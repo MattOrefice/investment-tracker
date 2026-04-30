@@ -17,3 +17,8 @@ Python 3.11+, Streamlit, SQLite, pandas, yfinance, fredapi, plotly, pytest
 .\.venv\Scripts\Activate.ps1
 streamlit run app.py
 ```
+
+## Repository
+- **GitHub**: https://github.com/MattOrefice/investment-tracker
+- Currently **private** — will be flipped to public in Phase 7 once the README and methodology docs are polished
+- Git configured as Matthew Orefice &lt;mattorefice0@gmail.com&gt;
