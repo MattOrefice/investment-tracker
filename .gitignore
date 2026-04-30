@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+data/tracker.db
+.streamlit/secrets.toml
+.env
+.cursor/
