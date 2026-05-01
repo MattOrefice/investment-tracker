@@ -289,12 +289,17 @@ Existing retained columns: thesis_id, title, macro_view (legacy), conviction, ho
 
 The parent category previously named "Growth" was renamed to "Equity" across the database, UI, and documentation. Reasoning: "Equity" matches institutional taxonomy used by endowments, pensions, and consulting firms, whereas "Growth" reads more retail. The change affects display labels and the asset_classes.name field for the parent row only; child sleeve names and weights are unchanged. References to "growth" in lowercase as a concept (e.g., "growth-oriented portfolio," "growth-vs-value") remain intact.
 
-## Phase 3 — schema landed (UI pending)
+## Phase 3 — COMPLETE
 
+- pages/3_Trade_Log.py renders three tabs: Trades, Theses, Themes
+- Trade entry form with dynamic ticker→thesis filtering (ticker select outside st.form triggers re-run)
+- Two-tier thesis browser (investment theses as expanders with theme pills + status badges; position theses as compact dataframe)
+- Theme aggregation view with per-theme thesis lists and stats
+- Empty-state handled gracefully (no trades, no closed/invalidated theses)
 - themes table seeded with 5 starter tags
 - theses schema extended: level, parent_thesis_id, target_sleeves, invalidation_conditions, expected_return_scenario, vehicle_rationale, target_weight, post-mortem fields
 - 12 investment theses seeded (10 SAA-derived + 2 system)
 - 11 position theses seeded, linked to parent investment theses
-- Theme tags applied
 - macro_view column kept as legacy; view_summary is canonical going forward
-- Next: build Trade Log UI (pages/3_Trade_Log.py)
+- SPAXX excluded from trade form ticker options (not in securities table; FK constraint)
+- Next: Phase 4 — Performance and Attribution (TWR, BHB attribution, drift analysis)
