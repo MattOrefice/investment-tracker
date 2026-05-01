@@ -127,13 +127,23 @@ with col:
     m1, m2, m3, m4 = st.columns(4)
 
     inception_delta_pct = f"{port_si*100:+.1f}% since inception"
-    m1.metric("Current Value",    f"${current_val:,.0f}",  inception_delta_pct)
-    m2.metric("vs. S&P 500",      _bps(alpha_sp),
-              f"SI: {_pct(sp500_si)} S&P 500")
+    m1.metric("Current Value",      f"${current_val:,.0f}", inception_delta_pct)
+    m2.metric("vs. S&P 500",        _bps(alpha_sp),
+              f"SI: {_pct(sp500_si)} S&P 500",
+              delta_color="off")
     m3.metric("vs. Custom Blended", _bps(alpha_bl),
-              f"SI: {_pct(blended_si)} blended")
-    m4.metric("YTD Return",       _pct(ytd_return),
+              f"SI: {_pct(blended_si)} blended",
+              delta_color="off")
+    m4.metric("YTD Return",         _pct(ytd_return),
               f"Since: {_pct(port_si)}")
+
+    st.caption(
+        "Underperformance vs. S&P 500 reflects intentional diversification: "
+        "28% of the portfolio is non-equity (Income + Real Assets + Cash), "
+        "27% is non-US equity. The Custom Blended benchmark — a target-weighted "
+        "basket of cap-weighted indices in the same SAA — is the more meaningful "
+        "comparison for security selection alpha."
+    )
 
     st.divider()
 
