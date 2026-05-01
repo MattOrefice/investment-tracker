@@ -42,17 +42,46 @@ CREATE TABLE IF NOT EXISTS securities (
     FOREIGN KEY (asset_class_id) REFERENCES asset_classes(asset_class_id)
 );
 
+CREATE TABLE IF NOT EXISTS themes (
+    theme_id    INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL UNIQUE,
+    description TEXT,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS theses (
-    thesis_id        INTEGER PRIMARY KEY AUTOINCREMENT,
-    title            TEXT NOT NULL,
-    macro_view       TEXT NOT NULL,
-    conviction       INTEGER NOT NULL,
-    horizon_months   INTEGER,
-    exit_conditions  TEXT,
-    status           TEXT NOT NULL DEFAULT 'active',
-    created_at       TEXT DEFAULT CURRENT_TIMESTAMP,
-    closed_at        TEXT,
-    post_mortem      TEXT
+    thesis_id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    title                    TEXT NOT NULL,
+    macro_view               TEXT NOT NULL,
+    view_summary             TEXT,
+    conviction               INTEGER NOT NULL,
+    level                    TEXT NOT NULL DEFAULT 'investment',
+    parent_thesis_id         INTEGER,
+    target_sleeves           TEXT,
+    horizon_months           INTEGER,
+    exit_conditions          TEXT,
+    invalidation_conditions  TEXT,
+    expected_return_scenario TEXT,
+    vehicle_rationale        TEXT,
+    target_weight            REAL,
+    status                   TEXT NOT NULL DEFAULT 'active',
+    created_at               TEXT DEFAULT CURRENT_TIMESTAMP,
+    closed_at                TEXT,
+    post_mortem              TEXT,
+    outcome                  TEXT,
+    realized_pnl_pct         REAL,
+    what_i_got_right         TEXT,
+    what_i_got_wrong         TEXT,
+    would_repeat             TEXT,
+    FOREIGN KEY (parent_thesis_id) REFERENCES theses(thesis_id)
+);
+
+CREATE TABLE IF NOT EXISTS thesis_themes (
+    thesis_id INTEGER NOT NULL,
+    theme_id  INTEGER NOT NULL,
+    PRIMARY KEY (thesis_id, theme_id),
+    FOREIGN KEY (thesis_id) REFERENCES theses(thesis_id),
+    FOREIGN KEY (theme_id)  REFERENCES themes(theme_id)
 );
 
 CREATE TABLE IF NOT EXISTS trades (

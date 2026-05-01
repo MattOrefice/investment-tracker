@@ -243,6 +243,58 @@ SPAXX is Fidelity's default money market fund and the natural cash vehicle — n
 
 **Next: Phase 3 — Thesis + Trade Log**
 
+## Phase 3 — Trade Log + Thesis System (in progress)
+
+### Architecture: two-tier theses with theme tags
+- Investment theses (upper tier): full 8-field discipline, strategic views tied to SAA sleeves
+- Position theses (lower tier): lightweight, 1:1 with current holdings, link up to investment theses
+- Themes: multi-select tags on investment theses, capture worldview-level patterns
+
+### Schema additions (this phase)
+
+`themes` table: theme_id (PK), name, description, created_at
+
+`thesis_themes` join table: thesis_id, theme_id (composite PK)
+
+`theses` table additions (ALTER TABLE for existing DBs; included in CREATE TABLE for fresh inits):
+- level: 'investment' or 'position' (NOT NULL DEFAULT 'investment')
+- parent_thesis_id: nullable FK → theses(thesis_id), used by position theses to link up
+- target_sleeves: JSON text array of asset_class names
+- invalidation_conditions: text
+- expected_return_scenario: text
+- vehicle_rationale: text (position theses only — the ETF selection rationale)
+- target_weight: real (position theses only)
+- view_summary: text — canonical view column going forward; macro_view kept as legacy (NOT NULL constraint requires it to remain)
+- Post-mortem fields: outcome, realized_pnl_pct, what_i_got_right, what_i_got_wrong, would_repeat
+
+Existing retained columns: thesis_id, title, macro_view (legacy), conviction, horizon_months, exit_conditions, status, created_at, closed_at, post_mortem (legacy)
+
+### Lifecycle states
+- 'active' (default)
+- 'closed' — view played out, position exited intentionally
+- 'invalidated' — view disproven, position exited because thesis was wrong
+
+### Trade-thesis linkage
+- Every trade requires thesis_id (enforced in application code; column nullable in schema)
+- Routine trades use system theses: 'system:rebalance' and 'system:cash_management'
+- Trades link to position theses → investment theses → theme tags
+
+### Pre-seeded data
+- 5 starter themes: Valuation-driven, Regime change, Factor tilt, Tax efficiency, Drawdown protection
+- 2 system theses: system:rebalance and system:cash_management (investment level, perpetual)
+- 10 investment theses: one per SAA sleeve, derived from sleeve rationales
+- 11 position theses: one per holding (VOO, SPHQ, VTV, AVUV, VEA, IEMG, VGIT, SCHP, VNQ, PDBC, SPAXX)
+
 ## Naming convention update (post-Phase 2)
 
 The parent category previously named "Growth" was renamed to "Equity" across the database, UI, and documentation. Reasoning: "Equity" matches institutional taxonomy used by endowments, pensions, and consulting firms, whereas "Growth" reads more retail. The change affects display labels and the asset_classes.name field for the parent row only; child sleeve names and weights are unchanged. References to "growth" in lowercase as a concept (e.g., "growth-oriented portfolio," "growth-vs-value") remain intact.
+
+## Phase 3 — schema landed (UI pending)
+
+- themes table seeded with 5 starter tags
+- theses schema extended: level, parent_thesis_id, target_sleeves, invalidation_conditions, expected_return_scenario, vehicle_rationale, target_weight, post-mortem fields
+- 12 investment theses seeded (10 SAA-derived + 2 system)
+- 11 position theses seeded, linked to parent investment theses
+- Theme tags applied
+- macro_view column kept as legacy; view_summary is canonical going forward
+- Next: build Trade Log UI (pages/3_Trade_Log.py)
