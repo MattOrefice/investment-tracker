@@ -42,7 +42,8 @@ def load_research_data():
 
 
 def _safe_md(text):
-    st.markdown(text.replace("$", r"\$"))
+    if text:
+        st.markdown(text.replace("$", r"\$"))
 
 
 def _er_str(er, display_override=None):

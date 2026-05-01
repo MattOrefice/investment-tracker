@@ -46,7 +46,7 @@ SORT_ORDERS = {
     "Emerging Markets":        60,
     "Core Fixed Income":       70,
     "TIPS":                    80,
-    "REITs & Commodities":     90,
+    "Real Assets":             90,
     "Cash / SPAXX":           100,
 }
 
@@ -186,7 +186,7 @@ SUB_CLASSES = [
         ),
     },
     {
-        "name": "REITs & Commodities",
+        "name": "Real Assets",
         "parent_name": "Real Assets",
         "target_weight": 0.10,
         "tolerance_band": 0.02,
