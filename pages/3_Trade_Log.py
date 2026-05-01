@@ -79,7 +79,10 @@ def load_all():
             LEFT JOIN themes tm ON tt.theme_id = tm.theme_id
             WHERE th.level = 'investment'
             GROUP BY th.thesis_id
-            ORDER BY th.conviction DESC, th.title
+            ORDER BY
+                CASE WHEN th.title LIKE 'system:%' THEN 1 ELSE 0 END,
+                th.conviction DESC,
+                th.title
         """).fetchall()]
 
         pos_theses = [dict(r) for r in conn.execute("""
@@ -274,7 +277,7 @@ def render_trade_form():
             price = st.number_input("Price ($)", min_value=0.0, step=0.01, format="%.2f")
             fees  = st.number_input("Fees ($)", min_value=0.0, value=0.0, step=0.01, format="%.2f")
         notes     = st.text_area("Notes (optional)", height=68)
-        submitted = st.form_submit_button("Log trade", type="primary", use_container_width=True)
+        submitted = st.form_submit_button("Log trade", use_container_width=True)
 
         if submitted:
             ticker   = st.session_state.get("tl_ticker", "")
@@ -482,7 +485,6 @@ with tab_theses:
                     "Vehicle Rationale": (rat[:88] + "…") if len(rat) > 88 else rat,
                     "Conviction":        _stars(pt["conviction"]),
                     "Investment Thesis": pt.get("parent_title") or "—",
-                    "Status":            pt["status"],
                 })
             st.dataframe(
                 pd.DataFrame(pos_rows),
