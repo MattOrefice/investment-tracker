@@ -160,3 +160,142 @@ When building any new feature, both modes must keep working. Pages should query 
 - Dual-mode foundation planted (src/config.py)
 
 **Next: Phase 2 — Security Research / Candidate ETF Comparison**
+
+## Phase 2 — ETF Picks (locked)
+
+Pre-decisions:
+- Tax efficiency: prioritize after-tax returns; prefer tax-efficient vehicles
+- Issuer default: Vanguard/iShares; Fidelity and others evaluated case by case
+- ESG: financially-driven primary; ESG risks considered, not a hard screen
+
+### Benchmark vs. Holding distinction (important for attribution)
+Benchmarks are for performance attribution and comparison. Holdings are chosen for after-tax, after-fee returns in a taxable account. These deliberately differ in several sleeves.
+
+### Final picks
+
+| Sleeve | Benchmark | Holding | ER | Asset class in DB |
+|---|---|---|---|---|
+| US Large Core | SPY | VOO | 0.03% | US Large Core |
+| US Large Quality | QUAL | SPHQ | 0.15% | US Large Quality |
+| US Large Value | IWD | VTV | 0.04% | US Large Value |
+| US Small Cap | IWM | AVUV | 0.25% | US Small Cap |
+| Intl Developed | EFA | VEA | 0.03% | International Developed |
+| Emerging Markets | EEM | IEMG | 0.09% | Emerging Markets |
+| Core FI | IEF | VGIT | 0.04% | Core Fixed Income |
+| TIPS | TIP | SCHP | 0.03% | TIPS |
+| REITs | VNQ | VNQ | 0.12% | REITs & Commodities |
+| Commodities | DJP | PDBC | 0.59% | REITs & Commodities |
+| Cash | BIL | SPAXX | ~0% | Cash / SPAXX |
+
+Weighted average ER of holdings: ~0.10%
+
+### ETF rationales
+
+**VOO (US Large Core)**
+VOO delivers S&P 500 exposure at 0.03% with the best tax efficiency of any large-cap passive fund. The benchmark is SPY — used for attribution because it's the institutional standard — but SPY's unit investment trust structure prevents internal dividend reinvestment, creating cash drag and incremental tax events that accumulate over decades. Vanguard's ETF share class structure historically produces fewer capital gains distributions. The difference between VOO and SPY compounds quietly; at a 30-year horizon I'm not willing to pay three times the fee for intraday liquidity I don't need.
+
+**SPHQ (US Large Quality)**
+SPHQ over QUAL was a deliberate methodology choice rooted in accounting quality. QUAL screens on ROE, earnings variability, and debt-to-equity. SPHQ adds an accruals ratio screen, which filters out companies with aggressive accounting — high accruals relative to assets predict earnings reversals, as documented in Sloan (1996) and widely replicated since. CFA training reinforced this: accruals manipulation is real and persistent, and a quality screen that ignores it is incomplete. The tradeoff is smaller AUM ($6B vs QUAL's $40B), acceptable given SPHQ isn't at closure-risk scale. Benchmarking against QUAL creates a natural attribution question over time: did the accruals screen add or cost value?
+
+**VTV (US Large Value)**
+VTV captures the value factor through CRSP's multi-metric methodology — P/B, P/E, P/S, P/CF, and dividend yield — rather than Russell's P/B-heavy single metric used in IWD (the benchmark). Multi-metric is academically superior: relying solely on P/B overweights asset-heavy industries and underweights intangible-rich businesses where book value poorly proxies intrinsic value. VTV also costs 0.04% vs IWD's 0.19%. The holding deliberately differs from the benchmark; the methodology difference is intentional and defensible.
+
+**AVUV (US Small Cap)**
+AVUV is the highest-conviction factor pick in the portfolio. Avantis (founded by former DFA researchers) targets the size, value, and profitability factors simultaneously — empirically, the size premium is concentrated almost entirely in profitable small-value firms; unprofitable small-caps drag index returns and explain why naive small-cap exposure has looked weak for 15 years. The 0.25% ER is the highest in the portfolio but buys genuine factor exposure. Current large-cap valuations structurally improve the relative opportunity in cheap, profitable small companies. Attribution is tracked against IWM to test whether the factor tilt earns its fee over time.
+
+**VEA (International Developed)**
+VEA delivers developed-ex-US exposure at 0.03% versus EFA's 0.32% — ten times more expensive for substantially the same asset class. VEA tracks FTSE Developed All Cap ex US, which includes Canada (MSCI EAFE excludes it), giving modestly broader coverage. The valuation thesis driving this sleeve's 19% weight holds regardless of the Canada distinction; the fee difference is indefensible for passive exposure. Vanguard's structure also produces fewer capital gains distributions historically.
+
+**IEMG (Emerging Markets)**
+IEMG is the holding because EEM costs 0.70% for identical exposure — seven times more expensive and the most egregious benchmark-vs-holding gap in the portfolio. IEMG at 0.09% tracks the same MSCI Emerging Markets index with the same ~27% China weight. China inclusion was deliberate: the SAA rationale flags governance risk as a watch item but not yet a reason to exit — China trades at ~10x P/E and the EM valuation thesis meaningfully includes Chinese equities. Excluding China via EMXC would be a larger active bet than appropriate at current prices; would revisit if ADR delisting risk materializes legislatively or if another sector-level government intervention occurs.
+
+**VGIT (Core Fixed Income)**
+VGIT delivers intermediate-term US Treasury exposure at 0.04% versus IEF's 0.15%. Duration is modestly shorter (~5.5 years vs IEF's ~7.5 years), appropriate for a 9% sleeve inside a 72% growth portfolio. Critically, Treasury interest income is exempt from state and local taxes — a real after-tax advantage in a high-income-tax jurisdiction like DC over investment-grade corporate bond funds with similar yield. Cost minimization is the dominant selection criterion for a sleeve that exists for drawdown buffering and rebalancing optionality, not return.
+
+**SCHP (TIPS)**
+SCHP delivers broad TIPS exposure at 0.03% versus TIP's 0.19% for identical exposure. The choice of broad TIPS over short-term alternatives (VTIP, STIP) reflects the long-horizon inflation thesis: at 27, the risk being hedged is not near-term inflation volatility but a decade of sustained real return erosion. Short-term TIPS protect against current inflation but have less sensitivity to unexpected long-run inflation regimes. Broad TIPS held for decades are the more appropriate vehicle. SCHP at 0.03% makes this hedge essentially free to carry.
+
+**VNQ (REITs)**
+VNQ is the standard for US REIT exposure: $35B AUM, 0.12% ER, broad diversification across property types. Primary risk accepted knowingly: REIT distributions are predominantly non-qualified income taxed at ordinary rates. In a perfect construction this sleeve would sit in a tax-advantaged account; working with a taxable account only, the drag is accepted with eyes open. The real assets diversification benefit justifies carrying the tax friction. Would revisit if tax-advantaged space becomes available.
+
+**PDBC (Commodities)**
+PDBC is the only broad commodity ETF worth owning in a taxable account because it avoids issuing a K-1 tax form. Nearly all commodity futures funds are organized as partnerships and issue K-1s annually — complicating filing, often arriving late, and potentially triggering estimated tax requirements. PDBC uses a C-corporation structure instead, eliminating K-1 at the cost of a higher ER (0.59%). For a 5% position in a taxable account, tax simplicity is worth materially more than the fee difference versus K-1-issuing alternatives. DJP (the benchmark) is an exchange-traded note with counterparty risk — used for attribution only, never as a holding.
+
+**SPAXX (Cash)**
+SPAXX is Fidelity's default money market fund and the natural cash vehicle — no transaction cost, immediate liquidity, currently ~4-5% yield. BIL exists only for attribution comparison. The 3% cash weight is operational liquidity: it funds rebalancing trades, covers small drawdowns without forced selling, and buffers position friction. Would reduce toward 1% if short rates fall materially below 2%.
+
+### Implementation notes
+- securities table contains all holdings (VOO, SPHQ, VTV, AVUV, VEA, IEMG, VGIT, SCHP, VNQ, PDBC) plus all benchmarks (SPY, QUAL, IWD, IWM, EFA, EEM, IEF, TIP, DJP, BIL)
+- SPAXX handled as cash position, not a security in the traditional sense
+- Both holding and benchmark tickers are needed for Phase 4 attribution math
+- Real Assets sleeve contains two holdings (VNQ + PDBC), each 50% of the sleeve weight
+- DB sleeve name is "REITs & Commodities" (renamed from "Real Assets" in Phase 0 to avoid UNIQUE collision)
+
+## Phase 2 — ETF Picks (locked)
+
+Pre-decisions:
+- Tax efficiency: prioritize after-tax returns; prefer tax-efficient vehicles
+- Issuer default: Vanguard/iShares; Fidelity and others evaluated case by case
+- ESG: financially-driven primary; ESG risks considered, not a hard screen
+
+### Benchmark vs. Holding distinction (important for attribution)
+Benchmarks are for performance attribution and comparison. Holdings are chosen for after-tax, after-fee returns in a taxable account. These deliberately differ in several sleeves.
+
+### Final picks
+
+| Sleeve | Benchmark | Holding | ER | Asset class in DB |
+|---|---|---|---|---|
+| US Large Core | SPY | VOO | 0.03% | US Large Core |
+| US Large Quality | QUAL | SPHQ | 0.15% | US Large Quality |
+| US Large Value | IWD | VTV | 0.04% | US Large Value |
+| US Small Cap | IWM | AVUV | 0.25% | US Small Cap |
+| Intl Developed | EFA | VEA | 0.03% | International Developed |
+| Emerging Markets | EEM | IEMG | 0.09% | Emerging Markets |
+| Core FI | IEF | VGIT | 0.04% | Core Fixed Income |
+| TIPS | TIP | SCHP | 0.03% | TIPS |
+| REITs | VNQ | VNQ | 0.12% | REITs & Commodities |
+| Commodities | DJP | PDBC | 0.59% | REITs & Commodities |
+| Cash | BIL | SPAXX | ~0% | Cash / SPAXX |
+
+Weighted average ER of holdings: ~0.09%
+
+### ETF rationales
+
+**VOO (US Large Core)**
+VOO delivers S&P 500 exposure at 0.03% with the best tax efficiency of any large-cap passive fund. The benchmark is SPY — used for attribution because it's the institutional standard — but SPY's unit investment trust structure prevents internal dividend reinvestment, creating cash drag and incremental tax events that accumulate over decades. Vanguard's ETF share class structure historically produces fewer capital gains distributions. The difference between VOO and SPY compounds quietly; at a 30-year horizon I'm not willing to pay three times the fee for intraday liquidity I don't need.
+
+**SPHQ (US Large Quality)**
+SPHQ over QUAL was a deliberate methodology choice rooted in accounting quality. QUAL screens on ROE, earnings variability, and debt-to-equity. SPHQ adds an accruals ratio screen, which filters out companies with aggressive accounting — high accruals relative to assets predict earnings reversals, as documented in Sloan (1996) and widely replicated since. CFA training reinforced this: accruals manipulation is real and persistent, and a quality screen that ignores it is incomplete. The tradeoff is smaller AUM ($6B vs QUAL's $40B), acceptable given SPHQ isn't at closure-risk scale. Benchmarking against QUAL creates a natural attribution question over time: did the accruals screen add or cost value?
+
+**VTV (US Large Value)**
+VTV captures the value factor through CRSP's multi-metric methodology — P/B, P/E, P/S, P/CF, and dividend yield — rather than Russell's P/B-heavy single metric used in IWD (the benchmark). Multi-metric is academically superior: relying solely on P/B overweights asset-heavy industries and underweights intangible-rich businesses where book value poorly proxies intrinsic value. VTV also costs 0.04% vs IWD's 0.19%. The holding deliberately differs from the benchmark; the methodology difference is intentional and defensible.
+
+**AVUV (US Small Cap)**
+AVUV is the highest-conviction factor pick in the portfolio. Avantis (founded by former DFA researchers) targets the size, value, and profitability factors simultaneously — empirically, the size premium is concentrated almost entirely in profitable small-value firms; unprofitable small-caps drag index returns and explain why naive small-cap exposure has looked weak for 15 years. The 0.25% ER is the highest in the portfolio but buys genuine factor exposure. Current large-cap valuations structurally improve the relative opportunity in cheap, profitable small companies. Attribution is tracked against IWM to test whether the factor tilt earns its fee over time.
+
+**VEA (International Developed)**
+VEA delivers developed-ex-US exposure at 0.03% versus EFA's 0.32% — ten times more expensive for substantially the same asset class. VEA tracks FTSE Developed All Cap ex US, which includes Canada (MSCI EAFE excludes it), giving modestly broader coverage. The valuation thesis driving this sleeve's 19% weight holds regardless of the Canada distinction; the fee difference is indefensible for passive exposure. Vanguard's structure also produces fewer capital gains distributions historically.
+
+**IEMG (Emerging Markets)**
+IEMG is the holding because EEM costs 0.70% for identical exposure — seven times more expensive and the most egregious benchmark-vs-holding gap in the portfolio. IEMG at 0.09% tracks the same MSCI Emerging Markets index with the same ~27% China weight. China inclusion was deliberate: the SAA rationale flags governance risk as a watch item but not yet a reason to exit — China trades at ~10x P/E and the EM valuation thesis meaningfully includes Chinese equities. Excluding China via EMXC would be a larger active bet than appropriate at current prices; would revisit if ADR delisting risk materializes legislatively or if another sector-level government intervention occurs.
+
+**VGIT (Core Fixed Income)**
+VGIT delivers intermediate-term US Treasury exposure at 0.04% versus IEF's 0.15%. Duration is modestly shorter (~5.5 years vs IEF's ~7.5 years), appropriate for a 9% sleeve inside a 72% growth portfolio. Critically, Treasury interest income is exempt from state and local taxes — a real after-tax advantage in a high-income-tax jurisdiction like DC over investment-grade corporate bond funds with similar yield. Cost minimization is the dominant selection criterion for a sleeve that exists for drawdown buffering and rebalancing optionality, not return.
+
+**SCHP (TIPS)**
+SCHP delivers broad TIPS exposure at 0.03% versus TIP's 0.19% for identical exposure. The choice of broad TIPS over short-term alternatives (VTIP, STIP) reflects the long-horizon inflation thesis: at 27, the risk being hedged is not near-term inflation volatility but a decade of sustained real return erosion. Short-term TIPS protect against current inflation but have less sensitivity to unexpected long-run inflation regimes. Broad TIPS held for decades are the more appropriate vehicle. SCHP at 0.03% makes this hedge essentially free to carry.
+
+**VNQ (REITs)**
+VNQ is the standard for US REIT exposure: $35B AUM, 0.12% ER, broad diversification across property types. Primary risk accepted knowingly: REIT distributions are predominantly non-qualified income taxed at ordinary rates. In a perfect construction this sleeve would sit in a tax-advantaged account; working with a taxable account only, the drag is accepted with eyes open. The real assets diversification benefit justifies carrying the tax friction. Would revisit if tax-advantaged space becomes available.
+
+**PDBC (Commodities)**
+PDBC is the only broad commodity ETF worth owning in a taxable account because it avoids issuing a K-1 tax form. Nearly all commodity futures funds are organized as partnerships and issue K-1s annually — complicating filing, often arriving late, and potentially triggering estimated tax requirements. PDBC uses a C-corporation structure instead, eliminating K-1 at the cost of a higher ER (0.59%). For a 5% position in a taxable account, tax simplicity is worth materially more than the fee difference versus K-1-issuing alternatives. DJP (the benchmark) is an exchange-traded note with counterparty risk — used for attribution only, never as a holding.
+
+**SPAXX (Cash)**
+SPAXX is Fidelity's default money market fund and the natural cash vehicle — no transaction cost, immediate liquidity, currently ~4-5% yield. BIL exists only for attribution comparison. The 3% cash weight is operational liquidity: it funds rebalancing trades, covers small drawdowns without forced selling, and buffers position friction. Would reduce toward 1% if short rates fall materially below 2%.
+
+### Implementation notes
+- securities table should contain all holdings (VOO, SPHQ, VTV, AVUV, VEA, IEMG, VGIT, SCHP, VNQ, PDBC) plus all benchmarks (SPY, QUAL, IWD, IWM, EFA, EEM, IEF, TIP, DJP, BIL)
+- SPAXX handled as cash position, not a security in the traditional sense
+- Both holding and benchmark tickers are needed for Phase 4 attribution math
+- Real Assets sleeve contains two holdings (VNQ + PDBC), each 50% of the sleeve weight
