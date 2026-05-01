@@ -20,7 +20,6 @@ def _safe_md(text):
         st.markdown(text.replace("$", r"\$"))
 
 
-@st.cache_data
 def load_saa_data():
     with get_connection() as conn:
         parents = [
