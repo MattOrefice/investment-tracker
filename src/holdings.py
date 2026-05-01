@@ -158,7 +158,19 @@ def get_sleeve_weights_on_date(date_str: str) -> pd.DataFrame:
         shares = float(row["net_shares"])
 
         if ticker == "SPAXX":
-            price = 1.0
+            try:
+                inception = "2025-05-01"
+                p = get_prices("BIL", inception, date_str)
+                if not p.empty:
+                    bil = p["adj_close"].fillna(p["close"])
+                    p0_idx = bil.first_valid_index()
+                    if p0_idx is not None and float(bil[p0_idx]) > 0:
+                        bil = bil / float(bil[p0_idx])
+                    price = float(bil.ffill().iloc[-1])
+                else:
+                    price = 1.0
+            except Exception:
+                price = 1.0
         else:
             try:
                 p = get_prices(ticker, look_back, date_str)
