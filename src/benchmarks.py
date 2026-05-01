@@ -11,9 +11,10 @@ except ImportError:
     from prices import get_prices
 
 # Sleeve → benchmark ticker mapping (from asset_classes.benchmark_ticker).
-# Real Assets benchmark is "VNQ+DJP" in the DB (50/50 blend), but DJP was
-# delisted in 2020.  We fall back to VNQ 50% + PDBC 50% for any period after
-# 2020, documenting the substitution.
+# Real Assets benchmark was originally "VNQ+DJP" but DJP (iPath Bloomberg
+# Commodity Index ETN) was delisted in May 2020.  Replaced with DBC (Invesco
+# DB Commodity Index Tracking Fund), which is still active, uses a similar
+# broad-commodity methodology, and has a long pricing history.
 _SLEEVE_BENCHMARKS: dict[str, list[tuple[str, float]]] = {
     "US Large Core":          [("SPY",  1.0)],
     "US Large Quality":       [("QUAL", 1.0)],
@@ -23,8 +24,7 @@ _SLEEVE_BENCHMARKS: dict[str, list[tuple[str, float]]] = {
     "Emerging Markets":       [("EEM",  1.0)],
     "Core Fixed Income":      [("IEF",  1.0)],
     "TIPS":                   [("TIP",  1.0)],
-    # DJP delisted 2020; substituting PDBC (holding) for commodity half
-    "Real Assets":            [("VNQ",  0.5), ("PDBC", 0.5)],
+    "Real Assets":            [("VNQ",  0.5), ("DBC", 0.5)],
     "Cash / SPAXX":           [("BIL",  1.0)],
 }
 

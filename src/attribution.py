@@ -82,9 +82,7 @@ def brinson_fachler(
 
 def _first_adj_price(ticker: str, from_date: str, window_days: int = 5) -> float:
     """Return the first available adj_close (total-return) price on or after from_date."""
-    end = (
-        date.fromisoformat(from_date) + timedelta(days=window_days)
-    ).isoformat()
+    end = (date.fromisoformat(from_date) + timedelta(days=window_days)).isoformat()
     try:
         p = get_prices(ticker, from_date, end)
         if not p.empty:
@@ -97,9 +95,7 @@ def _first_adj_price(ticker: str, from_date: str, window_days: int = 5) -> float
 
 def _last_adj_price(ticker: str, up_to_date: str, window_days: int = 5) -> float:
     """Return the last available adj_close (total-return) price on or before up_to_date."""
-    start = (
-        date.fromisoformat(up_to_date) - timedelta(days=window_days)
-    ).isoformat()
+    start = (date.fromisoformat(up_to_date) - timedelta(days=window_days)).isoformat()
     try:
         p = get_prices(ticker, start, up_to_date)
         if not p.empty:
@@ -162,7 +158,12 @@ def brinson_fachler_period(
     for ticker, shares in holdings.items():
         sleeve = ticker_to_sleeve.get(ticker, "Unknown")
         if ticker == "SPAXX":
-            p_start = p_end = 1.0
+            # SPAXX NAV is always $1; proxy T-bill yield through BIL.
+            # p_start stays $1.00; p_end = $1.00 × (BIL_end / BIL_start).
+            p_start = 1.0
+            bil_start = _first_adj_price("BIL", start_date)
+            bil_end   = _last_adj_price("BIL", end)
+            p_end = (bil_end / bil_start) if bil_start > 0 else 1.0
         else:
             p_start = _first_adj_price(ticker, start_date)
             p_end   = _last_adj_price(ticker, end)

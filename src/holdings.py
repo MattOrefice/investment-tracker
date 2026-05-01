@@ -91,16 +91,28 @@ def get_portfolio_value_series(
 
     tickers = holdings_matrix.columns.tolist()
 
-    # Build price matrix (adj_close, forward-filled for non-trading days)
+    # Build price matrix (adj_close, forward-filled for non-trading days).
+    # SPAXX NAV is always $1, but it accrues T-bill yield.  We proxy its total
+    # return through BIL (SPDR Bloomberg 1-3 Month T-Bill ETF), whose adj_close
+    # already reflects reinvested T-bill yield.  BIL is normalized to start at
+    # $1.00 so that shares × price still equals dollars of SPAXX held.
     price_cols: dict = {}
     for ticker in tickers:
         if ticker == "SPAXX":
-            price_cols[ticker] = pd.Series(1.0, index=date_range)
+            try:
+                p = get_prices("BIL", start_date, end)
+                p.index = pd.to_datetime(p.index)
+                series = p["adj_close"].fillna(p["close"])
+                p0 = series.first_valid_index()
+                if p0 is not None and float(series[p0]) > 0:
+                    series = series / float(series[p0])  # normalize to $1.00
+                price_cols[ticker] = series.reindex(date_range).ffill()
+            except Exception:
+                price_cols[ticker] = pd.Series(1.0, index=date_range)
         else:
             try:
                 p = get_prices(ticker, start_date, end)
                 p.index = pd.to_datetime(p.index)
-                # Fill missing adj_close from close (rare, belt-and-braces)
                 series = p["adj_close"].fillna(p["close"])
                 price_cols[ticker] = series.reindex(date_range).ffill()
             except Exception:
