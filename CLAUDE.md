@@ -303,3 +303,11 @@ The parent category previously named "Growth" was renamed to "Equity" across the
 - macro_view column kept as legacy; view_summary is canonical going forward
 - SPAXX excluded from trade form ticker options (not in securities table; FK constraint)
 - Next: Phase 4 — Performance and Attribution (TWR, BHB attribution, drift analysis)
+
+## Phase 4 Session 1 — COMPLETE
+
+- src/prices.py: Yahoo Finance v8/chart API direct fetcher (bypasses yfinance to avoid 429 rate-limiting); SQLite cache with INSERT OR REPLACE; get_prices() fills gaps intelligently; bulk_refresh() pre-warms all tickers
+- src/seed_paper_trades.py: deploys $10k across 10 ETFs + SPAXX residual on 2025-05-01 using floor(target_$/price) whole shares; idempotent guard; adds SPAXX to securities table
+- src/holdings.py: get_holdings_on_date() (net shares via cumulative buy/sell), get_portfolio_value_series() (daily adj_close × holdings, ffilled, SPAXX=$1), get_sleeve_weights_on_date() (actual vs target ± drift)
+- Verified end-to-end: $10k seeded 2025-05-01 → $12,415 by 2026-04-30; sleeve weights and drifts in expected range
+- Next: Phase 4 Session 2 — TWR, BHB attribution, drift chart, Portfolio page
