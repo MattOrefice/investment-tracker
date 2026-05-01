@@ -37,6 +37,8 @@ CREATE TABLE IF NOT EXISTS securities (
     security_type     TEXT,
     expense_ratio     REAL,
     notes             TEXT,
+    holding_rationale TEXT,
+    holding_rationale TEXT,
     FOREIGN KEY (asset_class_id) REFERENCES asset_classes(asset_class_id)
 );
 
