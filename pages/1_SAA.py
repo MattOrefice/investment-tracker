@@ -16,7 +16,8 @@ PARENT_COLORS = {
 
 def _safe_md(text):
     """Escape $ before passing to st.markdown so Streamlit doesn't treat them as LaTeX."""
-    st.markdown(text.replace("$", r"\$"))
+    if text:
+        st.markdown(text.replace("$", r"\$"))
 
 
 @st.cache_data

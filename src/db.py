@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS accounts (
 
 CREATE TABLE IF NOT EXISTS asset_classes (
     asset_class_id   INTEGER PRIMARY KEY AUTOINCREMENT,
-    name             TEXT NOT NULL UNIQUE,
+    name             TEXT NOT NULL,
     parent_id        INTEGER,
     target_weight    REAL NOT NULL,
     tolerance_band   REAL NOT NULL DEFAULT 0.05,

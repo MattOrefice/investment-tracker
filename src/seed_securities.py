@@ -138,7 +138,7 @@ HOLDINGS = [
     {
         "ticker": "VNQ",
         "name": "Vanguard Real Estate ETF",
-        "asset_class": "REITs & Commodities",
+        "asset_class": "Real Assets",
         "security_type": "ETF",
         "expense_ratio": 0.0012,
         "holding_rationale": (
@@ -153,7 +153,7 @@ HOLDINGS = [
     {
         "ticker": "PDBC",
         "name": "Invesco Optimum Yield Diversified Commodity Strategy No K-1 ETF",
-        "asset_class": "REITs & Commodities",
+        "asset_class": "Real Assets",
         "security_type": "ETF",
         "expense_ratio": 0.0059,
         "holding_rationale": (
@@ -179,7 +179,7 @@ BENCHMARKS = [
     {"ticker": "EEM",  "name": "iShares MSCI Emerging Markets ETF",                 "asset_class": "Emerging Markets"},
     {"ticker": "IEF",  "name": "iShares 7-10 Year Treasury Bond ETF",               "asset_class": "Core Fixed Income"},
     {"ticker": "TIP",  "name": "iShares TIPS Bond ETF",                             "asset_class": "TIPS"},
-    {"ticker": "DJP",  "name": "iPath Bloomberg Commodity Index Total Return ETN",  "asset_class": "REITs & Commodities"},
+    {"ticker": "DJP",  "name": "iPath Bloomberg Commodity Index Total Return ETN",  "asset_class": "Real Assets"},
     {"ticker": "BIL",  "name": "SPDR Bloomberg 1-3 Month T-Bill ETF",               "asset_class": "Cash / SPAXX"},
 ]
 

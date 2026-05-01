@@ -112,7 +112,7 @@ Operational liquidity, not strategic dry powder. At 27 with a 30+ year horizon, 
 
 ### Phase 1 complete (2026-04-29)
 - SAA locked: 10 sleeves across 4 parent categories (Equity 72% / Income 15% / Real Assets 10% / Cash 3%), weights sum to 100%
-- `asset_classes` table seeded via `src/seed_saa.py` (idempotent); sub-class naming note: sleeve 9 is "REITs & Commodities" to avoid UNIQUE collision with the "Real Assets" parent category
+- `asset_classes` table seeded via `src/seed_saa.py` (idempotent)
 - SAA page (`pages/1_SAA.py`) renders: stacked bar chart, sleeve table, per-sleeve rationale expanders, Phase 4 drift placeholder
 - Phase 2 (Security Research) is next: candidate ETF comparison per asset class
 
@@ -183,8 +183,8 @@ Benchmarks are for performance attribution and comparison. Holdings are chosen f
 | Emerging Markets | EEM | IEMG | 0.09% | Emerging Markets |
 | Core FI | IEF | VGIT | 0.04% | Core Fixed Income |
 | TIPS | TIP | SCHP | 0.03% | TIPS |
-| REITs | VNQ | VNQ | 0.12% | REITs & Commodities |
-| Commodities | DJP | PDBC | 0.59% | REITs & Commodities |
+| REITs | VNQ | VNQ | 0.12% | Real Assets |
+| Commodities | DJP | PDBC | 0.59% | Real Assets |
 | Cash | BIL | SPAXX | ~0% | Cash / SPAXX |
 
 Weighted average ER of holdings: ~0.10%
@@ -229,7 +229,7 @@ SPAXX is Fidelity's default money market fund and the natural cash vehicle — n
 - SPAXX handled as cash position, not a security in the traditional sense
 - Both holding and benchmark tickers are needed for Phase 4 attribution math
 - Real Assets sleeve contains two holdings (VNQ + PDBC), each 50% of the sleeve weight
-- DB sleeve name is "REITs & Commodities" (renamed from "Real Assets" in Phase 0 to avoid UNIQUE collision)
+- DB sleeve name is "Real Assets" (sub-class and parent share this name; UNIQUE constraint on asset_classes.name was dropped to allow it)
 
 
 ## Phase 2 — COMPLETE
