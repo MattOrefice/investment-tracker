@@ -32,7 +32,7 @@ def load_research_data():
                    p.name AS parent_name, p.target_weight AS parent_weight
             FROM asset_classes ac
             JOIN asset_classes p ON ac.parent_id = p.asset_class_id
-            ORDER BY p.target_weight DESC, ac.target_weight DESC, ac.name ASC
+            ORDER BY p.target_weight DESC, COALESCE(ac.sort_order, 999) ASC
         """).fetchall()]
         secs = [dict(r) for r in conn.execute("""
             SELECT ticker, name, expense_ratio, security_type, holding_rationale, asset_class_id
@@ -90,25 +90,24 @@ def _pair_benchmarks_holdings(holdings, benchmarks, bm_ticker_str):
     return pairs
 
 
-def _comparison_df(bm, h, self_bm=False):
-    bm_ticker = f"{bm['ticker']} (= holding)" if self_bm else (bm["ticker"] if bm else "—")
+def _comparison_df(bm, h, self_bm=False, show_type=False):
+    bm_ticker = bm["ticker"] if bm else "—"
     bm_name   = bm["name"] if bm else "—"
     bm_er     = _er_str(bm.get("expense_ratio") if bm else None)
-    bm_type   = (bm.get("security_type") or "—") if bm else "—"
 
     h_er_display = h.get("_er_display")
-    return pd.DataFrame(
-        {
-            "Benchmark": [bm_ticker, bm_name, bm_er, bm_type],
-            "Selected Holding": [
-                h["ticker"],
-                h["name"],
-                _er_str(h.get("expense_ratio"), h_er_display),
-                h.get("security_type") or "—",
-            ],
-        },
-        index=["Ticker", "Name", "Expense Ratio", "Type"],
-    )
+    cols = {
+        "Benchmark":        [bm_ticker, bm_name, bm_er],
+        "Selected Holding": [h["ticker"], h["name"], _er_str(h.get("expense_ratio"), h_er_display)],
+    }
+    idx = ["Ticker", "Name", "Expense Ratio"]
+
+    if show_type:
+        cols["Benchmark"].append((bm.get("security_type") or "—") if bm else "—")
+        cols["Selected Holding"].append(h.get("security_type") or "—")
+        idx.append("Type")
+
+    return pd.DataFrame(cols, index=idx)
 
 
 sleeves, secs = load_research_data()
@@ -187,11 +186,12 @@ with col:
             unsafe_allow_html=True,
         )
 
+        is_cash = sleeve["name"] == "Cash / SPAXX"
         for i, p in enumerate(pairs):
             bm, h = p["benchmark"], p["holding"]
             if len(pairs) > 1:
-                st.caption(f"{'50% REITs' if i == 0 else '50% Commodities'}")
-            df = _comparison_df(bm, h, self_bm=p["self_bm"])
+                st.caption(f"{'REITs (50% of sleeve)' if i == 0 else 'Commodities (50% of sleeve)'}")
+            df = _comparison_df(bm, h, self_bm=p["self_bm"], show_type=is_cash)
             st.dataframe(df, use_container_width=True)
 
             caption = _savings_caption(
@@ -199,7 +199,7 @@ with col:
                 h.get("expense_ratio"),
             )
             if caption:
-                st.caption(f"↳ {caption}")
+                st.caption(f"· {caption}")
 
             if h.get("holding_rationale"):
                 with st.expander(f"{h['ticker']} — rationale"):

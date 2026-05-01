@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS asset_classes (
     parent_id        INTEGER,
     target_weight    REAL NOT NULL,
     tolerance_band   REAL NOT NULL DEFAULT 0.05,
+    sort_order       INTEGER,
     rationale        TEXT,
     benchmark_ticker TEXT,
     FOREIGN KEY (parent_id) REFERENCES asset_classes(asset_class_id)

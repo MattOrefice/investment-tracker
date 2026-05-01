@@ -8,7 +8,7 @@ from src.db import get_connection, initialize_db
 
 PARENTS = [
     {
-        "name": "Growth",
+        "name": "Equity",
         "target_weight": 0.72,
         "tolerance_band": 0.03,
         "rationale": "Core equity engine of the portfolio; primary driver of long-run real returns across US, international, and emerging market sleeves.",
@@ -37,10 +37,23 @@ PARENTS = [
     },
 ]
 
+SORT_ORDERS = {
+    "US Large Core":           10,
+    "US Large Quality":        20,
+    "US Large Value":          30,
+    "US Small Cap":            40,
+    "International Developed": 50,
+    "Emerging Markets":        60,
+    "Core Fixed Income":       70,
+    "TIPS":                    80,
+    "REITs & Commodities":     90,
+    "Cash / SPAXX":           100,
+}
+
 SUB_CLASSES = [
     {
         "name": "US Large Core",
-        "parent_name": "Growth",
+        "parent_name": "Equity",
         "target_weight": 0.16,
         "tolerance_band": 0.03,
         "benchmark_ticker": "SPY",
@@ -56,7 +69,7 @@ SUB_CLASSES = [
     },
     {
         "name": "US Large Quality",
-        "parent_name": "Growth",
+        "parent_name": "Equity",
         "target_weight": 0.14,
         "tolerance_band": 0.03,
         "benchmark_ticker": "QUAL",
@@ -73,7 +86,7 @@ SUB_CLASSES = [
     },
     {
         "name": "US Large Value",
-        "parent_name": "Growth",
+        "parent_name": "Equity",
         "target_weight": 0.08,
         "tolerance_band": 0.02,
         "benchmark_ticker": "IWD",
@@ -90,7 +103,7 @@ SUB_CLASSES = [
     },
     {
         "name": "US Small Cap",
-        "parent_name": "Growth",
+        "parent_name": "Equity",
         "target_weight": 0.07,
         "tolerance_band": 0.02,
         "benchmark_ticker": "IWM",
@@ -107,7 +120,7 @@ SUB_CLASSES = [
     },
     {
         "name": "International Developed",
-        "parent_name": "Growth",
+        "parent_name": "Equity",
         "target_weight": 0.19,
         "tolerance_band": 0.03,
         "benchmark_ticker": "EFA",
@@ -124,7 +137,7 @@ SUB_CLASSES = [
     },
     {
         "name": "Emerging Markets",
-        "parent_name": "Growth",
+        "parent_name": "Equity",
         "target_weight": 0.08,
         "tolerance_band": 0.02,
         "benchmark_ticker": "EEM",
@@ -238,15 +251,16 @@ def seed():
         parent_id_map = {r["name"]: r["asset_class_id"] for r in rows}
 
         for sc in SUB_CLASSES:
-            parent_id = parent_id_map[sc["parent_name"]]
+            parent_id  = parent_id_map[sc["parent_name"]]
+            sort_order = SORT_ORDERS.get(sc["name"])
             conn.execute(
                 """
                 INSERT OR IGNORE INTO asset_classes
-                    (name, parent_id, target_weight, tolerance_band, rationale, benchmark_ticker)
-                VALUES (?, ?, ?, ?, ?, ?)
+                    (name, parent_id, target_weight, tolerance_band, sort_order, rationale, benchmark_ticker)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (sc["name"], parent_id, sc["target_weight"], sc["tolerance_band"],
-                 sc["rationale"], sc["benchmark_ticker"]),
+                 sort_order, sc["rationale"], sc["benchmark_ticker"]),
             )
 
         print(f"Seeded {len(PARENTS)} parent categories and {len(SUB_CLASSES)} sub-classes.")
