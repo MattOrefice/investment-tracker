@@ -51,7 +51,7 @@ Do not build ahead of the current phase.
 
 ## Strategic Asset Allocation (locked, Phase 1)
 
-Top-level: Growth 72% / Income 15% / Real Assets 10% / Cash 3%
+Top-level: Equity 72% / Income 15% / Real Assets 10% / Cash 3%
 Tolerance band rule: ±3% for sleeves ≥10%, ±2% for sleeves <10%
 
 ### Sleeves
@@ -87,7 +87,7 @@ Inflation-correlated diversifier with different risk drivers than equity or dura
 Operational liquidity, not strategic dry powder. At 27 with a 30+ year horizon, holding meaningful cash is performance drag — every 1% of cash at long-run equity returns of ~7% real costs ~$2.4k in terminal wealth per $10k of base capital over 30 years. 3% handles rebalancing friction (funding tax-inefficient sleeves without forced sales), small drawdowns without selling at the bottom, and occasional opportunistic deployment. SPAXX yields ~4-5% currently, so the drag is muted. Would increase closer to retirement or with shorter-duration liabilities; would reduce toward 1-2% if cash yields collapse below 2%.
 
 ### Parent categories (for top-level attribution)
-- Growth: 72% (sleeves 1-6)
+- Equity: 72% (sleeves 1-6)
 - Income: 15% (sleeves 7-8)
 - Real Assets: 10% (sleeve 9)
 - Cash: 3% (sleeve 10)
@@ -111,7 +111,7 @@ Operational liquidity, not strategic dry powder. At 27 with a 30+ year horizon, 
 ## Session log
 
 ### Phase 1 complete (2026-04-29)
-- SAA locked: 10 sleeves across 4 parent categories (Growth 72% / Income 15% / Real Assets 10% / Cash 3%), weights sum to 100%
+- SAA locked: 10 sleeves across 4 parent categories (Equity 72% / Income 15% / Real Assets 10% / Cash 3%), weights sum to 100%
 - `asset_classes` table seeded via `src/seed_saa.py` (idempotent); sub-class naming note: sleeve 9 is "REITs & Commodities" to avoid UNIQUE collision with the "Real Assets" parent category
 - SAA page (`pages/1_SAA.py`) renders: stacked bar chart, sleeve table, per-sleeve rationale expanders, Phase 4 drift placeholder
 - Phase 2 (Security Research) is next: candidate ETF comparison per asset class
@@ -154,7 +154,7 @@ When building any new feature, both modes must keep working. Pages should query 
 
 ## Phase 1 — COMPLETE
 
-- SAA locked: 10 sleeves across Growth/Income/Real Assets/Cash, summing to 100%
+- SAA locked: 10 sleeves across Equity/Income/Real Assets/Cash, summing to 100%
 - asset_classes table seeded
 - pages/1_SAA.py rendering correctly with allocation chart, sleeve table, and rationale expanders
 - Dual-mode foundation planted (src/config.py)
@@ -242,3 +242,7 @@ SPAXX is Fidelity's default money market fund and the natural cash vehicle — n
 - Benchmark vs. holding distinction documented
 
 **Next: Phase 3 — Thesis + Trade Log**
+
+## Naming convention update (post-Phase 2)
+
+The parent category previously named "Growth" was renamed to "Equity" across the database, UI, and documentation. Reasoning: "Equity" matches institutional taxonomy used by endowments, pensions, and consulting firms, whereas "Growth" reads more retail. The change affects display labels and the asset_classes.name field for the parent row only; child sleeve names and weights are unchanged. References to "growth" in lowercase as a concept (e.g., "growth-oriented portfolio," "growth-vs-value") remain intact.

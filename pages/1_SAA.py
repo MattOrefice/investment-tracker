@@ -7,7 +7,7 @@ from src.db import get_connection
 st.set_page_config(page_title="SAA", layout="wide")
 
 PARENT_COLORS = {
-    "Growth":      "#3D5A80",
+    "Equity":      "#3D5A80",
     "Income":      "#4A7C59",
     "Real Assets": "#8B7355",
     "Cash":        "#AEAEAE",
@@ -36,7 +36,7 @@ def load_saa_data():
                        ac.rationale, ac.benchmark_ticker, p.name AS parent_name
                 FROM asset_classes ac
                 JOIN asset_classes p ON ac.parent_id = p.asset_class_id
-                ORDER BY p.target_weight DESC, ac.target_weight DESC, ac.name ASC
+                ORDER BY p.target_weight DESC, COALESCE(ac.sort_order, 999) ASC
             """).fetchall()
         ]
     return parents, sub_classes
