@@ -14,6 +14,15 @@ SPAXX_RATIONALE = (
     "materially below 2%."
 )
 
+SPAXX_HOLDING = {
+    "ticker": "SPAXX",
+    "name": "Fidelity Government Money Market Fund",
+    "expense_ratio": None,
+    "_er_display": "n/a (money market)",
+    "security_type": "Money Market Fund",
+    "holding_rationale": SPAXX_RATIONALE,
+}
+
 
 @st.cache_data
 def load_research_data():
@@ -23,7 +32,7 @@ def load_research_data():
                    p.name AS parent_name, p.target_weight AS parent_weight
             FROM asset_classes ac
             JOIN asset_classes p ON ac.parent_id = p.asset_class_id
-            ORDER BY p.target_weight DESC, ac.target_weight DESC
+            ORDER BY p.target_weight DESC, ac.target_weight DESC, ac.name ASC
         """).fetchall()]
         secs = [dict(r) for r in conn.execute("""
             SELECT ticker, name, expense_ratio, security_type, holding_rationale, asset_class_id
@@ -32,8 +41,27 @@ def load_research_data():
     return sleeves, secs
 
 
-def _er_str(er):
+def _safe_md(text):
+    st.markdown(text.replace("$", r"\$"))
+
+
+def _er_str(er, display_override=None):
+    if display_override is not None:
+        return display_override
     return f"{er * 100:.2f}%" if er is not None else "—"
+
+
+def _savings_caption(bm_er, h_er):
+    if bm_er is None:
+        return None
+    h_val = h_er if h_er is not None else 0.0
+    bps = round((bm_er - h_val) * 10_000)
+    if bps == 0:
+        return "Holding matches benchmark"
+    elif bps > 0:
+        return f"Holding saves {bps} bps annually vs. benchmark"
+    else:
+        return f"Holding costs {abs(bps)} bps more than benchmark"
 
 
 def _pair_benchmarks_holdings(holdings, benchmarks, bm_ticker_str):
@@ -66,13 +94,20 @@ def _comparison_df(bm, h, self_bm=False):
     bm_ticker = f"{bm['ticker']} (= holding)" if self_bm else (bm["ticker"] if bm else "—")
     bm_name   = bm["name"] if bm else "—"
     bm_er     = _er_str(bm.get("expense_ratio") if bm else None)
+    bm_type   = (bm.get("security_type") or "—") if bm else "—"
 
+    h_er_display = h.get("_er_display")
     return pd.DataFrame(
         {
-            "Benchmark":       [bm_ticker, bm_name, bm_er],
-            "Selected Holding": [h["ticker"], h["name"], _er_str(h.get("expense_ratio"))],
+            "Benchmark": [bm_ticker, bm_name, bm_er, bm_type],
+            "Selected Holding": [
+                h["ticker"],
+                h["name"],
+                _er_str(h.get("expense_ratio"), h_er_display),
+                h.get("security_type") or "—",
+            ],
         },
-        index=["Ticker", "Name", "Expense Ratio"],
+        index=["Ticker", "Name", "Expense Ratio", "Type"],
     )
 
 
@@ -86,13 +121,35 @@ for s in secs:
     else:
         benchmarks_by_class[s["asset_class_id"]].append(s)
 
-# Weighted avg ER — Cash/SPAXX has no ETF entry so contributes 0 naturally
-weighted_er = sum(
-    sleeve["target_weight"] / len(holdings_by_class[sleeve["asset_class_id"]]) * h["expense_ratio"]
-    for sleeve in sleeves
-    for h in holdings_by_class[sleeve["asset_class_id"]]
-    if h.get("expense_ratio") is not None
-)
+# Pre-compute all sleeve/pair data (Cash uses synthetic SPAXX_HOLDING)
+sleeve_data = []
+for sleeve in sleeves:
+    sid = sleeve["asset_class_id"]
+    if sleeve["name"] == "Cash / SPAXX":
+        bm = benchmarks_by_class[sid][0] if benchmarks_by_class[sid] else None
+        pairs = [{"benchmark": bm, "holding": SPAXX_HOLDING, "self_bm": False}]
+    else:
+        pairs = _pair_benchmarks_holdings(
+            holdings_by_class[sid],
+            benchmarks_by_class[sid],
+            sleeve["benchmark_ticker"] or "",
+        )
+    sleeve_data.append({"sleeve": sleeve, "pairs": pairs})
+
+# Summary stats
+n_holdings = sum(len(d["pairs"]) for d in sleeve_data)
+weighted_er = 0.0
+portfolio_savings_bps = 0.0
+for d in sleeve_data:
+    n = len(d["pairs"])
+    w_per = d["sleeve"]["target_weight"] / n
+    for p in d["pairs"]:
+        h_er  = p["holding"].get("expense_ratio")
+        bm_er = p["benchmark"].get("expense_ratio") if p["benchmark"] else None
+        if h_er is not None:
+            weighted_er += w_per * h_er
+        if bm_er is not None:
+            portfolio_savings_bps += w_per * (bm_er - (h_er or 0.0)) * 10_000
 
 # ── Header ─────────────────────────────────────────────────────────────────────
 _, col, _ = st.columns([1, 8, 1])
@@ -100,8 +157,10 @@ with col:
     st.title("Security Research")
     st.caption("Candidate ETFs by asset class — holdings vs. benchmarks")
     er_pct = weighted_er * 100
-    er_bps = weighted_er * 10_000
-    st.markdown(f"Blended weighted average ER: **{er_pct:.2f}%** ({er_bps:.1f} bps)")
+    st.caption(
+        f"{len(sleeves)} sleeves  ·  {n_holdings} holdings  ·  "
+        f"{er_pct:.2f}% blended ER  ·  {portfolio_savings_bps:.0f} bps savings vs. benchmarks"
+    )
     st.divider()
 
 # ── Sleeve sections ─────────────────────────────────────────────────────────────
@@ -109,13 +168,11 @@ _, col, _ = st.columns([1, 8, 1])
 with col:
     current_parent = None
 
-    for sleeve in sleeves:
-        sid      = sleeve["asset_class_id"]
-        holdings  = holdings_by_class[sid]
-        benchmarks = benchmarks_by_class[sid]
-        is_cash  = sleeve["name"] == "Cash / SPAXX"
-        pct      = round(sleeve["target_weight"] * 100, 1)
-        bm_str   = sleeve["benchmark_ticker"] or "—"
+    for d in sleeve_data:
+        sleeve = d["sleeve"]
+        pairs  = d["pairs"]
+        pct    = round(sleeve["target_weight"] * 100, 1)
+        bm_str = sleeve["benchmark_ticker"] or "—"
 
         if sleeve["parent_name"] != current_parent:
             if current_parent is not None:
@@ -130,32 +187,23 @@ with col:
             unsafe_allow_html=True,
         )
 
-        if is_cash:
-            bm = benchmarks[0] if benchmarks else None
-            left, right = st.columns(2)
-            with left:
-                st.markdown("**Benchmark**")
-                if bm:
-                    st.markdown(f"**{bm['ticker']}** — {bm['name']}")
-                    st.caption(f"ER: {_er_str(bm.get('expense_ratio'))}")
-            with right:
-                st.markdown("**Selected Holding**")
-                st.markdown("**SPAXX** — Fidelity Government Money Market Fund")
-                st.caption("ER: ~0.00%  ·  yield: ~4–5%  ·  type: money market")
-            with st.expander("SPAXX — rationale"):
-                st.markdown(SPAXX_RATIONALE)
+        for i, p in enumerate(pairs):
+            bm, h = p["benchmark"], p["holding"]
+            if len(pairs) > 1:
+                st.caption(f"{'50% REITs' if i == 0 else '50% Commodities'}")
+            df = _comparison_df(bm, h, self_bm=p["self_bm"])
+            st.dataframe(df, use_container_width=True)
 
-        else:
-            pairs = _pair_benchmarks_holdings(holdings, benchmarks, bm_str)
-            for i, p in enumerate(pairs):
-                bm, h = p["benchmark"], p["holding"]
-                if len(pairs) > 1:
-                    st.caption(f"{'50% REITs' if i == 0 else '50% Commodities'}")
-                df = _comparison_df(bm, h, self_bm=p["self_bm"])
-                st.dataframe(df, use_container_width=True)
-                if h.get("holding_rationale"):
-                    with st.expander(f"{h['ticker']} — rationale"):
-                        st.markdown(h["holding_rationale"])
+            caption = _savings_caption(
+                bm.get("expense_ratio") if bm else None,
+                h.get("expense_ratio"),
+            )
+            if caption:
+                st.caption(f"↳ {caption}")
+
+            if h.get("holding_rationale"):
+                with st.expander(f"{h['ticker']} — rationale"):
+                    _safe_md(h["holding_rationale"])
 
         st.markdown("")
 
