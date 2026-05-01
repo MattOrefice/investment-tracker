@@ -24,7 +24,6 @@ SPAXX_HOLDING = {
 }
 
 
-@st.cache_data
 def load_research_data():
     with get_connection() as conn:
         sleeves = [dict(r) for r in conn.execute("""
