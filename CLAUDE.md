@@ -311,3 +311,22 @@ The parent category previously named "Growth" was renamed to "Equity" across the
 - src/holdings.py: get_holdings_on_date() (net shares via cumulative buy/sell), get_portfolio_value_series() (daily adj_close × holdings, ffilled, SPAXX=$1), get_sleeve_weights_on_date() (actual vs target ± drift)
 - Verified end-to-end: $10k seeded 2025-05-01 → $12,415 by 2026-04-30; sleeve weights and drifts in expected range
 - Next: Phase 4 Session 2 — TWR, BHB attribution, drift chart, Portfolio page
+
+## Phase 4 Session 2 — COMPLETE
+
+- src/returns.py: twr_daily_linked (GIPS chain-linked), twr_modified_dietz, annualize, period_return (1M/3M/YTD/1Y/SI slicing)
+- src/benchmarks.py: get_sp500_series (SPY adj_close normalized), get_custom_blended_series (SAA target-weight blend of benchmark tickers), get_sleeve_benchmark_returns; DJP delisted 2020 — Real Assets benchmark uses 50% VNQ + 50% PDBC
+- src/attribution.py: brinson_fachler (core, with algebra check assert), brinson_fachler_period (full DB-backed wrapper using adj_close for total-return consistency)
+- tests/test_returns.py: 9 tests — no-CF case, mid-period deposit (hand-calc), GIPS 3-sub-period chain, annualize, period slicing
+- tests/test_attribution.py: 4 tests — hand-calc two-sleeve, algebra check, zero allocation/selection edge cases
+- pages/4_Performance.py: summary banner, 4 headline metrics, period returns table (Daily/Dietz toggle), cumulative return chart (Portfolio/SPY/Blended), BF attribution (stacked bar + table + algebra note), drift analysis table, methodology validation expander
+- All 13 tests pass; BF algebra reconciles to <0.001 bps; SI portfolio +27.01% vs S&P +30.73% vs blended +26.31% (+69.5 bps active)
+
+## Phase 4 — COMPLETE
+
+- src/returns.py: daily-linked TWR + Modified Dietz, both unit-tested
+- src/benchmarks.py: S&P 500 + custom blended SAA-mirroring benchmark
+- src/attribution.py: Brinson-Fachler per-sleeve decomposition
+- pages/4_Performance.py: headline metrics, period returns, cumulative chart, BF attribution, drift
+- All math validated: daily/Dietz spread reconciles, BF algebra balances
+- Next: Phase 5 — Macro dashboard (CAPE, yield curve, US vs intl)
