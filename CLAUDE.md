@@ -330,3 +330,16 @@ The parent category previously named "Growth" was renamed to "Equity" across the
 - pages/4_Performance.py: headline metrics, period returns, cumulative chart, BF attribution, drift
 - All math validated: daily/Dietz spread reconciles, BF algebra balances
 - Next: Phase 5 — Macro dashboard (CAPE, yield curve, US vs intl)
+
+## Phase 5 — COMPLETE
+
+- src/macro.py: FRED API integration with 24h SQLite cache (T10Y2Y, DFF, BAMLH0A0HYM2, USREC); cache coverage check prevents stale short-window entries
+- src/shiller.py: CAPE from Robert Shiller's Yale dataset (econ.yale.edu), monthly refresh, local CSV fallback; shillerdata.com is unreliable (returns HTML), Yale URL is primary
+- pages/5_Macro.py: five-panel dashboard (CAPE, Yield Curve, Fed Funds, HY Spreads, US vs Intl)
+- All panels include current value, historical percentile, time-window controls, and interpretation notes tying back to portfolio sleeves
+- CAPE implied forward 10Y real return formula: r ≈ −0.070 × ln(CAPE/16) + 0.066 (calibrated to Shiller long-run data)
+- Known data limitation: FRED restricted BAMLH0A0HYM2 (ICE BofA HY OAS) to May 2023+; percentile reflects available window only; caption notes this
+- Shiller CAPE data ends Sep 2023 (Yale file not updated beyond that point as of May 2026); data-as-of label shown in UI
+- NBER recession shading on Yield Curve, Fed Funds, and HY Spreads panels
+- Force refresh button clears both SQLite macro_cache and Streamlit @st.cache_data
+- Next: Phase 6 — Quarterly PDF report generation
