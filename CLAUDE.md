@@ -343,3 +343,14 @@ The parent category previously named "Growth" was renamed to "Equity" across the
 - NBER recession shading on Yield Curve, Fed Funds, and HY Spreads panels
 - Force refresh button clears both SQLite macro_cache and Streamlit @st.cache_data
 - Next: Phase 6 — Quarterly PDF report generation
+
+## Database split (post-Phase 5)
+- data/tracker.db: personal real-portfolio database. Currently empty (trades wiped) — ready for first real Fidelity trade. Used when TRACKER_MODE=personal (default).
+- data/demo.db: demo portfolio with May 2025 paper trades preserved. Used when TRACKER_MODE=demo for public deployments.
+- Both share identical SAA, securities, themes, and theses. Only trades differ.
+- Demo mode shows a banner in app.py clarifying the paper-trade nature.
+- Both files are gitignored; neither is committed to the repo.
+
+## Next: Phase 5.5 — Streamlit Cloud deployment
+- Personal deployment: TRACKER_MODE=personal, password-protected, for user + mom
+- Demo deployment: TRACKER_MODE=demo, public URL for interviews
