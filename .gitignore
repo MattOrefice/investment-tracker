@@ -2,6 +2,7 @@
 __pycache__/
 *.pyc
 data/tracker.db
+data/demo.db
 .streamlit/secrets.toml
 .env
 .cursor/

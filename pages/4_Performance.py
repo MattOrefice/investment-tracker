@@ -97,6 +97,16 @@ with col:
     # Load data
     with st.spinner("Loading performance data…"):
         pv, cf = _load_portfolio()
+
+    # Empty-state guard — no trades yet
+    if pv.empty or float(pv.max()) == 0.0:
+        st.info(
+            "No performance data yet. Log your first trade in the Trade Log "
+            "to begin tracking returns and attribution."
+        )
+        st.stop()
+
+    with st.spinner("Loading benchmark data…"):
         start_val = float(pv.iloc[0])
         sp, bl    = _load_benchmarks(start_val)
 

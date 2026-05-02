@@ -35,3 +35,11 @@ def get_db_path() -> Path:
 
 def is_demo() -> bool:
     return get_mode() == "demo"
+
+
+IS_DEMO = is_demo()
+
+DEMO_BANNER_TEXT = (
+    "Demo portfolio — paper trades for illustration. "
+    "Methodology and analytics are real; trades are simulated from May 2025."
+)
