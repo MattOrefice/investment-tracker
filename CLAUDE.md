@@ -351,6 +351,25 @@ The parent category previously named "Growth" was renamed to "Equity" across the
 - Demo mode shows a banner in app.py clarifying the paper-trade nature.
 - Both files are gitignored; neither is committed to the repo.
 
-## Next: Phase 5.5 — Streamlit Cloud deployment
-- Personal deployment: TRACKER_MODE=personal, password-protected, for user + mom
-- Demo deployment: TRACKER_MODE=demo, public URL for interviews
+## Phase 5.5 — Streamlit Cloud deployment prep — COMPLETE
+
+- demo.db committed to repo (removed from .gitignore; tracker.db still gitignored)
+- requirements.txt modernized to >= pins; added jinja2, weasyprint, xhtml2pdf, kaleido==0.2.1
+- packages.txt added for WeasyPrint system deps on Streamlit Cloud (pango, harfbuzz)
+- .streamlit/secrets.toml.example created for deployment reference
+- src/config.py updated to resolve FRED_API_KEY and TRACKER_MODE from st.secrets first, then .env
+- src/macro.py updated to import FRED_API_KEY from config (not dotenv directly)
+- pages/4_Performance.py: fixed hardcoded sqlite3.connect() → get_connection() in Methodology expander
+
+## Phase 6 — COMPLETE
+
+- src/reports.py: PDF generator using WeasyPrint (Linux/Cloud) + xhtml2pdf fallback (Windows)
+- templates/quarterly_report.html: 8-section Jinja2 template (cover, exec summary, holdings, performance, attribution, macro, theses, methodology)
+- templates/report_styles.css: print-optimized institutional CSS; table-based metric cards for xhtml2pdf compat
+- Plotly charts rendered to PNG via kaleido with 25s daemon-thread timeout (handles Windows sandbox/AV kaleido hang)
+- "Generate Quarterly Report" expander on Performance page with period selector and download button
+- Empty-state: produces structural report with no-data banners when zero trades exist
+- Filename convention: Orefice_Portfolio_YYYYQN.pdf or Orefice_Portfolio_YYYYMMDD_to_YYYYMMDD.pdf
+- Output saved to data/reports/ (gitignored)
+- All 13 existing tests pass
+- Next: Phase 7 — README polish, demo banner refinement, final deployment cleanup

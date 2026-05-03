@@ -1,0 +1,215 @@
+/* ── Page setup ─────────────────────────────────────────────────────────── */
+@page {
+    size: letter;
+    margin: 0.75in;
+    @bottom-center {
+        content: "Page " counter(page) " of " counter(pages);
+        font-size: 9pt;
+        color: #888;
+        font-family: system-ui, -apple-system, sans-serif;
+    }
+}
+
+/* ── Base typography ─────────────────────────────────────────────────────── */
+body {
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 10pt;
+    line-height: 1.5;
+    color: #222;
+    margin: 0;
+    padding: 0;
+}
+
+h1, h2, h3, h4 {
+    font-family: system-ui, -apple-system, Arial, sans-serif;
+    color: #1a1a1a;
+    font-weight: 600;
+    margin-top: 0;
+}
+
+h1  { font-size: 28pt; line-height: 1.2; }
+h2  { font-size: 18pt; border-bottom: 1px solid #ddd; padding-bottom: 6pt;
+      margin-bottom: 14pt; }
+h3  { font-size: 12pt; font-weight: 600; margin-bottom: 6pt; }
+
+p   { margin: 0 0 0.6em 0; }
+
+/* ── Tables ──────────────────────────────────────────────────────────────── */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0.8em 0;
+}
+th {
+    border-bottom: 2px solid #222;
+    font-weight: 600;
+    text-align: left;
+    padding: 0.4em 0.5em;
+    font-family: system-ui, -apple-system, sans-serif;
+    font-size: 8.5pt;
+    text-transform: uppercase;
+    color: #444;
+    letter-spacing: 0.04em;
+}
+td {
+    border-bottom: 1px solid #e8e8e8;
+    padding: 0.4em 0.5em;
+    font-size: 9.5pt;
+}
+tr:last-child td { border-bottom: none; }
+td.num, th.num  { text-align: right; }
+
+/* ── Metric cards (4-up table layout) ───────────────────────────────────── */
+table.metric-table {
+    border-collapse: separate;
+    border-spacing: 10pt 0;
+    margin: 1em 0 1.4em 0;
+}
+table.metric-table td.metric-card {
+    border: 1px solid #ddd;
+    padding: 12pt 14pt;
+    vertical-align: top;
+    width: 25%;
+}
+.metric-card .label {
+    font-size: 8pt;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: #888;
+    font-family: system-ui, -apple-system, sans-serif;
+    display: block;
+    margin-bottom: 4pt;
+}
+.metric-card .value {
+    font-size: 20pt;
+    font-weight: 700;
+    font-family: system-ui, -apple-system, sans-serif;
+    color: #1a1a1a;
+    display: block;
+    line-height: 1.1;
+    margin-bottom: 4pt;
+}
+.metric-card .sub {
+    font-size: 8.5pt;
+    color: #888;
+    display: block;
+}
+
+/* ── Color utilities ─────────────────────────────────────────────────────── */
+.positive { color: #1B5E20; }
+.negative { color: #B71C1C; }
+.muted    { color: #888; font-size: 8.5pt; }
+.status-within  { color: #1B5E20; }
+.status-outside { color: #B71C1C; }
+
+/* ── Section / page breaks ───────────────────────────────────────────────── */
+section { page-break-before: always; padding-top: 4pt; }
+section.cover { page-break-before: auto; }
+
+/* ── Cover page ──────────────────────────────────────────────────────────── */
+.cover {
+    text-align: center;
+}
+.cover-content {
+    padding-top: 34%;
+}
+.cover-eyebrow {
+    font-family: system-ui, -apple-system, sans-serif;
+    font-size: 9.5pt;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    color: #888;
+    margin-bottom: 1.2em;
+}
+.cover h1 {
+    font-size: 36pt;
+    font-weight: 700;
+    margin: 0.15em 0 0.3em 0;
+    color: #1a1a1a;
+    letter-spacing: -0.01em;
+}
+.cover-period {
+    font-size: 20pt;
+    color: #444;
+    font-family: system-ui, -apple-system, sans-serif;
+    font-weight: 300;
+    margin: 0;
+}
+.cover-date {
+    font-size: 10pt;
+    color: #aaa;
+    margin-top: 0.5em;
+    font-family: system-ui, -apple-system, sans-serif;
+}
+.cover-rule {
+    width: 54pt;
+    height: 2pt;
+    background: #2E4057;
+    margin: 1.8em auto;
+}
+.cover-tagline {
+    font-size: 9.5pt;
+    color: #aaa;
+    font-family: system-ui, -apple-system, sans-serif;
+    letter-spacing: 0.04em;
+}
+
+/* ── Narrative / prose blocks ────────────────────────────────────────────── */
+.narrative { margin: 1em 0; }
+.narrative p {
+    font-size: 10pt;
+    margin: 0 0 0.5em 0;
+    color: #333;
+}
+
+/* ── Chart images ────────────────────────────────────────────────────────── */
+img.chart {
+    max-width: 100%;
+    display: block;
+    margin: 1em 0;
+}
+.chart-placeholder {
+    background: #f5f5f5;
+    border: 1px dashed #ccc;
+    padding: 1.5em;
+    text-align: center;
+    color: #aaa;
+    font-size: 9pt;
+    font-family: system-ui, sans-serif;
+    margin: 1em 0;
+}
+
+/* ── Two-column layout via table ─────────────────────────────────────────── */
+table.two-col { border-collapse: collapse; }
+table.two-col td {
+    vertical-align: top;
+    border-bottom: none;
+    padding: 0 14pt 0 0;
+    width: 50%;
+}
+table.two-col td:last-child { padding-right: 0; }
+
+/* ── Methodology ─────────────────────────────────────────────────────────── */
+dl.methodology dt {
+    font-weight: 600;
+    margin-top: 0.8em;
+    font-family: system-ui, -apple-system, sans-serif;
+    font-size: 9.5pt;
+    color: #222;
+}
+dl.methodology dd {
+    margin-left: 1.5em;
+    font-size: 9pt;
+    color: #555;
+    margin-bottom: 0.2em;
+}
+
+/* ── Empty-state banner ──────────────────────────────────────────────────── */
+.empty-banner {
+    border-left: 3px solid #2E4057;
+    padding: 0.8em 1em;
+    background: #f7f9fb;
+    margin: 1em 0;
+    font-size: 10pt;
+    color: #444;
+}
