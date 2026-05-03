@@ -470,8 +470,7 @@ with col:
             )
             st.markdown("---")
 
-        import sqlite3
-        conn2 = sqlite3.connect("data/tracker.db")
+        conn2 = get_connection()
         n_days = conn2.execute("SELECT COUNT(*) FROM prices").fetchone()[0]
         last_refresh = conn2.execute(
             "SELECT MAX(price_date) FROM prices"
