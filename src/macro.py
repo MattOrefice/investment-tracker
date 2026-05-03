@@ -1,20 +1,17 @@
 """FRED macro data fetcher with 24-hour SQLite cache."""
 import json
 import math
-import os
 from datetime import date
 from typing import Optional
 
 import pandas as pd
-from dotenv import load_dotenv
 
 try:
+    from src.config import FRED_API_KEY as _FRED_KEY
     from src.db import get_connection
 except ImportError:
+    from config import FRED_API_KEY as _FRED_KEY
     from db import get_connection
-
-load_dotenv()
-_FRED_KEY: Optional[str] = os.getenv("FRED_API_KEY")
 
 _CACHE_DDL = """
 CREATE TABLE IF NOT EXISTS macro_cache (
@@ -34,7 +31,7 @@ def _ensure_cache_table() -> None:
 def _get_fred():
     from fredapi import Fred
     if not _FRED_KEY:
-        raise RuntimeError("FRED_API_KEY not found. Add it to .env.")
+        raise RuntimeError("FRED_API_KEY not set. Add it to .env (local) or Streamlit secrets (cloud).")
     return Fred(api_key=_FRED_KEY)
 
 
