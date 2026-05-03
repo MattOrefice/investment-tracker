@@ -1,5 +1,6 @@
 """Investment Analytics Tracker — homepage."""
 import streamlit as st
+from src.config import DEMO_BANNER_TEXT, IS_DEMO
 from src.db import initialize_db
 
 st.set_page_config(
@@ -9,6 +10,9 @@ st.set_page_config(
 )
 
 initialize_db()
+
+if IS_DEMO:
+    st.info(DEMO_BANNER_TEXT)
 
 st.title("Investment Analytics Tracker")
 st.caption("Personal portfolio · structured allocator workflow")
@@ -26,5 +30,3 @@ st.markdown(
     Use the sidebar to navigate.
     """
 )
-
-st.info("Phase 0 complete. Ready to begin Phase 1 — Strategic Asset Allocation.")
