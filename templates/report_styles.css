@@ -58,12 +58,51 @@ td {
     font-size: 9.5pt;
 }
 tr:last-child td { border-bottom: none; }
-td.num, th.num  { text-align: right; }
+
+/* numeric columns: right-align + tabular digit widths */
+td.num, th.num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
 
 /* alternating row shading — WeasyPrint (Linux/Cloud) uses nth-child;
    xhtml2pdf (Windows) uses the explicit row-even class added via loop.cycle */
 tbody tr:nth-child(even) td { background: #f7f7f8; }
 tr.row-even td { background: #f7f7f8; }
+
+/* prevent sleeve/indicator column from wrapping in data tables */
+.data-table td:first-child,
+.data-table th:first-child {
+    white-space: nowrap;
+}
+
+/* ── BF attribution table — compact to fit chart + table on one page ────── */
+.bf-table td  { padding: 3px 8px; font-size: 9pt; }
+.bf-table th  { padding: 5px 8px; }
+
+/* ── BF commentary callout ───────────────────────────────────────────────── */
+.bf-commentary {
+    background: #f7f9fb;
+    border-left: 3px solid #5B7FA6;
+    padding: 0.5em 1em;
+    margin-top: 0.8em;
+    font-size: 8.5pt;
+}
+.bf-comm-title {
+    font-weight: 600;
+    font-size: 8pt;
+    margin: 0 0 0.25em 0;
+    color: #333;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.bf-comm-alloc { margin-top: 0.5em; }
+.bf-comm-list {
+    margin: 0;
+    padding-left: 1.2em;
+    color: #444;
+}
+.bf-comm-list li { margin-bottom: 0.2em; }
 
 /* ── Metric cards (4-up table layout) ───────────────────────────────────── */
 table.metric-table {
@@ -74,7 +113,7 @@ table.metric-table {
 table.metric-table td.metric-card {
     background: #fafafa;
     border: 1px solid #dddddd;
-    padding: 12pt 14pt;
+    padding: 10pt 12pt;
     vertical-align: top;
     width: 25%;
 }
@@ -88,13 +127,15 @@ table.metric-table td.metric-card {
     margin-bottom: 4pt;
 }
 .metric-card .value {
-    font-size: 24pt;
+    font-size: 18pt;
     font-weight: 700;
     font-family: Helvetica, Arial, sans-serif;
     color: #1a1a1a;
     display: block;
     line-height: 1.1;
     margin-bottom: 4pt;
+    white-space: nowrap;
+    overflow: hidden;
 }
 .metric-card .sub {
     font-size: 8.5pt;
@@ -106,19 +147,35 @@ table.metric-table td.metric-card {
 .positive { color: #1B5E20; }
 .negative { color: #B71C1C; }
 .muted    { color: #666; font-size: 8.5pt; }
-.status-within  { color: #2a2a2a; }
-.status-outside { color: #2a2a2a; font-weight: 600; }
+.status-within { color: #2a2a2a; }
+.status-drift  { color: #d97706; font-weight: 600; }
+
+/* ── Disclosure footer ───────────────────────────────────────────────────── */
+.disclosure {
+    margin-top: 1.8em;
+    padding-top: 0.8em;
+    border-top: 1px solid #ddd;
+    font-size: 7.5pt;
+    color: #999;
+}
 
 /* ── Section / page breaks ───────────────────────────────────────────────── */
 section { page-break-before: always; padding-top: 4pt; }
 section.cover { page-break-before: auto; }
 
-/* ── Cover page ──────────────────────────────────────────────────────────── */
-.cover {
+/* ── Cover page — compact masthead + exec summary on same page ──────────── */
+.cover-masthead {
     text-align: center;
+    padding-bottom: 1.2em;
+    border-bottom: 2px solid #2c3e50;
+    margin-bottom: 1.4em;
 }
-.cover-content {
-    padding-top: 34%;
+.cover-name {
+    font-size: 26pt;
+    font-weight: 700;
+    margin: 0.25em 0;
+    color: #1a1a1a;
+    letter-spacing: -0.01em;
 }
 .cover-eyebrow {
     font-family: Helvetica, Arial, sans-serif;
@@ -132,13 +189,6 @@ section.cover { page-break-before: auto; }
     border-top: 1px solid #2c3e50;
     margin: 0.4em 8%;
 }
-.cover h1 {
-    font-size: 34pt;
-    font-weight: 700;
-    margin: 0.3em 0;
-    color: #1a1a1a;
-    letter-spacing: -0.01em;
-}
 .cover-period {
     font-size: 18pt;
     color: #444;
@@ -146,10 +196,16 @@ section.cover { page-break-before: auto; }
     font-weight: 300;
     margin: 0.6em 0 0 0;
 }
+.cover-sub-id {
+    font-size: 10pt;
+    color: #666;
+    font-family: Helvetica, Arial, sans-serif;
+    margin: 0.25em 0;
+}
 .cover-date {
     font-size: 9pt;
     color: #aaa;
-    margin-top: 1.8em;
+    margin-top: 0.8em;
     font-family: Helvetica, Arial, sans-serif;
 }
 .cover-tagline {
@@ -157,7 +213,7 @@ section.cover { page-break-before: auto; }
     color: #aaa;
     font-family: Helvetica, Arial, sans-serif;
     letter-spacing: 0.04em;
-    margin-top: 0.6em;
+    margin-top: 0.4em;
 }
 
 /* ── Narrative / prose blocks ────────────────────────────────────────────── */

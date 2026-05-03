@@ -7,21 +7,19 @@
 </head>
 <body>
 
-{# ── Page 1: Cover ──────────────────────────────────────────────────────── #}
+{# ── Page 1: Cover + Executive Summary ────────────────────────────────────── #}
 <section class="cover">
-  <div class="cover-content">
+  <div class="cover-masthead">
     <p class="cover-eyebrow">Quarterly Investment Report</p>
     <div class="cover-hr-line"></div>
-    <h1>{{ recipient_name }}</h1>
+    <h1 class="cover-name">{{ recipient_name }}</h1>
     <div class="cover-hr-line"></div>
     <p class="cover-period">{{ period_label }}</p>
+    <p class="cover-sub-id">Personal Brokerage Account</p>
     <p class="cover-tagline">Personal Investment Analytics &middot; Thesis-Driven Allocation</p>
     <p class="cover-date">Generated {{ generation_date }}</p>
   </div>
-</section>
 
-{# ── Page 2: Executive Summary ──────────────────────────────────────────── #}
-<section>
   <h2>Executive Summary</h2>
 
   {% if has_trades and exec %}
@@ -65,12 +63,12 @@
   {% endif %}
 </section>
 
-{# ── Page 3: Holdings & Allocation ─────────────────────────────────────── #}
+{# ── Page 2: Holdings & Allocation ─────────────────────────────────────────── #}
 <section>
   <h2>Holdings &amp; Allocation</h2>
 
   {% if has_trades and hold and hold.rows %}
-  <table>
+  <table class="data-table">
     <thead>
       <tr>
         <th>Sleeve</th>
@@ -106,13 +104,13 @@
   {% endif %}
 </section>
 
-{# ── Page 4: Performance ────────────────────────────────────────────────── #}
+{# ── Page 3: Performance + Trades ──────────────────────────────────────────── #}
 <section>
   <h2>Performance</h2>
 
   {% if has_trades and perf %}
   <h3>Period Returns (Daily-Linked TWR)</h3>
-  <table>
+  <table class="data-table">
     <thead>
       <tr>
         <th>Period</th>
@@ -147,9 +145,40 @@
   {% else %}
   <div class="empty-banner">No performance data available. Log your first trade to begin tracking returns.</div>
   {% endif %}
+
+  {# Trades During Period — appended to Performance page #}
+  <h3>Trades During Period</h3>
+  {% if thesis.trades %}
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Ticker</th>
+        <th>Action</th>
+        <th class="num">Shares</th>
+        <th class="num">Price</th>
+        <th class="num">Value</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in thesis.trades %}
+      <tr class="{{ loop.cycle('', 'row-even') }}">
+        <td>{{ t.date }}</td>
+        <td>{{ t.ticker }}</td>
+        <td>{{ t.action }}</td>
+        <td class="num">{{ t.shares }}</td>
+        <td class="num">{{ t.price }}</td>
+        <td class="num">{{ t.cost }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No trades recorded during {{ period_label }}.</p>
+  {% endif %}
 </section>
 
-{# ── Page 5: Attribution ────────────────────────────────────────────────── #}
+{# ── Page 4: Brinson-Fachler Attribution ───────────────────────────────────── #}
 <section>
   <h2>Brinson-Fachler Attribution</h2>
 
@@ -160,7 +189,7 @@
   <div class="chart-placeholder">Attribution chart not available</div>
   {% endif %}
 
-  <table>
+  <table class="data-table bf-table">
     <thead>
       <tr>
         <th>Sleeve</th>
@@ -200,22 +229,38 @@
   Selection effect = w<sub>p</sub> &times; (r<sub>p</sub> &minus; r<sub>b</sub>).
   Sum of effects reconciles to active return within 1 bp (Brinson-Fachler 1985).</p>
 
+  {% if attr.sel_commentary %}
+  <div class="bf-commentary">
+    <p class="bf-comm-title">Top Selection Effect Drivers</p>
+    <ul class="bf-comm-list">
+      {% for line in attr.sel_commentary %}
+      <li>{{ line }}</li>
+      {% endfor %}
+    </ul>
+    {% if attr.alloc_commentary %}
+    <p class="bf-comm-title bf-comm-alloc">Top Allocation Effect</p>
+    <ul class="bf-comm-list">
+      <li>{{ attr.alloc_commentary }}</li>
+    </ul>
+    {% endif %}
+  </div>
+  {% endif %}
+
   {% else %}
   <div class="empty-banner">No attribution data available for this period.</div>
   {% endif %}
 </section>
 
-{# ── Page 6: Macro Context ──────────────────────────────────────────────── #}
+{# ── Page 5: Macro Context ──────────────────────────────────────────────────── #}
 <section>
   <h2>Macro Context</h2>
 
-  <table>
+  <table class="data-table">
     <thead>
       <tr>
         <th>Indicator</th>
         <th class="num">Current</th>
         <th class="num">Percentile</th>
-        <th>Interpretation</th>
       </tr>
     </thead>
     <tbody>
@@ -223,94 +268,35 @@
         <td><strong>CAPE (Shiller P/E)</strong></td>
         <td class="num">{{ macro.cape.value }}</td>
         <td class="num">{{ macro.cape.percentile }}</td>
-        <td>{{ macro.cape.note }}</td>
       </tr>
       <tr class="row-even">
         <td><strong>Yield Curve (10Y&minus;2Y)</strong></td>
         <td class="num">{{ macro.yield_curve.value }}</td>
         <td class="num">{{ macro.yield_curve.percentile }}</td>
-        <td>{{ macro.yield_curve.note }}</td>
       </tr>
       <tr>
         <td><strong>Fed Funds Rate</strong></td>
         <td class="num">{{ macro.fed_funds.value }}</td>
         <td class="num">{{ macro.fed_funds.percentile }}</td>
-        <td>{{ macro.fed_funds.note }}</td>
       </tr>
       <tr class="row-even">
         <td><strong>HY Credit Spread</strong></td>
         <td class="num">{{ macro.hy_spread.value }}</td>
         <td class="num">{{ macro.hy_spread.percentile }}</td>
-        <td>{{ macro.hy_spread.note }}</td>
       </tr>
     </tbody>
   </table>
+
+  <p class="muted">Elevated US equity valuations (CAPE 95th percentile) support the SAA&rsquo;s
+  diversification across non-US equity and real asset sleeves. Indicators are reference data;
+  tactical positioning remains anchored to SAA targets.</p>
 
   <p class="muted">CAPE from Robert Shiller / Yale (econ.yale.edu). Yield curve, Fed Funds,
   and HY spread from FRED (St. Louis Fed). Historical percentile computed over available
   data window. HY spread data available from May 2023 only due to FRED licensing restrictions.</p>
 </section>
 
-{# ── Page 7: Investment Theses & Trade Activity ─────────────────────────── #}
-<section>
-  <h2>Investment Theses &amp; Trade Activity</h2>
-
-  <h3>Active Investment Theses</h3>
-  {% if thesis.theses %}
-  <table>
-    <thead>
-      <tr>
-        <th>Thesis</th>
-        <th class="num">Conviction</th>
-        <th class="num">Horizon</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for t in thesis.theses %}
-      <tr class="{{ loop.cycle('', 'row-even') }}">
-        <td>{{ t.title }}</td>
-        <td class="num">{{ t.conviction_int }}/5</td>
-        <td class="num">{{ t.horizon }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <p class="muted">No active investment theses.</p>
-  {% endif %}
-
-  <h3>Trades During Period</h3>
-  {% if thesis.trades %}
-  <table>
-    <thead>
-      <tr>
-        <th>Date</th>
-        <th>Ticker</th>
-        <th>Action</th>
-        <th class="num">Shares</th>
-        <th class="num">Price</th>
-        <th class="num">Value</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for t in thesis.trades %}
-      <tr class="{{ loop.cycle('', 'row-even') }}">
-        <td>{{ t.date }}</td>
-        <td>{{ t.ticker }}</td>
-        <td>{{ t.action }}</td>
-        <td class="num">{{ t.shares }}</td>
-        <td class="num">{{ t.price }}</td>
-        <td class="num">{{ t.cost }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <p class="muted">No trades recorded during {{ period_label }}.</p>
-  {% endif %}
-</section>
-
-{# ── Page 8: Methodology ────────────────────────────────────────────────── #}
+{# ── Page 6: Methodology ────────────────────────────────────────────────────── #}
 <section>
   <h2>Methodology &amp; Data Sources</h2>
 
@@ -331,6 +317,11 @@
     r<sub>b,total</sub>). Selection effect = w<sub>p</sub> &times; (r<sub>p</sub> &minus; r<sub>b</sub>).
     Portfolio weights = beginning-of-period market value weights. Benchmark weights = SAA targets.
     Sum of effects reconciles to active return within 1 basis point.</dd>
+
+    <dt>Drift Status</dt>
+    <dd>A sleeve is flagged &ldquo;Drift&rdquo; when either threshold is breached: absolute drift
+    exceeds 200 bps, or relative drift exceeds 20% of the target weight. Both thresholds must be
+    satisfied for a &ldquo;Within&rdquo; status.</dd>
 
     <dt>Price Data</dt>
     <dd>Daily adjusted-close prices from Yahoo Finance (via yfinance), cached in SQLite.
@@ -353,6 +344,11 @@
     Real Assets 10% / Cash 3%. Ten sleeves with tolerance bands (&plusmn;2&ndash;3%).
     Full rationale available in the SAA section of the application.</dd>
   </dl>
+
+  <p class="disclosure">This report is generated from a personal investment analytics system
+  for portfolio review purposes. Returns are time-weighted and do not constitute investment
+  advice. Data sourced from Yahoo Finance, FRED, and Robert Shiller&rsquo;s public datasets;
+  calculations are best-effort and may contain methodological simplifications.</p>
 </section>
 
 </body>
