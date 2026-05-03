@@ -1,8 +1,9 @@
 .venv/
 __pycache__/
 *.pyc
+# tracker.db holds real holdings — never committed
 data/tracker.db
-data/demo.db
+# demo.db holds paper trades for Streamlit Cloud deployment — committed intentionally
 .streamlit/secrets.toml
 .env
 .cursor/
