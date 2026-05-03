@@ -137,7 +137,9 @@ def _format_period_label(start_date: str, end_date: str) -> str:
     for (sm, sd), (em, ed), qname in quarters:
         if (s.month, s.day) == (sm, sd) and (e.month, e.day) == (em, ed) and s.year == e.year:
             return f"{qname} {s.year}"
-    return f"{s.strftime('%b')} {s.day} to {e.strftime('%b')} {e.day}, {e.year}"
+    if s.year == e.year:
+        return f"{s.strftime('%b')} {s.day} to {e.strftime('%b')} {e.day}, {e.year}"
+    return f"{s.strftime('%b')} {s.day}, {s.year} to {e.strftime('%b')} {e.day}, {e.year}"
 
 
 def _format_filename(start_date: str, end_date: str, period_label: str) -> str:

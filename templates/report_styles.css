@@ -1,36 +1,36 @@
 /* ── Page setup ─────────────────────────────────────────────────────────── */
 @page {
     size: letter;
-    margin: 0.75in;
+    margin: 0.9in;
     @bottom-center {
         content: "Page " counter(page) " of " counter(pages);
         font-size: 9pt;
         color: #888;
-        font-family: system-ui, -apple-system, sans-serif;
+        font-family: Helvetica, Arial, sans-serif;
     }
 }
 
 /* ── Base typography ─────────────────────────────────────────────────────── */
 body {
-    font-family: Georgia, 'Times New Roman', serif;
+    font-family: Helvetica, Arial, sans-serif;
     font-size: 10pt;
-    line-height: 1.5;
-    color: #222;
+    line-height: 1.45;
+    color: #2a2a2a;
     margin: 0;
     padding: 0;
 }
 
 h1, h2, h3, h4 {
-    font-family: system-ui, -apple-system, Arial, sans-serif;
+    font-family: Helvetica, Arial, sans-serif;
     color: #1a1a1a;
     font-weight: 600;
     margin-top: 0;
 }
 
 h1  { font-size: 28pt; line-height: 1.2; }
-h2  { font-size: 18pt; border-bottom: 1px solid #ddd; padding-bottom: 6pt;
+h2  { font-size: 16pt; border-bottom: 2px solid #2c3e50; padding-bottom: 6pt;
       margin-bottom: 14pt; }
-h3  { font-size: 12pt; font-weight: 600; margin-bottom: 6pt; }
+h3  { font-size: 11pt; font-weight: 600; margin-bottom: 6pt; margin-top: 1.2em; }
 
 p   { margin: 0 0 0.6em 0; }
 
@@ -41,23 +41,29 @@ table {
     margin: 0.8em 0;
 }
 th {
-    border-bottom: 2px solid #222;
+    background: #ececec;
+    border-bottom: 2px solid #2c3e50;
     font-weight: 600;
     text-align: left;
-    padding: 0.4em 0.5em;
-    font-family: system-ui, -apple-system, sans-serif;
+    padding: 8px 12px;
+    font-family: Helvetica, Arial, sans-serif;
     font-size: 8.5pt;
     text-transform: uppercase;
     color: #444;
     letter-spacing: 0.04em;
 }
 td {
-    border-bottom: 1px solid #e8e8e8;
-    padding: 0.4em 0.5em;
+    border-bottom: 1px solid #f0f0f0;
+    padding: 6px 12px;
     font-size: 9.5pt;
 }
 tr:last-child td { border-bottom: none; }
 td.num, th.num  { text-align: right; }
+
+/* alternating row shading — WeasyPrint (Linux/Cloud) uses nth-child;
+   xhtml2pdf (Windows) uses the explicit row-even class added via loop.cycle */
+tbody tr:nth-child(even) td { background: #f7f7f8; }
+tr.row-even td { background: #f7f7f8; }
 
 /* ── Metric cards (4-up table layout) ───────────────────────────────────── */
 table.metric-table {
@@ -66,7 +72,8 @@ table.metric-table {
     margin: 1em 0 1.4em 0;
 }
 table.metric-table td.metric-card {
-    border: 1px solid #ddd;
+    background: #fafafa;
+    border: 1px solid #dddddd;
     padding: 12pt 14pt;
     vertical-align: top;
     width: 25%;
@@ -75,15 +82,15 @@ table.metric-table td.metric-card {
     font-size: 8pt;
     text-transform: uppercase;
     letter-spacing: 0.07em;
-    color: #888;
-    font-family: system-ui, -apple-system, sans-serif;
+    color: #666;
+    font-family: Helvetica, Arial, sans-serif;
     display: block;
     margin-bottom: 4pt;
 }
 .metric-card .value {
-    font-size: 20pt;
+    font-size: 24pt;
     font-weight: 700;
-    font-family: system-ui, -apple-system, sans-serif;
+    font-family: Helvetica, Arial, sans-serif;
     color: #1a1a1a;
     display: block;
     line-height: 1.1;
@@ -98,9 +105,9 @@ table.metric-table td.metric-card {
 /* ── Color utilities ─────────────────────────────────────────────────────── */
 .positive { color: #1B5E20; }
 .negative { color: #B71C1C; }
-.muted    { color: #888; font-size: 8.5pt; }
-.status-within  { color: #1B5E20; }
-.status-outside { color: #B71C1C; }
+.muted    { color: #666; font-size: 8.5pt; }
+.status-within  { color: #2a2a2a; }
+.status-outside { color: #2a2a2a; font-weight: 600; }
 
 /* ── Section / page breaks ───────────────────────────────────────────────── */
 section { page-break-before: always; padding-top: 4pt; }
@@ -114,44 +121,43 @@ section.cover { page-break-before: auto; }
     padding-top: 34%;
 }
 .cover-eyebrow {
-    font-family: system-ui, -apple-system, sans-serif;
-    font-size: 9.5pt;
+    font-family: Helvetica, Arial, sans-serif;
+    font-size: 9pt;
     text-transform: uppercase;
     letter-spacing: 0.18em;
     color: #888;
-    margin-bottom: 1.2em;
+    margin-bottom: 1em;
+}
+.cover-hr-line {
+    border-top: 1px solid #2c3e50;
+    margin: 0.4em 8%;
 }
 .cover h1 {
-    font-size: 36pt;
+    font-size: 34pt;
     font-weight: 700;
-    margin: 0.15em 0 0.3em 0;
+    margin: 0.3em 0;
     color: #1a1a1a;
     letter-spacing: -0.01em;
 }
 .cover-period {
-    font-size: 20pt;
+    font-size: 18pt;
     color: #444;
-    font-family: system-ui, -apple-system, sans-serif;
+    font-family: Helvetica, Arial, sans-serif;
     font-weight: 300;
-    margin: 0;
+    margin: 0.6em 0 0 0;
 }
 .cover-date {
-    font-size: 10pt;
+    font-size: 9pt;
     color: #aaa;
-    margin-top: 0.5em;
-    font-family: system-ui, -apple-system, sans-serif;
-}
-.cover-rule {
-    width: 54pt;
-    height: 2pt;
-    background: #2E4057;
-    margin: 1.8em auto;
+    margin-top: 1.8em;
+    font-family: Helvetica, Arial, sans-serif;
 }
 .cover-tagline {
-    font-size: 9.5pt;
+    font-size: 9pt;
     color: #aaa;
-    font-family: system-ui, -apple-system, sans-serif;
+    font-family: Helvetica, Arial, sans-serif;
     letter-spacing: 0.04em;
+    margin-top: 0.6em;
 }
 
 /* ── Narrative / prose blocks ────────────────────────────────────────────── */
@@ -175,7 +181,7 @@ img.chart {
     text-align: center;
     color: #aaa;
     font-size: 9pt;
-    font-family: system-ui, sans-serif;
+    font-family: Helvetica, Arial, sans-serif;
     margin: 1em 0;
 }
 
@@ -193,7 +199,7 @@ table.two-col td:last-child { padding-right: 0; }
 dl.methodology dt {
     font-weight: 600;
     margin-top: 0.8em;
-    font-family: system-ui, -apple-system, sans-serif;
+    font-family: Helvetica, Arial, sans-serif;
     font-size: 9.5pt;
     color: #222;
 }
