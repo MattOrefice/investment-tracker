@@ -232,7 +232,12 @@ def _build_executive_summary(start_date: str, end_date: str) -> dict:
     pv = get_portfolio_value_series(start_date, end_date)
     cf = pd.Series(0.0, index=pv.index)
     portfolio_twr = twr_daily_linked(pv, cf) if len(pv) >= 2 else 0.0
-    current_val   = float(pv.iloc[-1]) if not pv.empty else 0.0
+
+    # Use inception-to-end series for current_val so all DRIP (dividends
+    # from inception through end_date) are captured, not just those within
+    # the report period window.
+    pv_since_inception = get_portfolio_value_series(_inception_date(), end_date)
+    current_val = float(pv_since_inception.iloc[-1]) if not pv_since_inception.empty else 0.0
 
     sp = get_sp500_series(start_date, end_date)
     sp_return = float(sp.iloc[-1] / sp.iloc[0] - 1) if len(sp) >= 2 else 0.0
