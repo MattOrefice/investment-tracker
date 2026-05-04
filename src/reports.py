@@ -319,9 +319,9 @@ def _build_holdings_section(end_date: str) -> dict:
             "status_class":  "status-within" if status == "Within" else "status-drift",
         })
 
-    sleeves = [r["sleeve"] for r in rows]
-    actuals = [sw.loc[s, "Actual Weight"] * 100 for s in sleeves if s in sw.index]
-    targets = [sw.loc[s, "Target Weight"] * 100 for s in sleeves if s in sw.index]
+    sleeves = sw.index.tolist()
+    actuals = (sw["Actual Weight"] * 100).tolist()
+    targets = (sw["Target Weight"] * 100).tolist()
 
     fig = go.Figure()
     fig.add_trace(go.Bar(
@@ -336,11 +336,11 @@ def _build_holdings_section(end_date: str) -> dict:
         barmode="overlay",
         xaxis_title="Weight (%)", yaxis_title=None,
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
-        margin=dict(l=180, r=20, t=40, b=0), height=330,
+        margin=dict(l=200, r=20, t=40, b=30), height=330,
         plot_bgcolor="white", paper_bgcolor="white",
-        font=dict(family="sans-serif", size=10, color="#333"),
+        font=dict(family="sans-serif", size=9, color="#333"),
         xaxis=dict(gridcolor="#E8E8E8"),
-        yaxis=dict(tickmode="array", tickvals=sleeves, ticktext=sleeves),
+        yaxis=dict(tickmode="array", tickvals=sleeves, ticktext=sleeves, automargin=True),
     )
     return {"rows": rows, "chart_b64": _chart_b64(fig, 700, 330)}
 
@@ -374,27 +374,36 @@ def _build_performance_section(start_date: str, end_date: str) -> dict:
     sp_norm = sp / float(sp.iloc[0])
     bl_norm = bl / float(bl.iloc[0])
 
+    pv_pct = (pv_norm - 1) * 100
+    sp_pct = (sp_norm - 1) * 100
+    bl_pct = (bl_norm - 1) * 100
+    _all_pct = pd.concat([pv_pct, sp_pct, bl_pct])
+    _tick_min = int((_all_pct.min() // 10) * 10)
+    _tick_max = int((_all_pct.max() // 10 + 1) * 10)
+    _tick_vals = list(range(_tick_min, _tick_max + 1, 10))
+
     fig = go.Figure()
     fig.add_trace(go.Scatter(
-        x=pv_norm.index, y=(pv_norm - 1) * 100, name="Portfolio",
+        x=pv_norm.index, y=pv_pct, name="Portfolio",
         line=dict(color=_PALETTE["portfolio"], width=2),
     ))
     fig.add_trace(go.Scatter(
-        x=sp_norm.index, y=(sp_norm - 1) * 100, name="S&P 500",
+        x=sp_norm.index, y=sp_pct, name="S&P 500",
         line=dict(color=_PALETTE["sp500"], width=1.5, dash="dot"),
     ))
     fig.add_trace(go.Scatter(
-        x=bl_norm.index, y=(bl_norm - 1) * 100, name="Custom Blended",
+        x=bl_norm.index, y=bl_pct, name="Custom Blended",
         line=dict(color=_PALETTE["blended"], width=1.5, dash="dash"),
     ))
     fig.update_layout(
         yaxis_title="Cumulative Return (%)", xaxis_title=None,
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
-        margin=dict(l=0, r=0, t=40, b=0), height=290,
+        margin=dict(l=60, r=0, t=40, b=0), height=290,
         plot_bgcolor="white", paper_bgcolor="white",
         font=dict(family="sans-serif", size=10, color="#333"),
         yaxis=dict(gridcolor="#E8E8E8", zeroline=True, zerolinecolor="#CCC",
-                   dtick=10, ticksuffix="%"),
+                   tickmode="array", tickvals=_tick_vals,
+                   ticktext=[f"{v}%" for v in _tick_vals]),
         xaxis=dict(gridcolor="#E8E8E8"),
     )
     return {"period_rows": period_rows, "chart_b64": _chart_b64(fig, 700, 290)}

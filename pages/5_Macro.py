@@ -231,7 +231,7 @@ with col:
             )
             _apply_style(fig_cape, height=_CHART_H_CAPE)
             fig_cape.update_yaxes(title_text="CAPE (×)")
-            st.plotly_chart(fig_cape, use_container_width=True)
+            st.plotly_chart(fig_cape, width='stretch')
 
         pctile_label = (
             "extremely elevated" if cape_pctile > 90 else
@@ -297,7 +297,7 @@ with col:
         fig_yc.add_hline(y=0, line_dash="dash", line_color=_C["ref"], line_width=1)
         _apply_style(fig_yc)
         fig_yc.update_yaxes(title_text="Spread (bps)")
-        st.plotly_chart(fig_yc, use_container_width=True)
+        st.plotly_chart(fig_yc, width='stretch')
 
         st.caption(
             "Yield curve inversions (spread < 0) have preceded each of the last seven "
@@ -344,7 +344,7 @@ with col:
         ))
         _apply_style(fig_ff)
         fig_ff.update_yaxes(title_text="Rate (%)")
-        st.plotly_chart(fig_ff, use_container_width=True)
+        st.plotly_chart(fig_ff, width='stretch')
 
         st.caption(_ff_interpretation(current_ff, ff_chg_bps))
 
@@ -391,7 +391,7 @@ with col:
         )
         _apply_style(fig_hy)
         fig_hy.update_yaxes(title_text="OAS (bps)")
-        st.plotly_chart(fig_hy, use_container_width=True)
+        st.plotly_chart(fig_hy, width='stretch')
 
         hy_framing = (
             "suggests late-cycle complacency — limited cushion for additional compression"
@@ -470,7 +470,7 @@ with col:
         )
         _apply_style(fig_us)
         fig_us.update_yaxes(title_text="Ratio (normalized to 1.0)")
-        st.plotly_chart(fig_us, use_container_width=True)
+        st.plotly_chart(fig_us, width='stretch')
 
         us_label = (
             "extreme"   if ratio_pctile > 90 else
