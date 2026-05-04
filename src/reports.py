@@ -433,11 +433,28 @@ def _build_performance_section(start_date: str, end_date: str) -> dict:
     sp = get_sp500_series(inception, end_date) * start_val
     bl = get_custom_blended_series(inception, end_date) * start_val
 
+    end_d   = date.fromisoformat(end_date)
+    incep_d = date.fromisoformat(inception)
+
+    def _bl_period_return(period: str) -> float:
+        # Fresh blended series per period so weights reset at the period start
+        # (no 7-month inception drift). Capped at inception for 1Y/SI so we
+        # never extend the benchmark into pre-portfolio history.
+        ps = {
+            "SI":  inception,
+            "1Y":  max(end_d - timedelta(days=365),  incep_d).isoformat(),
+            "YTD": max(date(end_d.year - 1, 12, 31), incep_d).isoformat(),
+            "3M":  max(end_d - timedelta(days=90),   incep_d).isoformat(),
+            "1M":  max(end_d - timedelta(days=30),   incep_d).isoformat(),
+        }.get(period, inception)
+        s = get_custom_blended_series(ps, end_date)
+        return float(s.iloc[-1] / s.iloc[0] - 1) if len(s) >= 2 else 0.0
+
     period_rows = []
     for p in _PERIODS:
         pr = period_return("daily", pv, cf, p)
         sr = _bm_period_return(sp, p)
-        br = _bm_period_return(bl, p)
+        br = _bl_period_return(p)
         period_rows.append({
             "period":    _PERIOD_LABELS[p],
             "portfolio": f"{pr*100:.2f}%",
