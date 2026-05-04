@@ -662,7 +662,7 @@ def _build_positioning_section(end_date: str) -> dict:
         f"FI weight: {dur['fi_weight_pct']}% of portfolio. "
         "Intermediate-Treasury focus keeps duration below the Agg, limiting sensitivity to rate moves."
     )
-    style_box_b64 = _chart_b64(build_style_box_figure(style_data), 320, 240) if style_data else None
+    style_box_b64 = _chart_b64(build_style_box_figure(style_data), 520, 390) if style_data else None
     return {
         "tilts":          tilts,
         "duration_line":  duration_line,

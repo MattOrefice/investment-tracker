@@ -235,6 +235,38 @@ def test_build_style_box_figure_dot_sizes_scaled():
     assert sizes[voo_idx] > sizes[avuv_idx], "Larger weight should produce larger dot"
 
 
+def test_build_style_box_figure_crowded_cell_outward_textpositions():
+    """4-dot cell must use all four outward corner textpositions, one per dot, with dark text."""
+    data = [
+        {"ticker": "VOO",  "size": "Large", "style": "Blend", "weight_pct": 16.0},
+        {"ticker": "SPHQ", "size": "Large", "style": "Blend", "weight_pct": 14.0},
+        {"ticker": "VEA",  "size": "Large", "style": "Blend", "weight_pct": 19.0},
+        {"ticker": "IEMG", "size": "Large", "style": "Blend", "weight_pct":  8.0},
+        {"ticker": "VTV",  "size": "Large", "style": "Value", "weight_pct":  8.0},
+        {"ticker": "AVUV", "size": "Small", "style": "Value", "weight_pct":  7.0},
+    ]
+    fig = build_style_box_figure(data)
+    outward = {"top left", "top right", "bottom left", "bottom right"}
+    crowded_tickers = {"VOO", "SPHQ", "VEA", "IEMG"}
+
+    collected_pos = []
+    for trace in fig.data:
+        tickers = list(trace.text)
+        pos = trace.textposition
+        for i, ticker in enumerate(tickers):
+            if ticker in crowded_tickers:
+                val = pos[i] if isinstance(pos, (list, tuple)) else pos
+                collected_pos.append(val)
+                assert trace.textfont.color != "white", (
+                    f"{ticker}: crowded trace must use dark text (labels outside dot)"
+                )
+
+    assert len(collected_pos) == 4, f"Expected 4 crowded textpositions, got {len(collected_pos)}"
+    assert set(collected_pos) == outward, (
+        f"Crowded textpositions must be {outward}, got {set(collected_pos)}"
+    )
+
+
 def test_build_style_box_figure_4dot_cell_distinct_coordinates():
     """Four ETFs in the same cell must produce 4 distinct (x,y) points, all within the cell."""
     data = [

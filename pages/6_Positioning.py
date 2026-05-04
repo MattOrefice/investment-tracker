@@ -92,7 +92,9 @@ with col:
     style_data = get_style_box_data(end_date)
     if style_data:
         fig = build_style_box_figure(style_data)
-        st.plotly_chart(fig, use_container_width=False)
+        box_col, _ = st.columns([3, 2])
+        with box_col:
+            st.plotly_chart(fig, width='stretch')
         st.caption(
             "Morningstar 3×3 style box · dot size = portfolio weight · "
             "assignments based on official Morningstar category"

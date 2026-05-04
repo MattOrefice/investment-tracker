@@ -74,30 +74,28 @@ _SIZE_Y:  dict[str, int] = {"Large": 2, "Mid": 1, "Small": 0}
 
 # Within-cell dot layout for n simultaneous ETFs.
 # Offsets in cell-coordinate units (each cell spans 1.0 unit).
-# Chart is 320px wide / 3 cells = 107px per unit (x); 240px / 3 = 80px per unit (y).
+# Chart is 520px wide / 3 cells ≈ 135px per unit (x); 390px / 3 ≈ 97px per unit (y).
 #
-# n=4 geometry: ±0.22 x (47px c-t-c), ±0.22 y (35px c-t-c).
-#   max dot 28px → x-gap 19px / y-gap 7px.
-#   top dots at y=2.22: dot top at y=2.22+14/80=2.395, 8px clearance from plot ceiling (y=2.5).
-#   Labels: "middle center" white text inside dots — no label escapes the cell regardless of y.
+# n=4 geometry: ±0.22 x (59px c-t-c), ±0.10 y (19px c-t-c).
+#   Upper dots at y=2.10: 38.7px below plot ceiling at 520×390 → ample headroom for "top" label.
+#   textpositions point outward from cell centre (top-left/right, bottom-left/right) so
+#   labels radiate away from each other and away from adjacent cells.
 _CELL_OFFSETS: dict[int, list[tuple[float, float]]] = {
     1: [(0.0,   0.0)],
     2: [(-0.22, 0.0),  (0.22,  0.0)],
     3: [(-0.22, 0.0),  (0.0,   0.0),  (0.22,  0.0)],
-    4: [(-0.22, 0.22), (0.22,  0.22), (-0.22, -0.22), (0.22, -0.22)],
+    4: [(-0.22, 0.10), (0.22,  0.10), (-0.22, -0.10), (0.22, -0.10)],
 }
 _CELL_TEXTPOS: dict[int, list[str]] = {
     1: ["top center"],
-    2: ["top center",    "top center"],
-    3: ["top center",    "top center",    "top center"],
-    4: ["middle center", "middle center", "middle center", "middle center"],
+    2: ["top center",  "top center"],
+    3: ["top center",  "top center",  "top center"],
+    4: ["top left",    "top right",   "bottom left", "bottom right"],
 }
-# Per-cell dot size range (px).  Minimum for n=4 is 22px so a 4-char ticker
-# fits inside at font size 6 (~15px wide).  Textfont differs by cell population
-# (see build_style_box_figure) so crowded cells use white text rendered inside
-# the dot rather than dark text outside it.
-_CELL_MIN_SIZE: dict[int, float] = {1: 12.0, 2: 18.0, 3: 16.0, 4: 22.0}
-_CELL_MAX_SIZE: dict[int, float] = {1: 50.0, 2: 38.0, 3: 30.0, 4: 28.0}
+# Per-cell dot size range (px). n=4 uses outward corner labels so text sits outside
+# the dot; smaller max keeps markers from crowding the centre of the cell.
+_CELL_MIN_SIZE: dict[int, float] = {1: 12.0, 2: 18.0, 3: 16.0, 4: 14.0}
+_CELL_MAX_SIZE: dict[int, float] = {1: 50.0, 2: 38.0, 3: 30.0, 4: 24.0}
 
 
 # ── Style box helpers ──────────────────────────────────────────────────────
@@ -150,9 +148,9 @@ def build_style_box_figure(style_data: list[dict]) -> go.Figure:
     Morningstar 3×3 style grid. Dot size ∝ portfolio weight.
     Multiple ETFs in the same cell are spread using _CELL_OFFSETS; dot sizes
     are bounded by _CELL_MIN_SIZE/_CELL_MAX_SIZE per cell population.
-    Cells with ≥4 ETFs render labels as white text inside each dot
-    ("middle center") so no label can clip above the plot ceiling.
-    This requires two separate scatter traces because textfont is trace-level.
+    Cells with ≥4 ETFs use outward corner textpositions (top-left/right,
+    bottom-left/right) so labels radiate away from the cell centre.
+    Two scatter traces are required because textfont is trace-level in Plotly.
     """
     cell_items: dict = defaultdict(list)
     for i, d in enumerate(style_data):
@@ -229,7 +227,7 @@ def build_style_box_figure(style_data: list[dict]) -> go.Figure:
                     line=dict(width=1, color="white"),
                 ),
                 text=[style_data[i]["ticker"] for i in crowded_idx],
-                textfont=dict(size=6, color="white"),
+                textfont=dict(size=8, color="#222222"),
                 textposition=[textpos_out[i] for i in crowded_idx],
                 customdata=[[style_data[i]["weight_pct"]] for i in crowded_idx],
                 hovertemplate="%{text}: %{customdata[0]:.1f}%<extra></extra>",
@@ -249,7 +247,7 @@ def build_style_box_figure(style_data: list[dict]) -> go.Figure:
             tickfont=dict(size=9),
         ),
         margin=dict(l=55, r=20, t=50, b=20),
-        height=240, width=320,
+        height=390, width=520,
         plot_bgcolor="#FAFAFA", paper_bgcolor="white",
         font=dict(family="sans-serif", size=9, color="#333"),
         showlegend=False,
