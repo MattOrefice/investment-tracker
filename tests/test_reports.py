@@ -193,11 +193,20 @@ def test_cover_current_value_reflects_full_portfolio():
 def _make_exec_summary_mocks(inception: str, start_date: str, end_date: str,
                              pv_full: pd.Series, sp_full: pd.Series,
                              bl_full: pd.Series) -> dict:
-    """Call _build_executive_summary with full inception-scoped mocks."""
+    """Call _build_executive_summary with inception-scoped mocks.
+
+    get_custom_blended_series uses side_effect so the mock slices bl_full to
+    the requested start date, matching the production code path that calls
+    get_custom_blended_series(start_date, end_date) and uses the full returned
+    series for the period return.
+    """
+    def _blended_side_effect(start: str, end: str) -> pd.Series:
+        return bl_full[bl_full.index >= pd.Timestamp(start)]
+
     with patch.object(rpt, "get_portfolio_value_series", return_value=pv_full), \
          patch.object(rpt, "_inception_date", return_value=inception), \
          patch.object(rpt, "get_sp500_series", return_value=sp_full), \
-         patch.object(rpt, "get_custom_blended_series", return_value=bl_full), \
+         patch.object(rpt, "get_custom_blended_series", side_effect=_blended_side_effect), \
          patch.object(rpt, "brinson_fachler_period", side_effect=Exception("no db")), \
          patch.object(rpt, "current_cape", side_effect=Exception("no data")), \
          patch.object(rpt, "get_cape_series", side_effect=Exception("no data")):
@@ -236,8 +245,8 @@ def test_cover_sp500_return_uses_inception_slice():
     )
 
 
-def test_cover_blended_return_uses_inception_slice():
-    """Cover card blended_return_pct must use the inception-sliced series."""
+def test_cover_blended_return_uses_period_start():
+    """Cover card blended_return_pct must use period-start blended return (fresh start_date, not inception-sliced)."""
     inception  = "2025-05-01"
     start_date = "2026-01-01"
     end_date   = "2026-03-31"

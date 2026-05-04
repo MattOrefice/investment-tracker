@@ -248,11 +248,13 @@ def _bm_period_return(series: pd.Series, period: str) -> float:
 # ── Section builders ──────────────────────────────────────────────────────────
 
 def _build_executive_summary(start_date: str, end_date: str) -> dict:
-    # All three series (portfolio, SP500, blended) are fetched from inception
-    # so that holiday gaps (e.g. New Year's Day) are forward-filled from the
-    # prior trading day rather than back-filled from the next.  Each is then
-    # sliced to the report period before computing returns — consistent with
-    # how _build_performance_section computes period returns.
+    # Portfolio and S&P 500 are loaded from inception so that the value series
+    # is continuous and daily-linked TWR can be computed correctly.  Each is then
+    # sliced to the report period start.  The custom blended benchmark is computed
+    # fresh from start_date so it uses SAA target weights as of the period start
+    # (buy-and-hold from inception drifts weights and produces a different result).
+    # start_date is always a trading day (Dec-31 for Q1, Mar-31 for Q2, etc.) so
+    # no holiday-bfill risk exists for the fresh blended series.
     inception = _inception_date()
 
     pv_since_inception = get_portfolio_value_series(inception, end_date)
@@ -266,9 +268,8 @@ def _build_executive_summary(start_date: str, end_date: str) -> dict:
     sp_period = sp_full[sp_full.index >= pd.Timestamp(start_date)]
     sp_return = float(sp_period.iloc[-1] / sp_period.iloc[0] - 1) if len(sp_period) >= 2 else 0.0
 
-    bl_full   = get_custom_blended_series(inception, end_date)
-    bl_period = bl_full[bl_full.index >= pd.Timestamp(start_date)]
-    bl_return = float(bl_period.iloc[-1] / bl_period.iloc[0] - 1) if len(bl_period) >= 2 else 0.0
+    bl = get_custom_blended_series(start_date, end_date)
+    bl_return = float(bl.iloc[-1] / bl.iloc[0] - 1) if len(bl) >= 2 else 0.0
 
     alpha_sp_bps = (portfolio_twr - sp_return) * 10_000
     alpha_bl_bps = (portfolio_twr - bl_return) * 10_000
@@ -626,10 +627,16 @@ def _build_factor_section(end_date: str) -> Optional[dict]:
     }
 
 
-def _build_benchmark_section(end_date: str) -> Optional[dict]:
+def _build_benchmark_section(start_date: str, end_date: str) -> Optional[dict]:
     """
     Run the benchmark-relative attribution regression from inception through end_date
     and format results for the template.  Returns None if insufficient data or on failure.
+
+    start_date is the report-period start (e.g. Dec-31 for Q1) and is used only
+    for the BHB cross-reference window — the regression itself always covers the
+    full inception-to-end_date window.  Cross-reference uses the raw return
+    differential (r_p − r_b) so prose reads "AVUV outperformed IWM by 768 bps"
+    rather than the portfolio-weighted selection effect.
     """
     inception = _inception_date()
     try:
@@ -666,11 +673,14 @@ def _build_benchmark_section(end_date: str) -> Optional[dict]:
             "significance": sig_marker(p),
         })
 
-    # Compute top-3 BHB selection effects (since inception) for prose cross-reference
+    # Top-3 BHB cross-reference — use report period (Q1) window, raw r_p−r_b
+    # differential so prose reads "AVUV outperformed IWM by 768 bps" matching
+    # the bench_ret / port_ret columns on the BHB attribution page.
     bhb_top = None
     try:
-        bf_df = brinson_fachler_period(inception, end_date)
+        bf_df = brinson_fachler_period(start_date, end_date)
         if not bf_df.empty:
+            bf_df["raw_diff"] = bf_df["r_p"] - bf_df["r_b"]
             top3 = bf_df.nlargest(3, "selection_effect")
             bhb_top = []
             for _, row in top3.iterrows():
@@ -678,7 +688,7 @@ def _build_benchmark_section(end_date: str) -> Optional[dict]:
                 bhb_top.append({
                     "holding": _SLEEVE_HOLDING_TICKER.get(sleeve, sleeve),
                     "bench":   _SLEEVE_BENCH_TICKER.get(sleeve, sleeve),
-                    "sel_bps": row["selection_effect"] * 10_000,
+                    "sel_bps": row["raw_diff"] * 10_000,
                 })
     except Exception:
         pass
@@ -854,7 +864,7 @@ def generate_quarterly_report(
     attr_data        = _build_attribution_section(start_date, end_date) if has_trades else None
     pos_data         = _build_positioning_section(end_date)             if has_trades else None
     factor_data      = _build_factor_section(end_date)                 if has_trades else None
-    bench_attr_data  = _build_benchmark_section(end_date)              if has_trades else None
+    bench_attr_data  = _build_benchmark_section(start_date, end_date)  if has_trades else None
     macro_data       = _build_macro_section()
     thesis_data      = _build_thesis_section(start_date, end_date)
 
