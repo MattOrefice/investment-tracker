@@ -46,6 +46,32 @@ _PALETTE = {
     "selection": "#A67B5B",
 }
 
+# Phase 2 locked picks — holding ticker and benchmark ticker per sleeve
+_SLEEVE_HOLDING_TICKER: dict[str, str] = {
+    "US Large Core":           "VOO",
+    "US Large Quality":        "SPHQ",
+    "US Large Value":          "VTV",
+    "US Small Cap":            "AVUV",
+    "International Developed": "VEA",
+    "Emerging Markets":        "IEMG",
+    "Core Fixed Income":       "VGIT",
+    "TIPS":                    "SCHP",
+    "Real Assets":             "VNQ / PDBC",
+    "Cash / SPAXX":            "SPAXX",
+}
+_SLEEVE_BENCH_TICKER: dict[str, str] = {
+    "US Large Core":           "SPY",
+    "US Large Quality":        "QUAL",
+    "US Large Value":          "IWD",
+    "US Small Cap":            "IWM",
+    "International Developed": "EFA",
+    "Emerging Markets":        "EEM",
+    "Core Fixed Income":       "IEF",
+    "TIPS":                    "TIP",
+    "Real Assets":             "VNQ / DBC",
+    "Cash / SPAXX":            "BIL",
+}
+
 _PERIODS = ["1M", "3M", "YTD", "1Y", "SI"]
 _PERIOD_LABELS = {
     "1M": "1 Month", "3M": "3 Months",
@@ -152,6 +178,18 @@ def _format_filename(start_date: str, end_date: str, period_label: str) -> str:
     return f"Orefice_Portfolio_{s}_to_{e}.pdf"
 
 
+def _drift_status(drift_bps: float, target_bps: float) -> str:
+    """Return 'Within' or 'Drift'.
+
+    Both thresholds must be satisfied for Within:
+      abs(drift_bps) <= 200  AND  abs(drift_bps / target_bps) <= 0.20
+    Either breach trips to Drift.
+    """
+    if target_bps == 0:
+        return "Drift"
+    return "Within" if abs(drift_bps) <= 200 and abs(drift_bps / target_bps) <= 0.20 else "Drift"
+
+
 def _inception_date() -> str:
     """Return date of first trade, falling back to 2025-05-01."""
     try:
@@ -242,6 +280,9 @@ def _build_executive_summary(start_date: str, end_date: str) -> dict:
             f"supporting the diversification rationale across non-US and real asset sleeves."
         )
 
+    end = date.fromisoformat(end_date)
+    formatted_end_date = f"{end.strftime('%B')} {end.day}, {end.year}"
+
     return {
         "period_label":         period_label,
         "portfolio_return_pct": f"{portfolio_twr*100:.2f}%",
@@ -252,7 +293,7 @@ def _build_executive_summary(start_date: str, end_date: str) -> dict:
         "alpha_sp_str":         f"{alpha_sp_bps:+.0f} bps",
         "alpha_bl_str":         f"{alpha_bl_bps:+.0f} bps",
         "current_value":        f"${current_val:,.0f}",
-        "end_date":             end_date,
+        "end_date":             formatted_end_date,
         "narrative":            narrative,
     }
 
@@ -264,15 +305,18 @@ def _build_holdings_section(end_date: str) -> dict:
 
     rows = []
     for sleeve, row in sw.iterrows():
-        drift = row["Drift"]
+        drift       = row["Drift"]
+        drift_bps   = drift * 10_000
+        target_bps  = row["Target Weight"] * 10_000
+        status      = _drift_status(drift_bps, target_bps)
         rows.append({
             "sleeve":        sleeve,
             "market_value":  f"${row['Market Value']:,.0f}",
             "actual_weight": f"{row['Actual Weight']*100:.1f}%",
             "target_weight": f"{row['Target Weight']*100:.1f}%",
-            "drift_bps":     f"{drift*10000:+.0f} bps",
-            "status":        "Within" if abs(drift) <= 0.03 else "Outside",
-            "status_class":  "status-within" if abs(drift) <= 0.03 else "status-outside",
+            "drift_bps":     f"{drift_bps:+.0f} bps",
+            "status":        status,
+            "status_class":  "status-within" if status == "Within" else "status-drift",
         })
 
     sleeves = [r["sleeve"] for r in rows]
@@ -355,7 +399,11 @@ def _build_performance_section(start_date: str, end_date: str) -> dict:
 
 
 def _build_attribution_section(start_date: str, end_date: str) -> dict:
-    _empty = {"rows": [], "chart_b64": None, "total_alloc": "+0.0", "total_sel": "+0.0", "total_total": "+0.0"}
+    _empty = {
+        "rows": [], "chart_b64": None,
+        "total_alloc": "+0.0", "total_sel": "+0.0", "total_total": "+0.0",
+        "sel_commentary": [], "alloc_commentary": None,
+    }
     try:
         bf_df = brinson_fachler_period(start_date, end_date)
     except Exception:
@@ -364,26 +412,36 @@ def _build_attribution_section(start_date: str, end_date: str) -> dict:
         return _empty
 
     bf_sorted = bf_df.sort_values("total_effect", ascending=True)
+    sleeve_labels = bf_sorted["sleeve"].tolist()
+
     fig = go.Figure()
     fig.add_trace(go.Bar(
         name="Allocation",
-        y=bf_sorted["sleeve"].tolist(),
+        y=sleeve_labels,
         x=(bf_sorted["allocation_effect"] * 10_000).tolist(),
         orientation="h", marker_color=_PALETTE["alloc"],
     ))
     fig.add_trace(go.Bar(
         name="Selection",
-        y=bf_sorted["sleeve"].tolist(),
+        y=sleeve_labels,
         x=(bf_sorted["selection_effect"] * 10_000).tolist(),
         orientation="h", marker_color=_PALETTE["selection"],
     ))
     fig.update_layout(
         barmode="stack", xaxis_title="Basis Points", yaxis_title=None,
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
-        margin=dict(l=0, r=60, t=40, b=0), height=350,
+        margin=dict(l=180, r=20, t=40, b=30), height=240,
         plot_bgcolor="white", paper_bgcolor="white",
-        font=dict(family="sans-serif", size=10, color="#333"),
-        xaxis=dict(gridcolor="#E8E8E8", zeroline=True, zerolinecolor="#888"),
+        font=dict(family="sans-serif", size=9, color="#333"),
+        xaxis=dict(
+            gridcolor="#E8E8E8", zeroline=True, zerolinecolor="#888",
+            dtick=50, tickformat="+.0f",
+        ),
+        yaxis=dict(
+            tickmode="array",
+            tickvals=sleeve_labels,
+            ticktext=sleeve_labels,
+        ),
     )
 
     rows = []
@@ -399,12 +457,43 @@ def _build_attribution_section(start_date: str, end_date: str) -> dict:
             "total":     f"{row['total_effect']*10000:+.1f}",
         })
 
+    # Top 3 selection effect drivers (by absolute value)
+    sel_commentary = []
+    sel_sorted = bf_df.reindex(
+        bf_df["selection_effect"].abs().sort_values(ascending=False).index
+    ).head(3)
+    for _, r in sel_sorted.iterrows():
+        sleeve  = r["sleeve"]
+        port_t  = _SLEEVE_HOLDING_TICKER.get(sleeve, "—")
+        bench_t = _SLEEVE_BENCH_TICKER.get(sleeve, "—")
+        diff_bps = (r["r_p"] - r["r_b"]) * 10_000
+        sel_bps  = r["selection_effect"] * 10_000
+        sel_commentary.append(
+            f"{sleeve}: portfolio holding ({port_t}) returned {r['r_p']*100:.1f}% "
+            f"vs benchmark {bench_t} {r['r_b']*100:.1f}% "
+            f"(Δ {diff_bps:+.0f} bps), contributing {sel_bps:+.0f} bps to active return"
+        )
+
+    # Top allocation effect driver (only if >15 bps absolute)
+    alloc_commentary = None
+    top_alloc = bf_df.loc[bf_df["allocation_effect"].abs().idxmax()]
+    if abs(top_alloc["allocation_effect"]) * 10_000 > 15:
+        sleeve    = top_alloc["sleeve"]
+        direction = "overweight" if top_alloc["w_p"] > top_alloc["w_b"] else "underweight"
+        alloc_commentary = (
+            f"{sleeve}: {direction} vs benchmark "
+            f"({top_alloc['w_p']*100:.1f}% vs {top_alloc['w_b']*100:.1f}%), "
+            f"contributing {top_alloc['allocation_effect']*10_000:+.0f} bps allocation effect"
+        )
+
     return {
-        "rows":        rows,
-        "chart_b64":   _chart_b64(fig, 700, 350),
-        "total_alloc": f"{bf_df['allocation_effect'].sum()*10000:+.1f}",
-        "total_sel":   f"{bf_df['selection_effect'].sum()*10000:+.1f}",
-        "total_total": f"{bf_df['total_effect'].sum()*10000:+.1f}",
+        "rows":             rows,
+        "chart_b64":        _chart_b64(fig, 700, 240),
+        "total_alloc":      f"{bf_df['allocation_effect'].sum()*10000:+.1f}",
+        "total_sel":        f"{bf_df['selection_effect'].sum()*10000:+.1f}",
+        "total_total":      f"{bf_df['total_effect'].sum()*10000:+.1f}",
+        "sel_commentary":   sel_commentary,
+        "alloc_commentary": alloc_commentary,
     }
 
 
@@ -498,8 +587,9 @@ def _build_thesis_section(start_date: str, end_date: str) -> dict:
     trades = []
     for t in tr_rows:
         price = float(t["price"]) if t["price"] else 0.0
+        td = date.fromisoformat(t["trade_date"])
         trades.append({
-            "date":   t["trade_date"],
+            "date":   f"{td.strftime('%b')} {td.day}, {td.year}",
             "ticker": t["ticker"],
             "action": t["action"].title(),
             "shares": f"{float(t['shares']):.0f}",
