@@ -317,6 +317,57 @@ def test_run_sleeve_regressions_returns_none_on_insufficient_data():
     assert results["developed_exus"] is None
 
 
+# ── SAA weights embedded in sleeve config ─────────────────────────────────────
+
+def test_us_sleeve_has_embedded_weights_summing_to_one():
+    """
+    _SLEEVES['us'] must carry embedded SAA-proportional weights so that
+    _get_sleeve_return_series never needs to call get_holdings_on_date.
+    """
+    from src.factors import _SLEEVES
+    us = _SLEEVES["us"]
+    assert "weights" in us, "_SLEEVES['us'] must have a 'weights' key"
+    w = us["weights"]
+    assert set(w.keys()) == set(us["tickers"]), "Weight keys must match tickers"
+    assert abs(sum(w.values()) - 1.0) < 1e-10, f"Weights sum to {sum(w.values())}, not 1.0"
+    assert all(v > 0 for v in w.values()), "All weights must be positive"
+
+
+def test_us_sleeve_non_none_when_holdings_db_empty():
+    """
+    US sleeve must return a regression result even when get_holdings_on_date
+    returns an empty DataFrame (e.g., personal mode with no trades, or fresh
+    Cloud deployment before TRACKER_MODE=demo is configured in st.secrets).
+
+    The fix: SAA weights embedded in _SLEEVES bypass the DB lookup entirely.
+    This is the regression test for the production N/A bug.
+    """
+    rng = np.random.default_rng(77)
+    T = 100
+    dates_range = pd.date_range("2025-05-01", periods=T + 1, freq="D")
+
+    # Realistic price DataFrame: DatetimeIndex, adj_close + close columns
+    mock_prices = pd.DataFrame({
+        "adj_close": np.cumprod(1 + rng.standard_normal(T + 1) * 0.01),
+        "close":     np.cumprod(1 + rng.standard_normal(T + 1) * 0.01),
+    }, index=dates_range)
+
+    mock_ff = _make_mock_ff(T, rng, pd.bdate_range("2025-05-01", periods=T))
+
+    empty_holdings = pd.DataFrame(columns=["net_shares"])
+
+    with patch("src.factors.get_prices", return_value=mock_prices), \
+         patch("src.factors.get_holdings_on_date", return_value=empty_holdings), \
+         patch("src.factors.load_factors", return_value=mock_ff):
+        results = run_sleeve_regressions("2025-05-01", "2025-09-30")
+
+    assert results["us"] is not None, (
+        "US sleeve returned None despite SAA weights being embedded in _SLEEVES. "
+        "The regression must not require get_holdings_on_date when weights are provided."
+    )
+    assert results["us"]["T"] > 0
+
+
 # ── EM disclosure constant ─────────────────────────────────────────────────────
 
 def test_em_disclosure_is_non_empty_string():

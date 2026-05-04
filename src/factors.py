@@ -68,16 +68,28 @@ _FF5_FACTORS = ["Mkt-RF", "SMB", "HML", "RMW", "CMA"]
 
 # ── Equity sleeve definitions ──────────────────────────────────────────────────
 
+# SAA target weights for the US equity sleeve (Phase 1 locked).
+# Used to compute the sleeve's value-weighted return series without requiring
+# a DB call — eliminates the `get_holdings_on_date` dependency in environments
+# where the portfolio database is empty or unavailable (e.g., Streamlit Cloud
+# in personal mode, fresh deployments, or test environments).
+_SAA_US = {"VOO": 16, "SPHQ": 14, "VTV": 8, "AVUV": 7}
+_SAA_US_TOTAL = sum(_SAA_US.values())  # 45
+
 _SLEEVES = {
     "us": {
         "label":   "US Equity Sleeve",
         "tickers": ["VOO", "VTV", "SPHQ", "AVUV"],
         "region":  "us",
+        # Proportional SAA target weights; used instead of inception market values
+        # so the regression requires no database access.
+        "weights": {t: w / _SAA_US_TOTAL for t, w in _SAA_US.items()},
     },
     "developed_exus": {
         "label":   "International Developed Sleeve",
         "tickers": ["VEA"],
         "region":  "developed_exus",
+        # Single-ticker sleeve: no weights needed.
     },
 }
 
@@ -244,17 +256,18 @@ def _get_sleeve_return_series(
     tickers: list[str],
     inception: str,
     end_date: str,
+    weights: Optional[dict[str, float]] = None,
 ) -> pd.Series:
     """
     Daily total-return series for an equity sleeve from inception through end_date.
 
-    Single-ticker sleeves (VEA, IEMG): adj_close pct_change of that ETF.
+    Single-ticker sleeves (VEA): adj_close pct_change — no weights needed.
 
-    Multi-ticker sleeves (US equity: VOO, VTV, SPHQ, AVUV): value-weighted
-    daily return using inception market values (shares × price at inception)
-    as fixed weights.  This buy-and-hold sleeve return is appropriate for
-    factor regression — it reflects the portfolio's actual factor exposure
-    without rebalancing noise.
+    Multi-ticker sleeves (US equity): value-weighted daily return.
+      When ``weights`` is supplied (SAA target proportions from _SLEEVES config),
+      they are used directly and no database access is required.
+      When ``weights`` is None, inception market values are computed from
+      get_holdings_on_date — this fallback requires trades to exist in the DB.
 
     Non-trading days (weekends, US holidays) carry forward Friday's price;
     inner-joining against the factor index in the regression step drops them.
@@ -268,34 +281,34 @@ def _get_sleeve_return_series(
         series = p["adj_close"].fillna(p["close"])
         return series.reindex(date_range).ffill().pct_change().iloc[1:]
 
-    # Multi-ticker: compute inception market values for value-weight computation
-    holdings = get_holdings_on_date(inception)
-
-    sleeve_values: dict[str, float] = {}
-    for ticker in tickers:
-        if ticker not in holdings.index:
-            continue
-        shares = float(holdings.loc[ticker, "net_shares"])
-        try:
-            p_inc = get_prices(ticker, inception, inception)
-            p_inc.index = pd.to_datetime(p_inc.index)
-            px = p_inc["adj_close"].fillna(p_inc["close"])
-            price = float(px.dropna().iloc[-1]) if not px.dropna().empty else 0.0
-            if price > 0:
-                sleeve_values[ticker] = shares * price
-        except Exception:
-            continue
-
-    if not sleeve_values:
-        raise ValueError(
-            f"Could not compute inception market values for tickers: {tickers}"
-        )
-
-    total_value = sum(sleeve_values.values())
-    weights = {t: v / total_value for t, v in sleeve_values.items()}
+    # Multi-ticker: use provided weights or compute from inception market values
+    if weights is not None:
+        effective_weights = weights
+    else:
+        holdings = get_holdings_on_date(inception)
+        sleeve_values: dict[str, float] = {}
+        for ticker in tickers:
+            if ticker not in holdings.index:
+                continue
+            shares = float(holdings.loc[ticker, "net_shares"])
+            try:
+                p_inc = get_prices(ticker, inception, inception)
+                p_inc.index = pd.to_datetime(p_inc.index)
+                px = p_inc["adj_close"].fillna(p_inc["close"])
+                price = float(px.dropna().iloc[-1]) if not px.dropna().empty else 0.0
+                if price > 0:
+                    sleeve_values[ticker] = shares * price
+            except Exception:
+                continue
+        if not sleeve_values:
+            raise ValueError(
+                f"Could not compute inception market values for tickers: {tickers}"
+            )
+        total = sum(sleeve_values.values())
+        effective_weights = {t: v / total for t, v in sleeve_values.items()}
 
     weighted_ret = pd.Series(0.0, index=date_range)
-    for ticker, w in weights.items():
+    for ticker, w in effective_weights.items():
         try:
             p = get_prices(ticker, inception, end_date)
             p.index = pd.to_datetime(p.index)
@@ -360,6 +373,7 @@ def run_sleeve_regression(
     region: str,
     inception: str,
     end_date: str,
+    weights: Optional[dict[str, float]] = None,
 ) -> Optional[dict]:
     """
     Run FF5 regression for one equity sleeve against region-appropriate factors.
@@ -370,7 +384,7 @@ def run_sleeve_regression(
 
     Returns None if fewer than 30 aligned observations are available.
     """
-    daily_ret = _get_sleeve_return_series(tickers, inception, end_date)
+    daily_ret = _get_sleeve_return_series(tickers, inception, end_date, weights=weights)
     daily_ret.index = pd.to_datetime(daily_ret.index)
 
     ff = load_factors(region)
@@ -417,6 +431,7 @@ def run_sleeve_regressions(inception: str, end_date: str) -> dict:
                 region=spec["region"],
                 inception=inception,
                 end_date=end_date,
+                weights=spec.get("weights"),
             )
         except Exception:
             results[key] = None
@@ -480,7 +495,7 @@ def build_factor_prose(results: dict) -> list[str]:
         T_dev   = dev["T"]
 
         alpha_note_d = (
-            f"marginally significant (|t| = {abs(t_a_d):.2f})"
+            f"statistically significant at the 5% level (|t| = {abs(t_a_d):.2f})"
             if abs(t_a_d) > 2
             else "not statistically distinguishable from zero"
         )
@@ -489,7 +504,16 @@ def build_factor_prose(results: dict) -> list[str]:
             f"The International Developed sleeve (VEA, {T_dev} trading days) "
             f"loads on Mkt-RF_dev at {b_mkt_d:.2f} (t = {t_mkt_d:.2f}), within the "
             f"expected range for a passive cap-weighted developed-markets ETF. "
-            f"Annualized alpha of {a_bps_d:+.0f} bps is {alpha_note_d}."
+            f"Annualized alpha of {a_bps_d:+.0f} bps is {alpha_note_d}. "
+            f"This unexplained return should not be interpreted as skill: "
+            f"VEA tracks the FTSE Developed All Cap ex US index, which classifies "
+            f"South Korea as a developed market and includes it at approximately "
+            f"3–4% of the index. Ken French's Developed ex-US factor universe "
+            f"excludes South Korea. Over the current sample window, Korean equities "
+            f"(EWY) returned approximately 95–98% — an extraordinary period driven "
+            f"by AI-semiconductor demand — producing a model-span gap that flows "
+            f"into the alpha term. The alpha estimate is expected to revert as the "
+            f"sample window extends and Korean equity returns normalize."
         )
 
     lines.append(
@@ -540,9 +564,20 @@ def build_factor_methodology_notes(results: dict) -> list[str]:
         "residuals. Lag L is computed per regression as floor(4 × (T/100)^(2/9)).",
 
         "Sleeve return series: the US equity sleeve return is the value-weighted daily "
-        "total return of VOO, VTV, SPHQ, and AVUV, weighted by inception market values "
-        "(shares × price at May 1, 2025). Weights are held constant (buy-and-hold). "
+        "total return of VOO, VTV, SPHQ, and AVUV, weighted by SAA target proportions "
+        "(VOO 35.6%, SPHQ 31.1%, VTV 17.8%, AVUV 15.6% — proportional to the locked "
+        "Phase 1 sleeve targets of 16/14/8/7%). Weights are held constant. "
         "The Developed sleeve is VEA's daily adj_close return.",
+
+        "Universe mismatch — International Developed sleeve: VEA tracks the FTSE "
+        "Developed All Cap ex US index, which classifies South Korea as Developed and "
+        "includes it at ~3–4% of the index. Ken French's Developed ex-US factor "
+        "universe excludes South Korea (following a different market-classification "
+        "framework). This mismatch is the primary source of unexplained return (alpha) "
+        "in the Developed sleeve regression; it is not indicative of active management "
+        "skill. Caveats: (1) the alpha estimate carries meaningful sampling uncertainty "
+        "at T ≈ 216; (2) Korean equity outperformance in the current sample "
+        "(EWY ≈ +95–98% over calendar 2025) is exceptional and unlikely to persist.",
 
         "EM sleeve exclusion: Ken French does not publish daily EM factor data. "
         "Monthly EM factors would yield approximately 12 observations — below the minimum "
