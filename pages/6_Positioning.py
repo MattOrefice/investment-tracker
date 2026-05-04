@@ -6,6 +6,7 @@ from src.positioning import (
     build_style_box_figure,
     get_active_tilts,
     get_effective_duration,
+    get_non_us_equity_data,
     get_scenario_triggers,
     get_style_box_data,
 )
@@ -90,14 +91,29 @@ with col:
     # ── Block D: Equity Style Profile ───────────────────────────────────────
     st.subheader("Equity Style Profile")
     style_data = get_style_box_data(end_date)
+    non_us     = get_non_us_equity_data(end_date)
+
     if style_data:
         fig = build_style_box_figure(style_data)
         box_col, _ = st.columns([3, 2])
         with box_col:
             st.plotly_chart(fig, width='stretch')
         st.caption(
-            "Morningstar 3×3 style box · dot size = portfolio weight · "
-            "assignments based on official Morningstar category"
+            "Morningstar 3×3 style box · x-axis: 4-factor value-growth score (z-scored vs SPY) · "
+            "y-axis: log market cap · dot size = portfolio weight · US equity sleeves only"
         )
+
+        if non_us:
+            st.markdown("**Non-US Equity Sleeve**")
+            for item in non_us:
+                st.markdown(
+                    f"- **{item['ticker']}** ({item['region_label']}) — "
+                    f"{item['weight_pct']:.1f}% of portfolio"
+                )
+            st.caption(
+                "Non-US holdings are not directly comparable to US value/growth and "
+                "market-cap distributions. See Morningstar regional style boxes for "
+                "international placement methodology."
+            )
     else:
         st.info("No equity holdings found.")

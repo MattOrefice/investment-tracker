@@ -26,7 +26,7 @@ try:
     from src.macro import get_series, percentile
     from src.positioning import (
         build_style_box_figure, get_active_tilts, get_effective_duration,
-        get_scenario_triggers, get_style_box_data,
+        get_non_us_equity_data, get_scenario_triggers, get_style_box_data,
     )
     from src.returns import period_return, twr_daily_linked
     from src.shiller import current_cape, get_cape_series
@@ -38,7 +38,7 @@ except ImportError:
     from macro import get_series, percentile
     from positioning import (
         build_style_box_figure, get_active_tilts, get_effective_duration,
-        get_scenario_triggers, get_style_box_data,
+        get_non_us_equity_data, get_scenario_triggers, get_style_box_data,
     )
     from returns import period_return, twr_daily_linked
     from shiller import current_cape, get_cape_series
@@ -653,6 +653,7 @@ def _build_positioning_section(end_date: str) -> dict:
     dur        = get_effective_duration(end_date)
     scenarios  = get_scenario_triggers(end_date)
     style_data = get_style_box_data(end_date)
+    non_us     = get_non_us_equity_data(end_date)
     fi_dur  = dur["fi_sleeve_duration"]
     agg_dur = dur["agg_benchmark"]
     vs_agg  = "below" if fi_dur < agg_dur else "above"
@@ -668,6 +669,7 @@ def _build_positioning_section(end_date: str) -> dict:
         "duration_line":  duration_line,
         "scenarios":      scenarios,
         "style_box_b64":  style_box_b64,
+        "non_us":         non_us,
     }
 
 

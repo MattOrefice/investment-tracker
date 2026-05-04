@@ -18,9 +18,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 try:
     from src.holdings import get_holdings_on_date, get_sleeve_weights_on_date
     from src.prices import get_prices
+    from src.style_box import (
+        US_EQUITY_TICKERS, NON_US_EQUITY_MAP,
+        assign_textposition, compute_size_score, compute_value_growth_score,
+        xy_to_category, _load_metadata,
+    )
 except ImportError:
     from holdings import get_holdings_on_date, get_sleeve_weights_on_date
     from prices import get_prices
+    from style_box import (
+        US_EQUITY_TICKERS, NON_US_EQUITY_MAP,
+        assign_textposition, compute_size_score, compute_value_growth_score,
+        xy_to_category, _load_metadata,
+    )
 
 # ── Static reference dicts ─────────────────────────────────────────────────
 
@@ -100,15 +110,11 @@ _CELL_MAX_SIZE: dict[int, float] = {1: 50.0, 2: 38.0, 3: 30.0, 4: 24.0}
 
 # ── Style box helpers ──────────────────────────────────────────────────────
 
-def get_style_box_data(date_str: str) -> list[dict]:
-    """
-    Return per-equity-ETF style box entries with portfolio weights for date_str.
-    Each dict: ticker, size, style, weight_pct.
-    Only ETFs listed in ETF_STYLE_BOX are included; missing tickers get 0 weight.
-    """
+def _portfolio_market_values(date_str: str) -> tuple[dict[str, float], float]:
+    """Shared helper: returns (ticker→market_value, total_mv) for all holdings."""
     holdings = get_holdings_on_date(date_str)
     if holdings.empty:
-        return []
+        return {}, 0.0
 
     look_back = (date.fromisoformat(date_str) - timedelta(days=7)).isoformat()
     total_mv = 0.0
@@ -128,52 +134,130 @@ def get_style_box_data(date_str: str) -> list[dict]:
         ticker_mv[ticker] = mv
         total_mv += mv
 
+    return ticker_mv, total_mv
+
+
+def get_style_box_data(date_str: str) -> list[dict]:
+    """
+    Return continuous-coordinate style entries for US equity ETFs.
+    Each dict: ticker, x, y, weight_pct (with x, y as grid coordinates).
+    Non-US equity (VEA, IEMG) excluded — see get_non_us_equity_data().
+    """
+    ticker_mv, total_mv = _portfolio_market_values(date_str)
+    if total_mv == 0:
+        return []
+
+    meta = _load_metadata()
+    result = []
+    for ticker in US_EQUITY_TICKERS:
+        mv = ticker_mv.get(ticker, 0.0)
+        if mv == 0.0:
+            continue
+        x = compute_value_growth_score(ticker, meta)
+        y = compute_size_score(ticker, meta)
+        result.append({
+            "ticker":     ticker,
+            "x":          round(x, 4),
+            "y":          round(y, 4),
+            "weight_pct": round(mv / total_mv * 100, 2),
+        })
+    return sorted(result, key=lambda d: -d["weight_pct"])
+
+
+def get_non_us_equity_data(date_str: str) -> list[dict]:
+    """
+    Return weight data for non-US equity ETFs (VEA, IEMG) for the callout section.
+    Each dict: ticker, region_label, weight_pct.
+    """
+    ticker_mv, total_mv = _portfolio_market_values(date_str)
     if total_mv == 0:
         return []
 
     result = []
-    for ticker, (size, style) in ETF_STYLE_BOX.items():
+    for ticker, region_label in NON_US_EQUITY_MAP.items():
         mv = ticker_mv.get(ticker, 0.0)
+        if mv == 0.0:
+            continue
         result.append({
-            "ticker":     ticker,
-            "size":       size,
-            "style":      style,
-            "weight_pct": round(mv / total_mv * 100, 2),
+            "ticker":       ticker,
+            "region_label": region_label,
+            "weight_pct":   round(mv / total_mv * 100, 2),
         })
-    return sorted(result, key=lambda x: -x["weight_pct"])
+    return sorted(result, key=lambda d: -d["weight_pct"])
 
 
 def build_style_box_figure(style_data: list[dict]) -> go.Figure:
     """
-    Morningstar 3×3 style grid. Dot size ∝ portfolio weight.
-    Multiple ETFs in the same cell are spread using _CELL_OFFSETS; dot sizes
-    are bounded by _CELL_MIN_SIZE/_CELL_MAX_SIZE per cell population.
-    Cells with ≥4 ETFs use outward corner textpositions (top-left/right,
-    bottom-left/right) so labels radiate away from the cell centre.
-    Two scatter traces are required because textfont is trace-level in Plotly.
+    Morningstar 3×3 style grid. Dot position ∝ actual style/size tilt; dot size ∝ weight.
+
+    Dual-mode input:
+      Continuous (preferred): dicts contain 'x' and 'y' float coordinates
+        computed from ETF fundamentals via src.style_box. Each dot placed at its
+        data-derived position; textposition outward from cell centre via assign_textposition.
+      Categorical (legacy, existing tests): dicts contain 'size' and 'style' strings.
+        Uses cell-centre + _CELL_OFFSETS placement and the prior two-trace split.
     """
-    cell_items: dict = defaultdict(list)
-    for i, d in enumerate(style_data):
-        key = (_STYLE_X.get(d["style"], 1), _SIZE_Y.get(d["size"], 2))
-        cell_items[key].append(i)
+    fig = go.Figure()
 
-    x_vals      = [0.0] * len(style_data)
-    y_vals      = [0.0] * len(style_data)
-    textpos_out = ["top center"] * len(style_data)
-    cell_n      = {}  # style_data index → cell population count
+    for i in range(4):
+        fig.add_shape(type="line", x0=i - 0.5, x1=i - 0.5, y0=-0.5, y1=2.5,
+                      line=dict(color="#CCCCCC", width=1), layer="below")
+        fig.add_shape(type="line", x0=-0.5, x1=2.5, y0=i - 0.5, y1=i - 0.5,
+                      line=dict(color="#CCCCCC", width=1), layer="below")
 
-    for (cx, cy), indices in cell_items.items():
-        n = min(len(indices), 4)
-        offs = _CELL_OFFSETS.get(n, [(0.0, 0.0)] * n)
-        tpos = _CELL_TEXTPOS.get(n, ["top center"] * n)
-        for j, idx in enumerate(indices):
-            ox, oy = offs[j] if j < len(offs) else (0.0, 0.0)
-            x_vals[idx]      = cx + ox
-            y_vals[idx]      = cy + oy
-            textpos_out[idx] = tpos[j] if j < len(tpos) else "top center"
-            cell_n[idx]      = len(indices)
+    if not style_data:
+        pass  # empty grid
 
-    if style_data:
+    elif "x" in style_data[0] and "y" in style_data[0]:
+        # ── Continuous mode ─────────────────────────────────────────────────
+        x_vals   = [d["x"] for d in style_data]
+        y_vals   = [d["y"] for d in style_data]
+        tickers  = [d["ticker"] for d in style_data]
+        weights  = [d["weight_pct"] for d in style_data]
+        textpos  = [assign_textposition(d["x"], d["y"]) for d in style_data]
+
+        w_min, w_max = min(weights), max(weights)
+        span = w_max - w_min if w_max > w_min else 1.0
+        _MIN_SZ, _MAX_SZ = 14.0, 36.0
+        sizes = [_MIN_SZ + (_MAX_SZ - _MIN_SZ) * (w - w_min) / span for w in weights]
+
+        fig.add_trace(go.Scatter(
+            x=x_vals, y=y_vals,
+            mode="markers+text",
+            marker=dict(
+                size=sizes, color="#2E4057", opacity=0.80,
+                line=dict(width=1, color="white"),
+            ),
+            text=tickers,
+            textfont=dict(size=8, color="#222222"),
+            textposition=textpos,
+            customdata=[[w] for w in weights],
+            hovertemplate="%{text}: %{customdata[0]:.1f}%<extra></extra>",
+        ))
+
+    else:
+        # ── Categorical mode (legacy — preserves all existing tests) ────────
+        cell_items: dict = defaultdict(list)
+        for i, d in enumerate(style_data):
+            key = (_STYLE_X.get(d["style"], 1), _SIZE_Y.get(d["size"], 2))
+            cell_items[key].append(i)
+
+        x_vals      = [0.0] * len(style_data)
+        y_vals      = [0.0] * len(style_data)
+        textpos_out = ["top center"] * len(style_data)
+        cell_n: dict[int, int] = {}
+
+        for (cx, cy), indices in cell_items.items():
+            n = min(len(indices), 4)
+            offs = _CELL_OFFSETS.get(n, [(0.0, 0.0)] * n)
+            tpos = _CELL_TEXTPOS.get(n, ["top center"] * n)
+            for j, idx in enumerate(indices):
+                ox, oy = offs[j] if j < len(offs) else (0.0, 0.0)
+                x_vals[idx]      = cx + ox
+                y_vals[idx]      = cy + oy
+                textpos_out[idx] = tpos[j] if j < len(tpos) else "top center"
+                cell_n[idx]      = len(indices)
+
         weights = [d["weight_pct"] for d in style_data]
         w_min, w_max = min(weights), max(weights)
         span = w_max - w_min if w_max > w_min else 1.0
@@ -183,19 +267,7 @@ def build_style_box_figure(style_data: list[dict]) -> go.Figure:
             min_s  = _CELL_MIN_SIZE.get(capped, 12.0)
             max_s  = _CELL_MAX_SIZE.get(capped, 24.0)
             sizes.append(min_s + (max_s - min_s) * (w - w_min) / span)
-    else:
-        sizes = []
 
-    fig = go.Figure()
-
-    for i in range(4):
-        fig.add_shape(type="line", x0=i - 0.5, x1=i - 0.5, y0=-0.5, y1=2.5,
-                      line=dict(color="#CCCCCC", width=1), layer="below")
-        fig.add_shape(type="line", x0=-0.5, x1=2.5, y0=i - 0.5, y1=i - 0.5,
-                      line=dict(color="#CCCCCC", width=1), layer="below")
-
-    if style_data:
-        # textfont is trace-level in Plotly — split normal (n<4) and crowded (n≥4)
         normal_idx  = [i for i in range(len(style_data)) if cell_n.get(i, 1) < 4]
         crowded_idx = [i for i in range(len(style_data)) if cell_n.get(i, 1) >= 4]
 
@@ -205,8 +277,7 @@ def build_style_box_figure(style_data: list[dict]) -> go.Figure:
                 y=[y_vals[i] for i in normal_idx],
                 mode="markers+text",
                 marker=dict(
-                    size=[sizes[i] for i in normal_idx],
-                    color="#2E4057", opacity=0.80,
+                    size=[sizes[i] for i in normal_idx], color="#2E4057", opacity=0.80,
                     line=dict(width=1, color="white"),
                 ),
                 text=[style_data[i]["ticker"] for i in normal_idx],
@@ -222,8 +293,7 @@ def build_style_box_figure(style_data: list[dict]) -> go.Figure:
                 y=[y_vals[i] for i in crowded_idx],
                 mode="markers+text",
                 marker=dict(
-                    size=[sizes[i] for i in crowded_idx],
-                    color="#2E4057", opacity=0.80,
+                    size=[sizes[i] for i in crowded_idx], color="#2E4057", opacity=0.80,
                     line=dict(width=1, color="white"),
                 ),
                 text=[style_data[i]["ticker"] for i in crowded_idx],

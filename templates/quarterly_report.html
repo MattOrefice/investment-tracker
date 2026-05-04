@@ -290,9 +290,27 @@
   {% if pos.style_box_b64 %}
   <h3>Equity Style Profile</h3>
   <div style="text-align: center; margin: 8px 0 4px;">
-    <img src="data:image/png;base64,{{ pos.style_box_b64 }}" style="max-width: 330px;" alt="Equity Style Profile" />
-    <p style="font-size: 0.78em; color: #666; margin: 2px 0 0;">Morningstar 3&times;3 style box &middot; dot size = portfolio weight</p>
+    <img src="data:image/png;base64,{{ pos.style_box_b64 }}" style="max-width: 480px;" alt="Equity Style Profile" />
+    <p style="font-size: 0.78em; color: #666; margin: 2px 0 0;">
+      Morningstar 3&times;3 style box &middot; x-axis: 4-factor value-growth score (z-scored vs SPY) &middot;
+      y-axis: log market cap &middot; dot size = portfolio weight &middot; US equity sleeves only
+    </p>
   </div>
+
+  {% if pos.non_us %}
+  <div style="margin: 8px 0 0; padding: 8px 12px; background: #F7F7F7; border-left: 3px solid #CCCCCC; font-size: 0.85em;">
+    <strong>Non-US Equity Sleeve</strong>
+    <ul style="margin: 4px 0 4px 16px; padding: 0;">
+    {% for item in pos.non_us %}
+      <li><strong>{{ item.ticker }}</strong> ({{ item.region_label }}) &mdash; {{ "%.1f"|format(item.weight_pct) }}% of portfolio</li>
+    {% endfor %}
+    </ul>
+    <p style="margin: 4px 0 0; color: #666;">
+      Non-US holdings are not directly comparable to US value/growth and market-cap distributions.
+      See Morningstar regional style boxes for international placement methodology.
+    </p>
+  </div>
+  {% endif %}
   {% endif %}
 
   {% else %}
@@ -371,6 +389,23 @@
     <dd>A sleeve is flagged &ldquo;Drift&rdquo; when either threshold is breached: absolute drift
     exceeds 200 bps, or relative drift exceeds 20% of the target weight. Both thresholds must be
     satisfied for a &ldquo;Within&rdquo; status.</dd>
+
+    <dt>Style Box Methodology</dt>
+    <dd><strong>Size (y-axis):</strong> log<sub>10</sub>(weighted-average market cap in $B),
+    additive-shifted so SPY anchors at y=2.0 (Large/Blend centre). Large/Mid boundary ≈ $79B,
+    Mid/Small boundary ≈ $7.9B at current calibration.
+    <strong>Value-growth (x-axis):</strong> four-factor z-score &mdash; book-to-price, earnings-to-price,
+    dividend yield, cash-flow-to-price &mdash; each normalised as fractional deviation from SPY,
+    averaged, then mapped to x with VALUE_SCALE=0.85; SPY/VOO anchors at x=1.0 (Blend centre).
+    Value tilt pulls x below 1.0; growth tilt pushes above.
+    <strong>Simplification disclosure:</strong> this is a 4-factor trailing approximation of
+    Morningstar&rsquo;s proprietary 10-factor score (which also incorporates forward P/E, price-to-sales,
+    and earnings-growth metrics with undisclosed weights). Treat dot positions as directional
+    indicators of factor tilt, not precise Morningstar equivalents.
+    <strong>Universe:</strong> US equity ETFs only (VOO, VTV, SPHQ, AVUV); non-US sleeves
+    (VEA, IEMG) are listed in a separate callout.
+    <strong>Data:</strong> static ETF metadata from fact sheets; refresh cadence stamped
+    by the &ldquo;as_of&rdquo; field in data/etf_metadata.json.</dd>
 
     <dt>Price Data</dt>
     <dd>Daily adjusted-close prices from Yahoo Finance (via yfinance), cached in SQLite.
