@@ -110,8 +110,16 @@ CREATE TABLE IF NOT EXISTS prices (
     FOREIGN KEY (ticker) REFERENCES securities(ticker)
 );
 
-CREATE INDEX IF NOT EXISTS idx_trades_account_date ON trades(account_id, trade_date);
-CREATE INDEX IF NOT EXISTS idx_prices_ticker_date  ON prices(ticker, price_date);
+CREATE TABLE IF NOT EXISTS dividends (
+    ticker   TEXT NOT NULL,
+    ex_date  TEXT NOT NULL,
+    amount   REAL NOT NULL,
+    PRIMARY KEY (ticker, ex_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_trades_account_date  ON trades(account_id, trade_date);
+CREATE INDEX IF NOT EXISTS idx_prices_ticker_date   ON prices(ticker, price_date);
+CREATE INDEX IF NOT EXISTS idx_dividends_ticker_date ON dividends(ticker, ex_date);
 """
 
 def get_connection():

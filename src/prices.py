@@ -123,7 +123,25 @@ def fetch_prices(
     if df.empty:
         raise ValueError(f"No usable price rows after cleaning for '{ticker}'.")
 
+    # Extract dividend events from the API response
+    events = result.get("events") or {}
+    div_rows: list[tuple] = []
+    for ts_key, div_data in (events.get("dividends") or {}).items():
+        try:
+            ex_dt = datetime.fromtimestamp(int(ts_key), tz=timezone.utc).date()
+            amt   = float(div_data.get("amount", 0.0))
+            if amt > 0:
+                div_rows.append((_to_iso(ex_dt), amt))
+        except (ValueError, TypeError, KeyError):
+            pass
+
     with get_connection() as conn:
+        # Auto-migrate: ensure dividends table exists in pre-existing DBs
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS dividends (
+                ticker TEXT NOT NULL, ex_date TEXT NOT NULL, amount REAL NOT NULL,
+                PRIMARY KEY (ticker, ex_date))"""
+        )
         for dt, row in df.iterrows():
             conn.execute(
                 """INSERT OR REPLACE INTO prices (ticker, price_date, close, adj_close)
@@ -134,6 +152,11 @@ def fetch_prices(
                     float(row["close"]),
                     float(row["adj_close"]) if pd.notna(row["adj_close"]) else None,
                 ),
+            )
+        for ex_date, amount in div_rows:
+            conn.execute(
+                "INSERT OR REPLACE INTO dividends (ticker, ex_date, amount) VALUES (?, ?, ?)",
+                (ticker, ex_date, amount),
             )
 
     return df
@@ -191,6 +214,49 @@ def get_prices(
             pass
 
     return cached
+
+
+def get_dividends(ticker: str, start_date: str, end_date: str) -> pd.Series:
+    """
+    Return dividend-per-share amounts indexed by ex_date for ticker in [start_date, end_date].
+    Fetches from Yahoo Finance (and caches) if not already stored.
+    Returns an empty Series if no dividends exist in the range.
+    """
+    end = end_date or date.today().isoformat()
+
+    def _query_cache() -> list:
+        with get_connection() as conn:
+            try:
+                conn.execute(
+                    """CREATE TABLE IF NOT EXISTS dividends (
+                        ticker TEXT NOT NULL, ex_date TEXT NOT NULL, amount REAL NOT NULL,
+                        PRIMARY KEY (ticker, ex_date))"""
+                )
+                return conn.execute(
+                    """SELECT ex_date, amount FROM dividends
+                       WHERE ticker = ? AND ex_date >= ? AND ex_date <= ?
+                       ORDER BY ex_date""",
+                    (ticker, start_date, end),
+                ).fetchall()
+            except Exception:
+                return []
+
+    rows = _query_cache()
+    if not rows:
+        # Prices may be cached but dividends not yet (first run after migration).
+        # Re-fetch prices — fetch_prices now also stores dividends as a side effect.
+        try:
+            fetch_prices(ticker, start_date, end)
+            rows = _query_cache()
+        except Exception:
+            pass
+
+    if not rows:
+        return pd.Series(dtype=float)
+
+    s = pd.Series({r["ex_date"]: float(r["amount"]) for r in rows})
+    s.index = pd.to_datetime(s.index).date  # DatetimeIndex → array of datetime.date
+    return s.sort_index()
 
 
 def bulk_refresh(tickers: list, start_date: str) -> None:

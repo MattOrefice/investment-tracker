@@ -31,6 +31,10 @@ TILT_DESCRIPTORS: dict[str, str] = {
     "US Large Core":          "broad US large-cap beta",
 }
 
+# Bloomberg US Aggregate Bond Index effective duration — used as the FI benchmark.
+# TODO: source this live from Bloomberg/FRED each quarter instead of hardcoding.
+BLOOMBERG_AGG_DURATION_YEARS: float = 6.0
+
 # TODO: source these from ETF fact sheets each quarter instead of hardcoding
 ETF_DURATION: dict[str, float] = {
     "VGIT":  5.5,   # Vanguard Intermediate-Term Treasury (Core FI holding)
@@ -106,22 +110,31 @@ def get_active_tilts(
 
 def get_effective_duration(end_date: str) -> dict:
     """
-    Return portfolio effective duration (years) weighted across FI sleeves.
-
-    Duration is computed using actual portfolio weights, not FI-only weights,
-    so it reflects the impact of FI on the full portfolio.
+    Return effective duration metrics for the FI sleeves.
 
     Returns:
-        duration     — portfolio-level effective duration in years
-        fi_weight_pct — actual FI (Core FI + TIPS + Cash) weight as % of portfolio
+        duration          — portfolio-level contribution (FI weighted by full portfolio)
+        fi_sleeve_duration — duration of the FI sleeve itself (weighted by FI weight only)
+        fi_weight_pct     — actual FI (Core FI + TIPS + Cash) weight as % of portfolio
+        agg_benchmark     — Bloomberg US Agg duration for comparison (BLOOMBERG_AGG_DURATION_YEARS)
     """
     sw = get_sleeve_weights_on_date(end_date)
     if sw.empty:
-        return {"duration": 0.0, "fi_weight_pct": 0.0}
+        return {
+            "duration": 0.0,
+            "fi_sleeve_duration": 0.0,
+            "fi_weight_pct": 0.0,
+            "agg_benchmark": BLOOMBERG_AGG_DURATION_YEARS,
+        }
 
     total_portfolio_wt = float(sw["Actual Weight"].sum())
     if total_portfolio_wt == 0:
-        return {"duration": 0.0, "fi_weight_pct": 0.0}
+        return {
+            "duration": 0.0,
+            "fi_sleeve_duration": 0.0,
+            "fi_weight_pct": 0.0,
+            "agg_benchmark": BLOOMBERG_AGG_DURATION_YEARS,
+        }
 
     weighted_dur = 0.0
     fi_actual_wt = 0.0
@@ -134,12 +147,15 @@ def get_effective_duration(end_date: str) -> dict:
         weighted_dur += actual_wt * duration
         fi_actual_wt  += actual_wt
 
-    eff_duration  = weighted_dur / total_portfolio_wt
-    fi_weight_pct = fi_actual_wt / total_portfolio_wt * 100
+    eff_duration     = weighted_dur / total_portfolio_wt
+    fi_sleeve_dur    = (weighted_dur / fi_actual_wt) if fi_actual_wt > 0 else 0.0
+    fi_weight_pct    = fi_actual_wt / total_portfolio_wt * 100
 
     return {
-        "duration":      round(eff_duration, 1),
-        "fi_weight_pct": round(fi_weight_pct, 1),
+        "duration":           round(eff_duration, 1),
+        "fi_sleeve_duration": round(fi_sleeve_dur, 1),
+        "fi_weight_pct":      round(fi_weight_pct, 1),
+        "agg_benchmark":      BLOOMBERG_AGG_DURATION_YEARS,
     }
 
 
@@ -180,63 +196,63 @@ def get_scenario_triggers(end_date: str, max_scenarios: int = 4) -> list[dict]:
     if _drift_bps("US Large Quality") > 0:
         candidates.append({
             "name":   "Late-cycle slowdown",
-            "text":   "Earnings revisions / late-cycle slowdown — quality tilt rewards margin resilience and balance-sheet strength",
+            "text":   "Earnings revisions signal deteriorating growth — quality tilt rewards margin resilience and balance-sheet strength",
             "weight": abs(_drift_bps("US Large Quality")),
         })
 
     if non_us_drift_pp >= 2.0:
         candidates.append({
             "name":   "USD weakness",
-            "text":   "USD weakness / non-US earnings outperformance — international overweight benefits",
+            "text":   "Non-US earnings outperformance as the dollar reverses — international overweight captures the tailwind",
             "weight": non_us_drift_pp * 100,
         })
 
     if _drift_bps("Cash / SPAXX") >= 100:
         candidates.append({
             "name":   "Volatility shock",
-            "text":   "Volatility shock / risk-off — cash buffer reduces drawdown depth, provides redeployment optionality",
+            "text":   "Risk-off drawdown — cash buffer reduces depth and provides redeployment optionality at lower prices",
             "weight": _drift_bps("Cash / SPAXX"),
         })
 
     if eff_duration < 3.0 and fi_weight_pct < fi_target_pct - 0.5:
         candidates.append({
             "name":   "Higher-for-longer rates",
-            "text":   "Higher-for-longer rates — short-duration positioning benefits as longer-duration peers underperform",
+            "text":   "Short-duration positioning benefits as longer-duration peers underperform in a sticky-rate environment",
             "weight": (3.0 - eff_duration) * 100,
         })
 
     if eff_duration > 5.0 or _drift_bps("Core Fixed Income") > 0:
         candidates.append({
             "name":   "Rate cut acceleration",
-            "text":   "Rate cut acceleration — duration overweight rewards as yields fall",
+            "text":   "Duration overweight rewards as yields fall and bond prices rise faster than the short end",
             "weight": max(eff_duration * 10, _drift_bps("Core Fixed Income")),
         })
 
     if _drift_bps("Real Assets") > 0:
         candidates.append({
             "name":   "Inflation surprise",
-            "text":   "Inflation surprise / commodity rally — real assets tilt benefits",
+            "text":   "Commodity rally and unexpected CPI acceleration — real assets tilt captures upside that equities and bonds miss",
             "weight": _drift_bps("Real Assets"),
         })
 
     if _drift_bps("US Small Cap") > 0:
         candidates.append({
             "name":   "Small-cap rotation",
-            "text":   "Small-cap rotation / cyclical rally — small-cap risk premium captured",
+            "text":   "Cyclical rally and broadening risk appetite — small-cap risk premium and valuation discount get repriced",
             "weight": _drift_bps("US Small Cap"),
         })
 
     if _drift_bps("US Large Value") > 0:
         candidates.append({
             "name":   "Value rotation",
-            "text":   "Value rotation / multiple compression in expensive growth — value tilt rewarded",
+            "text":   "Multiple compression in expensive growth stocks — value tilt rewarded as market re-rates on fundamentals",
             "weight": _drift_bps("US Large Value"),
         })
 
     if _drift_bps("Emerging Markets") > 0:
         candidates.append({
             "name":   "EM-specific catalysts",
-            "text":   "EM-specific catalysts (commodity strength, China stimulus, USD weakness) — EM exposure captures upside",
+            "text":   "Commodity strength, China stimulus, or dollar weakness — EM overweight captures the upside",
             "weight": _drift_bps("Emerging Markets"),
         })
 

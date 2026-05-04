@@ -635,9 +635,14 @@ def _build_positioning_section(end_date: str) -> dict:
     tilts     = get_active_tilts(end_date)
     dur       = get_effective_duration(end_date)
     scenarios = get_scenario_triggers(end_date)
+    fi_dur  = dur["fi_sleeve_duration"]
+    agg_dur = dur["agg_benchmark"]
+    vs_agg  = "below" if fi_dur < agg_dur else "above"
     duration_line = (
-        f"Portfolio effective duration: {dur['duration']} years "
-        f"(computed across FI sleeves; FI weight: {dur['fi_weight_pct']}%)"
+        f"FI sleeve effective duration: {fi_dur} yrs "
+        f"(vs Bloomberg US Agg: {agg_dur} yrs — {vs_agg} benchmark by {abs(fi_dur - agg_dur):.1f} yrs). "
+        f"FI weight: {dur['fi_weight_pct']}% of portfolio. "
+        "Intermediate-Treasury focus keeps duration below the Agg, limiting sensitivity to rate moves."
     )
     return {
         "tilts":         tilts,

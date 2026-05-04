@@ -50,17 +50,23 @@ with col:
 
     st.divider()
 
-    # ── Block B: Portfolio Effective Duration ────────────────────────────────
-    st.subheader("Portfolio Effective Duration")
+    # ── Block B: FI Sleeve Effective Duration ───────────────────────────────
+    st.subheader("FI Sleeve Effective Duration")
     dur = get_effective_duration(end_date)
+    fi_dur   = dur["fi_sleeve_duration"]
+    agg_dur  = dur["agg_benchmark"]
+    delta_yr = round(fi_dur - agg_dur, 1)
     st.metric(
-        label="Effective Duration",
-        value=f"{dur['duration']} yrs",
-        help="Weighted across FI sleeves (Core Fixed Income, TIPS, Cash). "
-             "Reflects duration contribution at the total portfolio level.",
+        label="FI Sleeve Duration",
+        value=f"{fi_dur} yrs",
+        delta=f"{delta_yr:+.1f} yrs vs Bloomberg US Agg ({agg_dur} yrs)",
+        help="Weighted average duration of the FI sleeve (Core Fixed Income, TIPS, Cash), "
+             "using actual sleeve weights only — not diluted by equity.",
     )
     st.caption(
         f"FI weight: {dur['fi_weight_pct']}% of portfolio. "
+        "Intermediate-Treasury focus keeps duration below the Agg benchmark, limiting rate sensitivity. "
+        "Duration also flows through equity via discount-rate effects — it's a whole-portfolio consideration. "
         "Duration sourced from static ETF fact-sheet values — TODO: pull live."
     )
 
