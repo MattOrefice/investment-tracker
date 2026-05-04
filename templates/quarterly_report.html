@@ -318,7 +318,93 @@
   {% endif %}
 </section>
 
-{# ── Page 6: Macro Context ──────────────────────────────────────────────────── #}
+{# ── Page 6: Factor Profile ─────────────────────────────────────────────────── #}
+<section>
+  <h2>Factor Profile</h2>
+  <h3>Fama-French 5-Factor Regression</h3>
+
+  {% if has_trades and factor %}
+
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Factor</th>
+        <th class="num">Loading (&beta;)</th>
+        <th class="num">t-stat</th>
+        <th class="num">p-value</th>
+        <th class="num">Sig.</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Alpha (annualized)</strong></td>
+        <td class="num">{{ factor.alpha_annual_str }}</td>
+        <td class="num">{{ factor.t_alpha_str }}</td>
+        <td class="num">{{ factor.p_alpha_str }}</td>
+        <td class="num">{{ factor.sig_alpha }}</td>
+      </tr>
+      {% for row in factor.rows %}
+      <tr class="{{ loop.cycle('', 'row-even') }}">
+        <td>{{ row.factor }}</td>
+        <td class="num">{{ row.beta }}</td>
+        <td class="num">{{ row.tstat }}</td>
+        <td class="num">{{ row.pvalue }}</td>
+        <td class="num">{{ row.significance }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <table class="metric-table" style="margin-top: 12px;">
+    <tr>
+      <td class="metric-card">
+        <span class="label">R&sup2;</span>
+        <span class="value">{{ factor.r_squared }}</span>
+      </td>
+      <td class="metric-card">
+        <span class="label">Adj. R&sup2;</span>
+        <span class="value">{{ factor.adj_r_squared }}</span>
+      </td>
+      <td class="metric-card">
+        <span class="label">Observations</span>
+        <span class="value">{{ factor.T }}</span>
+      </td>
+      <td class="metric-card">
+        <span class="label">NW Lags</span>
+        <span class="value">{{ factor.nw_lags }}</span>
+      </td>
+    </tr>
+  </table>
+  <p class="muted" style="margin-top: 4px;">Sample window: {{ factor.sample_window }}</p>
+
+  <div class="bf-commentary" style="margin-top: 10px;">
+    {% for sentence in factor.prose %}
+    <p style="margin: 4px 0;">{{ sentence }}</p>
+    {% endfor %}
+  </div>
+
+  <div class="bf-commentary" style="margin-top: 8px;">
+    <p class="bf-comm-title">Methodology Disclosure</p>
+    <ul class="bf-comm-list">
+      {% for note in factor.methodology_notes %}
+      <li>{{ note }}</li>
+      {% endfor %}
+    </ul>
+    <p class="muted" style="margin: 4px 0 0; font-size: 0.80em;">
+      * p &lt; 0.10 &nbsp;&nbsp; ** p &lt; 0.05 &nbsp;&nbsp; *** p &lt; 0.01
+    </p>
+  </div>
+
+  {% else %}
+  <div class="empty-banner">
+    Factor data unavailable — requires at least 30 trading days of aligned portfolio
+    and Fama-French returns. Section populates after sufficient portfolio history
+    and a successful Ken French data fetch.
+  </div>
+  {% endif %}
+</section>
+
+{# ── Page 7: Macro Context ──────────────────────────────────────────────────── #}
 <section>
   <h2>Macro Context</h2>
 
@@ -363,7 +449,7 @@
   data window. HY spread data available from May 2023 only due to FRED licensing restrictions.</p>
 </section>
 
-{# ── Page 6: Methodology ────────────────────────────────────────────────────── #}
+{# ── Page 8: Methodology ────────────────────────────────────────────────────── #}
 <section>
   <h2>Methodology &amp; Data Sources</h2>
 
@@ -406,6 +492,16 @@
     (VEA, IEMG) are listed in a separate callout.
     <strong>Data:</strong> static ETF metadata from fact sheets; refresh cadence stamped
     by the &ldquo;as_of&rdquo; field in data/etf_metadata.json.</dd>
+
+    <dt>Fama-French 5-Factor Regression</dt>
+    <dd>Daily portfolio excess returns (R<sub>p</sub> &minus; RF) regressed on Mkt-RF, SMB, HML,
+    RMW, and CMA from the Ken French Data Library (Dartmouth). Standard errors are Newey-West
+    HAC-adjusted with lag L = floor(4 &times; (T/100)<sup>2/9</sup>), where T is the number
+    of aligned trading-day observations. Alpha is annualized as &alpha;<sub>daily</sub> &times; 252.
+    The regression sample is truncated to the overlap window between portfolio returns and available
+    factor data; Ken French publishes with approximately a 1-month lag. FF factors are calibrated
+    on US equities; international and fixed income sleeves contribute primarily to unexplained
+    residual variance. No Carhart momentum factor is included.</dd>
 
     <dt>Price Data</dt>
     <dd>Daily adjusted-close prices from Yahoo Finance (via yfinance), cached in SQLite.

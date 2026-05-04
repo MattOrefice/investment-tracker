@@ -21,6 +21,10 @@ import plotly.io as pio
 from src.attribution import brinson_fachler_period
 from src.benchmarks import get_custom_blended_series, get_sp500_series
 from src.db import get_connection
+from src.factors import (
+    build_factor_methodology_notes, build_factor_prose,
+    run_ff5_regression, sig_marker,
+)
 from src.holdings import get_portfolio_value_series, get_sleeve_weights_on_date
 from src.macro import get_series, percentile
 from src.positioning import (
@@ -531,6 +535,57 @@ def _build_attribution_section(start_date: str, end_date: str) -> dict:
     }
 
 
+def _build_factor_section(end_date: str) -> Optional[dict]:
+    """
+    Run FF5 regression from inception through end_date and format for the template.
+
+    Returns None on failure (network error, insufficient data) so the template
+    renders a no-data banner rather than crashing the PDF generator.
+    """
+    inception = _inception_date()
+    try:
+        res = run_ff5_regression(inception, end_date)
+    except Exception:
+        logging.exception("FF5 regression failed — factor section omitted from PDF")
+        return None
+    if res is None:
+        return None
+
+    def _fmt_date(iso: str) -> str:
+        d = date.fromisoformat(iso)
+        return f"{d.strftime('%B')} {d.day}, {d.year}"
+
+    rows = []
+    for factor in ["Mkt-RF", "SMB", "HML", "RMW", "CMA"]:
+        p = res["p_values"][factor]
+        rows.append({
+            "factor":       factor,
+            "beta":         f"{res['betas'][factor]:.3f}",
+            "tstat":        f"{res['t_stats'][factor]:.2f}",
+            "pvalue":       f"{p:.3f}",
+            "significance": sig_marker(p),
+        })
+
+    p_alpha = res["p_alpha"]
+    alpha_bps = res["alpha_annual_bps"]
+
+    return {
+        "rows":             rows,
+        "alpha_annual_str": f"{alpha_bps:+.0f} bps/yr",
+        "t_alpha_str":      f"{res['t_alpha']:.2f}",
+        "p_alpha_str":      f"{p_alpha:.3f}",
+        "sig_alpha":        sig_marker(p_alpha),
+        "r_squared":        f"{res['r_squared']:.3f}",
+        "adj_r_squared":    f"{res['adj_r_squared']:.3f}",
+        "T":                res["T"],
+        "nw_lags":          res["nw_lags"],
+        "sample_window":    f"{_fmt_date(res['sample_start'])} — {_fmt_date(res['sample_end'])}",
+        "prose":            build_factor_prose(res),
+        "methodology_notes": build_factor_methodology_notes(res),
+        "_raw":             res,
+    }
+
+
 def _build_macro_section() -> dict:
     def _pct_str(series, val):
         try:
@@ -685,6 +740,7 @@ def generate_quarterly_report(
     perf_data   = _build_performance_section(start_date, end_date) if has_trades else None
     attr_data   = _build_attribution_section(start_date, end_date) if has_trades else None
     pos_data    = _build_positioning_section(end_date)             if has_trades else None
+    factor_data = _build_factor_section(end_date)                 if has_trades else None
     macro_data  = _build_macro_section()
     thesis_data = _build_thesis_section(start_date, end_date)
 
@@ -708,6 +764,7 @@ def generate_quarterly_report(
         perf           = perf_data,
         attr           = attr_data,
         pos            = pos_data,
+        factor         = factor_data,
         macro          = macro_data,
         thesis         = thesis_data,
     )

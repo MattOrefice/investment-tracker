@@ -16,6 +16,9 @@ data/tracker.db
 # Generated reports — local artifacts, not committed
 data/reports/
 
+# Factor data cache — fetched at runtime from Ken French Data Library
+data/ff_factors.csv
+
 # Editor / tool dirs
 .cursor/
 .claude/
