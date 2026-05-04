@@ -72,13 +72,24 @@ ETF_STYLE_BOX: dict[str, tuple[str, str]] = {
 _STYLE_X: dict[str, int] = {"Value": 0, "Blend": 1, "Growth": 2}
 _SIZE_Y:  dict[str, int] = {"Large": 2, "Mid": 1, "Small": 0}
 
-# Within-cell dot offsets for n simultaneous ETFs (normalized to ±0.20 cell units)
+# Within-cell dot layout for n simultaneous ETFs.
+# Offsets in cell-coordinate units (each cell spans 1.0 unit).
+# Chart is 320px wide / 3 cells = 107px per unit (x); 240px / 3 = 80px per unit (y).
+# n=4: ±0.22 x (47px c-t-c) / ±0.20 y (32px c-t-c); max dot size 24px → min gap 23px x / 8px y.
 _CELL_OFFSETS: dict[int, list[tuple[float, float]]] = {
     1: [(0.0,   0.0)],
-    2: [(-0.18, 0.0),  (0.18,  0.0)],
-    3: [(-0.20, 0.0),  (0.0,   0.0),  (0.20, 0.0)],
-    4: [(-0.17, 0.13), (0.17,  0.13), (-0.17, -0.13), (0.17, -0.13)],
+    2: [(-0.22, 0.0),  (0.22,  0.0)],
+    3: [(-0.22, 0.0),  (0.0,   0.0),  (0.22,  0.0)],
+    4: [(-0.22, 0.20), (0.22,  0.20), (-0.22, -0.20), (0.22, -0.20)],
 }
+_CELL_TEXTPOS: dict[int, list[str]] = {
+    1: ["top center"],
+    2: ["top center",    "top center"],
+    3: ["top center",    "top center",    "top center"],
+    4: ["top center",    "top center",    "bottom center", "bottom center"],
+}
+# Per-cell maximum dot diameter (px) to prevent overlap in crowded cells.
+_CELL_MAX_SIZE: dict[int, float] = {1: 50.0, 2: 38.0, 3: 30.0, 4: 24.0}
 
 
 # ── Style box helpers ──────────────────────────────────────────────────────
@@ -129,28 +140,41 @@ def get_style_box_data(date_str: str) -> list[dict]:
 def build_style_box_figure(style_data: list[dict]) -> go.Figure:
     """
     Morningstar 3×3 style grid. Dot size ∝ portfolio weight.
-    Multiple ETFs in the same cell are spread with pre-computed offsets.
+    Multiple ETFs in the same cell are spread using _CELL_OFFSETS; dot sizes
+    are capped per cell population (_CELL_MAX_SIZE) to prevent overlap.
+    Bottom-row dots in 4-ETF cells use 'bottom center' label placement to
+    avoid collision with the top-row dots above them.
     """
     cell_items: dict = defaultdict(list)
     for i, d in enumerate(style_data):
         key = (_STYLE_X.get(d["style"], 1), _SIZE_Y.get(d["size"], 2))
         cell_items[key].append(i)
 
-    x_vals = [0.0] * len(style_data)
-    y_vals = [0.0] * len(style_data)
+    x_vals      = [0.0] * len(style_data)
+    y_vals      = [0.0] * len(style_data)
+    textpos_out = ["top center"] * len(style_data)
+    cell_n      = {}  # style_data index → cell population count
+
     for (cx, cy), indices in cell_items.items():
         n = min(len(indices), 4)
         offs = _CELL_OFFSETS.get(n, [(0.0, 0.0)] * n)
+        tpos = _CELL_TEXTPOS.get(n, ["top center"] * n)
         for j, idx in enumerate(indices):
             ox, oy = offs[j] if j < len(offs) else (0.0, 0.0)
-            x_vals[idx] = cx + ox
-            y_vals[idx] = cy + oy
+            x_vals[idx]      = cx + ox
+            y_vals[idx]      = cy + oy
+            textpos_out[idx] = tpos[j] if j < len(tpos) else "top center"
+            cell_n[idx]      = len(indices)
 
     if style_data:
         weights = [d["weight_pct"] for d in style_data]
         w_min, w_max = min(weights), max(weights)
         span = w_max - w_min if w_max > w_min else 1.0
-        sizes = [12 + 38 * (w - w_min) / span for w in weights]
+        sizes = []
+        for i, w in enumerate(weights):
+            n      = cell_n.get(i, 1)
+            max_s  = _CELL_MAX_SIZE.get(min(n, 4), 24.0)
+            sizes.append(12.0 + (max_s - 12.0) * (w - w_min) / span)
     else:
         sizes = []
 
@@ -172,7 +196,7 @@ def build_style_box_figure(style_data: list[dict]) -> go.Figure:
             ),
             text=[d["ticker"] for d in style_data],
             textfont=dict(size=8, color="#222222"),
-            textposition="top center",
+            textposition=textpos_out,
             customdata=[[d["weight_pct"]] for d in style_data],
             hovertemplate="%{text}: %{customdata[0]:.1f}%<extra></extra>",
         ))

@@ -235,21 +235,27 @@ def _bm_period_return(series: pd.Series, period: str) -> float:
 # ── Section builders ──────────────────────────────────────────────────────────
 
 def _build_executive_summary(start_date: str, end_date: str) -> dict:
-    # Use inception-to-end series so all DRIP dividends are captured, then
-    # slice to the report period for portfolio_twr — avoids v_start=$0 on
-    # New Year's Day when the period-scoped series has no prior trading day.
-    pv_since_inception = get_portfolio_value_series(_inception_date(), end_date)
+    # All three series (portfolio, SP500, blended) are fetched from inception
+    # so that holiday gaps (e.g. New Year's Day) are forward-filled from the
+    # prior trading day rather than back-filled from the next.  Each is then
+    # sliced to the report period before computing returns — consistent with
+    # how _build_performance_section computes period returns.
+    inception = _inception_date()
+
+    pv_since_inception = get_portfolio_value_series(inception, end_date)
     current_val = float(pv_since_inception.iloc[-1]) if not pv_since_inception.empty else 0.0
 
     pv = pv_since_inception[pv_since_inception.index >= pd.Timestamp(start_date)]
     cf = pd.Series(0.0, index=pv.index)
     portfolio_twr = twr_daily_linked(pv, cf) if len(pv) >= 2 else 0.0
 
-    sp = get_sp500_series(start_date, end_date)
-    sp_return = float(sp.iloc[-1] / sp.iloc[0] - 1) if len(sp) >= 2 else 0.0
+    sp_full   = get_sp500_series(inception, end_date)
+    sp_period = sp_full[sp_full.index >= pd.Timestamp(start_date)]
+    sp_return = float(sp_period.iloc[-1] / sp_period.iloc[0] - 1) if len(sp_period) >= 2 else 0.0
 
-    bl = get_custom_blended_series(start_date, end_date)
-    bl_return = float(bl.iloc[-1] / bl.iloc[0] - 1) if len(bl) >= 2 else 0.0
+    bl_full   = get_custom_blended_series(inception, end_date)
+    bl_period = bl_full[bl_full.index >= pd.Timestamp(start_date)]
+    bl_return = float(bl_period.iloc[-1] / bl_period.iloc[0] - 1) if len(bl_period) >= 2 else 0.0
 
     alpha_sp_bps = (portfolio_twr - sp_return) * 10_000
     alpha_bl_bps = (portfolio_twr - bl_return) * 10_000
