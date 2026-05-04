@@ -210,7 +210,7 @@ def test_build_style_box_figure_returns_figure():
     ]
     fig = build_style_box_figure(data)
     assert isinstance(fig, go.Figure)
-    assert len(fig.data) == 1
+    assert len(fig.data) >= 1
     assert fig.data[0].x is not None
 
 
@@ -233,6 +233,35 @@ def test_build_style_box_figure_dot_sizes_scaled():
     voo_idx  = list(fig.data[0].text).index("VOO")
     avuv_idx = list(fig.data[0].text).index("AVUV")
     assert sizes[voo_idx] > sizes[avuv_idx], "Larger weight should produce larger dot"
+
+
+def test_build_style_box_figure_4dot_cell_distinct_coordinates():
+    """Four ETFs in the same cell must produce 4 distinct (x,y) points, all within the cell."""
+    data = [
+        {"ticker": "VOO",  "size": "Large", "style": "Blend", "weight_pct": 16.0},
+        {"ticker": "SPHQ", "size": "Large", "style": "Blend", "weight_pct": 14.0},
+        {"ticker": "VEA",  "size": "Large", "style": "Blend", "weight_pct": 19.0},
+        {"ticker": "IEMG", "size": "Large", "style": "Blend", "weight_pct":  8.0},
+        {"ticker": "VTV",  "size": "Large", "style": "Value", "weight_pct":  8.0},
+        {"ticker": "AVUV", "size": "Small", "style": "Value", "weight_pct":  7.0},
+    ]
+    fig = build_style_box_figure(data)
+
+    all_x, all_y = [], []
+    for trace in fig.data:
+        all_x.extend(list(trace.x))
+        all_y.extend(list(trace.y))
+
+    # Large/Blend center: x=1, y=2 — all 4 dots must be within the cell boundary
+    lb_points = [(round(x, 6), round(y, 6))
+                 for x, y in zip(all_x, all_y)
+                 if abs(x - 1) < 0.5 and abs(y - 2) < 0.5]
+    assert len(lb_points) == 4, f"Expected 4 dots in Large/Blend, got {len(lb_points)}"
+    assert len(set(lb_points)) == 4, "All 4 Large/Blend dots must have distinct (x, y) coordinates"
+
+    for x, y in lb_points:
+        assert 0.5 <= x <= 1.5, f"x={x} out of Large/Blend cell x-range [0.5, 1.5]"
+        assert 1.5 <= y <= 2.5, f"y={y} out of Large/Blend cell y-range [1.5, 2.5]"
 
 
 def test_get_style_box_data_empty_portfolio():

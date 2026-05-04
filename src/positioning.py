@@ -75,21 +75,29 @@ _SIZE_Y:  dict[str, int] = {"Large": 2, "Mid": 1, "Small": 0}
 # Within-cell dot layout for n simultaneous ETFs.
 # Offsets in cell-coordinate units (each cell spans 1.0 unit).
 # Chart is 320px wide / 3 cells = 107px per unit (x); 240px / 3 = 80px per unit (y).
-# n=4: ±0.22 x (47px c-t-c) / ±0.20 y (32px c-t-c); max dot size 24px → min gap 23px x / 8px y.
+#
+# n=4 geometry: ±0.22 x (47px c-t-c), ±0.22 y (35px c-t-c).
+#   max dot 28px → x-gap 19px / y-gap 7px.
+#   top dots at y=2.22: dot top at y=2.22+14/80=2.395, 8px clearance from plot ceiling (y=2.5).
+#   Labels: "middle center" white text inside dots — no label escapes the cell regardless of y.
 _CELL_OFFSETS: dict[int, list[tuple[float, float]]] = {
     1: [(0.0,   0.0)],
     2: [(-0.22, 0.0),  (0.22,  0.0)],
     3: [(-0.22, 0.0),  (0.0,   0.0),  (0.22,  0.0)],
-    4: [(-0.22, 0.20), (0.22,  0.20), (-0.22, -0.20), (0.22, -0.20)],
+    4: [(-0.22, 0.22), (0.22,  0.22), (-0.22, -0.22), (0.22, -0.22)],
 }
 _CELL_TEXTPOS: dict[int, list[str]] = {
     1: ["top center"],
     2: ["top center",    "top center"],
     3: ["top center",    "top center",    "top center"],
-    4: ["top center",    "top center",    "bottom center", "bottom center"],
+    4: ["middle center", "middle center", "middle center", "middle center"],
 }
-# Per-cell maximum dot diameter (px) to prevent overlap in crowded cells.
-_CELL_MAX_SIZE: dict[int, float] = {1: 50.0, 2: 38.0, 3: 30.0, 4: 24.0}
+# Per-cell dot size range (px).  Minimum for n=4 is 22px so a 4-char ticker
+# fits inside at font size 6 (~15px wide).  Textfont differs by cell population
+# (see build_style_box_figure) so crowded cells use white text rendered inside
+# the dot rather than dark text outside it.
+_CELL_MIN_SIZE: dict[int, float] = {1: 12.0, 2: 18.0, 3: 16.0, 4: 22.0}
+_CELL_MAX_SIZE: dict[int, float] = {1: 50.0, 2: 38.0, 3: 30.0, 4: 28.0}
 
 
 # ── Style box helpers ──────────────────────────────────────────────────────
@@ -141,9 +149,10 @@ def build_style_box_figure(style_data: list[dict]) -> go.Figure:
     """
     Morningstar 3×3 style grid. Dot size ∝ portfolio weight.
     Multiple ETFs in the same cell are spread using _CELL_OFFSETS; dot sizes
-    are capped per cell population (_CELL_MAX_SIZE) to prevent overlap.
-    Bottom-row dots in 4-ETF cells use 'bottom center' label placement to
-    avoid collision with the top-row dots above them.
+    are bounded by _CELL_MIN_SIZE/_CELL_MAX_SIZE per cell population.
+    Cells with ≥4 ETFs render labels as white text inside each dot
+    ("middle center") so no label can clip above the plot ceiling.
+    This requires two separate scatter traces because textfont is trace-level.
     """
     cell_items: dict = defaultdict(list)
     for i, d in enumerate(style_data):
@@ -172,9 +181,10 @@ def build_style_box_figure(style_data: list[dict]) -> go.Figure:
         span = w_max - w_min if w_max > w_min else 1.0
         sizes = []
         for i, w in enumerate(weights):
-            n      = cell_n.get(i, 1)
-            max_s  = _CELL_MAX_SIZE.get(min(n, 4), 24.0)
-            sizes.append(12.0 + (max_s - 12.0) * (w - w_min) / span)
+            capped = min(cell_n.get(i, 1), 4)
+            min_s  = _CELL_MIN_SIZE.get(capped, 12.0)
+            max_s  = _CELL_MAX_SIZE.get(capped, 24.0)
+            sizes.append(min_s + (max_s - min_s) * (w - w_min) / span)
     else:
         sizes = []
 
@@ -187,19 +197,43 @@ def build_style_box_figure(style_data: list[dict]) -> go.Figure:
                       line=dict(color="#CCCCCC", width=1), layer="below")
 
     if style_data:
-        fig.add_trace(go.Scatter(
-            x=x_vals, y=y_vals,
-            mode="markers+text",
-            marker=dict(
-                size=sizes, color="#2E4057", opacity=0.80,
-                line=dict(width=1, color="white"),
-            ),
-            text=[d["ticker"] for d in style_data],
-            textfont=dict(size=8, color="#222222"),
-            textposition=textpos_out,
-            customdata=[[d["weight_pct"]] for d in style_data],
-            hovertemplate="%{text}: %{customdata[0]:.1f}%<extra></extra>",
-        ))
+        # textfont is trace-level in Plotly — split normal (n<4) and crowded (n≥4)
+        normal_idx  = [i for i in range(len(style_data)) if cell_n.get(i, 1) < 4]
+        crowded_idx = [i for i in range(len(style_data)) if cell_n.get(i, 1) >= 4]
+
+        if normal_idx:
+            fig.add_trace(go.Scatter(
+                x=[x_vals[i] for i in normal_idx],
+                y=[y_vals[i] for i in normal_idx],
+                mode="markers+text",
+                marker=dict(
+                    size=[sizes[i] for i in normal_idx],
+                    color="#2E4057", opacity=0.80,
+                    line=dict(width=1, color="white"),
+                ),
+                text=[style_data[i]["ticker"] for i in normal_idx],
+                textfont=dict(size=8, color="#222222"),
+                textposition=[textpos_out[i] for i in normal_idx],
+                customdata=[[style_data[i]["weight_pct"]] for i in normal_idx],
+                hovertemplate="%{text}: %{customdata[0]:.1f}%<extra></extra>",
+            ))
+
+        if crowded_idx:
+            fig.add_trace(go.Scatter(
+                x=[x_vals[i] for i in crowded_idx],
+                y=[y_vals[i] for i in crowded_idx],
+                mode="markers+text",
+                marker=dict(
+                    size=[sizes[i] for i in crowded_idx],
+                    color="#2E4057", opacity=0.80,
+                    line=dict(width=1, color="white"),
+                ),
+                text=[style_data[i]["ticker"] for i in crowded_idx],
+                textfont=dict(size=6, color="white"),
+                textposition=[textpos_out[i] for i in crowded_idx],
+                customdata=[[style_data[i]["weight_pct"]] for i in crowded_idx],
+                hovertemplate="%{text}: %{customdata[0]:.1f}%<extra></extra>",
+            ))
 
     fig.update_layout(
         xaxis=dict(
