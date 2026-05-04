@@ -24,6 +24,7 @@ try:
     from src.db import get_connection
     from src.holdings import get_portfolio_value_series, get_sleeve_weights_on_date
     from src.macro import get_series, percentile
+    from src.positioning import get_active_tilts, get_effective_duration, get_scenario_triggers
     from src.returns import period_return, twr_daily_linked
     from src.shiller import current_cape, get_cape_series
 except ImportError:
@@ -32,6 +33,7 @@ except ImportError:
     from db import get_connection
     from holdings import get_portfolio_value_series, get_sleeve_weights_on_date
     from macro import get_series, percentile
+    from positioning import get_active_tilts, get_effective_duration, get_scenario_triggers
     from returns import period_return, twr_daily_linked
     from shiller import current_cape, get_cape_series
 
@@ -628,6 +630,22 @@ def _build_thesis_section(start_date: str, end_date: str) -> dict:
     return {"theses": theses, "trades": trades}
 
 
+def _build_positioning_section(end_date: str) -> dict:
+    """Build the Active Positioning section from live portfolio state."""
+    tilts     = get_active_tilts(end_date)
+    dur       = get_effective_duration(end_date)
+    scenarios = get_scenario_triggers(end_date)
+    duration_line = (
+        f"Portfolio effective duration: {dur['duration']} years "
+        f"(computed across FI sleeves; FI weight: {dur['fi_weight_pct']}%)"
+    )
+    return {
+        "tilts":         tilts,
+        "duration_line": duration_line,
+        "scenarios":     scenarios,
+    }
+
+
 # ── Main public function ──────────────────────────────────────────────────────
 
 def generate_quarterly_report(
@@ -652,6 +670,7 @@ def generate_quarterly_report(
     hold_data   = _build_holdings_section(end_date)              if has_trades else {"rows": [], "chart_b64": None}
     perf_data   = _build_performance_section(start_date, end_date) if has_trades else None
     attr_data   = _build_attribution_section(start_date, end_date) if has_trades else None
+    pos_data    = _build_positioning_section(end_date)             if has_trades else None
     macro_data  = _build_macro_section()
     thesis_data = _build_thesis_section(start_date, end_date)
 
@@ -674,6 +693,7 @@ def generate_quarterly_report(
         hold           = hold_data,
         perf           = perf_data,
         attr           = attr_data,
+        pos            = pos_data,
         macro          = macro_data,
         thesis         = thesis_data,
     )
