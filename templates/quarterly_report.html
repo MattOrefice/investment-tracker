@@ -413,7 +413,85 @@
   {% endif %}
 </section>
 
-{# ── Page 7: Macro Context ──────────────────────────────────────────────────── #}
+{# ── Page 7: Benchmark Attribution ─────────────────────────────────────────── #}
+<section>
+  <h2>Benchmark Attribution</h2>
+  <h3>Portfolio vs Custom Blended SAA &mdash; R<sub>p</sub> &minus; RF ~ (R<sub>b</sub> &minus; RF) + HML + SMB + RMW</h3>
+
+  {% if has_trades and bench_attr %}
+
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Factor</th>
+        <th class="num">Loading (&beta;)</th>
+        <th class="num">t-stat</th>
+        <th class="num">p-value</th>
+        <th class="num">Sig.</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in bench_attr.rows %}
+      <tr class="{{ loop.cycle('', 'row-even') }}">
+        <td>{{ row.factor }}</td>
+        <td class="num">{{ row.beta }}</td>
+        <td class="num">{{ row.tstat }}</td>
+        <td class="num">{{ row.pvalue }}</td>
+        <td class="num">{{ row.significance }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <table class="metric-table" style="margin-top: 8px;">
+    <tr>
+      <td class="metric-card">
+        <span class="label">R&sup2;</span>
+        <span class="value">{{ bench_attr.r_squared }}</span>
+      </td>
+      <td class="metric-card">
+        <span class="label">Adj. R&sup2;</span>
+        <span class="value">{{ bench_attr.adj_r_squared }}</span>
+      </td>
+      <td class="metric-card">
+        <span class="label">Observations</span>
+        <span class="value">{{ bench_attr.T }}</span>
+      </td>
+      <td class="metric-card">
+        <span class="label">NW Lags</span>
+        <span class="value">{{ bench_attr.nw_lags }}</span>
+      </td>
+    </tr>
+  </table>
+  <p class="muted" style="margin-top: 4px; margin-bottom: 12px;">Sample window: {{ bench_attr.sample_window }}</p>
+
+  <div class="bf-commentary" style="margin-top: 10px;">
+    {% for sentence in bench_attr.prose %}
+    <p style="margin: 4px 0;">{{ sentence }}</p>
+    {% endfor %}
+  </div>
+
+  <div class="bf-commentary" style="margin-top: 8px;">
+    <p class="bf-comm-title">Methodology Disclosure</p>
+    <ul class="bf-comm-list">
+      {% for note in bench_attr.methodology_notes %}
+      <li>{{ note }}</li>
+      {% endfor %}
+    </ul>
+    <p class="muted" style="margin: 4px 0 0; font-size: 0.80em;">
+      * p &lt; 0.10 &nbsp;&nbsp; ** p &lt; 0.05 &nbsp;&nbsp; *** p &lt; 0.01
+    </p>
+  </div>
+
+  {% else %}
+  <div class="empty-banner">
+    Benchmark attribution regression unavailable &mdash; requires at least 30 aligned trading
+    days of portfolio returns, benchmark returns, and Fama-French factor data.
+  </div>
+  {% endif %}
+</section>
+
+{# ── Page 8: Macro Context ──────────────────────────────────────────────────── #}
 <section>
   <h2>Macro Context</h2>
 
@@ -458,7 +536,7 @@
   data window. HY spread data available from May 2023 only due to FRED licensing restrictions.</p>
 </section>
 
-{# ── Page 8: Methodology ────────────────────────────────────────────────────── #}
+{# ── Page 9: Methodology ────────────────────────────────────────────────────── #}
 <section>
   <h2>Methodology &amp; Data Sources</h2>
 
@@ -501,6 +579,14 @@
     (VEA, IEMG) are listed in a separate callout.
     <strong>Data:</strong> static ETF metadata from fact sheets; refresh cadence stamped
     by the &ldquo;as_of&rdquo; field in data/etf_metadata.json.</dd>
+
+    <dt>Benchmark Attribution Regression</dt>
+    <dd>Model: (R<sub>p</sub> &minus; RF) ~ (R<sub>b</sub> &minus; RF) + HML + SMB + RMW,
+    where R<sub>b</sub> is the daily custom blended SAA benchmark return. The intercept is
+    the active return after controlling for benchmark beta and style tilts &mdash; the
+    institutional alpha definition used by PRINCO and JPM IDD. CMA is excluded; for a
+    passive/semi-passive implementation it primarily captures ETF-level capex differences
+    rather than a deliberate active tilt. Standard errors: Newey-West HAC.</dd>
 
     <dt>Fama-French 5-Factor Regression</dt>
     <dd>Per-sleeve decomposition: each equity sleeve is regressed against its own

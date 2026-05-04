@@ -38,7 +38,8 @@ import requests
 from statsmodels.regression.linear_model import OLS
 from statsmodels.tools import add_constant
 
-from src.holdings import get_holdings_on_date
+from src.benchmarks import get_custom_blended_series
+from src.holdings import get_holdings_on_date, get_portfolio_value_series
 from src.prices import get_prices
 
 _ROOT = Path(__file__).resolve().parent.parent
@@ -64,7 +65,8 @@ _CACHE_PATH = _FACTOR_CONFIG["us"]["cache"]
 _REFRESH_CACHE_DAYS = 7   # re-fetch if cache mtime exceeds this many days
 _LAG_THRESHOLD_DAYS = 35  # re-fetch if most recent factor date is this far behind today
 
-_FF5_FACTORS = ["Mkt-RF", "SMB", "HML", "RMW", "CMA"]
+_FF5_FACTORS   = ["Mkt-RF", "SMB", "HML", "RMW", "CMA"]
+_BENCH_FACTORS = ["Bench-RF", "HML", "SMB", "RMW"]
 
 # ── Equity sleeve definitions ──────────────────────────────────────────────────
 
@@ -81,8 +83,19 @@ _SLEEVES = {
         "label":   "US Equity Sleeve",
         "tickers": ["VOO", "VTV", "SPHQ", "AVUV"],
         "region":  "us",
-        # Proportional SAA target weights; used instead of inception market values
-        # so the regression requires no database access.
+        # Phase 8g — Conditions that require refreshing these embedded weights:
+        #   1. SAA target weight changes — Phase 1 weights are locked; any SAA review
+        #      must also update _SAA_US above and reseed the asset_classes table.
+        #   2. A holding is added to or removed from this sleeve — update _SAA_US keys
+        #      to match and re-run the seeding scripts.
+        #   3. Portfolio age reaches ~3+ years — cumulative drift from the SAA launch
+        #      weights may then be large enough that inception-market-value weighting
+        #      (the DB-backed fallback path) would produce meaningfully different factor
+        #      loadings. Revisit at the Phase 1 target reset review.
+        # Assumption: buy-and-hold from a single-day initialization keeps actual weights
+        # close to SAA proportions for the early years. The regression result is not
+        # sensitive to ±5% weight deviations because it measures daily return structure,
+        # not cumulative wealth attribution.
         "weights": {t: w / _SAA_US_TOTAL for t, w in _SAA_US.items()},
     },
     "developed_exus": {
@@ -582,4 +595,205 @@ def build_factor_methodology_notes(results: dict) -> list[str]:
         "Fixed income (VGIT, SCHP) and real assets (VNQ, PDBC) are excluded; equity "
         "factor models do not span those asset classes. Term/credit factor models for FI "
         "and real-asset factor proxies are noted as future extensions.",
+    ]
+
+
+# ── Benchmark-relative attribution regression ─────────────────────────────────
+
+def _ols_benchmark(R_p_excess: pd.Series, factors: pd.DataFrame) -> dict:
+    """
+    OLS regression with NW-HAC for the benchmark-relative attribution model.
+
+    R_p_excess : daily portfolio excess returns (R_p − RF), decimal, DatetimeIndex
+    factors    : DataFrame with columns Bench-RF, HML, SMB, RMW, decimal
+
+    The model is: R_p − RF ~ const + β_b*(R_b − RF) + β_hml*HML + β_smb*SMB + β_rmw*RMW
+    The intercept is "active return after controlling for benchmark beta and style tilts"
+    — the institutional alpha definition used by PRINCO, JPM IDD, and similar.
+
+    Alpha is annualized as alpha_daily * 252.
+    Both HAC and plain OLS standard errors are returned.
+    """
+    T = len(R_p_excess)
+    L = _nw_lags(T)
+
+    X = add_constant(factors[_BENCH_FACTORS])
+    model   = OLS(R_p_excess, X)
+    res_hac = model.fit(cov_type="HAC", cov_kwds={"maxlags": L})
+    res_ols = model.fit()
+
+    params = res_hac.params
+    tvals  = res_hac.tvalues
+    pvals  = res_hac.pvalues
+
+    alpha_daily  = float(params["const"])
+    alpha_annual = alpha_daily * 252
+
+    return {
+        "alpha_daily":      alpha_daily,
+        "alpha_annual":     alpha_annual,
+        "alpha_annual_bps": alpha_annual * 10_000,
+        "t_alpha":          float(tvals["const"]),
+        "p_alpha":          float(pvals["const"]),
+        "betas":   {f: float(params[f]) for f in _BENCH_FACTORS},
+        "t_stats": {f: float(tvals[f])  for f in _BENCH_FACTORS},
+        "p_values":{f: float(pvals[f])  for f in _BENCH_FACTORS},
+        "r_squared":     float(res_hac.rsquared),
+        "adj_r_squared": float(res_hac.rsquared_adj),
+        "T":       T,
+        "nw_lags": L,
+        "_ols_bse": res_ols.bse.to_dict(),
+        "_hac_bse": res_hac.bse.to_dict(),
+    }
+
+
+def run_benchmark_attribution_regression(
+    inception: str,
+    end_date: str,
+) -> Optional[dict]:
+    """
+    Benchmark-relative attribution regression (portfolio vs custom blended SAA).
+
+    Model: (R_p − RF) ~ (R_b − RF) + HML + SMB + RMW
+
+      R_p: daily portfolio total return from get_portfolio_value_series
+      R_b: daily custom blended SAA benchmark return from get_custom_blended_series
+      RF:  Ken French US daily risk-free rate
+      HML, SMB, RMW: Ken French US FF5 style factors (CMA excluded — see methodology)
+
+    The intercept is active return after controlling for benchmark beta and style
+    tilts. Standard errors: Newey-West HAC, L = floor(4*(T/100)^(2/9)).
+
+    Returns None when fewer than 30 aligned observations are available.
+    """
+    date_range = pd.date_range(start=inception, end=end_date, freq="D")
+
+    pv = get_portfolio_value_series(inception, end_date)
+    if pv.empty or float(pv.max()) == 0.0:
+        return None
+    pv = pv.reindex(date_range).ffill()
+    R_p = pv.pct_change()
+
+    bl = get_custom_blended_series(inception, end_date)
+    bl = bl.reindex(date_range).ffill()
+    R_b = bl.pct_change()
+
+    ff = load_factors("us")
+    ff.index = pd.to_datetime(ff.index)
+
+    merged = (
+        R_p.to_frame(name="R_p")
+        .join(R_b.to_frame(name="R_b"), how="inner")
+        .join(ff[["RF", "HML", "SMB", "RMW"]], how="inner")
+        .dropna()
+    )
+
+    if len(merged) < 30:
+        return None
+
+    R_p_excess = merged["R_p"] - merged["RF"]
+    R_b_excess = merged["R_b"] - merged["RF"]
+
+    factors_df = pd.DataFrame({
+        "Bench-RF": R_b_excess.values,
+        "HML":      merged["HML"].values,
+        "SMB":      merged["SMB"].values,
+        "RMW":      merged["RMW"].values,
+    }, index=merged.index)
+
+    result = _ols_benchmark(R_p_excess, factors_df)
+    result["sample_start"] = merged.index[0].date().isoformat()
+    result["sample_end"]   = merged.index[-1].date().isoformat()
+
+    return result
+
+
+def build_benchmark_prose(result: Optional[dict]) -> list[str]:
+    """
+    Generate institutional-register prose interpreting the benchmark attribution regression.
+
+    Called by both the PDF section builder and the Streamlit page.
+    """
+    if result is None:
+        return [
+            "Benchmark attribution regression is unavailable: insufficient aligned observations "
+            "(minimum 30 trading days required). Section will populate as portfolio history grows."
+        ]
+
+    b_bench = result["betas"]["Bench-RF"]
+    t_bench = result["t_stats"]["Bench-RF"]
+    b_hml   = result["betas"]["HML"]
+    t_hml   = result["t_stats"]["HML"]
+    b_smb   = result["betas"]["SMB"]
+    t_smb   = result["t_stats"]["SMB"]
+    b_rmw   = result["betas"]["RMW"]
+    t_rmw   = result["t_stats"]["RMW"]
+    a_bps   = result["alpha_annual_bps"]
+    t_a     = result["t_alpha"]
+    T       = result["T"]
+    r2      = result["r_squared"]
+    s_start = _fmt_date(result["sample_start"])
+    s_end   = _fmt_date(result["sample_end"])
+
+    bench_note = (
+        "consistent with near-full beta to the SAA benchmark"
+        if abs(b_bench - 1.0) < 0.15
+        else "departing from benchmark (expected ≈ 1.0 for a fully-invested passive portfolio)"
+    )
+    alpha_note = (
+        f"marginally significant (|t| = {abs(t_a):.2f})"
+        if abs(t_a) > 2
+        else "not statistically distinguishable from zero at conventional thresholds"
+    )
+
+    return [
+        f"Portfolio benchmark-relative regression ({T} trading days, {s_start} to {s_end}): "
+        f"the portfolio loads on the custom blended benchmark at β = {b_bench:.3f} "
+        f"(t = {t_bench:.2f}), {bench_note}. "
+        f"Residual style exposures: HML β = {b_hml:.3f} (t = {t_hml:.2f}), "
+        f"SMB β = {b_smb:.3f} (t = {t_smb:.2f}), "
+        f"RMW β = {b_rmw:.3f} (t = {t_rmw:.2f}). "
+        f"R² = {r2:.3f}.",
+
+        f"The intercept — active return after controlling for benchmark beta and style tilts — "
+        f"is {a_bps:+.0f} bps/yr (t = {t_a:.2f}), {alpha_note}. "
+        f"Over this sample length the confidence interval around the alpha estimate is wide; "
+        f"a t-statistic above 2.0 requires roughly 4-6 years of daily data to achieve "
+        f"for a genuine 100 bps/yr signal, making statistical significance a high bar at "
+        f"this stage of the portfolio's history.",
+    ]
+
+
+def build_benchmark_methodology(result: Optional[dict]) -> list[str]:
+    """Return methodology disclosure bullet points for the benchmark attribution regression."""
+    T      = result["T"]      if result else "N/A"
+    L      = result["nw_lags"] if result else "N/A"
+    window = (
+        f"{_fmt_date(result['sample_start'])} to {_fmt_date(result['sample_end'])}"
+        if result else "N/A"
+    )
+    return [
+        f"Regression: (R_p − RF) ~ (R_b − RF) + HML + SMB + RMW. "
+        f"{T} observations ({window}), Newey-West HAC SEs, L = {L}.",
+
+        "R_p: daily portfolio total return (adj_close basis, SPAXX proxied via BIL normalized "
+        "to $1.00 at inception). R_b: daily custom blended SAA benchmark return (target-weight "
+        "basket: SPY, QUAL, IWD, IWM, EFA, EEM, IEF, TIP, 50% VNQ + 50% DBC, BIL). "
+        "RF, HML, SMB, RMW: Ken French US daily factors (Dartmouth). "
+        "All series aligned by inner join on trading dates.",
+
+        "The benchmark beta (Bench-RF coefficient) measures how closely the portfolio tracks "
+        "its own SAA benchmark. A value near 1.0 indicates near-full tracking; deviations "
+        "reflect cross-sleeve return dispersion from active tilts relative to the benchmark "
+        "basket. Style betas (HML, SMB, RMW) capture portfolio-wide factor tilts not "
+        "explained by benchmark beta. The intercept is the active return component "
+        "unexplained by benchmark beta and style — the PRINCO/JPM IDD institutional "
+        "alpha definition.",
+
+        "CMA (investment factor) is excluded from this regression. For a passive/semi-passive "
+        "multi-ETF implementation, CMA primarily captures differences in accruals and capex "
+        "patterns across the constituent ETFs — not a deliberate active tilt. Including it "
+        "would add collinearity without improving interpretation. HML, SMB, and RMW are "
+        "the style factors most informative for this portfolio's deliberate tilts "
+        "(value via VTV, size via AVUV, quality/profitability via SPHQ).",
     ]

@@ -23,7 +23,9 @@ from src.benchmarks import get_custom_blended_series, get_sp500_series
 from src.db import get_connection
 from src.factors import (
     EM_DISCLOSURE,
+    build_benchmark_methodology, build_benchmark_prose,
     build_factor_methodology_notes, build_factor_prose,
+    run_benchmark_attribution_regression,
     run_sleeve_regressions, sig_marker,
 )
 from src.holdings import get_portfolio_value_series, get_sleeve_weights_on_date
@@ -605,6 +607,62 @@ def _build_factor_section(end_date: str) -> Optional[dict]:
     }
 
 
+def _build_benchmark_section(end_date: str) -> Optional[dict]:
+    """
+    Run the benchmark-relative attribution regression from inception through end_date
+    and format results for the template.  Returns None if insufficient data or on failure.
+    """
+    inception = _inception_date()
+    try:
+        result = run_benchmark_attribution_regression(inception, end_date)
+    except Exception:
+        logging.exception("Benchmark attribution regression failed — section omitted from PDF")
+        return None
+
+    if result is None:
+        return None
+
+    _BENCH_FACTORS = ["Bench-RF", "HML", "SMB", "RMW"]
+
+    def _fmt_date_local(iso: str) -> str:
+        d = date.fromisoformat(iso)
+        return f"{d.strftime('%B')} {d.day}, {d.year}"
+
+    rows = []
+    p_alpha = result["p_alpha"]
+    rows.append({
+        "factor":       "Alpha (annualized)",
+        "beta":         f"{result['alpha_annual_bps']:+.0f} bps/yr",
+        "tstat":        f"{result['t_alpha']:.2f}",
+        "pvalue":       f"{p_alpha:.3f}",
+        "significance": sig_marker(p_alpha),
+    })
+    for f in _BENCH_FACTORS:
+        p = result["p_values"][f]
+        rows.append({
+            "factor":       f,
+            "beta":         f"{result['betas'][f]:.3f}",
+            "tstat":        f"{result['t_stats'][f]:.2f}",
+            "pvalue":       f"{p:.3f}",
+            "significance": sig_marker(p),
+        })
+
+    return {
+        "rows":              rows,
+        "r_squared":         f"{result['r_squared']:.3f}",
+        "adj_r_squared":     f"{result['adj_r_squared']:.3f}",
+        "T":                 result["T"],
+        "nw_lags":           result["nw_lags"],
+        "sample_window": (
+            f"{_fmt_date_local(result['sample_start'])} — "
+            f"{_fmt_date_local(result['sample_end'])}"
+        ),
+        "prose":             build_benchmark_prose(result),
+        "methodology_notes": build_benchmark_methodology(result),
+        "_raw":              result,
+    }
+
+
 def _build_macro_section() -> dict:
     def _pct_str(series, val):
         try:
@@ -754,14 +812,15 @@ def generate_quarterly_report(
 
     period_label = _format_period_label(start_date, end_date)
 
-    exec_data   = _build_executive_summary(start_date, end_date) if has_trades else None
-    hold_data   = _build_holdings_section(end_date)              if has_trades else {"rows": [], "chart_b64": None}
-    perf_data   = _build_performance_section(start_date, end_date) if has_trades else None
-    attr_data   = _build_attribution_section(start_date, end_date) if has_trades else None
-    pos_data    = _build_positioning_section(end_date)             if has_trades else None
-    factor_data = _build_factor_section(end_date)                 if has_trades else None
-    macro_data  = _build_macro_section()
-    thesis_data = _build_thesis_section(start_date, end_date)
+    exec_data        = _build_executive_summary(start_date, end_date) if has_trades else None
+    hold_data        = _build_holdings_section(end_date)              if has_trades else {"rows": [], "chart_b64": None}
+    perf_data        = _build_performance_section(start_date, end_date) if has_trades else None
+    attr_data        = _build_attribution_section(start_date, end_date) if has_trades else None
+    pos_data         = _build_positioning_section(end_date)             if has_trades else None
+    factor_data      = _build_factor_section(end_date)                 if has_trades else None
+    bench_attr_data  = _build_benchmark_section(end_date)              if has_trades else None
+    macro_data       = _build_macro_section()
+    thesis_data      = _build_thesis_section(start_date, end_date)
 
     css_content = (TEMPLATES_DIR / "report_styles.css").read_text(encoding="utf-8")
 
@@ -784,6 +843,7 @@ def generate_quarterly_report(
         attr           = attr_data,
         pos            = pos_data,
         factor         = factor_data,
+        bench_attr     = bench_attr_data,
         macro          = macro_data,
         thesis         = thesis_data,
     )

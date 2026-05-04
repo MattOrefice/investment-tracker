@@ -21,8 +21,11 @@ from src.factors import (
     _nw_lags,
     _ols_ff5,
     _parse_ff_csv_text,
+    build_benchmark_methodology,
+    build_benchmark_prose,
     build_factor_methodology_notes,
     build_factor_prose,
+    run_benchmark_attribution_regression,
     run_sleeve_regressions,
     sig_marker,
 )
@@ -397,6 +400,133 @@ def test_developed_sleeve_prose_contains_korea_disclosure():
     )
     assert "universe mismatch" in full_text, (
         "Developed sleeve prose must frame the alpha as a universe-mismatch artifact"
+    )
+
+
+# ── Benchmark attribution regression ─────────────────────────────────────────
+
+def test_run_benchmark_attribution_regression_returns_expected_structure():
+    """
+    With mocked portfolio/benchmark series and FF factors,
+    run_benchmark_attribution_regression must return a dict with all required keys
+    including betas for all four model factors.
+    """
+    rng = np.random.default_rng(11)
+    T = 100
+    bdays = pd.bdate_range("2025-05-01", periods=T)
+
+    pv_series = pd.Series(
+        np.cumprod(1 + rng.standard_normal(T) * 0.008) * 10000,
+        index=bdays,
+    )
+    bl_series = pd.Series(
+        np.cumprod(1 + rng.standard_normal(T) * 0.008),
+        index=bdays,
+    )
+    mock_ff = _make_mock_ff(T, rng, bdays)
+
+    with patch("src.factors.get_portfolio_value_series", return_value=pv_series), \
+         patch("src.factors.get_custom_blended_series", return_value=bl_series), \
+         patch("src.factors.load_factors", return_value=mock_ff):
+        result = run_benchmark_attribution_regression("2025-05-01", "2025-09-30")
+
+    assert result is not None, "Expected non-None result with sufficient data"
+    required = {
+        "alpha_daily", "alpha_annual", "alpha_annual_bps",
+        "t_alpha", "p_alpha",
+        "betas", "t_stats", "p_values",
+        "r_squared", "adj_r_squared",
+        "T", "nw_lags", "sample_start", "sample_end",
+    }
+    assert required.issubset(result.keys()), f"Missing keys: {required - result.keys()}"
+    for f in ["Bench-RF", "HML", "SMB", "RMW"]:
+        assert f in result["betas"],   f"Missing beta for factor '{f}'"
+        assert f in result["t_stats"], f"Missing t-stat for factor '{f}'"
+        assert f in result["p_values"],f"Missing p-value for factor '{f}'"
+
+
+def test_benchmark_regression_recovers_synthetic_bench_beta():
+    """
+    When R_p = R_b + small noise (β_bench ≈ 1.0, alpha ≈ 0), the regression
+    must recover β_bench close to 1.0 and a near-zero daily alpha.
+    """
+    rng = np.random.default_rng(22)
+    T = 200
+    bdays = pd.bdate_range("2025-01-01", periods=T)
+
+    mock_ff = _make_mock_ff(T, rng, bdays)
+    mock_ff["RF"] = 0.0001  # near-zero RF so excess ≈ raw return
+
+    # R_b tracks the Mkt-RF factor; R_p = R_b + small noise → β_bench ≈ 1, α ≈ 0
+    R_b_raw = mock_ff["Mkt-RF"].values.copy()
+    R_p_raw = R_b_raw + rng.standard_normal(T) * 0.001
+
+    pv_series = pd.Series(np.cumprod(1 + R_p_raw) * 10000, index=bdays)
+    bl_series = pd.Series(np.cumprod(1 + R_b_raw),         index=bdays)
+
+    with patch("src.factors.get_portfolio_value_series", return_value=pv_series), \
+         patch("src.factors.get_custom_blended_series", return_value=bl_series), \
+         patch("src.factors.load_factors", return_value=mock_ff):
+        result = run_benchmark_attribution_regression("2025-01-01", "2025-10-31")
+
+    assert result is not None
+    assert abs(result["betas"]["Bench-RF"] - 1.0) < 0.15, (
+        f"Expected β_bench ≈ 1.0, got {result['betas']['Bench-RF']:.3f}"
+    )
+    assert abs(result["alpha_daily"]) < 0.0005, (
+        f"Expected near-zero alpha, got {result['alpha_daily']:.6f}"
+    )
+
+
+def test_benchmark_regression_returns_none_on_insufficient_data():
+    """Fewer than 30 aligned observations → result must be None."""
+    T = 5
+    short_bdays = pd.bdate_range("2025-05-01", periods=T)
+
+    short_pv = pd.Series(np.ones(T) * 10000, index=short_bdays)
+    short_bl = pd.Series(np.ones(T),          index=short_bdays)
+    short_ff = pd.DataFrame({
+        "Mkt-RF": np.zeros(T), "SMB": np.zeros(T), "HML": np.zeros(T),
+        "RMW":    np.zeros(T), "CMA": np.zeros(T), "RF":  np.zeros(T),
+    }, index=short_bdays)
+
+    with patch("src.factors.get_portfolio_value_series", return_value=short_pv), \
+         patch("src.factors.get_custom_blended_series", return_value=short_bl), \
+         patch("src.factors.load_factors", return_value=short_ff):
+        result = run_benchmark_attribution_regression("2025-05-01", "2025-05-10")
+
+    assert result is None
+
+
+def test_benchmark_prose_contains_alpha_interpretation():
+    """
+    build_benchmark_prose must describe the intercept as 'active return'
+    and include the word 'alpha' — core institutional framing requirements.
+    """
+    mock_result = {
+        "betas":   {"Bench-RF": 0.98, "HML": 0.12, "SMB": 0.08, "RMW": 0.05},
+        "t_stats": {"Bench-RF": 25.0, "HML": 1.5,  "SMB": 1.2,  "RMW": 0.9},
+        "p_values":{"Bench-RF": 0.0,  "HML": 0.14, "SMB": 0.23, "RMW": 0.36},
+        "alpha_daily":      0.0001,
+        "alpha_annual":     0.0252,
+        "alpha_annual_bps": 252.0,
+        "t_alpha":          1.2,
+        "p_alpha":          0.23,
+        "r_squared":        0.95,
+        "adj_r_squared":    0.949,
+        "T":                200,
+        "nw_lags":          4,
+        "sample_start":     "2025-05-01",
+        "sample_end":       "2026-01-15",
+    }
+    prose = build_benchmark_prose(mock_result)
+    full_text = " ".join(prose).lower()
+
+    assert "active return" in full_text, (
+        "Prose must frame the intercept as 'active return after controlling for...'"
+    )
+    assert "alpha" in full_text, (
+        "Prose must use the word 'alpha' in describing the intercept"
     )
 
 
