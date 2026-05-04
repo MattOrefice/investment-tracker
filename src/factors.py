@@ -494,26 +494,24 @@ def build_factor_prose(results: dict) -> list[str]:
         t_a_d   = dev["t_alpha"]
         T_dev   = dev["T"]
 
-        alpha_note_d = (
-            f"statistically significant at the 5% level (|t| = {abs(t_a_d):.2f})"
-            if abs(t_a_d) > 2
-            else "not statistically distinguishable from zero"
-        )
+        alpha_sig_d = "marginally significant" if abs(t_a_d) > 2 else "not statistically distinguishable from zero"
 
         lines.append(
             f"The International Developed sleeve (VEA, {T_dev} trading days) "
             f"loads on Mkt-RF_dev at {b_mkt_d:.2f} (t = {t_mkt_d:.2f}), within the "
             f"expected range for a passive cap-weighted developed-markets ETF. "
-            f"Annualized alpha of {a_bps_d:+.0f} bps is {alpha_note_d}. "
-            f"This unexplained return should not be interpreted as skill: "
-            f"VEA tracks the FTSE Developed All Cap ex US index, which classifies "
-            f"South Korea as a developed market and includes it at approximately "
-            f"3–4% of the index. Ken French's Developed ex-US factor universe "
-            f"excludes South Korea. Over the current sample window, Korean equities "
-            f"(EWY) returned approximately 95–98% — an extraordinary period driven "
-            f"by AI-semiconductor demand — producing a model-span gap that flows "
-            f"into the alpha term. The alpha estimate is expected to revert as the "
-            f"sample window extends and Korean equity returns normalize."
+            f"The {a_bps_d:+.0f} bps annualized alpha (t = {t_a_d:.2f}) is {alpha_sig_d}, "
+            f"but should not be interpreted as skill: "
+            f"VEA tracks the FTSE Developed All Cap ex US Index, which classifies "
+            f"South Korea as Developed (~3-4% of VEA's holdings); "
+            f"Ken French's Developed ex-US factor universe excludes Korea entirely. "
+            f"Korean equities returned approximately 95-98% in calendar 2025, "
+            f"driven by the AI/semiconductor capex cycle (Samsung Electronics, SK Hynix). "
+            f"That excess return falls outside the FF Developed ex-US factor span and "
+            f"accumulates in the alpha term. "
+            f"The reported alpha is best read as "
+            f'"unexplained-by-Developed-ex-US-factors return attributable to universe mismatch," '
+            f"not risk-adjusted excess return."
         )
 
     lines.append(
@@ -569,15 +567,13 @@ def build_factor_methodology_notes(results: dict) -> list[str]:
         "Phase 1 sleeve targets of 16/14/8/7%). Weights are held constant. "
         "The Developed sleeve is VEA's daily adj_close return.",
 
-        "Universe mismatch — International Developed sleeve: VEA tracks the FTSE "
-        "Developed All Cap ex US index, which classifies South Korea as Developed and "
-        "includes it at ~3–4% of the index. Ken French's Developed ex-US factor "
-        "universe excludes South Korea (following a different market-classification "
-        "framework). This mismatch is the primary source of unexplained return (alpha) "
-        "in the Developed sleeve regression; it is not indicative of active management "
-        "skill. Caveats: (1) the alpha estimate carries meaningful sampling uncertainty "
-        "at T ≈ 216; (2) Korean equity outperformance in the current sample "
-        "(EWY ≈ +95–98% over calendar 2025) is exceptional and unlikely to persist.",
+        "Universe mismatch — Developed sleeve: VEA tracks FTSE Developed All Cap ex US "
+        "(includes Korea, Israel as Developed). Ken French's Developed ex-US universe "
+        "excludes Korea (treated as EM in Ken French's classification) and uses a different "
+        "Israel categorization. The universe difference contributes to unexplained variance "
+        "and inflates the Developed-sleeve alpha estimate. A future phase may address this "
+        "by reweighting VEA's holdings to match Ken French's universe before regressing, "
+        "or by using a custom factor set aligned to FTSE Developed All Cap ex US.",
 
         "EM sleeve exclusion: Ken French does not publish daily EM factor data. "
         "Monthly EM factors would yield approximately 12 observations — below the minimum "

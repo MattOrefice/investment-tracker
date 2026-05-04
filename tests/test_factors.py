@@ -368,6 +368,38 @@ def test_us_sleeve_non_none_when_holdings_db_empty():
     assert results["us"]["T"] > 0
 
 
+# ── Developed sleeve prose contains Korea universe-mismatch disclosure ─────────
+
+def test_developed_sleeve_prose_contains_korea_disclosure():
+    """
+    The Developed sleeve prose paragraph must name the universe mismatch
+    (Korea excluded from Ken French Developed, included in VEA/FTSE) as the
+    source of the elevated alpha. This is the credibility-defining sentence.
+    """
+    rng = np.random.default_rng(55)
+    T = 100
+    dates = pd.bdate_range("2025-05-01", periods=T)
+    mock_ret = pd.Series(rng.standard_normal(T) * 0.008, index=dates)
+    mock_ff  = _make_mock_ff(T, rng, dates)
+
+    with patch("src.factors._get_sleeve_return_series", return_value=mock_ret), \
+         patch("src.factors.load_factors", return_value=mock_ff):
+        results = run_sleeve_regressions("2025-05-01", "2025-09-30")
+
+    prose = build_factor_prose(results)
+    full_text = " ".join(prose)
+
+    assert "Korean equities" in full_text, (
+        "Developed sleeve prose must name 'Korean equities' as the universe-mismatch source"
+    )
+    assert "FTSE Developed All Cap ex US" in full_text, (
+        "Developed sleeve prose must name the FTSE index to disclose the classification gap"
+    )
+    assert "universe mismatch" in full_text, (
+        "Developed sleeve prose must frame the alpha as a universe-mismatch artifact"
+    )
+
+
 # ── EM disclosure constant ─────────────────────────────────────────────────────
 
 def test_em_disclosure_is_non_empty_string():
