@@ -1,7 +1,7 @@
 /* ── Page setup ─────────────────────────────────────────────────────────── */
 @page {
     size: letter;
-    margin: 0.9in;
+    margin: 0.75in;
     @bottom-center {
         content: "Page " counter(page) " of " counter(pages);
         font-size: 9pt;
@@ -14,7 +14,7 @@
 body {
     font-family: Helvetica, Arial, sans-serif;
     font-size: 10pt;
-    line-height: 1.45;
+    line-height: 1.35;
     color: #2a2a2a;
     margin: 0;
     padding: 0;
@@ -30,7 +30,7 @@ h1, h2, h3, h4 {
 h1  { font-size: 28pt; line-height: 1.2; }
 h2  { font-size: 16pt; border-bottom: 2px solid #2c3e50; padding-bottom: 6pt;
       margin-bottom: 14pt; }
-h3  { font-size: 11pt; font-weight: 600; margin-bottom: 6pt; margin-top: 1.2em; }
+h3  { font-size: 11pt; font-weight: 600; margin-bottom: 6pt; margin-top: 0.7em; }
 
 p   { margin: 0 0 0.6em 0; }
 
@@ -38,7 +38,7 @@ p   { margin: 0 0 0.6em 0; }
 table {
     width: 100%;
     border-collapse: collapse;
-    margin: 0.8em 0;
+    margin: 0.5em 0;
 }
 th {
     background: #ececec;
@@ -108,12 +108,12 @@ tr.row-even td { background: #f7f7f8; }
 table.metric-table {
     border-collapse: separate;
     border-spacing: 10pt 0;
-    margin: 1em 0 1.4em 0;
+    margin: 0.5em 0 0.7em 0;
 }
 table.metric-table td.metric-card {
     background: #fafafa;
     border: 1px solid #dddddd;
-    padding: 10pt 12pt;
+    padding: 7pt 10pt;
     vertical-align: top;
     width: 25%;
 }
@@ -127,7 +127,7 @@ table.metric-table td.metric-card {
     margin-bottom: 4pt;
 }
 .metric-card .value {
-    font-size: 18pt;
+    font-size: 16pt;
     font-weight: 700;
     font-family: Helvetica, Arial, sans-serif;
     color: #1a1a1a;
@@ -162,6 +162,7 @@ table.metric-table td.metric-card {
 /* ── Section / page breaks ───────────────────────────────────────────────── */
 section { page-break-before: always; padding-top: 4pt; }
 section.cover { page-break-before: auto; }
+section.no-break { page-break-before: auto; }
 
 /* ── Cover page — compact masthead + exec summary on same page ──────────── */
 .cover-masthead {
@@ -254,7 +255,7 @@ table.two-col td:last-child { padding-right: 0; }
 /* ── Methodology ─────────────────────────────────────────────────────────── */
 dl.methodology dt {
     font-weight: 600;
-    margin-top: 0.8em;
+    margin-top: 0.5em;
     font-family: Helvetica, Arial, sans-serif;
     font-size: 9.5pt;
     color: #222;
@@ -263,7 +264,8 @@ dl.methodology dd {
     margin-left: 1.5em;
     font-size: 9pt;
     color: #555;
-    margin-bottom: 0.2em;
+    margin-bottom: 0.05em;
+    line-height: 1.3;
 }
 
 /* ── Empty-state banner ──────────────────────────────────────────────────── */
