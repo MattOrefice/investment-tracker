@@ -336,10 +336,11 @@ def _build_holdings_section(end_date: str) -> dict:
         barmode="overlay",
         xaxis_title="Weight (%)", yaxis_title=None,
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
-        margin=dict(l=0, r=0, t=40, b=0), height=330,
+        margin=dict(l=180, r=20, t=40, b=0), height=330,
         plot_bgcolor="white", paper_bgcolor="white",
         font=dict(family="sans-serif", size=10, color="#333"),
         xaxis=dict(gridcolor="#E8E8E8"),
+        yaxis=dict(tickmode="array", tickvals=sleeves, ticktext=sleeves),
     )
     return {"rows": rows, "chart_b64": _chart_b64(fig, 700, 330)}
 
@@ -392,7 +393,8 @@ def _build_performance_section(start_date: str, end_date: str) -> dict:
         margin=dict(l=0, r=0, t=40, b=0), height=290,
         plot_bgcolor="white", paper_bgcolor="white",
         font=dict(family="sans-serif", size=10, color="#333"),
-        yaxis=dict(gridcolor="#E8E8E8", zeroline=True, zerolinecolor="#CCC"),
+        yaxis=dict(gridcolor="#E8E8E8", zeroline=True, zerolinecolor="#CCC",
+                   dtick=10, ticksuffix="%"),
         xaxis=dict(gridcolor="#E8E8E8"),
     )
     return {"period_rows": period_rows, "chart_b64": _chart_b64(fig, 700, 290)}

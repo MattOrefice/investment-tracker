@@ -346,7 +346,8 @@ with col:
         plot_bgcolor="white",
         paper_bgcolor="white",
         font=dict(family="sans-serif", size=12, color="#333"),
-        yaxis=dict(gridcolor="#E8E8E8", zeroline=True, zerolinecolor="#CCCCCC"),
+        yaxis=dict(gridcolor="#E8E8E8", zeroline=True, zerolinecolor="#CCCCCC",
+                   dtick=10, ticksuffix="%"),
         xaxis=dict(gridcolor="#E8E8E8"),
     )
     st.plotly_chart(fig, use_container_width=True)
@@ -477,6 +478,38 @@ with col:
     if sw.empty:
         st.info("No holdings found.")
     else:
+        # Actual vs. target allocation bar chart
+        _sleeves_ch = sw.index.tolist()
+        _fig_alloc = go.Figure()
+        _fig_alloc.add_trace(go.Bar(
+            name="Actual",
+            y=_sleeves_ch,
+            x=(sw["Actual Weight"] * 100).tolist(),
+            orientation="h",
+            marker_color=_PALETTE["portfolio"],
+        ))
+        _fig_alloc.add_trace(go.Bar(
+            name="Target",
+            y=_sleeves_ch,
+            x=(sw["Target Weight"] * 100).tolist(),
+            orientation="h",
+            marker_color=_PALETTE["sp500"],
+            opacity=0.65,
+        ))
+        _fig_alloc.update_layout(
+            barmode="overlay",
+            xaxis_title="Weight (%)",
+            yaxis_title=None,
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+            margin=dict(l=0, r=0, t=40, b=0),
+            height=320,
+            plot_bgcolor="white",
+            paper_bgcolor="white",
+            font=dict(family="sans-serif", size=11, color="#333"),
+            xaxis=dict(gridcolor="#E8E8E8"),
+        )
+        st.plotly_chart(_fig_alloc, use_container_width=True)
+
         drift_rows = []
         outside_band_count = 0
         for sleeve, row in sw.iterrows():
