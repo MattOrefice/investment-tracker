@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ recipient_name }} — {{ period_label }}</title>
+<style>{{ css_content }}</style>
+</head>
+<body>
+
+{# ── Page 1: Cover + Executive Summary ────────────────────────────────────── #}
+<section class="cover">
+  <div class="cover-masthead">
+    <p class="cover-eyebrow">Quarterly Investment Report</p>
+    <div class="cover-hr-line"></div>
+    <h1 class="cover-name">{{ recipient_name }}</h1>
+    <div class="cover-hr-line"></div>
+    <p class="cover-period">{{ period_label }}</p>
+    <p class="cover-sub-id">Personal Brokerage Account</p>
+    <p class="cover-tagline">Personal Investment Analytics &middot; Thesis-Driven Allocation</p>
+    <p class="cover-date">Generated {{ generation_date }}</p>
+  </div>
+
+  <h2>Executive Summary</h2>
+
+  {% if has_trades and exec %}
+  <table class="metric-table">
+    <tr>
+      <td class="metric-card">
+        <span class="label">Portfolio Return</span>
+        <span class="value">{{ exec.portfolio_return_pct }}</span>
+        <span class="sub">{{ exec.period_label }}</span>
+      </td>
+      <td class="metric-card">
+        <span class="label">vs S&amp;P 500</span>
+        <span class="value {% if exec.alpha_sp_bps >= 0 %}positive{% else %}negative{% endif %}">{{ exec.alpha_sp_str }}</span>
+        <span class="sub">S&amp;P 500: {{ exec.sp500_return_pct }}</span>
+      </td>
+      <td class="metric-card">
+        <span class="label">vs Custom Blended</span>
+        <span class="value {% if exec.alpha_bl_bps >= 0 %}positive{% else %}negative{% endif %}">{{ exec.alpha_bl_str }}</span>
+        <span class="sub">Blended: {{ exec.blended_return_pct }}</span>
+      </td>
+      <td class="metric-card">
+        <span class="label">Portfolio Value</span>
+        <span class="value">{{ exec.current_value }}</span>
+        <span class="sub">as of {{ exec.end_date }}</span>
+      </td>
+    </tr>
+  </table>
+
+  <div class="narrative">
+    {% for sentence in exec.narrative %}
+    <p>{{ sentence }}</p>
+    {% endfor %}
+  </div>
+
+  {% else %}
+  <div class="empty-banner">
+    No trades have been logged. This report contains structural information only:
+    SAA targets, investment theses, and macro context. Performance and attribution
+    sections will populate after the first trade is recorded.
+  </div>
+  {% endif %}
+</section>
+
+{# ── Page 2: Holdings & Allocation ─────────────────────────────────────────── #}
+<section>
+  <h2>Holdings &amp; Allocation</h2>
+
+  {% if has_trades and hold and hold.rows %}
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Sleeve</th>
+        <th class="num">Market Value</th>
+        <th class="num">Actual</th>
+        <th class="num">Target</th>
+        <th class="num">Drift</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in hold.rows %}
+      <tr class="{{ loop.cycle('', 'row-even') }}">
+        <td>{{ row.sleeve }}</td>
+        <td class="num">{{ row.market_value }}</td>
+        <td class="num">{{ row.actual_weight }}</td>
+        <td class="num">{{ row.target_weight }}</td>
+        <td class="num">{{ row.drift_bps }}</td>
+        <td class="{{ row.status_class }}">{{ row.status }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% if hold.chart_b64 %}
+  <img class="chart" src="data:image/png;base64,{{ hold.chart_b64 }}" alt="Allocation chart">
+  {% else %}
+  <div class="chart-placeholder">Allocation chart not available</div>
+  {% endif %}
+
+  {% else %}
+  <div class="empty-banner">No holdings data available for this period.</div>
+  {% endif %}
+</section>
+
+{# ── Page 3: Performance + Trades ──────────────────────────────────────────── #}
+<section>
+  <h2>Performance</h2>
+
+  {% if has_trades and perf %}
+  <h3>Period Returns (Daily-Linked TWR)</h3>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Period</th>
+        <th class="num">Portfolio</th>
+        <th class="num">S&amp;P 500</th>
+        <th class="num">Custom Blended</th>
+        <th class="num">vs S&amp;P 500</th>
+        <th class="num">vs Blended</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in perf.period_rows %}
+      <tr class="{{ loop.cycle('', 'row-even') }}">
+        <td>{{ row.period }}</td>
+        <td class="num">{{ row.portfolio }}</td>
+        <td class="num">{{ row.sp500 }}</td>
+        <td class="num">{{ row.blended }}</td>
+        <td class="num">{{ row.vs_sp }}</td>
+        <td class="num">{{ row.vs_bl }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h3>Cumulative Return Since Inception</h3>
+  {% if perf.chart_b64 %}
+  <img class="chart" src="data:image/png;base64,{{ perf.chart_b64 }}" alt="Cumulative return chart">
+  {% else %}
+  <div class="chart-placeholder">Cumulative return chart not available</div>
+  {% endif %}
+
+  {% else %}
+  <div class="empty-banner">No performance data available. Log your first trade to begin tracking returns.</div>
+  {% endif %}
+
+  {# Trades During Period — appended to Performance page #}
+  <h3>Trades During Period</h3>
+  {% if thesis.trades %}
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Ticker</th>
+        <th>Action</th>
+        <th class="num">Shares</th>
+        <th class="num">Price</th>
+        <th class="num">Value</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in thesis.trades %}
+      <tr class="{{ loop.cycle('', 'row-even') }}">
+        <td>{{ t.date }}</td>
+        <td>{{ t.ticker }}</td>
+        <td>{{ t.action }}</td>
+        <td class="num">{{ t.shares }}</td>
+        <td class="num">{{ t.price }}</td>
+        <td class="num">{{ t.cost }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No trades recorded during {{ period_label }}.</p>
+  {% endif %}
+</section>
+
+{# ── Page 4: Brinson-Fachler Attribution ───────────────────────────────────── #}
+<section>
+  <h2>Brinson-Fachler Attribution</h2>
+
+  {% if has_trades and attr and attr.rows %}
+  {% if attr.chart_b64 %}
+  <img class="chart" src="data:image/png;base64,{{ attr.chart_b64 }}" alt="Attribution chart">
+  {% else %}
+  <div class="chart-placeholder">Attribution chart not available</div>
+  {% endif %}
+
+  <table class="data-table bf-table">
+    <thead>
+      <tr>
+        <th>Sleeve</th>
+        <th class="num">Port Wt</th>
+        <th class="num">Bench Wt</th>
+        <th class="num">Port Ret</th>
+        <th class="num">Bench Ret</th>
+        <th class="num">Alloc (bps)</th>
+        <th class="num">Sel (bps)</th>
+        <th class="num">Total (bps)</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in attr.rows %}
+      <tr class="{{ loop.cycle('', 'row-even') }}">
+        <td>{{ row.sleeve }}</td>
+        <td class="num">{{ row.port_wt }}</td>
+        <td class="num">{{ row.bench_wt }}</td>
+        <td class="num">{{ row.port_ret }}</td>
+        <td class="num">{{ row.bench_ret }}</td>
+        <td class="num">{{ row.alloc }}</td>
+        <td class="num">{{ row.sel }}</td>
+        <td class="num">{{ row.total }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr>
+        <td colspan="5"><strong>Total</strong></td>
+        <td class="num"><strong>{{ attr.total_alloc }}</strong></td>
+        <td class="num"><strong>{{ attr.total_sel }}</strong></td>
+        <td class="num"><strong>{{ attr.total_total }}</strong></td>
+      </tr>
+    </tfoot>
+  </table>
+  <p class="muted">Allocation effect = (w<sub>p</sub> &minus; w<sub>b</sub>) &times; (r<sub>b</sub> &minus; r<sub>b,total</sub>).
+  Selection effect = w<sub>p</sub> &times; (r<sub>p</sub> &minus; r<sub>b</sub>).
+  Sum of effects reconciles to active return within 1 bp (Brinson-Fachler 1985).</p>
+
+  {% if attr.sel_commentary %}
+  <div class="bf-commentary">
+    <p class="bf-comm-title">Top Selection Effect Drivers</p>
+    <ul class="bf-comm-list">
+      {% for line in attr.sel_commentary %}
+      <li>{{ line }}</li>
+      {% endfor %}
+    </ul>
+    {% if attr.alloc_commentary %}
+    <p class="bf-comm-title bf-comm-alloc">Top Allocation Effect</p>
+    <ul class="bf-comm-list">
+      <li>{{ attr.alloc_commentary }}</li>
+    </ul>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% else %}
+  <div class="empty-banner">No attribution data available for this period.</div>
+  {% endif %}
+</section>
+
+{# ── Page 5: Macro Context ──────────────────────────────────────────────────── #}
+<section>
+  <h2>Macro Context</h2>
+
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Indicator</th>
+        <th class="num">Current</th>
+        <th class="num">Percentile</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>CAPE (Shiller P/E)</strong></td>
+        <td class="num">{{ macro.cape.value }}</td>
+        <td class="num">{{ macro.cape.percentile }}</td>
+      </tr>
+      <tr class="row-even">
+        <td><strong>Yield Curve (10Y&minus;2Y)</strong></td>
+        <td class="num">{{ macro.yield_curve.value }}</td>
+        <td class="num">{{ macro.yield_curve.percentile }}</td>
+      </tr>
+      <tr>
+        <td><strong>Fed Funds Rate</strong></td>
+        <td class="num">{{ macro.fed_funds.value }}</td>
+        <td class="num">{{ macro.fed_funds.percentile }}</td>
+      </tr>
+      <tr class="row-even">
+        <td><strong>HY Credit Spread</strong></td>
+        <td class="num">{{ macro.hy_spread.value }}</td>
+        <td class="num">{{ macro.hy_spread.percentile }}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p class="muted">Elevated US equity valuations (CAPE 95th percentile) support the SAA&rsquo;s
+  diversification across non-US equity and real asset sleeves. Indicators are reference data;
+  tactical positioning remains anchored to SAA targets.</p>
+
+  <p class="muted">CAPE from Robert Shiller / Yale (econ.yale.edu). Yield curve, Fed Funds,
+  and HY spread from FRED (St. Louis Fed). Historical percentile computed over available
+  data window. HY spread data available from May 2023 only due to FRED licensing restrictions.</p>
+</section>
+
+{# ── Page 6: Methodology ────────────────────────────────────────────────────── #}
+<section>
+  <h2>Methodology &amp; Data Sources</h2>
+
+  <dl class="methodology">
+    <dt>Time-Weighted Return</dt>
+    <dd>Daily-linked chain-linked TWR (GIPS-compliant). For each day t:
+    r<sub>t</sub> = (V<sub>t</sub> &minus; V<sub>t&minus;1</sub> &minus; CF<sub>t</sub>) / V<sub>t&minus;1</sub>.
+    Cash flows assumed at beginning of day. Cumulative return is
+    &prod;(1 + r<sub>t</sub>) &minus; 1.</dd>
+
+    <dt>Benchmarks</dt>
+    <dd>S&amp;P 500: SPY total return (adj_close). Custom Blended: SAA target-weight basket
+    of benchmark tickers (SPY, QUAL, IWD, IWM, EFA, EEM, IEF, TIP, 50% VNQ + 50% DBC, BIL),
+    normalized to $1 on inception date.</dd>
+
+    <dt>Brinson-Fachler Attribution</dt>
+    <dd>Allocation effect = (w<sub>p</sub> &minus; w<sub>b</sub>) &times; (r<sub>b</sub> &minus;
+    r<sub>b,total</sub>). Selection effect = w<sub>p</sub> &times; (r<sub>p</sub> &minus; r<sub>b</sub>).
+    Portfolio weights = beginning-of-period market value weights. Benchmark weights = SAA targets.
+    Sum of effects reconciles to active return within 1 basis point.</dd>
+
+    <dt>Drift Status</dt>
+    <dd>A sleeve is flagged &ldquo;Drift&rdquo; when either threshold is breached: absolute drift
+    exceeds 200 bps, or relative drift exceeds 20% of the target weight. Both thresholds must be
+    satisfied for a &ldquo;Within&rdquo; status.</dd>
+
+    <dt>Price Data</dt>
+    <dd>Daily adjusted-close prices from Yahoo Finance (via yfinance), cached in SQLite.
+    Adjusted close reflects splits and dividends (total-return basis). Weekend and holiday
+    gaps are forward-filled from the last available trading day.</dd>
+
+    <dt>CAPE (Shiller P/E)</dt>
+    <dd>From Robert Shiller&rsquo;s data (econ.yale.edu/~shiller/data/ie_data.xls). Monthly
+    observations; current value is the most recent month available. Formula for implied
+    10-year real return: r &asymp; &minus;0.070 &times; ln(CAPE/16) + 0.066, calibrated to
+    long-run Shiller data.</dd>
+
+    <dt>Macro Data</dt>
+    <dd>Federal Reserve Economic Data (FRED, St. Louis Fed). T10Y2Y = 10-Year minus 2-Year
+    Treasury Constant Maturity. DFF = Federal Funds Effective Rate.
+    BAMLH0A0HYM2 = ICE BofA US High Yield OAS (available May 2023+).</dd>
+
+    <dt>SAA &amp; Sleeve Targets</dt>
+    <dd>Strategic Asset Allocation locked in Phase 1: Equity 72% / Income 15% /
+    Real Assets 10% / Cash 3%. Ten sleeves with tolerance bands (&plusmn;2&ndash;3%).
+    Full rationale available in the SAA section of the application.</dd>
+  </dl>
+
+  <p class="disclosure">This report is generated from a personal investment analytics system
+  for portfolio review purposes. Returns are time-weighted and do not constitute investment
+  advice. Data sourced from Yahoo Finance, FRED, and Robert Shiller&rsquo;s public datasets;
+  calculations are best-effort and may contain methodological simplifications.</p>
+</section>
+
+</body>
+</html>

@@ -15,6 +15,12 @@ import os
 from pathlib import Path
 
 try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
+try:
     import streamlit as st
     FRED_API_KEY = st.secrets.get("FRED_API_KEY", os.getenv("FRED_API_KEY"))
     _resolved_mode = st.secrets.get("TRACKER_MODE", os.getenv("TRACKER_MODE", "personal")).lower()

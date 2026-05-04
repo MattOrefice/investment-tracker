@@ -1,4 +1,7 @@
 """Performance & Attribution page."""
+from datetime import date
+from pathlib import Path
+
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -7,6 +10,7 @@ from src.attribution import brinson_fachler_period
 from src.benchmarks import get_custom_blended_series, get_sp500_series
 from src.db import get_connection
 from src.holdings import get_portfolio_value_series, get_sleeve_weights_on_date
+from src.reports import generate_quarterly_report
 from src.returns import annualize, period_return, twr_daily_linked
 
 st.set_page_config(page_title="Performance & Attribution", layout="wide")
@@ -70,8 +74,23 @@ def _load_drift():
 
 
 def _date_offset(iso: str, days: int) -> str:
-    from datetime import date, timedelta
+    from datetime import timedelta
     return (date.fromisoformat(iso) + timedelta(days=days)).isoformat()
+
+
+def _most_recent_completed_quarter():
+    """Return (start_iso, end_iso, label) for the most recently completed quarter."""
+    today = date.today()
+    quarters = [
+        (date(today.year, 1, 1),  date(today.year, 3, 31),  f"Q1 {today.year}"),
+        (date(today.year, 4, 1),  date(today.year, 6, 30),  f"Q2 {today.year}"),
+        (date(today.year, 7, 1),  date(today.year, 9, 30),  f"Q3 {today.year}"),
+        (date(today.year, 10, 1), date(today.year, 12, 31), f"Q4 {today.year}"),
+    ]
+    for q_start, q_end, q_label in reversed(quarters):
+        if q_end < today:
+            return q_start.isoformat(), q_end.isoformat(), q_label
+    return f"{today.year-1}-10-01", f"{today.year-1}-12-31", f"Q4 {today.year-1}"
 
 
 def _pct(v: float, decimals: int = 2) -> str:
@@ -97,6 +116,56 @@ with col:
     # Load data
     with st.spinner("Loading performance data…"):
         pv, cf = _load_portfolio()
+
+    # ── Generate Report expander ──────────────────────────────────────────
+    with st.expander("Generate Quarterly Report", expanded=False):
+        _rcol1, _rcol2 = st.columns([1, 1])
+        with _rcol1:
+            _period_choice = st.selectbox(
+                "Period",
+                ["Most recent completed quarter", "Custom date range"],
+                key="report_period_choice",
+            )
+        with _rcol2:
+            _recipient = st.text_input(
+                "Recipient name", value="Matthew Orefice", key="report_recipient"
+            )
+
+        if _period_choice == "Most recent completed quarter":
+            _r_start, _r_end, _r_qlabel = _most_recent_completed_quarter()
+            st.caption(f"Period: **{_r_qlabel}** &nbsp;({_r_start} to {_r_end})")
+            _report_filename = (
+                f"Orefice_Portfolio_{_r_qlabel.replace(' ', '')[2:]}"
+                f"{_r_qlabel.split()[0]}.pdf"
+            )
+        else:
+            _dc1, _dc2 = st.columns(2)
+            with _dc1:
+                _r_start = str(st.date_input("Start date", value=date(2025, 1, 1), key="report_start"))
+            with _dc2:
+                _r_end   = str(st.date_input("End date",   value=date.today(),       key="report_end"))
+            _r_qlabel = None
+            _report_filename = (
+                f"Orefice_Portfolio_{_r_start.replace('-','')}_{_r_end.replace('-','')}.pdf"
+            )
+
+        if st.button("Generate Report", type="primary", key="gen_report_btn"):
+            with st.spinner("Generating PDF — this takes ~30 seconds for chart rendering…"):
+                try:
+                    _pdf_path = generate_quarterly_report(
+                        _r_start, _r_end, recipient_name=_recipient
+                    )
+                    _pdf_bytes = Path(_pdf_path).read_bytes()
+                    st.success(f"Report generated ({len(_pdf_bytes):,} bytes)")
+                    st.download_button(
+                        "⬇ Download PDF",
+                        _pdf_bytes,
+                        file_name=_report_filename,
+                        mime="application/pdf",
+                        key="report_download",
+                    )
+                except Exception as _e:
+                    st.error(f"Report generation failed: {_e}")
 
     # Empty-state guard — no trades yet
     if pv.empty or float(pv.max()) == 0.0:
@@ -277,7 +346,8 @@ with col:
         plot_bgcolor="white",
         paper_bgcolor="white",
         font=dict(family="sans-serif", size=12, color="#333"),
-        yaxis=dict(gridcolor="#E8E8E8", zeroline=True, zerolinecolor="#CCCCCC"),
+        yaxis=dict(gridcolor="#E8E8E8", zeroline=True, zerolinecolor="#CCCCCC",
+                   dtick=10, ticksuffix="%"),
         xaxis=dict(gridcolor="#E8E8E8"),
     )
     st.plotly_chart(fig, use_container_width=True)
@@ -408,6 +478,38 @@ with col:
     if sw.empty:
         st.info("No holdings found.")
     else:
+        # Actual vs. target allocation bar chart
+        _sleeves_ch = sw.index.tolist()
+        _fig_alloc = go.Figure()
+        _fig_alloc.add_trace(go.Bar(
+            name="Actual",
+            y=_sleeves_ch,
+            x=(sw["Actual Weight"] * 100).tolist(),
+            orientation="h",
+            marker_color=_PALETTE["portfolio"],
+        ))
+        _fig_alloc.add_trace(go.Bar(
+            name="Target",
+            y=_sleeves_ch,
+            x=(sw["Target Weight"] * 100).tolist(),
+            orientation="h",
+            marker_color=_PALETTE["sp500"],
+            opacity=0.65,
+        ))
+        _fig_alloc.update_layout(
+            barmode="overlay",
+            xaxis_title="Weight (%)",
+            yaxis_title=None,
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+            margin=dict(l=0, r=0, t=40, b=0),
+            height=320,
+            plot_bgcolor="white",
+            paper_bgcolor="white",
+            font=dict(family="sans-serif", size=11, color="#333"),
+            xaxis=dict(gridcolor="#E8E8E8"),
+        )
+        st.plotly_chart(_fig_alloc, use_container_width=True)
+
         drift_rows = []
         outside_band_count = 0
         for sleeve, row in sw.iterrows():
@@ -470,8 +572,7 @@ with col:
             )
             st.markdown("---")
 
-        import sqlite3
-        conn2 = sqlite3.connect("data/tracker.db")
+        conn2 = get_connection()
         n_days = conn2.execute("SELECT COUNT(*) FROM prices").fetchone()[0]
         last_refresh = conn2.execute(
             "SELECT MAX(price_date) FROM prices"
