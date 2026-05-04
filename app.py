@@ -11,22 +11,27 @@ st.set_page_config(
 
 initialize_db()
 
-if IS_DEMO:
-    st.info(DEMO_BANNER_TEXT)
+_, col, _ = st.columns([1, 8, 1])
+with col:
+    if IS_DEMO:
+        st.info(DEMO_BANNER_TEXT)
 
-st.title("Investment Analytics Tracker")
-st.caption("Personal portfolio · structured allocator workflow")
+    st.markdown("## Personal Investment Analytics")
 
-st.markdown(
-    """
-    This dashboard mirrors an institutional allocator workflow:
+    st.markdown(
+        """
+        Built by Matt Orefice — CFA charterholder, ex-MissionSquare Retirement.
+        A live-data portfolio tracking system with GIPS-compliant time-weighted returns,
+        Brinson-Fachler attribution, and automated quarterly PDF reporting against a
+        custom-blended benchmark.
 
-    1. **Strategic asset allocation** — set target weights and tolerance bands
-    2. **Research** — compare candidate securities within each asset class
-    3. **Thesis & execution** — log trades with documented views and exit conditions
-    4. **Performance** — time-weighted returns, benchmarking, and attribution
-    5. **Macro dashboard** — valuation, rates, and relative performance
+        **The most polished artifact is the quarterly PDF report.** Navigate to the
+        **Performance** page and open "Generate Quarterly Report" to produce it.
+        """
+    )
 
-    Use the sidebar to navigate.
-    """
-)
+    st.divider()
+
+    st.caption(
+        "SAA framework · thesis-driven execution · BF attribution · macro overlay"
+    )

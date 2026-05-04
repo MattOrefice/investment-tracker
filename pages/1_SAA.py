@@ -158,7 +158,3 @@ with col:
             _safe_md(sc["rationale"])
     st.divider()
 
-# ── Phase 4 placeholder ────────────────────────────────────────────────────────
-_, col, _ = st.columns([1, 8, 1])
-with col:
-    st.info("Drift analysis (actual vs. target) coming in Phase 4 once trades are logged.")

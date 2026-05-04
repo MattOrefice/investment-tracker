@@ -1,9 +1,21 @@
+# Python
 .venv/
-__pycache__/
-*.pyc
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+
+# Secrets — never commit
+.env
+.streamlit/secrets.toml
+
+# Local databases
 # tracker.db holds real holdings — never committed
 data/tracker.db
-# demo.db holds paper trades for Streamlit Cloud deployment — committed intentionally
-.streamlit/secrets.toml
-.env
+# demo.db is committed intentionally (paper trades for Streamlit Cloud)
+
+# Generated reports — local artifacts, not committed
+data/reports/
+
+# Editor / tool dirs
 .cursor/
+.claude/
