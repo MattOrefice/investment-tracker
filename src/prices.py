@@ -11,10 +11,7 @@ from typing import Optional
 import pandas as pd
 import requests
 
-try:
-    from src.db import get_connection
-except ImportError:
-    from db import get_connection
+from src.db import get_connection
 
 # Shared session with a browser User-Agent so Yahoo Finance doesn't 429-block us
 _SESSION = requests.Session()

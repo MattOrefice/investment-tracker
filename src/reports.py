@@ -18,30 +18,17 @@ import pandas as pd
 import plotly.graph_objects as go
 import plotly.io as pio
 
-try:
-    from src.attribution import brinson_fachler_period
-    from src.benchmarks import get_custom_blended_series, get_sp500_series
-    from src.db import get_connection
-    from src.holdings import get_portfolio_value_series, get_sleeve_weights_on_date
-    from src.macro import get_series, percentile
-    from src.positioning import (
-        build_style_box_figure, get_active_tilts, get_effective_duration,
-        get_non_us_equity_data, get_scenario_triggers, get_style_box_data,
-    )
-    from src.returns import period_return, twr_daily_linked
-    from src.shiller import current_cape, get_cape_series
-except ImportError:
-    from attribution import brinson_fachler_period
-    from benchmarks import get_custom_blended_series, get_sp500_series
-    from db import get_connection
-    from holdings import get_portfolio_value_series, get_sleeve_weights_on_date
-    from macro import get_series, percentile
-    from positioning import (
-        build_style_box_figure, get_active_tilts, get_effective_duration,
-        get_non_us_equity_data, get_scenario_triggers, get_style_box_data,
-    )
-    from returns import period_return, twr_daily_linked
-    from shiller import current_cape, get_cape_series
+from src.attribution import brinson_fachler_period
+from src.benchmarks import get_custom_blended_series, get_sp500_series
+from src.db import get_connection
+from src.holdings import get_portfolio_value_series, get_sleeve_weights_on_date
+from src.macro import get_series, percentile
+from src.positioning import (
+    build_style_box_figure, get_active_tilts, get_effective_duration,
+    get_non_us_equity_data, get_scenario_triggers, get_style_box_data,
+)
+from src.returns import period_return, twr_daily_linked
+from src.shiller import current_cape, get_cape_series
 
 from jinja2 import Environment, FileSystemLoader
 

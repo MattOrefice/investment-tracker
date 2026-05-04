@@ -3,14 +3,9 @@ from datetime import date, timedelta
 
 import pandas as pd
 
-try:
-    from src.db import get_connection
-    from src.prices import get_prices
-    from src.benchmarks import get_sleeve_benchmark_returns, _SLEEVE_BENCHMARKS
-except ImportError:
-    from db import get_connection
-    from prices import get_prices
-    from benchmarks import get_sleeve_benchmark_returns, _SLEEVE_BENCHMARKS
+from src.db import get_connection
+from src.prices import get_prices
+from src.benchmarks import get_sleeve_benchmark_returns, _SLEEVE_BENCHMARKS
 
 
 def brinson_fachler(

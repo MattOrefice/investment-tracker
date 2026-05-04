@@ -4,12 +4,8 @@ from typing import Optional
 
 import pandas as pd
 
-try:
-    from src.db import get_connection
-    from src.prices import get_prices, get_dividends, _to_iso
-except ImportError:
-    from db import get_connection
-    from prices import get_prices, get_dividends, _to_iso
+from src.db import get_connection
+from src.prices import get_prices, get_dividends, _to_iso
 
 
 def get_holdings_on_date(date_str: str) -> pd.DataFrame:

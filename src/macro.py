@@ -6,12 +6,8 @@ from typing import Optional
 
 import pandas as pd
 
-try:
-    from src.config import FRED_API_KEY as _FRED_KEY
-    from src.db import get_connection
-except ImportError:
-    from config import FRED_API_KEY as _FRED_KEY
-    from db import get_connection
+from src.config import FRED_API_KEY as _FRED_KEY
+from src.db import get_connection
 
 _CACHE_DDL = """
 CREATE TABLE IF NOT EXISTS macro_cache (
