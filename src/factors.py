@@ -708,11 +708,20 @@ def run_benchmark_attribution_regression(
     return result
 
 
-def build_benchmark_prose(result: Optional[dict]) -> list[str]:
+def build_benchmark_prose(
+    result: Optional[dict],
+    bhb_top_selection: Optional[list] = None,
+) -> list[str]:
     """
     Generate institutional-register prose interpreting the benchmark attribution regression.
 
     Called by both the PDF section builder and the Streamlit page.
+
+    bhb_top_selection: optional list of dicts from the caller:
+        [{"holding": "AVUV", "bench": "IWM", "sel_bps": 754.0}, ...]
+      When provided and alpha is significant, a cross-reference to the
+      Brinson-Fachler attribution is included with specific numbers.
+      When None, the cross-reference is generic (no bps numbers).
     """
     if result is None:
         return [
@@ -740,10 +749,60 @@ def build_benchmark_prose(result: Optional[dict]) -> list[str]:
         if abs(b_bench - 1.0) < 0.15
         else "departing from benchmark (expected ≈ 1.0 for a fully-invested passive portfolio)"
     )
-    alpha_note = (
-        f"marginally significant (|t| = {abs(t_a):.2f})"
-        if abs(t_a) > 2
-        else "not statistically distinguishable from zero at conventional thresholds"
+
+    # Four-tier significance label — avoids mislabeling strong results as "marginal"
+    t_abs = abs(t_a)
+    if t_abs >= 2.58:
+        sig_label = "statistically significant at the 1% level"
+    elif t_abs >= 1.96:
+        sig_label = "statistically significant at the 5% level"
+    elif t_abs >= 1.65:
+        sig_label = "marginally significant (10% level)"
+    else:
+        sig_label = "not statistically distinguishable from zero"
+
+    is_significant = t_abs >= 1.65
+
+    # Second paragraph: intercept interpretation + optional BHB cross-reference
+    second_para = (
+        f"The intercept — active return after controlling for benchmark beta and style tilts — "
+        f"is {a_bps:+.0f} bps annualized (t = {t_a:.2f}), {sig_label}. "
+    )
+
+    if is_significant and bhb_top_selection:
+        parts = []
+        for item in (bhb_top_selection or [])[:3]:
+            bps    = item["sel_bps"]
+            verb   = "outperformed" if bps >= 0 else "underperformed"
+            parts.append(
+                f"{item['holding']} {verb} {item['bench']} by {abs(bps):.0f} bps"
+            )
+        if len(parts) == 1:
+            joined = parts[0]
+        elif len(parts) == 2:
+            joined = f"{parts[0]}, and {parts[1]}"
+        else:
+            joined = f"{parts[0]}, {parts[1]}, and {parts[2]}"
+        second_para += (
+            f"This active return is consistent with the selection effects documented in the "
+            f"Brinson-Fachler attribution: {joined}. "
+            f"The benchmark attribution regression aggregates these sleeve-level selection "
+            f"effects into a single portfolio-level active return after controlling for "
+            f"systematic style tilts. "
+        )
+    elif is_significant:
+        second_para += (
+            "This active return is consistent with the selection effects documented in the "
+            "Brinson-Fachler attribution. "
+            "The benchmark attribution regression aggregates sleeve-level selection effects "
+            "into a single portfolio-level active return after controlling for systematic "
+            "style tilts. "
+        )
+
+    second_para += (
+        f"The t-statistic should be interpreted in light of the {T}-observation sample window: "
+        f"confidence intervals around the alpha estimate are wide at this sample length, "
+        f"and persistence of the active return cannot be established without a longer history."
     )
 
     return [
@@ -755,12 +814,7 @@ def build_benchmark_prose(result: Optional[dict]) -> list[str]:
         f"RMW β = {b_rmw:.3f} (t = {t_rmw:.2f}). "
         f"R² = {r2:.3f}.",
 
-        f"The intercept — active return after controlling for benchmark beta and style tilts — "
-        f"is {a_bps:+.0f} bps/yr (t = {t_a:.2f}), {alpha_note}. "
-        f"Over this sample length the confidence interval around the alpha estimate is wide; "
-        f"a t-statistic above 2.0 requires roughly 4-6 years of daily data to achieve "
-        f"for a genuine 100 bps/yr signal, making statistical significance a high bar at "
-        f"this stage of the portfolio's history.",
+        second_para,
     ]
 
 

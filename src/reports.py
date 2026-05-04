@@ -647,6 +647,23 @@ def _build_benchmark_section(end_date: str) -> Optional[dict]:
             "significance": sig_marker(p),
         })
 
+    # Compute top-3 BHB selection effects (since inception) for prose cross-reference
+    bhb_top = None
+    try:
+        bf_df = brinson_fachler_period(inception, end_date)
+        if not bf_df.empty:
+            top3 = bf_df.nlargest(3, "selection_effect")
+            bhb_top = []
+            for _, row in top3.iterrows():
+                sleeve = row["sleeve"]
+                bhb_top.append({
+                    "holding": _SLEEVE_HOLDING_TICKER.get(sleeve, sleeve),
+                    "bench":   _SLEEVE_BENCH_TICKER.get(sleeve, sleeve),
+                    "sel_bps": row["selection_effect"] * 10_000,
+                })
+    except Exception:
+        pass
+
     return {
         "rows":              rows,
         "r_squared":         f"{result['r_squared']:.3f}",
@@ -657,7 +674,7 @@ def _build_benchmark_section(end_date: str) -> Optional[dict]:
             f"{_fmt_date_local(result['sample_start'])} — "
             f"{_fmt_date_local(result['sample_end'])}"
         ),
-        "prose":             build_benchmark_prose(result),
+        "prose":             build_benchmark_prose(result, bhb_top_selection=bhb_top),
         "methodology_notes": build_benchmark_methodology(result),
         "_raw":              result,
     }

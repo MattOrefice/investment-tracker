@@ -500,24 +500,26 @@ def test_benchmark_regression_returns_none_on_insufficient_data():
 
 def test_benchmark_prose_contains_alpha_interpretation():
     """
-    build_benchmark_prose must describe the intercept as 'active return'
-    and include the word 'alpha' — core institutional framing requirements.
+    build_benchmark_prose must:
+    - describe the intercept as 'active return'
+    - use the four-tier significance label correctly:
+      t = 3.65 (|t| ≥ 2.58) → 'at the 1% level', NOT 'marginally significant'
     """
     mock_result = {
-        "betas":   {"Bench-RF": 0.98, "HML": 0.12, "SMB": 0.08, "RMW": 0.05},
-        "t_stats": {"Bench-RF": 25.0, "HML": 1.5,  "SMB": 1.2,  "RMW": 0.9},
-        "p_values":{"Bench-RF": 0.0,  "HML": 0.14, "SMB": 0.23, "RMW": 0.36},
-        "alpha_daily":      0.0001,
-        "alpha_annual":     0.0252,
-        "alpha_annual_bps": 252.0,
-        "t_alpha":          1.2,
-        "p_alpha":          0.23,
-        "r_squared":        0.95,
-        "adj_r_squared":    0.949,
-        "T":                200,
+        "betas":   {"Bench-RF": 0.990, "HML": 0.052, "SMB": -0.007, "RMW": 0.012},
+        "t_stats": {"Bench-RF": 98.46, "HML": 6.00,  "SMB": -0.82,  "RMW": 1.17},
+        "p_values":{"Bench-RF": 0.0,   "HML": 0.0,   "SMB": 0.41,   "RMW": 0.24},
+        "alpha_daily":      0.001706,
+        "alpha_annual":     0.04299,
+        "alpha_annual_bps": 429.0,
+        "t_alpha":          3.65,
+        "p_alpha":          0.0003,
+        "r_squared":        0.986,
+        "adj_r_squared":    0.986,
+        "T":                207,
         "nw_lags":          4,
-        "sample_start":     "2025-05-01",
-        "sample_end":       "2026-01-15",
+        "sample_start":     "2025-05-02",
+        "sample_end":       "2026-03-28",
     }
     prose = build_benchmark_prose(mock_result)
     full_text = " ".join(prose).lower()
@@ -525,9 +527,35 @@ def test_benchmark_prose_contains_alpha_interpretation():
     assert "active return" in full_text, (
         "Prose must frame the intercept as 'active return after controlling for...'"
     )
-    assert "alpha" in full_text, (
-        "Prose must use the word 'alpha' in describing the intercept"
+    assert "at the 1% level" in full_text, (
+        "t = 3.65 (|t| ≥ 2.58) must trigger '1% level' significance label, not 'marginally significant'"
     )
+    assert "marginally significant" not in full_text, (
+        "t = 3.65 must not be labeled 'marginally significant' — that label is for 1.65 ≤ |t| < 1.96"
+    )
+
+
+def test_benchmark_prose_significance_thresholds():
+    """
+    Verify all four significance-label tiers are applied correctly.
+    """
+    def _prose_for_t(t_val: float) -> str:
+        mock = {
+            "betas":   {"Bench-RF": 0.99, "HML": 0.0, "SMB": 0.0, "RMW": 0.0},
+            "t_stats": {"Bench-RF": 50.0, "HML": 0.0, "SMB": 0.0, "RMW": 0.0},
+            "p_values":{"Bench-RF": 0.0,  "HML": 1.0, "SMB": 1.0, "RMW": 1.0},
+            "alpha_daily": 0.0, "alpha_annual": 0.0, "alpha_annual_bps": 0.0,
+            "t_alpha": t_val, "p_alpha": 0.5,
+            "r_squared": 0.99, "adj_r_squared": 0.99,
+            "T": 200, "nw_lags": 4,
+            "sample_start": "2025-05-01", "sample_end": "2026-01-01",
+        }
+        return " ".join(build_benchmark_prose(mock)).lower()
+
+    assert "at the 1% level"    in _prose_for_t(3.0),  "t=3.0 → 1% level"
+    assert "at the 5% level"    in _prose_for_t(2.1),  "t=2.1 → 5% level"
+    assert "marginally significant" in _prose_for_t(1.8), "t=1.8 → marginally significant (10%)"
+    assert "not statistically distinguishable" in _prose_for_t(1.0), "t=1.0 → not significant"
 
 
 # ── EM disclosure constant ─────────────────────────────────────────────────────

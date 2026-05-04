@@ -4,6 +4,7 @@ from datetime import date
 
 import pandas as pd
 
+from src.attribution import brinson_fachler_period
 from src.config import IS_DEMO
 from src.factors import (
     build_benchmark_methodology,
@@ -11,6 +12,32 @@ from src.factors import (
     run_benchmark_attribution_regression,
     sig_marker,
 )
+
+# Locked Phase 2 holdings and benchmarks per sleeve — used for BHB cross-reference
+_SLEEVE_HOLDING = {
+    "US Large Core":           "VOO",
+    "US Large Quality":        "SPHQ",
+    "US Large Value":          "VTV",
+    "US Small Cap":            "AVUV",
+    "International Developed": "VEA",
+    "Emerging Markets":        "IEMG",
+    "Core Fixed Income":       "VGIT",
+    "TIPS":                    "SCHP",
+    "Real Assets":             "VNQ / PDBC",
+    "Cash / SPAXX":            "SPAXX",
+}
+_SLEEVE_BENCH = {
+    "US Large Core":           "SPY",
+    "US Large Quality":        "QUAL",
+    "US Large Value":          "IWD",
+    "US Small Cap":            "IWM",
+    "International Developed": "EFA",
+    "Emerging Markets":        "EEM",
+    "Core Fixed Income":       "IEF",
+    "TIPS":                    "TIP",
+    "Real Assets":             "VNQ / DBC",
+    "Cash / SPAXX":            "BIL",
+}
 
 st.set_page_config(page_title="Benchmark Attribution", layout="wide")
 
@@ -98,8 +125,25 @@ with col:
     st.divider()
 
     # ── Interpretation ────────────────────────────────────────────────────────
+    # Compute top-3 BHB selection effects since inception for prose cross-reference
+    _bhb_top = None
+    try:
+        _bf_df = brinson_fachler_period(inception, end_date)
+        if not _bf_df.empty:
+            _top3 = _bf_df.nlargest(3, "selection_effect")
+            _bhb_top = []
+            for _, _row in _top3.iterrows():
+                _sleeve = _row["sleeve"]
+                _bhb_top.append({
+                    "holding": _SLEEVE_HOLDING.get(_sleeve, _sleeve),
+                    "bench":   _SLEEVE_BENCH.get(_sleeve, _sleeve),
+                    "sel_bps": _row["selection_effect"] * 10_000,
+                })
+    except Exception:
+        pass
+
     st.subheader("Interpretation")
-    for sentence in build_benchmark_prose(result):
+    for sentence in build_benchmark_prose(result, bhb_top_selection=_bhb_top):
         st.write(sentence)
 
     st.divider()
