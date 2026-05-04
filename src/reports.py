@@ -8,10 +8,12 @@ Charts: Plotly + kaleido 0.2.1.
 import base64
 import io
 import json
+import logging
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Optional
 
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.io as pio
@@ -134,7 +136,7 @@ def _render_chart_to_png(fig: go.Figure, width: int = 700, height: int = 310) ->
         try:
             result[0] = pio.to_image(fig, format="png", width=width, height=height, scale=1.5)
         except Exception:
-            pass
+            logging.exception("kaleido chart render failed (width=%d, height=%d)", width, height)
 
     t = threading.Thread(target=_render, daemon=True)
     t.start()
@@ -298,6 +300,30 @@ def _build_executive_summary(start_date: str, end_date: str) -> dict:
     }
 
 
+def _build_holdings_chart(sleeves: list, actuals: list, targets: list) -> go.Figure:
+    """Pure figure construction — no DB, no rendering. Testable in isolation."""
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        name="Actual", y=sleeves, x=actuals, orientation="h",
+        marker_color=_PALETTE["portfolio"],
+    ))
+    fig.add_trace(go.Bar(
+        name="Target", y=sleeves, x=targets, orientation="h",
+        marker_color=_PALETTE["sp500"], opacity=0.65,
+    ))
+    fig.update_layout(
+        barmode="overlay",
+        xaxis_title="Weight (%)", yaxis_title=None,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+        margin=dict(l=180, r=20, t=40, b=30), height=330,
+        plot_bgcolor="white", paper_bgcolor="white",
+        font=dict(family="sans-serif", size=9, color="#333"),
+        xaxis=dict(gridcolor="#E8E8E8"),
+        yaxis=dict(tickmode="array", tickvals=sleeves, ticktext=sleeves),
+    )
+    return fig
+
+
 def _build_holdings_section(end_date: str) -> dict:
     sw = get_sleeve_weights_on_date(end_date)
     if sw.empty:
@@ -322,27 +348,45 @@ def _build_holdings_section(end_date: str) -> dict:
     sleeves = sw.index.tolist()
     actuals = (sw["Actual Weight"] * 100).tolist()
     targets = (sw["Target Weight"] * 100).tolist()
+    fig = _build_holdings_chart(sleeves, actuals, targets)
+    return {"rows": rows, "chart_b64": _chart_b64(fig, 700, 330)}
 
+
+def _build_cumulative_chart(
+    pv_pct: pd.Series, sp_pct: pd.Series, bl_pct: pd.Series
+) -> go.Figure:
+    """Pure cumulative-return figure. Raises ValueError on empty input."""
+    if pv_pct.empty:
+        raise ValueError("pv_pct is empty — cannot build cumulative return chart")
+    all_vals = np.concatenate([pv_pct.values, sp_pct.values, bl_pct.values])
+    tick_min = int(np.nanmin(all_vals) // 10) * 10
+    tick_max = int(np.nanmax(all_vals) // 10 + 1) * 10
+    tick_vals = list(range(tick_min, tick_max + 1, 10))
     fig = go.Figure()
-    fig.add_trace(go.Bar(
-        name="Actual", y=sleeves, x=actuals, orientation="h",
-        marker_color=_PALETTE["portfolio"],
+    fig.add_trace(go.Scatter(
+        x=pv_pct.index, y=pv_pct, name="Portfolio",
+        line=dict(color=_PALETTE["portfolio"], width=2),
     ))
-    fig.add_trace(go.Bar(
-        name="Target", y=sleeves, x=targets, orientation="h",
-        marker_color=_PALETTE["sp500"], opacity=0.65,
+    fig.add_trace(go.Scatter(
+        x=sp_pct.index, y=sp_pct, name="S&P 500",
+        line=dict(color=_PALETTE["sp500"], width=1.5, dash="dot"),
+    ))
+    fig.add_trace(go.Scatter(
+        x=bl_pct.index, y=bl_pct, name="Custom Blended",
+        line=dict(color=_PALETTE["blended"], width=1.5, dash="dash"),
     ))
     fig.update_layout(
-        barmode="overlay",
-        xaxis_title="Weight (%)", yaxis_title=None,
+        yaxis_title="Cumulative Return (%)", xaxis_title=None,
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
-        margin=dict(l=200, r=20, t=40, b=30), height=330,
+        margin=dict(l=60, r=0, t=40, b=0), height=290,
         plot_bgcolor="white", paper_bgcolor="white",
-        font=dict(family="sans-serif", size=9, color="#333"),
+        font=dict(family="sans-serif", size=10, color="#333"),
+        yaxis=dict(gridcolor="#E8E8E8", zeroline=True, zerolinecolor="#CCC",
+                   tickmode="array", tickvals=tick_vals,
+                   ticktext=[f"{v}%" for v in tick_vals]),
         xaxis=dict(gridcolor="#E8E8E8"),
-        yaxis=dict(tickmode="array", tickvals=sleeves, ticktext=sleeves, automargin=True),
     )
-    return {"rows": rows, "chart_b64": _chart_b64(fig, 700, 330)}
+    return fig
 
 
 def _build_performance_section(start_date: str, end_date: str) -> dict:
@@ -377,35 +421,8 @@ def _build_performance_section(start_date: str, end_date: str) -> dict:
     pv_pct = (pv_norm - 1) * 100
     sp_pct = (sp_norm - 1) * 100
     bl_pct = (bl_norm - 1) * 100
-    _all_pct = pd.concat([pv_pct, sp_pct, bl_pct])
-    _tick_min = int((_all_pct.min() // 10) * 10)
-    _tick_max = int((_all_pct.max() // 10 + 1) * 10)
-    _tick_vals = list(range(_tick_min, _tick_max + 1, 10))
 
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=pv_norm.index, y=pv_pct, name="Portfolio",
-        line=dict(color=_PALETTE["portfolio"], width=2),
-    ))
-    fig.add_trace(go.Scatter(
-        x=sp_norm.index, y=sp_pct, name="S&P 500",
-        line=dict(color=_PALETTE["sp500"], width=1.5, dash="dot"),
-    ))
-    fig.add_trace(go.Scatter(
-        x=bl_norm.index, y=bl_pct, name="Custom Blended",
-        line=dict(color=_PALETTE["blended"], width=1.5, dash="dash"),
-    ))
-    fig.update_layout(
-        yaxis_title="Cumulative Return (%)", xaxis_title=None,
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
-        margin=dict(l=60, r=0, t=40, b=0), height=290,
-        plot_bgcolor="white", paper_bgcolor="white",
-        font=dict(family="sans-serif", size=10, color="#333"),
-        yaxis=dict(gridcolor="#E8E8E8", zeroline=True, zerolinecolor="#CCC",
-                   tickmode="array", tickvals=_tick_vals,
-                   ticktext=[f"{v}%" for v in _tick_vals]),
-        xaxis=dict(gridcolor="#E8E8E8"),
-    )
+    fig = _build_cumulative_chart(pv_pct, sp_pct, bl_pct)
     return {"period_rows": period_rows, "chart_b64": _chart_b64(fig, 700, 290)}
 
 
