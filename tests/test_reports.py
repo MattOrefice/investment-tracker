@@ -1,6 +1,7 @@
 """Tests for report-level logic in src/reports.py."""
 import sys
 import pathlib
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
@@ -8,7 +9,9 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
+import src.reports as rpt
 from src.reports import _build_cumulative_chart, _build_holdings_chart, _drift_status
+from src.returns import twr_daily_linked
 
 # ── shared fixtures ──────────────────────────────────────────────────────────
 
@@ -112,3 +115,74 @@ def test_cumulative_return_chart_does_not_swallow_errors():
             pd.Series(dtype=float),
             pd.Series(dtype=float),
         )
+
+
+# ── _build_executive_summary cover TWR fix ───────────────────────────────────
+
+def _flat_series(start: str, end: str, value: float = 1.0) -> pd.Series:
+    return pd.Series(value, index=pd.date_range(start, end, freq="D"))
+
+
+def test_cover_twr_uses_inception_slice_not_period_scoped():
+    """
+    portfolio_return_pct must equal twr_daily_linked on the inception series
+    sliced to the report period — not a separate period-scoped call whose
+    v_start can be $0 on New Year's Day.
+    """
+    inception  = "2025-05-01"
+    start_date = "2026-01-01"
+    end_date   = "2026-03-31"
+
+    idx = pd.date_range(inception, end_date, freq="D")
+    pv_full = pd.Series(
+        1000.0 + (idx - idx[0]).days.astype(float) * (300.0 / (len(idx) - 1)),
+        index=idx,
+    )
+    pv_period    = pv_full[pv_full.index >= pd.Timestamp(start_date)]
+    expected_pct = twr_daily_linked(
+        pv_period, pd.Series(0.0, index=pv_period.index)
+    ) * 100
+
+    sp_flat = _flat_series(inception, end_date)
+    bl_flat = _flat_series(inception, end_date)
+
+    with patch.object(rpt, "get_portfolio_value_series", return_value=pv_full), \
+         patch.object(rpt, "_inception_date", return_value=inception), \
+         patch.object(rpt, "get_sp500_series", return_value=sp_flat), \
+         patch.object(rpt, "get_custom_blended_series", return_value=bl_flat), \
+         patch.object(rpt, "brinson_fachler_period", side_effect=Exception("no db")), \
+         patch.object(rpt, "current_cape", side_effect=Exception("no data")), \
+         patch.object(rpt, "get_cape_series", side_effect=Exception("no data")):
+
+        result = rpt._build_executive_summary(start_date, end_date)
+
+    actual_pct = float(result["portfolio_return_pct"].rstrip("%"))
+    assert abs(actual_pct - expected_pct) < 0.01, (
+        f"Cover TWR {actual_pct:.4f}% should match period-sliced inception "
+        f"TWR {expected_pct:.4f}%"
+    )
+
+
+def test_cover_current_value_reflects_full_portfolio():
+    """current_value must equal the end-date portfolio value from the inception series."""
+    inception  = "2025-05-01"
+    start_date = "2026-01-01"
+    end_date   = "2026-03-31"
+
+    idx     = pd.date_range(inception, end_date, freq="D")
+    pv_full = pd.Series(1200.0, index=idx)
+
+    sp_flat = _flat_series(inception, end_date)
+    bl_flat = _flat_series(inception, end_date)
+
+    with patch.object(rpt, "get_portfolio_value_series", return_value=pv_full), \
+         patch.object(rpt, "_inception_date", return_value=inception), \
+         patch.object(rpt, "get_sp500_series", return_value=sp_flat), \
+         patch.object(rpt, "get_custom_blended_series", return_value=bl_flat), \
+         patch.object(rpt, "brinson_fachler_period", side_effect=Exception("no db")), \
+         patch.object(rpt, "current_cape", side_effect=Exception("no data")), \
+         patch.object(rpt, "get_cape_series", side_effect=Exception("no data")):
+
+        result = rpt._build_executive_summary(start_date, end_date)
+
+    assert result["current_value"] == "$1,200"

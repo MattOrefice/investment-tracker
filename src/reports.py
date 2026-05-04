@@ -24,7 +24,10 @@ try:
     from src.db import get_connection
     from src.holdings import get_portfolio_value_series, get_sleeve_weights_on_date
     from src.macro import get_series, percentile
-    from src.positioning import get_active_tilts, get_effective_duration, get_scenario_triggers
+    from src.positioning import (
+        build_style_box_figure, get_active_tilts, get_effective_duration,
+        get_scenario_triggers, get_style_box_data,
+    )
     from src.returns import period_return, twr_daily_linked
     from src.shiller import current_cape, get_cape_series
 except ImportError:
@@ -33,7 +36,10 @@ except ImportError:
     from db import get_connection
     from holdings import get_portfolio_value_series, get_sleeve_weights_on_date
     from macro import get_series, percentile
-    from positioning import get_active_tilts, get_effective_duration, get_scenario_triggers
+    from positioning import (
+        build_style_box_figure, get_active_tilts, get_effective_duration,
+        get_scenario_triggers, get_style_box_data,
+    )
     from returns import period_return, twr_daily_linked
     from shiller import current_cape, get_cape_series
 
@@ -229,15 +235,15 @@ def _bm_period_return(series: pd.Series, period: str) -> float:
 # ── Section builders ──────────────────────────────────────────────────────────
 
 def _build_executive_summary(start_date: str, end_date: str) -> dict:
-    pv = get_portfolio_value_series(start_date, end_date)
-    cf = pd.Series(0.0, index=pv.index)
-    portfolio_twr = twr_daily_linked(pv, cf) if len(pv) >= 2 else 0.0
-
-    # Use inception-to-end series for current_val so all DRIP (dividends
-    # from inception through end_date) are captured, not just those within
-    # the report period window.
+    # Use inception-to-end series so all DRIP dividends are captured, then
+    # slice to the report period for portfolio_twr — avoids v_start=$0 on
+    # New Year's Day when the period-scoped series has no prior trading day.
     pv_since_inception = get_portfolio_value_series(_inception_date(), end_date)
     current_val = float(pv_since_inception.iloc[-1]) if not pv_since_inception.empty else 0.0
+
+    pv = pv_since_inception[pv_since_inception.index >= pd.Timestamp(start_date)]
+    cf = pd.Series(0.0, index=pv.index)
+    portfolio_twr = twr_daily_linked(pv, cf) if len(pv) >= 2 else 0.0
 
     sp = get_sp500_series(start_date, end_date)
     sp_return = float(sp.iloc[-1] / sp.iloc[0] - 1) if len(sp) >= 2 else 0.0
@@ -637,9 +643,10 @@ def _build_thesis_section(start_date: str, end_date: str) -> dict:
 
 def _build_positioning_section(end_date: str) -> dict:
     """Build the Active Positioning section from live portfolio state."""
-    tilts     = get_active_tilts(end_date)
-    dur       = get_effective_duration(end_date)
-    scenarios = get_scenario_triggers(end_date)
+    tilts      = get_active_tilts(end_date)
+    dur        = get_effective_duration(end_date)
+    scenarios  = get_scenario_triggers(end_date)
+    style_data = get_style_box_data(end_date)
     fi_dur  = dur["fi_sleeve_duration"]
     agg_dur = dur["agg_benchmark"]
     vs_agg  = "below" if fi_dur < agg_dur else "above"
@@ -649,10 +656,12 @@ def _build_positioning_section(end_date: str) -> dict:
         f"FI weight: {dur['fi_weight_pct']}% of portfolio. "
         "Intermediate-Treasury focus keeps duration below the Agg, limiting sensitivity to rate moves."
     )
+    style_box_b64 = _chart_b64(build_style_box_figure(style_data), 320, 240) if style_data else None
     return {
-        "tilts":         tilts,
-        "duration_line": duration_line,
-        "scenarios":     scenarios,
+        "tilts":          tilts,
+        "duration_line":  duration_line,
+        "scenarios":      scenarios,
+        "style_box_b64":  style_box_b64,
     }
 
 

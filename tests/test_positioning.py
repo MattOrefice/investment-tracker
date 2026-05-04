@@ -10,10 +10,13 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from src.positioning import (
     ETF_DURATION,
+    ETF_STYLE_BOX,
     _FI_SLEEVE_HOLDING,
+    build_style_box_figure,
     get_active_tilts,
     get_effective_duration,
     get_scenario_triggers,
+    get_style_box_data,
 )
 
 # ── Shared test fixtures ──────────────────────────────────────────────────────
@@ -175,3 +178,66 @@ def test_scenario_capped_at_four():
     with patch("src.positioning.get_sleeve_weights_on_date", return_value=sw):
         scenarios = get_scenario_triggers("2026-03-31")
     assert len(scenarios) <= 4
+
+
+# ── ETF_STYLE_BOX and build_style_box_figure ─────────────────────────────────
+
+_EQUITY_ETFS = {"VOO", "SPHQ", "VTV", "AVUV", "VEA", "IEMG"}
+
+
+def test_style_box_contains_all_equity_etfs():
+    """All equity holdings must appear in ETF_STYLE_BOX — fail loud if missing."""
+    missing = _EQUITY_ETFS - set(ETF_STYLE_BOX.keys())
+    assert not missing, f"ETF_STYLE_BOX missing equity ETFs: {missing}"
+
+
+def test_style_box_valid_categories():
+    """Every ETF_STYLE_BOX entry must use valid Morningstar size and style values."""
+    valid_sizes  = {"Large", "Mid", "Small"}
+    valid_styles = {"Value", "Blend", "Growth"}
+    for ticker, (size, style) in ETF_STYLE_BOX.items():
+        assert size  in valid_sizes,  f"{ticker}: invalid size '{size}'"
+        assert style in valid_styles, f"{ticker}: invalid style '{style}'"
+
+
+def test_build_style_box_figure_returns_figure():
+    """build_style_box_figure returns a Plotly Figure for valid data."""
+    import plotly.graph_objects as go
+    data = [
+        {"ticker": "VOO",  "size": "Large", "style": "Blend", "weight_pct": 16.0},
+        {"ticker": "AVUV", "size": "Small", "style": "Value", "weight_pct":  7.0},
+        {"ticker": "VTV",  "size": "Large", "style": "Value", "weight_pct":  8.0},
+    ]
+    fig = build_style_box_figure(data)
+    assert isinstance(fig, go.Figure)
+    assert len(fig.data) == 1
+    assert fig.data[0].x is not None
+
+
+def test_build_style_box_figure_empty():
+    """build_style_box_figure returns a Figure (no traces) for empty input."""
+    import plotly.graph_objects as go
+    fig = build_style_box_figure([])
+    assert isinstance(fig, go.Figure)
+    assert len(fig.data) == 0
+
+
+def test_build_style_box_figure_dot_sizes_scaled():
+    """Largest-weight ETF gets the largest dot; smallest-weight gets the smallest."""
+    data = [
+        {"ticker": "VOO",  "size": "Large", "style": "Blend", "weight_pct": 16.0},
+        {"ticker": "AVUV", "size": "Small", "style": "Value", "weight_pct":  7.0},
+    ]
+    fig = build_style_box_figure(data)
+    sizes = list(fig.data[0].marker.size)
+    voo_idx  = list(fig.data[0].text).index("VOO")
+    avuv_idx = list(fig.data[0].text).index("AVUV")
+    assert sizes[voo_idx] > sizes[avuv_idx], "Larger weight should produce larger dot"
+
+
+def test_get_style_box_data_empty_portfolio():
+    """get_style_box_data returns [] when portfolio is empty."""
+    empty_df = pd.DataFrame(columns=["net_shares"])
+    with patch("src.positioning.get_holdings_on_date", return_value=empty_df):
+        result = get_style_box_data("2026-03-31")
+    assert result == []

@@ -3,9 +3,11 @@ import streamlit as st
 
 from src.config import IS_DEMO
 from src.positioning import (
+    build_style_box_figure,
     get_active_tilts,
     get_effective_duration,
     get_scenario_triggers,
+    get_style_box_data,
 )
 
 st.set_page_config(page_title="Active Positioning", layout="wide")
@@ -82,3 +84,18 @@ with col:
                 st.write(s["text"])
     else:
         st.info("No scenario triggers based on current positioning.")
+
+    st.divider()
+
+    # ── Block D: Equity Style Profile ───────────────────────────────────────
+    st.subheader("Equity Style Profile")
+    style_data = get_style_box_data(end_date)
+    if style_data:
+        fig = build_style_box_figure(style_data)
+        st.plotly_chart(fig, use_container_width=False)
+        st.caption(
+            "Morningstar 3×3 style box · dot size = portfolio weight · "
+            "assignments based on official Morningstar category"
+        )
+    else:
+        st.info("No equity holdings found.")

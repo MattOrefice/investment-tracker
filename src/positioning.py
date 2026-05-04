@@ -7,14 +7,20 @@ no hand-written quarterly text.  Every number re-derives from live portfolio sta
 from __future__ import annotations
 
 import sys
+from collections import defaultdict
+from datetime import date, timedelta
 from pathlib import Path
+
+import plotly.graph_objects as go
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 try:
-    from src.holdings import get_sleeve_weights_on_date
+    from src.holdings import get_holdings_on_date, get_sleeve_weights_on_date
+    from src.prices import get_prices
 except ImportError:
-    from holdings import get_sleeve_weights_on_date
+    from holdings import get_holdings_on_date, get_sleeve_weights_on_date
+    from prices import get_prices
 
 # ── Static reference dicts ─────────────────────────────────────────────────
 
@@ -51,6 +57,147 @@ _FI_SLEEVE_HOLDING: dict[str, str] = {
     "TIPS":              "SCHP",
     "Cash / SPAXX":      "SPAXX",
 }
+
+# Morningstar 3×3 style box assignments for equity holdings.
+# Source: official Morningstar category — update if holdings change.
+ETF_STYLE_BOX: dict[str, tuple[str, str]] = {
+    "VOO":  ("Large", "Blend"),   # S&P 500            — Large Blend
+    "SPHQ": ("Large", "Blend"),   # S&P 500 Quality    — Large Blend
+    "VTV":  ("Large", "Value"),   # CRSP Large Value   — Large Value
+    "AVUV": ("Small", "Value"),   # Avantis US Sm Val  — Small Value
+    "VEA":  ("Large", "Blend"),   # FTSE Dev ex-US     — Foreign Large Blend
+    "IEMG": ("Large", "Blend"),   # MSCI EM            — Diversified Emerging Mkts
+}
+
+_STYLE_X: dict[str, int] = {"Value": 0, "Blend": 1, "Growth": 2}
+_SIZE_Y:  dict[str, int] = {"Large": 2, "Mid": 1, "Small": 0}
+
+# Within-cell dot offsets for n simultaneous ETFs (normalized to ±0.20 cell units)
+_CELL_OFFSETS: dict[int, list[tuple[float, float]]] = {
+    1: [(0.0,   0.0)],
+    2: [(-0.18, 0.0),  (0.18,  0.0)],
+    3: [(-0.20, 0.0),  (0.0,   0.0),  (0.20, 0.0)],
+    4: [(-0.17, 0.13), (0.17,  0.13), (-0.17, -0.13), (0.17, -0.13)],
+}
+
+
+# ── Style box helpers ──────────────────────────────────────────────────────
+
+def get_style_box_data(date_str: str) -> list[dict]:
+    """
+    Return per-equity-ETF style box entries with portfolio weights for date_str.
+    Each dict: ticker, size, style, weight_pct.
+    Only ETFs listed in ETF_STYLE_BOX are included; missing tickers get 0 weight.
+    """
+    holdings = get_holdings_on_date(date_str)
+    if holdings.empty:
+        return []
+
+    look_back = (date.fromisoformat(date_str) - timedelta(days=7)).isoformat()
+    total_mv = 0.0
+    ticker_mv: dict[str, float] = {}
+
+    for ticker, row in holdings.iterrows():
+        shares = float(row["net_shares"])
+        if ticker == "SPAXX":
+            mv = shares
+        else:
+            try:
+                p = get_prices(ticker, look_back, date_str)
+                price = float(p["close"].iloc[-1]) if not p.empty else 0.0
+                mv = shares * price
+            except Exception:
+                mv = 0.0
+        ticker_mv[ticker] = mv
+        total_mv += mv
+
+    if total_mv == 0:
+        return []
+
+    result = []
+    for ticker, (size, style) in ETF_STYLE_BOX.items():
+        mv = ticker_mv.get(ticker, 0.0)
+        result.append({
+            "ticker":     ticker,
+            "size":       size,
+            "style":      style,
+            "weight_pct": round(mv / total_mv * 100, 2),
+        })
+    return sorted(result, key=lambda x: -x["weight_pct"])
+
+
+def build_style_box_figure(style_data: list[dict]) -> go.Figure:
+    """
+    Morningstar 3×3 style grid. Dot size ∝ portfolio weight.
+    Multiple ETFs in the same cell are spread with pre-computed offsets.
+    """
+    cell_items: dict = defaultdict(list)
+    for i, d in enumerate(style_data):
+        key = (_STYLE_X.get(d["style"], 1), _SIZE_Y.get(d["size"], 2))
+        cell_items[key].append(i)
+
+    x_vals = [0.0] * len(style_data)
+    y_vals = [0.0] * len(style_data)
+    for (cx, cy), indices in cell_items.items():
+        n = min(len(indices), 4)
+        offs = _CELL_OFFSETS.get(n, [(0.0, 0.0)] * n)
+        for j, idx in enumerate(indices):
+            ox, oy = offs[j] if j < len(offs) else (0.0, 0.0)
+            x_vals[idx] = cx + ox
+            y_vals[idx] = cy + oy
+
+    if style_data:
+        weights = [d["weight_pct"] for d in style_data]
+        w_min, w_max = min(weights), max(weights)
+        span = w_max - w_min if w_max > w_min else 1.0
+        sizes = [12 + 38 * (w - w_min) / span for w in weights]
+    else:
+        sizes = []
+
+    fig = go.Figure()
+
+    for i in range(4):
+        fig.add_shape(type="line", x0=i - 0.5, x1=i - 0.5, y0=-0.5, y1=2.5,
+                      line=dict(color="#CCCCCC", width=1), layer="below")
+        fig.add_shape(type="line", x0=-0.5, x1=2.5, y0=i - 0.5, y1=i - 0.5,
+                      line=dict(color="#CCCCCC", width=1), layer="below")
+
+    if style_data:
+        fig.add_trace(go.Scatter(
+            x=x_vals, y=y_vals,
+            mode="markers+text",
+            marker=dict(
+                size=sizes, color="#2E4057", opacity=0.80,
+                line=dict(width=1, color="white"),
+            ),
+            text=[d["ticker"] for d in style_data],
+            textfont=dict(size=8, color="#222222"),
+            textposition="top center",
+            customdata=[[d["weight_pct"]] for d in style_data],
+            hovertemplate="%{text}: %{customdata[0]:.1f}%<extra></extra>",
+        ))
+
+    fig.update_layout(
+        xaxis=dict(
+            tickmode="array", tickvals=[0, 1, 2],
+            ticktext=["Value", "Blend", "Growth"],
+            range=[-0.5, 2.5], showgrid=False, zeroline=False, side="top",
+            tickfont=dict(size=9),
+        ),
+        yaxis=dict(
+            tickmode="array", tickvals=[0, 1, 2],
+            ticktext=["Small", "Mid", "Large"],
+            range=[-0.5, 2.5], showgrid=False, zeroline=False,
+            tickfont=dict(size=9),
+        ),
+        margin=dict(l=55, r=20, t=50, b=20),
+        height=240, width=320,
+        plot_bgcolor="#FAFAFA", paper_bgcolor="white",
+        font=dict(family="sans-serif", size=9, color="#333"),
+        showlegend=False,
+    )
+
+    return fig
 
 
 # ── Public API ─────────────────────────────────────────────────────────────

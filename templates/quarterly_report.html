@@ -287,6 +287,14 @@
   <p class="muted">No scenario triggers based on current positioning.</p>
   {% endif %}
 
+  {% if pos.style_box_b64 %}
+  <h3>Equity Style Profile</h3>
+  <div style="text-align: center; margin: 8px 0 4px;">
+    <img src="data:image/png;base64,{{ pos.style_box_b64 }}" style="max-width: 330px;" alt="Equity Style Profile" />
+    <p style="font-size: 0.78em; color: #666; margin: 2px 0 0;">Morningstar 3&times;3 style box &middot; dot size = portfolio weight</p>
+  </div>
+  {% endif %}
+
   {% else %}
   <div class="empty-banner">No positioning data available for this period.</div>
   {% endif %}
