@@ -157,14 +157,33 @@ def _chart_b64(fig: Optional[go.Figure], width: int = 700, height: int = 310) ->
 # ── Period / filename helpers ─────────────────────────────────────────────────
 
 def _format_period_label(start_date: str, end_date: str) -> str:
-    """'Q1 2026' for standard quarters, else 'Jan 1 to Mar 31, 2026'."""
+    """'Q1 2026' for standard quarters, else 'Jan 1 to Mar 31, 2026'.
+
+    Recognises both conventions:
+      - Prior-quarter-end: Dec-31/2025 → Mar-31/2026 = Q1 2026  (preferred)
+      - First-of-quarter:  Jan-1/2026  → Mar-31/2026 = Q1 2026  (legacy)
+    """
     s = date.fromisoformat(start_date)
     e = date.fromisoformat(end_date)
-    quarters = [
-        ((1, 1), (3, 31), "Q1"), ((4, 1), (6, 30), "Q2"),
-        ((7, 1), (9, 30), "Q3"), ((10, 1), (12, 31), "Q4"),
-    ]
-    for (sm, sd), (em, ed), qname in quarters:
+    # Prior-quarter-end start convention (Dec31→Mar31, Mar31→Jun30, etc.)
+    for (sm, sd), (em, ed), qname in [
+        ((12, 31), (3, 31),  "Q1"),  # Dec31 prior year → Mar31
+        ((3, 31),  (6, 30),  "Q2"),
+        ((6, 30),  (9, 30),  "Q3"),
+        ((9, 30),  (12, 31), "Q4"),
+    ]:
+        if (s.month, s.day) == (sm, sd) and (e.month, e.day) == (em, ed):
+            yr = e.year  # Q1 spans two calendar years; use end year as the label
+            if qname == "Q1" and e.year != s.year + 1:
+                continue  # Dec-31 same year as Mar-31 would be wrong
+            if qname != "Q1" and s.year != e.year:
+                continue
+            return f"{qname} {yr}"
+    # First-of-quarter start convention (Jan-1, Apr-1, Jul-1, Oct-1) — legacy
+    for (sm, sd), (em, ed), qname in [
+        ((1, 1),  (3, 31),  "Q1"), ((4, 1),  (6, 30),  "Q2"),
+        ((7, 1),  (9, 30),  "Q3"), ((10, 1), (12, 31), "Q4"),
+    ]:
         if (s.month, s.day) == (sm, sd) and (e.month, e.day) == (em, ed) and s.year == e.year:
             return f"{qname} {s.year}"
     if s.year == e.year:

@@ -79,18 +79,25 @@ def _date_offset(iso: str, days: int) -> str:
 
 
 def _most_recent_completed_quarter():
-    """Return (start_iso, end_iso, label) for the most recently completed quarter."""
+    """Return (start_iso, end_iso, label) for the most recently completed quarter.
+
+    Start = last trading day of the prior quarter (conventional quarterly return
+    definition: Q1 return = Mar-31 close / Dec-31 prior-year close − 1).
+    Using Jan-1 as Q1 start fails because Jan-1 is a US market holiday; the
+    benchmark pipeline would bfill from Jan-2, creating a spurious shift vs the
+    correct Dec-31 base price.
+    """
     today = date.today()
     quarters = [
-        (date(today.year, 1, 1),  date(today.year, 3, 31),  f"Q1 {today.year}"),
-        (date(today.year, 4, 1),  date(today.year, 6, 30),  f"Q2 {today.year}"),
-        (date(today.year, 7, 1),  date(today.year, 9, 30),  f"Q3 {today.year}"),
-        (date(today.year, 10, 1), date(today.year, 12, 31), f"Q4 {today.year}"),
+        (date(today.year - 1, 12, 31), date(today.year, 3, 31),  f"Q1 {today.year}"),
+        (date(today.year, 3, 31),       date(today.year, 6, 30),  f"Q2 {today.year}"),
+        (date(today.year, 6, 30),       date(today.year, 9, 30),  f"Q3 {today.year}"),
+        (date(today.year, 9, 30),       date(today.year, 12, 31), f"Q4 {today.year}"),
     ]
     for q_start, q_end, q_label in reversed(quarters):
         if q_end < today:
             return q_start.isoformat(), q_end.isoformat(), q_label
-    return f"{today.year-1}-10-01", f"{today.year-1}-12-31", f"Q4 {today.year-1}"
+    return f"{today.year-1}-09-30", f"{today.year-1}-12-31", f"Q4 {today.year-1}"
 
 
 def _pct(v: float, decimals: int = 2) -> str:
