@@ -1,0 +1,28 @@
+{
+  "_comment": "Weighted-average market cap and valuation ratios from ETF fact sheets. Update each quarter.",
+  "SPY": {
+    "weighted_avg_mcap_b": 250.0,
+    "p_b": 4.30, "p_e": 24.0, "div_yield": 0.0125, "p_cf": 17.0,
+    "as_of": "2026-04-15"
+  },
+  "VOO": {
+    "weighted_avg_mcap_b": 250.0,
+    "p_b": 4.30, "p_e": 24.0, "div_yield": 0.0125, "p_cf": 17.0,
+    "as_of": "2026-04-15"
+  },
+  "VTV": {
+    "weighted_avg_mcap_b": 150.0,
+    "p_b": 2.10, "p_e": 16.0, "div_yield": 0.0220, "p_cf": 11.0,
+    "as_of": "2026-04-15"
+  },
+  "SPHQ": {
+    "weighted_avg_mcap_b": 300.0,
+    "p_b": 5.50, "p_e": 27.0, "div_yield": 0.0085, "p_cf": 20.0,
+    "as_of": "2026-04-15"
+  },
+  "AVUV": {
+    "weighted_avg_mcap_b":   3.0,
+    "p_b": 1.50, "p_e": 11.0, "div_yield": 0.0180, "p_cf":  6.5,
+    "as_of": "2026-04-15"
+  }
+}

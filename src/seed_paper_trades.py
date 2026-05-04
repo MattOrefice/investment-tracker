@@ -1,9 +1,9 @@
 """
-Seed paper trades: deploy $10,000 across 10 holdings on 2025-05-01.
+Seed paper trades: deploy $1,000 across 10 holdings on 2025-05-01.
 
-Run once. Idempotent — aborts cleanly if trades already exist.
+Fractional shares are used so the full $1,000 deploys cleanly.
+Pass force=True (or --force on the CLI) to wipe existing trades first.
 """
-import math
 import sys
 from pathlib import Path
 
@@ -13,9 +13,9 @@ from src.db import get_connection, initialize_db
 from src.prices import get_prices
 
 TRADE_DATE   = "2025-05-01"
-TOTAL_CASH   = 10_000.0
+TOTAL_CASH   = 1_000.0
 ACCOUNT_ID   = 1
-TRADE_NOTES  = "Paper trade — Phase 4 deployment seed"
+TRADE_NOTES  = "Paper trade — $1k inception seed"
 
 # 10 ETF holdings in sleeve order
 HOLDINGS = ["VOO", "SPHQ", "VTV", "AVUV", "VEA", "IEMG", "VGIT", "SCHP", "VNQ", "PDBC"]
@@ -67,19 +67,21 @@ def _price_on_or_after(ticker: str, from_date: str) -> tuple[str, float]:
     return _to_iso(first_date), close
 
 
-def seed():
+def seed(force: bool = False):
     initialize_db()
 
     with get_connection() as conn:
-        # Guard: abort if trades already exist
         existing = conn.execute("SELECT COUNT(*) FROM trades").fetchone()[0]
         if existing > 0:
-            print(
-                f"Trades table already has {existing} row(s). "
-                "Aborting to prevent duplicates.\n"
-                "Delete existing trades manually if you want to re-seed."
-            )
-            return
+            if not force:
+                print(
+                    f"Trades table already has {existing} row(s). "
+                    "Aborting to prevent duplicates.\n"
+                    "Pass force=True (or --force) to wipe and re-seed."
+                )
+                return
+            conn.execute("DELETE FROM trades")
+            print(f"Wiped {existing} existing trade(s). Re-seeding...")
 
         _ensure_spaxx_in_securities(conn)
 
@@ -106,14 +108,14 @@ def seed():
             ticker = parts[-1]
             weight_map[ticker] = r["target_weight"] or 0.0
 
-        # ── Compute shares (whole shares, floor) ───────────────────────────
+        # ── Compute shares (fractional — full target_dollars deployed) ────────
         allocations = []
         total_deployed = 0.0
         for ticker in HOLDINGS:
             target_w = weight_map.get(ticker, 0.0)
             target_dollars = TOTAL_CASH * target_w
             trade_date_used, price = prices_used[ticker]
-            shares = math.floor(target_dollars / price) if price > 0 else 0
+            shares = round(target_dollars / price, 6) if price > 0 else 0.0
             cost   = shares * price
             total_deployed += cost
             allocations.append(
@@ -133,9 +135,6 @@ def seed():
 
         # ── Insert ETF trades ──────────────────────────────────────────────
         for a in allocations:
-            if a["shares"] == 0:
-                print(f"  WARNING: {a['ticker']} — 0 shares computed, skipping.")
-                continue
             conn.execute(
                 """INSERT INTO trades
                    (account_id, ticker, thesis_id, trade_date, action,
@@ -208,4 +207,4 @@ def seed():
 
 
 if __name__ == "__main__":
-    seed()
+    seed(force="--force" in sys.argv)

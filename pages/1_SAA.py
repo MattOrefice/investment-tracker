@@ -96,7 +96,7 @@ with col:
         yaxis=dict(showticklabels=False, showgrid=False,
                    zeroline=False, fixedrange=True),
     )
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    st.plotly_chart(fig, width='stretch', config={"displayModeBar": False})
     # Legend row anchors small-segment labels that can't fit inside the bar
     legend_parts = []
     for p in parents:
@@ -126,7 +126,7 @@ with col:
     df = pd.DataFrame(rows)
     st.dataframe(
         df,
-        use_container_width=True,
+        width='stretch',
         hide_index=True,
         column_config={
             "Target (%)": st.column_config.NumberColumn(format="%.1f"),
@@ -158,7 +158,3 @@ with col:
             _safe_md(sc["rationale"])
     st.divider()
 
-# ── Phase 4 placeholder ────────────────────────────────────────────────────────
-_, col, _ = st.columns([1, 8, 1])
-with col:
-    st.info("Drift analysis (actual vs. target) coming in Phase 4 once trades are logged.")

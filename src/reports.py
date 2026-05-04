@@ -8,10 +8,12 @@ Charts: Plotly + kaleido 0.2.1.
 import base64
 import io
 import json
+import logging
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Optional
 
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.io as pio
@@ -22,6 +24,10 @@ try:
     from src.db import get_connection
     from src.holdings import get_portfolio_value_series, get_sleeve_weights_on_date
     from src.macro import get_series, percentile
+    from src.positioning import (
+        build_style_box_figure, get_active_tilts, get_effective_duration,
+        get_non_us_equity_data, get_scenario_triggers, get_style_box_data,
+    )
     from src.returns import period_return, twr_daily_linked
     from src.shiller import current_cape, get_cape_series
 except ImportError:
@@ -30,6 +36,10 @@ except ImportError:
     from db import get_connection
     from holdings import get_portfolio_value_series, get_sleeve_weights_on_date
     from macro import get_series, percentile
+    from positioning import (
+        build_style_box_figure, get_active_tilts, get_effective_duration,
+        get_non_us_equity_data, get_scenario_triggers, get_style_box_data,
+    )
     from returns import period_return, twr_daily_linked
     from shiller import current_cape, get_cape_series
 
@@ -134,7 +144,7 @@ def _render_chart_to_png(fig: go.Figure, width: int = 700, height: int = 310) ->
         try:
             result[0] = pio.to_image(fig, format="png", width=width, height=height, scale=1.5)
         except Exception:
-            pass
+            logging.exception("kaleido chart render failed (width=%d, height=%d)", width, height)
 
     t = threading.Thread(target=_render, daemon=True)
     t.start()
@@ -225,16 +235,27 @@ def _bm_period_return(series: pd.Series, period: str) -> float:
 # ── Section builders ──────────────────────────────────────────────────────────
 
 def _build_executive_summary(start_date: str, end_date: str) -> dict:
-    pv = get_portfolio_value_series(start_date, end_date)
+    # All three series (portfolio, SP500, blended) are fetched from inception
+    # so that holiday gaps (e.g. New Year's Day) are forward-filled from the
+    # prior trading day rather than back-filled from the next.  Each is then
+    # sliced to the report period before computing returns — consistent with
+    # how _build_performance_section computes period returns.
+    inception = _inception_date()
+
+    pv_since_inception = get_portfolio_value_series(inception, end_date)
+    current_val = float(pv_since_inception.iloc[-1]) if not pv_since_inception.empty else 0.0
+
+    pv = pv_since_inception[pv_since_inception.index >= pd.Timestamp(start_date)]
     cf = pd.Series(0.0, index=pv.index)
     portfolio_twr = twr_daily_linked(pv, cf) if len(pv) >= 2 else 0.0
-    current_val   = float(pv.iloc[-1]) if not pv.empty else 0.0
 
-    sp = get_sp500_series(start_date, end_date)
-    sp_return = float(sp.iloc[-1] / sp.iloc[0] - 1) if len(sp) >= 2 else 0.0
+    sp_full   = get_sp500_series(inception, end_date)
+    sp_period = sp_full[sp_full.index >= pd.Timestamp(start_date)]
+    sp_return = float(sp_period.iloc[-1] / sp_period.iloc[0] - 1) if len(sp_period) >= 2 else 0.0
 
-    bl = get_custom_blended_series(start_date, end_date)
-    bl_return = float(bl.iloc[-1] / bl.iloc[0] - 1) if len(bl) >= 2 else 0.0
+    bl_full   = get_custom_blended_series(inception, end_date)
+    bl_period = bl_full[bl_full.index >= pd.Timestamp(start_date)]
+    bl_return = float(bl_period.iloc[-1] / bl_period.iloc[0] - 1) if len(bl_period) >= 2 else 0.0
 
     alpha_sp_bps = (portfolio_twr - sp_return) * 10_000
     alpha_bl_bps = (portfolio_twr - bl_return) * 10_000
@@ -298,6 +319,30 @@ def _build_executive_summary(start_date: str, end_date: str) -> dict:
     }
 
 
+def _build_holdings_chart(sleeves: list, actuals: list, targets: list) -> go.Figure:
+    """Pure figure construction — no DB, no rendering. Testable in isolation."""
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        name="Actual", y=sleeves, x=actuals, orientation="h",
+        marker_color=_PALETTE["portfolio"],
+    ))
+    fig.add_trace(go.Bar(
+        name="Target", y=sleeves, x=targets, orientation="h",
+        marker_color=_PALETTE["sp500"], opacity=0.65,
+    ))
+    fig.update_layout(
+        barmode="overlay",
+        xaxis_title="Weight (%)", yaxis_title=None,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+        margin=dict(l=180, r=20, t=40, b=30), height=330,
+        plot_bgcolor="white", paper_bgcolor="white",
+        font=dict(family="sans-serif", size=9, color="#333"),
+        xaxis=dict(gridcolor="#E8E8E8"),
+        yaxis=dict(tickmode="array", tickvals=sleeves, ticktext=sleeves),
+    )
+    return fig
+
+
 def _build_holdings_section(end_date: str) -> dict:
     sw = get_sleeve_weights_on_date(end_date)
     if sw.empty:
@@ -319,30 +364,48 @@ def _build_holdings_section(end_date: str) -> dict:
             "status_class":  "status-within" if status == "Within" else "status-drift",
         })
 
-    sleeves = [r["sleeve"] for r in rows]
-    actuals = [sw.loc[s, "Actual Weight"] * 100 for s in sleeves if s in sw.index]
-    targets = [sw.loc[s, "Target Weight"] * 100 for s in sleeves if s in sw.index]
+    sleeves = sw.index.tolist()
+    actuals = (sw["Actual Weight"] * 100).tolist()
+    targets = (sw["Target Weight"] * 100).tolist()
+    fig = _build_holdings_chart(sleeves, actuals, targets)
+    return {"rows": rows, "chart_b64": _chart_b64(fig, 700, 330)}
 
+
+def _build_cumulative_chart(
+    pv_pct: pd.Series, sp_pct: pd.Series, bl_pct: pd.Series
+) -> go.Figure:
+    """Pure cumulative-return figure. Raises ValueError on empty input."""
+    if pv_pct.empty:
+        raise ValueError("pv_pct is empty — cannot build cumulative return chart")
+    all_vals = np.concatenate([pv_pct.values, sp_pct.values, bl_pct.values])
+    tick_min = int(np.nanmin(all_vals) // 10) * 10
+    tick_max = int(np.nanmax(all_vals) // 10 + 1) * 10
+    tick_vals = list(range(tick_min, tick_max + 1, 10))
     fig = go.Figure()
-    fig.add_trace(go.Bar(
-        name="Actual", y=sleeves, x=actuals, orientation="h",
-        marker_color=_PALETTE["portfolio"],
+    fig.add_trace(go.Scatter(
+        x=pv_pct.index, y=pv_pct, name="Portfolio",
+        line=dict(color=_PALETTE["portfolio"], width=2),
     ))
-    fig.add_trace(go.Bar(
-        name="Target", y=sleeves, x=targets, orientation="h",
-        marker_color=_PALETTE["sp500"], opacity=0.65,
+    fig.add_trace(go.Scatter(
+        x=sp_pct.index, y=sp_pct, name="S&P 500",
+        line=dict(color=_PALETTE["sp500"], width=1.5, dash="dot"),
+    ))
+    fig.add_trace(go.Scatter(
+        x=bl_pct.index, y=bl_pct, name="Custom Blended",
+        line=dict(color=_PALETTE["blended"], width=1.5, dash="dash"),
     ))
     fig.update_layout(
-        barmode="overlay",
-        xaxis_title="Weight (%)", yaxis_title=None,
+        yaxis_title="Cumulative Return (%)", xaxis_title=None,
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
-        margin=dict(l=180, r=20, t=40, b=0), height=330,
+        margin=dict(l=60, r=0, t=40, b=0), height=290,
         plot_bgcolor="white", paper_bgcolor="white",
         font=dict(family="sans-serif", size=10, color="#333"),
+        yaxis=dict(gridcolor="#E8E8E8", zeroline=True, zerolinecolor="#CCC",
+                   tickmode="array", tickvals=tick_vals,
+                   ticktext=[f"{v}%" for v in tick_vals]),
         xaxis=dict(gridcolor="#E8E8E8"),
-        yaxis=dict(tickmode="array", tickvals=sleeves, ticktext=sleeves),
     )
-    return {"rows": rows, "chart_b64": _chart_b64(fig, 700, 330)}
+    return fig
 
 
 def _build_performance_section(start_date: str, end_date: str) -> dict:
@@ -374,29 +437,11 @@ def _build_performance_section(start_date: str, end_date: str) -> dict:
     sp_norm = sp / float(sp.iloc[0])
     bl_norm = bl / float(bl.iloc[0])
 
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=pv_norm.index, y=(pv_norm - 1) * 100, name="Portfolio",
-        line=dict(color=_PALETTE["portfolio"], width=2),
-    ))
-    fig.add_trace(go.Scatter(
-        x=sp_norm.index, y=(sp_norm - 1) * 100, name="S&P 500",
-        line=dict(color=_PALETTE["sp500"], width=1.5, dash="dot"),
-    ))
-    fig.add_trace(go.Scatter(
-        x=bl_norm.index, y=(bl_norm - 1) * 100, name="Custom Blended",
-        line=dict(color=_PALETTE["blended"], width=1.5, dash="dash"),
-    ))
-    fig.update_layout(
-        yaxis_title="Cumulative Return (%)", xaxis_title=None,
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
-        margin=dict(l=0, r=0, t=40, b=0), height=290,
-        plot_bgcolor="white", paper_bgcolor="white",
-        font=dict(family="sans-serif", size=10, color="#333"),
-        yaxis=dict(gridcolor="#E8E8E8", zeroline=True, zerolinecolor="#CCC",
-                   dtick=10, ticksuffix="%"),
-        xaxis=dict(gridcolor="#E8E8E8"),
-    )
+    pv_pct = (pv_norm - 1) * 100
+    sp_pct = (sp_norm - 1) * 100
+    bl_pct = (bl_norm - 1) * 100
+
+    fig = _build_cumulative_chart(pv_pct, sp_pct, bl_pct)
     return {"period_rows": period_rows, "chart_b64": _chart_b64(fig, 700, 290)}
 
 
@@ -602,6 +647,32 @@ def _build_thesis_section(start_date: str, end_date: str) -> dict:
     return {"theses": theses, "trades": trades}
 
 
+def _build_positioning_section(end_date: str) -> dict:
+    """Build the Active Positioning section from live portfolio state."""
+    tilts      = get_active_tilts(end_date)
+    dur        = get_effective_duration(end_date)
+    scenarios  = get_scenario_triggers(end_date)
+    style_data = get_style_box_data(end_date)
+    non_us     = get_non_us_equity_data(end_date)
+    fi_dur  = dur["fi_sleeve_duration"]
+    agg_dur = dur["agg_benchmark"]
+    vs_agg  = "below" if fi_dur < agg_dur else "above"
+    duration_line = (
+        f"FI sleeve effective duration: {fi_dur} yrs "
+        f"(vs Bloomberg US Agg: {agg_dur} yrs — {vs_agg} benchmark by {abs(fi_dur - agg_dur):.1f} yrs). "
+        f"FI weight: {dur['fi_weight_pct']}% of portfolio. "
+        "Intermediate-Treasury focus keeps duration below the Agg, limiting sensitivity to rate moves."
+    )
+    style_box_b64 = _chart_b64(build_style_box_figure(style_data), 520, 390) if style_data else None
+    return {
+        "tilts":          tilts,
+        "duration_line":  duration_line,
+        "scenarios":      scenarios,
+        "style_box_b64":  style_box_b64,
+        "non_us":         non_us,
+    }
+
+
 # ── Main public function ──────────────────────────────────────────────────────
 
 def generate_quarterly_report(
@@ -626,6 +697,7 @@ def generate_quarterly_report(
     hold_data   = _build_holdings_section(end_date)              if has_trades else {"rows": [], "chart_b64": None}
     perf_data   = _build_performance_section(start_date, end_date) if has_trades else None
     attr_data   = _build_attribution_section(start_date, end_date) if has_trades else None
+    pos_data    = _build_positioning_section(end_date)             if has_trades else None
     macro_data  = _build_macro_section()
     thesis_data = _build_thesis_section(start_date, end_date)
 
@@ -648,6 +720,7 @@ def generate_quarterly_report(
         hold           = hold_data,
         perf           = perf_data,
         attr           = attr_data,
+        pos            = pos_data,
         macro          = macro_data,
         thesis         = thesis_data,
     )
