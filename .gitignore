@@ -18,6 +18,8 @@ data/reports/
 
 # Factor data cache — fetched at runtime from Ken French Data Library
 data/ff_factors.csv
+data/ff_factors_us.csv
+data/ff_factors_developed_exus.csv
 
 # Editor / tool dirs
 .cursor/

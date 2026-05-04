@@ -17,12 +17,13 @@ from statsmodels.tools import add_constant
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from src.factors import (
+    EM_DISCLOSURE,
     _nw_lags,
     _ols_ff5,
     _parse_ff_csv_text,
     build_factor_methodology_notes,
     build_factor_prose,
-    run_ff5_regression,
+    run_sleeve_regressions,
     sig_marker,
 )
 
@@ -83,6 +84,17 @@ def test_ff_parser_handles_missing_column_header_line():
     )
     df = _parse_ff_csv_text(text)
     assert len(df) == 2
+
+
+def test_ff_parser_replaces_missing_sentinel():
+    """-99.99 percent → -0.9999 decimal must become NaN."""
+    text = (
+        "19900101,  -99.99,   0.09,   0.26,   0.09,   0.18,  0.01\n"
+        "19900102,   0.50,   0.09,   0.26,   0.09,   0.18,  0.01\n"
+    )
+    df = _parse_ff_csv_text(text)
+    assert np.isnan(df["Mkt-RF"].iloc[0])
+    assert not np.isnan(df["Mkt-RF"].iloc[1])
 
 
 # ── Newey-West lag formula ─────────────────────────────────────────────────────
@@ -239,93 +251,116 @@ def test_alignment_produces_trading_days_only():
     assert len(merged) == len(bdays) - 1  # one fewer because pct_change drops first
 
 
-# ── run_ff5_regression integration (mocked DB + factor data) ─────────────────
+# ── run_sleeve_regressions: structure and required keys ───────────────────────
 
-def test_run_ff5_regression_returns_required_keys():
-    """
-    With mocked portfolio value series and FF factor data, run_ff5_regression
-    must return a dict containing all expected keys.
-    """
-    rng = np.random.default_rng(7)
-    T = 100
-    dates = pd.bdate_range("2025-05-01", periods=T + 1)
-
-    pv_vals = np.cumprod(1 + rng.standard_normal(T + 1) * 0.008) * 10_000
-    mock_pv = pd.Series(pv_vals, index=dates)
-
-    ff_dates = pd.bdate_range("2025-05-01", periods=T)
-    mock_ff = pd.DataFrame({
+def _make_mock_ff(T: int, rng: np.random.Generator, dates: pd.DatetimeIndex) -> pd.DataFrame:
+    return pd.DataFrame({
         "Mkt-RF": rng.standard_normal(T) * 0.01,
         "SMB":    rng.standard_normal(T) * 0.005,
         "HML":    rng.standard_normal(T) * 0.005,
         "RMW":    rng.standard_normal(T) * 0.003,
         "CMA":    rng.standard_normal(T) * 0.003,
         "RF":     np.full(T, 0.0001),
-    }, index=ff_dates)
+    }, index=dates)
 
-    with patch("src.factors.get_portfolio_value_series", return_value=mock_pv), \
-         patch("src.factors.get_ff_factors", return_value=mock_ff):
-        res = run_ff5_regression("2025-05-01", "2025-09-30")
 
-    assert res is not None
+def test_run_sleeve_regressions_returns_expected_structure():
+    """
+    With mocked _get_sleeve_return_series and load_factors, run_sleeve_regressions
+    must return a dict with 'us' and 'developed_exus' keys, each containing all
+    required result keys.
+    """
+    rng = np.random.default_rng(7)
+    T = 100
+    dates = pd.bdate_range("2025-05-01", periods=T)
+
+    mock_ret = pd.Series(rng.standard_normal(T) * 0.008, index=dates)
+    mock_ff  = _make_mock_ff(T, rng, dates)
+
+    with patch("src.factors._get_sleeve_return_series", return_value=mock_ret), \
+         patch("src.factors.load_factors", return_value=mock_ff):
+        results = run_sleeve_regressions("2025-05-01", "2025-09-30")
+
+    assert "us" in results
+    assert "developed_exus" in results
+
     required = {
         "alpha_daily", "alpha_annual", "alpha_annual_bps",
         "t_alpha", "p_alpha",
         "betas", "t_stats", "p_values",
         "r_squared", "adj_r_squared",
         "T", "nw_lags", "sample_start", "sample_end",
+        "sleeve_label", "tickers", "region",
     }
-    assert required.issubset(res.keys()), f"Missing keys: {required - res.keys()}"
+    for key in ("us", "developed_exus"):
+        res = results[key]
+        assert res is not None, f"Expected non-None result for '{key}'"
+        assert required.issubset(res.keys()), (
+            f"Missing keys in '{key}': {required - res.keys()}"
+        )
 
 
-def test_run_ff5_regression_returns_none_on_empty_portfolio():
-    empty_pv = pd.Series(0.0, index=pd.date_range("2025-05-01", periods=5))
-    with patch("src.factors.get_portfolio_value_series", return_value=empty_pv):
-        res = run_ff5_regression("2025-05-01", "2025-05-10")
-    assert res is None
+def test_run_sleeve_regressions_returns_none_on_insufficient_data():
+    """When fewer than 30 observations are aligned, both sleeve results must be None."""
+    short_dates = pd.bdate_range("2025-05-01", periods=5)
+    short_ret = pd.Series(np.zeros(5), index=short_dates)
+    short_ff  = pd.DataFrame({
+        "Mkt-RF": np.zeros(5), "SMB": np.zeros(5), "HML": np.zeros(5),
+        "RMW":    np.zeros(5), "CMA": np.zeros(5), "RF":  np.zeros(5),
+    }, index=short_dates)
+
+    with patch("src.factors._get_sleeve_return_series", return_value=short_ret), \
+         patch("src.factors.load_factors", return_value=short_ff):
+        results = run_sleeve_regressions("2025-05-01", "2025-05-10")
+
+    assert results["us"] is None
+    assert results["developed_exus"] is None
+
+
+# ── EM disclosure constant ─────────────────────────────────────────────────────
+
+def test_em_disclosure_is_non_empty_string():
+    assert isinstance(EM_DISCLOSURE, str) and len(EM_DISCLOSURE) > 50
 
 
 # ── Factor section values match regression object ─────────────────────────────
 
 def test_factor_section_values_match_raw_result():
     """
-    _build_factor_section must format values from the raw run_ff5_regression result
+    _build_factor_section must format values from run_sleeve_regressions results
     without recomputing or silently transforming them.
-    The formatted beta strings, r_squared, and T must be derivable from the raw dict.
+    Checks the new two-sleeve structure: section["sleeves"][0] is the US sleeve.
     """
     from src.reports import _build_factor_section
 
     rng = np.random.default_rng(3)
     T = 80
-    dates = pd.bdate_range("2025-05-01", periods=T + 1)
-    pv_vals = np.cumprod(1 + rng.standard_normal(T + 1) * 0.008) * 10_000
-    mock_pv = pd.Series(pv_vals, index=dates)
+    dates = pd.bdate_range("2025-05-01", periods=T)
+    mock_ret = pd.Series(rng.standard_normal(T) * 0.008, index=dates)
+    mock_ff  = _make_mock_ff(T, rng, dates)
 
-    ff_dates = pd.bdate_range("2025-05-01", periods=T)
-    mock_ff = pd.DataFrame({
-        "Mkt-RF": rng.standard_normal(T) * 0.01,
-        "SMB":    rng.standard_normal(T) * 0.005,
-        "HML":    rng.standard_normal(T) * 0.005,
-        "RMW":    rng.standard_normal(T) * 0.003,
-        "CMA":    rng.standard_normal(T) * 0.003,
-        "RF":     np.full(T, 0.0001),
-    }, index=ff_dates)
-
-    with patch("src.factors.get_portfolio_value_series", return_value=mock_pv), \
-         patch("src.factors.get_ff_factors", return_value=mock_ff), \
+    with patch("src.factors._get_sleeve_return_series", return_value=mock_ret), \
+         patch("src.factors.load_factors", return_value=mock_ff), \
          patch("src.reports._inception_date", return_value="2025-05-01"):
         section = _build_factor_section("2025-09-30")
 
     assert section is not None
+    assert "sleeves" in section
+    assert len(section["sleeves"]) >= 1
 
-    raw = section["_raw"]
+    # Verify EM disclosure is passed through
+    assert section["em_note"] == EM_DISCLOSURE
 
-    # R² must match exactly (it is not transformed)
-    assert section["r_squared"] == f"{raw['r_squared']:.3f}"
+    # Check US sleeve (first entry)
+    us_sleeve = section["sleeves"][0]
+    raw = us_sleeve["_raw"]
+
+    # R² must match exactly (not transformed)
+    assert us_sleeve["r_squared"] == f"{raw['r_squared']:.3f}"
 
     # T must match exactly
-    assert section["T"] == raw["T"]
+    assert us_sleeve["T"] == raw["T"]
 
-    # Mkt-RF beta string must match the raw beta rounded to 3 dp
-    mkt_row = next(r for r in section["rows"] if r["factor"] == "Mkt-RF")
+    # Mkt-RF beta string must match raw beta rounded to 3 dp
+    mkt_row = next(r for r in us_sleeve["rows"] if r["factor"] == "Mkt-RF")
     assert mkt_row["beta"] == f"{raw['betas']['Mkt-RF']:.3f}"

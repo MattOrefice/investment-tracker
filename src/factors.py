@@ -1,23 +1,34 @@
 """
-Fama-French 5-Factor data ingestion and regression engine.
+Fama-French 5-Factor regional decomposition — data ingestion and regression engine.
 
-Data source: Ken French Data Library (Dartmouth).
-  URL: https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/
-       F-F_Research_Data_5_Factors_2x3_daily_CSV.zip
-  Format: daily CSV inside a ZIP, factor returns expressed in percent
-          (0.50 = 0.50%); converted to decimal on load.
-  Lag: factors are published with approximately a 1-month lag.  The
-       regression sample is truncated to the available overlap window.
+Architecture (v1.1 — replaces single full-portfolio regression from v1.0)
+--------------------------------------------------------------------------
+Three equity sleeves are regressed separately against region-appropriate
+factor sets.  A single full-portfolio regression conflated returns from
+international and real-asset sleeves — which the US-only FF5 model cannot
+span — into the alpha estimate, producing a methodologically misleading
++826 bps significant alpha.  The decomposed approach measures factor
+exposure within the universe each factor set spans.
 
-Standard errors: Newey-West HAC, lag L = floor(4 * (T/100)^(2/9)),
-  where T is the number of aligned observations.
+Data sources: Ken French Data Library (Dartmouth)
+  US daily:           F-F_Research_Data_5_Factors_2x3_daily_CSV.zip
+  Developed ex-US:    Developed_ex_US_5_Factors_Daily_CSV.zip
+  EM (daily):         NOT PUBLISHED by Ken French.  Monthly EM factors
+                      would yield T≈12 over a 1-year window — below any
+                      threshold for stable inference.  EM sleeve excluded
+                      from regression; included in qualitative disclosure.
+
+Factor returns in source files are in percent (0.50 = 0.50%); converted
+to decimal on load.  Missing-data sentinel is -99.99; replaced with NaN.
+
+Standard errors: Newey-West HAC, L = floor(4 * (T/100)^(2/9)) per regression.
 """
 from __future__ import annotations
 
 import io
-import math
+import warnings
 import zipfile
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
 from typing import Optional
 
@@ -27,20 +38,58 @@ import requests
 from statsmodels.regression.linear_model import OLS
 from statsmodels.tools import add_constant
 
-from src.holdings import get_portfolio_value_series
+from src.holdings import get_holdings_on_date
+from src.prices import get_prices
 
-_ROOT       = Path(__file__).resolve().parent.parent
-_CACHE_PATH = _ROOT / "data" / "ff_factors.csv"
+_ROOT = Path(__file__).resolve().parent.parent
 
-_FF_URL = (
-    "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/"
-    "F-F_Research_Data_5_Factors_2x3_daily_CSV.zip"
-)
+# ── Factor configuration ───────────────────────────────────────────────────────
 
-_REFRESH_CACHE_DAYS = 7   # re-fetch if cache file is older than this many days
+_BASE_URL = "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/"
+
+_FACTOR_CONFIG: dict[str, dict] = {
+    "us": {
+        "url":   _BASE_URL + "F-F_Research_Data_5_Factors_2x3_daily_CSV.zip",
+        "cache": _ROOT / "data" / "ff_factors_us.csv",
+    },
+    "developed_exus": {
+        "url":   _BASE_URL + "Developed_ex_US_5_Factors_Daily_CSV.zip",
+        "cache": _ROOT / "data" / "ff_factors_developed_exus.csv",
+    },
+}
+
+# Backward-compatible alias used by the stale-cache check
+_CACHE_PATH = _FACTOR_CONFIG["us"]["cache"]
+
+_REFRESH_CACHE_DAYS = 7   # re-fetch if cache mtime exceeds this many days
 _LAG_THRESHOLD_DAYS = 35  # re-fetch if most recent factor date is this far behind today
 
 _FF5_FACTORS = ["Mkt-RF", "SMB", "HML", "RMW", "CMA"]
+
+# ── Equity sleeve definitions ──────────────────────────────────────────────────
+
+_SLEEVES = {
+    "us": {
+        "label":   "US Equity Sleeve",
+        "tickers": ["VOO", "VTV", "SPHQ", "AVUV"],
+        "region":  "us",
+    },
+    "developed_exus": {
+        "label":   "International Developed Sleeve",
+        "tickers": ["VEA"],
+        "region":  "developed_exus",
+    },
+}
+
+# Qualitative disclosure for the EM sleeve (no daily FF5 data available)
+EM_DISCLOSURE = (
+    "Emerging Markets sleeve (IEMG): Ken French does not publish daily EM factor data. "
+    "Monthly EM factors would yield approximately 12 observations over the current "
+    "1-year window — below the threshold for stable inference. "
+    "IEMG provides passive cap-weighted broad EM exposure (~27% China weight at current "
+    "index composition). Factor decomposition for this sleeve will be added when the "
+    "portfolio accumulates sufficient history (target: 3+ years of monthly data)."
+)
 
 
 # ── Utilities ─────────────────────────────────────────────────────────────────
@@ -61,41 +110,45 @@ def sig_marker(p: float) -> str:
     return ""
 
 
+def _fmt_date(iso: str) -> str:
+    """'2025-05-01' → 'May 1, 2025'."""
+    d = date.fromisoformat(iso)
+    return f"{d.strftime('%B')} {d.day}, {d.year}"
+
+
 # ── Factor data ingestion ──────────────────────────────────────────────────────
 
 def _parse_ff_csv_text(text: str) -> pd.DataFrame:
     """
     Parse the raw text of a Ken French daily factor CSV file.
 
-    The file is comma-delimited.  It begins with a descriptive header of
-    arbitrary length, then a column-header row (leading comma, unnamed date
-    column), then data rows of the form::
+    The file is comma-delimited.  Format::
 
-        19630701,   -0.67,    0.00,   -0.34,   -0.01,    0.16,    0.01
+        <descriptive header lines>
+        ,Mkt-RF,SMB,HML,RMW,CMA,RF          ← column header (leading comma)
+        19630701,   -0.67,    0.00, ...       ← data rows; date may have trailing spaces
+        ...
+        <annual averages footer with 4-digit year as first field>
 
-    followed by an annual-averages footer where the leading field is a
-    4-digit year rather than an 8-digit date.
+    Two regional variants are handled:
+      - US file: date field is clean (e.g. "19630701,")
+      - Developed ex-US file: date field has trailing spaces ("19900702    ,")
+      Both are handled by strip() on the first comma-separated token.
 
-    All factor values are in percent (0.50 = 0.50%).  This function
-    divides by 100 to convert to decimal.
-
-    Returns a DatetimeIndex-indexed DataFrame with columns:
-      Mkt-RF, SMB, HML, RMW, CMA, RF (all in decimal).
+    Missing-data sentinel -99.99 is replaced with NaN.
+    All factor columns are divided by 100 to convert percent to decimal.
     """
     raw_data_lines: list[str] = []
     in_data = False
 
     for line in text.splitlines():
-        # First comma-separated field is the candidate date token.
         first_field = line.split(",")[0].strip()
         if len(first_field) == 8 and first_field.isdigit():
             in_data = True
             raw_data_lines.append(line)
         elif in_data:
-            # Annual-averages footer has 4-digit year as first field.
             if len(first_field) == 4 and first_field.isdigit():
-                break
-            # Blank or noise lines inside the data block — skip.
+                break  # annual-averages footer
 
     if not raw_data_lines:
         raise ValueError("No daily factor data rows found in Ken French CSV text")
@@ -108,33 +161,36 @@ def _parse_ff_csv_text(text: str) -> pd.DataFrame:
     for col in df.columns:
         df[col] = pd.to_numeric(df[col], errors="coerce") / 100.0
 
+    # Replace missing-data sentinel (-99.99 in percent → approx -0.9999 in decimal).
+    # Use a threshold rather than exact equality to avoid float precision issues.
+    # No legitimate daily factor return is below -99%.
+    df = df.where(df > -0.99, float("nan"))
+
     return df
 
 
-def _fetch_ff_factors() -> pd.DataFrame:
-    """Download and parse the Ken French daily 5-factor ZIP from Dartmouth."""
-    resp = requests.get(_FF_URL, timeout=30)
+def _fetch_factors(url: str) -> pd.DataFrame:
+    """Download and parse a Ken French daily factor ZIP from Dartmouth."""
+    resp = requests.get(url, timeout=30)
     resp.raise_for_status()
 
     with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
-        csv_name = next(
-            n for n in zf.namelist()
-            if n.upper().endswith(".CSV")
-        )
+        csv_name = next(n for n in zf.namelist() if n.upper().endswith(".CSV"))
         raw_text = zf.read(csv_name).decode("utf-8", errors="replace")
 
     return _parse_ff_csv_text(raw_text)
 
 
-def _cache_is_stale() -> bool:
-    """Return True if the cache file should be refreshed."""
-    if not _CACHE_PATH.exists():
+def _cache_stale(config: dict) -> bool:
+    """Return True if the cache for this region config needs refreshing."""
+    cache: Path = config["cache"]
+    if not cache.exists():
         return True
-    mtime = date.fromtimestamp(_CACHE_PATH.stat().st_mtime)
+    mtime = date.fromtimestamp(cache.stat().st_mtime)
     if (date.today() - mtime).days > _REFRESH_CACHE_DAYS:
         return True
     try:
-        cached = pd.read_csv(_CACHE_PATH, index_col=0, parse_dates=True)
+        cached = pd.read_csv(cache, index_col=0, parse_dates=True)
         if cached.empty:
             return True
         most_recent = cached.index[-1].date()
@@ -145,49 +201,125 @@ def _cache_is_stale() -> bool:
     return False
 
 
-def get_ff_factors(force_refresh: bool = False) -> pd.DataFrame:
+def load_factors(region: str, force_refresh: bool = False) -> pd.DataFrame:
     """
-    Return the Ken French daily 5-factor data as a DataFrame indexed by date.
+    Return Ken French daily 5-factor data for the specified region.
 
-    Refreshes the local cache at data/ff_factors.csv when:
-      - the file does not exist, OR
-      - the cache file is older than 7 days, OR
-      - the most recent factor date is more than 35 days behind today
-        (accounting for Ken French's ~1-month publication lag).
+    region: 'us' | 'developed_exus'
 
-    If a network fetch fails, the stale cache is returned with a logged warning.
+    Refreshes the local cache when stale (file absent, mtime > 7 days, or
+    most recent factor date > 35 days behind today).  On fetch failure the
+    stale cache is returned with a warning rather than crashing.
     """
-    if force_refresh or _cache_is_stale():
+    if region not in _FACTOR_CONFIG:
+        raise ValueError(
+            f"Unknown factor region '{region}'. "
+            f"Valid regions: {list(_FACTOR_CONFIG)}"
+        )
+    config = _FACTOR_CONFIG[region]
+    cache: Path = config["cache"]
+
+    if force_refresh or _cache_stale(config):
         try:
-            df = _fetch_ff_factors()
-            _CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
-            df.to_csv(_CACHE_PATH)
+            df = _fetch_factors(config["url"])
+            cache.parent.mkdir(parents=True, exist_ok=True)
+            df.to_csv(cache)
             return df
         except Exception as exc:
-            if _CACHE_PATH.exists():
-                import warnings
+            if cache.exists():
                 warnings.warn(
-                    f"FF factor refresh failed ({exc}); using cached data.",
+                    f"FF factor refresh failed for region '{region}' ({exc}); "
+                    "using cached data.",
                     stacklevel=2,
                 )
             else:
                 raise
 
-    return pd.read_csv(_CACHE_PATH, index_col=0, parse_dates=True)
+    return pd.read_csv(cache, index_col=0, parse_dates=True)
+
+
+# ── Sleeve return series ───────────────────────────────────────────────────────
+
+def _get_sleeve_return_series(
+    tickers: list[str],
+    inception: str,
+    end_date: str,
+) -> pd.Series:
+    """
+    Daily total-return series for an equity sleeve from inception through end_date.
+
+    Single-ticker sleeves (VEA, IEMG): adj_close pct_change of that ETF.
+
+    Multi-ticker sleeves (US equity: VOO, VTV, SPHQ, AVUV): value-weighted
+    daily return using inception market values (shares × price at inception)
+    as fixed weights.  This buy-and-hold sleeve return is appropriate for
+    factor regression — it reflects the portfolio's actual factor exposure
+    without rebalancing noise.
+
+    Non-trading days (weekends, US holidays) carry forward Friday's price;
+    inner-joining against the factor index in the regression step drops them.
+    """
+    date_range = pd.date_range(start=inception, end=end_date, freq="D")
+
+    if len(tickers) == 1:
+        ticker = tickers[0]
+        p = get_prices(ticker, inception, end_date)
+        p.index = pd.to_datetime(p.index)
+        series = p["adj_close"].fillna(p["close"])
+        return series.reindex(date_range).ffill().pct_change().iloc[1:]
+
+    # Multi-ticker: compute inception market values for value-weight computation
+    holdings = get_holdings_on_date(inception)
+
+    sleeve_values: dict[str, float] = {}
+    for ticker in tickers:
+        if ticker not in holdings.index:
+            continue
+        shares = float(holdings.loc[ticker, "net_shares"])
+        try:
+            p_inc = get_prices(ticker, inception, inception)
+            p_inc.index = pd.to_datetime(p_inc.index)
+            px = p_inc["adj_close"].fillna(p_inc["close"])
+            price = float(px.dropna().iloc[-1]) if not px.dropna().empty else 0.0
+            if price > 0:
+                sleeve_values[ticker] = shares * price
+        except Exception:
+            continue
+
+    if not sleeve_values:
+        raise ValueError(
+            f"Could not compute inception market values for tickers: {tickers}"
+        )
+
+    total_value = sum(sleeve_values.values())
+    weights = {t: v / total_value for t, v in sleeve_values.items()}
+
+    weighted_ret = pd.Series(0.0, index=date_range)
+    for ticker, w in weights.items():
+        try:
+            p = get_prices(ticker, inception, end_date)
+            p.index = pd.to_datetime(p.index)
+            series = p["adj_close"].fillna(p["close"])
+            daily_ret = series.reindex(date_range).ffill().pct_change().fillna(0.0)
+            weighted_ret = weighted_ret + w * daily_ret
+        except Exception:
+            continue
+
+    return weighted_ret.iloc[1:]  # drop inception day (pct_change → 0.0 sentinel)
 
 
 # ── Regression engine ──────────────────────────────────────────────────────────
 
 def _ols_ff5(R_excess: pd.Series, factors: pd.DataFrame) -> dict:
     """
-    OLS regression of portfolio excess returns on FF5 factors with HAC SEs.
+    OLS regression with Newey-West HAC standard errors.
 
-    R_excess : daily excess returns (R_p - RF), decimal, DatetimeIndex
+    R_excess : daily excess returns (R_sleeve - RF), decimal, DatetimeIndex
     factors  : DataFrame with columns Mkt-RF, SMB, HML, RMW, CMA, decimal
 
-    Returns a dict of regression statistics.  Alpha is annualized as
-    alpha_daily * 252 (linear daily-to-annual scaling; equivalent to the
-    compound form (1+alpha_daily)^252-1 within rounding for |alpha| < 0.5%).
+    Alpha is annualized as alpha_daily * 252 (linear daily-to-annual scaling).
+    Both HAC and plain OLS standard errors are returned (HAC is authoritative;
+    OLS is retained for the NW-vs-OLS diagnostic test).
     """
     T = len(R_excess)
     L = _nw_lags(T)
@@ -195,170 +327,228 @@ def _ols_ff5(R_excess: pd.Series, factors: pd.DataFrame) -> dict:
     X = add_constant(factors[_FF5_FACTORS])
     model = OLS(R_excess, X)
     res_hac = model.fit(cov_type="HAC", cov_kwds={"maxlags": L})
-    res_ols = model.fit()  # used only for the NW-vs-OLS SE comparison in tests
+    res_ols = model.fit()
 
-    params  = res_hac.params
-    tvals   = res_hac.tvalues
-    pvals   = res_hac.pvalues
+    params = res_hac.params
+    tvals  = res_hac.tvalues
+    pvals  = res_hac.pvalues
 
     alpha_daily  = float(params["const"])
-    alpha_annual = alpha_daily * 252  # linear annualization
+    alpha_annual = alpha_daily * 252
 
     return {
-        "alpha_daily":       alpha_daily,
-        "alpha_annual":      alpha_annual,
-        "alpha_annual_bps":  alpha_annual * 10_000,
-        "t_alpha":           float(tvals["const"]),
-        "p_alpha":           float(pvals["const"]),
-        "betas":   {f: float(params[f])  for f in _FF5_FACTORS},
-        "t_stats": {f: float(tvals[f])   for f in _FF5_FACTORS},
-        "p_values":{f: float(pvals[f])   for f in _FF5_FACTORS},
+        "alpha_daily":      alpha_daily,
+        "alpha_annual":     alpha_annual,
+        "alpha_annual_bps": alpha_annual * 10_000,
+        "t_alpha":          float(tvals["const"]),
+        "p_alpha":          float(pvals["const"]),
+        "betas":   {f: float(params[f]) for f in _FF5_FACTORS},
+        "t_stats": {f: float(tvals[f])  for f in _FF5_FACTORS},
+        "p_values":{f: float(pvals[f])  for f in _FF5_FACTORS},
         "r_squared":     float(res_hac.rsquared),
         "adj_r_squared": float(res_hac.rsquared_adj),
-        "T":             T,
-        "nw_lags":       L,
-        # OLS (non-HAC) SEs for diagnostic comparison in tests
+        "T":      T,
+        "nw_lags": L,
         "_ols_bse": res_ols.bse.to_dict(),
         "_hac_bse": res_hac.bse.to_dict(),
     }
 
 
-def run_ff5_regression(
-    inception_date: str,
+def run_sleeve_regression(
+    sleeve_label: str,
+    tickers: list[str],
+    region: str,
+    inception: str,
     end_date: str,
 ) -> Optional[dict]:
     """
-    Regress daily portfolio excess returns on FF5 factors.
+    Run FF5 regression for one equity sleeve against region-appropriate factors.
 
-    Portfolio returns are computed from get_portfolio_value_series() on a
-    total-return (adj_close) basis from inception_date through end_date.
-    Daily returns are aligned against available FF factor data via inner join;
-    the alignment naturally excludes weekends, US holidays, and the ~20
-    trailing trading days for which FF factors are not yet published.
+    The sleeve return series is aligned against the factor data via inner join,
+    which naturally drops weekends, US holidays, and the factor publication lag
+    window at the right edge of the sample.
 
     Returns None if fewer than 30 aligned observations are available.
     """
-    pv = get_portfolio_value_series(inception_date, end_date)
-    if pv.empty or float(pv.max()) == 0.0:
-        return None
-
-    daily_ret = pv.pct_change().dropna()
+    daily_ret = _get_sleeve_return_series(tickers, inception, end_date)
     daily_ret.index = pd.to_datetime(daily_ret.index)
 
-    ff = get_ff_factors()
+    ff = load_factors(region)
     ff.index = pd.to_datetime(ff.index)
 
-    merged = (
-        daily_ret.to_frame(name="R_p")
-        .join(ff, how="inner")
-        .dropna()
-    )
+    merged = daily_ret.to_frame(name="R_sleeve").join(ff, how="inner").dropna()
 
     if len(merged) < 30:
         return None
 
-    R_excess = merged["R_p"] - merged["RF"]
+    R_excess = merged["R_sleeve"] - merged["RF"]
     result = _ols_ff5(R_excess, merged)
 
-    result["sample_start"]    = merged.index[0].date().isoformat()
-    result["sample_end"]      = merged.index[-1].date().isoformat()
-    result["factor_end_date"] = ff.index[-1].date().isoformat()
-    result["inception_date"]  = inception_date
-
-    excl_days = (
-        pd.Timestamp(end_date) - pd.Timestamp(result["sample_end"])
-    ).days
-    result["exclusion_days"] = max(0, excl_days)
+    result["sleeve_label"]  = sleeve_label
+    result["tickers"]       = tickers
+    result["region"]        = region
+    result["sample_start"]  = merged.index[0].date().isoformat()
+    result["sample_end"]    = merged.index[-1].date().isoformat()
+    result["exclusion_days"] = max(
+        0, (pd.Timestamp(end_date) - pd.Timestamp(result["sample_end"])).days
+    )
 
     return result
 
 
+def run_sleeve_regressions(inception: str, end_date: str) -> dict:
+    """
+    Run FF5 regressions for the US equity and Developed ex-US equity sleeves.
+
+    EM sleeve is excluded: Ken French does not publish daily EM factor data.
+    Monthly EM factors would yield ~12 observations over a 1-year window,
+    insufficient for stable inference.  See EM_DISCLOSURE for the qualitative
+    note included in the PDF and Streamlit output.
+
+    Returns a dict with keys 'us' and 'developed_exus'; each value is either
+    a regression result dict or None if data is insufficient.
+    """
+    results: dict[str, Optional[dict]] = {}
+    for key, spec in _SLEEVES.items():
+        try:
+            results[key] = run_sleeve_regression(
+                sleeve_label=spec["label"],
+                tickers=spec["tickers"],
+                region=spec["region"],
+                inception=inception,
+                end_date=end_date,
+            )
+        except Exception:
+            results[key] = None
+    return results
+
+
 # ── Interpretation helpers ─────────────────────────────────────────────────────
 
-def _fmt_date(iso: str) -> str:
-    """'2025-05-01' → 'May 1, 2025'."""
-    d = date.fromisoformat(iso)
-    return f"{d.strftime('%B')} {d.day}, {d.year}"
-
-
-def build_factor_prose(res: dict) -> list[str]:
+def build_factor_prose(results: dict) -> list[str]:
     """
-    Generate 3–5 sentence institutional-register interpretation of the FF5 results.
-    Called by both the PDF section builder and the Streamlit page for consistency.
-    """
-    b_mkt  = res["betas"]["Mkt-RF"]
-    t_mkt  = res["t_stats"]["Mkt-RF"]
-    b_smb  = res["betas"]["SMB"]
-    t_smb  = res["t_stats"]["SMB"]
-    b_hml  = res["betas"]["HML"]
-    t_hml  = res["t_stats"]["HML"]
-    alpha_bps = res["alpha_annual_bps"]
-    t_alpha   = res["t_alpha"]
-    T         = res["T"]
-    s_start   = _fmt_date(res["sample_start"])
-    s_end     = _fmt_date(res["sample_end"])
+    Generate institutional-register prose interpreting the two sleeve regressions.
 
-    hml_dir  = "positive" if b_hml >= 0 else "negative"
-    hml_sig  = (
-        "statistically significant at the 5% level"
-        if abs(t_hml) > 2
-        else "not statistically significant at conventional levels"
+    results: dict with keys 'us' and 'developed_exus' (each a result dict or None).
+    Called by both the PDF section builder and the Streamlit page to guarantee
+    identical output.
+    """
+    lines: list[str] = []
+    us  = results.get("us")
+    dev = results.get("developed_exus")
+
+    if us:
+        b_hml = us["betas"]["HML"]
+        t_hml = us["t_stats"]["HML"]
+        b_smb = us["betas"]["SMB"]
+        t_smb = us["t_stats"]["SMB"]
+        b_mkt = us["betas"]["Mkt-RF"]
+        t_mkt = us["t_stats"]["Mkt-RF"]
+        a_bps = us["alpha_annual_bps"]
+        t_a   = us["t_alpha"]
+        T_us  = us["T"]
+        s_start = _fmt_date(us["sample_start"])
+        s_end   = _fmt_date(us["sample_end"])
+
+        hml_sig = (
+            "statistically significant at the 5% level"
+            if abs(t_hml) > 2
+            else "not statistically significant at conventional levels"
+        )
+        alpha_note = (
+            f"marginally significant (|t| = {abs(t_a):.2f} > 2.0)"
+            if abs(t_a) > 2
+            else "not statistically distinguishable from zero at conventional thresholds"
+        )
+
+        lines.append(
+            f"The US equity sleeve ({T_us} trading days, {s_start} to {s_end}) "
+            f"loads on Mkt-RF at {b_mkt:.2f} (t = {t_mkt:.2f}), consistent with "
+            f"near-fully-invested US equity exposure. "
+            f"The HML loading of {b_hml:.3f} (t = {t_hml:.2f}) is {hml_sig}, "
+            f"broadly consistent with the value tilts in VTV and AVUV. "
+            f"The SMB loading of {b_smb:.3f} (t = {t_smb:.2f}) reflects the "
+            f"small-cap exposure from the AVUV holding. "
+            f"Annualized alpha of {a_bps:+.0f} bps is {alpha_note}."
+        )
+
+    if dev:
+        b_mkt_d = dev["betas"]["Mkt-RF"]
+        t_mkt_d = dev["t_stats"]["Mkt-RF"]
+        a_bps_d = dev["alpha_annual_bps"]
+        t_a_d   = dev["t_alpha"]
+        T_dev   = dev["T"]
+
+        alpha_note_d = (
+            f"marginally significant (|t| = {abs(t_a_d):.2f})"
+            if abs(t_a_d) > 2
+            else "not statistically distinguishable from zero"
+        )
+
+        lines.append(
+            f"The International Developed sleeve (VEA, {T_dev} trading days) "
+            f"loads on Mkt-RF_dev at {b_mkt_d:.2f} (t = {t_mkt_d:.2f}), within the "
+            f"expected range for a passive cap-weighted developed-markets ETF. "
+            f"Annualized alpha of {a_bps_d:+.0f} bps is {alpha_note_d}."
+        )
+
+    lines.append(
+        "The Emerging Markets sleeve (IEMG) is excluded from regression analysis: "
+        "Ken French does not publish daily EM factor data, and the current "
+        "portfolio history is insufficient for a meaningful monthly-frequency regression. "
+        "Fixed income (VGIT, SCHP) and real assets (VNQ, PDBC) are out of scope for "
+        "equity factor models and are not regressed."
     )
-    alpha_sig = (
-        "marginally significant (|t| > 2)"
-        if abs(t_alpha) > 2
-        else "not statistically distinguishable from zero"
+
+    return lines
+
+
+def build_factor_methodology_notes(results: dict) -> list[str]:
+    """Return methodology disclosure bullet points for the sleeve regressions."""
+    us  = results.get("us")
+    dev = results.get("developed_exus")
+
+    T_us  = us["T"]  if us  else "N/A"
+    L_us  = us["nw_lags"]  if us  else "N/A"
+    T_dev = dev["T"] if dev else "N/A"
+    L_dev = dev["nw_lags"] if dev else "N/A"
+
+    us_window  = (
+        f"{_fmt_date(us['sample_start'])} to {_fmt_date(us['sample_end'])}"
+        if us else "N/A"
+    )
+    dev_window = (
+        f"{_fmt_date(dev['sample_start'])} to {_fmt_date(dev['sample_end'])}"
+        if dev else "N/A"
     )
 
     return [
-        f"The portfolio's daily excess return series is regressed on the Fama-French "
-        f"five-factor model over {T} trading days ({s_start} to {s_end}).",
+        f"Samples: US equity sleeve {T_us} trading days ({us_window}), L = {L_us}. "
+        f"International Developed sleeve {T_dev} trading days ({dev_window}), L = {L_dev}. "
+        "Sample sizes reflect the overlap between portfolio inception (May 1, 2025) and "
+        "the most recent available factor data (~65 calendar-day publication lag "
+        "at current Ken French release cadence).",
 
-        f"Market beta of {b_mkt:.2f} (t = {t_mkt:.2f}) is consistent with the portfolio's "
-        f"72% growth-asset allocation; the sub-unity loading reflects the dampening effect "
-        f"of fixed income, real assets, and international sleeves that the US equity market "
-        f"factor does not span.",
+        "Methodology: each equity sleeve is regressed against its own region-appropriate "
+        "FF5 factor set — US factors for the US sleeve, Developed ex-US factors for VEA. "
+        "This per-sleeve approach avoids the model-misspecification problem that inflated "
+        "the alpha estimate in the prior single-portfolio regression: returns from non-US "
+        "equity and real-asset sleeves that the US-only factor model cannot span had been "
+        "flowing into the alpha term.",
 
-        f"The HML loading of {b_hml:.3f} (t = {t_hml:.2f}) is {hml_dir} and {hml_sig}, "
-        f"broadly consistent with the value tilts in VTV (US Large Value) and AVUV "
-        f"(US Small Value). "
-        f"The SMB loading of {b_smb:.3f} (t = {t_smb:.2f}) reflects the small-cap "
-        f"exposure from the AVUV sleeve.",
+        "Standard errors: Newey-West HAC, correcting for autocorrelation in daily return "
+        "residuals. Lag L is computed per regression as floor(4 × (T/100)^(2/9)).",
 
-        f"Annualized alpha of {alpha_bps:+.0f} bps (t = {t_alpha:.2f}) is {alpha_sig}; "
-        f"the {T}-observation sample produces wide confidence intervals on the intercept, "
-        f"and no inference about systematic outperformance is appropriate at this horizon.",
-    ]
+        "Sleeve return series: the US equity sleeve return is the value-weighted daily "
+        "total return of VOO, VTV, SPHQ, and AVUV, weighted by inception market values "
+        "(shares × price at May 1, 2025). Weights are held constant (buy-and-hold). "
+        "The Developed sleeve is VEA's daily adj_close return.",
 
+        "EM sleeve exclusion: Ken French does not publish daily EM factor data. "
+        "Monthly EM factors would yield approximately 12 observations — below the minimum "
+        "for stable inference. EM factor decomposition will be added at 3+ years of history.",
 
-def build_factor_methodology_notes(res: dict) -> list[str]:
-    """Return methodology disclosure bullet points for this regression run."""
-    s_end      = _fmt_date(res["sample_end"])
-    s_start    = _fmt_date(res["sample_start"])
-    excl_days  = res.get("exclusion_days", 0)
-    L          = res["nw_lags"]
-    T          = res["T"]
-
-    return [
-        f"Sample: {T} daily trading-day observations, {s_start} to {s_end}. "
-        "This is the minimum sample size for FF5 stability; factor loadings will tighten "
-        "as the observation window extends toward 3+ years.",
-
-        f"Data lag: approximately {excl_days} calendar days of portfolio returns excluded "
-        "from the regression pending Ken French publication. "
-        "FF factors are published with a ~1-month lag; the regression sample is truncated "
-        "to the overlap window.",
-
-        f"Standard errors: Newey-West HAC with lag L = {L} (rule: floor(4 × (T/100)^(2/9))), "
-        "correcting for autocorrelation in daily return residuals.",
-
-        "Factor scope: Fama-French factors are calibrated on US equities. "
-        "International equity (VEA, IEMG) and fixed income (VGIT, SCHP) sleeves load "
-        "primarily as residual / unexplained variance. A lower R² does not imply "
-        "portfolio mispricing — it partly reflects non-US and non-equity exposures "
-        "the model does not span.",
-
-        "Extensions noted but out of scope for this version: rolling-window regression "
-        "(requires T > 500 for stability), global FF factors for the international sleeve, "
-        "and bond-specific term/credit factor decomposition for the fixed income sleeve.",
+        "Fixed income (VGIT, SCHP) and real assets (VNQ, PDBC) are excluded; equity "
+        "factor models do not span those asset classes. Term/credit factor models for FI "
+        "and real-asset factor proxies are noted as future extensions.",
     ]

@@ -321,9 +321,13 @@
 {# ── Page 6: Factor Profile ─────────────────────────────────────────────────── #}
 <section>
   <h2>Factor Profile</h2>
-  <h3>Fama-French 5-Factor Regression</h3>
+  <h3>Fama-French 5-Factor Regression &mdash; Per-Sleeve Decomposition</h3>
 
-  {% if has_trades and factor %}
+  {% if has_trades and factor and factor.sleeves %}
+
+  {% for sleeve in factor.sleeves %}
+  <h3 style="margin-top: 14px; margin-bottom: 2px;">{{ sleeve.label }}</h3>
+  <p class="muted" style="margin: 0 0 6px;">Tickers: {{ sleeve.tickers | join(", ") }}</p>
 
   <table class="data-table">
     <thead>
@@ -338,12 +342,12 @@
     <tbody>
       <tr>
         <td><strong>Alpha (annualized)</strong></td>
-        <td class="num">{{ factor.alpha_annual_str }}</td>
-        <td class="num">{{ factor.t_alpha_str }}</td>
-        <td class="num">{{ factor.p_alpha_str }}</td>
-        <td class="num">{{ factor.sig_alpha }}</td>
+        <td class="num">{{ sleeve.alpha_annual_str }}</td>
+        <td class="num">{{ sleeve.t_alpha_str }}</td>
+        <td class="num">{{ sleeve.p_alpha_str }}</td>
+        <td class="num">{{ sleeve.sig_alpha }}</td>
       </tr>
-      {% for row in factor.rows %}
+      {% for row in sleeve.rows %}
       <tr class="{{ loop.cycle('', 'row-even') }}">
         <td>{{ row.factor }}</td>
         <td class="num">{{ row.beta }}</td>
@@ -355,27 +359,32 @@
     </tbody>
   </table>
 
-  <table class="metric-table" style="margin-top: 12px;">
+  <table class="metric-table" style="margin-top: 8px;">
     <tr>
       <td class="metric-card">
         <span class="label">R&sup2;</span>
-        <span class="value">{{ factor.r_squared }}</span>
+        <span class="value">{{ sleeve.r_squared }}</span>
       </td>
       <td class="metric-card">
         <span class="label">Adj. R&sup2;</span>
-        <span class="value">{{ factor.adj_r_squared }}</span>
+        <span class="value">{{ sleeve.adj_r_squared }}</span>
       </td>
       <td class="metric-card">
         <span class="label">Observations</span>
-        <span class="value">{{ factor.T }}</span>
+        <span class="value">{{ sleeve.T }}</span>
       </td>
       <td class="metric-card">
         <span class="label">NW Lags</span>
-        <span class="value">{{ factor.nw_lags }}</span>
+        <span class="value">{{ sleeve.nw_lags }}</span>
       </td>
     </tr>
   </table>
-  <p class="muted" style="margin-top: 4px;">Sample window: {{ factor.sample_window }}</p>
+  <p class="muted" style="margin-top: 4px; margin-bottom: 14px;">Sample window: {{ sleeve.sample_window }}</p>
+  {% endfor %}
+
+  <div style="margin: 8px 0 12px; padding: 8px 12px; background: #FFF8E1; border-left: 3px solid #C8A200; font-size: 0.84em;">
+    <strong>Emerging Markets (IEMG):</strong> {{ factor.em_note }}
+  </div>
 
   <div class="bf-commentary" style="margin-top: 10px;">
     {% for sentence in factor.prose %}
@@ -494,14 +503,16 @@
     by the &ldquo;as_of&rdquo; field in data/etf_metadata.json.</dd>
 
     <dt>Fama-French 5-Factor Regression</dt>
-    <dd>Daily portfolio excess returns (R<sub>p</sub> &minus; RF) regressed on Mkt-RF, SMB, HML,
-    RMW, and CMA from the Ken French Data Library (Dartmouth). Standard errors are Newey-West
-    HAC-adjusted with lag L = floor(4 &times; (T/100)<sup>2/9</sup>), where T is the number
-    of aligned trading-day observations. Alpha is annualized as &alpha;<sub>daily</sub> &times; 252.
-    The regression sample is truncated to the overlap window between portfolio returns and available
-    factor data; Ken French publishes with approximately a 1-month lag. FF factors are calibrated
-    on US equities; international and fixed income sleeves contribute primarily to unexplained
-    residual variance. No Carhart momentum factor is included.</dd>
+    <dd>Per-sleeve decomposition: each equity sleeve is regressed against its own
+    region-appropriate FF5 factor set — US factors (Ken French Data Library) for the US equity
+    sleeve (VOO, VTV, SPHQ, AVUV), Developed ex-US factors for the International Developed
+    sleeve (VEA). This approach avoids the model-misspecification problem present in a single
+    full-portfolio regression, where non-US equity and real-asset returns that the US-only
+    FF5 model cannot span flow into the alpha estimate.
+    Standard errors are Newey-West HAC-adjusted with lag L = floor(4 &times; (T/100)<sup>2/9</sup>).
+    Alpha is annualized as &alpha;<sub>daily</sub> &times; 252.
+    Emerging Markets (IEMG): excluded because Ken French does not publish daily EM factor data.
+    Fixed income and real assets are out of scope for equity factor models.</dd>
 
     <dt>Price Data</dt>
     <dd>Daily adjusted-close prices from Yahoo Finance (via yfinance), cached in SQLite.

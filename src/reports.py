@@ -22,8 +22,9 @@ from src.attribution import brinson_fachler_period
 from src.benchmarks import get_custom_blended_series, get_sp500_series
 from src.db import get_connection
 from src.factors import (
+    EM_DISCLOSURE,
     build_factor_methodology_notes, build_factor_prose,
-    run_ff5_regression, sig_marker,
+    run_sleeve_regressions, sig_marker,
 )
 from src.holdings import get_portfolio_value_series, get_sleeve_weights_on_date
 from src.macro import get_series, percentile
@@ -537,52 +538,70 @@ def _build_attribution_section(start_date: str, end_date: str) -> dict:
 
 def _build_factor_section(end_date: str) -> Optional[dict]:
     """
-    Run FF5 regression from inception through end_date and format for the template.
-
-    Returns None on failure (network error, insufficient data) so the template
-    renders a no-data banner rather than crashing the PDF generator.
+    Run per-sleeve FF5 regressions from inception through end_date and format for
+    the template.  Returns None only if both sleeves fail; partial results (one
+    sleeve None) are still returned so the template can render what it has.
     """
     inception = _inception_date()
     try:
-        res = run_ff5_regression(inception, end_date)
+        results = run_sleeve_regressions(inception, end_date)
     except Exception:
-        logging.exception("FF5 regression failed — factor section omitted from PDF")
-        return None
-    if res is None:
+        logging.exception("FF5 sleeve regressions failed — factor section omitted from PDF")
         return None
 
-    def _fmt_date(iso: str) -> str:
+    if not any(v is not None for v in results.values()):
+        return None
+
+    def _fmt_date_local(iso: str) -> str:
         d = date.fromisoformat(iso)
         return f"{d.strftime('%B')} {d.day}, {d.year}"
 
-    rows = []
-    for factor in ["Mkt-RF", "SMB", "HML", "RMW", "CMA"]:
-        p = res["p_values"][factor]
-        rows.append({
-            "factor":       factor,
-            "beta":         f"{res['betas'][factor]:.3f}",
-            "tstat":        f"{res['t_stats'][factor]:.2f}",
-            "pvalue":       f"{p:.3f}",
-            "significance": sig_marker(p),
-        })
+    def _format_sleeve(res: Optional[dict]) -> Optional[dict]:
+        if res is None:
+            return None
+        rows = []
+        for factor in ["Mkt-RF", "SMB", "HML", "RMW", "CMA"]:
+            p = res["p_values"][factor]
+            rows.append({
+                "factor":       factor,
+                "beta":         f"{res['betas'][factor]:.3f}",
+                "tstat":        f"{res['t_stats'][factor]:.2f}",
+                "pvalue":       f"{p:.3f}",
+                "significance": sig_marker(p),
+            })
+        p_alpha = res["p_alpha"]
+        return {
+            "label":            res["sleeve_label"],
+            "tickers":          res["tickers"],
+            "rows":             rows,
+            "alpha_annual_str": f"{res['alpha_annual_bps']:+.0f} bps/yr",
+            "t_alpha_str":      f"{res['t_alpha']:.2f}",
+            "p_alpha_str":      f"{p_alpha:.3f}",
+            "sig_alpha":        sig_marker(p_alpha),
+            "r_squared":        f"{res['r_squared']:.3f}",
+            "adj_r_squared":    f"{res['adj_r_squared']:.3f}",
+            "T":                res["T"],
+            "nw_lags":          res["nw_lags"],
+            "sample_window": (
+                f"{_fmt_date_local(res['sample_start'])} — "
+                f"{_fmt_date_local(res['sample_end'])}"
+            ),
+            "_raw": res,
+        }
 
-    p_alpha = res["p_alpha"]
-    alpha_bps = res["alpha_annual_bps"]
+    sleeves = [
+        s for s in [
+            _format_sleeve(results.get("us")),
+            _format_sleeve(results.get("developed_exus")),
+        ]
+        if s is not None
+    ]
 
     return {
-        "rows":             rows,
-        "alpha_annual_str": f"{alpha_bps:+.0f} bps/yr",
-        "t_alpha_str":      f"{res['t_alpha']:.2f}",
-        "p_alpha_str":      f"{p_alpha:.3f}",
-        "sig_alpha":        sig_marker(p_alpha),
-        "r_squared":        f"{res['r_squared']:.3f}",
-        "adj_r_squared":    f"{res['adj_r_squared']:.3f}",
-        "T":                res["T"],
-        "nw_lags":          res["nw_lags"],
-        "sample_window":    f"{_fmt_date(res['sample_start'])} — {_fmt_date(res['sample_end'])}",
-        "prose":            build_factor_prose(res),
-        "methodology_notes": build_factor_methodology_notes(res),
-        "_raw":             res,
+        "sleeves":           sleeves,
+        "em_note":           EM_DISCLOSURE,
+        "prose":             build_factor_prose(results),
+        "methodology_notes": build_factor_methodology_notes(results),
     }
 
 
