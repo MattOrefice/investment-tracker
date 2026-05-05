@@ -50,26 +50,29 @@ _ROOT = Path(__file__).resolve().parent.parent
 
 _BASE_URL = "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/"
 
+_CACHE_DIR = _ROOT / "data" / "cache"
+
 _FACTOR_CONFIG: dict[str, dict] = {
     "us": {
         "url":   _BASE_URL + "F-F_Research_Data_5_Factors_2x3_daily_CSV.zip",
-        "cache": _ROOT / "data" / "ff_factors_us.csv",
+        "cache": _CACHE_DIR / "ff_factors_us.csv",
     },
     "developed_exus": {
         "url":   _BASE_URL + "Developed_ex_US_5_Factors_Daily_CSV.zip",
-        "cache": _ROOT / "data" / "ff_factors_developed_exus.csv",
+        "cache": _CACHE_DIR / "ff_factors_developed_exus.csv",
     },
     "global": {
         "url":   _BASE_URL + "Global_5_Factors_Daily_CSV.zip",
-        "cache": _ROOT / "data" / "ff_factors_global.csv",
+        "cache": _CACHE_DIR / "ff_factors_global.csv",
     },
 }
 
 _UMD_URL   = _BASE_URL + "F-F_Momentum_Factor_daily_CSV.zip"
-_UMD_CACHE = _ROOT / "data" / "ff_umd_us.csv"
+_UMD_CACHE = _CACHE_DIR / "ff_umd_us.csv"
 
-# Backward-compatible alias used by the stale-cache check
-_CACHE_PATH = _FACTOR_CONFIG["us"]["cache"]
+_HYG_CACHE = _CACHE_DIR / "prices_hyg.parquet"
+
+_CACHE_PATH = _FACTOR_CONFIG["us"]["cache"]  # backward-compatible alias
 
 _REFRESH_CACHE_DAYS = 7   # re-fetch if cache mtime exceeds this many days
 _LAG_THRESHOLD_DAYS = 35  # re-fetch if most recent factor date is this far behind today
@@ -730,6 +733,13 @@ def regress_fi_sleeve(inception: str, end_date: str) -> Optional[dict]:
 
     # TERM and CREDIT factor proxies
     def _ret(ticker: str) -> pd.Series:
+        if ticker == "HYG" and _HYG_CACHE.exists():
+            try:
+                df = pd.read_parquet(_HYG_CACHE)
+                df.index = pd.to_datetime(df.index)
+                return df["adj_close"].reindex(date_range).ffill().pct_change().iloc[1:]
+            except Exception:
+                pass
         p = get_prices(ticker, inception, end_date)
         p.index = pd.to_datetime(p.index)
         return p["adj_close"].fillna(p["close"]).reindex(date_range).ffill().pct_change().iloc[1:]

@@ -5,7 +5,7 @@ from datetime import date
 import pandas as pd
 
 from src.asof import as_of_banner
-from src.config import IS_DEMO
+from src.config import DEMO_BANNER_TEXT, IS_DEMO
 from src.factors import (
     EM_DISCLOSURE,
     alpha_ci_str,
@@ -21,10 +21,7 @@ from src.factors import (
 st.set_page_config(page_title="Factor Profile", layout="wide")
 
 if IS_DEMO:
-    st.info(
-        "**Demo mode** — regressions computed on the demo portfolio's paper-trade return series. "
-        "Factor loadings reflect the SAA construction, not live trading decisions."
-    )
+    st.info(DEMO_BANNER_TEXT)
 
 _, col, _ = st.columns([1, 8, 1])
 with col:
@@ -115,6 +112,20 @@ with col:
         )
 
     # ── Per-sleeve regression tables ─────────────────────────────────────────
+    def _render_fit_metrics(r: dict) -> None:
+        d_s = date.fromisoformat(r["sample_start"])
+        d_e = date.fromisoformat(r["sample_end"])
+        win = (
+            f"{d_s.strftime('%B')} {d_s.day}, {d_s.year} — "
+            f"{d_e.strftime('%B')} {d_e.day}, {d_e.year}"
+        )
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("R²",           f"{r['r_squared']:.3f}")
+        c2.metric("Adj. R²",      f"{r['adj_r_squared']:.3f}")
+        c3.metric("Observations", str(r["T"]))
+        c4.metric("NW Lags (L)",  str(r["nw_lags"]))
+        st.caption(f"Sample window: {win}")
+
     for key in _SLEEVE_ORDER:
         res = results.get(key)
         if res is None:
@@ -123,14 +134,26 @@ with col:
         st.subheader(res["sleeve_label"])
         st.caption(f"Tickers: {', '.join(res['tickers'])}")
 
-        # International Developed: always show both tabs; error state in Global if unavailable
         if key == "developed_exus":
             tab_dev, tab_glob = st.tabs(["Developed ex-US Factors", "Global Factors"])
             with tab_dev:
                 _render_factor_table(res, _FACTORS, label="FF5 — Developed ex-US")
+                _render_fit_metrics(res)
+                res_mom = results_mom.get(key)
+                if res_mom is not None:
+                    with st.expander("Carhart Momentum Supplement (FF5 + UMD)", expanded=False):
+                        _render_factor_table(res_mom, _FACTORS + ["Mom"], label="FF5 + Momentum")
+                        st.caption(
+                            "Supplementary regression including the Ken French daily UMD (Mom) factor. "
+                            "A near-zero Mom loading is expected given the portfolio's tax-aware construction "
+                            "(momentum strategies carry high turnover, creating short-term capital gains). "
+                            "Alpha change vs. FF5 above reflects covariance between sleeve returns and "
+                            "the momentum factor."
+                        )
             with tab_glob:
                 if global_result is not None:
                     _render_factor_table(global_result, _FACTORS, label="FF5 — Global")
+                    _render_fit_metrics(global_result)
                 else:
                     st.warning(
                         "Global factor data temporarily unavailable — Ken French Global "
@@ -142,33 +165,18 @@ with col:
                         st.rerun()
         else:
             _render_factor_table(res, _FACTORS)
-
-        # Fit statistics for main (Dev-ex-US) result
-        d_start = date.fromisoformat(res["sample_start"])
-        d_end   = date.fromisoformat(res["sample_end"])
-        window_str = (
-            f"{d_start.strftime('%B')} {d_start.day}, {d_start.year} — "
-            f"{d_end.strftime('%B')} {d_end.day}, {d_end.year}"
-        )
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("R²",           f"{res['r_squared']:.3f}")
-        c2.metric("Adj. R²",      f"{res['adj_r_squared']:.3f}")
-        c3.metric("Observations", str(res["T"]))
-        c4.metric("NW Lags (L)",  str(res["nw_lags"]))
-        st.caption(f"Sample window: {window_str}")
-
-        # Carhart momentum supplement
-        res_mom = results_mom.get(key)
-        if res_mom is not None:
-            with st.expander("Carhart Momentum Supplement (FF5 + UMD)", expanded=False):
-                _render_factor_table(res_mom, _FACTORS + ["Mom"], label="FF5 + Momentum")
-                st.caption(
-                    "Supplementary regression including the Ken French daily UMD (Mom) factor. "
-                    "A near-zero Mom loading is expected given the portfolio's tax-aware construction "
-                    "(momentum strategies carry high turnover, creating short-term capital gains). "
-                    "Alpha change vs. FF5 above reflects covariance between sleeve returns and "
-                    "the momentum factor."
-                )
+            _render_fit_metrics(res)
+            res_mom = results_mom.get(key)
+            if res_mom is not None:
+                with st.expander("Carhart Momentum Supplement (FF5 + UMD)", expanded=False):
+                    _render_factor_table(res_mom, _FACTORS + ["Mom"], label="FF5 + Momentum")
+                    st.caption(
+                        "Supplementary regression including the Ken French daily UMD (Mom) factor. "
+                        "A near-zero Mom loading is expected given the portfolio's tax-aware construction "
+                        "(momentum strategies carry high turnover, creating short-term capital gains). "
+                        "Alpha change vs. FF5 above reflects covariance between sleeve returns and "
+                        "the momentum factor."
+                    )
 
         st.divider()
 
