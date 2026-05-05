@@ -565,7 +565,7 @@ with col:
         # Actual vs. target allocation bar chart
         _sleeves_ch = sw.index.tolist()
         _fig_alloc = go.Figure()
-        # Tolerance band — rendered first (behind Actual and Target bars)
+        # Trace order matches legend and z-order: Band (bottom) → Target → Actual (top)
         _fig_alloc.add_trace(go.Bar(
             name="Tolerance Band",
             y=_sleeves_ch,
@@ -578,19 +578,19 @@ with col:
             showlegend=True,
         ))
         _fig_alloc.add_trace(go.Bar(
-            name="Actual",
-            y=_sleeves_ch,
-            x=(sw["Actual Weight"] * 100).tolist(),
-            orientation="h",
-            marker_color=_PALETTE["portfolio"],
-        ))
-        _fig_alloc.add_trace(go.Bar(
             name="Target",
             y=_sleeves_ch,
             x=(sw["Target Weight"] * 100).tolist(),
             orientation="h",
             marker_color=_PALETTE["sp500"],
             opacity=0.65,
+        ))
+        _fig_alloc.add_trace(go.Bar(
+            name="Actual",
+            y=_sleeves_ch,
+            x=(sw["Actual Weight"] * 100).tolist(),
+            orientation="h",
+            marker_color=_PALETTE["portfolio"],
         ))
         _fig_alloc.update_layout(
             barmode="overlay",

@@ -163,7 +163,8 @@ with col:
             "Data: FRED & Shiller."
         )
     with hdr_r:
-        if st.button("Force refresh", type="secondary"):
+        if st.button("Force refresh", type="secondary",
+                     help="Bypass the disk cache and re-fetch macro data from FRED and Shiller."):
             macro.clear_macro_cache()
             shiller.clear_shiller_cache()   # delete disk CSV so next load re-fetches
             st.cache_data.clear()
