@@ -21,12 +21,15 @@ from src.factors import (
     _nw_lags,
     _ols_ff5,
     _parse_ff_csv_text,
+    _parse_momentum_csv_text,
     build_benchmark_methodology,
     build_benchmark_prose,
     build_factor_methodology_notes,
     build_factor_prose,
+    regress_fi_sleeve,
     run_benchmark_attribution_regression,
     run_sleeve_regressions,
+    run_sleeve_regressions_mom,
     sig_marker,
 )
 
@@ -559,6 +562,165 @@ def test_benchmark_prose_significance_thresholds():
 
 
 # ── EM disclosure constant ─────────────────────────────────────────────────────
+
+# ── Carhart momentum parser ───────────────────────────────────────────────────
+
+_SAMPLE_UMD_TEXT = """\
+F-F Momentum Factor (Daily)
+
+,Mom
+20250101,   2.34
+20250102,  -0.15
+20250103,   0.88
+
+Annual Factors: Value-Weighted Returns
+2024,   5.20
+"""
+
+
+def test_parse_momentum_returns_correct_count():
+    s = _parse_momentum_csv_text(_SAMPLE_UMD_TEXT)
+    assert len(s) == 3
+
+
+def test_parse_momentum_unit_conversion():
+    """Momentum values should be divided by 100 (percent → decimal)."""
+    s = _parse_momentum_csv_text(_SAMPLE_UMD_TEXT)
+    assert abs(s.iloc[0] - 0.0234) < 1e-9
+
+
+def test_parse_momentum_date_index():
+    s = _parse_momentum_csv_text(_SAMPLE_UMD_TEXT)
+    assert s.index[0].date().isoformat() == "2025-01-01"
+
+
+def test_parse_momentum_excludes_annual_footer():
+    s = _parse_momentum_csv_text(_SAMPLE_UMD_TEXT)
+    assert len(s) == 3
+
+
+def test_run_sleeve_regressions_mom_returns_expected_structure():
+    """
+    With mocked _get_sleeve_return_series, load_factors, and load_umd_factor,
+    run_sleeve_regressions_mom must return a dict with 'us' and 'developed_exus' keys
+    containing all required keys including 'Mom' in betas.
+    """
+    rng = np.random.default_rng(77)
+    T = 120
+    dates = pd.bdate_range("2025-05-01", periods=T)
+
+    mock_ret = pd.Series(rng.standard_normal(T) * 0.008, index=dates)
+    mock_ff  = _make_mock_ff(T, rng, dates)
+    mock_umd = pd.Series(rng.standard_normal(T) * 0.006, index=dates, name="Mom")
+
+    with patch("src.factors._get_sleeve_return_series", return_value=mock_ret), \
+         patch("src.factors.load_factors", return_value=mock_ff), \
+         patch("src.factors.load_umd_factor", return_value=mock_umd):
+        results_mom = run_sleeve_regressions_mom("2025-05-01", "2025-10-31")
+
+    assert "us" in results_mom
+    assert "developed_exus" in results_mom
+    for key in ("us", "developed_exus"):
+        r = results_mom[key]
+        assert r is not None
+        assert "Mom" in r["betas"]
+        assert "Mom" in r["t_stats"]
+        assert "Mom" in r["p_values"]
+
+
+def test_global_region_in_factor_config():
+    """'global' must be a valid region key in _FACTOR_CONFIG."""
+    from src.factors import _FACTOR_CONFIG
+    assert "global" in _FACTOR_CONFIG
+    assert "url" in _FACTOR_CONFIG["global"]
+    assert "cache" in _FACTOR_CONFIG["global"]
+    assert "Global" in _FACTOR_CONFIG["global"]["url"]
+
+
+# ── FI TERM/CREDIT regression ─────────────────────────────────────────────────
+
+def test_fi_term_credit_regression_recovers_known_betas():
+    """
+    Synthetic FI series with known TERM/CREDIT loadings: regression must
+    recover betas within ±0.10 of truth at T=250.
+    """
+    rng = np.random.default_rng(42)
+    T = 250
+    dates = pd.bdate_range("2025-01-01", periods=T)
+
+    term_factor   = rng.normal(0, 0.0015, T)
+    credit_factor = rng.normal(0, 0.0008, T)
+    noise         = rng.normal(0, 0.0002, T)
+
+    true_term, true_credit = 0.85, 0.15
+    R_excess = true_term * term_factor + true_credit * credit_factor + noise
+
+    factors_df = pd.DataFrame(
+        {"TERM": term_factor, "CREDIT": credit_factor}, index=dates
+    )
+    X = add_constant(factors_df)
+    L = _nw_lags(T)
+    res = OLS(pd.Series(R_excess, index=dates), X).fit(
+        cov_type="HAC", cov_kwds={"maxlags": L}
+    )
+
+    assert abs(res.params["TERM"]   - true_term)   < 0.10, f"TERM: {res.params['TERM']:.3f}"
+    assert abs(res.params["CREDIT"] - true_credit) < 0.10, f"CREDIT: {res.params['CREDIT']:.3f}"
+
+
+def test_regress_fi_sleeve_returns_expected_structure():
+    """
+    With mocked get_prices and load_factors, regress_fi_sleeve must return a
+    dict with all required keys and TERM / CREDIT entries in betas / t_stats / p_values.
+    """
+    rng = np.random.default_rng(99)
+    T = 250
+    dates_full = pd.date_range("2025-05-01", periods=T + 1, freq="D")
+
+    px = pd.DataFrame({
+        "adj_close": 100.0 * np.cumprod(1 + rng.standard_normal(T + 1) * 0.003),
+        "close":     100.0 * np.cumprod(1 + rng.standard_normal(T + 1) * 0.003),
+    }, index=dates_full)
+
+    mock_ff = _make_mock_ff(T, rng, pd.bdate_range("2025-05-01", periods=T))
+    mock_ff["RF"] = 0.0001
+
+    with patch("src.factors.get_prices", return_value=px), \
+         patch("src.factors.load_factors", return_value=mock_ff):
+        result = regress_fi_sleeve("2025-05-01", "2026-04-30")
+
+    assert result is not None
+    required = {
+        "alpha_daily", "alpha_annual", "alpha_annual_bps",
+        "t_alpha", "p_alpha", "betas", "t_stats", "p_values",
+        "r_squared", "adj_r_squared", "T", "nw_lags",
+        "sample_start", "sample_end", "sleeve_label", "tickers",
+    }
+    assert required.issubset(result.keys()), f"Missing: {required - result.keys()}"
+    for f in ["TERM", "CREDIT"]:
+        assert f in result["betas"],    f"betas missing {f}"
+        assert f in result["t_stats"],  f"t_stats missing {f}"
+        assert f in result["p_values"], f"p_values missing {f}"
+
+
+def test_regress_fi_sleeve_returns_none_on_insufficient_data():
+    """Fewer than 30 aligned observations → None."""
+    short_dates = pd.date_range("2025-05-01", periods=5, freq="D")
+    short_px = pd.DataFrame({
+        "adj_close": np.ones(5), "close": np.ones(5),
+    }, index=short_dates)
+
+    short_ff = pd.DataFrame({
+        "Mkt-RF": np.zeros(5), "SMB": np.zeros(5), "HML": np.zeros(5),
+        "RMW":    np.zeros(5), "CMA": np.zeros(5), "RF":  np.zeros(5),
+    }, index=pd.bdate_range("2025-05-01", periods=5))
+
+    with patch("src.factors.get_prices", return_value=short_px), \
+         patch("src.factors.load_factors", return_value=short_ff):
+        result = regress_fi_sleeve("2025-05-01", "2025-05-07")
+
+    assert result is None
+
 
 def test_em_disclosure_is_non_empty_string():
     assert isinstance(EM_DISCLOSURE, str) and len(EM_DISCLOSURE) > 50

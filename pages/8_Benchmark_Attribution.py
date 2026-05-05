@@ -8,6 +8,7 @@ from src.asof import as_of_banner
 from src.attribution import brinson_fachler_period
 from src.config import IS_DEMO
 from src.factors import (
+    alpha_ci_str,
     build_benchmark_methodology,
     build_benchmark_prose,
     run_benchmark_attribution_regression,
@@ -86,7 +87,7 @@ with col:
     p_a = result["p_alpha"]
     table_rows.append({
         "Factor":       "Alpha (annualized)",
-        "Loading (β)":  f"{result['alpha_annual_bps']:+.0f} bps/yr",
+        "Loading (β)":  alpha_ci_str(result),
         "t-stat":       f"{result['t_alpha']:.2f}",
         "p-value":      f"{p_a:.3f}",
         "Significance": sig_marker(p_a),
@@ -154,6 +155,15 @@ with col:
     with st.expander("Methodology & Disclosure", expanded=False):
         for note in build_benchmark_methodology(result):
             st.markdown(f"- {note}")
+        st.markdown(
+            "- **Alpha confidence intervals**: 95% CI = alpha_bps ± 1.96 × SE_bps, "
+            "where SE_bps = HAC standard error of the intercept × 252 × 10,000. "
+            "HAC SEs are authoritative (correct for daily return autocorrelation); "
+            "CI applies to alpha only, not to factor betas. "
+            "Wide CIs at this sample length reflect parameter uncertainty, "
+            "not a methodological failure — they correctly communicate that the "
+            "alpha estimate is not yet stable."
+        )
         st.caption(
             "Portfolio returns: get_portfolio_value_series (adj_close basis). "
             "Benchmark returns: get_custom_blended_series (SAA target-weight basket). "
