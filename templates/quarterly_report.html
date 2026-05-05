@@ -594,8 +594,10 @@
           return within 1 basis point.</dd>
 
           <dt>Drift Status</dt>
-          <dd>Flagged &ldquo;Drift&rdquo; when absolute drift &gt; 200 bps or relative drift &gt; 20%
-          of target weight. Both thresholds must be satisfied for &ldquo;Within&rdquo; status.</dd>
+          <dd>Flagged &ldquo;Drift&rdquo; when absolute drift exceeds the per-sleeve tolerance band
+          (&plusmn;300&nbsp;bps for sleeves with &ge;10% target weight; &plusmn;200&nbsp;bps for smaller sleeves)
+          <em>or</em> relative drift exceeds 20% of target weight.
+          Both thresholds must be satisfied for &ldquo;Within&rdquo; status.</dd>
 
           <dt>Price Data</dt>
           <dd>Daily adjusted-close from Yahoo Finance, cached in SQLite. Adjusted close reflects

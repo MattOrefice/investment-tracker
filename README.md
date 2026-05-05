@@ -13,7 +13,7 @@ To generate a sample quarterly report: open the demo, navigate to **Performance*
 - **Time-weighted returns** — daily-linked chain-linked TWR (GIPS-compliant); Modified Dietz available for comparison. Both methods converge to within 1 bp for this portfolio (single initial cash flow, no subsequent external flows).
 - **Brinson-Fachler attribution** — allocation and selection effects per sleeve, with a reconciliation check ensuring the sum of effects equals active return within 1 basis point.
 - **Custom-blended benchmark** — SAA target-weight basket of per-sleeve benchmark proxies (SPY, QUAL, IWD, IWM, EFA, EEM, IEF, TIP, 50% VNQ / 50% DBC, BIL), normalized to $1 at inception. Separates diversification decisions from security selection.
-- **Drift monitoring** — two-threshold tolerance: a sleeve is flagged when absolute drift exceeds 200 bps *or* relative drift exceeds 20% of target weight.
+- **Drift monitoring** — per-sleeve tolerance bands (±300 bps for sleeves ≥10% target weight, ±200 bps for smaller sleeves); flagged when absolute drift exceeds the band *or* relative drift exceeds 20% of target weight.
 - **Macro context** — CAPE (Robert Shiller / Yale), 2/10 yield curve spread, Fed Funds rate, ICE BofA HY OAS, sourced from FRED and Yale. Historical percentiles provided for each indicator.
 - **Quarterly PDF report** — six-page WeasyPrint-rendered report with static chart export (kaleido). Covers executive summary, holdings, period returns, BF attribution with auto-generated selection effect commentary, macro context, and methodology.
 - **Dual mode** — personal mode (local SQLite with real holdings, gitignored) and demo mode (paper-trade database committed to the repo, deployed to Streamlit Cloud).
