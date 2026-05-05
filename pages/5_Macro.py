@@ -267,7 +267,7 @@ with col:
 
     st.divider()
 
-    # ── Load FRED data (shared across panels 2-4) ────────────────────────────
+    # ── Load FRED data (shared across panels 2-5) ────────────────────────────
 
     try:
         with st.spinner("Loading FRED data…"):
@@ -275,12 +275,115 @@ with col:
             t10y2y      = _load_fred("T10Y2Y",       "1976-06-01")
             dff         = _load_fred("DFF",           "1954-07-01")
             hy_oas      = _load_fred("BAMLH0A0HYM2", "1996-12-31")
+            dgs10       = _load_fred("DGS10",         "2003-01-01")
+            t10yie      = _load_fred("T10YIE",        "2003-01-01")
         fred_ok = True
     except Exception as exc:
         fred_ok = False
         st.error(f"FRED data unavailable: {exc}")
 
-    # ── Panel 2: Yield Curve ─────────────────────────────────────────────────
+    # ── Panel 2: Excess CAPE Yield ──────────────────────────────────────────
+
+    if cape_ok and fred_ok:
+        st.markdown("#### Excess CAPE Yield (ECY)")
+
+        dgs10_clean  = dgs10.dropna()
+        t10yie_clean = t10yie.dropna()
+
+        current_dgs10  = float(dgs10_clean.iloc[-1])
+        current_t10yie = float(t10yie_clean.iloc[-1])
+        current_ecy    = macro.compute_ecy(cape_val, current_dgs10, current_t10yie)
+
+        # Historical ECY series aligned monthly (T10YIE starts Jan 2003)
+        _ecy_start = "2003-01-01"
+        _dgs10_m   = dgs10_clean.loc[_ecy_start:].resample("MS").mean()
+        _t10yie_m  = t10yie_clean.loc[_ecy_start:].resample("MS").mean()
+        _cape_m    = cape_series.dropna().loc[_ecy_start:]
+        _ecy_df    = pd.concat([_cape_m, _dgs10_m, _t10yie_m], axis=1).dropna()
+        _ecy_df.columns = ["cape", "dgs10", "t10yie"]
+        _ecy_hist  = (100.0 / _ecy_df["cape"]) - (_ecy_df["dgs10"] - _ecy_df["t10yie"])
+
+        ecy_pctile   = macro.percentile(_ecy_hist, current_ecy)
+        ecy_since    = _ecy_hist.index[0].strftime("%b %Y")
+        _ecy_median  = float(_ecy_hist.median())
+        _real_rate   = current_dgs10 - current_t10yie
+
+        col_l, col_r = st.columns([1, 2])
+        with col_l:
+            st.metric("ECY", f"{current_ecy:.2f}%")
+            st.caption(
+                f"{_ordinal(ecy_pctile)} percentile since {ecy_since}  \n"
+                f"CAPE yield {100/cape_val:.2f}% vs real rate {_real_rate:.2f}% "
+                f"({current_dgs10:.2f}% − {current_t10yie:.2f}%)"
+            )
+            ecy_window = st.radio(
+                "Window", ["5Y", "10Y", "Max"],
+                index=2, key="ecy_window", horizontal=True,
+            )
+
+        with col_r:
+            _ecy_w_start = _window_start(ecy_window)
+            _ecy_w       = _ecy_hist[_ecy_hist.index >= pd.Timestamp(_ecy_w_start)]
+
+            fig_ecy = go.Figure()
+            fig_ecy.add_trace(go.Scatter(
+                x=_ecy_w.index, y=_ecy_w.values,
+                mode="lines", name="ECY (%)",
+                line=dict(color=_C["primary"], width=2),
+            ))
+            fig_ecy.add_hline(
+                y=_ecy_median,
+                line_dash="dash", line_color=_C["ref"], line_width=1,
+                annotation_text=f"Median {_ecy_median:.1f}%",
+                annotation_position="right", annotation_font_size=10,
+            )
+            fig_ecy.add_hline(
+                y=0,
+                line_dash="dot", line_color="#CC4444", line_width=1,
+                annotation_text="0 = bonds match equities",
+                annotation_position="top left", annotation_font_size=9,
+                annotation_font_color="#888",
+            )
+            _apply_style(fig_ecy, height=_CHART_H_CAPE)
+            fig_ecy.update_yaxes(title_text="ECY (%)")
+            st.plotly_chart(fig_ecy, width='stretch')
+
+        if current_ecy >= 3.0:
+            _ecy_interp = (
+                f"ECY of {current_ecy:.2f}% signals equities offer a substantial earnings yield "
+                "above real bond yields — historically associated with attractive equity forward "
+                "returns relative to fixed income."
+            )
+        elif current_ecy >= 1.0:
+            _ecy_interp = (
+                f"ECY of {current_ecy:.2f}% reflects a modest equity premium above real bond yields — "
+                "historically consistent with reasonable forward returns, though the margin of safety "
+                "is thinner than the post-2008 zero-real-rate era."
+            )
+        elif current_ecy >= 0.0:
+            _ecy_interp = (
+                f"ECY of {current_ecy:.2f}% places equities near parity with real bond yields — "
+                "limited yield premium above what intermediate Treasuries offer in real terms. "
+                "The International Developed sleeve's valuation thesis is partly predicated on US "
+                "equities being expensive relative to both international peers and real bond yields."
+            )
+        else:
+            _ecy_interp = (
+                f"ECY of {current_ecy:.2f}% indicates real bonds yield more than equities — "
+                "a historically unusual regime where fixed income competes directly with equity returns. "
+                "TIPS and Core Fixed Income sleeves become more competitive on a risk-adjusted basis "
+                "in this environment."
+            )
+
+        st.caption(
+            _ecy_interp + f" "
+            f"Current reading at the {_ordinal(ecy_pctile)} percentile of its {ecy_since}–present "
+            f"history (T10YIE breakeven data starts {ecy_since}; percentile window is disclosed accordingly)."
+        )
+
+        st.divider()
+
+    # ── Panel 3: Yield Curve ─────────────────────────────────────────────────
 
     if fred_ok:
         st.markdown("#### 2/10 Yield Curve Spread")
@@ -330,7 +433,7 @@ with col:
 
         st.divider()
 
-    # ── Panel 3: Fed Funds ───────────────────────────────────────────────────
+    # ── Panel 4: Fed Funds ───────────────────────────────────────────────────
 
     if fred_ok:
         st.markdown("#### Effective Federal Funds Rate")
@@ -372,7 +475,7 @@ with col:
 
         st.divider()
 
-    # ── Panel 4: HY Credit Spreads ───────────────────────────────────────────
+    # ── Panel 5: HY Credit Spreads ───────────────────────────────────────────
 
     if fred_ok:
         st.markdown("#### HY Credit Spreads (OAS)")
@@ -436,7 +539,7 @@ with col:
 
         st.divider()
 
-    # ── Panel 5: US vs. International ────────────────────────────────────────
+    # ── Panel 6: US vs. International ────────────────────────────────────────
 
     st.markdown("#### US vs. International Equity")
 
@@ -537,10 +640,14 @@ with col:
         else:
             _src_lines.append("**Shiller CAPE**: unavailable")
         if fred_ok:
-            _t10_last = t10y2y.dropna().index[-1].strftime("%b %d, %Y")
-            _dff_last = dff.dropna().index[-1].strftime("%b %d, %Y")
-            _hy_last  = hy_oas.dropna().index[-1].strftime("%b %d, %Y")
+            _t10_last   = t10y2y.dropna().index[-1].strftime("%b %d, %Y")
+            _dff_last   = dff.dropna().index[-1].strftime("%b %d, %Y")
+            _hy_last    = hy_oas.dropna().index[-1].strftime("%b %d, %Y")
+            _dgs10_last = dgs10.dropna().index[-1].strftime("%b %d, %Y")
+            _tie_last   = t10yie.dropna().index[-1].strftime("%b %d, %Y")
             _src_lines += [
+                f"**FRED DGS10** (10-Year Treasury Rate): last observation **{_dgs10_last}** · daily",
+                f"**FRED T10YIE** (10-Year Breakeven Inflation): last observation **{_tie_last}** · daily · starts Jan 2003",
                 f"**FRED T10Y2Y** (10Y−2Y Treasury spread): last observation **{_t10_last}** · daily",
                 f"**FRED DFF** (Fed Funds Rate): last observation **{_dff_last}** · daily",
                 f"**FRED BAMLH0A0HYM2** (ICE BofA HY OAS, May 2023+): last observation **{_hy_last}** · daily",

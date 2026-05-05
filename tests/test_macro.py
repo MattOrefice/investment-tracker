@@ -1,4 +1,4 @@
-"""Tests for src/macro.py — CAPE implied return formula."""
+"""Tests for src/macro.py — CAPE implied return formula and ECY."""
 import math
 import sys
 import pathlib
@@ -7,7 +7,7 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from src.macro import compute_cape_implied_return
+from src.macro import compute_cape_implied_return, compute_ecy
 
 
 def test_cape_16_anchor():
@@ -48,3 +48,28 @@ def test_cape_monotonically_decreasing():
             f"Monotonicity failed: CAPE={capes[i]} gives {returns[i]:.4%} "
             f"but CAPE={capes[i+1]} gives {returns[i+1]:.4%}"
         )
+
+
+# ── ECY tests ─────────────────────────────────────────────────────────────────
+
+def test_ecy_positive():
+    """CAPE=25, DGS10=3.0%, T10YIE=2.0% → ECY = 100/25 − (3.0−2.0) = 4.0 − 1.0 = 3.0%"""
+    assert abs(compute_ecy(25.0, 3.0, 2.0) - 3.0) < 1e-9
+
+
+def test_ecy_negative():
+    """CAPE=40, DGS10=6.0%, T10YIE=2.0% → ECY = 100/40 − (6.0−2.0) = 2.5 − 4.0 = −1.5%"""
+    assert abs(compute_ecy(40.0, 6.0, 2.0) - (-1.5)) < 1e-9
+
+
+def test_ecy_zero():
+    """ECY = 0 when CAPE earnings yield exactly equals real bond rate."""
+    # CAPE=25 → earnings yield 4.0%; T10Y=6.0%, T10YIE=2.0% → real rate 4.0%
+    assert abs(compute_ecy(25.0, 6.0, 2.0) - 0.0) < 1e-9
+
+
+def test_ecy_higher_cape_lower_value():
+    """Higher CAPE reduces the earnings yield, lowering ECY all else equal."""
+    ecy_low_cape  = compute_ecy(20.0, 4.0, 2.0)   # earnings yield 5% → ECY 3%
+    ecy_high_cape = compute_ecy(40.0, 4.0, 2.0)   # earnings yield 2.5% → ECY 0.5%
+    assert ecy_low_cape > ecy_high_cape

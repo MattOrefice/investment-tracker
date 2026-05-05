@@ -133,3 +133,13 @@ def compute_cape_implied_return(cape: float) -> float:
     subsequent replications of the log-linear CAPE-to-forward-return relationship.
     """
     return -0.070 * math.log(cape / 16.0) + 0.066
+
+
+def compute_ecy(cape: float, t10y_pct: float, t10yie_pct: float) -> float:
+    """
+    Excess CAPE Yield: equity earnings yield minus 10-year real bond yield.
+    ECY = (100 / CAPE) − (T10Y% − T10YIE%)
+    Positive = equities yield more than real bonds (equities cheaper relative to bonds).
+    All inputs and output are in percent (e.g., 2.5 means 2.5%).
+    """
+    return (100.0 / cape) - (t10y_pct - t10yie_pct)
