@@ -268,24 +268,41 @@ with col:
 
     st.divider()
 
-    # ── Load FRED data (shared across panels 2-5) ────────────────────────────
+    # ── Load FRED data per-series — None signals fetch failure ───────────────
 
-    try:
-        with st.spinner("Loading FRED data…"):
-            rec_periods = _load_recession_periods()
-            t10y2y      = _load_fred("T10Y2Y",       "1976-06-01")
-            dff         = _load_fred("DFF",           "1954-07-01")
-            hy_oas      = _load_fred("BAMLH0A0HYM2", "1996-12-31")
-            dgs10       = _load_fred("DGS10",         "2003-01-01")
-            t10yie      = _load_fred("T10YIE",        "2003-01-01")
-        fred_ok = True
-    except Exception as exc:
-        fred_ok = False
-        st.error(f"FRED data unavailable: {exc}")
+    def _try_fred(series_id: str, start_date: str):
+        """Return (series, None) on success or (None, exc) on failure."""
+        try:
+            return _load_fred(series_id, start_date), None
+        except Exception as exc:
+            return None, exc
+
+    def _try_rec():
+        try:
+            return _load_recession_periods(), None
+        except Exception as exc:
+            return None, exc
+
+    def _panel_error(panel_title: str, exc: Exception, retry_key: str) -> None:
+        """Render a compact per-panel error card with a Retry button."""
+        with st.container(border=True):
+            st.markdown(f"**{panel_title}** — data temporarily unavailable")
+            st.caption(f"{type(exc).__name__}: {exc}")
+            if st.button("Retry", key=retry_key):
+                _load_fred.clear()
+                st.rerun()
+
+    with st.spinner("Loading FRED data…"):
+        rec_periods, _rec_err    = _try_rec()
+        t10y2y,      _t10y2y_err = _try_fred("T10Y2Y",       "1976-06-01")
+        dff,         _dff_err    = _try_fred("DFF",           "1954-07-01")
+        hy_oas,      _hy_oas_err = _try_fred("BAMLH0A0HYM2", "1996-12-31")
+        dgs10,       _dgs10_err  = _try_fred("DGS10",         "2003-01-01")
+        t10yie,      _t10yie_err = _try_fred("T10YIE",        "2003-01-01")
 
     # ── Panel 2: Excess CAPE Yield ──────────────────────────────────────────
 
-    if cape_ok and fred_ok:
+    if cape_ok and (dgs10 is not None) and (t10yie is not None):
         st.markdown("#### Excess CAPE Yield (ECY)")
 
         dgs10_clean  = dgs10.dropna()
@@ -384,10 +401,14 @@ with col:
 
         st.divider()
 
+    elif cape_ok:
+        _panel_error("Excess CAPE Yield (ECY)", _dgs10_err or _t10yie_err, "retry_ecy")
+        st.divider()
+
     # ── Panel 3: Yield Curve ─────────────────────────────────────────────────
 
-    if fred_ok:
-        st.markdown("#### 2/10 Yield Curve Spread")
+    st.markdown("#### 2/10 Yield Curve Spread")
+    if t10y2y is not None:
 
         t10y2y_clean       = t10y2y.dropna()
         # FRED T10Y2Y is in percent; multiply by 100 for basis points
@@ -409,7 +430,7 @@ with col:
         yc_data  = (t10y2y_clean * 100).loc[yc_start:]
 
         fig_yc = go.Figure()
-        _add_recession_shading(fig_yc, rec_periods, yc_start)
+        _add_recession_shading(fig_yc, rec_periods or [], yc_start)
         fig_yc.add_trace(go.Scatter(
             x=yc_data.index, y=yc_data.values,
             mode="lines", name="10Y−2Y (bps)",
@@ -433,11 +454,14 @@ with col:
         )
 
         st.divider()
+    else:
+        _panel_error("2/10 Yield Curve Spread", _t10y2y_err, "retry_yc")
+        st.divider()
 
     # ── Panel 4: Fed Funds ───────────────────────────────────────────────────
 
-    if fred_ok:
-        st.markdown("#### Effective Federal Funds Rate")
+    st.markdown("#### Effective Federal Funds Rate")
+    if dff is not None:
 
         dff_clean  = dff.dropna()
         current_ff = float(dff_clean.iloc[-1])
@@ -462,7 +486,7 @@ with col:
         ff_data  = dff_clean.loc[ff_start:]
 
         fig_ff = go.Figure()
-        _add_recession_shading(fig_ff, rec_periods, ff_start)
+        _add_recession_shading(fig_ff, rec_periods or [], ff_start)
         fig_ff.add_trace(go.Scatter(
             x=ff_data.index, y=ff_data.values,
             mode="lines", name="Fed Funds (%)",
@@ -475,11 +499,14 @@ with col:
         st.caption(_ff_interpretation(current_ff, ff_chg_bps))
 
         st.divider()
+    else:
+        _panel_error("Effective Federal Funds Rate", _dff_err, "retry_ff")
+        st.divider()
 
     # ── Panel 5: HY Credit Spreads ───────────────────────────────────────────
 
-    if fred_ok:
-        st.markdown("#### HY Credit Spreads (OAS)")
+    st.markdown("#### HY Credit Spreads (OAS)")
+    if hy_oas is not None:
 
         # FRED BAMLH0A0HYM2 is in percent; multiply by 100 for basis points
         hy_clean      = hy_oas.dropna()
@@ -506,7 +533,7 @@ with col:
         hy_data  = hy_bps.loc[hy_start:]
 
         fig_hy = go.Figure()
-        _add_recession_shading(fig_hy, rec_periods, hy_start)
+        _add_recession_shading(fig_hy, rec_periods or [], hy_start)
         fig_hy.add_trace(go.Scatter(
             x=hy_data.index, y=hy_data.values,
             mode="lines", name="HY OAS (bps)",
@@ -538,6 +565,9 @@ with col:
             "historical percentile reflects the available window.*"
         )
 
+        st.divider()
+    else:
+        _panel_error("HY Credit Spreads (OAS)", _hy_oas_err, "retry_hy")
         st.divider()
 
     # ── Panel 6: US vs. International ────────────────────────────────────────
@@ -640,22 +670,21 @@ with col:
             )
         else:
             _src_lines.append("**Shiller CAPE**: unavailable")
-        if fred_ok:
-            _t10_last   = t10y2y.dropna().index[-1].strftime("%b %d, %Y")
-            _dff_last   = dff.dropna().index[-1].strftime("%b %d, %Y")
-            _hy_last    = hy_oas.dropna().index[-1].strftime("%b %d, %Y")
-            _dgs10_last = dgs10.dropna().index[-1].strftime("%b %d, %Y")
-            _tie_last   = t10yie.dropna().index[-1].strftime("%b %d, %Y")
-            _src_lines += [
-                f"**FRED DGS10** (10-Year Treasury Rate): last observation **{_dgs10_last}** · daily",
-                f"**FRED T10YIE** (10-Year Breakeven Inflation): last observation **{_tie_last}** · daily · starts Jan 2003",
-                f"**FRED T10Y2Y** (10Y−2Y Treasury spread): last observation **{_t10_last}** · daily",
-                f"**FRED DFF** (Fed Funds Rate): last observation **{_dff_last}** · daily",
-                f"**FRED BAMLH0A0HYM2** (ICE BofA HY OAS, May 2023+): last observation **{_hy_last}** · daily",
-                "**FRED USREC** (NBER recession indicator): monthly, lags recession end by ~12 months",
-            ]
-        else:
-            _src_lines.append("**FRED data**: unavailable")
+        def _fred_src(label: str, series: "pd.Series | None") -> str:
+            if series is not None:
+                last = series.dropna().index[-1].strftime("%b %d, %Y")
+                return f"**{label}**: last observation **{last}**"
+            return f"**{label}**: unavailable"
+
+        _src_lines += [
+            _fred_src("FRED DGS10 (10-Year Treasury Rate)",              dgs10)  + " · daily",
+            _fred_src("FRED T10YIE (10-Year Breakeven Inflation)",       t10yie) + " · daily · starts Jan 2003",
+            _fred_src("FRED T10Y2Y (10Y−2Y Treasury spread)",            t10y2y) + " · daily",
+            _fred_src("FRED DFF (Fed Funds Rate)",                       dff)    + " · daily",
+            _fred_src("FRED BAMLH0A0HYM2 (ICE BofA HY OAS, May 2023+)", hy_oas) + " · daily",
+            "**FRED USREC** (NBER recession indicator): monthly, lags recession end by ~12 months"
+            + ("" if rec_periods is not None else " — unavailable"),
+        ]
         _src_lines.append(
             "**Yahoo Finance** (SPY, EFA): daily prices via local SQLite cache · "
             "used for the US vs. International relative performance panel"

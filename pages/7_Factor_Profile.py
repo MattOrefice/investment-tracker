@@ -123,13 +123,23 @@ with col:
         st.subheader(res["sleeve_label"])
         st.caption(f"Tickers: {', '.join(res['tickers'])}")
 
-        # International Developed: show Dev-ex-US and Global in tabs
-        if key == "developed_exus" and global_result is not None:
+        # International Developed: always show both tabs; error state in Global if unavailable
+        if key == "developed_exus":
             tab_dev, tab_glob = st.tabs(["Developed ex-US Factors", "Global Factors"])
             with tab_dev:
                 _render_factor_table(res, _FACTORS, label="FF5 — Developed ex-US")
             with tab_glob:
-                _render_factor_table(global_result, _FACTORS, label="FF5 — Global")
+                if global_result is not None:
+                    _render_factor_table(global_result, _FACTORS, label="FF5 — Global")
+                else:
+                    st.warning(
+                        "Global factor data temporarily unavailable — Ken French Global "
+                        "5-factor file could not be downloaded. "
+                        "The tab populates once the file is fetched and cached."
+                    )
+                    if st.button("Retry", key="retry_global"):
+                        _get_global_result.clear()
+                        st.rerun()
         else:
             _render_factor_table(res, _FACTORS)
 
@@ -163,13 +173,20 @@ with col:
         st.divider()
 
     # ── FI sleeve — TERM / CREDIT regression ─────────────────────────────────
-    if fi_result is not None:
-        st.subheader(fi_result["sleeve_label"])
+    st.subheader("Fixed Income Sleeve — TERM / CREDIT")
+    if fi_result is None:
+        st.warning(
+            "FI factor data temporarily unavailable — requires IEF, BIL, and HYG daily prices "
+            "plus Ken French US risk-free rate. Panel populates once the price series are cached."
+        )
+        if st.button("Retry", key="retry_fi"):
+            _get_fi_result.clear()
+            st.rerun()
+    else:
         st.caption(
             f"Tickers: {', '.join(fi_result['tickers'])} (60% / 40%, proportional to SAA) · "
             "TERM = IEF − BIL · CREDIT = HYG − IEF"
         )
-
         fi_rows = []
         p_a_fi = fi_result["p_alpha"]
         fi_rows.append({
