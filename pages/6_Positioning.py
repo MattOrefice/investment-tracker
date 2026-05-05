@@ -2,7 +2,7 @@
 import streamlit as st
 
 from src.asof import as_of_banner
-from src.config import IS_DEMO
+from src.config import DEMO_BANNER_TEXT, IS_DEMO
 from src.positioning import (
     build_style_box_figure,
     get_active_tilts,
@@ -15,10 +15,7 @@ from src.positioning import (
 st.set_page_config(page_title="Active Positioning", layout="wide")
 
 if IS_DEMO:
-    st.info(
-        "**Demo mode** — data reflects a paper-trade portfolio. "
-        "Positioning analysis derives automatically from live portfolio state."
-    )
+    st.info(DEMO_BANNER_TEXT)
 
 _, col, _ = st.columns([1, 8, 1])
 with col:

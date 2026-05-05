@@ -6,7 +6,7 @@ import pandas as pd
 
 from src.asof import as_of_banner
 from src.attribution import brinson_fachler_period
-from src.config import IS_DEMO
+from src.config import DEMO_BANNER_TEXT, IS_DEMO
 from src.factors import (
     alpha_ci_str,
     build_benchmark_methodology,
@@ -44,10 +44,7 @@ _SLEEVE_BENCH = {
 st.set_page_config(page_title="Benchmark Attribution", layout="wide")
 
 if IS_DEMO:
-    st.info(
-        "**Demo mode** — regression computed on the demo portfolio's paper-trade return series. "
-        "Factor loadings reflect the SAA construction, not live trading decisions."
-    )
+    st.info(DEMO_BANNER_TEXT)
 
 _, col, _ = st.columns([1, 8, 1])
 with col:

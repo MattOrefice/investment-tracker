@@ -27,8 +27,7 @@ with col:
         Brinson-Fachler attribution, and automated quarterly PDF reporting against a
         custom-blended benchmark.
 
-        **The most polished artifact is the quarterly PDF report.** Navigate to the
-        **Performance** page and open "Generate Quarterly Report" to produce it.
+        The quarterly PDF report is the primary deliverable. Generate it from the **Performance** page.
         """
     )
 

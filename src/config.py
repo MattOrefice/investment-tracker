@@ -55,6 +55,6 @@ def is_demo() -> bool:
 IS_DEMO = is_demo()
 
 DEMO_BANNER_TEXT = (
-    "Demo portfolio — paper trades for illustration. "
-    "Methodology and analytics are real; trades are simulated from May 2025."
+    "**Demo mode** — analytics computed on a paper-trade portfolio simulated from May 2025. "
+    "Methodology and inference are real; positions are illustrative."
 )
