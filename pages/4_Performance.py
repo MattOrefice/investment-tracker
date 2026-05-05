@@ -349,30 +349,38 @@ with col:
         with _r1:
             st.markdown("**Since Inception**")
             _si1, _si2, _si3, _si4, _si5 = st.columns(5)
-            _si1.metric("Sharpe",   _fmt_ratio(_m_si["sharpe"]))
-            _si2.metric("Sortino",  _fmt_ratio(_m_si["sortino"]))
-            _si3.metric("Max DD",   _fmt_pct(_m_si["max_drawdown_pct"]))
+            _si1.metric("Sharpe",     _fmt_ratio(_m_si["sharpe"]))
+            _si2.metric("Sortino",    _fmt_ratio(_m_si["sortino"]))
+            _si3.metric("Max DD",     _fmt_pct(_m_si["max_drawdown_pct"]))
             _si4.metric("Track. Err", _fmt_pct(_m_si["tracking_error_pct"]))
             _si5.metric("Info Ratio", _fmt_ratio(_m_si["information_ratio"]))
+            _si_v1, _si_v2, _si_blank = st.columns(3)
+            _si_v1.metric("VaR (95%)",  _fmt_pct(_m_si["var_95_pct"]))
+            _si_v2.metric("CVaR (95%)", _fmt_pct(_m_si["cvar_95_pct"]))
         with _r2:
             st.markdown("**Trailing 1 Year**")
             if _m_1y:
                 _1y1, _1y2, _1y3, _1y4, _1y5 = st.columns(5)
-                _1y1.metric("Sharpe",   _fmt_ratio(_m_1y["sharpe"]))
-                _1y2.metric("Sortino",  _fmt_ratio(_m_1y["sortino"]))
-                _1y3.metric("Max DD",   _fmt_pct(_m_1y["max_drawdown_pct"]))
+                _1y1.metric("Sharpe",     _fmt_ratio(_m_1y["sharpe"]))
+                _1y2.metric("Sortino",    _fmt_ratio(_m_1y["sortino"]))
+                _1y3.metric("Max DD",     _fmt_pct(_m_1y["max_drawdown_pct"]))
                 _1y4.metric("Track. Err", _fmt_pct(_m_1y["tracking_error_pct"]))
                 _1y5.metric("Info Ratio", _fmt_ratio(_m_1y["information_ratio"]))
+                _1y_v1, _1y_v2, _1y_blank = st.columns(3)
+                _1y_v1.metric("VaR (95%)",  _fmt_pct(_m_1y["var_95_pct"]))
+                _1y_v2.metric("CVaR (95%)", _fmt_pct(_m_1y["cvar_95_pct"]))
             else:
                 st.caption("Insufficient data for 1Y window.")
 
         st.caption(
             "Sharpe and Sortino use RF = 4.5% (current cash yield). "
             "Tracking error and information ratio vs. Custom Blended benchmark. "
-            "Max drawdown = peak-to-trough decline in portfolio value since inception."
+            "Max drawdown = peak-to-trough decline in portfolio value since inception. "
+            "VaR(95%) = daily loss exceeded only 5% of trading days (historical simulation). "
+            "CVaR(95%) = average daily loss on the worst 5% of trading days (Expected Shortfall)."
         )
         st.markdown(
-            "*Inception period (369 days) overlaps substantially with trailing 12 months. "
+            "*Inception period overlaps substantially with trailing 12 months. "
             "Max DD, TE, and IR will diverge from Since Inception once the portfolio "
             "crosses ~18 months of history.*"
         )

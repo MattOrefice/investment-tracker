@@ -2,6 +2,7 @@
 import math
 from datetime import date, timedelta
 
+import numpy as np
 import pandas as pd
 
 
@@ -72,6 +73,12 @@ def compute_risk_metrics(
     ann_bench      = float((1 + bench_ret).prod() ** (252 / n) - 1)
     ir = (ann_port - ann_bench) / tracking_error if tracking_error > 1e-10 else float("nan")
 
+    # VaR(95%) and CVaR(95%) — daily positive loss magnitudes
+    var_threshold = float(np.percentile(port_ret, 5))   # 5th percentile (negative)
+    var_95        = -var_threshold                        # positive loss magnitude
+    tail_mask     = port_ret <= var_threshold
+    cvar_95       = -float(port_ret[tail_mask].mean()) if tail_mask.any() else var_95
+
     return {
         "sharpe":               sharpe,
         "sortino":              sortino,
@@ -81,4 +88,6 @@ def compute_risk_metrics(
         "n_days":               n,
         "ann_port_return_pct":  ann_port * 100,
         "ann_bench_return_pct": ann_bench * 100,
+        "var_95_pct":           var_95 * 100,
+        "cvar_95_pct":          cvar_95 * 100,
     }
