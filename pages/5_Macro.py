@@ -165,6 +165,7 @@ with col:
     with hdr_r:
         if st.button("Force refresh", type="secondary"):
             macro.clear_macro_cache()
+            shiller.clear_shiller_cache()   # delete disk CSV so next load re-fetches
             st.cache_data.clear()
             st.rerun()
 
@@ -188,9 +189,18 @@ with col:
         st.error(f"CAPE data unavailable: {exc}")
 
     if cape_ok:
+        cape_last_date = cape_series.dropna().index[-1]
+        staleness_days = (pd.Timestamp.today() - cape_last_date).days
+        if staleness_days > 95:
+            st.warning(
+                f"Shiller data is {staleness_days} days stale "
+                f"(last observation: {cape_last_date.strftime('%Y-%m')}). "
+                "Force refresh below to pull the latest data."
+            )
+
         col_l, col_r = st.columns([1, 2])
 
-        cape_as_of = cape_series.dropna().index[-1].strftime("%b %Y")
+        cape_as_of = cape_last_date.strftime("%b %Y")
         with col_l:
             st.metric("Shiller CAPE", f"{cape_val:.1f}×")
             st.caption(
@@ -247,10 +257,12 @@ with col:
         )
         st.caption(
             f"CAPE in the {_ordinal(cape_pctile)} percentile historically — {pctile_label}. "
-            "Periods of similarly elevated valuation (1929, 1999, 2021) preceded materially "
-            "below-average forward returns. Most directly relevant to the International "
-            "Developed and US Large Value sleeves, where the discount-to-US-CAPE thesis "
-            "depends on US valuations remaining above historical norms."
+            "Only the dot-com bubble peak (1999–2001) has sustained CAPE above 40 in the "
+            "full 145-year Shiller record; the 2024–2026 stretch is the second such instance. "
+            "Periods of extreme valuation have preceded materially below-average decade-ahead "
+            "returns. Most directly relevant to the International Developed and US Large Value "
+            "sleeves, where the discount-to-US-CAPE thesis depends on US valuations remaining "
+            "above historical norms."
         )
 
     st.divider()
