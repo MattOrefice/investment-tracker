@@ -2,6 +2,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
+from src.asof import as_of_banner
 from src.db import get_connection
 
 st.set_page_config(page_title="SAA", layout="wide")
@@ -53,6 +54,7 @@ _, col, _ = st.columns([1, 8, 1])
 with col:
     st.title("Strategic Asset Allocation")
     st.caption("Target weights, tolerance bands, and rationale")
+    st.caption(as_of_banner())
     st.caption(f"{n_sleeves} sleeves  ·  {total_alloc:.1f}% allocated  ·  {n_parents} parent categories")
     parts = [f"{round(p['target_weight'] * 100)}% {p['name']}" for p in parents]
     st.markdown("&nbsp;&nbsp;·&nbsp;&nbsp;".join(f"**{p}**" for p in parts))

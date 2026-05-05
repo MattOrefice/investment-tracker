@@ -4,6 +4,7 @@ from datetime import date
 
 import pandas as pd
 
+from src.asof import as_of_banner
 from src.config import IS_DEMO
 from src.factors import (
     EM_DISCLOSURE,
@@ -28,6 +29,7 @@ with col:
         "Fama-French 5-Factor Regression · Per-sleeve decomposition · "
         "Daily excess returns since inception · Newey-West HAC standard errors"
     )
+    st.caption(as_of_banner())
     st.divider()
 
     end_date  = date.today().isoformat()

@@ -6,6 +6,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from src import macro, shiller
+from src.asof import as_of_banner
 from src.prices import get_prices
 
 st.set_page_config(page_title="Macro Dashboard", layout="wide")
@@ -153,6 +154,7 @@ with col:
 
     st.markdown("## Macro Dashboard")
     st.caption("Regime indicators relevant to portfolio positioning.")
+    st.caption(as_of_banner())
 
     hdr_l, hdr_r = st.columns([3, 1])
     with hdr_l:
@@ -191,7 +193,10 @@ with col:
         cape_as_of = cape_series.dropna().index[-1].strftime("%b %Y")
         with col_l:
             st.metric("Shiller CAPE", f"{cape_val:.1f}×")
-            st.caption(f"{_ordinal(cape_pctile)} percentile since 1881 · data as of {cape_as_of}")
+            st.caption(
+                f"{_ordinal(cape_pctile)} percentile since 1881 (full history) "
+                f"· data as of {cape_as_of}"
+            )
             st.markdown(
                 f"**Implied forward 10Y real return:** ~{cape_implied:.1%}  \n"
                 "*Historical relationship, not a forecast.*"
@@ -294,7 +299,12 @@ with col:
             mode="lines", name="10Y−2Y (bps)",
             line=dict(color=_C["primary"], width=2),
         ))
-        fig_yc.add_hline(y=0, line_dash="dash", line_color=_C["ref"], line_width=1)
+        fig_yc.add_hline(
+            y=0, line_dash="dash", line_color=_C["ref"], line_width=1,
+            annotation_text="0 = flat  |  above: normal  |  below: inverted",
+            annotation_position="top left", annotation_font_size=9,
+            annotation_font_color="#888",
+        )
         _apply_style(fig_yc)
         fig_yc.update_yaxes(title_text="Spread (bps)")
         st.plotly_chart(fig_yc, width='stretch')
@@ -366,7 +376,10 @@ with col:
         col_m, col_w = st.columns([3, 1])
         with col_m:
             st.metric("HY OAS", f"{current_hy:.0f} bps")
-            st.caption(f"{_ordinal(hy_pctile)} percentile since {hy_since}")
+            st.caption(
+                f"{_ordinal(hy_pctile)} percentile since {hy_since} "
+                "(available window — FRED restricted series to this date)"
+            )
         with col_w:
             hy_window = st.radio(
                 "Window", ["5Y", "10Y", "20Y", "Max"],
@@ -469,7 +482,15 @@ with col:
             annotation_position="right", annotation_font_size=10,
         )
         _apply_style(fig_us)
-        fig_us.update_yaxes(title_text="Ratio (normalized to 1.0)")
+        fig_us.update_yaxes(title_text="Ratio (normalized to 1.0 at window start)")
+        fig_us.add_annotation(
+            xref="paper", yref="paper",
+            x=0.01, y=0.98,
+            text="Rising = US outperforming international",
+            showarrow=False,
+            font=dict(size=9, color="#888"),
+            xanchor="left", yanchor="top",
+        )
         st.plotly_chart(fig_us, width='stretch')
 
         us_label = (

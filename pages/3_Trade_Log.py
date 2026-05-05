@@ -6,6 +6,7 @@ from datetime import date as dt_date
 import pandas as pd
 import streamlit as st
 
+from src.asof import as_of_banner
 from src.db import get_connection
 
 st.set_page_config(page_title="Trade Log", layout="wide")
@@ -182,6 +183,7 @@ with col:
         "Every trade documents a position thesis, which rolls up to "
         "an investment view, which carries theme tags."
     )
+    st.caption(as_of_banner())
     st.caption(
         f"{c['n_trades']} trades  ·  "
         f"{c['n_inv']} active investment theses  ·  "
@@ -507,7 +509,16 @@ with tab_themes:
             st.info("No themes defined yet.")
         else:
             for theme in themes:
-                st.markdown(f"### {theme['name']}")
+                _t_active = theme.get("active_count") or 0
+                _t_badge  = (
+                    f'<span style="background:#2d6a4f20;color:#2d6a4f;'
+                    f'padding:2px 9px;border-radius:12px;font-size:0.8rem;'
+                    f'font-weight:500">{_t_active} active</span>'
+                )
+                st.markdown(
+                    f"### {theme['name']} &nbsp; {_t_badge}",
+                    unsafe_allow_html=True,
+                )
                 if theme.get("description"):
                     st.caption(theme["description"])
 

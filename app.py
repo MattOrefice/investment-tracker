@@ -1,5 +1,6 @@
 """Investment Analytics Tracker — homepage."""
 import streamlit as st
+from src.asof import as_of_banner
 from src.config import DEMO_BANNER_TEXT, IS_DEMO
 from src.db import initialize_db
 
@@ -17,6 +18,7 @@ with col:
         st.info(DEMO_BANNER_TEXT)
 
     st.markdown("## Personal Investment Analytics")
+    st.caption(as_of_banner())
 
     st.markdown(
         """

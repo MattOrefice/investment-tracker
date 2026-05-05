@@ -4,6 +4,7 @@ from datetime import date
 
 import pandas as pd
 
+from src.asof import as_of_banner
 from src.attribution import brinson_fachler_period
 from src.config import IS_DEMO
 from src.factors import (
@@ -55,6 +56,7 @@ with col:
         "R_p − RF ~ (R_b − RF) + HML + SMB + RMW · "
         "Daily excess returns since inception · Newey-West HAC standard errors"
     )
+    st.caption(as_of_banner())
     st.divider()
 
     end_date  = date.today().isoformat()

@@ -6,17 +6,21 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from src.asof import as_of_banner
 from src.attribution import brinson_fachler_period
 from src.benchmarks import get_custom_blended_series, get_sp500_series
 from src.db import get_connection
 from src.holdings import get_portfolio_value_series, get_sleeve_weights_on_date
+from src.performance import compute_risk_metrics
 from src.reports import generate_quarterly_report
 from src.returns import annualize, period_return, twr_daily_linked
 
 st.set_page_config(page_title="Performance & Attribution", layout="wide")
 
+_REPORTS_DIR = Path(__file__).parent.parent / "data" / "reports"
+
 INCEPTION    = "2025-05-01"
-TODAY        = "2026-05-01"
+TODAY        = date.today().isoformat()
 PERIODS      = ["1M", "3M", "YTD", "1Y", "SI"]
 PERIOD_LABEL = {"1M": "1 Month", "3M": "3 Months", "YTD": "YTD",
                 "1Y": "1 Year", "SI": "Since Inception"}
@@ -119,6 +123,7 @@ with col:
     st.caption(
         "Time-weighted return, benchmarking, and Brinson-Fachler decomposition."
     )
+    st.caption(as_of_banner())
 
     # Load data
     with st.spinner("Loading performance data…"):
@@ -126,6 +131,18 @@ with col:
 
     # ── Generate Report expander ──────────────────────────────────────────
     with st.expander("Generate Quarterly Report", expanded=False):
+        _existing_pdfs = sorted(_REPORTS_DIR.glob("*.pdf"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if _existing_pdfs:
+            _latest = _existing_pdfs[0]
+            st.download_button(
+                f"⬇ Latest report: {_latest.name}",
+                _latest.read_bytes(),
+                file_name=_latest.name,
+                mime="application/pdf",
+                key="latest_report_dl",
+            )
+            st.markdown("---")
+
         _rcol1, _rcol2 = st.columns([1, 1])
         with _rcol1:
             _period_choice = st.selectbox(
@@ -313,6 +330,51 @@ with col:
     st.divider()
 
     # ──────────────────────────────────────────────────────────────────────
+    # Section 2b — Risk-adjusted metrics
+    # ──────────────────────────────────────────────────────────────────────
+    st.markdown("#### Risk-Adjusted Metrics")
+
+    _bl_for_metrics = bl / float(bl.iloc[0])
+    _m_si = compute_risk_metrics(pv, _bl_for_metrics, window="SI")
+    _m_1y = compute_risk_metrics(pv, _bl_for_metrics, window="1Y")
+
+    def _fmt_ratio(v) -> str:
+        return f"{v:.2f}" if v == v else "—"
+
+    def _fmt_pct(v) -> str:
+        return f"{v:.1f}%" if v == v else "—"
+
+    if _m_si:
+        _r1, _r2 = st.columns(2)
+        with _r1:
+            st.markdown("**Since Inception**")
+            _si1, _si2, _si3, _si4, _si5 = st.columns(5)
+            _si1.metric("Sharpe",   _fmt_ratio(_m_si["sharpe"]))
+            _si2.metric("Sortino",  _fmt_ratio(_m_si["sortino"]))
+            _si3.metric("Max DD",   _fmt_pct(_m_si["max_drawdown_pct"]))
+            _si4.metric("Track. Err", _fmt_pct(_m_si["tracking_error_pct"]))
+            _si5.metric("Info Ratio", _fmt_ratio(_m_si["information_ratio"]))
+        with _r2:
+            st.markdown("**Trailing 1 Year**")
+            if _m_1y:
+                _1y1, _1y2, _1y3, _1y4, _1y5 = st.columns(5)
+                _1y1.metric("Sharpe",   _fmt_ratio(_m_1y["sharpe"]))
+                _1y2.metric("Sortino",  _fmt_ratio(_m_1y["sortino"]))
+                _1y3.metric("Max DD",   _fmt_pct(_m_1y["max_drawdown_pct"]))
+                _1y4.metric("Track. Err", _fmt_pct(_m_1y["tracking_error_pct"]))
+                _1y5.metric("Info Ratio", _fmt_ratio(_m_1y["information_ratio"]))
+            else:
+                st.caption("Insufficient data for 1Y window.")
+
+        st.caption(
+            "Sharpe and Sortino use RF = 4.5% (current cash yield). "
+            "Tracking error and information ratio vs. Custom Blended benchmark. "
+            "Max drawdown = peak-to-trough decline in portfolio value since inception."
+        )
+
+    st.divider()
+
+    # ──────────────────────────────────────────────────────────────────────
     # Section 3 — Cumulative return chart
     # ──────────────────────────────────────────────────────────────────────
     st.markdown("#### Cumulative Return Since Inception")
@@ -369,10 +431,12 @@ with col:
     bf_period = st.radio(
         "Attribution period",
         PERIODS,
-        index=PERIODS.index("SI"),
+        index=PERIODS.index("3M"),
         format_func=lambda p: PERIOD_LABEL[p],
         horizontal=True,
         key="bf_period",
+        help="PDF quarterly report uses the most recent completed quarter (Q1 2026). "
+             "Select SI to compare since-inception active return.",
     )
 
     with st.spinner("Computing attribution…"):

@@ -1,6 +1,7 @@
 """Active Positioning — tilts, effective duration, scenario analysis."""
 import streamlit as st
 
+from src.asof import as_of_banner
 from src.config import IS_DEMO
 from src.positioning import (
     build_style_box_figure,
@@ -26,6 +27,7 @@ with col:
         "Auto-derived from current sleeve weights vs SAA targets. "
         "No hand-written text — updates every quarter as the portfolio evolves."
     )
+    st.caption(as_of_banner())
     st.divider()
 
     from datetime import date
@@ -70,7 +72,7 @@ with col:
         f"FI weight: {dur['fi_weight_pct']}% of portfolio. "
         "Intermediate-Treasury focus keeps duration below the Agg benchmark, limiting rate sensitivity. "
         "Duration also flows through equity via discount-rate effects — it's a whole-portfolio consideration. "
-        "Duration sourced from static ETF fact-sheet values — TODO: pull live."
+        "Duration sourced from ETF fact-sheet values (VGIT: 5.5 yrs, SCHP: 6.8 yrs per Vanguard/Schwab Q1 2026)."
     )
 
     st.divider()

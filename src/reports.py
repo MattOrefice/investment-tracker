@@ -201,16 +201,17 @@ def _format_filename(start_date: str, end_date: str, period_label: str) -> str:
     return f"Orefice_Portfolio_{s}_to_{e}.pdf"
 
 
-def _drift_status(drift_bps: float, target_bps: float) -> str:
+def _drift_status(drift_bps: float, target_bps: float, band_bps: float = 200) -> str:
     """Return 'Within' or 'Drift'.
 
     Both thresholds must be satisfied for Within:
-      abs(drift_bps) <= 200  AND  abs(drift_bps / target_bps) <= 0.20
+      abs(drift_bps) <= band_bps  AND  abs(drift_bps / target_bps) <= 0.20
     Either breach trips to Drift.
+    band_bps defaults to 200 (±2%) for sleeves < 10% target; pass 300 for sleeves ≥ 10%.
     """
     if target_bps == 0:
         return "Drift"
-    return "Within" if abs(drift_bps) <= 200 and abs(drift_bps / target_bps) <= 0.20 else "Drift"
+    return "Within" if abs(drift_bps) <= band_bps and abs(drift_bps / target_bps) <= 0.20 else "Drift"
 
 
 def _inception_date() -> str:
@@ -362,12 +363,19 @@ def _build_holdings_section(end_date: str) -> dict:
     if sw.empty:
         return {"rows": [], "chart_b64": None}
 
+    with get_connection() as conn:
+        band_rows = conn.execute(
+            "SELECT name, tolerance_band FROM asset_classes WHERE parent_id IS NOT NULL"
+        ).fetchall()
+    band_map = {r["name"]: r["tolerance_band"] * 10_000 for r in band_rows}
+
     rows = []
     for sleeve, row in sw.iterrows():
         drift       = row["Drift"]
         drift_bps   = drift * 10_000
         target_bps  = row["Target Weight"] * 10_000
-        status      = _drift_status(drift_bps, target_bps)
+        band_bps    = band_map.get(sleeve, 200)
+        status      = _drift_status(drift_bps, target_bps, band_bps)
         rows.append({
             "sleeve":        sleeve,
             "market_value":  f"${row['Market Value']:,.0f}",
