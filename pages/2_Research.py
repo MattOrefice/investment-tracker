@@ -199,6 +199,8 @@ with col:
                 f"**{_ticker}** <span style='color:#666;font-size:0.85rem'>vs {_meta['bench']}</span>",
                 unsafe_allow_html=True,
             )
+            if _ticker == "PDBC":
+                st.caption("Most distinctive rationale")
             st.caption(f"ER: {_er_s}")
             st.caption(_meta["headline"])
             if _sec.get("holding_rationale"):
