@@ -1,6 +1,8 @@
 """FRED macro data fetcher with 24-hour SQLite cache."""
 import json
 import math
+import sys
+import time
 from datetime import date
 from typing import Optional
 
@@ -8,6 +10,18 @@ import pandas as pd
 
 from src.config import FRED_API_KEY as _FRED_KEY
 from src.db import get_connection
+
+_FRED_RETRY_DELAYS = (1, 3, 9)  # seconds between retry attempts (exponential backoff)
+
+
+class FREDFetchError(Exception):
+    """Raised when all FRED API retry attempts are exhausted."""
+    def __init__(self, series_id: str, cause: Exception):
+        self.series_id = series_id
+        self.cause = cause
+        super().__init__(
+            f"FRED series '{series_id}' fetch failed after {len(_FRED_RETRY_DELAYS) + 1} attempts: {cause}"
+        )
 
 _CACHE_DDL = """
 CREATE TABLE IF NOT EXISTS macro_cache (
@@ -36,10 +50,24 @@ def fetch_fred_series(
     start_date: str,
     end_date: Optional[str] = None,
 ) -> pd.Series:
-    """Fetch directly from FRED API; does not touch the cache."""
-    end = end_date or date.today().isoformat()
+    """Fetch directly from FRED API with exponential backoff retry. Does not touch cache."""
+    end  = end_date or date.today().isoformat()
     fred = _get_fred()
-    return fred.get_series(series_id, observation_start=start_date, observation_end=end)
+    last_exc: Exception = RuntimeError("no attempts made")
+    delays = list(_FRED_RETRY_DELAYS)
+    for attempt in range(len(delays) + 1):
+        try:
+            return fred.get_series(series_id, observation_start=start_date, observation_end=end)
+        except Exception as exc:
+            last_exc = exc
+            print(
+                f"[INFO] FRED fetch attempt {attempt + 1}/{len(delays) + 1} "
+                f"for '{series_id}' failed: {exc}",
+                file=sys.stderr,
+            )
+            if attempt < len(delays):
+                time.sleep(delays[attempt])
+    raise FREDFetchError(series_id, last_exc)
 
 
 def get_series(series_id: str, start_date: str = "1990-01-01") -> pd.Series:

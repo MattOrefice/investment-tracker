@@ -767,3 +767,62 @@ def test_factor_section_values_match_raw_result():
     # Mkt-RF beta string must match raw beta rounded to 3 dp
     mkt_row = next(r for r in us_sleeve["rows"] if r["factor"] == "Mkt-RF")
     assert mkt_row["beta"] == f"{raw['betas']['Mkt-RF']:.3f}"
+
+
+# ── Ken French fetch retry tests ──────────────────────────────────────────────
+
+def test_fetch_factors_retries_on_transient_failure(monkeypatch):
+    """_fetch_factors retries on transient HTTP failure and succeeds on second attempt."""
+    import io as _io
+    import zipfile as _zf
+    import requests as _req
+    import src.factors as _f
+
+    call_count = [0]
+
+    def _make_zip(csv_text: str) -> bytes:
+        buf = _io.BytesIO()
+        with _zf.ZipFile(buf, "w") as z:
+            z.writestr("factors.CSV", csv_text)
+        return buf.getvalue()
+
+    _csv = (
+        "Some header\n\n"
+        ",Mkt-RF,SMB,HML,RMW,CMA,RF\n"
+        "20200102,   0.50,   0.10,  -0.20,   0.30,   0.10,   0.01\n"
+        "20200103,   0.30,  -0.05,   0.15,   0.20,  -0.05,   0.01\n\n"
+        "Annual Factors\n"
+    )
+
+    class _MockResponse:
+        status_code = 200
+        content = _make_zip(_csv)
+        def raise_for_status(self): pass
+
+    def _mock_get(url, timeout):
+        call_count[0] += 1
+        if call_count[0] == 1:
+            raise _req.exceptions.ConnectionError("transient network error")
+        return _MockResponse()
+
+    monkeypatch.setattr(_req, "get", _mock_get)
+    monkeypatch.setattr(_f, "_FF_RETRY_DELAYS", (0, 0, 0))
+
+    df = _f._fetch_factors("https://example.com/fake.zip")
+    assert call_count[0] == 2
+    assert "Mkt-RF" in df.columns
+    assert len(df) == 2
+
+
+def test_fetch_factors_raises_after_all_retries(monkeypatch):
+    """_fetch_factors raises RuntimeError after all retry attempts are exhausted."""
+    import requests as _req
+    import src.factors as _f
+
+    monkeypatch.setattr(_req, "get", lambda *a, **kw: (_ for _ in ()).throw(
+        _req.exceptions.ConnectionError("always fails")
+    ))
+    monkeypatch.setattr(_f, "_FF_RETRY_DELAYS", (0, 0, 0))
+
+    with pytest.raises(RuntimeError, match="Ken French factor download failed"):
+        _f._fetch_factors("https://example.com/fake.zip")

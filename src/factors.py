@@ -26,6 +26,8 @@ Standard errors: Newey-West HAC, L = floor(4 * (T/100)^(2/9)) per regression.
 from __future__ import annotations
 
 import io
+import sys
+import time
 import warnings
 import zipfile
 from datetime import date
@@ -71,6 +73,7 @@ _CACHE_PATH = _FACTOR_CONFIG["us"]["cache"]
 
 _REFRESH_CACHE_DAYS = 7   # re-fetch if cache mtime exceeds this many days
 _LAG_THRESHOLD_DAYS = 35  # re-fetch if most recent factor date is this far behind today
+_FF_RETRY_DELAYS    = (1, 3, 9)  # seconds between Ken French download retry attempts
 
 _FF5_FACTORS     = ["Mkt-RF", "SMB", "HML", "RMW", "CMA"]
 _FF5_MOM_FACTORS = ["Mkt-RF", "SMB", "HML", "RMW", "CMA", "Mom"]
@@ -231,15 +234,30 @@ def _parse_ff_csv_text(text: str) -> pd.DataFrame:
 
 
 def _fetch_factors(url: str) -> pd.DataFrame:
-    """Download and parse a Ken French daily factor ZIP from Dartmouth."""
-    resp = requests.get(url, timeout=30)
-    resp.raise_for_status()
-
-    with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
-        csv_name = next(n for n in zf.namelist() if n.upper().endswith(".CSV"))
-        raw_text = zf.read(csv_name).decode("utf-8", errors="replace")
-
-    return _parse_ff_csv_text(raw_text)
+    """Download and parse a Ken French daily factor ZIP from Dartmouth, with retry."""
+    last_exc: Exception = RuntimeError("no attempts made")
+    delays = list(_FF_RETRY_DELAYS)
+    for attempt in range(len(delays) + 1):
+        try:
+            resp = requests.get(url, timeout=30)
+            resp.raise_for_status()
+            with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
+                csv_name = next(n for n in zf.namelist() if n.upper().endswith(".CSV"))
+                raw_text = zf.read(csv_name).decode("utf-8", errors="replace")
+            return _parse_ff_csv_text(raw_text)
+        except Exception as exc:
+            last_exc = exc
+            print(
+                f"[INFO] Ken French fetch attempt {attempt + 1}/{len(delays) + 1} "
+                f"for '{url}' failed: {exc}",
+                file=sys.stderr,
+            )
+            if attempt < len(delays):
+                time.sleep(delays[attempt])
+    raise RuntimeError(
+        f"Ken French factor download failed after {len(delays) + 1} attempts "
+        f"for '{url}': {last_exc}"
+    )
 
 
 def _cache_stale(config: dict) -> bool:

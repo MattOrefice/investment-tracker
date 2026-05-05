@@ -1,8 +1,9 @@
-"""Tests for src/macro.py — CAPE implied return formula and ECY."""
+"""Tests for src/macro.py — CAPE implied return formula, ECY, and FRED retry."""
 import math
 import sys
 import pathlib
 
+import pandas as pd
 import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
@@ -73,3 +74,54 @@ def test_ecy_higher_cape_lower_value():
     ecy_low_cape  = compute_ecy(20.0, 4.0, 2.0)   # earnings yield 5% → ECY 3%
     ecy_high_cape = compute_ecy(40.0, 4.0, 2.0)   # earnings yield 2.5% → ECY 0.5%
     assert ecy_low_cape > ecy_high_cape
+
+
+# ── FRED retry tests ──────────────────────────────────────────────────────────
+
+def test_fetch_fred_retries_on_transient_failure(monkeypatch):
+    """fetch_fred_series retries on transient failure and succeeds on second attempt."""
+    import src.macro as _m
+
+    call_count = [0]
+
+    class MockFred:
+        def get_series(self, *args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise RuntimeError("Internal Server Error")
+            return pd.Series([1.0], index=pd.to_datetime(["2020-01-01"]))
+
+    monkeypatch.setattr(_m, "_get_fred", lambda: MockFred())
+    monkeypatch.setattr(_m, "_FRED_RETRY_DELAYS", (0, 0, 0))
+
+    result = _m.fetch_fred_series("DFF", "2020-01-01")
+    assert call_count[0] == 2
+    assert isinstance(result, pd.Series)
+    assert len(result) == 1
+
+
+def test_fetch_fred_raises_after_all_retries(monkeypatch):
+    """fetch_fred_series raises FREDFetchError after all attempts are exhausted."""
+    import src.macro as _m
+    from src.macro import FREDFetchError
+
+    class MockFred:
+        def get_series(self, *args, **kwargs):
+            raise RuntimeError("Internal Server Error")
+
+    monkeypatch.setattr(_m, "_get_fred", lambda: MockFred())
+    monkeypatch.setattr(_m, "_FRED_RETRY_DELAYS", (0, 0, 0))
+
+    with pytest.raises(FREDFetchError) as exc_info:
+        _m.fetch_fred_series("T10Y2Y", "2020-01-01")
+    assert "T10Y2Y" in str(exc_info.value)
+
+
+def test_fredetcherror_carries_series_id():
+    """FREDFetchError.series_id attribute must equal the requested series."""
+    from src.macro import FREDFetchError
+    cause = ValueError("network timeout")
+    err   = FREDFetchError("DGS10", cause)
+    assert err.series_id == "DGS10"
+    assert err.cause is cause
+    assert "DGS10" in str(err)
