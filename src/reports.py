@@ -9,7 +9,8 @@ import base64
 import io
 import json
 import logging
-from datetime import date, timedelta
+from contextlib import nullcontext
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -19,6 +20,13 @@ import plotly.graph_objects as go
 import plotly.io as pio
 
 from src.attribution import brinson_fachler_period
+from src.cache import (
+    capture_quarter_snapshot,
+    get_quarter_snapshot,
+    is_quarter_complete,
+    label_to_quarter_id,
+    snapshot_price_context,
+)
 from src.benchmarks import get_custom_blended_series, get_sp500_series
 from src.db import get_connection
 from src.factors import (
@@ -883,15 +891,27 @@ def generate_quarterly_report(
 
     period_label = _format_period_label(start_date, end_date)
 
-    exec_data        = _build_executive_summary(start_date, end_date) if has_trades else None
-    hold_data        = _build_holdings_section(end_date)              if has_trades else {"rows": [], "chart_b64": None}
-    perf_data        = _build_performance_section(start_date, end_date) if has_trades else None
-    attr_data        = _build_attribution_section(start_date, end_date) if has_trades else None
-    pos_data         = _build_positioning_section(end_date)             if has_trades else None
-    factor_data      = _build_factor_section(end_date)                 if has_trades else None
-    bench_attr_data  = _build_benchmark_section(start_date, end_date)  if has_trades else None
-    macro_data       = _build_macro_section()
-    thesis_data      = _build_thesis_section(start_date, end_date)
+    # Quarter-locking: use immutable snapshot prices for standard completed quarters so
+    # that Yahoo Finance retroactive adj_close updates cannot shift historical report numbers.
+    quarter_id = label_to_quarter_id(period_label)
+    snap_df: Optional[pd.DataFrame] = None
+    snapshot_captured_at: Optional[str] = None
+    if quarter_id and is_quarter_complete(quarter_id):
+        snap_df, snapshot_captured_at = get_quarter_snapshot(quarter_id)
+        if snap_df is None:
+            snap_df, snapshot_captured_at = capture_quarter_snapshot(quarter_id)
+
+    ctx = snapshot_price_context(snap_df) if snap_df is not None else nullcontext()
+    with ctx:
+        exec_data        = _build_executive_summary(start_date, end_date) if has_trades else None
+        hold_data        = _build_holdings_section(end_date)              if has_trades else {"rows": [], "chart_b64": None}
+        perf_data        = _build_performance_section(start_date, end_date) if has_trades else None
+        attr_data        = _build_attribution_section(start_date, end_date) if has_trades else None
+        pos_data         = _build_positioning_section(end_date)             if has_trades else None
+        factor_data      = _build_factor_section(end_date)                 if has_trades else None
+        bench_attr_data  = _build_benchmark_section(start_date, end_date)  if has_trades else None
+        macro_data       = _build_macro_section()
+        thesis_data      = _build_thesis_section(start_date, end_date)
 
     css_content = (TEMPLATES_DIR / "report_styles.css").read_text(encoding="utf-8")
 
@@ -902,12 +922,18 @@ def generate_quarterly_report(
     today = date.today()
     gen_date = f"{today.strftime('%B')} {today.day}, {today.year}"
 
+    snapshot_display: Optional[str] = None
+    if snapshot_captured_at:
+        snap_dt = datetime.fromisoformat(snapshot_captured_at)
+        snapshot_display = f"{snap_dt.strftime('%B')} {snap_dt.day}, {snap_dt.year}"
+
     html_content = tmpl.render(
-        css_content    = css_content,
-        period_label   = period_label,
-        recipient_name = recipient_name,
-        generation_date= gen_date,
-        has_trades     = has_trades,
+        css_content          = css_content,
+        period_label         = period_label,
+        recipient_name       = recipient_name,
+        generation_date      = gen_date,
+        snapshot_captured_at = snapshot_display,
+        has_trades           = has_trades,
         exec           = exec_data,
         hold           = hold_data,
         perf           = perf_data,

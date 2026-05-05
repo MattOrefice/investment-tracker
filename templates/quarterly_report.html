@@ -17,7 +17,7 @@
     <p class="cover-period">{{ period_label }}</p>
     <p class="cover-sub-id">Personal Brokerage Account</p>
     <p class="cover-tagline">Personal Investment Analytics &middot; Thesis-Driven Allocation</p>
-    <p class="cover-date">Generated {{ generation_date }}</p>
+    <p class="cover-date">Generated {{ generation_date }}{% if snapshot_captured_at %} &middot; Prices locked {{ snapshot_captured_at }}{% endif %}</p>
   </div>
 
   <h2>Executive Summary</h2>
@@ -601,7 +601,9 @@
 
           <dt>Price Data</dt>
           <dd>Daily adjusted-close from Yahoo Finance, cached in SQLite. Adjusted close reflects
-          splits and dividends (total-return basis). Gaps forward-filled from last trading day.</dd>
+          splits and dividends (total-return basis). Gaps forward-filled from last trading day.
+          {% if snapshot_captured_at %}Quarter prices locked at {{ snapshot_captured_at }} to prevent
+          retroactive Yahoo Finance adj_close adjustments from shifting historical report numbers.{% endif %}</dd>
 
           <dt>CAPE (Shiller P/E)</dt>
           <dd>Robert Shiller / Yale (econ.yale.edu). Monthly observations; most recent month shown.
