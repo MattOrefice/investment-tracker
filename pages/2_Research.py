@@ -4,6 +4,7 @@ import pandas as pd
 from collections import defaultdict
 from src.asof import as_of_banner
 from src.db import get_connection
+from src.ui_helpers import render_footer
 
 st.set_page_config(page_title="Research", layout="wide")
 
@@ -255,3 +256,4 @@ with col:
         st.markdown("")
 
     st.divider()
+    render_footer()

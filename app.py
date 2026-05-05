@@ -3,6 +3,7 @@ import streamlit as st
 from src.asof import as_of_banner
 from src.config import DEMO_BANNER_TEXT, IS_DEMO
 from src.db import initialize_db
+from src.ui_helpers import render_footer
 
 st.set_page_config(
     page_title="Investment Analytics Tracker",
@@ -36,3 +37,4 @@ with col:
     st.caption(
         "SAA framework · thesis-driven execution · BF attribution · macro overlay"
     )
+    render_footer()

@@ -8,6 +8,7 @@ import streamlit as st
 
 from src.asof import as_of_banner
 from src.db import get_connection
+from src.ui_helpers import render_footer
 
 st.set_page_config(page_title="Trade Log", layout="wide")
 
@@ -550,3 +551,4 @@ with tab_themes:
                     f"{inv_n} invalidated"
                 )
                 st.divider()
+render_footer()

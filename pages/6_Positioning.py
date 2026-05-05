@@ -3,6 +3,7 @@ import streamlit as st
 
 from src.asof import as_of_banner
 from src.config import DEMO_BANNER_TEXT, IS_DEMO
+from src.ui_helpers import render_footer
 from src.positioning import (
     build_style_box_figure,
     get_active_tilts,
@@ -121,3 +122,4 @@ with col:
             )
     else:
         st.info("No equity holdings found.")
+    render_footer()

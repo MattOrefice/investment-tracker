@@ -5,6 +5,7 @@ import plotly.graph_objects as go
 from src.asof import as_of_banner
 from src.db import get_connection
 from src.endowment_benchmarks import CATEGORIES, ENTITIES, get_endowment_data
+from src.ui_helpers import render_footer
 
 st.set_page_config(page_title="SAA", layout="wide")
 
@@ -232,4 +233,5 @@ with col:
         "Allocations are approximate rounded figures; groupings are author's classification "
         "for comparability."
     )
+    render_footer()
 

@@ -6,6 +6,7 @@ import pandas as pd
 
 from src.asof import as_of_banner
 from src.config import DEMO_BANNER_TEXT, IS_DEMO
+from src.ui_helpers import render_footer
 from src.factors import (
     EM_DISCLOSURE,
     alpha_ci_str,
@@ -268,3 +269,4 @@ with col:
             "Each refreshed when the cache is older than 7 days or the most recent "
             "factor date exceeds 35 days lag."
         )
+    render_footer()

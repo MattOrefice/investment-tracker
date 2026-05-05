@@ -8,6 +8,7 @@ import streamlit as st
 from src import macro, shiller
 from src.asof import as_of_banner
 from src.prices import get_prices
+from src.ui_helpers import render_footer
 
 st.set_page_config(page_title="Macro Dashboard", layout="wide")
 
@@ -690,3 +691,4 @@ with col:
             "used for the US vs. International relative performance panel"
         )
         st.caption("  \n".join(_src_lines))
+    render_footer()

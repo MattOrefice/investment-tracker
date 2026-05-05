@@ -14,6 +14,7 @@ from src.holdings import get_portfolio_value_series, get_sleeve_weights_on_date
 from src.performance import compute_risk_metrics
 from src.reports import generate_quarterly_report
 from src.returns import annualize, period_return, twr_daily_linked
+from src.ui_helpers import render_footer
 
 st.set_page_config(page_title="Performance & Attribution", layout="wide")
 
@@ -676,3 +677,4 @@ with col:
         conn2.close()
         st.markdown(f"**Price cache rows:** {n_days:,}")
         st.markdown(f"**Last price date in cache:** {last_refresh}")
+    render_footer()

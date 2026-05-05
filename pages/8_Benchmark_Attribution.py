@@ -14,6 +14,7 @@ from src.factors import (
     run_benchmark_attribution_regression,
     sig_marker,
 )
+from src.ui_helpers import render_footer
 
 # Locked Phase 2 holdings and benchmarks per sleeve — used for BHB cross-reference
 _SLEEVE_HOLDING = {
@@ -168,3 +169,4 @@ with col:
             "Cached at data/ff_factors_us.csv; refreshed when older than 7 days or "
             "most recent factor date exceeds 35-day publication lag."
         )
+    render_footer()
