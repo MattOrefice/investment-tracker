@@ -104,6 +104,10 @@ with col:
             "Morningstar 3×3 style box · x-axis: 4-factor value-growth score (z-scored vs SPY) · "
             "y-axis: log market cap · dot size = portfolio weight · US equity sleeves only"
         )
+        st.caption(
+            "Empty cells reflect deliberate construction: the SAA does not include mid-cap or "
+            "pure-growth tilts. Quality (SPHQ) and value (VTV, AVUV) are the chosen factor exposures."
+        )
 
         if non_us:
             st.markdown("**Non-US Equity Sleeve**")

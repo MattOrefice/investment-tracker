@@ -526,12 +526,30 @@ with col:
 
     # ── Sources ───────────────────────────────────────────────────────────────
 
-    with st.expander("Data sources"):
-        st.caption(
-            "**FRED** (Federal Reserve Bank of St. Louis): T10Y2Y (10Y−2Y Treasury spread), "
-            "DFF (Effective Federal Funds Rate), BAMLH0A0HYM2 (ICE BofA HY OAS — available "
-            "from May 2023 only; FRED restricted series access in 2023), "
-            "USREC (NBER recession indicator).  \n"
-            "**Shiller / Yale**: CAPE from Robert Shiller’s dataset at https://shillerdata.com/.  \n"
-            "**Yahoo Finance**: SPY and EFA price data via local prices cache."
+    with st.expander("Data sources & freshness"):
+        _src_lines = []
+        if cape_ok:
+            _cape_last = cape_series.dropna().index[-1].strftime("%b %Y")
+            _src_lines.append(
+                f"**Shiller CAPE** (multpl.com, sourced from Robert Shiller’s dataset): "
+                f"last observation **{_cape_last}** · monthly cadence"
+            )
+        else:
+            _src_lines.append("**Shiller CAPE**: unavailable")
+        if fred_ok:
+            _t10_last = t10y2y.dropna().index[-1].strftime("%b %d, %Y")
+            _dff_last = dff.dropna().index[-1].strftime("%b %d, %Y")
+            _hy_last  = hy_oas.dropna().index[-1].strftime("%b %d, %Y")
+            _src_lines += [
+                f"**FRED T10Y2Y** (10Y−2Y Treasury spread): last observation **{_t10_last}** · daily",
+                f"**FRED DFF** (Fed Funds Rate): last observation **{_dff_last}** · daily",
+                f"**FRED BAMLH0A0HYM2** (ICE BofA HY OAS, May 2023+): last observation **{_hy_last}** · daily",
+                "**FRED USREC** (NBER recession indicator): monthly, lags recession end by ~12 months",
+            ]
+        else:
+            _src_lines.append("**FRED data**: unavailable")
+        _src_lines.append(
+            "**Yahoo Finance** (SPY, EFA): daily prices via local SQLite cache · "
+            "used for the US vs. International relative performance panel"
         )
+        st.caption("  \n".join(_src_lines))

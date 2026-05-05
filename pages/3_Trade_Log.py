@@ -73,7 +73,7 @@ def load_all():
             SELECT th.thesis_id, th.title, th.view_summary, th.conviction,
                    th.status, th.horizon_months, th.exit_conditions,
                    th.invalidation_conditions, th.expected_return_scenario,
-                   th.target_sleeves,
+                   th.target_sleeves, th.created_at,
                    GROUP_CONCAT(tm.name, ', ') AS theme_names
             FROM theses th
             LEFT JOIN thesis_themes tt ON th.thesis_id = tt.thesis_id
@@ -429,6 +429,13 @@ with tab_theses:
 
                 _safe_md(thesis.get("view_summary") or "")
 
+                if thesis.get("created_at"):
+                    try:
+                        _open_date = dt_date.fromisoformat(str(thesis["created_at"])[:10])
+                        _days_held = (dt_date.today() - _open_date).days
+                        _safe_cap(f"**Days held:** {_days_held}")
+                    except Exception:
+                        pass
                 if thesis.get("horizon_months"):
                     _safe_cap(f"**Horizon:** {thesis['horizon_months']} months")
                 if thesis.get("exit_conditions"):

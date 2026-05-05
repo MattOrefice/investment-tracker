@@ -371,6 +371,11 @@ with col:
             "Tracking error and information ratio vs. Custom Blended benchmark. "
             "Max drawdown = peak-to-trough decline in portfolio value since inception."
         )
+        st.markdown(
+            "*Inception period (369 days) overlaps substantially with trailing 12 months. "
+            "Max DD, TE, and IR will diverge from Since Inception once the portfolio "
+            "crosses ~18 months of history.*"
+        )
 
     st.divider()
 
@@ -552,6 +557,18 @@ with col:
         # Actual vs. target allocation bar chart
         _sleeves_ch = sw.index.tolist()
         _fig_alloc = go.Figure()
+        # Tolerance band — rendered first (behind Actual and Target bars)
+        _fig_alloc.add_trace(go.Bar(
+            name="Tolerance Band",
+            y=_sleeves_ch,
+            x=[band_map.get(s, 0.03) * 2 * 100 for s in _sleeves_ch],
+            base=[(sw.loc[s, "Target Weight"] - band_map.get(s, 0.03)) * 100
+                  for s in _sleeves_ch],
+            orientation="h",
+            marker_color="rgba(91, 127, 166, 0.15)",
+            marker_line=dict(width=0),
+            showlegend=True,
+        ))
         _fig_alloc.add_trace(go.Bar(
             name="Actual",
             y=_sleeves_ch,
