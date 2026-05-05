@@ -162,7 +162,7 @@ with col:
     st.caption(
         f"{len(sleeves)} sleeves  ·  {n_holdings} holdings  ·  "
         f"{er_pct:.2f}% blended ER  ·  {portfolio_savings_bps:.0f} bps savings vs. benchmarks  ·  "
-        f"~${_savings_250k:,}/yr in ER savings at $250k"
+        f"~\\${_savings_250k:,}/yr in ER savings at \\$250k"
     )
     st.divider()
 
@@ -255,4 +255,3 @@ with col:
         st.markdown("")
 
     st.divider()
-    st.info("Prices and live performance data coming in Phase 4.")

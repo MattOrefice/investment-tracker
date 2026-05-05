@@ -55,21 +55,22 @@ with col:
 
     st.divider()
 
-    # ── Block B: FI Sleeve Effective Duration ───────────────────────────────
-    st.subheader("FI Sleeve Effective Duration")
+    # ── Block B: Income + Cash Effective Duration ───────────────────────────
+    st.subheader("Income + Cash Effective Duration")
     dur = get_effective_duration(end_date)
     fi_dur   = dur["fi_sleeve_duration"]
     agg_dur  = dur["agg_benchmark"]
     delta_yr = round(fi_dur - agg_dur, 1)
     st.metric(
-        label="FI Sleeve Duration",
+        label="Income + Cash Duration",
         value=f"{fi_dur} yrs",
         delta=f"{delta_yr:+.1f} yrs vs Bloomberg US Agg ({agg_dur} yrs)",
-        help="Weighted average duration of the FI sleeve (Core Fixed Income, TIPS, Cash), "
-             "using actual sleeve weights only — not diluted by equity.",
+        help="Weighted average duration of the Income + Cash bucket (VGIT, SCHP, and SPAXX), "
+             "using actual sleeve weights. Cash carries zero duration, pulling the bucket average "
+             "below the pure FI sleeve duration of ~6.0 yrs.",
     )
     st.caption(
-        f"FI weight: {dur['fi_weight_pct']}% of portfolio. "
+        f"Income + Cash weight: {dur['fi_weight_pct']}% of portfolio. "
         "Intermediate-Treasury focus keeps duration below the Agg benchmark, limiting rate sensitivity. "
         "Duration also flows through equity via discount-rate effects — it's a whole-portfolio consideration. "
         "Duration sourced from ETF fact-sheet values (VGIT: 5.5 yrs, SCHP: 6.8 yrs per Vanguard/Schwab Q1 2026)."
