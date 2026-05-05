@@ -4,6 +4,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from src.asof import as_of_banner
 from src.db import get_connection
+from src.endowment_benchmarks import CATEGORIES, ENTITIES, get_endowment_data
 
 st.set_page_config(page_title="SAA", layout="wide")
 
@@ -159,4 +160,76 @@ with col:
         with st.expander(f"{sc['name']} — {pct}% (benchmark: {bm})"):
             _safe_md(sc["rationale"])
     st.divider()
+
+# ── Endowment comparison panel ─────────────────────────────────────────────────
+_, col, _ = st.columns([1, 8, 1])
+with col:
+    st.subheader("Endowment Context")
+    st.caption(
+        "Approximate FY2024 asset-class groupings: Yale Investments Office and "
+        "Princeton University Investment Company (PRINCO). "
+        "Source: public annual reports. Groupings are the author's classification."
+    )
+
+    _endo_colors = {
+        "Public Equity":          "#2E4057",
+        "Private Equity / VC":    "#8C3B3B",
+        "Absolute Return / HF":   "#A67B5B",
+        "Real Assets":            "#6B7F4A",
+        "Fixed Income":           "#4A7C59",
+        "Cash":                   "#AEAEAE",
+    }
+
+    _entity_names = list(ENTITIES.keys())
+    _fig_endo = go.Figure()
+    for cat in CATEGORIES:
+        weights = [ENTITIES[e].get(cat, 0.0) for e in _entity_names]
+        _fig_endo.add_trace(go.Bar(
+            name=cat,
+            y=_entity_names,
+            x=weights,
+            orientation="h",
+            marker_color=_endo_colors.get(cat, "#888"),
+            text=[f"{w:.0f}%" if w >= 6 else "" for w in weights],
+            textposition="inside",
+            insidetextanchor="middle",
+            textfont=dict(color="white", size=11),
+        ))
+
+    _fig_endo.update_layout(
+        barmode="stack",
+        height=180,
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        margin=dict(l=0, r=0, t=8, b=4),
+        legend=dict(
+            orientation="h", yanchor="bottom", y=1.02,
+            xanchor="left", x=0, font_size=11,
+        ),
+        xaxis=dict(
+            range=[0, 100], ticksuffix="%",
+            gridcolor="#EBEBEB", showgrid=True,
+        ),
+        yaxis=dict(showgrid=False),
+    )
+    st.plotly_chart(_fig_endo, width="stretch", config={"displayModeBar": False})
+
+    st.markdown(
+        "Endowments achieving institutional-grade returns do so with heavy "
+        "allocations to private equity, venture capital, and hedge funds — "
+        "strategies inaccessible to retail investors at meaningful scale. "
+        "This portfolio substitutes factor ETFs to capture similar risk premia through "
+        "public markets: AVUV for small-cap value, SPHQ for quality/profitability, "
+        "VEA/IEMG for international diversification. "
+        "Yale and PRINCO employ institutional infrastructure — 25+ year manager "
+        "relationships, proprietary deal flow, and illiquidity budgets — that "
+        "cannot be replicated in a taxable brokerage account. "
+        "The comparison is contextual, not aspirational."
+    )
+    st.caption(
+        "Sources: Yale Investments Office Annual Report FY2024 (yale.edu/investments); "
+        "Princeton University Investment Company Annual Report FY2024 (princeton.edu/princo). "
+        "Allocations are approximate rounded figures; groupings are author's classification "
+        "for comparability."
+    )
 
