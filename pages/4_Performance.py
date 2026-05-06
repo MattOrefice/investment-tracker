@@ -130,6 +130,40 @@ with col:
     with st.spinner("Loading performance data…"):
         pv, cf = _load_portfolio()
 
+    # ── TEMP DIAGNOSTICS 3 — per-ticker value contributions ─────────────
+    import pandas as _pd3
+    from src.holdings import get_holdings_on_date as _get_hld3
+    from src.prices import get_prices as _get_pr3
+    _diag3_lines = []
+    try:
+        _h3 = _get_hld3(TODAY)
+        _dr3 = _pd3.date_range(start=INCEPTION, end=TODAY, freq="D")
+        for _tk3 in _h3.index:
+            _shares3 = float(_h3.loc[_tk3, "net_shares"])
+            try:
+                if _tk3 == "SPAXX":
+                    _p3 = _get_pr3("BIL", INCEPTION, TODAY)
+                else:
+                    _p3 = _get_pr3(_tk3, INCEPTION, TODAY)
+                _p3.index = _pd3.to_datetime(_p3.index)
+                _ser3 = _p3["adj_close"].fillna(_p3["close"])
+                _ser3 = _ser3.reindex(_dr3).ffill()
+                _last3 = float(_ser3.iloc[-1]) if not _ser3.isna().all() else float("nan")
+                _nan3 = int(_ser3.isna().sum())
+                _contrib3 = _shares3 * _last3
+                _diag3_lines.append(
+                    f"{_tk3}: shares={_shares3:.4f}  last_price={_last3:.4f}"
+                    f"  NaN_count={_nan3}/{len(_ser3)}  value={_contrib3:.2f}"
+                )
+            except Exception as _pe3:
+                _diag3_lines.append(f"{_tk3}: PRICE ERROR — {_pe3}")
+    except Exception as _he3:
+        _diag3_lines = [f"HOLDINGS ERROR: {_he3}"]
+
+    with st.expander("DEBUG-3 per-ticker value contributions (remove before merge)", expanded=True):
+        st.code("\n".join(_diag3_lines))
+    # ── END TEMP DIAGNOSTICS 3 ─────────────────────────────────────────────
+
     # ── TEMP DIAGNOSTICS 2 — holdings + price lookup ─────────────────────
     from src.holdings import get_holdings_on_date as _get_holdings
     from src.prices import get_prices as _get_prices
