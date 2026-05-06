@@ -269,9 +269,10 @@ with col:
         _abs_ret_pct  = (current_val / _cost_basis - 1) * 100
         _twr_pct      = port_si * 100
         st.caption(
-            f"Reconciliation: ${_cost_basis:,.0f} cost basis at inception · "
-            f"${current_val:,.0f} current value · ${_unrealized:+,.0f} unrealized gain · "
-            f"{_abs_ret_pct:.1f}% absolute return vs {_twr_pct:.1f}% cumulative TWR. "
+            f"Reconciliation: **${_cost_basis:,.0f} cost basis** at inception → "
+            f"**${current_val:,.0f} current value** · "
+            f"**${_unrealized:+,.0f} unrealized gain** · "
+            f"**{_abs_ret_pct:.1f}% absolute return** vs **{_twr_pct:.1f}% cumulative TWR**. "
             f"For a single lump-sum portfolio with no subsequent cash flows, TWR and "
             f"absolute return converge; any residual difference reflects DRIP reinvestment "
             f"rounding and the BIL total-return proxy applied to the SPAXX cash sleeve. "
