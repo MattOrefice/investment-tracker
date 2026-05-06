@@ -95,6 +95,44 @@ def test_build_caption_renders(performance_app: AppTest) -> None:
     )
 
 
+def test_risk_metrics_radio_has_five_options(performance_app: AppTest) -> None:
+    """Risk-Adjusted Metrics window radio must offer exactly five period options. Pinned: Phase 8u.
+
+    Options must match the BF Attribution period set in order:
+    1 Month, 3 Months, YTD, 1 Year, Since Inception.
+    """
+    if not performance_app.metric:
+        pytest.skip("No portfolio data — skipped in local/empty-DB mode")
+    risk_radios = [r for r in performance_app.radio if r.key == "risk_metrics_window"]
+    assert risk_radios, "Risk-Adjusted Metrics window radio (key='risk_metrics_window') not found"
+    opts = risk_radios[0].options
+    assert len(opts) == 5, f"Expected 5 window options, got {len(opts)}: {opts}"
+    assert list(opts) == ["1 Month", "3 Months", "YTD", "1 Year", "Since Inception"], (
+        f"Window options order or labels incorrect: {list(opts)}"
+    )
+
+
+def test_risk_metrics_1m_window_no_nan() -> None:
+    """Switching risk metrics to 1 Month window must produce no NaN metric values. Pinned: Phase 8u.
+
+    Uses a fresh AppTest instance (not the module fixture) to avoid contaminating
+    shared widget state. Sets the risk_metrics_window radio to '1 Month' and
+    re-runs the page, then asserts all rendered metric values are finite.
+    """
+    at = AppTest.from_file("pages/4_Performance.py", default_timeout=120)
+    at.run()
+    if not at.metric:
+        pytest.skip("No portfolio data — skipped in local/empty-DB mode")
+    risk_radios = [r for r in at.radio if r.key == "risk_metrics_window"]
+    if not risk_radios:
+        pytest.skip("Risk metrics radio not found")
+    risk_radios[0].set_value("1 Month")
+    at.run()
+    assert not at.exception, f"Page raised after 1M radio switch: {at.exception}"
+    nan_metrics = [m.value for m in at.metric if "nan" in str(m.value).lower()]
+    assert not nan_metrics, f"1M window rendered NaN metrics: {nan_metrics}"
+
+
 def test_reconciliation_no_latex_artifacts(performance_app: AppTest) -> None:
     """Reconciliation paragraph must escape dollar signs to prevent LaTeX rendering.
 

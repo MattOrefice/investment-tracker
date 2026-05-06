@@ -19,17 +19,29 @@ def compute_risk_metrics(
         pv:         Daily portfolio value series (absolute dollars, DatetimeIndex).
         bl:         Daily benchmark series (any scale, DatetimeIndex).
         rf_annual:  Annual risk-free rate as decimal. Default 4.5% (current cash yield).
-        window:     "SI" = full inception history; "1Y" = trailing 365 calendar days.
+        window:     "SI" = full inception history; "1Y" / "3M" / "1M" = trailing
+                    calendar-day windows; "YTD" = year-to-date from Jan 1.
 
     Returns a dict with keys:
         sharpe, sortino, max_drawdown_pct, tracking_error_pct, information_ratio,
         n_days, ann_port_return_pct, ann_bench_return_pct.
     Returns {} if fewer than 20 observations.
     """
-    if window == "1Y":
-        cutoff = pd.Timestamp(date.today() - timedelta(days=365))
-        pv = pv[pv.index >= cutoff]
-        bl = bl[bl.index >= cutoff]
+    if window != "SI":
+        today = date.today()
+        if window == "1Y":
+            cutoff = pd.Timestamp(today - timedelta(days=365))
+        elif window == "3M":
+            cutoff = pd.Timestamp(today - timedelta(days=90))
+        elif window == "1M":
+            cutoff = pd.Timestamp(today - timedelta(days=30))
+        elif window == "YTD":
+            cutoff = pd.Timestamp(date(today.year, 1, 1))
+        else:
+            cutoff = None
+        if cutoff is not None:
+            pv = pv[pv.index >= cutoff]
+            bl = bl[bl.index >= cutoff]
 
     idx = pv.index.intersection(bl.index)
     pv  = pv.loc[idx]

@@ -376,8 +376,20 @@ with col:
     st.markdown("#### Risk-Adjusted Metrics")
 
     _bl_for_metrics = bl / float(bl.iloc[0])
-    _m_si = compute_risk_metrics(pv, _bl_for_metrics, window="SI")
-    _m_1y = compute_risk_metrics(pv, _bl_for_metrics, window="1Y")
+    _m_si  = compute_risk_metrics(pv, _bl_for_metrics, window="SI")
+    _m_1y  = compute_risk_metrics(pv, _bl_for_metrics, window="1Y")
+    _m_ytd = compute_risk_metrics(pv, _bl_for_metrics, window="YTD")
+    _m_3m  = compute_risk_metrics(pv, _bl_for_metrics, window="3M")
+    _m_1m  = compute_risk_metrics(pv, _bl_for_metrics, window="1M")
+
+    _RISK_WINDOW_LABELS = ["1 Month", "3 Months", "YTD", "1 Year", "Since Inception"]
+    _RISK_WINDOW_MAP = {
+        "1 Month":        _m_1m,
+        "3 Months":       _m_3m,
+        "YTD":            _m_ytd,
+        "1 Year":         _m_1y,
+        "Since Inception": _m_si,
+    }
 
     def _fmt_ratio(v) -> str:
         return f"{v:.2f}" if v == v else "—"
@@ -386,34 +398,43 @@ with col:
         return f"{v:.1f}%" if v == v else "—"
 
     if _m_si:
-        _window = st.radio(
+        _window_label = st.radio(
             "Window",
-            ["Since Inception", "Trailing 1Y"],
+            _RISK_WINDOW_LABELS,
+            index=4,
             horizontal=True,
             key="risk_metrics_window",
         )
-        _m = _m_si if _window == "Since Inception" else (_m_1y or _m_si)
+        _m = _RISK_WINDOW_MAP.get(_window_label) or {}
 
-        _c1, _c2, _c3, _c4, _c5, _c6, _c7 = st.columns(7)
-        _c1.metric("Sharpe",     _fmt_ratio(_m["sharpe"]))
-        _c2.metric("Sortino",    _fmt_ratio(_m["sortino"]))
-        _c3.metric("Max DD",     _fmt_pct(_m["max_drawdown_pct"]))
-        _c4.metric("Track. Err", _fmt_pct(_m["tracking_error_pct"]))
-        _c5.metric("Info Ratio", _fmt_ratio(_m["information_ratio"]))
-        _c6.metric("VaR (95%)",  _fmt_pct(_m["var_95_pct"]))
-        _c7.metric("CVaR (95%)", _fmt_pct(_m["cvar_95_pct"]))
+        if not _m:
+            st.caption(
+                f"Insufficient data for {_window_label} window — requires ≥ 20 trading days."
+            )
+        else:
+            _c1, _c2, _c3, _c4, _c5, _c6, _c7 = st.columns(7)
+            _c1.metric("Sharpe",     _fmt_ratio(_m["sharpe"]))
+            _c2.metric("Sortino",    _fmt_ratio(_m["sortino"]))
+            _c3.metric("Max DD",     _fmt_pct(_m["max_drawdown_pct"]))
+            _c4.metric("Track. Err", _fmt_pct(_m["tracking_error_pct"]))
+            _c5.metric("Info Ratio", _fmt_ratio(_m["information_ratio"]))
+            _c6.metric("VaR (95%)",  _fmt_pct(_m["var_95_pct"]))
+            _c7.metric("CVaR (95%)", _fmt_pct(_m["cvar_95_pct"]))
 
         st.caption(
             "Sharpe and Sortino use RF = 4.5% (current cash yield). "
             "Tracking error and information ratio vs. Custom Blended benchmark. "
-            "Max drawdown = peak-to-trough decline in portfolio value since inception. "
+            "Max drawdown = peak-to-trough decline in portfolio value within the selected window. "
             "VaR(95%) = daily loss exceeded only 5% of trading days (historical simulation). "
             "CVaR(95%) = average daily loss on the worst 5% of trading days (Expected Shortfall)."
         )
         st.markdown(
             "*Inception period overlaps substantially with trailing 12 months. "
             "Max DD, TE, and IR will diverge from Since Inception once the portfolio "
-            "crosses ~18 months of history.*"
+            "crosses ~18 months of history. "
+            "Risk ratios at 1M and 3M windows reflect ~21 and ~63 daily observations "
+            "respectively; interpret short-window Sharpe and Sortino as directional "
+            "rather than statistically stable.*"
         )
 
     st.divider()

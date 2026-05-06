@@ -99,6 +99,35 @@ def test_risk_metrics_returns_var_cvar_keys():
 
 # ── Alpha CI unit tests ───────────────────────────────────────────────────────
 
+def test_compute_risk_metrics_short_windows():
+    """compute_risk_metrics must support 1M, 3M, YTD, and 1Y windows.
+
+    Regression pin: Phase 8u. Extended from SI+1Y to five windows matching the
+    BF Attribution period set. Uses a synthetic 400-day series so every window
+    has ≥ 20 observations; asserts all seven keys are present and values are finite.
+    """
+    import math as _math
+    rng = np.random.default_rng(99)
+    # 400 business days ending today — all window slices will have ≥ 20 obs
+    returns = rng.normal(0.0004, 0.01, 400)
+    pv = _make_series(returns, start="2024-12-01")
+    bl = _make_series(np.zeros(400), start="2024-12-01")
+
+    expected_keys = {
+        "sharpe", "sortino", "max_drawdown_pct", "tracking_error_pct",
+        "information_ratio", "var_95_pct", "cvar_95_pct",
+    }
+    for w in ("1M", "3M", "YTD", "1Y", "SI"):
+        m = compute_risk_metrics(pv, bl, window=w)
+        assert m, f"window={w!r} returned empty dict — check observation threshold"
+        missing = expected_keys - m.keys()
+        assert not missing, f"window={w!r} missing keys: {missing}"
+        for k in expected_keys:
+            assert _math.isfinite(m[k]), (
+                f"window={w!r} key {k!r} is not finite: {m[k]}"
+            )
+
+
 def test_alpha_ci_str_format():
     """alpha_ci_str must produce '+N bps/yr [±lo, ±hi]' format."""
     from src.factors import alpha_ci_str
