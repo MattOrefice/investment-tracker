@@ -133,6 +133,48 @@ def test_risk_metrics_1m_window_no_nan() -> None:
     assert not nan_metrics, f"1M window rendered NaN metrics: {nan_metrics}"
 
 
+def test_risk_metrics_1m_sharpe_differs_from_si() -> None:
+    """Sharpe at 1M window must differ from Sharpe at SI by ≥ 0.01. Pinned: Phase 8u.1.
+
+    Window-distinguishing integration pin. If window filtering collapses (the
+    view/copy bug recurs), all windows return SI values and Sharpe values are
+    identical. The 1M portfolio Sharpe is substantially higher than SI Sharpe
+    for the current demo portfolio (recent month outperformed the full inception
+    period), so any identity in displayed values is a clear signal of collapse.
+
+    Fix if failing: restore .copy() after each cutoff slice in compute_risk_metrics.
+    """
+    at = AppTest.from_file("pages/4_Performance.py", default_timeout=120)
+    at.run()
+    if not at.metric:
+        pytest.skip("No portfolio data — skipped in local/empty-DB mode")
+
+    # Capture SI Sharpe (default window = Since Inception, radio index=4)
+    sharpe_si_widgets = [m for m in at.metric if m.label == "Sharpe"]
+    if not sharpe_si_widgets or sharpe_si_widgets[0].value == "—":
+        pytest.skip("Sharpe metric unavailable in default (SI) window")
+    sharpe_si = float(sharpe_si_widgets[0].value)
+
+    # Switch to 1 Month and re-run
+    risk_radios = [r for r in at.radio if r.key == "risk_metrics_window"]
+    if not risk_radios:
+        pytest.skip("risk_metrics_window radio not found")
+    risk_radios[0].set_value("1 Month")
+    at.run()
+    assert not at.exception, f"Page raised after 1M radio switch: {at.exception}"
+
+    sharpe_1m_widgets = [m for m in at.metric if m.label == "Sharpe"]
+    if not sharpe_1m_widgets or sharpe_1m_widgets[0].value == "—":
+        pytest.skip("Sharpe metric unavailable in 1M window")
+    sharpe_1m = float(sharpe_1m_widgets[0].value)
+
+    assert abs(sharpe_si - sharpe_1m) >= 0.01, (
+        f"SI Sharpe ({sharpe_si}) and 1M Sharpe ({sharpe_1m}) are indistinguishable. "
+        f"Window filter likely collapsed — all windows returning SI-length series. "
+        f"Fix: restore .copy() after cutoff slice in src/performance.py."
+    )
+
+
 def test_reconciliation_no_latex_artifacts(performance_app: AppTest) -> None:
     """Reconciliation paragraph must escape dollar signs to prevent LaTeX rendering.
 

@@ -6,6 +6,20 @@ import numpy as np
 import pandas as pd
 
 
+def _window_cutoff(window: str) -> "pd.Timestamp | None":
+    """Return the start-of-window cutoff for the given window key, or None for SI."""
+    today = date.today()
+    if window == "1Y":
+        return pd.Timestamp(today - timedelta(days=365))
+    if window == "3M":
+        return pd.Timestamp(today - timedelta(days=90))
+    if window == "1M":
+        return pd.Timestamp(today - timedelta(days=30))
+    if window == "YTD":
+        return pd.Timestamp(date(today.year, 1, 1))
+    return None  # "SI" = full inception series
+
+
 def compute_risk_metrics(
     pv: pd.Series,
     bl: pd.Series,
@@ -27,25 +41,17 @@ def compute_risk_metrics(
         n_days, ann_port_return_pct, ann_bench_return_pct.
     Returns {} if fewer than 20 observations.
     """
-    if window != "SI":
-        today = date.today()
-        if window == "1Y":
-            cutoff = pd.Timestamp(today - timedelta(days=365))
-        elif window == "3M":
-            cutoff = pd.Timestamp(today - timedelta(days=90))
-        elif window == "1M":
-            cutoff = pd.Timestamp(today - timedelta(days=30))
-        elif window == "YTD":
-            cutoff = pd.Timestamp(date(today.year, 1, 1))
-        else:
-            cutoff = None
-        if cutoff is not None:
-            pv = pv[pv.index >= cutoff]
-            bl = bl[bl.index >= cutoff]
+    cutoff = _window_cutoff(window)
+    if cutoff is not None:
+        # .copy() breaks any view relationship with the @st.cache_data-frozen
+        # Series; without it, pandas may reference the original full-length
+        # underlying array through the view's base, collapsing the window filter.
+        pv = pv.loc[pv.index >= cutoff].copy()
+        bl = bl.loc[bl.index >= cutoff].copy()
 
     idx = pv.index.intersection(bl.index)
-    pv  = pv.loc[idx]
-    bl  = bl.loc[idx]
+    pv  = pv.loc[idx].copy()
+    bl  = bl.loc[idx].copy()
 
     if len(pv) < 20:
         return {}
