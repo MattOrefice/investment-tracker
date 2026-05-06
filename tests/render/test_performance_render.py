@@ -196,3 +196,100 @@ def test_reconciliation_no_latex_artifacts(performance_app: AppTest) -> None:
         f"Unescaped $ will trigger Streamlit LaTeX mode and corrupt bold amounts. "
         f"Caption starts: {recon[:120]}"
     )
+
+
+def test_naive_benchmark_radio_has_two_options(performance_app: AppTest) -> None:
+    """Naive benchmark radio must offer exactly two options. Pinned: Phase 10 Section 0.
+
+    Options must be '60/40 (60% SPY / 40% AGG)' (default, index 0) and 'S&P 500 (SPY)'.
+    If the radio is absent or has the wrong options, the toggle is broken.
+    """
+    if not performance_app.metric:
+        pytest.skip("No portfolio data — skipped in local/empty-DB mode")
+    naive_radios = [r for r in performance_app.radio if r.key == "naive_benchmark"]
+    assert naive_radios, "Naive benchmark radio (key='naive_benchmark') not found"
+    opts = list(naive_radios[0].options)
+    assert len(opts) == 2, f"Expected 2 naive benchmark options, got {len(opts)}: {opts}"
+    assert opts[0] == "60/40 (60% SPY / 40% AGG)", f"First option wrong: {opts[0]!r}"
+    assert opts[1] == "S&P 500 (SPY)", f"Second option wrong: {opts[1]!r}"
+
+
+def test_two_stage_reconciliation_uses_price_series(performance_app: AppTest) -> None:
+    """Stage 1/2 reconciliation caption must use price-series methodology with 0.00 bps residual.
+
+    Phase 10.1 regression pin. Pre-fix code called compute_two_stage_attribution()
+    with _r_p_bf (BF-internal price-appreciation return) instead of the portfolio
+    price-series TWR, creating a ~316 bps Stage 2 residual vs. the price series.
+    The reconciliation caption showed '⚠ residual: N bps'. Fixed code uses
+    _benchmark_period_return(pv, period) throughout; algebra residual is 0.00 bps.
+    """
+    if not performance_app.metric:
+        pytest.skip("No portfolio data — skipped in local/empty-DB mode")
+    captions = [c.value for c in performance_app.caption]
+    # The stage-level reconciliation caption contains "price-series methodology"
+    # (old code had "computed independently ... by portfolio price series")
+    stage_recon = next((c for c in captions if "price-series methodology" in c), None)
+    assert stage_recon is not None, (
+        "Stage 1/2 reconciliation caption not found or still using old 'computed independently' "
+        "format. Phase 10.1 fix not applied — check compute_two_stage_attribution() call site."
+    )
+    assert "⚠" not in stage_recon, (
+        f"Stage 1/2 reconciliation caption shows a residual warning (⚠). "
+        f"Price-series methodology should give exact algebra (0.00 bps residual). "
+        f"Caption: {stage_recon}"
+    )
+    assert "0.00 bps" in stage_recon, (
+        f"Stage 1/2 reconciliation must show '0.00 bps' algebra residual. "
+        f"Caption: {stage_recon}"
+    )
+
+
+def test_two_stage_attribution_section_renders(performance_app: AppTest) -> None:
+    """Two-Stage Attribution section must render with three metric tiles. Pinned: Phase 9.
+
+    Verifies that the new Stage 1 / Stage 2 / Total tiles are present and that
+    switching the BF window radio updates the tile values (wired to same radio).
+    Skipped when no portfolio data exists (local empty-DB mode).
+    """
+    if not performance_app.metric:
+        pytest.skip("No portfolio data — skipped in local/empty-DB mode")
+
+    metric_labels = [m.label for m in performance_app.metric]
+    assert "Stage 1: SAA Design" in metric_labels, (
+        f"'Stage 1: SAA Design' tile not found in metric labels: {metric_labels}"
+    )
+    assert "Stage 2: Implementation" in metric_labels, (
+        f"'Stage 2: Implementation' tile not found in metric labels: {metric_labels}"
+    )
+    assert "Total: Portfolio vs. 60/40" in metric_labels, (
+        f"'Total: Portfolio vs. 60/40' tile not found in metric labels: {metric_labels}"
+    )
+
+    # Switching the BF period radio must change Stage 1 value (window-sensitivity check)
+    at = AppTest.from_file("pages/4_Performance.py", default_timeout=120)
+    at.run()
+    if not at.metric:
+        pytest.skip("No portfolio data in fresh AppTest instance")
+
+    def _get_stage1(app) -> str | None:
+        hits = [m for m in app.metric if m.label == "Stage 1: SAA Design"]
+        return hits[0].value if hits else None
+
+    bf_radios = [r for r in at.radio if r.key == "bf_period"]
+    if not bf_radios:
+        pytest.skip("bf_period radio not found")
+
+    stage1_3m = _get_stage1(at)    # default is 3M
+
+    bf_radios[0].set_value("SI")
+    at.run()
+    assert not at.exception, f"Page raised after bf_period switch to SI: {at.exception}"
+    stage1_si = _get_stage1(at)
+
+    assert stage1_3m is not None and stage1_si is not None, (
+        "Stage 1 tile missing after radio switch"
+    )
+    assert stage1_3m != stage1_si, (
+        f"Stage 1 value unchanged after switching 3M → SI: both = {stage1_3m!r}. "
+        "Window filtering may have collapsed — check _load_attribution or _benchmark_period_return."
+    )

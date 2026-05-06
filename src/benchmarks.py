@@ -168,6 +168,40 @@ def get_sleeve_benchmark_returns(
     return pd.DataFrame(result, index=date_range)
 
 
+def get_naive_60_40_series(start_date: str, end_date: str | None = None) -> pd.Series:
+    """
+    $1-normalized daily return series for a 60/40 naive benchmark.
+
+    Computes as 0.6 × daily SPY return + 0.4 × daily AGG return at the return
+    level (not a portfolio simulation — avoids rebalancing-frequency assumptions).
+    Returns a Series indexed by pd.Timestamp starting at 1.0 on start_date.
+    """
+    end = end_date or date.today().isoformat()
+    spy = _get_price_series("SPY", start_date, end, col="adj_close")
+    agg = _get_price_series("AGG", start_date, end, col="adj_close")
+
+    spy_ret = spy.pct_change().fillna(0.0)
+    agg_ret = agg.pct_change().fillna(0.0)
+
+    naive_ret  = 0.6 * spy_ret + 0.4 * agg_ret
+    cumulative = (1 + naive_ret).cumprod()
+
+    first = float(cumulative.iloc[0]) if not cumulative.empty else 1.0
+    return cumulative / first if first > 0 else cumulative
+
+
+def get_naive_series(kind: str, start_date: str, end_date: str | None = None) -> pd.Series:
+    """
+    $1-normalized naive benchmark series.
+
+    kind='60_40': 60% SPY + 40% AGG (calls get_naive_60_40_series).
+    kind='spy':   pure SPY total return (calls get_sp500_series).
+    """
+    if kind == "spy":
+        return get_sp500_series(start_date, end_date)
+    return get_naive_60_40_series(start_date, end_date)
+
+
 # Convenience: scalar benchmark return for a single sleeve over a period
 def sleeve_benchmark_return(sleeve: str, start_date: str, end_date: str) -> float:
     """Return the total return of the benchmark for a single sleeve over the period."""
