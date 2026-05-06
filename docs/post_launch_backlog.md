@@ -19,6 +19,10 @@ Items deferred from pre-launch polish pass (Phase 8s, 2026-05-05). None are bloc
 - **Global 5-factor regression** — Ken French discontinued daily global factors June 2019. Tab shows informational message. If Ken French ever resumes publication (unlikely), the early-return guard in `src/factors.py` will need to be removed.
 - **Yahoo Finance rate limits** — `src/prices.py` uses direct v8/chart API. If Yahoo changes the endpoint, price fetching will break silently. Consider adding a last-successful-fetch timestamp to the `prices` table and surfacing a staleness warning if > 2 trading days old.
 
+## Attribution methodology
+
+- **Phase 9.5 — Multi-level attribution.** Add a SAA-design-vs-naive-benchmark layer above the existing drift/selection BF. Decompose total active return into (a) SAA strategic tilts vs. 60/40 or pure-equity benchmark, then (b) drift/selection vs. SAA. Currently disclosed via methodology footnote (Phase 8t, Section 4) with pointer to Factor Profile for strategic-tilt evidence; full multi-level decomposition is a methodology build, not a pre-launch polish.
+
 ## README (separate phase)
 
 - Full README rewrite is the final action before public launch — tracked separately.

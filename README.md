@@ -32,7 +32,7 @@ Python 3.11, Streamlit, SQLite, pandas, NumPy, Plotly + kaleido (static chart ex
 
 ## About
 
-Matt Orefice — CFA charterholder (April 2026). Previously in portfolio analytics at MissionSquare Retirement. Built this system during a transition to buy-side allocator and investment due diligence roles, applying CFA-level investment analysis to a personal portfolio tracking system built from scratch.
+Matt Orefice — CFA charterholder (April 2026). Previously in portfolio analytics at MissionSquare. Built this system during a transition to buy-side allocator and investment due diligence roles, applying CFA-level investment analysis to a personal portfolio tracking system built from scratch.
 
 GitHub: https://github.com/MattOrefice
 

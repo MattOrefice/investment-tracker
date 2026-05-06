@@ -20,7 +20,7 @@ with col:
 
     st.markdown(
         """
-        Built by Matt Orefice — CFA charterholder, ex-MissionSquare Retirement.
+        Built by Matt Orefice — CFA charterholder, ex-MissionSquare.
         A live-data portfolio tracking system with GIPS-compliant time-weighted returns,
         Brinson-Fachler attribution, and automated quarterly PDF reporting against a
         custom-blended benchmark.

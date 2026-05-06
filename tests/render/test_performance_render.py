@@ -93,3 +93,26 @@ def test_build_caption_renders(performance_app: AppTest) -> None:
     assert any("Build" in c for c in captions), (
         f"Deployed SHA caption not rendered — captions found: {captions[:5]}"
     )
+
+
+def test_reconciliation_no_latex_artifacts(performance_app: AppTest) -> None:
+    """Reconciliation paragraph must escape dollar signs to prevent LaTeX rendering.
+
+    Regression pin: Phase 8t. Phase 8s introduced **$...**  bold syntax in the
+    reconciliation st.caption. Unescaped $ chars triggered Streamlit's LaTeX
+    extension, rendering bold dollar amounts as math-mode gibberish (spaced-out
+    characters, ∗∗ instead of bold, → rendered as math arrow). Fix: escape every
+    $ in the f-string template as \\$. The raw caption value passed to st.caption
+    must contain \\$ — if it contains a bare $N pattern (dollar + digit inside a
+    bold span), LaTeX will corrupt the output on next render.
+    """
+    if not performance_app.metric:
+        pytest.skip("No portfolio data — skipped in local/empty-DB mode")
+    captions = [c.value for c in performance_app.caption]
+    recon = next((c for c in captions if "Reconciliation" in c), None)
+    assert recon is not None, "Reconciliation paragraph not found in page captions"
+    assert "\\$" in recon, (
+        f"Reconciliation caption lacks escaped dollar signs (\\$). "
+        f"Unescaped $ will trigger Streamlit LaTeX mode and corrupt bold amounts. "
+        f"Caption starts: {recon[:120]}"
+    )

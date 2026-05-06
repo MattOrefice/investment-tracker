@@ -13,6 +13,7 @@ from src.config import DEMO_BANNER_TEXT, IS_DEMO
 from src.attribution import brinson_fachler_period
 from src.benchmarks import get_custom_blended_series, get_sp500_series
 from src.db import get_connection
+from src.factors import run_sleeve_regressions
 from src.holdings import get_portfolio_value_series, get_sleeve_weights_on_date
 from src.performance import compute_risk_metrics
 from src.reports import generate_quarterly_report
@@ -71,6 +72,14 @@ def _load_attribution(period_key: str):
     else:   # 1M
         start = _date_offset(TODAY, days=-30)
     return brinson_fachler_period(start, TODAY)
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _load_factor_results(inception_date: str, end: str) -> dict:
+    try:
+        return run_sleeve_regressions(inception_date, end)
+    except Exception:
+        return {}
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -269,9 +278,9 @@ with col:
         _abs_ret_pct  = (current_val / _cost_basis - 1) * 100
         _twr_pct      = port_si * 100
         st.caption(
-            f"Reconciliation: **${_cost_basis:,.0f} cost basis** at inception → "
-            f"**${current_val:,.0f} current value** · "
-            f"**${_unrealized:+,.0f} unrealized gain** · "
+            f"Reconciliation: **\\${_cost_basis:,.0f} cost basis** at inception → "
+            f"**\\${current_val:,.0f} current value** · "
+            f"**\\${_unrealized:+,.0f} unrealized gain** · "
             f"**{_abs_ret_pct:.1f}% absolute return** vs **{_twr_pct:.1f}% cumulative TWR**. "
             f"For a single lump-sum portfolio with no subsequent cash flows, TWR and "
             f"absolute return converge; any residual difference reflects DRIP reinvestment "
@@ -377,32 +386,22 @@ with col:
         return f"{v:.1f}%" if v == v else "—"
 
     if _m_si:
-        _r1, _r2 = st.columns(2)
-        with _r1:
-            st.markdown("**Since Inception**")
-            _si1, _si2, _si3, _si4, _si5 = st.columns(5)
-            _si1.metric("Sharpe",     _fmt_ratio(_m_si["sharpe"]))
-            _si2.metric("Sortino",    _fmt_ratio(_m_si["sortino"]))
-            _si3.metric("Max DD",     _fmt_pct(_m_si["max_drawdown_pct"]))
-            _si4.metric("Track. Err", _fmt_pct(_m_si["tracking_error_pct"]))
-            _si5.metric("Info Ratio", _fmt_ratio(_m_si["information_ratio"]))
-            _si_v1, _si_v2, _si_blank = st.columns(3)
-            _si_v1.metric("VaR (95%)",  _fmt_pct(_m_si["var_95_pct"]))
-            _si_v2.metric("CVaR (95%)", _fmt_pct(_m_si["cvar_95_pct"]))
-        with _r2:
-            st.markdown("**Trailing 1 Year**")
-            if _m_1y:
-                _1y1, _1y2, _1y3, _1y4, _1y5 = st.columns(5)
-                _1y1.metric("Sharpe",     _fmt_ratio(_m_1y["sharpe"]))
-                _1y2.metric("Sortino",    _fmt_ratio(_m_1y["sortino"]))
-                _1y3.metric("Max DD",     _fmt_pct(_m_1y["max_drawdown_pct"]))
-                _1y4.metric("Track. Err", _fmt_pct(_m_1y["tracking_error_pct"]))
-                _1y5.metric("Info Ratio", _fmt_ratio(_m_1y["information_ratio"]))
-                _1y_v1, _1y_v2, _1y_blank = st.columns(3)
-                _1y_v1.metric("VaR (95%)",  _fmt_pct(_m_1y["var_95_pct"]))
-                _1y_v2.metric("CVaR (95%)", _fmt_pct(_m_1y["cvar_95_pct"]))
-            else:
-                st.caption("Insufficient data for 1Y window.")
+        _window = st.radio(
+            "Window",
+            ["Since Inception", "Trailing 1Y"],
+            horizontal=True,
+            key="risk_metrics_window",
+        )
+        _m = _m_si if _window == "Since Inception" else (_m_1y or _m_si)
+
+        _c1, _c2, _c3, _c4, _c5, _c6, _c7 = st.columns(7)
+        _c1.metric("Sharpe",     _fmt_ratio(_m["sharpe"]))
+        _c2.metric("Sortino",    _fmt_ratio(_m["sortino"]))
+        _c3.metric("Max DD",     _fmt_pct(_m["max_drawdown_pct"]))
+        _c4.metric("Track. Err", _fmt_pct(_m["tracking_error_pct"]))
+        _c5.metric("Info Ratio", _fmt_ratio(_m["information_ratio"]))
+        _c6.metric("VaR (95%)",  _fmt_pct(_m["var_95_pct"]))
+        _c7.metric("CVaR (95%)", _fmt_pct(_m["cvar_95_pct"]))
 
         st.caption(
             "Sharpe and Sortino use RF = 4.5% (current cash yield). "
@@ -580,6 +579,33 @@ with col:
             f"Blended benchmark: {r_b_total:.2f}%  &nbsp;·&nbsp; "
             f"Sum of effects: {sum_effects:+.1f} bps  &nbsp;·&nbsp; "
             f"Algebra check: {'✓ reconciled' if reconciled else '⚠ discrepancy'}"
+        )
+
+        # — BF methodology disclosure —
+        _factor_res = _load_factor_results(INCEPTION, TODAY)
+        _us_res = _factor_res.get("us")
+        if _us_res:
+            _factor_clause = (
+                f"the US sleeve's HML loading of {_us_res['betas']['HML']:.3f} "
+                f"(t = {_us_res['t_stats']['HML']:.2f}) and SMB loading of "
+                f"{_us_res['betas']['SMB']:.3f} (t = {_us_res['t_stats']['SMB']:.2f}) "
+                "statistically confirm the value and small-cap exposures."
+            )
+        else:
+            _factor_clause = (
+                "the US sleeve's HML and SMB factor loadings on the Factor Profile page "
+                "statistically confirm the value and small-cap exposures."
+            )
+        st.caption(
+            "**What this decomposition measures.** Brinson-Fachler attribution captures two effects "
+            "relative to the SAA's sleeve targets: **allocation effect** — over/underweights from SAA "
+            "targets, primarily driven by drift since this portfolio is not rebalanced intra-quarter; "
+            "and **selection effect** — the chosen ETF return vs. the sleeve benchmark return, typically "
+            "near-zero for passive ETF holdings. The strategic tilts that define the SAA itself — the "
+            "8% allocation to value (VTV), 7% to small-cap value (AVUV), 8% to emerging markets, and "
+            "10% to real assets — are **not** captured here; they are baked into the SAA design and "
+            "surface in two places: the **Custom Blended vs. S&P 500 spread** on the cover, and the "
+            "**Factor Profile** page, where " + _factor_clause
         )
 
     st.divider()
