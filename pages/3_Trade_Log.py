@@ -6,11 +6,11 @@ from datetime import date as dt_date
 import pandas as pd
 import streamlit as st
 
+st.set_page_config(page_title="Trade Log", layout="wide")
+
 from src.asof import as_of_banner
 from src.db import get_connection
 from src.ui_helpers import render_footer
-
-st.set_page_config(page_title="Trade Log", layout="wide")
 
 STATUS_COLOR = {
     "active":      "#2d6a4f",
@@ -280,7 +280,7 @@ def render_trade_form():
             price = st.number_input("Price ($)", min_value=0.0, step=0.01, format="%.2f")
             fees  = st.number_input("Fees ($)", min_value=0.0, value=0.0, step=0.01, format="%.2f")
         notes     = st.text_area("Notes (optional)", height=68)
-        submitted = st.form_submit_button("Log trade", width='stretch')
+        submitted = st.form_submit_button("Log trade", use_container_width=True)
 
         if submitted:
             ticker   = st.session_state.get("tl_ticker", "")
@@ -378,7 +378,7 @@ with tab_trades:
             df = pd.DataFrame(rows)
             st.dataframe(
                 df,
-                width='stretch',
+                use_container_width=True,
                 hide_index=True,
                 column_config={
                     "Price":       st.column_config.NumberColumn(format="$%.2f"),
@@ -498,7 +498,7 @@ with tab_theses:
                 })
             st.dataframe(
                 pd.DataFrame(pos_rows),
-                width='stretch',
+                use_container_width=True,
                 hide_index=True,
             )
 

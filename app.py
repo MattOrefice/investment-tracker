@@ -1,15 +1,16 @@
 """Investment Analytics Tracker — homepage."""
 import streamlit as st
-from src.asof import as_of_banner
-from src.config import DEMO_BANNER_TEXT, IS_DEMO
-from src.db import initialize_db
-from src.ui_helpers import render_footer
 
 st.set_page_config(
     page_title="Investment Analytics Tracker",
     page_icon="📈",
     layout="wide",
 )
+
+from src.asof import as_of_banner
+from src.config import DEMO_BANNER_TEXT, IS_DEMO
+from src.db import initialize_db
+from src.ui_helpers import render_footer
 
 initialize_db()
 

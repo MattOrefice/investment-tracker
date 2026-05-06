@@ -1,12 +1,13 @@
 """Research page — Security Research."""
 import streamlit as st
+
+st.set_page_config(page_title="Research", layout="wide")
+
 import pandas as pd
 from collections import defaultdict
 from src.asof import as_of_banner
 from src.db import get_connection
 from src.ui_helpers import render_footer
-
-st.set_page_config(page_title="Research", layout="wide")
 
 SPAXX_RATIONALE = (
     "SPAXX is Fidelity's default money market fund and the natural cash vehicle — no transaction "
@@ -240,7 +241,7 @@ with col:
             if len(pairs) > 1:
                 st.caption(f"{'REITs (50% of sleeve)' if i == 0 else 'Commodities (50% of sleeve)'}")
             df = _comparison_df(bm, h, self_bm=p["self_bm"], show_type=is_cash)
-            st.dataframe(df, width='stretch')
+            st.dataframe(df, use_container_width=True)
 
             caption = _savings_caption(
                 bm.get("expense_ratio") if bm else None,

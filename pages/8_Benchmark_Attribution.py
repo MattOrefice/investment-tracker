@@ -4,6 +4,8 @@ from datetime import date
 
 import pandas as pd
 
+st.set_page_config(page_title="Benchmark Attribution", layout="wide")
+
 from src.asof import as_of_banner
 from src.attribution import brinson_fachler_period
 from src.config import DEMO_BANNER_TEXT, IS_DEMO
@@ -41,8 +43,6 @@ _SLEEVE_BENCH = {
     "Real Assets":             "VNQ / DBC",
     "Cash / SPAXX":            "BIL",
 }
-
-st.set_page_config(page_title="Benchmark Attribution", layout="wide")
 
 if IS_DEMO:
     st.info(DEMO_BANNER_TEXT)
@@ -102,7 +102,7 @@ with col:
 
     st.dataframe(
         pd.DataFrame(table_rows).set_index("Factor"),
-        width="stretch",
+        use_container_width=True,
     )
     st.caption(
         "* p < 0.10 &nbsp; ** p < 0.05 &nbsp; *** p < 0.01 &nbsp;|&nbsp; "

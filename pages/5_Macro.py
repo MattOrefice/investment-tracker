@@ -5,12 +5,12 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+st.set_page_config(page_title="Macro Dashboard", layout="wide")
+
 from src import macro, shiller
 from src.asof import as_of_banner
 from src.prices import get_prices
 from src.ui_helpers import render_footer
-
-st.set_page_config(page_title="Macro Dashboard", layout="wide")
 
 TODAY      = date.today().isoformat()
 ONE_YR_AGO = (date.fromisoformat(TODAY) - timedelta(days=365)).isoformat()
@@ -248,7 +248,7 @@ with col:
             )
             _apply_style(fig_cape, height=_CHART_H_CAPE)
             fig_cape.update_yaxes(title_text="CAPE (×)")
-            st.plotly_chart(fig_cape, width='stretch')
+            st.plotly_chart(fig_cape, use_container_width=True)
 
         pctile_label = (
             "extremely elevated" if cape_pctile > 90 else
@@ -365,7 +365,7 @@ with col:
             )
             _apply_style(fig_ecy, height=_CHART_H_CAPE)
             fig_ecy.update_yaxes(title_text="ECY (%)")
-            st.plotly_chart(fig_ecy, width='stretch')
+            st.plotly_chart(fig_ecy, use_container_width=True)
 
         if current_ecy >= 3.0:
             _ecy_interp = (
@@ -445,7 +445,7 @@ with col:
         )
         _apply_style(fig_yc)
         fig_yc.update_yaxes(title_text="Spread (bps)")
-        st.plotly_chart(fig_yc, width='stretch')
+        st.plotly_chart(fig_yc, use_container_width=True)
 
         st.caption(
             "Yield curve inversions (spread < 0) have preceded each of the last seven "
@@ -495,7 +495,7 @@ with col:
         ))
         _apply_style(fig_ff)
         fig_ff.update_yaxes(title_text="Rate (%)")
-        st.plotly_chart(fig_ff, width='stretch')
+        st.plotly_chart(fig_ff, use_container_width=True)
 
         st.caption(_ff_interpretation(current_ff, ff_chg_bps))
 
@@ -548,7 +548,7 @@ with col:
         )
         _apply_style(fig_hy)
         fig_hy.update_yaxes(title_text="OAS (bps)")
-        st.plotly_chart(fig_hy, width='stretch')
+        st.plotly_chart(fig_hy, use_container_width=True)
 
         hy_framing = (
             "suggests late-cycle complacency — limited cushion for additional compression"
@@ -638,7 +638,7 @@ with col:
             font=dict(size=9, color="#888"),
             xanchor="left", yanchor="top",
         )
-        st.plotly_chart(fig_us, width='stretch')
+        st.plotly_chart(fig_us, use_container_width=True)
 
         us_label = (
             "extreme"   if ratio_pctile > 90 else

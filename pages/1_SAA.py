@@ -1,13 +1,14 @@
 """SAA page — Strategic Asset Allocation."""
 import streamlit as st
+
+st.set_page_config(page_title="SAA", layout="wide")
+
 import pandas as pd
 import plotly.graph_objects as go
 from src.asof import as_of_banner
 from src.db import get_connection
 from src.endowment_benchmarks import CATEGORIES, ENTITIES, get_endowment_data
 from src.ui_helpers import render_footer
-
-st.set_page_config(page_title="SAA", layout="wide")
 
 PARENT_COLORS = {
     "Equity":      "#3D5A80",
@@ -100,7 +101,7 @@ with col:
         yaxis=dict(showticklabels=False, showgrid=False,
                    zeroline=False, fixedrange=True),
     )
-    st.plotly_chart(fig, width='stretch', config={"displayModeBar": False})
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
     # Legend row anchors small-segment labels that can't fit inside the bar
     legend_parts = []
     for p in parents:
@@ -130,7 +131,7 @@ with col:
     df = pd.DataFrame(rows)
     st.dataframe(
         df,
-        width='stretch',
+        use_container_width=True,
         hide_index=True,
         column_config={
             "Target (%)": st.column_config.NumberColumn(format="%.1f"),
@@ -213,7 +214,7 @@ with col:
         ),
         yaxis=dict(showgrid=False),
     )
-    st.plotly_chart(_fig_endo, width="stretch", config={"displayModeBar": False})
+    st.plotly_chart(_fig_endo, use_container_width=True, config={"displayModeBar": False})
 
     st.markdown(
         "Endowments achieving institutional-grade returns do so with heavy "

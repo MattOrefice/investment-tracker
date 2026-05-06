@@ -1,6 +1,8 @@
 """Active Positioning — tilts, effective duration, scenario analysis."""
 import streamlit as st
 
+st.set_page_config(page_title="Active Positioning", layout="wide")
+
 from src.asof import as_of_banner
 from src.config import DEMO_BANNER_TEXT, IS_DEMO
 from src.ui_helpers import render_footer
@@ -12,8 +14,6 @@ from src.positioning import (
     get_scenario_triggers,
     get_style_box_data,
 )
-
-st.set_page_config(page_title="Active Positioning", layout="wide")
 
 if IS_DEMO:
     st.info(DEMO_BANNER_TEXT)
@@ -98,7 +98,7 @@ with col:
         fig = build_style_box_figure(style_data)
         box_col, _ = st.columns([3, 2])
         with box_col:
-            st.plotly_chart(fig, width='stretch')
+            st.plotly_chart(fig, use_container_width=True)
         st.caption(
             "Morningstar 3×3 style box · x-axis: 4-factor value-growth score (z-scored vs SPY) · "
             "y-axis: log market cap · dot size = portfolio weight · US equity sleeves only"

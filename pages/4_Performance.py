@@ -6,6 +6,8 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+st.set_page_config(page_title="Performance & Attribution", layout="wide")
+
 from src.asof import as_of_banner
 from src.attribution import brinson_fachler_period
 from src.benchmarks import get_custom_blended_series, get_sp500_series
@@ -15,8 +17,6 @@ from src.performance import compute_risk_metrics
 from src.reports import generate_quarterly_report
 from src.returns import annualize, period_return, twr_daily_linked
 from src.ui_helpers import render_footer
-
-st.set_page_config(page_title="Performance & Attribution", layout="wide")
 
 _REPORTS_DIR = Path(__file__).parent.parent / "data" / "reports"
 
@@ -326,7 +326,7 @@ with col:
 
     tbl_df = pd.DataFrame(display).T
     tbl_df.index.name = "Period"
-    st.dataframe(tbl_df, width='stretch')
+    st.dataframe(tbl_df, use_container_width=True)
 
     st.divider()
 
@@ -433,7 +433,7 @@ with col:
                    dtick=10, ticksuffix="%"),
         xaxis=dict(gridcolor="#E8E8E8"),
     )
-    st.plotly_chart(fig, width='stretch')
+    st.plotly_chart(fig, use_container_width=True)
 
     st.divider()
 
@@ -517,7 +517,7 @@ with col:
                 xaxis=dict(gridcolor="#E8E8E8", zeroline=True,
                            zerolinecolor="#888"),
             )
-            st.plotly_chart(fig2, width='stretch')
+            st.plotly_chart(fig2, use_container_width=True)
 
         # — Attribution table —
         with bf_table_col:
@@ -534,7 +534,7 @@ with col:
                     "Total (bps)":   f"{row['total_effect']*10000:+.1f}",
                 })
             st.dataframe(pd.DataFrame(tbl_data), hide_index=True,
-                         width='stretch')
+                         use_container_width=True)
 
         # — Algebra summary —
         sum_effects   = bf_df["total_effect"].sum() * 10_000
@@ -605,7 +605,7 @@ with col:
             font=dict(family="sans-serif", size=11, color="#333"),
             xaxis=dict(gridcolor="#E8E8E8"),
         )
-        st.plotly_chart(_fig_alloc, width='stretch')
+        st.plotly_chart(_fig_alloc, use_container_width=True)
 
         drift_rows = []
         outside_band_count = 0
@@ -628,7 +628,7 @@ with col:
 
         # Sort by absolute drift descending
         drift_rows.sort(key=lambda r: abs(int(r["Drift (bps)"].replace("+", ""))), reverse=True)
-        st.dataframe(pd.DataFrame(drift_rows), hide_index=True, width='stretch')
+        st.dataframe(pd.DataFrame(drift_rows), hide_index=True, use_container_width=True)
         st.caption(
             f"Rebalance candidates: **{outside_band_count}** sleeve"
             f"{'s' if outside_band_count != 1 else ''} outside tolerance band"
