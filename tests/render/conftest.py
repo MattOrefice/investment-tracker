@@ -11,6 +11,8 @@ Pre-importing these modules here (in the pytest collection phase, outside any
 ScriptRunContext) caches them in sys.modules so the AppTest script's import
 statements are no-ops and the file-watcher delta is never sent.
 """
-import src.config  # noqa: F401  — triggers st.secrets outside AppTest context
-import src.macro   # noqa: F401
-import src.shiller  # noqa: F401
+import src.config    # noqa: F401  — triggers st.secrets outside AppTest context
+import src.db        # noqa: F401  — used by Performance, Attribution, Trade Log pages
+import src.holdings  # noqa: F401  — used by Performance page
+import src.macro     # noqa: F401
+import src.shiller   # noqa: F401

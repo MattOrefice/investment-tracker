@@ -210,6 +210,14 @@ def get_prices(
         except Exception:
             pass
 
+    # Dedup index: trailing/leading fetches can return dates that overlap the
+    # cached range when the Yahoo Finance API's UTC-midnight period boundary
+    # maps to the previous US trading day (e.g., requesting "2026-05-06"
+    # returns May-5 data already in the cache).  Keep the last occurrence so
+    # the most-recently fetched value wins.
+    if cached.index.duplicated().any():
+        cached = cached[~cached.index.duplicated(keep="last")]
+
     return cached
 
 
