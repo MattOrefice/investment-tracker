@@ -130,6 +130,62 @@ with col:
     with st.spinner("Loading performance data…"):
         pv, cf = _load_portfolio()
 
+    # ── TEMP DIAGNOSTIC 4 — cache vs fresh + per-ticker reindex ──────────
+    from src.holdings import (
+        get_holdings_on_date as _hod4,
+        get_portfolio_value_series as _gpvs4,
+    )
+    from src.prices import get_prices as _gp4
+
+    _d4: list[str] = []
+
+    # A: Direct (uncached) call — compare to cached pv
+    try:
+        _pv_fresh = _gpvs4(INCEPTION, TODAY)
+        _cached_last  = float(pv.iloc[-1])
+        _fresh_last   = float(_pv_fresh.iloc[-1])
+        _cache_match  = "=SAME" if abs(_cached_last - _fresh_last) < 0.01 else "≠STALE CACHE"
+        _d4.append(f"A. cached pv.iloc[-1]  = {_cached_last:.2f}")
+        _d4.append(f"   fresh  pv.iloc[-1]  = {_fresh_last:.2f}  ← {_cache_match}")
+        _d4.append(f"   fresh  pv unique vals: {_pv_fresh.nunique()} (1 = flat)")
+    except Exception as _e4a:
+        _d4.append(f"A. gpvs fresh call ERROR: {_e4a}")
+
+    # B: Per-ticker: run exactly the same reindex step that gpvs runs
+    _d4.append(f"\nB. Per-ticker reindex (INCEPTION→TODAY, date_range len={len(pd.date_range(INCEPTION, TODAY, freq='D'))}):")
+    try:
+        _hld4 = _hod4(TODAY)
+        _dr4  = pd.date_range(start=INCEPTION, end=TODAY, freq="D")
+        _manual_total = 0.0
+        for _t4 in _hld4.index:
+            _sh4 = float(_hld4.loc[_t4, "net_shares"])
+            _fetch_t = "BIL" if _t4 == "SPAXX" else _t4
+            try:
+                _p4 = _gp4(_fetch_t, INCEPTION, TODAY)
+                # replicate gpvs exactly
+                _p4.index = pd.to_datetime(_p4.index)
+                _ser4 = _p4["adj_close"].fillna(_p4["close"])
+                _rix4 = _ser4.reindex(_dr4).ffill()
+                _last4 = float(_rix4.iloc[-1]) if not _rix4.isna().all() else float("nan")
+                _nan4  = int(_rix4.isna().sum())
+                _val4  = _sh4 * _last4
+                _manual_total += _val4 if _val4 == _val4 else 0.0
+                _d4.append(
+                    f"   {_t4}: sh={_sh4:.4f}  raw_len={len(_p4)}"
+                    f"  dup_in_raw={int(_p4.index.duplicated().sum())}"
+                    f"  rix_NaN={_nan4}/{len(_rix4)}"
+                    f"  last_price={_last4:.4f}  val={_val4:.2f}"
+                )
+            except Exception as _pe4:
+                _d4.append(f"   {_t4}: reindex EXCEPTION — {_pe4}")
+        _d4.append(f"\n   manual sum: {_manual_total:.2f}")
+    except Exception as _he4:
+        _d4.append(f"B. holdings ERROR: {_he4}")
+
+    with st.expander("DEBUG-4 cache vs fresh + reindex (remove before merge)", expanded=True):
+        st.code("\n".join(_d4))
+    # ── END DIAGNOSTIC 4 ──────────────────────────────────────────────────
+
     # ── Generate Report expander ──────────────────────────────────────────
     with st.expander("Generate Quarterly Report", expanded=False):
         _existing_pdfs = sorted(_REPORTS_DIR.glob("*.pdf"), key=lambda p: p.stat().st_mtime, reverse=True)
