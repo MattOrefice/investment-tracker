@@ -130,6 +130,32 @@ with col:
     with st.spinner("Loading performance data…"):
         pv, cf = _load_portfolio()
 
+    # ── TEMP DIAGNOSTICS — remove before merge ────────────────────────────
+    import os as _os
+    from src.db import DB_PATH as _DB_PATH
+    from src.config import get_mode as _get_mode
+    try:
+        import sqlite3 as _sq3
+        _conn = _sq3.connect(str(_DB_PATH))
+        _n_prices = _conn.execute("SELECT COUNT(*) FROM prices").fetchone()[0]
+        _n_trades = _conn.execute("SELECT COUNT(*) FROM trades").fetchone()[0]
+        _max_price_date = _conn.execute("SELECT MAX(price_date) FROM prices").fetchone()[0]
+        _conn.close()
+        _db_ok = f"prices={_n_prices} trades={_n_trades} max_date={_max_price_date}"
+    except Exception as _e:
+        _db_ok = f"DB ERROR: {_e}"
+    with st.expander("DEBUG (remove before merge)", expanded=True):
+        st.code(
+            f"mode={_get_mode()}\n"
+            f"DB_PATH={_DB_PATH}\n"
+            f"DB exists={_DB_PATH.exists()}\n"
+            f"DB stats: {_db_ok}\n"
+            f"TODAY={TODAY}\n"
+            f"pv.shape={pv.shape}  pv.iloc[0]={float(pv.iloc[0]):.2f}  pv.iloc[-1]={float(pv.iloc[-1]):.2f}\n"
+            f"pv NaN count={int(pv.isna().sum())}"
+        )
+    # ── END TEMP DIAGNOSTICS ───────────────────────────────────────────────
+
     # ── Generate Report expander ──────────────────────────────────────────
     with st.expander("Generate Quarterly Report", expanded=False):
         _existing_pdfs = sorted(_REPORTS_DIR.glob("*.pdf"), key=lambda p: p.stat().st_mtime, reverse=True)
