@@ -103,8 +103,7 @@ CREATE TABLE IF NOT EXISTS prices (
     price_date    TEXT NOT NULL,
     close         REAL NOT NULL,
     adj_close     REAL,
-    PRIMARY KEY (ticker, price_date),
-    FOREIGN KEY (ticker) REFERENCES securities(ticker)
+    PRIMARY KEY (ticker, price_date)
 );
 
 CREATE TABLE IF NOT EXISTS dividends (
@@ -119,11 +118,43 @@ CREATE INDEX IF NOT EXISTS idx_prices_ticker_date   ON prices(ticker, price_date
 CREATE INDEX IF NOT EXISTS idx_dividends_ticker_date ON dividends(ticker, ex_date);
 """
 
+_migrated_paths: set[str] = set()
+
+
+def _auto_migrate(conn: sqlite3.Connection) -> None:
+    """Idempotent schema migrations. Safe to call on every process startup."""
+    # Migration: drop FK on prices.ticker so benchmark-only tickers (e.g. AGG)
+    # can be cached without needing a securities table entry.
+    info = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='prices'"
+    ).fetchone()
+    if info and "FOREIGN KEY (ticker) REFERENCES securities" in (info[0] or ""):
+        conn.executescript(
+            "PRAGMA foreign_keys = OFF;"
+            "CREATE TABLE IF NOT EXISTS prices_new ("
+            "    ticker TEXT NOT NULL, price_date TEXT NOT NULL,"
+            "    close REAL NOT NULL, adj_close REAL,"
+            "    PRIMARY KEY (ticker, price_date)"
+            ");"
+            "INSERT OR IGNORE INTO prices_new"
+            "    SELECT ticker, price_date, close, adj_close FROM prices;"
+            "DROP TABLE prices;"
+            "ALTER TABLE prices_new RENAME TO prices;"
+            "CREATE INDEX IF NOT EXISTS idx_prices_ticker_date"
+            "    ON prices(ticker, price_date);"
+            "PRAGMA foreign_keys = ON;"
+        )
+
+
 def get_connection():
     """Return a SQLite connection with foreign keys enabled."""
     conn = sqlite3.connect(DB_PATH)
     conn.execute("PRAGMA foreign_keys = ON")
     conn.row_factory = sqlite3.Row
+    db_key = str(DB_PATH)
+    if db_key not in _migrated_paths:
+        _auto_migrate(conn)
+        _migrated_paths.add(db_key)
     return conn
 
 def initialize_db():

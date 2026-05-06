@@ -75,6 +75,51 @@ def brinson_fachler(
     return df
 
 
+def compute_two_stage_attribution(
+    port_return: float,
+    saa_return: float,
+    naive_return: float,
+    sleeve_saa_weights: dict[str, float],
+    sleeve_benchmark_returns: dict[str, float],
+) -> dict:
+    """
+    Two-stage active return decomposition vs. a 60/40 naive baseline.
+
+    Stage 1 (SAA design effect)    = saa_return    − naive_return
+    Stage 2 (implementation effect) = port_return   − saa_return
+    Total                           = port_return   − naive_return
+                                    = Stage 1 + Stage 2  (algebraically exact)
+
+    Per-sleeve Stage 1 contribution = SAA_weight_i × (sleeve_benchmark_return_i − naive_return).
+    The per-sleeve sum equals Stage 1 exactly.
+
+    All return arguments are decimals (e.g. 0.12 = 12%).
+
+    Returns a dict with:
+        stage1, stage2, total, algebra_residual,
+        per_sleeve (dict: sleeve → decimal contribution),
+        sleeve_sum_residual.
+    """
+    stage1 = saa_return  - naive_return
+    stage2 = port_return - saa_return
+    total  = port_return - naive_return   # = stage1 + stage2 by construction
+
+    per_sleeve: dict[str, float] = {
+        sleeve: weight * (sleeve_benchmark_returns.get(sleeve, 0.0) - naive_return)
+        for sleeve, weight in sleeve_saa_weights.items()
+    }
+    sleeve_sum = sum(per_sleeve.values())
+
+    return {
+        "stage1":              stage1,
+        "stage2":              stage2,
+        "total":               total,
+        "algebra_residual":    abs(stage1 + stage2 - total),
+        "per_sleeve":          per_sleeve,
+        "sleeve_sum_residual": abs(sleeve_sum - stage1),
+    }
+
+
 def _first_adj_price(ticker: str, from_date: str, window_days: int = 5) -> float:
     """Return the first available adj_close (total-return) price on or after from_date."""
     end = (date.fromisoformat(from_date) + timedelta(days=window_days)).isoformat()

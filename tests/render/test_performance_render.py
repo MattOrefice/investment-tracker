@@ -196,3 +196,54 @@ def test_reconciliation_no_latex_artifacts(performance_app: AppTest) -> None:
         f"Unescaped $ will trigger Streamlit LaTeX mode and corrupt bold amounts. "
         f"Caption starts: {recon[:120]}"
     )
+
+
+def test_two_stage_attribution_section_renders(performance_app: AppTest) -> None:
+    """Two-Stage Attribution section must render with three metric tiles. Pinned: Phase 9.
+
+    Verifies that the new Stage 1 / Stage 2 / Total tiles are present and that
+    switching the BF window radio updates the tile values (wired to same radio).
+    Skipped when no portfolio data exists (local empty-DB mode).
+    """
+    if not performance_app.metric:
+        pytest.skip("No portfolio data — skipped in local/empty-DB mode")
+
+    metric_labels = [m.label for m in performance_app.metric]
+    assert "Stage 1: SAA Design" in metric_labels, (
+        f"'Stage 1: SAA Design' tile not found in metric labels: {metric_labels}"
+    )
+    assert "Stage 2: Implementation" in metric_labels, (
+        f"'Stage 2: Implementation' tile not found in metric labels: {metric_labels}"
+    )
+    assert "Total: Portfolio vs. 60/40" in metric_labels, (
+        f"'Total: Portfolio vs. 60/40' tile not found in metric labels: {metric_labels}"
+    )
+
+    # Switching the BF period radio must change Stage 1 value (window-sensitivity check)
+    at = AppTest.from_file("pages/4_Performance.py", default_timeout=120)
+    at.run()
+    if not at.metric:
+        pytest.skip("No portfolio data in fresh AppTest instance")
+
+    def _get_stage1(app) -> str | None:
+        hits = [m for m in app.metric if m.label == "Stage 1: SAA Design"]
+        return hits[0].value if hits else None
+
+    bf_radios = [r for r in at.radio if r.key == "bf_period"]
+    if not bf_radios:
+        pytest.skip("bf_period radio not found")
+
+    stage1_3m = _get_stage1(at)    # default is 3M
+
+    bf_radios[0].set_value("SI")
+    at.run()
+    assert not at.exception, f"Page raised after bf_period switch to SI: {at.exception}"
+    stage1_si = _get_stage1(at)
+
+    assert stage1_3m is not None and stage1_si is not None, (
+        "Stage 1 tile missing after radio switch"
+    )
+    assert stage1_3m != stage1_si, (
+        f"Stage 1 value unchanged after switching 3M → SI: both = {stage1_3m!r}. "
+        "Window filtering may have collapsed — check _load_attribution or _benchmark_period_return."
+    )

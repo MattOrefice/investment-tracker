@@ -1,12 +1,14 @@
-"""Tests for src/attribution.py Brinson-Fachler decomposition."""
+"""Tests for src/attribution.py — Brinson-Fachler and two-stage decomposition."""
+import math
 import sys
 import pathlib
 
+import numpy as np
 import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from src.attribution import brinson_fachler
+from src.attribution import brinson_fachler, compute_two_stage_attribution
 
 
 def test_two_sleeve_hand_calculation():
@@ -91,3 +93,194 @@ def test_equal_returns_no_selection_effect():
 
     for _, row in df.iterrows():
         assert row["selection_effect"] == pytest.approx(0.0, abs=1e-10)
+
+
+# ── Two-stage attribution unit tests ─────────────────────────────────────────
+
+def test_two_stage_reconciliation():
+    """Stage1 + Stage2 = Total = port_return - naive_return within floating-point precision.
+
+    Regression pin: Phase 9. Tests the algebraic identity that holds by construction
+    in compute_two_stage_attribution.
+    """
+    sleeve_weights  = {"Equity": 0.72, "Fixed Income": 0.15, "Real Assets": 0.10, "Cash": 0.03}
+    sleeve_returns  = {"Equity": 0.30, "Fixed Income": 0.04, "Real Assets": 0.08, "Cash": 0.05}
+    saa_return      = sum(sleeve_weights[s] * sleeve_returns[s] for s in sleeve_weights)
+    naive_return    = 0.60 * 0.27 + 0.40 * 0.04   # 60% SPY at 27%, 40% AGG at 4%
+    port_return     = saa_return + 0.0050           # 50 bps implementation outperformance
+
+    result = compute_two_stage_attribution(
+        port_return              = port_return,
+        saa_return               = saa_return,
+        naive_return             = naive_return,
+        sleeve_saa_weights       = sleeve_weights,
+        sleeve_benchmark_returns = sleeve_returns,
+    )
+
+    # Stage1 + Stage2 = Total by construction
+    assert result["algebra_residual"] < 1e-10, (
+        f"Stage1 + Stage2 != Total: residual = {result['algebra_residual']:.2e}"
+    )
+    assert result["total"] == pytest.approx(port_return - naive_return, abs=1e-12)
+    assert result["stage1"] == pytest.approx(saa_return - naive_return, abs=1e-12)
+    assert result["stage2"] == pytest.approx(port_return - saa_return, abs=1e-12)
+
+    # ±0.5 bps tolerance check (as specified)
+    assert result["algebra_residual"] * 10_000 < 0.5, (
+        f"Algebra residual {result['algebra_residual'] * 10_000:.4f} bps exceeds 0.5 bps"
+    )
+
+
+def test_stage1_sleeve_decomposition_reconciles():
+    """Sum of per-sleeve Stage 1 contributions = Stage 1 total.
+
+    Stage1_i = w_b_i * (r_b_i - naive). Sum = sum(w_b_i * r_b_i) - naive * sum(w_b_i).
+    When sum(w_b_i) = 1, this equals saa_return - naive = Stage1. Regression pin: Phase 9.
+    """
+    sleeve_weights  = {"A": 0.60, "B": 0.30, "C": 0.10}
+    sleeve_returns  = {"A": 0.18, "B": 0.04, "C": 0.09}
+    saa_return      = sum(sleeve_weights[s] * sleeve_returns[s] for s in sleeve_weights)
+    naive_return    = 0.10
+    port_return     = 0.13
+
+    result = compute_two_stage_attribution(
+        port_return              = port_return,
+        saa_return               = saa_return,
+        naive_return             = naive_return,
+        sleeve_saa_weights       = sleeve_weights,
+        sleeve_benchmark_returns = sleeve_returns,
+    )
+
+    sleeve_sum = sum(result["per_sleeve"].values())
+    assert result["sleeve_sum_residual"] < 1e-10, (
+        f"Sleeve sum {sleeve_sum:.8f} != Stage1 {result['stage1']:.8f}: "
+        f"residual = {result['sleeve_sum_residual']:.2e}"
+    )
+
+    # Manual check for sleeve A:
+    # contribution_A = 0.60 * (0.18 - 0.10) = 0.048
+    assert result["per_sleeve"]["A"] == pytest.approx(0.060 * 0.8, abs=1e-12)  # 0.60*(0.18-0.10)=0.048
+    assert result["per_sleeve"]["A"] == pytest.approx(0.60 * (0.18 - 0.10), abs=1e-12)
+    assert result["per_sleeve"]["B"] == pytest.approx(0.30 * (0.04 - 0.10), abs=1e-12)
+    assert result["per_sleeve"]["C"] == pytest.approx(0.10 * (0.09 - 0.10), abs=1e-12)
+
+
+def test_stage1_hand_calculation():
+    """Verify Stage 1 against a fully hand-computed two-sleeve example.
+
+    Weights: Equity 70%, FI 30%. Returns: Equity 15%, FI 3%.
+    SAA blend = 0.70*0.15 + 0.30*0.03 = 0.105 + 0.009 = 0.114.
+    Naive (60/40): 0.60*0.12 + 0.40*0.04 = 0.072 + 0.016 = 0.088.
+    Stage 1 = 0.114 - 0.088 = 0.026  (260 bps).
+    Stage 2 = 0.120 - 0.114 = 0.006   (60 bps).
+    Total   = 0.120 - 0.088 = 0.032  (320 bps).
+    """
+    result = compute_two_stage_attribution(
+        port_return              = 0.120,
+        saa_return               = 0.114,
+        naive_return             = 0.088,
+        sleeve_saa_weights       = {"Equity": 0.70, "FI": 0.30},
+        sleeve_benchmark_returns = {"Equity": 0.15, "FI": 0.03},
+    )
+
+    assert result["stage1"] == pytest.approx(0.026, abs=1e-10)
+    assert result["stage2"] == pytest.approx(0.006, abs=1e-10)
+    assert result["total"]  == pytest.approx(0.032, abs=1e-10)
+    assert result["algebra_residual"] < 1e-12
+
+    # Sleeve contributions: Equity = 0.70*(0.15-0.088)=0.0434, FI=0.30*(0.03-0.088)=-0.0174
+    assert result["per_sleeve"]["Equity"] == pytest.approx(0.70 * (0.15 - 0.088), abs=1e-10)
+    assert result["per_sleeve"]["FI"]     == pytest.approx(0.30 * (0.03 - 0.088), abs=1e-10)
+    # Sum = 0.0434 - 0.0174 = 0.0260 = Stage 1
+    assert result["sleeve_sum_residual"] < 1e-10
+
+
+def test_naive_benchmark_60_40_composition():
+    """60/40 series = 0.6 * daily_SPY_return + 0.4 * daily_AGG_return to floating-point tolerance.
+
+    Regression pin: Phase 9. Uses actual price data from the cache (requires demo.db with AGG prices).
+    Skips gracefully if AGG data is absent.
+    """
+    from src.benchmarks import get_naive_60_40_series, _get_price_series
+
+    start = "2025-11-03"
+    end   = "2025-12-31"
+
+    try:
+        naive = get_naive_60_40_series(start, end)
+        spy   = _get_price_series("SPY", start, end)
+        agg   = _get_price_series("AGG", start, end)
+    except Exception as exc:
+        pytest.skip(f"Price data unavailable: {exc}")
+
+    if spy.isnull().all() or agg.isnull().all():
+        pytest.skip("SPY or AGG price series empty — prices not in cache")
+
+    spy_ret      = spy.pct_change().fillna(0.0)
+    agg_ret      = agg.pct_change().fillna(0.0)
+    expected_ret = 0.6 * spy_ret + 0.4 * agg_ret
+    expected     = (1 + expected_ret).cumprod()
+    expected     = expected / float(expected.iloc[0])
+
+    common = naive.dropna().index.intersection(expected.dropna().index)
+    assert len(common) >= 10, f"Fewer than 10 common dates: {len(common)}"
+
+    np.testing.assert_allclose(
+        naive.loc[common].values,
+        expected.loc[common].values,
+        rtol=1e-8,
+        err_msg="Naive 60/40 series does not match 0.6*SPY_ret + 0.4*AGG_ret",
+    )
+
+
+def test_stage1_distinguishes_across_windows():
+    """Stage 1 values must not be identical across windows (tests price-series sensitivity).
+
+    Regression pin: Phase 9. Uses actual benchmark series from the cache. If all windows
+    collapse to the same return (e.g., because the naive or SAA series is flat), this pin
+    fails and diagnoses the collapse. Skips if benchmark data is unavailable.
+    """
+    from datetime import date, timedelta
+    import pandas as pd
+    from src.benchmarks import get_naive_60_40_series, get_custom_blended_series
+
+    INCEPTION = "2025-05-01"
+    TODAY     = date.today().isoformat()
+
+    try:
+        naive = get_naive_60_40_series(INCEPTION, TODAY)
+        bl    = get_custom_blended_series(INCEPTION, TODAY)
+    except Exception as exc:
+        pytest.skip(f"Benchmark data unavailable: {exc}")
+
+    if naive.isnull().all() or bl.isnull().all():
+        pytest.skip("Benchmark series empty")
+
+    def _bpr(series: "pd.Series", period: str) -> float:
+        last_date = series.index[-1].date() if hasattr(series.index[-1], "date") else series.index[-1]
+        if period == "SI":
+            start_ts = series.index[0]
+        elif period == "1Y":
+            start_ts = pd.Timestamp(last_date - timedelta(days=365))
+        elif period == "3M":
+            start_ts = pd.Timestamp(last_date - timedelta(days=90))
+        elif period == "1M":
+            start_ts = pd.Timestamp(last_date - timedelta(days=30))
+        else:
+            return 0.0
+        sliced = series[series.index >= start_ts]
+        if len(sliced) < 2:
+            return 0.0
+        return float(sliced.iloc[-1] / sliced.iloc[0] - 1)
+
+    stage1_by_window = {
+        p: _bpr(bl, p) - _bpr(naive, p)
+        for p in ("1M", "3M", "1Y", "SI")
+    }
+
+    unique_vals = set(round(v, 8) for v in stage1_by_window.values())
+    assert len(unique_vals) > 1, (
+        f"Stage 1 values are identical across all windows: {stage1_by_window}. "
+        "If naive and SAA series both have data, different windows must produce "
+        "different start-of-window prices and thus different returns."
+    )

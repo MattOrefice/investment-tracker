@@ -10,8 +10,8 @@ st.set_page_config(page_title="Performance & Attribution", layout="wide")
 
 from src.asof import as_of_banner
 from src.config import DEMO_BANNER_TEXT, IS_DEMO
-from src.attribution import brinson_fachler_period
-from src.benchmarks import get_custom_blended_series, get_sp500_series
+from src.attribution import brinson_fachler_period, compute_two_stage_attribution
+from src.benchmarks import get_custom_blended_series, get_naive_60_40_series, get_sp500_series
 from src.db import get_connection
 from src.factors import run_sleeve_regressions
 from src.holdings import get_portfolio_value_series, get_sleeve_weights_on_date
@@ -56,6 +56,12 @@ def _load_benchmarks(start_val: float):
     sp  = get_sp500_series(INCEPTION, TODAY)      * start_val
     bl  = get_custom_blended_series(INCEPTION, TODAY) * start_val
     return sp, bl
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _load_naive_benchmark(start_val: float):
+    naive = get_naive_60_40_series(INCEPTION, TODAY) * start_val
+    return naive
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -221,6 +227,7 @@ with col:
     with st.spinner("Loading benchmark data…"):
         start_val = float(pv.iloc[0])
         sp, bl    = _load_benchmarks(start_val)
+        naive     = _load_naive_benchmark(start_val)
 
     # Key scalars (Since Inception)
     si_days     = (pd.Timestamp(TODAY) - pd.Timestamp(INCEPTION)).days
@@ -489,9 +496,9 @@ with col:
     st.divider()
 
     # ──────────────────────────────────────────────────────────────────────
-    # Section 4 — Brinson-Fachler attribution
+    # Section 4 — Two-Stage Attribution + Brinson-Fachler decomposition
     # ──────────────────────────────────────────────────────────────────────
-    st.markdown("#### Brinson-Fachler Attribution")
+    st.markdown("#### Two-Stage Attribution")
 
     bf_period = st.radio(
         "Attribution period",
@@ -507,6 +514,122 @@ with col:
     with st.spinner("Computing attribution…"):
         bf_df = _load_attribution(bf_period)
 
+    # ── Stage 1 + Stage 2 tiles ─────────────────────────────────────────────────────
+    if not bf_df.empty:
+        # BF-internal portfolio and SAA-blend returns for this period
+        _r_p_bf  = float((bf_df["w_p"] * bf_df["r_p"]).sum())
+        _r_b_bf  = float((bf_df["w_b"] * bf_df["r_b"]).sum())
+        _naive_r = _benchmark_period_return(naive, bf_period)
+
+        _ts = compute_two_stage_attribution(
+            port_return              = _r_p_bf,
+            saa_return               = _r_b_bf,
+            naive_return             = _naive_r,
+            sleeve_saa_weights       = dict(zip(bf_df["sleeve"], bf_df["w_b"])),
+            sleeve_benchmark_returns = dict(zip(bf_df["sleeve"], bf_df["r_b"])),
+        )
+
+        st.caption(
+            f"Window: {PERIOD_LABEL[bf_period]}. "
+            "Stages 1 and 2 are computed over the same window and sum to total active "
+            "return vs. the 60/40 naive benchmark (60% SPY, 40% AGG)."
+        )
+
+        _ts1_bps = _ts["stage1"] * 10_000
+        _ts2_bps = _ts["stage2"] * 10_000
+        _tot_bps = _ts["total"]  * 10_000
+        _sign = lambda v: "+" if v >= 0 else ""
+
+        _tc1, _tc2, _tc3 = st.columns(3)
+        _tc1.metric(
+            "Stage 1: SAA Design",
+            f"{_sign(_ts1_bps)}{_ts1_bps:.0f} bps",
+            "SAA blend vs. 60/40",
+            delta_color="off",
+        )
+        _tc2.metric(
+            "Stage 2: Implementation",
+            f"{_sign(_ts2_bps)}{_ts2_bps:.0f} bps",
+            "Portfolio vs. SAA blend",
+            delta_color="off",
+        )
+        _tc3.metric(
+            "Total: Portfolio vs. 60/40",
+            f"{_sign(_tot_bps)}{_tot_bps:.0f} bps",
+            "Stage 1 + Stage 2",
+            delta_color="off",
+        )
+
+        # Algebra check — stage1+stage2=total by construction; cross-check vs. price-series
+        _port_price_r = _benchmark_period_return(pv, bf_period)
+        _cross_bps    = (_port_price_r - _naive_r) * 10_000
+        _resid_bps    = abs(_tot_bps - _cross_bps)
+        _recon_note   = (
+            "✓ reconciled"
+            if _resid_bps < 2.0
+            else f"⚠ residual: {_resid_bps:.1f} bps (BF vs. price-series methodology difference)"
+        )
+        st.caption(
+            f"Reconciliation: {_sign(_ts1_bps)}{_ts1_bps:.0f} + "
+            f"{_sign(_ts2_bps)}{_ts2_bps:.0f} = {_sign(_tot_bps)}{_tot_bps:.0f} bps "
+            f"(computed independently: {_sign(_cross_bps)}{_cross_bps:.0f} bps by portfolio price series). "
+            f"{_recon_note}"
+        )
+
+        # ── Stage 1 sleeve bar chart ─────────────────────────────────────────────────────
+        _per_sleeve = _ts["per_sleeve"]
+        _sleeve_order = sorted(_per_sleeve, key=lambda s: abs(_per_sleeve[s]), reverse=True)
+        _sleeve_vals_bps = [_per_sleeve[s] * 10_000 for s in _sleeve_order]
+        _bar_colors = [
+            _PALETTE["alloc"] if v >= 0 else _PALETTE["selection"]
+            for v in _sleeve_vals_bps
+        ]
+
+        _fig_s1 = go.Figure()
+        _fig_s1.add_trace(go.Bar(
+            name="SAA design contribution",
+            y=_sleeve_order,
+            x=_sleeve_vals_bps,
+            orientation="h",
+            marker_color=_bar_colors,
+            hovertemplate="%{y}: %{x:.1f} bps<extra></extra>",
+        ))
+        for _si, (_slv, _val) in enumerate(zip(_sleeve_order, _sleeve_vals_bps)):
+            _fig_s1.add_annotation(
+                x=_val + (3 if _val >= 0 else -3),
+                y=_slv,
+                text=f"{_sign(_val)}{_val:.0f}",
+                showarrow=False,
+                font=dict(size=10, color="#555"),
+                xanchor="left" if _val >= 0 else "right",
+            )
+        _fig_s1.update_layout(
+            xaxis_title="Basis Points",
+            yaxis_title=None,
+            showlegend=False,
+            margin=dict(l=0, r=80, t=20, b=0),
+            height=300,
+            plot_bgcolor="white",
+            paper_bgcolor="white",
+            font=dict(family="sans-serif", size=11, color="#333"),
+            yaxis=dict(autorange="reversed"),
+            xaxis=dict(gridcolor="#E8E8E8", zeroline=True, zerolinecolor="#888"),
+        )
+        st.plotly_chart(_fig_s1, use_container_width=True)
+
+        _sleeve_sum_bps = sum(_sleeve_vals_bps)
+        st.caption(
+            f"Stage 1 sleeve contributions sum to {_sign(_sleeve_sum_bps)}{_sleeve_sum_bps:.0f} bps "
+            f"(= Stage 1 {_sign(_ts1_bps)}{_ts1_bps:.0f} bps). "
+            "Each sleeve\u2019s contribution = SAA target weight \u00d7 (sleeve benchmark return \u2212 60/40 return)."
+        )
+
+        st.caption(
+            "Stage 2 implementation effect (drift + selection) is decomposed in the "
+            "Brinson-Fachler chart below."
+        )
+
+    # ── Brinson-Fachler decomposition (Stage 2 detail) ──────────────────────────────────
     if bf_df.empty:
         st.info("Not enough data for the selected period.")
     else:
@@ -595,38 +718,27 @@ with col:
         reconciled    = abs(sum_effects - active * 100) < 1.0
 
         st.caption(
-            f"**Total active return:** {active:+.2f}%  &nbsp;|&nbsp; "
-            f"Portfolio: {r_p_total:.2f}%  &nbsp;·&nbsp; "
-            f"Blended benchmark: {r_b_total:.2f}%  &nbsp;·&nbsp; "
-            f"Sum of effects: {sum_effects:+.1f} bps  &nbsp;·&nbsp; "
+            f"**Stage 2 active return (portfolio vs. SAA blend):** {active:+.2f}%  &nbsp;|&nbsp;  "
+            f"Portfolio: {r_p_total:.2f}%  &nbsp;·&nbsp;  "
+            f"Blended benchmark: {r_b_total:.2f}%  &nbsp;·&nbsp;  "
+            f"Sum of effects: {sum_effects:+.1f} bps  &nbsp;·&nbsp;  "
             f"Algebra check: {'✓ reconciled' if reconciled else '⚠ discrepancy'}"
         )
 
-        # — BF methodology disclosure —
-        _factor_res = _load_factor_results(INCEPTION, TODAY)
-        _us_res = _factor_res.get("us")
-        if _us_res:
-            _factor_clause = (
-                f"the US sleeve's HML loading of {_us_res['betas']['HML']:.3f} "
-                f"(t = {_us_res['t_stats']['HML']:.2f}) and SMB loading of "
-                f"{_us_res['betas']['SMB']:.3f} (t = {_us_res['t_stats']['SMB']:.2f}) "
-                "statistically confirm the value and small-cap exposures."
-            )
-        else:
-            _factor_clause = (
-                "the US sleeve's HML and SMB factor loadings on the Factor Profile page "
-                "statistically confirm the value and small-cap exposures."
-            )
         st.caption(
-            "**What this decomposition measures.** Brinson-Fachler attribution captures two effects "
-            "relative to the SAA's sleeve targets: **allocation effect** — over/underweights from SAA "
-            "targets, primarily driven by drift since this portfolio is not rebalanced intra-quarter; "
-            "and **selection effect** — the chosen ETF return vs. the sleeve benchmark return, typically "
-            "near-zero for passive ETF holdings. The strategic tilts that define the SAA itself — the "
-            "8% allocation to value (VTV), 7% to small-cap value (AVUV), 8% to emerging markets, and "
-            "10% to real assets — are **not** captured here; they are baked into the SAA design and "
-            "surface in two places: the **Custom Blended vs. S&P 500 spread** on the cover, and the "
-            "**Factor Profile** page, where " + _factor_clause
+            "**What the two stages measure.** Stage 1 (SAA design) captures the strategic-tilt "
+            "contribution of the SAA itself — the value allocation (VTV at 8%), small-cap value "
+            "(AVUV at 7%), emerging markets (8%), real assets (10%), TIPS (6%), and the overall "
+            "~72/28 equity-vs-other-assets risk posture — measured as the SAA-blended benchmark's "
+            "return spread over a 60/40 naive baseline (60% SPY, 40% AGG). This isolates what the "
+            "allocation thesis itself contributed, separate from execution. Stage 2 (Implementation, "
+            "decomposed above via Brinson-Fachler) captures two effects relative to the SAA's sleeve "
+            "targets: **allocation effect** — over/underweights from SAA targets, primarily driven by "
+            "drift since this portfolio is not rebalanced intra-quarter; and **selection effect** — the "
+            "chosen ETF return vs. the sleeve benchmark return, typically near-zero for passive ETF "
+            "holdings. Stage 1 + Stage 2 = Portfolio return vs. 60/40 (algebra-checked above). The "
+            "Factor Profile page provides an independent factor-loading view of the same strategic tilts "
+            "(HML, SMB, RMW, CMA loadings on the US sleeve regression)."
         )
 
     st.divider()
