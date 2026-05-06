@@ -13,6 +13,7 @@ statements are no-ops and the file-watcher delta is never sent.
 """
 import src.config    # noqa: F401  — triggers st.secrets outside AppTest context
 import src.db        # noqa: F401  — used by Performance, Attribution, Trade Log pages
+import src.factors   # noqa: F401  — used by Factor Profile page
 import src.holdings  # noqa: F401  — used by Performance page
 import src.macro     # noqa: F401
 import src.shiller   # noqa: F401

@@ -78,6 +78,10 @@ _REFRESH_CACHE_DAYS = 7   # re-fetch if cache mtime exceeds this many days
 _LAG_THRESHOLD_DAYS = 35  # re-fetch if most recent factor date is this far behind today
 _FF_RETRY_DELAYS    = (1, 3, 9)  # seconds between Ken French download retry attempts
 
+# Ken French ceased publication of daily Global 5-factor data after this date.
+# Any portfolio started after it has zero factor-data overlap and cannot be regressed.
+GLOBAL_DAILY_FACTORS_CUTOFF = date(2019, 6, 28)
+
 _FF5_FACTORS     = ["Mkt-RF", "SMB", "HML", "RMW", "CMA"]
 _FF5_MOM_FACTORS = ["Mkt-RF", "SMB", "HML", "RMW", "CMA", "Mom"]
 _BENCH_FACTORS   = ["Bench-RF", "HML", "SMB", "RMW"]
@@ -688,12 +692,17 @@ def run_intl_global_regression(inception: str, end_date: str) -> Optional[dict]:
     """
     Run FF5 regression for the International Developed sleeve (VEA) against GLOBAL factors.
 
-    Supplements the Developed-ex-US regression with the global factor universe.
-    Ken French's Global FF5 factors span all major developed markets (including US),
-    providing a robustness check against the Developed-ex-US universe mismatch.
+    Ken French ceased publication of daily Global 5-factor data in June 2019
+    (GLOBAL_DAILY_FACTORS_CUTOFF). Any portfolio whose inception date is after
+    that cutoff has zero factor-data overlap; this function returns None immediately
+    without downloading the (permanently outdated) file from Dartmouth.
 
-    Returns None if fewer than 30 aligned observations are available.
+    Returns None if inception is after GLOBAL_DAILY_FACTORS_CUTOFF or if fewer
+    than 30 aligned observations are available.
     """
+    if date.fromisoformat(inception) > GLOBAL_DAILY_FACTORS_CUTOFF:
+        return None
+
     spec = _SLEEVES["developed_exus"]
     try:
         return run_sleeve_regression(

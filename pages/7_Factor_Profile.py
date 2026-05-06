@@ -11,6 +11,7 @@ from src.config import DEMO_BANNER_TEXT, IS_DEMO
 from src.ui_helpers import render_footer
 from src.factors import (
     EM_DISCLOSURE,
+    GLOBAL_DAILY_FACTORS_CUTOFF,
     alpha_ci_str,
     build_factor_methodology_notes,
     build_factor_prose,
@@ -156,14 +157,15 @@ with col:
                     _render_factor_table(global_result, _FACTORS, label="FF5 — Global")
                     _render_fit_metrics(global_result)
                 else:
-                    st.warning(
-                        "Global factor data temporarily unavailable — Ken French Global "
-                        "5-factor file could not be downloaded. "
-                        "The tab populates once the file is fetched and cached."
+                    st.info(
+                        f"Global daily factor data discontinued — Ken French ceased "
+                        f"publication of the daily Global 5-factor file in June 2019 "
+                        f"(last available date: {GLOBAL_DAILY_FACTORS_CUTOFF}). "
+                        f"This portfolio started in May 2025; there is no data overlap "
+                        f"and a regression cannot be produced at daily frequency. "
+                        f"The Developed ex-US Factors tab provides the primary factor "
+                        f"decomposition for the International Developed sleeve."
                     )
-                    if st.button("Retry", key="retry_global"):
-                        _get_global_result.clear()
-                        st.rerun()
         else:
             _render_factor_table(res, _FACTORS)
             _render_fit_metrics(res)
