@@ -561,7 +561,7 @@ with col:
         _r_b_bf  = float((bf_df["w_b"] * bf_df["r_b"]).sum())
         # Price-series returns (total return incl. dividends; drives Stage 1/2 tiles)
         _r_p_ps  = _benchmark_period_return(pv, bf_period)
-        _r_b_ps  = _benchmark_period_return(bl, bf_period)
+        _r_b_ps  = _r_b_bf  # target weights x period returns; matches BF decomposition
         _naive_r = _benchmark_period_return(naive, bf_period)
 
         _ts = compute_two_stage_attribution(
@@ -753,15 +753,16 @@ with col:
         active        = r_p_total - r_b_total
         reconciled    = abs(sum_effects - active * 100) < 1.0
 
-        _div_gap_bps = (_r_p_ps - _r_p_bf) * 10_000
+        _bf_s2_gap_bps = (active / 100 - (_r_p_ps - _r_b_ps)) * 10_000
+        _bf_reconciled = abs(_bf_s2_gap_bps) < 0.5
         st.caption(
-            f"**BF decomposition (price-appreciation component of Stage 2):**  "
+            f"**BF decomposition:**  "
             f"Portfolio: {r_p_total:.2f}%  &nbsp;·&nbsp;  "
             f"SAA blend: {r_b_total:.2f}%  &nbsp;·&nbsp;  "
             f"BF active: {active:+.2f}%  &nbsp;·&nbsp;  "
             f"Sum of effects: {sum_effects:+.1f} bps  &nbsp;·&nbsp;  "
-            f"Algebra check: {'✓' if reconciled else '⚠'}  &nbsp;|&nbsp;  "
-            f"Dividend-income gap vs. price-series Stage 2: {_div_gap_bps:+.0f} bps"
+            f"Algebra check: {'✓' if reconciled else '⚠'}  &nbsp;·&nbsp;  "
+            f"vs. Stage 2: {'✓' if _bf_reconciled else '⚠'} {_bf_s2_gap_bps:+.2f} bps"
         )
 
         st.caption(

@@ -357,7 +357,7 @@ def test_stage1_distinguishes_across_naive_benchmarks():
 
 def _bpr_helper(series: "pd.Series", period: str) -> float:
     """Slice series to period and return end/start - 1. Mirrors _benchmark_period_return."""
-    from datetime import timedelta
+    from datetime import timedelta, date as _date
     import pandas as pd
 
     last_ts   = series.index[-1]
@@ -366,6 +366,8 @@ def _bpr_helper(series: "pd.Series", period: str) -> float:
         start_ts = series.index[0]
     elif period == "1Y":
         start_ts = pd.Timestamp(last_date - timedelta(days=365))
+    elif period == "YTD":
+        start_ts = pd.Timestamp(_date(last_date.year, 1, 1))
     elif period == "3M":
         start_ts = pd.Timestamp(last_date - timedelta(days=90))
     elif period == "1M":
@@ -517,4 +519,112 @@ def test_ps_two_stage_algebra_si_spy():
         f"Price-series Stage1+Stage2 algebra residual {resid_bps:.4f} bps exceeds 0.05 bps "
         f"for SI/SPY. stage1={result['stage1']*10000:.1f} bps, "
         f"stage2={result['stage2']*10000:.1f} bps, total={result['total']*10000:.1f} bps."
+    )
+
+
+def test_bf_sum_reconciles_to_stage2():
+    """BF active return (Σ effects) must reconcile with Stage 2 within 0.5 bps for all windows.
+
+    Phase 10.2 regression pin. After (1) DRIP-aligning brinson_fachler_period() sleeve
+    returns and (2) fixing pages/4_Performance.py to use _r_b_bf (target-weighted BF
+    benchmark return) for Stage 2, the BF identity holds for all five windows:
+      BF active = bf_r_p - r_b_bf
+      Stage 2   = r_p_ps - r_b_bf   (Performance page definition, Phase 10.2)
+      Gap       = |bf_r_p - r_p_ps|
+
+    r_p_ps uses inception-based portfolio value series sliced to the period, matching
+    the Performance page's _benchmark_period_return(pv, bf_period) call.
+    Benchmark side cancels: both Stage 2 and BF active use r_b_bf = Σ(w_b * r_b).
+    """
+    import datetime
+    from src.attribution import brinson_fachler_period
+    from src.holdings import get_portfolio_value_series
+
+    INCEPTION = "2025-05-01"
+    TODAY = datetime.date.today().isoformat()
+    today = datetime.date.today()
+
+    windows = [
+        ("SI",  INCEPTION),
+        ("1Y",  (today - datetime.timedelta(days=365)).isoformat()),
+        ("YTD", f"{today.year}-01-01"),
+        ("3M",  (today - datetime.timedelta(days=90)).isoformat()),
+        ("1M",  (today - datetime.timedelta(days=30)).isoformat()),
+    ]
+
+    try:
+        pv_full = get_portfolio_value_series(INCEPTION, TODAY)
+    except Exception as exc:
+        pytest.skip(f"Portfolio data unavailable: {exc}")
+
+    if pv_full.dropna().empty:
+        pytest.skip("Portfolio data empty — skipped in local/empty-DB mode")
+
+    for label, start in windows:
+        try:
+            bf_df = brinson_fachler_period(start, TODAY)
+        except Exception as exc:
+            pytest.skip(f"BF data unavailable for {label}: {exc}")
+
+        if bf_df.empty:
+            pytest.skip(f"BF result empty for {label} — skipped in local/empty-DB mode")
+
+        r_p_ps = _bpr_helper(pv_full, label)
+        r_b_bf = float((bf_df["w_b"] * bf_df["r_b"]).sum())
+        bf_r_p = float((bf_df["w_p"] * bf_df["r_p"]).sum())
+        gap_bps = abs(bf_r_p - r_p_ps) * 10_000
+
+        assert gap_bps < 0.5, (
+            f"BF portfolio return ({bf_r_p*10000:.1f} bps) diverges from price series "
+            f"({r_p_ps*10000:.1f} bps) by {gap_bps:.2f} bps for {label} window. "
+            f"DRIP alignment in brinson_fachler_period() may have failed — check "
+            f"_drip_shares() and the end_values accumulation loop."
+        )
+
+
+def test_bf_per_sleeve_returns_are_total_return():
+    """BF chart International Developed Port Ret must exceed price-only by >= 100 bps.
+
+    Phase 10.2 regression pin. Pre-fix: brinson_fachler_period() returned
+    price-only sleeve returns (stale inception adj_close, no dividends).
+    Post-fix: DRIP shares added in the holdings loop → r_p includes dividend
+    income. VEA pays ~3% annual yield, so SI total-return must exceed the
+    raw adj_close ratio by at least 100 bps.  If this test fails, check
+    _drip_shares() in src/attribution.py and confirm get_dividends() returns
+    non-empty for VEA over the SI window.
+    """
+    import datetime
+    from src.attribution import brinson_fachler_period, _first_adj_price, _last_adj_price
+
+    INCEPTION = "2025-05-01"
+    TODAY = datetime.date.today().isoformat()
+
+    try:
+        bf_df = brinson_fachler_period(INCEPTION, TODAY)
+    except Exception as exc:
+        pytest.skip(f"Data unavailable: {exc}")
+
+    if bf_df.empty:
+        pytest.skip("No portfolio data — skipped in local/empty-DB mode")
+
+    intl_rows = bf_df[bf_df["sleeve"] == "International Developed"]
+    if intl_rows.empty:
+        pytest.skip("International Developed sleeve not in BF result")
+
+    r_p_total_return = float(intl_rows["r_p"].iloc[0])
+
+    p_start = _first_adj_price("VEA", INCEPTION)
+    p_end   = _last_adj_price("VEA", TODAY)
+    if p_start <= 0 or p_end <= 0:
+        pytest.skip("VEA price data unavailable")
+
+    r_p_price_only = p_end / p_start - 1
+    dividend_premium_bps = (r_p_total_return - r_p_price_only) * 10_000
+
+    assert dividend_premium_bps >= 100, (
+        f"International Developed r_p ({r_p_total_return*100:.2f}%) not materially "
+        f"higher than price-only ({r_p_price_only*100:.2f}%). "
+        f"Dividend premium: {dividend_premium_bps:.0f} bps (expected >= 100 bps for ~1yr). "
+        f"DRIP alignment in brinson_fachler_period() may not be applied — check "
+        f"_drip_shares() returns non-zero for VEA."
     )

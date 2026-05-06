@@ -4,7 +4,7 @@ from datetime import date, timedelta
 import pandas as pd
 
 from src.db import get_connection
-from src.prices import get_prices
+from src.prices import get_prices, get_dividends
 from src.benchmarks import get_sleeve_benchmark_returns, _SLEEVE_BENCHMARKS
 
 
@@ -146,6 +146,47 @@ def _last_adj_price(ticker: str, up_to_date: str, window_days: int = 5) -> float
     return 0.0
 
 
+def _drip_shares(
+    ticker: str,
+    original_shares: float,
+    start_date: str,
+    end_date: str,
+) -> float:
+    """Compound DRIP reinvestment: return extra shares earned between start and end.
+
+    Mirrors get_portfolio_value_series() dividend reinvestment so that
+    brinson_fachler_period() sleeve returns capture total return, not
+    price-only return.
+
+    Skips dividends on the start_date itself: get_portfolio_value_series()
+    builds a holdings_matrix starting at start_date with no "previous day",
+    so any ex_date == start_date has empty prev_dates and is skipped.
+    """
+    try:
+        divs = get_dividends(ticker, start_date, end_date)
+    except Exception:
+        return 0.0
+    if divs is None or divs.empty:
+        return 0.0
+
+    from datetime import date as _date
+    start_dt = _date.fromisoformat(start_date)
+
+    current_shares = original_shares
+    extra = 0.0
+    for ex_date, div_amount in sorted(divs.items()):
+        if ex_date <= start_dt:
+            continue
+        ex_iso = str(ex_date.date()) if hasattr(ex_date, "date") else str(ex_date)
+        price = _last_adj_price(ticker, ex_iso)
+        if price <= 0:
+            continue
+        reinvested = div_amount * current_shares / price
+        extra += reinvested
+        current_shares += reinvested
+    return extra
+
+
 def brinson_fachler_period(
     start_date: str,
     end_date: str | None = None,
@@ -186,10 +227,29 @@ def brinson_fachler_period(
             (start_date,),
         ).fetchall()
 
+        # Portfolio inception date (for historical DRIP accumulation before window)
+        inception_row = conn.execute(
+            "SELECT MIN(trade_date) AS inception FROM trades"
+        ).fetchone()
+        portfolio_inception = (
+            inception_row["inception"]
+            if inception_row and inception_row["inception"]
+            else start_date
+        )
+
     if not hold_rows:
         return pd.DataFrame()
 
     holdings = {r["ticker"]: float(r["net_shares"]) for r in hold_rows}
+
+    # BIL prices anchored at portfolio inception so SPAXX weight reflects
+    # the full historical appreciation of cash since launch.
+    bil_inception    = _first_adj_price("BIL", portfolio_inception)
+    # _last_adj_price (backward-fill) aligns with get_portfolio_value_series()
+    # which uses ffill() — both return the prior trading-day close for non-trading
+    # start dates (e.g. YTD start = Jan 1).
+    bil_period_start = _last_adj_price("BIL", start_date)
+    bil_period_end   = _last_adj_price("BIL", end)
 
     # ── Compute beginning-of-period prices and sleeve values ─────────────────
     start_values: dict[str, float] = {}   # sleeve → market value at start
@@ -198,18 +258,24 @@ def brinson_fachler_period(
     for ticker, shares in holdings.items():
         sleeve = ticker_to_sleeve.get(ticker, "Unknown")
         if ticker == "SPAXX":
-            # SPAXX NAV is always $1; proxy T-bill yield through BIL.
-            # p_start stays $1.00; p_end = $1.00 × (BIL_end / BIL_start).
-            p_start = 1.0
-            bil_start = _first_adj_price("BIL", start_date)
-            bil_end   = _last_adj_price("BIL", end)
-            p_end = (bil_end / bil_start) if bil_start > 0 else 1.0
+            # Normalize BIL to portfolio inception so sleeve weight correctly
+            # reflects historical BIL appreciation.  Period return is unchanged:
+            # p_end / p_start = (BIL_end / BIL_inception) / (BIL_start / BIL_inception)
+            #                 = BIL_end / BIL_start.
+            p_start = (bil_period_start / bil_inception) if bil_inception > 0 else 1.0
+            p_end   = (bil_period_end   / bil_inception) if bil_inception > 0 else 1.0
+            start_values[sleeve] = start_values.get(sleeve, 0.0) + shares * p_start
+            end_values[sleeve]   = end_values.get(sleeve, 0.0)   + shares * p_end
         else:
-            p_start = _first_adj_price(ticker, start_date)
+            p_start = _last_adj_price(ticker, start_date)  # backward-fill matches pv ffill
             p_end   = _last_adj_price(ticker, end)
-
-        start_values[sleeve] = start_values.get(sleeve, 0.0) + shares * p_start
-        end_values[sleeve]   = end_values.get(sleeve, 0.0)   + shares * p_end
+            # Historical DRIP accumulated from inception to window start (0 for SI).
+            hist_drip  = _drip_shares(ticker, shares, portfolio_inception, start_date)
+            eff_shares = shares + hist_drip
+            # Period DRIP is earned on the historically-adjusted share count.
+            period_drip = _drip_shares(ticker, eff_shares, start_date, end)
+            start_values[sleeve] = start_values.get(sleeve, 0.0) + eff_shares * p_start
+            end_values[sleeve]   = end_values.get(sleeve, 0.0)   + (eff_shares + period_drip) * p_end
 
     total_start = sum(start_values.values())
     if total_start == 0:
