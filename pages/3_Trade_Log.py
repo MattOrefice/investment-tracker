@@ -6,9 +6,12 @@ from datetime import date as dt_date
 import pandas as pd
 import streamlit as st
 
-from src.db import get_connection
-
 st.set_page_config(page_title="Trade Log", layout="wide")
+
+from src.asof import as_of_banner
+from src.config import DEMO_BANNER_TEXT, IS_DEMO
+from src.db import get_connection
+from src.ui_helpers import render_footer
 
 STATUS_COLOR = {
     "active":      "#2d6a4f",
@@ -72,7 +75,7 @@ def load_all():
             SELECT th.thesis_id, th.title, th.view_summary, th.conviction,
                    th.status, th.horizon_months, th.exit_conditions,
                    th.invalidation_conditions, th.expected_return_scenario,
-                   th.target_sleeves,
+                   th.target_sleeves, th.created_at,
                    GROUP_CONCAT(tm.name, ', ') AS theme_names
             FROM theses th
             LEFT JOIN thesis_themes tt ON th.thesis_id = tt.thesis_id
@@ -174,6 +177,9 @@ data = load_all()
 c    = data["counts"]
 
 
+if IS_DEMO:
+    st.info(DEMO_BANNER_TEXT)
+
 # ── Header ────────────────────────────────────────────────────────────────────
 _, col, _ = st.columns([1, 8, 1])
 with col:
@@ -182,6 +188,7 @@ with col:
         "Every trade documents a position thesis, which rolls up to "
         "an investment view, which carries theme tags."
     )
+    st.caption(as_of_banner())
     st.caption(
         f"{c['n_trades']} trades  ·  "
         f"{c['n_inv']} active investment theses  ·  "
@@ -277,7 +284,7 @@ def render_trade_form():
             price = st.number_input("Price ($)", min_value=0.0, step=0.01, format="%.2f")
             fees  = st.number_input("Fees ($)", min_value=0.0, value=0.0, step=0.01, format="%.2f")
         notes     = st.text_area("Notes (optional)", height=68)
-        submitted = st.form_submit_button("Log trade", width='stretch')
+        submitted = st.form_submit_button("Log trade", use_container_width=True)
 
         if submitted:
             ticker   = st.session_state.get("tl_ticker", "")
@@ -375,7 +382,7 @@ with tab_trades:
             df = pd.DataFrame(rows)
             st.dataframe(
                 df,
-                width='stretch',
+                use_container_width=True,
                 hide_index=True,
                 column_config={
                     "Price":       st.column_config.NumberColumn(format="$%.2f"),
@@ -427,6 +434,13 @@ with tab_theses:
 
                 _safe_md(thesis.get("view_summary") or "")
 
+                if thesis.get("created_at"):
+                    try:
+                        _open_date = dt_date.fromisoformat(str(thesis["created_at"])[:10])
+                        _days_held = (dt_date.today() - _open_date).days
+                        _safe_cap(f"**Days held:** {_days_held}")
+                    except Exception:
+                        pass
                 if thesis.get("horizon_months"):
                     _safe_cap(f"**Horizon:** {thesis['horizon_months']} months")
                 if thesis.get("exit_conditions"):
@@ -488,7 +502,7 @@ with tab_theses:
                 })
             st.dataframe(
                 pd.DataFrame(pos_rows),
-                width='stretch',
+                use_container_width=True,
                 hide_index=True,
             )
 
@@ -507,7 +521,16 @@ with tab_themes:
             st.info("No themes defined yet.")
         else:
             for theme in themes:
-                st.markdown(f"### {theme['name']}")
+                _t_active = theme.get("active_count") or 0
+                _t_badge  = (
+                    f'<span style="background:#2d6a4f20;color:#2d6a4f;'
+                    f'padding:2px 9px;border-radius:12px;font-size:0.8rem;'
+                    f'font-weight:500">{_t_active} active</span>'
+                )
+                st.markdown(
+                    f"### {theme['name']} &nbsp; {_t_badge}",
+                    unsafe_allow_html=True,
+                )
                 if theme.get("description"):
                     st.caption(theme["description"])
 
@@ -532,3 +555,4 @@ with tab_themes:
                     f"{inv_n} invalidated"
                 )
                 st.divider()
+render_footer()

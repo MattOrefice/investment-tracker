@@ -1,10 +1,14 @@
 """Research page — Security Research."""
 import streamlit as st
-import pandas as pd
-from collections import defaultdict
-from src.db import get_connection
 
 st.set_page_config(page_title="Research", layout="wide")
+
+import pandas as pd
+from collections import defaultdict
+from src.asof import as_of_banner
+from src.config import DEMO_BANNER_TEXT, IS_DEMO
+from src.db import get_connection
+from src.ui_helpers import render_footer
 
 SPAXX_RATIONALE = (
     "SPAXX is Fidelity's default money market fund and the natural cash vehicle — no transaction "
@@ -150,16 +154,65 @@ for d in sleeve_data:
         if bm_er is not None:
             portfolio_savings_bps += w_per * (bm_er - (h_er or 0.0)) * 10_000
 
+if IS_DEMO:
+    st.info(DEMO_BANNER_TEXT)
+
 # ── Header ─────────────────────────────────────────────────────────────────────
 _, col, _ = st.columns([1, 8, 1])
 with col:
     st.title("Security Research")
     st.caption("Candidate ETFs by asset class — holdings vs. benchmarks")
+    st.caption(as_of_banner())
     er_pct = weighted_er * 100
+    _savings_250k = round(portfolio_savings_bps / 10_000 * 250_000)
     st.caption(
         f"{len(sleeves)} sleeves  ·  {n_holdings} holdings  ·  "
-        f"{er_pct:.2f}% blended ER  ·  {portfolio_savings_bps:.0f} bps savings vs. benchmarks"
+        f"{er_pct:.2f}% blended ER  ·  {portfolio_savings_bps:.0f} bps savings vs. benchmarks  ·  "
+        f"~\\${_savings_250k:,}/yr in ER savings at \\$250k"
     )
+    st.divider()
+
+    # ── Featured Selections ──────────────────────────────────────────────────────
+    st.subheader("Featured Selections")
+    st.caption(
+        "Three holdings where the case for diverging from the benchmark is most compelling."
+    )
+
+    _featured_meta = {
+        "SPHQ": {
+            "bench":    "QUAL",
+            "headline": "Accruals screen filters accounting manipulation that QUAL misses.",
+        },
+        "IEMG": {
+            "bench":    "EEM",
+            "headline": "Identical EM exposure at 0.09% vs EEM's 0.70% — 61 bps of pure fee drag eliminated.",
+        },
+        "PDBC": {
+            "bench":    "DJP",
+            "headline": "Only broad commodity ETF with no K-1 in a taxable account; C-corp structure avoids partnership filing complexity.",
+        },
+    }
+    _sec_by_ticker = {s["ticker"]: s for s in secs}
+
+    _fc1, _fc2, _fc3 = st.columns(3)
+    for _col, _ticker in zip([_fc1, _fc2, _fc3], ["SPHQ", "IEMG", "PDBC"]):
+        _meta  = _featured_meta[_ticker]
+        _sec   = _sec_by_ticker.get(_ticker, {})
+        _er    = _sec.get("expense_ratio")
+        _er_s  = f"{_er * 100:.2f}%" if _er is not None else "—"
+        with _col:
+            st.markdown(
+                f"**{_ticker}** <span style='color:#666;font-size:0.85rem'>vs {_meta['bench']}</span>",
+                unsafe_allow_html=True,
+            )
+            if _ticker == "PDBC":
+                st.caption("Most distinctive rationale")
+            st.caption(f"ER: {_er_s}")
+            st.caption(_meta["headline"])
+            if _sec.get("holding_rationale"):
+                with st.expander("Full rationale"):
+                    _safe_md(_sec["holding_rationale"])
+
     st.divider()
 
 # ── Sleeve sections ─────────────────────────────────────────────────────────────
@@ -192,7 +245,7 @@ with col:
             if len(pairs) > 1:
                 st.caption(f"{'REITs (50% of sleeve)' if i == 0 else 'Commodities (50% of sleeve)'}")
             df = _comparison_df(bm, h, self_bm=p["self_bm"], show_type=is_cash)
-            st.dataframe(df, width='stretch')
+            st.dataframe(df, use_container_width=True)
 
             caption = _savings_caption(
                 bm.get("expense_ratio") if bm else None,
@@ -208,4 +261,4 @@ with col:
         st.markdown("")
 
     st.divider()
-    st.info("Prices and live performance data coming in Phase 4.")
+    render_footer()

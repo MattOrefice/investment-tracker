@@ -1,8 +1,15 @@
-"""CAPE data from Robert Shiller's Yale dataset (shillerdata.com).
+"""CAPE data sourced from Robert Shiller's dataset via multpl.com.
 
-Known fragility: the Excel URL and sheet structure can change without notice.
-If download fails, the module falls back to the local CSV cache in data/.
-To manually refresh: delete data/shiller_cape.csv and reload the page.
+Primary source: https://www.multpl.com/shiller-pe/table/by-month
+  - Full history 1871-present, updated monthly.
+  - Yale's ie_data.xls has been stale at Sep 2023 since at least May 2026
+    (no further updates to that file); multpl.com is the live replacement.
+
+Fallback: http://www.econ.yale.edu/~shiller/data/ie_data.xls
+  - Used only if multpl.com is unreachable; last reliable through Sep 2023.
+
+Local disk cache: data/shiller_cape.csv, refreshed every 30 days.
+Force-invalidate by calling clear_shiller_cache() or deleting the file.
 """
 import io
 from datetime import date
@@ -15,15 +22,13 @@ import requests
 _ROOT      = Path(__file__).resolve().parent.parent
 _CACHE_CSV = _ROOT / "data" / "shiller_cape.csv"
 
-_URLS = [
-    "http://www.econ.yale.edu/~shiller/data/ie_data.xls",  # primary — reliable direct download
-    "https://shillerdata.com/ie_data.xls",                 # fallback — sometimes redirects to HTML
-]
+_MULTPL_URL = "https://www.multpl.com/shiller-pe/table/by-month"
+_YALE_URL   = "http://www.econ.yale.edu/~shiller/data/ie_data.xls"
 
 _REFRESH_DAYS = 30
 
 
-# ── date parsing ─────────────────────────────────────────────────────────────
+# ── date parsing (Shiller fractional-year format) ─────────────────────────────
 
 def _parse_shiller_date(val) -> Optional[pd.Timestamp]:
     """Convert Shiller fractional-year date (e.g. 1881.01) to Timestamp."""
@@ -37,10 +42,53 @@ def _parse_shiller_date(val) -> Optional[pd.Timestamp]:
         return None
 
 
-# ── Excel parsing ─────────────────────────────────────────────────────────────
+# ── multpl.com parser (primary source) ───────────────────────────────────────
+
+def _parse_multpl(html_content: str) -> pd.DataFrame:
+    """
+    Parse the multpl.com Shiller P/E monthly table.
+    Returns DataFrame with columns: date (Timestamp), cape (float), sorted ascending.
+    Dates are normalised to the 1st of each month.
+    """
+    try:
+        tables = pd.read_html(io.StringIO(html_content))
+    except ValueError as exc:
+        raise RuntimeError(f"No tables found in multpl.com response: {exc}") from exc
+    if not tables:
+        raise RuntimeError("No tables found in multpl.com response.")
+
+    t = tables[0]
+    if "Date" not in t.columns or "Value" not in t.columns:
+        raise RuntimeError(f"Unexpected multpl.com columns: {list(t.columns)}")
+
+    rows = []
+    for _, row in t.iterrows():
+        try:
+            dt = pd.to_datetime(row["Date"], format="%b %d, %Y", errors="coerce")
+            if pd.isna(dt):
+                dt = pd.to_datetime(row["Date"], errors="coerce")
+            if pd.isna(dt):
+                continue
+            dt = dt.replace(day=1)   # normalise to month start
+            cape_val = float(row["Value"])
+            if cape_val <= 0:
+                continue
+            rows.append({"date": dt, "cape": cape_val})
+        except Exception:
+            continue
+
+    if not rows:
+        raise RuntimeError("No usable rows parsed from multpl.com response.")
+
+    df = pd.DataFrame(rows)
+    df["date"] = pd.to_datetime(df["date"])
+    return df.sort_values("date").reset_index(drop=True)
+
+
+# ── Yale Excel parser (fallback) ──────────────────────────────────────────────
 
 def _parse_excel_bytes(content: bytes) -> pd.DataFrame:
-    """Parse Shiller's ie_data.xls bytes into (date, sp500_real, earnings_real, cape)."""
+    """Parse Shiller's ie_data.xls bytes into (date, cape) DataFrame."""
     raw = None
     for engine in ("xlrd", "openpyxl"):
         try:
@@ -54,7 +102,6 @@ def _parse_excel_bytes(content: bytes) -> pd.DataFrame:
     if raw is None:
         raise RuntimeError("Could not parse Shiller Excel with xlrd or openpyxl.")
 
-    # Drop entirely-unnamed or entirely-NaN columns
     raw = raw.loc[:, ~raw.columns.astype(str).str.startswith("Unnamed")]
     raw = raw.dropna(how="all")
 
@@ -96,9 +143,9 @@ def _parse_excel_bytes(content: bytes) -> pd.DataFrame:
             continue
         rows.append({
             "date":          dt,
+            "cape":          cape_f,
             "sp500_real":    float(row[real_price_col]) if real_price_col and pd.notna(row[real_price_col]) else None,
             "earnings_real": float(row[real_earn_col])  if real_earn_col  and pd.notna(row[real_earn_col])  else None,
-            "cape":          cape_f,
         })
 
     if not rows:
@@ -112,33 +159,53 @@ def _parse_excel_bytes(content: bytes) -> pd.DataFrame:
 # ── public API ────────────────────────────────────────────────────────────────
 
 def download_shiller_data() -> pd.DataFrame:
-    """Download ie_data.xls, parse, cache as CSV. Falls back to cached CSV on failure."""
-    last_exc: Exception = RuntimeError("No download attempted.")
-    for url in _URLS:
-        try:
-            resp = requests.get(url, timeout=30)
-            resp.raise_for_status()
-            df = _parse_excel_bytes(resp.content)
-            _CACHE_CSV.parent.mkdir(parents=True, exist_ok=True)
-            df.to_csv(_CACHE_CSV, index=False)
-            return df
-        except Exception as exc:
-            last_exc = exc
+    """
+    Download CAPE data and cache as CSV.
 
+    Primary:  multpl.com HTML table (full history 1871-present, monthly updates).
+    Fallback: Yale ie_data.xls (known stale at Sep 2023 as of May 2026).
+    Last resort: existing local CSV cache.
+    """
+    # Primary: multpl.com
+    try:
+        resp = requests.get(
+            _MULTPL_URL,
+            timeout=20,
+            headers={"User-Agent": "Mozilla/5.0 (compatible; investment-tracker/1.0)"},
+        )
+        resp.raise_for_status()
+        df = _parse_multpl(resp.text)
+        _CACHE_CSV.parent.mkdir(parents=True, exist_ok=True)
+        df.to_csv(_CACHE_CSV, index=False)
+        return df
+    except Exception as multpl_exc:
+        pass
+
+    # Fallback: Yale XLS
+    try:
+        resp = requests.get(_YALE_URL, timeout=30)
+        resp.raise_for_status()
+        df = _parse_excel_bytes(resp.content)
+        _CACHE_CSV.parent.mkdir(parents=True, exist_ok=True)
+        df.to_csv(_CACHE_CSV, index=False)
+        return df
+    except Exception:
+        pass
+
+    # Last resort: disk cache
     if _CACHE_CSV.exists():
         return pd.read_csv(_CACHE_CSV, parse_dates=["date"])
 
     raise RuntimeError(
-        f"Shiller CAPE data unavailable. Download failed ({last_exc}). "
-        "No local cache exists. Manually download ie_data.xls from "
-        "https://shillerdata.com/ and place it in the project root."
+        "Shiller CAPE data unavailable. multpl.com and Yale XLS both failed, "
+        "and no local cache exists."
     )
 
 
 def get_cape_series() -> pd.Series:
     """
     Date-indexed Series of CAPE values from 1881 to present.
-    Refreshes from Shiller's site when the local cache is ≥30 days old.
+    Refreshes from multpl.com when the local cache is ≥30 days old.
     """
     needs_refresh = True
     if _CACHE_CSV.exists():
@@ -159,6 +226,12 @@ def get_cape_series() -> pd.Series:
     df = df.dropna(subset=["cape"])
     s = pd.Series(df["cape"].values, index=pd.DatetimeIndex(df["date"]), name="CAPE")
     return s.sort_index()
+
+
+def clear_shiller_cache() -> None:
+    """Delete the local CSV cache so the next load forces a fresh download."""
+    if _CACHE_CSV.exists():
+        _CACHE_CSV.unlink()
 
 
 def current_cape() -> float:

@@ -6,20 +6,32 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+st.set_page_config(page_title="Performance & Attribution", layout="wide")
+
+from src.asof import as_of_banner
+from src.config import DEMO_BANNER_TEXT, IS_DEMO
 from src.attribution import brinson_fachler_period
 from src.benchmarks import get_custom_blended_series, get_sp500_series
 from src.db import get_connection
+from src.factors import run_sleeve_regressions
 from src.holdings import get_portfolio_value_series, get_sleeve_weights_on_date
+from src.performance import compute_risk_metrics
 from src.reports import generate_quarterly_report
 from src.returns import annualize, period_return, twr_daily_linked
+from src.ui_helpers import render_footer
 
-st.set_page_config(page_title="Performance & Attribution", layout="wide")
+_REPORTS_DIR = Path(__file__).parent.parent / "data" / "reports"
 
 INCEPTION    = "2025-05-01"
-TODAY        = "2026-05-01"
+TODAY        = date.today().isoformat()
 PERIODS      = ["1M", "3M", "YTD", "1Y", "SI"]
 PERIOD_LABEL = {"1M": "1 Month", "3M": "3 Months", "YTD": "YTD",
                 "1Y": "1 Year", "SI": "Since Inception"}
+
+# Increment when a bug fix changes what get_portfolio_value_series returns so
+# that Streamlit's @st.cache_data (keyed on function args) invalidates the old
+# cached result automatically rather than serving the pre-fix stale value.
+_PORTFOLIO_CACHE_V = 2
 
 _PALETTE = {
     "portfolio": "#2E4057",   # deep navy
@@ -33,7 +45,7 @@ _PALETTE = {
 # ── Cached data loaders ───────────────────────────────────────────────────────
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def _load_portfolio():
+def _load_portfolio(_v: int = _PORTFOLIO_CACHE_V):
     pv = get_portfolio_value_series(INCEPTION, TODAY)
     cf = pd.Series(0.0, index=pv.index)
     return pv, cf
@@ -63,6 +75,14 @@ def _load_attribution(period_key: str):
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
+def _load_factor_results(inception_date: str, end: str) -> dict:
+    try:
+        return run_sleeve_regressions(inception_date, end)
+    except Exception:
+        return {}
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
 def _load_drift():
     sw = get_sleeve_weights_on_date(TODAY)
     with get_connection() as conn:
@@ -79,18 +99,25 @@ def _date_offset(iso: str, days: int) -> str:
 
 
 def _most_recent_completed_quarter():
-    """Return (start_iso, end_iso, label) for the most recently completed quarter."""
+    """Return (start_iso, end_iso, label) for the most recently completed quarter.
+
+    Start = last trading day of the prior quarter (conventional quarterly return
+    definition: Q1 return = Mar-31 close / Dec-31 prior-year close − 1).
+    Using Jan-1 as Q1 start fails because Jan-1 is a US market holiday; the
+    benchmark pipeline would bfill from Jan-2, creating a spurious shift vs the
+    correct Dec-31 base price.
+    """
     today = date.today()
     quarters = [
-        (date(today.year, 1, 1),  date(today.year, 3, 31),  f"Q1 {today.year}"),
-        (date(today.year, 4, 1),  date(today.year, 6, 30),  f"Q2 {today.year}"),
-        (date(today.year, 7, 1),  date(today.year, 9, 30),  f"Q3 {today.year}"),
-        (date(today.year, 10, 1), date(today.year, 12, 31), f"Q4 {today.year}"),
+        (date(today.year - 1, 12, 31), date(today.year, 3, 31),  f"Q1 {today.year}"),
+        (date(today.year, 3, 31),       date(today.year, 6, 30),  f"Q2 {today.year}"),
+        (date(today.year, 6, 30),       date(today.year, 9, 30),  f"Q3 {today.year}"),
+        (date(today.year, 9, 30),       date(today.year, 12, 31), f"Q4 {today.year}"),
     ]
     for q_start, q_end, q_label in reversed(quarters):
         if q_end < today:
             return q_start.isoformat(), q_end.isoformat(), q_label
-    return f"{today.year-1}-10-01", f"{today.year-1}-12-31", f"Q4 {today.year-1}"
+    return f"{today.year-1}-09-30", f"{today.year-1}-12-31", f"Q4 {today.year-1}"
 
 
 def _pct(v: float, decimals: int = 2) -> str:
@@ -105,6 +132,9 @@ def _bps(v: float) -> str:
 
 # ── Page ─────────────────────────────────────────────────────────────────────
 
+if IS_DEMO:
+    st.info(DEMO_BANNER_TEXT)
+
 _, col, _ = st.columns([1, 8, 1])
 with col:
 
@@ -112,6 +142,7 @@ with col:
     st.caption(
         "Time-weighted return, benchmarking, and Brinson-Fachler decomposition."
     )
+    st.caption(as_of_banner())
 
     # Load data
     with st.spinner("Loading performance data…"):
@@ -119,6 +150,18 @@ with col:
 
     # ── Generate Report expander ──────────────────────────────────────────
     with st.expander("Generate Quarterly Report", expanded=False):
+        _existing_pdfs = sorted(_REPORTS_DIR.glob("*.pdf"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if _existing_pdfs:
+            _latest = _existing_pdfs[0]
+            st.download_button(
+                f"⬇ Latest report: {_latest.name}",
+                _latest.read_bytes(),
+                file_name=_latest.name,
+                mime="application/pdf",
+                key="latest_report_dl",
+            )
+            st.markdown("---")
+
         _rcol1, _rcol2 = st.columns([1, 1])
         with _rcol1:
             _period_choice = st.selectbox(
@@ -224,6 +267,28 @@ with col:
         "comparison for security selection alpha."
     )
 
+    # ── Reconciliation note ────────────────────────────────────────────────
+    with get_connection() as _rc:
+        _cost_row = _rc.execute(
+            "SELECT SUM(shares * price) FROM trades WHERE LOWER(action) = 'buy'"
+        ).fetchone()
+    _cost_basis = float(_cost_row[0] or 0.0)
+    if _cost_basis > 0:
+        _unrealized   = current_val - _cost_basis
+        _abs_ret_pct  = (current_val / _cost_basis - 1) * 100
+        _twr_pct      = port_si * 100
+        st.caption(
+            f"Reconciliation: **\\${_cost_basis:,.0f} cost basis** at inception → "
+            f"**\\${current_val:,.0f} current value** · "
+            f"**\\${_unrealized:+,.0f} unrealized gain** · "
+            f"**{_abs_ret_pct:.1f}% absolute return** vs **{_twr_pct:.1f}% cumulative TWR**. "
+            f"For a single lump-sum portfolio with no subsequent cash flows, TWR and "
+            f"absolute return converge; any residual difference reflects DRIP reinvestment "
+            f"rounding and the BIL total-return proxy applied to the SPAXX cash sleeve. "
+            f"TWR is the GIPS-correct measure for benchmark comparison."
+        )
+    # ── End reconciliation note ────────────────────────────────────────────
+
     st.divider()
 
     # ──────────────────────────────────────────────────────────────────────
@@ -301,7 +366,76 @@ with col:
 
     tbl_df = pd.DataFrame(display).T
     tbl_df.index.name = "Period"
-    st.dataframe(tbl_df, width='stretch')
+    st.dataframe(tbl_df, use_container_width=True)
+
+    st.divider()
+
+    # ──────────────────────────────────────────────────────────────────────
+    # Section 2b — Risk-adjusted metrics
+    # ──────────────────────────────────────────────────────────────────────
+    st.markdown("#### Risk-Adjusted Metrics")
+
+    _bl_for_metrics = bl / float(bl.iloc[0])
+    _m_si  = compute_risk_metrics(pv, _bl_for_metrics, window="SI")
+    _m_1y  = compute_risk_metrics(pv, _bl_for_metrics, window="1Y")
+    _m_ytd = compute_risk_metrics(pv, _bl_for_metrics, window="YTD")
+    _m_3m  = compute_risk_metrics(pv, _bl_for_metrics, window="3M")
+    _m_1m  = compute_risk_metrics(pv, _bl_for_metrics, window="1M")
+
+    _RISK_WINDOW_LABELS = ["1 Month", "3 Months", "YTD", "1 Year", "Since Inception"]
+    _RISK_WINDOW_MAP = {
+        "1 Month":        _m_1m,
+        "3 Months":       _m_3m,
+        "YTD":            _m_ytd,
+        "1 Year":         _m_1y,
+        "Since Inception": _m_si,
+    }
+
+    def _fmt_ratio(v) -> str:
+        return f"{v:.2f}" if v == v else "—"
+
+    def _fmt_pct(v) -> str:
+        return f"{v:.1f}%" if v == v else "—"
+
+    if _m_si:
+        _window_label = st.radio(
+            "Window",
+            _RISK_WINDOW_LABELS,
+            index=4,
+            horizontal=True,
+            key="risk_metrics_window",
+        )
+        _m = _RISK_WINDOW_MAP.get(_window_label) or {}
+
+        if not _m:
+            st.caption(
+                f"Insufficient data for {_window_label} window — requires ≥ 20 trading days."
+            )
+        else:
+            _c1, _c2, _c3, _c4, _c5, _c6, _c7 = st.columns(7)
+            _c1.metric("Sharpe",     _fmt_ratio(_m["sharpe"]))
+            _c2.metric("Sortino",    _fmt_ratio(_m["sortino"]))
+            _c3.metric("Max DD",     _fmt_pct(_m["max_drawdown_pct"]))
+            _c4.metric("Track. Err", _fmt_pct(_m["tracking_error_pct"]))
+            _c5.metric("Info Ratio", _fmt_ratio(_m["information_ratio"]))
+            _c6.metric("VaR (95%)",  _fmt_pct(_m["var_95_pct"]))
+            _c7.metric("CVaR (95%)", _fmt_pct(_m["cvar_95_pct"]))
+
+        st.caption(
+            "Sharpe and Sortino use RF = 4.5% (current cash yield). "
+            "Tracking error and information ratio vs. Custom Blended benchmark. "
+            "Max drawdown = peak-to-trough decline in portfolio value within the selected window. "
+            "VaR(95%) = daily loss exceeded only 5% of trading days (historical simulation). "
+            "CVaR(95%) = average daily loss on the worst 5% of trading days (Expected Shortfall)."
+        )
+        st.markdown(
+            "*Inception period overlaps substantially with trailing 12 months. "
+            "Max DD, TE, and IR will diverge from Since Inception once the portfolio "
+            "crosses ~18 months of history. "
+            "Risk ratios at 1M and 3M windows reflect ~21 and ~63 daily observations "
+            "respectively; interpret short-window Sharpe and Sortino as directional "
+            "rather than statistically stable.*"
+        )
 
     st.divider()
 
@@ -350,7 +484,7 @@ with col:
                    dtick=10, ticksuffix="%"),
         xaxis=dict(gridcolor="#E8E8E8"),
     )
-    st.plotly_chart(fig, width='stretch')
+    st.plotly_chart(fig, use_container_width=True)
 
     st.divider()
 
@@ -362,10 +496,12 @@ with col:
     bf_period = st.radio(
         "Attribution period",
         PERIODS,
-        index=PERIODS.index("SI"),
+        index=PERIODS.index("3M"),
         format_func=lambda p: PERIOD_LABEL[p],
         horizontal=True,
         key="bf_period",
+        help="PDF quarterly report uses the most recent completed quarter (Q1 2026). "
+             "Select SI to compare since-inception active return.",
     )
 
     with st.spinner("Computing attribution…"):
@@ -432,7 +568,7 @@ with col:
                 xaxis=dict(gridcolor="#E8E8E8", zeroline=True,
                            zerolinecolor="#888"),
             )
-            st.plotly_chart(fig2, width='stretch')
+            st.plotly_chart(fig2, use_container_width=True)
 
         # — Attribution table —
         with bf_table_col:
@@ -449,7 +585,7 @@ with col:
                     "Total (bps)":   f"{row['total_effect']*10000:+.1f}",
                 })
             st.dataframe(pd.DataFrame(tbl_data), hide_index=True,
-                         width='stretch')
+                         use_container_width=True)
 
         # — Algebra summary —
         sum_effects   = bf_df["total_effect"].sum() * 10_000
@@ -464,6 +600,33 @@ with col:
             f"Blended benchmark: {r_b_total:.2f}%  &nbsp;·&nbsp; "
             f"Sum of effects: {sum_effects:+.1f} bps  &nbsp;·&nbsp; "
             f"Algebra check: {'✓ reconciled' if reconciled else '⚠ discrepancy'}"
+        )
+
+        # — BF methodology disclosure —
+        _factor_res = _load_factor_results(INCEPTION, TODAY)
+        _us_res = _factor_res.get("us")
+        if _us_res:
+            _factor_clause = (
+                f"the US sleeve's HML loading of {_us_res['betas']['HML']:.3f} "
+                f"(t = {_us_res['t_stats']['HML']:.2f}) and SMB loading of "
+                f"{_us_res['betas']['SMB']:.3f} (t = {_us_res['t_stats']['SMB']:.2f}) "
+                "statistically confirm the value and small-cap exposures."
+            )
+        else:
+            _factor_clause = (
+                "the US sleeve's HML and SMB factor loadings on the Factor Profile page "
+                "statistically confirm the value and small-cap exposures."
+            )
+        st.caption(
+            "**What this decomposition measures.** Brinson-Fachler attribution captures two effects "
+            "relative to the SAA's sleeve targets: **allocation effect** — over/underweights from SAA "
+            "targets, primarily driven by drift since this portfolio is not rebalanced intra-quarter; "
+            "and **selection effect** — the chosen ETF return vs. the sleeve benchmark return, typically "
+            "near-zero for passive ETF holdings. The strategic tilts that define the SAA itself — the "
+            "8% allocation to value (VTV), 7% to small-cap value (AVUV), 8% to emerging markets, and "
+            "10% to real assets — are **not** captured here; they are baked into the SAA design and "
+            "surface in two places: the **Custom Blended vs. S&P 500 spread** on the cover, and the "
+            "**Factor Profile** page, where " + _factor_clause
         )
 
     st.divider()
@@ -481,12 +644,17 @@ with col:
         # Actual vs. target allocation bar chart
         _sleeves_ch = sw.index.tolist()
         _fig_alloc = go.Figure()
+        # Trace order matches legend and z-order: Band (bottom) → Target → Actual (top)
         _fig_alloc.add_trace(go.Bar(
-            name="Actual",
+            name="Tolerance Band",
             y=_sleeves_ch,
-            x=(sw["Actual Weight"] * 100).tolist(),
+            x=[band_map.get(s, 0.03) * 2 * 100 for s in _sleeves_ch],
+            base=[(sw.loc[s, "Target Weight"] - band_map.get(s, 0.03)) * 100
+                  for s in _sleeves_ch],
             orientation="h",
-            marker_color=_PALETTE["portfolio"],
+            marker_color="rgba(91, 127, 166, 0.15)",
+            marker_line=dict(width=0),
+            showlegend=True,
         ))
         _fig_alloc.add_trace(go.Bar(
             name="Target",
@@ -495,6 +663,13 @@ with col:
             orientation="h",
             marker_color=_PALETTE["sp500"],
             opacity=0.65,
+        ))
+        _fig_alloc.add_trace(go.Bar(
+            name="Actual",
+            y=_sleeves_ch,
+            x=(sw["Actual Weight"] * 100).tolist(),
+            orientation="h",
+            marker_color=_PALETTE["portfolio"],
         ))
         _fig_alloc.update_layout(
             barmode="overlay",
@@ -508,7 +683,7 @@ with col:
             font=dict(family="sans-serif", size=11, color="#333"),
             xaxis=dict(gridcolor="#E8E8E8"),
         )
-        st.plotly_chart(_fig_alloc, width='stretch')
+        st.plotly_chart(_fig_alloc, use_container_width=True)
 
         drift_rows = []
         outside_band_count = 0
@@ -531,7 +706,7 @@ with col:
 
         # Sort by absolute drift descending
         drift_rows.sort(key=lambda r: abs(int(r["Drift (bps)"].replace("+", ""))), reverse=True)
-        st.dataframe(pd.DataFrame(drift_rows), hide_index=True, width='stretch')
+        st.dataframe(pd.DataFrame(drift_rows), hide_index=True, use_container_width=True)
         st.caption(
             f"Rebalance candidates: **{outside_band_count}** sleeve"
             f"{'s' if outside_band_count != 1 else ''} outside tolerance band"
@@ -580,3 +755,4 @@ with col:
         conn2.close()
         st.markdown(f"**Price cache rows:** {n_days:,}")
         st.markdown(f"**Last price date in cache:** {last_refresh}")
+    render_footer()

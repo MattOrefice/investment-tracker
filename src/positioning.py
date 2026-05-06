@@ -6,31 +6,18 @@ no hand-written quarterly text.  Every number re-derives from live portfolio sta
 """
 from __future__ import annotations
 
-import sys
 from collections import defaultdict
 from datetime import date, timedelta
-from pathlib import Path
 
 import plotly.graph_objects as go
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-try:
-    from src.holdings import get_holdings_on_date, get_sleeve_weights_on_date
-    from src.prices import get_prices
-    from src.style_box import (
-        US_EQUITY_TICKERS, NON_US_EQUITY_MAP,
-        assign_textposition, compute_size_score, compute_value_growth_score,
-        xy_to_category, _load_metadata,
-    )
-except ImportError:
-    from holdings import get_holdings_on_date, get_sleeve_weights_on_date
-    from prices import get_prices
-    from style_box import (
-        US_EQUITY_TICKERS, NON_US_EQUITY_MAP,
-        assign_textposition, compute_size_score, compute_value_growth_score,
-        xy_to_category, _load_metadata,
-    )
+from src.holdings import get_holdings_on_date, get_sleeve_weights_on_date
+from src.prices import get_prices
+from src.style_box import (
+    US_EQUITY_TICKERS, NON_US_EQUITY_MAP,
+    assign_textposition, compute_size_score, compute_value_growth_score,
+    xy_to_category, _load_metadata,
+)
 
 # ── Static reference dicts ─────────────────────────────────────────────────
 

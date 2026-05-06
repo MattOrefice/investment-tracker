@@ -9,7 +9,8 @@ import base64
 import io
 import json
 import logging
-from datetime import date, timedelta
+from contextlib import nullcontext
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -18,30 +19,31 @@ import pandas as pd
 import plotly.graph_objects as go
 import plotly.io as pio
 
-try:
-    from src.attribution import brinson_fachler_period
-    from src.benchmarks import get_custom_blended_series, get_sp500_series
-    from src.db import get_connection
-    from src.holdings import get_portfolio_value_series, get_sleeve_weights_on_date
-    from src.macro import get_series, percentile
-    from src.positioning import (
-        build_style_box_figure, get_active_tilts, get_effective_duration,
-        get_non_us_equity_data, get_scenario_triggers, get_style_box_data,
-    )
-    from src.returns import period_return, twr_daily_linked
-    from src.shiller import current_cape, get_cape_series
-except ImportError:
-    from attribution import brinson_fachler_period
-    from benchmarks import get_custom_blended_series, get_sp500_series
-    from db import get_connection
-    from holdings import get_portfolio_value_series, get_sleeve_weights_on_date
-    from macro import get_series, percentile
-    from positioning import (
-        build_style_box_figure, get_active_tilts, get_effective_duration,
-        get_non_us_equity_data, get_scenario_triggers, get_style_box_data,
-    )
-    from returns import period_return, twr_daily_linked
-    from shiller import current_cape, get_cape_series
+from src.attribution import brinson_fachler_period
+from src.cache import (
+    capture_quarter_snapshot,
+    get_quarter_snapshot,
+    is_quarter_complete,
+    label_to_quarter_id,
+    snapshot_price_context,
+)
+from src.benchmarks import get_custom_blended_series, get_sp500_series
+from src.db import get_connection
+from src.factors import (
+    EM_DISCLOSURE,
+    build_benchmark_methodology, build_benchmark_prose,
+    build_factor_methodology_notes, build_factor_prose,
+    run_benchmark_attribution_regression,
+    run_sleeve_regressions, sig_marker,
+)
+from src.holdings import get_portfolio_value_series, get_sleeve_weights_on_date
+from src.macro import get_series, percentile
+from src.positioning import (
+    build_style_box_figure, get_active_tilts, get_effective_duration,
+    get_non_us_equity_data, get_scenario_triggers, get_style_box_data,
+)
+from src.returns import period_return, twr_daily_linked
+from src.shiller import current_cape, get_cape_series
 
 from jinja2 import Environment, FileSystemLoader
 
@@ -163,14 +165,33 @@ def _chart_b64(fig: Optional[go.Figure], width: int = 700, height: int = 310) ->
 # ── Period / filename helpers ─────────────────────────────────────────────────
 
 def _format_period_label(start_date: str, end_date: str) -> str:
-    """'Q1 2026' for standard quarters, else 'Jan 1 to Mar 31, 2026'."""
+    """'Q1 2026' for standard quarters, else 'Jan 1 to Mar 31, 2026'.
+
+    Recognises both conventions:
+      - Prior-quarter-end: Dec-31/2025 → Mar-31/2026 = Q1 2026  (preferred)
+      - First-of-quarter:  Jan-1/2026  → Mar-31/2026 = Q1 2026  (legacy)
+    """
     s = date.fromisoformat(start_date)
     e = date.fromisoformat(end_date)
-    quarters = [
-        ((1, 1), (3, 31), "Q1"), ((4, 1), (6, 30), "Q2"),
-        ((7, 1), (9, 30), "Q3"), ((10, 1), (12, 31), "Q4"),
-    ]
-    for (sm, sd), (em, ed), qname in quarters:
+    # Prior-quarter-end start convention (Dec31→Mar31, Mar31→Jun30, etc.)
+    for (sm, sd), (em, ed), qname in [
+        ((12, 31), (3, 31),  "Q1"),  # Dec31 prior year → Mar31
+        ((3, 31),  (6, 30),  "Q2"),
+        ((6, 30),  (9, 30),  "Q3"),
+        ((9, 30),  (12, 31), "Q4"),
+    ]:
+        if (s.month, s.day) == (sm, sd) and (e.month, e.day) == (em, ed):
+            yr = e.year  # Q1 spans two calendar years; use end year as the label
+            if qname == "Q1" and e.year != s.year + 1:
+                continue  # Dec-31 same year as Mar-31 would be wrong
+            if qname != "Q1" and s.year != e.year:
+                continue
+            return f"{qname} {yr}"
+    # First-of-quarter start convention (Jan-1, Apr-1, Jul-1, Oct-1) — legacy
+    for (sm, sd), (em, ed), qname in [
+        ((1, 1),  (3, 31),  "Q1"), ((4, 1),  (6, 30),  "Q2"),
+        ((7, 1),  (9, 30),  "Q3"), ((10, 1), (12, 31), "Q4"),
+    ]:
         if (s.month, s.day) == (sm, sd) and (e.month, e.day) == (em, ed) and s.year == e.year:
             return f"{qname} {s.year}"
     if s.year == e.year:
@@ -188,16 +209,17 @@ def _format_filename(start_date: str, end_date: str, period_label: str) -> str:
     return f"Orefice_Portfolio_{s}_to_{e}.pdf"
 
 
-def _drift_status(drift_bps: float, target_bps: float) -> str:
+def _drift_status(drift_bps: float, target_bps: float, band_bps: float = 200) -> str:
     """Return 'Within' or 'Drift'.
 
     Both thresholds must be satisfied for Within:
-      abs(drift_bps) <= 200  AND  abs(drift_bps / target_bps) <= 0.20
+      abs(drift_bps) <= band_bps  AND  abs(drift_bps / target_bps) <= 0.20
     Either breach trips to Drift.
+    band_bps defaults to 200 (±2%) for sleeves < 10% target; pass 300 for sleeves ≥ 10%.
     """
     if target_bps == 0:
         return "Drift"
-    return "Within" if abs(drift_bps) <= 200 and abs(drift_bps / target_bps) <= 0.20 else "Drift"
+    return "Within" if abs(drift_bps) <= band_bps and abs(drift_bps / target_bps) <= 0.20 else "Drift"
 
 
 def _inception_date() -> str:
@@ -235,11 +257,13 @@ def _bm_period_return(series: pd.Series, period: str) -> float:
 # ── Section builders ──────────────────────────────────────────────────────────
 
 def _build_executive_summary(start_date: str, end_date: str) -> dict:
-    # All three series (portfolio, SP500, blended) are fetched from inception
-    # so that holiday gaps (e.g. New Year's Day) are forward-filled from the
-    # prior trading day rather than back-filled from the next.  Each is then
-    # sliced to the report period before computing returns — consistent with
-    # how _build_performance_section computes period returns.
+    # Portfolio and S&P 500 are loaded from inception so that the value series
+    # is continuous and daily-linked TWR can be computed correctly.  Each is then
+    # sliced to the report period start.  The custom blended benchmark is computed
+    # fresh from start_date so it uses SAA target weights as of the period start
+    # (buy-and-hold from inception drifts weights and produces a different result).
+    # start_date is always a trading day (Dec-31 for Q1, Mar-31 for Q2, etc.) so
+    # no holiday-bfill risk exists for the fresh blended series.
     inception = _inception_date()
 
     pv_since_inception = get_portfolio_value_series(inception, end_date)
@@ -253,9 +277,8 @@ def _build_executive_summary(start_date: str, end_date: str) -> dict:
     sp_period = sp_full[sp_full.index >= pd.Timestamp(start_date)]
     sp_return = float(sp_period.iloc[-1] / sp_period.iloc[0] - 1) if len(sp_period) >= 2 else 0.0
 
-    bl_full   = get_custom_blended_series(inception, end_date)
-    bl_period = bl_full[bl_full.index >= pd.Timestamp(start_date)]
-    bl_return = float(bl_period.iloc[-1] / bl_period.iloc[0] - 1) if len(bl_period) >= 2 else 0.0
+    bl = get_custom_blended_series(start_date, end_date)
+    bl_return = float(bl.iloc[-1] / bl.iloc[0] - 1) if len(bl) >= 2 else 0.0
 
     alpha_sp_bps = (portfolio_twr - sp_return) * 10_000
     alpha_bl_bps = (portfolio_twr - bl_return) * 10_000
@@ -348,12 +371,19 @@ def _build_holdings_section(end_date: str) -> dict:
     if sw.empty:
         return {"rows": [], "chart_b64": None}
 
+    with get_connection() as conn:
+        band_rows = conn.execute(
+            "SELECT name, tolerance_band FROM asset_classes WHERE parent_id IS NOT NULL"
+        ).fetchall()
+    band_map = {r["name"]: r["tolerance_band"] * 10_000 for r in band_rows}
+
     rows = []
     for sleeve, row in sw.iterrows():
         drift       = row["Drift"]
         drift_bps   = drift * 10_000
         target_bps  = row["Target Weight"] * 10_000
-        status      = _drift_status(drift_bps, target_bps)
+        band_bps    = band_map.get(sleeve, 200)
+        status      = _drift_status(drift_bps, target_bps, band_bps)
         rows.append({
             "sleeve":        sleeve,
             "market_value":  f"${row['Market Value']:,.0f}",
@@ -419,11 +449,28 @@ def _build_performance_section(start_date: str, end_date: str) -> dict:
     sp = get_sp500_series(inception, end_date) * start_val
     bl = get_custom_blended_series(inception, end_date) * start_val
 
+    end_d   = date.fromisoformat(end_date)
+    incep_d = date.fromisoformat(inception)
+
+    def _bl_period_return(period: str) -> float:
+        # Fresh blended series per period so weights reset at the period start
+        # (no 7-month inception drift). Capped at inception for 1Y/SI so we
+        # never extend the benchmark into pre-portfolio history.
+        ps = {
+            "SI":  inception,
+            "1Y":  max(end_d - timedelta(days=365),  incep_d).isoformat(),
+            "YTD": max(date(end_d.year - 1, 12, 31), incep_d).isoformat(),
+            "3M":  max(end_d - timedelta(days=90),   incep_d).isoformat(),
+            "1M":  max(end_d - timedelta(days=30),   incep_d).isoformat(),
+        }.get(period, inception)
+        s = get_custom_blended_series(ps, end_date)
+        return float(s.iloc[-1] / s.iloc[0] - 1) if len(s) >= 2 else 0.0
+
     period_rows = []
     for p in _PERIODS:
         pr = period_return("daily", pv, cf, p)
         sr = _bm_period_return(sp, p)
-        br = _bm_period_return(bl, p)
+        br = _bl_period_return(p)
         period_rows.append({
             "period":    _PERIOD_LABELS[p],
             "portfolio": f"{pr*100:.2f}%",
@@ -541,6 +588,157 @@ def _build_attribution_section(start_date: str, end_date: str) -> dict:
         "total_total":      f"{bf_df['total_effect'].sum()*10000:+.1f}",
         "sel_commentary":   sel_commentary,
         "alloc_commentary": alloc_commentary,
+    }
+
+
+def _build_factor_section(end_date: str) -> Optional[dict]:
+    """
+    Run per-sleeve FF5 regressions from inception through end_date and format for
+    the template.  Returns None only if both sleeves fail; partial results (one
+    sleeve None) are still returned so the template can render what it has.
+    """
+    inception = _inception_date()
+    try:
+        results = run_sleeve_regressions(inception, end_date)
+    except Exception:
+        logging.exception("FF5 sleeve regressions failed — factor section omitted from PDF")
+        return None
+
+    if not any(v is not None for v in results.values()):
+        return None
+
+    def _fmt_date_local(iso: str) -> str:
+        d = date.fromisoformat(iso)
+        return f"{d.strftime('%B')} {d.day}, {d.year}"
+
+    def _format_sleeve(res: Optional[dict]) -> Optional[dict]:
+        if res is None:
+            return None
+        rows = []
+        for factor in ["Mkt-RF", "SMB", "HML", "RMW", "CMA"]:
+            p = res["p_values"][factor]
+            rows.append({
+                "factor":       factor,
+                "beta":         f"{res['betas'][factor]:.3f}",
+                "tstat":        f"{res['t_stats'][factor]:.2f}",
+                "pvalue":       f"{p:.3f}",
+                "significance": sig_marker(p),
+            })
+        p_alpha = res["p_alpha"]
+        return {
+            "label":            res["sleeve_label"],
+            "tickers":          res["tickers"],
+            "rows":             rows,
+            "alpha_annual_str": f"{res['alpha_annual_bps']:+.0f} bps/yr",
+            "t_alpha_str":      f"{res['t_alpha']:.2f}",
+            "p_alpha_str":      f"{p_alpha:.3f}",
+            "sig_alpha":        sig_marker(p_alpha),
+            "r_squared":        f"{res['r_squared']:.3f}",
+            "adj_r_squared":    f"{res['adj_r_squared']:.3f}",
+            "T":                res["T"],
+            "nw_lags":          res["nw_lags"],
+            "sample_window": (
+                f"{_fmt_date_local(res['sample_start'])} — "
+                f"{_fmt_date_local(res['sample_end'])}"
+            ),
+            "_raw": res,
+        }
+
+    sleeves = [
+        s for s in [
+            _format_sleeve(results.get("us")),
+            _format_sleeve(results.get("developed_exus")),
+        ]
+        if s is not None
+    ]
+
+    return {
+        "sleeves":           sleeves,
+        "em_note":           EM_DISCLOSURE,
+        "prose":             build_factor_prose(results),
+        "methodology_notes": build_factor_methodology_notes(results),
+    }
+
+
+def _build_benchmark_section(start_date: str, end_date: str) -> Optional[dict]:
+    """
+    Run the benchmark-relative attribution regression from inception through end_date
+    and format results for the template.  Returns None if insufficient data or on failure.
+
+    start_date is the report-period start (e.g. Dec-31 for Q1) and is used only
+    for the BHB cross-reference window — the regression itself always covers the
+    full inception-to-end_date window.  Cross-reference uses the raw return
+    differential (r_p − r_b) so prose reads "AVUV outperformed IWM by 768 bps"
+    rather than the portfolio-weighted selection effect.
+    """
+    inception = _inception_date()
+    try:
+        result = run_benchmark_attribution_regression(inception, end_date)
+    except Exception:
+        logging.exception("Benchmark attribution regression failed — section omitted from PDF")
+        return None
+
+    if result is None:
+        return None
+
+    _BENCH_FACTORS = ["Bench-RF", "HML", "SMB", "RMW"]
+
+    def _fmt_date_local(iso: str) -> str:
+        d = date.fromisoformat(iso)
+        return f"{d.strftime('%B')} {d.day}, {d.year}"
+
+    rows = []
+    p_alpha = result["p_alpha"]
+    rows.append({
+        "factor":       "Alpha (annualized)",
+        "beta":         f"{result['alpha_annual_bps']:+.0f} bps/yr",
+        "tstat":        f"{result['t_alpha']:.2f}",
+        "pvalue":       f"{p_alpha:.3f}",
+        "significance": sig_marker(p_alpha),
+    })
+    for f in _BENCH_FACTORS:
+        p = result["p_values"][f]
+        rows.append({
+            "factor":       f,
+            "beta":         f"{result['betas'][f]:.3f}",
+            "tstat":        f"{result['t_stats'][f]:.2f}",
+            "pvalue":       f"{p:.3f}",
+            "significance": sig_marker(p),
+        })
+
+    # Top-3 BHB cross-reference — use report period (Q1) window, raw r_p−r_b
+    # differential so prose reads "AVUV outperformed IWM by 768 bps" matching
+    # the bench_ret / port_ret columns on the BHB attribution page.
+    bhb_top = None
+    try:
+        bf_df = brinson_fachler_period(start_date, end_date)
+        if not bf_df.empty:
+            bf_df["raw_diff"] = bf_df["r_p"] - bf_df["r_b"]
+            top3 = bf_df.nlargest(3, "selection_effect")
+            bhb_top = []
+            for _, row in top3.iterrows():
+                sleeve = row["sleeve"]
+                bhb_top.append({
+                    "holding": _SLEEVE_HOLDING_TICKER.get(sleeve, sleeve),
+                    "bench":   _SLEEVE_BENCH_TICKER.get(sleeve, sleeve),
+                    "sel_bps": row["raw_diff"] * 10_000,
+                })
+    except Exception:
+        pass
+
+    return {
+        "rows":              rows,
+        "r_squared":         f"{result['r_squared']:.3f}",
+        "adj_r_squared":     f"{result['adj_r_squared']:.3f}",
+        "T":                 result["T"],
+        "nw_lags":           result["nw_lags"],
+        "sample_window": (
+            f"{_fmt_date_local(result['sample_start'])} — "
+            f"{_fmt_date_local(result['sample_end'])}"
+        ),
+        "prose":             build_benchmark_prose(result, bhb_top_selection=bhb_top),
+        "methodology_notes": build_benchmark_methodology(result),
+        "_raw":              result,
     }
 
 
@@ -693,13 +891,27 @@ def generate_quarterly_report(
 
     period_label = _format_period_label(start_date, end_date)
 
-    exec_data   = _build_executive_summary(start_date, end_date) if has_trades else None
-    hold_data   = _build_holdings_section(end_date)              if has_trades else {"rows": [], "chart_b64": None}
-    perf_data   = _build_performance_section(start_date, end_date) if has_trades else None
-    attr_data   = _build_attribution_section(start_date, end_date) if has_trades else None
-    pos_data    = _build_positioning_section(end_date)             if has_trades else None
-    macro_data  = _build_macro_section()
-    thesis_data = _build_thesis_section(start_date, end_date)
+    # Quarter-locking: use immutable snapshot prices for standard completed quarters so
+    # that Yahoo Finance retroactive adj_close updates cannot shift historical report numbers.
+    quarter_id = label_to_quarter_id(period_label)
+    snap_df: Optional[pd.DataFrame] = None
+    snapshot_captured_at: Optional[str] = None
+    if quarter_id and is_quarter_complete(quarter_id):
+        snap_df, snapshot_captured_at = get_quarter_snapshot(quarter_id)
+        if snap_df is None:
+            snap_df, snapshot_captured_at = capture_quarter_snapshot(quarter_id)
+
+    ctx = snapshot_price_context(snap_df) if snap_df is not None else nullcontext()
+    with ctx:
+        exec_data        = _build_executive_summary(start_date, end_date) if has_trades else None
+        hold_data        = _build_holdings_section(end_date)              if has_trades else {"rows": [], "chart_b64": None}
+        perf_data        = _build_performance_section(start_date, end_date) if has_trades else None
+        attr_data        = _build_attribution_section(start_date, end_date) if has_trades else None
+        pos_data         = _build_positioning_section(end_date)             if has_trades else None
+        factor_data      = _build_factor_section(end_date)                 if has_trades else None
+        bench_attr_data  = _build_benchmark_section(start_date, end_date)  if has_trades else None
+        macro_data       = _build_macro_section()
+        thesis_data      = _build_thesis_section(start_date, end_date)
 
     css_content = (TEMPLATES_DIR / "report_styles.css").read_text(encoding="utf-8")
 
@@ -710,17 +922,25 @@ def generate_quarterly_report(
     today = date.today()
     gen_date = f"{today.strftime('%B')} {today.day}, {today.year}"
 
+    snapshot_display: Optional[str] = None
+    if snapshot_captured_at:
+        snap_dt = datetime.fromisoformat(snapshot_captured_at)
+        snapshot_display = f"{snap_dt.strftime('%B')} {snap_dt.day}, {snap_dt.year}"
+
     html_content = tmpl.render(
-        css_content    = css_content,
-        period_label   = period_label,
-        recipient_name = recipient_name,
-        generation_date= gen_date,
-        has_trades     = has_trades,
+        css_content          = css_content,
+        period_label         = period_label,
+        recipient_name       = recipient_name,
+        generation_date      = gen_date,
+        snapshot_captured_at = snapshot_display,
+        has_trades           = has_trades,
         exec           = exec_data,
         hold           = hold_data,
         perf           = perf_data,
         attr           = attr_data,
         pos            = pos_data,
+        factor         = factor_data,
+        bench_attr     = bench_attr_data,
         macro          = macro_data,
         thesis         = thesis_data,
     )

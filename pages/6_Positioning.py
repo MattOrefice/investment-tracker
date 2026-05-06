@@ -1,7 +1,11 @@
 """Active Positioning — tilts, effective duration, scenario analysis."""
 import streamlit as st
 
-from src.config import IS_DEMO
+st.set_page_config(page_title="Active Positioning", layout="wide")
+
+from src.asof import as_of_banner
+from src.config import DEMO_BANNER_TEXT, IS_DEMO
+from src.ui_helpers import render_footer
 from src.positioning import (
     build_style_box_figure,
     get_active_tilts,
@@ -11,13 +15,8 @@ from src.positioning import (
     get_style_box_data,
 )
 
-st.set_page_config(page_title="Active Positioning", layout="wide")
-
 if IS_DEMO:
-    st.info(
-        "**Demo mode** — data reflects a paper-trade portfolio. "
-        "Positioning analysis derives automatically from live portfolio state."
-    )
+    st.info(DEMO_BANNER_TEXT)
 
 _, col, _ = st.columns([1, 8, 1])
 with col:
@@ -26,6 +25,7 @@ with col:
         "Auto-derived from current sleeve weights vs SAA targets. "
         "No hand-written text — updates every quarter as the portfolio evolves."
     )
+    st.caption(as_of_banner())
     st.divider()
 
     from datetime import date
@@ -53,24 +53,25 @@ with col:
 
     st.divider()
 
-    # ── Block B: FI Sleeve Effective Duration ───────────────────────────────
-    st.subheader("FI Sleeve Effective Duration")
+    # ── Block B: Income + Cash Effective Duration ───────────────────────────
+    st.subheader("Income + Cash Effective Duration")
     dur = get_effective_duration(end_date)
     fi_dur   = dur["fi_sleeve_duration"]
     agg_dur  = dur["agg_benchmark"]
     delta_yr = round(fi_dur - agg_dur, 1)
     st.metric(
-        label="FI Sleeve Duration",
+        label="Income + Cash Duration",
         value=f"{fi_dur} yrs",
         delta=f"{delta_yr:+.1f} yrs vs Bloomberg US Agg ({agg_dur} yrs)",
-        help="Weighted average duration of the FI sleeve (Core Fixed Income, TIPS, Cash), "
-             "using actual sleeve weights only — not diluted by equity.",
+        help="Weighted average duration of the Income + Cash bucket (VGIT, SCHP, and SPAXX), "
+             "using actual sleeve weights. Cash carries zero duration, pulling the bucket average "
+             "below the pure FI sleeve duration of ~6.0 yrs.",
     )
     st.caption(
-        f"FI weight: {dur['fi_weight_pct']}% of portfolio. "
+        f"Income + Cash weight: {dur['fi_weight_pct']}% of portfolio. "
         "Intermediate-Treasury focus keeps duration below the Agg benchmark, limiting rate sensitivity. "
         "Duration also flows through equity via discount-rate effects — it's a whole-portfolio consideration. "
-        "Duration sourced from static ETF fact-sheet values — TODO: pull live."
+        "Duration sourced from ETF fact-sheet values (VGIT: 5.5 yrs, SCHP: 6.8 yrs per Vanguard/Schwab Q1 2026)."
     )
 
     st.divider()
@@ -97,10 +98,14 @@ with col:
         fig = build_style_box_figure(style_data)
         box_col, _ = st.columns([3, 2])
         with box_col:
-            st.plotly_chart(fig, width='stretch')
+            st.plotly_chart(fig, use_container_width=True)
         st.caption(
             "Morningstar 3×3 style box · x-axis: 4-factor value-growth score (z-scored vs SPY) · "
             "y-axis: log market cap · dot size = portfolio weight · US equity sleeves only"
+        )
+        st.caption(
+            "Empty cells reflect deliberate construction: the SAA does not include mid-cap or "
+            "pure-growth tilts. Quality (SPHQ) and value (VTV, AVUV) are the chosen factor exposures."
         )
 
         if non_us:
@@ -117,3 +122,4 @@ with col:
             )
     else:
         st.info("No equity holdings found.")
+    render_footer()

@@ -16,6 +16,14 @@ data/tracker.db
 # Generated reports — local artifacts, not committed
 data/reports/
 
+# Factor data cache — local copies in data/ are gitignored; committed seed files live in data/cache/
+data/ff_factors.csv
+data/ff_factors_us.csv
+data/ff_factors_developed_exus.csv
+data/ff_factors_global.csv
+data/ff_umd_us.csv
+# data/cache/ is committed (seed files for Streamlit Cloud cold start)
+
 # Editor / tool dirs
 .cursor/
 .claude/

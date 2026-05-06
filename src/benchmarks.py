@@ -3,12 +3,8 @@ from datetime import date
 
 import pandas as pd
 
-try:
-    from src.db import get_connection
-    from src.prices import get_prices
-except ImportError:
-    from db import get_connection
-    from prices import get_prices
+from src.db import get_connection
+from src.prices import get_prices
 
 # Sleeve → benchmark ticker mapping (from asset_classes.benchmark_ticker).
 # Real Assets benchmark was originally "VNQ+DJP" but DJP (iPath Bloomberg

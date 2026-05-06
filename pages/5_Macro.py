@@ -5,10 +5,12 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from src import macro, shiller
-from src.prices import get_prices
-
 st.set_page_config(page_title="Macro Dashboard", layout="wide")
+
+from src import macro, shiller
+from src.asof import as_of_banner
+from src.prices import get_prices
+from src.ui_helpers import render_footer
 
 TODAY      = date.today().isoformat()
 ONE_YR_AGO = (date.fromisoformat(TODAY) - timedelta(days=365)).isoformat()
@@ -153,6 +155,7 @@ with col:
 
     st.markdown("## Macro Dashboard")
     st.caption("Regime indicators relevant to portfolio positioning.")
+    st.caption(as_of_banner())
 
     hdr_l, hdr_r = st.columns([3, 1])
     with hdr_l:
@@ -161,8 +164,10 @@ with col:
             "Data: FRED & Shiller."
         )
     with hdr_r:
-        if st.button("Force refresh", type="secondary"):
+        if st.button("Force refresh", type="secondary",
+                     help="Bypass the disk cache and re-fetch macro data from FRED and Shiller."):
             macro.clear_macro_cache()
+            shiller.clear_shiller_cache()   # delete disk CSV so next load re-fetches
             st.cache_data.clear()
             st.rerun()
 
@@ -186,12 +191,24 @@ with col:
         st.error(f"CAPE data unavailable: {exc}")
 
     if cape_ok:
+        cape_last_date = cape_series.dropna().index[-1]
+        staleness_days = (pd.Timestamp.today() - cape_last_date).days
+        if staleness_days > 95:
+            st.warning(
+                f"Shiller data is {staleness_days} days stale "
+                f"(last observation: {cape_last_date.strftime('%Y-%m')}). "
+                "Force refresh below to pull the latest data."
+            )
+
         col_l, col_r = st.columns([1, 2])
 
-        cape_as_of = cape_series.dropna().index[-1].strftime("%b %Y")
+        cape_as_of = cape_last_date.strftime("%b %Y")
         with col_l:
             st.metric("Shiller CAPE", f"{cape_val:.1f}×")
-            st.caption(f"{_ordinal(cape_pctile)} percentile since 1881 · data as of {cape_as_of}")
+            st.caption(
+                f"{_ordinal(cape_pctile)} percentile since 1881 (full history) "
+                f"· data as of {cape_as_of}"
+            )
             st.markdown(
                 f"**Implied forward 10Y real return:** ~{cape_implied:.1%}  \n"
                 "*Historical relationship, not a forecast.*"
@@ -231,7 +248,7 @@ with col:
             )
             _apply_style(fig_cape, height=_CHART_H_CAPE)
             fig_cape.update_yaxes(title_text="CAPE (×)")
-            st.plotly_chart(fig_cape, width='stretch')
+            st.plotly_chart(fig_cape, use_container_width=True)
 
         pctile_label = (
             "extremely elevated" if cape_pctile > 90 else
@@ -242,31 +259,157 @@ with col:
         )
         st.caption(
             f"CAPE in the {_ordinal(cape_pctile)} percentile historically — {pctile_label}. "
-            "Periods of similarly elevated valuation (1929, 1999, 2021) preceded materially "
-            "below-average forward returns. Most directly relevant to the International "
-            "Developed and US Large Value sleeves, where the discount-to-US-CAPE thesis "
-            "depends on US valuations remaining above historical norms."
+            "Only the dot-com bubble peak (1999–2001) has sustained CAPE above 40 in the "
+            "full 145-year Shiller record; the 2024–2026 stretch is the second such instance. "
+            "Periods of extreme valuation have preceded materially below-average decade-ahead "
+            "returns. Most directly relevant to the International Developed and US Large Value "
+            "sleeves, where the discount-to-US-CAPE thesis depends on US valuations remaining "
+            "above historical norms."
         )
 
     st.divider()
 
-    # ── Load FRED data (shared across panels 2-4) ────────────────────────────
+    # ── Load FRED data per-series — None signals fetch failure ───────────────
 
-    try:
-        with st.spinner("Loading FRED data…"):
-            rec_periods = _load_recession_periods()
-            t10y2y      = _load_fred("T10Y2Y",       "1976-06-01")
-            dff         = _load_fred("DFF",           "1954-07-01")
-            hy_oas      = _load_fred("BAMLH0A0HYM2", "1996-12-31")
-        fred_ok = True
-    except Exception as exc:
-        fred_ok = False
-        st.error(f"FRED data unavailable: {exc}")
+    def _try_fred(series_id: str, start_date: str):
+        """Return (series, None) on success or (None, exc) on failure."""
+        try:
+            return _load_fred(series_id, start_date), None
+        except Exception as exc:
+            return None, exc
 
-    # ── Panel 2: Yield Curve ─────────────────────────────────────────────────
+    def _try_rec():
+        try:
+            return _load_recession_periods(), None
+        except Exception as exc:
+            return None, exc
 
-    if fred_ok:
-        st.markdown("#### 2/10 Yield Curve Spread")
+    def _panel_error(panel_title: str, exc: Exception, retry_key: str) -> None:
+        """Render a compact per-panel error card with a Retry button."""
+        with st.container(border=True):
+            st.markdown(f"**{panel_title}** — data temporarily unavailable")
+            st.caption(f"{type(exc).__name__}: {exc}")
+            if st.button("Retry", key=retry_key):
+                _load_fred.clear()
+                st.rerun()
+
+    with st.spinner("Loading FRED data…"):
+        rec_periods, _rec_err    = _try_rec()
+        t10y2y,      _t10y2y_err = _try_fred("T10Y2Y",       "1976-06-01")
+        dff,         _dff_err    = _try_fred("DFF",           "1954-07-01")
+        hy_oas,      _hy_oas_err = _try_fred("BAMLH0A0HYM2", "1996-12-31")
+        dgs10,       _dgs10_err  = _try_fred("DGS10",         "2003-01-01")
+        t10yie,      _t10yie_err = _try_fred("T10YIE",        "2003-01-01")
+
+    # ── Panel 2: Excess CAPE Yield ──────────────────────────────────────────
+
+    if cape_ok and (dgs10 is not None) and (t10yie is not None):
+        st.markdown("#### Excess CAPE Yield (ECY)")
+
+        dgs10_clean  = dgs10.dropna()
+        t10yie_clean = t10yie.dropna()
+
+        current_dgs10  = float(dgs10_clean.iloc[-1])
+        current_t10yie = float(t10yie_clean.iloc[-1])
+        current_ecy    = macro.compute_ecy(cape_val, current_dgs10, current_t10yie)
+
+        # Historical ECY series aligned monthly (T10YIE starts Jan 2003)
+        _ecy_start = "2003-01-01"
+        _dgs10_m   = dgs10_clean.loc[_ecy_start:].resample("MS").mean()
+        _t10yie_m  = t10yie_clean.loc[_ecy_start:].resample("MS").mean()
+        _cape_m    = cape_series.dropna().loc[_ecy_start:]
+        _ecy_df    = pd.concat([_cape_m, _dgs10_m, _t10yie_m], axis=1).dropna()
+        _ecy_df.columns = ["cape", "dgs10", "t10yie"]
+        _ecy_hist  = (100.0 / _ecy_df["cape"]) - (_ecy_df["dgs10"] - _ecy_df["t10yie"])
+
+        ecy_pctile   = macro.percentile(_ecy_hist, current_ecy)
+        ecy_since    = _ecy_hist.index[0].strftime("%b %Y")
+        _ecy_median  = float(_ecy_hist.median())
+        _real_rate   = current_dgs10 - current_t10yie
+
+        col_l, col_r = st.columns([1, 2])
+        with col_l:
+            st.metric("ECY", f"{current_ecy:.2f}%")
+            st.caption(
+                f"{_ordinal(ecy_pctile)} percentile since {ecy_since}  \n"
+                f"CAPE yield {100/cape_val:.2f}% vs real rate {_real_rate:.2f}% "
+                f"({current_dgs10:.2f}% − {current_t10yie:.2f}%)"
+            )
+            ecy_window = st.radio(
+                "Window", ["5Y", "10Y", "Max"],
+                index=2, key="ecy_window", horizontal=True,
+            )
+
+        with col_r:
+            _ecy_w_start = _window_start(ecy_window)
+            _ecy_w       = _ecy_hist[_ecy_hist.index >= pd.Timestamp(_ecy_w_start)]
+
+            fig_ecy = go.Figure()
+            fig_ecy.add_trace(go.Scatter(
+                x=_ecy_w.index, y=_ecy_w.values,
+                mode="lines", name="ECY (%)",
+                line=dict(color=_C["primary"], width=2),
+            ))
+            fig_ecy.add_hline(
+                y=_ecy_median,
+                line_dash="dash", line_color=_C["ref"], line_width=1,
+                annotation_text=f"Median {_ecy_median:.1f}%",
+                annotation_position="right", annotation_font_size=10,
+            )
+            fig_ecy.add_hline(
+                y=0,
+                line_dash="dot", line_color="#CC4444", line_width=1,
+                annotation_text="0 = bonds match equities",
+                annotation_position="top left", annotation_font_size=9,
+                annotation_font_color="#888",
+            )
+            _apply_style(fig_ecy, height=_CHART_H_CAPE)
+            fig_ecy.update_yaxes(title_text="ECY (%)")
+            st.plotly_chart(fig_ecy, use_container_width=True)
+
+        if current_ecy >= 3.0:
+            _ecy_interp = (
+                f"ECY of {current_ecy:.2f}% signals equities offer a substantial earnings yield "
+                "above real bond yields — historically associated with attractive equity forward "
+                "returns relative to fixed income."
+            )
+        elif current_ecy >= 1.0:
+            _ecy_interp = (
+                f"ECY of {current_ecy:.2f}% reflects a modest equity premium above real bond yields — "
+                "historically consistent with reasonable forward returns, though the margin of safety "
+                "is thinner than the post-2008 zero-real-rate era."
+            )
+        elif current_ecy >= 0.0:
+            _ecy_interp = (
+                f"ECY of {current_ecy:.2f}% places equities near parity with real bond yields — "
+                "limited yield premium above what intermediate Treasuries offer in real terms. "
+                "The International Developed sleeve's valuation thesis is partly predicated on US "
+                "equities being expensive relative to both international peers and real bond yields."
+            )
+        else:
+            _ecy_interp = (
+                f"ECY of {current_ecy:.2f}% indicates real bonds yield more than equities — "
+                "a historically unusual regime where fixed income competes directly with equity returns. "
+                "TIPS and Core Fixed Income sleeves become more competitive on a risk-adjusted basis "
+                "in this environment."
+            )
+
+        st.caption(
+            _ecy_interp + f" "
+            f"Current reading at the {_ordinal(ecy_pctile)} percentile of its {ecy_since}–present "
+            f"history (T10YIE breakeven data starts {ecy_since}; percentile window is disclosed accordingly)."
+        )
+
+        st.divider()
+
+    elif cape_ok:
+        _panel_error("Excess CAPE Yield (ECY)", _dgs10_err or _t10yie_err, "retry_ecy")
+        st.divider()
+
+    # ── Panel 3: Yield Curve ─────────────────────────────────────────────────
+
+    st.markdown("#### 2/10 Yield Curve Spread")
+    if t10y2y is not None:
 
         t10y2y_clean       = t10y2y.dropna()
         # FRED T10Y2Y is in percent; multiply by 100 for basis points
@@ -288,16 +431,21 @@ with col:
         yc_data  = (t10y2y_clean * 100).loc[yc_start:]
 
         fig_yc = go.Figure()
-        _add_recession_shading(fig_yc, rec_periods, yc_start)
+        _add_recession_shading(fig_yc, rec_periods or [], yc_start)
         fig_yc.add_trace(go.Scatter(
             x=yc_data.index, y=yc_data.values,
             mode="lines", name="10Y−2Y (bps)",
             line=dict(color=_C["primary"], width=2),
         ))
-        fig_yc.add_hline(y=0, line_dash="dash", line_color=_C["ref"], line_width=1)
+        fig_yc.add_hline(
+            y=0, line_dash="dash", line_color=_C["ref"], line_width=1,
+            annotation_text="0 = flat  |  above: normal  |  below: inverted",
+            annotation_position="top left", annotation_font_size=9,
+            annotation_font_color="#888",
+        )
         _apply_style(fig_yc)
         fig_yc.update_yaxes(title_text="Spread (bps)")
-        st.plotly_chart(fig_yc, width='stretch')
+        st.plotly_chart(fig_yc, use_container_width=True)
 
         st.caption(
             "Yield curve inversions (spread < 0) have preceded each of the last seven "
@@ -307,11 +455,14 @@ with col:
         )
 
         st.divider()
+    else:
+        _panel_error("2/10 Yield Curve Spread", _t10y2y_err, "retry_yc")
+        st.divider()
 
-    # ── Panel 3: Fed Funds ───────────────────────────────────────────────────
+    # ── Panel 4: Fed Funds ───────────────────────────────────────────────────
 
-    if fred_ok:
-        st.markdown("#### Effective Federal Funds Rate")
+    st.markdown("#### Effective Federal Funds Rate")
+    if dff is not None:
 
         dff_clean  = dff.dropna()
         current_ff = float(dff_clean.iloc[-1])
@@ -336,7 +487,7 @@ with col:
         ff_data  = dff_clean.loc[ff_start:]
 
         fig_ff = go.Figure()
-        _add_recession_shading(fig_ff, rec_periods, ff_start)
+        _add_recession_shading(fig_ff, rec_periods or [], ff_start)
         fig_ff.add_trace(go.Scatter(
             x=ff_data.index, y=ff_data.values,
             mode="lines", name="Fed Funds (%)",
@@ -344,16 +495,19 @@ with col:
         ))
         _apply_style(fig_ff)
         fig_ff.update_yaxes(title_text="Rate (%)")
-        st.plotly_chart(fig_ff, width='stretch')
+        st.plotly_chart(fig_ff, use_container_width=True)
 
         st.caption(_ff_interpretation(current_ff, ff_chg_bps))
 
         st.divider()
+    else:
+        _panel_error("Effective Federal Funds Rate", _dff_err, "retry_ff")
+        st.divider()
 
-    # ── Panel 4: HY Credit Spreads ───────────────────────────────────────────
+    # ── Panel 5: HY Credit Spreads ───────────────────────────────────────────
 
-    if fred_ok:
-        st.markdown("#### HY Credit Spreads (OAS)")
+    st.markdown("#### HY Credit Spreads (OAS)")
+    if hy_oas is not None:
 
         # FRED BAMLH0A0HYM2 is in percent; multiply by 100 for basis points
         hy_clean      = hy_oas.dropna()
@@ -366,7 +520,10 @@ with col:
         col_m, col_w = st.columns([3, 1])
         with col_m:
             st.metric("HY OAS", f"{current_hy:.0f} bps")
-            st.caption(f"{_ordinal(hy_pctile)} percentile since {hy_since}")
+            st.caption(
+                f"{_ordinal(hy_pctile)} percentile since {hy_since} "
+                "(available window — FRED restricted series to this date)"
+            )
         with col_w:
             hy_window = st.radio(
                 "Window", ["5Y", "10Y", "20Y", "Max"],
@@ -377,7 +534,7 @@ with col:
         hy_data  = hy_bps.loc[hy_start:]
 
         fig_hy = go.Figure()
-        _add_recession_shading(fig_hy, rec_periods, hy_start)
+        _add_recession_shading(fig_hy, rec_periods or [], hy_start)
         fig_hy.add_trace(go.Scatter(
             x=hy_data.index, y=hy_data.values,
             mode="lines", name="HY OAS (bps)",
@@ -391,7 +548,7 @@ with col:
         )
         _apply_style(fig_hy)
         fig_hy.update_yaxes(title_text="OAS (bps)")
-        st.plotly_chart(fig_hy, width='stretch')
+        st.plotly_chart(fig_hy, use_container_width=True)
 
         hy_framing = (
             "suggests late-cycle complacency — limited cushion for additional compression"
@@ -410,8 +567,11 @@ with col:
         )
 
         st.divider()
+    else:
+        _panel_error("HY Credit Spreads (OAS)", _hy_oas_err, "retry_hy")
+        st.divider()
 
-    # ── Panel 5: US vs. International ────────────────────────────────────────
+    # ── Panel 6: US vs. International ────────────────────────────────────────
 
     st.markdown("#### US vs. International Equity")
 
@@ -469,8 +629,16 @@ with col:
             annotation_position="right", annotation_font_size=10,
         )
         _apply_style(fig_us)
-        fig_us.update_yaxes(title_text="Ratio (normalized to 1.0)")
-        st.plotly_chart(fig_us, width='stretch')
+        fig_us.update_yaxes(title_text="Ratio (normalized to 1.0 at window start)")
+        fig_us.add_annotation(
+            xref="paper", yref="paper",
+            x=0.01, y=0.98,
+            text="Rising = US outperforming international",
+            showarrow=False,
+            font=dict(size=9, color="#888"),
+            xanchor="left", yanchor="top",
+        )
+        st.plotly_chart(fig_us, use_container_width=True)
 
         us_label = (
             "extreme"   if ratio_pctile > 90 else
@@ -493,12 +661,34 @@ with col:
 
     # ── Sources ───────────────────────────────────────────────────────────────
 
-    with st.expander("Data sources"):
-        st.caption(
-            "**FRED** (Federal Reserve Bank of St. Louis): T10Y2Y (10Y−2Y Treasury spread), "
-            "DFF (Effective Federal Funds Rate), BAMLH0A0HYM2 (ICE BofA HY OAS — available "
-            "from May 2023 only; FRED restricted series access in 2023), "
-            "USREC (NBER recession indicator).  \n"
-            "**Shiller / Yale**: CAPE from Robert Shiller’s dataset at https://shillerdata.com/.  \n"
-            "**Yahoo Finance**: SPY and EFA price data via local prices cache."
+    with st.expander("Data sources & freshness"):
+        _src_lines = []
+        if cape_ok:
+            _cape_last = cape_series.dropna().index[-1].strftime("%b %Y")
+            _src_lines.append(
+                f"**Shiller CAPE** (multpl.com, sourced from Robert Shiller’s dataset): "
+                f"last observation **{_cape_last}** · monthly cadence"
+            )
+        else:
+            _src_lines.append("**Shiller CAPE**: unavailable")
+        def _fred_src(label: str, series: "pd.Series | None") -> str:
+            if series is not None:
+                last = series.dropna().index[-1].strftime("%b %d, %Y")
+                return f"**{label}**: last observation **{last}**"
+            return f"**{label}**: unavailable"
+
+        _src_lines += [
+            _fred_src("FRED DGS10 (10-Year Treasury Rate)",              dgs10)  + " · daily",
+            _fred_src("FRED T10YIE (10-Year Breakeven Inflation)",       t10yie) + " · daily · starts Jan 2003",
+            _fred_src("FRED T10Y2Y (10Y−2Y Treasury spread)",            t10y2y) + " · daily",
+            _fred_src("FRED DFF (Fed Funds Rate)",                       dff)    + " · daily",
+            _fred_src("FRED BAMLH0A0HYM2 (ICE BofA HY OAS, May 2023+)", hy_oas) + " · daily",
+            "**FRED USREC** (NBER recession indicator): monthly, lags recession end by ~12 months"
+            + ("" if rec_periods is not None else " — unavailable"),
+        ]
+        _src_lines.append(
+            "**Yahoo Finance** (SPY, EFA): daily prices via local SQLite cache · "
+            "used for the US vs. International relative performance panel"
         )
+        st.caption("  \n".join(_src_lines))
+    render_footer()

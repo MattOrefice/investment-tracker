@@ -2,10 +2,7 @@
 import sqlite3
 from pathlib import Path
 
-try:
-    from src.config import get_db_path
-except ImportError:
-    from config import get_db_path  # when run directly as python src/db.py
+from src.config import get_db_path
 
 DB_PATH = get_db_path()
 

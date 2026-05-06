@@ -126,7 +126,7 @@ SUB_CLASSES = [
         "benchmark_ticker": "EFA",
         "rationale": (
             "Largest non-US sleeve, expressing two distinct views. First, valuation: developed international "
-            "CAPE is around 18 vs. US at 28, and starting valuation is the dominant driver of long-run returns "
+            "CAPE is materially below US levels (historically 30-50% discount), and starting valuation is the dominant driver of long-run returns "
             "over 10+ year windows. Second, regime diversification: the dollar has been a 15-year tailwind for "
             "US-domiciled investors, and historical mean reversion suggests that tailwind isn't permanent. 19% "
             "is meaningfully overweight typical US-investor home bias (10-15%) but underweight global market "
@@ -194,7 +194,7 @@ SUB_CLASSES = [
         "rationale": (
             "Inflation-correlated diversifier with different risk drivers than equity or duration. Public REITs "
             "and commodities aren't perfect substitutes for the private real estate and natural resource exposure "
-            "endowments hold, but at $10k they're the only honest implementation. 10% is large enough to actually "
+            "endowments hold, but at retail account sizes they're the only honest implementation. 10% is large enough to actually "
             "move the portfolio's behavior in inflationary regimes (which 2-3% wouldn't) without being so large "
             "that REIT/commodity volatility — both can have 30%+ drawdowns — overwhelms the equity sleeves. "
             "Would increase if I gain access to private real estate or if commodities enter sustained "

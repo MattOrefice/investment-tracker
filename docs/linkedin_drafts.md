@@ -20,7 +20,7 @@ to a live personal portfolio:
 - Automated quarterly PDF reporting (WeasyPrint, kaleido static chart rendering)
 - Dual-mode architecture: local personal portfolio and public demo on Streamlit Cloud
 
-CFA charterholder (April 2026) | Previously: portfolio analytics at MissionSquare Retirement
+CFA charterholder (April 2026) | Previously: portfolio analytics at MissionSquare
 
 Live demo: https://mattorefice-investment.streamlit.app/
 GitHub: https://github.com/MattOrefice/investment-tracker
@@ -44,7 +44,7 @@ FRED, with historical percentiles for each indicator.
 
 The primary public artifact is an automated quarterly PDF report, generated directly
 from the live demo. CFA charterholder (April 2026); previously in portfolio analytics
-at MissionSquare Retirement.
+at MissionSquare.
 
 Live demo: https://mattorefice-investment.streamlit.app/
 GitHub: https://github.com/MattOrefice/investment-tracker
