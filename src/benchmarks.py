@@ -190,6 +190,18 @@ def get_naive_60_40_series(start_date: str, end_date: str | None = None) -> pd.S
     return cumulative / first if first > 0 else cumulative
 
 
+def get_naive_series(kind: str, start_date: str, end_date: str | None = None) -> pd.Series:
+    """
+    $1-normalized naive benchmark series.
+
+    kind='60_40': 60% SPY + 40% AGG (calls get_naive_60_40_series).
+    kind='spy':   pure SPY total return (calls get_sp500_series).
+    """
+    if kind == "spy":
+        return get_sp500_series(start_date, end_date)
+    return get_naive_60_40_series(start_date, end_date)
+
+
 # Convenience: scalar benchmark return for a single sleeve over a period
 def sleeve_benchmark_return(sleeve: str, start_date: str, end_date: str) -> float:
     """Return the total return of the benchmark for a single sleeve over the period."""

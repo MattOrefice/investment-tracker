@@ -284,3 +284,70 @@ def test_stage1_distinguishes_across_windows():
         "If naive and SAA series both have data, different windows must produce "
         "different start-of-window prices and thus different returns."
     )
+
+
+# ── Phase 10 Section 0 — naive benchmark toggle ───────────────────────────────
+
+def test_two_stage_reconciles_against_spy():
+    """Stage1 + Stage2 = Total holds when naive baseline is SPY (not 60/40).
+
+    Regression pin: Phase 10 Section 0. The algebra is purely arithmetic and
+    must hold regardless of which naive baseline is selected. This test uses a
+    hand-constructed scenario with a pure-SPY naive return.
+    """
+    spy_return  = 0.25   # hypothetical SPY return
+    saa_return  = 0.30   # SAA-blended benchmark
+    port_return = 0.31   # portfolio outperforms SAA by 1%
+
+    result = compute_two_stage_attribution(
+        port_return              = port_return,
+        saa_return               = saa_return,
+        naive_return             = spy_return,
+        sleeve_saa_weights       = {"Equity": 0.72, "Income": 0.15, "Real Assets": 0.10, "Cash": 0.03},
+        sleeve_benchmark_returns = {"Equity": 0.35, "Income": 0.05, "Real Assets": 0.12, "Cash": 0.05},
+    )
+
+    assert result["algebra_residual"] < 1e-12
+    assert result["stage1"] == pytest.approx(saa_return - spy_return, abs=1e-12)
+    assert result["stage2"] == pytest.approx(port_return - saa_return, abs=1e-12)
+    assert result["total"]  == pytest.approx(port_return - spy_return, abs=1e-12)
+    assert result["algebra_residual"] * 10_000 < 0.5
+
+
+def test_stage1_distinguishes_across_naive_benchmarks():
+    """Stage 1 vs. 60/40 must differ from Stage 1 vs. SPY for the same period.
+
+    Regression pin: Phase 10 Section 0. If both naive series return the same
+    value (e.g., because price data is absent), Stage 1 becomes identical
+    regardless of selection and the toggle has no effect.
+    Skips when benchmark data is unavailable.
+    """
+    from src.benchmarks import get_naive_series, get_custom_blended_series
+
+    INCEPTION = "2025-05-01"
+    import datetime
+    TODAY = datetime.date.today().isoformat()
+
+    try:
+        naive_6040 = get_naive_series("60_40", INCEPTION, TODAY)
+        naive_spy  = get_naive_series("spy",   INCEPTION, TODAY)
+        bl         = get_custom_blended_series(INCEPTION, TODAY)
+    except Exception as exc:
+        pytest.skip(f"Benchmark data unavailable: {exc}")
+
+    if naive_6040.isnull().all() or naive_spy.isnull().all() or bl.isnull().all():
+        pytest.skip("One or more benchmark series is empty")
+
+    # SI return for each naive baseline and the SAA blend
+    bl_si     = float(bl.iloc[-1] / bl.iloc[0] - 1)
+    naive_6040_si = float(naive_6040.iloc[-1] / naive_6040.iloc[0] - 1)
+    naive_spy_si  = float(naive_spy.iloc[-1]  / naive_spy.iloc[0]  - 1)
+
+    stage1_6040 = bl_si - naive_6040_si
+    stage1_spy  = bl_si - naive_spy_si
+
+    assert abs(stage1_6040 - stage1_spy) > 0.001, (
+        f"Stage 1 is indistinguishable across naive benchmarks: "
+        f"60/40={stage1_6040:.4f}, SPY={stage1_spy:.4f}. "
+        "The 60/40 and SPY series must have diverged over the inception period."
+    )

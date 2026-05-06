@@ -198,6 +198,22 @@ def test_reconciliation_no_latex_artifacts(performance_app: AppTest) -> None:
     )
 
 
+def test_naive_benchmark_radio_has_two_options(performance_app: AppTest) -> None:
+    """Naive benchmark radio must offer exactly two options. Pinned: Phase 10 Section 0.
+
+    Options must be '60/40 (60% SPY / 40% AGG)' (default, index 0) and 'S&P 500 (SPY)'.
+    If the radio is absent or has the wrong options, the toggle is broken.
+    """
+    if not performance_app.metric:
+        pytest.skip("No portfolio data — skipped in local/empty-DB mode")
+    naive_radios = [r for r in performance_app.radio if r.key == "naive_benchmark"]
+    assert naive_radios, "Naive benchmark radio (key='naive_benchmark') not found"
+    opts = list(naive_radios[0].options)
+    assert len(opts) == 2, f"Expected 2 naive benchmark options, got {len(opts)}: {opts}"
+    assert opts[0] == "60/40 (60% SPY / 40% AGG)", f"First option wrong: {opts[0]!r}"
+    assert opts[1] == "S&P 500 (SPY)", f"Second option wrong: {opts[1]!r}"
+
+
 def test_two_stage_attribution_section_renders(performance_app: AppTest) -> None:
     """Two-Stage Attribution section must render with three metric tiles. Pinned: Phase 9.
 

@@ -11,7 +11,7 @@ st.set_page_config(page_title="Performance & Attribution", layout="wide")
 from src.asof import as_of_banner
 from src.config import DEMO_BANNER_TEXT, IS_DEMO
 from src.attribution import brinson_fachler_period, compute_two_stage_attribution
-from src.benchmarks import get_custom_blended_series, get_naive_60_40_series, get_sp500_series
+from src.benchmarks import get_custom_blended_series, get_naive_60_40_series, get_naive_series, get_sp500_series
 from src.db import get_connection
 from src.factors import run_sleeve_regressions
 from src.holdings import get_portfolio_value_series, get_sleeve_weights_on_date
@@ -59,8 +59,8 @@ def _load_benchmarks(start_val: float):
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def _load_naive_benchmark(start_val: float):
-    naive = get_naive_60_40_series(INCEPTION, TODAY) * start_val
+def _load_naive_benchmark(start_val: float, kind: str = "60_40"):
+    naive = get_naive_series(kind, INCEPTION, TODAY) * start_val
     return naive
 
 
@@ -227,7 +227,6 @@ with col:
     with st.spinner("Loading benchmark data…"):
         start_val = float(pv.iloc[0])
         sp, bl    = _load_benchmarks(start_val)
-        naive     = _load_naive_benchmark(start_val)
 
     # Key scalars (Since Inception)
     si_days     = (pd.Timestamp(TODAY) - pd.Timestamp(INCEPTION)).days
@@ -511,6 +510,26 @@ with col:
              "Select SI to compare since-inception active return.",
     )
 
+    _NAIVE_OPTIONS = {
+        "60/40 (60% SPY / 40% AGG)": "60_40",
+        "S&P 500 (SPY)": "spy",
+    }
+    _naive_sel = st.radio(
+        "Naive benchmark",
+        list(_NAIVE_OPTIONS.keys()),
+        horizontal=True,
+        key="naive_benchmark",
+        help="Stage 1 measures the SAA design effect relative to this baseline.",
+    )
+    naive_kind   = _NAIVE_OPTIONS[_naive_sel]
+    naive        = _load_naive_benchmark(start_val, naive_kind)
+    _naive_label = (
+        "60/40 naive baseline (60% SPY, 40% AGG)"
+        if naive_kind == "60_40"
+        else "S&P 500 baseline (SPY total return)"
+    )
+    _naive_short = "60/40" if naive_kind == "60_40" else "S&P 500"
+
     with st.spinner("Computing attribution…"):
         bf_df = _load_attribution(bf_period)
 
@@ -531,8 +550,8 @@ with col:
 
         st.caption(
             f"Window: {PERIOD_LABEL[bf_period]}. "
-            "Stages 1 and 2 are computed over the same window and sum to total active "
-            "return vs. the 60/40 naive benchmark (60% SPY, 40% AGG)."
+            f"Stages 1 and 2 are computed over the same window and sum to total active "
+            f"return vs. the {_naive_label}."
         )
 
         _ts1_bps = _ts["stage1"] * 10_000
@@ -554,7 +573,7 @@ with col:
             delta_color="off",
         )
         _tc3.metric(
-            "Total: Portfolio vs. 60/40",
+            f"Total: Portfolio vs. {_naive_short}",
             f"{_sign(_tot_bps)}{_tot_bps:.0f} bps",
             "Stage 1 + Stage 2",
             delta_color="off",
@@ -621,7 +640,7 @@ with col:
         st.caption(
             f"Stage 1 sleeve contributions sum to {_sign(_sleeve_sum_bps)}{_sleeve_sum_bps:.0f} bps "
             f"(= Stage 1 {_sign(_ts1_bps)}{_ts1_bps:.0f} bps). "
-            "Each sleeve\u2019s contribution = SAA target weight \u00d7 (sleeve benchmark return \u2212 60/40 return)."
+            f"Each sleeve\u2019s contribution = SAA target weight \u00d7 (sleeve benchmark return \u2212 {_naive_short} return)."
         )
 
         st.caption(
@@ -730,13 +749,13 @@ with col:
             "contribution of the SAA itself — the value allocation (VTV at 8%), small-cap value "
             "(AVUV at 7%), emerging markets (8%), real assets (10%), TIPS (6%), and the overall "
             "~72/28 equity-vs-other-assets risk posture — measured as the SAA-blended benchmark's "
-            "return spread over a 60/40 naive baseline (60% SPY, 40% AGG). This isolates what the "
+            f"return spread over a {_naive_label}. This isolates what the "
             "allocation thesis itself contributed, separate from execution. Stage 2 (Implementation, "
             "decomposed above via Brinson-Fachler) captures two effects relative to the SAA's sleeve "
             "targets: **allocation effect** — over/underweights from SAA targets, primarily driven by "
             "drift since this portfolio is not rebalanced intra-quarter; and **selection effect** — the "
             "chosen ETF return vs. the sleeve benchmark return, typically near-zero for passive ETF "
-            "holdings. Stage 1 + Stage 2 = Portfolio return vs. 60/40 (algebra-checked above). The "
+            f"holdings. Stage 1 + Stage 2 = Portfolio return vs. {_naive_short} (algebra-checked above). The "
             "Factor Profile page provides an independent factor-loading view of the same strategic tilts "
             "(HML, SMB, RMW, CMA loadings on the US sleeve regression)."
         )
