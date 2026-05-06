@@ -10,6 +10,7 @@ st.set_page_config(page_title="Macro Dashboard", layout="wide")
 from src import macro, shiller
 from src.asof import as_of_banner
 from src.prices import get_prices
+from src.prose_helpers import percentile_label
 from src.ui_helpers import render_footer
 
 TODAY      = date.today().isoformat()
@@ -250,13 +251,7 @@ with col:
             fig_cape.update_yaxes(title_text="CAPE (×)")
             st.plotly_chart(fig_cape, use_container_width=True)
 
-        pctile_label = (
-            "extremely elevated" if cape_pctile > 90 else
-            "very elevated"      if cape_pctile > 80 else
-            "elevated"           if cape_pctile > 65 else
-            "near the median"    if cape_pctile > 40 else
-            "below median"
-        )
+        pctile_label = percentile_label(cape_pctile)
         st.caption(
             f"CAPE in the {_ordinal(cape_pctile)} percentile historically — {pctile_label}. "
             "Only the dot-com bubble peak (1999–2001) has sustained CAPE above 40 in the "
@@ -640,12 +635,7 @@ with col:
         )
         st.plotly_chart(fig_us, use_container_width=True)
 
-        us_label = (
-            "extreme"   if ratio_pctile > 90 else
-            "very high" if ratio_pctile > 75 else
-            "elevated"  if ratio_pctile > 55 else
-            "moderate"
-        )
+        us_label = percentile_label(ratio_pctile)
         st.caption(
             f"US outperformance vs. international is at the {_ordinal(ratio_pctile)} percentile "
             f"of its 20-year history — {us_label} relative to history. "

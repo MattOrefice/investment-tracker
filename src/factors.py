@@ -43,6 +43,7 @@ from statsmodels.tools import add_constant
 from src.benchmarks import get_custom_blended_series
 from src.holdings import get_holdings_on_date, get_portfolio_value_series
 from src.prices import get_prices
+from src.prose_helpers import significance_label
 
 _ROOT = Path(__file__).resolve().parent.parent
 
@@ -848,16 +849,8 @@ def build_factor_prose(
         s_start = _fmt_date(us["sample_start"])
         s_end   = _fmt_date(us["sample_end"])
 
-        hml_sig = (
-            "statistically significant at the 5% level"
-            if abs(t_hml) > 2
-            else "not statistically significant at conventional levels"
-        )
-        alpha_note = (
-            f"marginally significant (|t| = {abs(t_a):.2f} > 2.0)"
-            if abs(t_a) > 2
-            else "not statistically distinguishable from zero at conventional thresholds"
-        )
+        hml_sig    = significance_label(t_hml)
+        alpha_note = significance_label(t_a)
 
         lines.append(
             f"The US equity sleeve ({T_us} trading days, {s_start} to {s_end}) "
@@ -877,7 +870,7 @@ def build_factor_prose(
         t_a_d   = dev["t_alpha"]
         T_dev   = dev["T"]
 
-        alpha_sig_d = "marginally significant" if abs(t_a_d) > 2 else "not statistically distinguishable from zero"
+        alpha_sig_d = significance_label(t_a_d)
 
         lines.append(
             f"The International Developed sleeve (VEA, {T_dev} trading days) "
@@ -1195,18 +1188,8 @@ def build_benchmark_prose(
         else "departing from benchmark (expected ≈ 1.0 for a fully-invested passive portfolio)"
     )
 
-    # Four-tier significance label — avoids mislabeling strong results as "marginal"
-    t_abs = abs(t_a)
-    if t_abs >= 2.58:
-        sig_label = "statistically significant at the 1% level"
-    elif t_abs >= 1.96:
-        sig_label = "statistically significant at the 5% level"
-    elif t_abs >= 1.65:
-        sig_label = "marginally significant (10% level)"
-    else:
-        sig_label = "not statistically distinguishable from zero"
-
-    is_significant = t_abs >= 1.65
+    sig_label      = significance_label(t_a)
+    is_significant = abs(t_a) >= 1.65
 
     # Second paragraph: intercept interpretation + optional BHB cross-reference
     second_para = (
