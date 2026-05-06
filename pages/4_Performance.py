@@ -9,6 +9,7 @@ import streamlit as st
 st.set_page_config(page_title="Performance & Attribution", layout="wide")
 
 from src.asof import as_of_banner
+from src.config import DEMO_BANNER_TEXT, IS_DEMO
 from src.attribution import brinson_fachler_period
 from src.benchmarks import get_custom_blended_series, get_sp500_series
 from src.db import get_connection
@@ -121,6 +122,9 @@ def _bps(v: float) -> str:
 
 
 # ── Page ─────────────────────────────────────────────────────────────────────
+
+if IS_DEMO:
+    st.info(DEMO_BANNER_TEXT)
 
 _, col, _ = st.columns([1, 8, 1])
 with col:

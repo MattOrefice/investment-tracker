@@ -8,7 +8,6 @@ st.set_page_config(
 )
 
 from src.asof import as_of_banner
-from src.config import DEMO_BANNER_TEXT, IS_DEMO
 from src.db import initialize_db
 from src.ui_helpers import render_footer
 
@@ -16,9 +15,6 @@ initialize_db()
 
 _, col, _ = st.columns([1, 8, 1])
 with col:
-    if IS_DEMO:
-        st.info(DEMO_BANNER_TEXT)
-
     st.markdown("## Personal Investment Analytics")
     st.caption(as_of_banner())
 

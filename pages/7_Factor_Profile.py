@@ -158,13 +158,12 @@ with col:
                     _render_fit_metrics(global_result)
                 else:
                     st.info(
-                        f"Global daily factor data discontinued — Ken French ceased "
-                        f"publication of the daily Global 5-factor file in June 2019 "
-                        f"(last available date: {GLOBAL_DAILY_FACTORS_CUTOFF}). "
-                        f"This portfolio started in May 2025; there is no data overlap "
-                        f"and a regression cannot be produced at daily frequency. "
-                        f"The Developed ex-US Factors tab provides the primary factor "
-                        f"decomposition for the International Developed sleeve."
+                        "Global daily factor data discontinued — Ken French ceased "
+                        "publication of the daily Global 5-factor file in June 2019. "
+                        "This portfolio started in May 2025; with no data overlap, "
+                        "a regression cannot be produced at daily frequency. "
+                        "The Developed ex-US Factors tab provides the primary factor "
+                        "decomposition for the International Developed sleeve."
                     )
         else:
             _render_factor_table(res, _FACTORS)
