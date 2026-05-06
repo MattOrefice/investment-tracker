@@ -130,6 +130,35 @@ with col:
     with st.spinner("Loading performance data…"):
         pv, cf = _load_portfolio()
 
+    # ── TEMP DIAGNOSTICS 2 — holdings + price lookup ─────────────────────
+    from src.holdings import get_holdings_on_date as _get_holdings
+    from src.prices import get_prices as _get_prices
+    try:
+        _hld = _get_holdings(TODAY)
+        _hld_str = (
+            f"{len(_hld)} tickers: " + ", ".join(
+                f"{t}={_hld.loc[t,'net_shares']:.4f}" for t in _hld.index
+            ) if not _hld.empty else "EMPTY"
+        )
+    except Exception as _he:
+        _hld_str = f"HOLDINGS ERROR: {_he}"
+
+    try:
+        _spy_p = _get_prices("SPY", "2026-05-05", "2026-05-05")
+        if _spy_p.empty:
+            _spy_str = "empty DataFrame"
+        else:
+            _spy_str = f"rows={len(_spy_p)}  adj_close={_spy_p['adj_close'].iloc[-1]:.4f}"
+    except Exception as _pe:
+        _spy_str = f"get_prices ERROR: {_pe}"
+
+    with st.expander("DEBUG-2 holdings + price lookup (remove before merge)", expanded=True):
+        st.code(
+            f"holdings on {TODAY}:\n  {_hld_str}\n\n"
+            f"get_prices(SPY, 2026-05-05, 2026-05-05):\n  {_spy_str}"
+        )
+    # ── END TEMP DIAGNOSTICS 2 ─────────────────────────────────────────────
+
     # ── TEMP DIAGNOSTICS — remove before merge ────────────────────────────
     import os as _os
     from src.db import DB_PATH as _DB_PATH
