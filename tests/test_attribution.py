@@ -351,3 +351,170 @@ def test_stage1_distinguishes_across_naive_benchmarks():
         f"60/40={stage1_6040:.4f}, SPY={stage1_spy:.4f}. "
         "The 60/40 and SPY series must have diverged over the inception period."
     )
+
+
+# ── Phase 10.1 — price-series two-stage algebra regression pins ───────────────
+
+def _bpr_helper(series: "pd.Series", period: str) -> float:
+    """Slice series to period and return end/start - 1. Mirrors _benchmark_period_return."""
+    from datetime import timedelta
+    import pandas as pd
+
+    last_ts   = series.index[-1]
+    last_date = last_ts.date() if hasattr(last_ts, "date") else last_ts
+    if period == "SI":
+        start_ts = series.index[0]
+    elif period == "1Y":
+        start_ts = pd.Timestamp(last_date - timedelta(days=365))
+    elif period == "3M":
+        start_ts = pd.Timestamp(last_date - timedelta(days=90))
+    elif period == "1M":
+        start_ts = pd.Timestamp(last_date - timedelta(days=30))
+    else:
+        return 0.0
+    sliced = series[series.index >= start_ts]
+    if len(sliced) < 2:
+        return 0.0
+    return float(sliced.iloc[-1] / sliced.iloc[0] - 1)
+
+
+def test_ps_two_stage_algebra_si_60_40():
+    """Price-series Stage1+Stage2=Total within 0.05 bps for SI period vs 60/40 naive.
+
+    Phase 10.1 regression pin. Pre-fix code used _r_p_bf (BF-internal,
+    price-appreciation only) for Stage 2. With price-series inputs, algebra
+    residual must be < 1e-10 (exact by construction).
+    Skips when price data is unavailable (local empty-DB mode).
+    """
+    import datetime
+    from src.attribution import compute_two_stage_attribution, brinson_fachler_period
+    from src.benchmarks import get_custom_blended_series, get_naive_series
+    from src.holdings import get_portfolio_value_series
+
+    INCEPTION = "2025-05-01"
+    TODAY = datetime.date.today().isoformat()
+
+    try:
+        pv = get_portfolio_value_series(INCEPTION, TODAY)
+        bl = get_custom_blended_series(INCEPTION, TODAY)
+        naive = get_naive_series("60_40", INCEPTION, TODAY)
+        bf_df = brinson_fachler_period(INCEPTION, TODAY)
+    except Exception as exc:
+        pytest.skip(f"Data unavailable: {exc}")
+
+    if pv.dropna().empty or bl.dropna().empty or naive.dropna().empty or bf_df.empty:
+        pytest.skip("One or more series is empty — skipped in local/empty-DB mode")
+
+    r_p_ps  = _bpr_helper(pv, "SI")
+    r_b_ps  = _bpr_helper(bl, "SI")
+    naive_r = _bpr_helper(naive, "SI")
+
+    result = compute_two_stage_attribution(
+        port_return              = r_p_ps,
+        saa_return               = r_b_ps,
+        naive_return             = naive_r,
+        sleeve_saa_weights       = dict(zip(bf_df["sleeve"], bf_df["w_b"])),
+        sleeve_benchmark_returns = dict(zip(bf_df["sleeve"], bf_df["r_b"])),
+    )
+
+    resid_bps = result["algebra_residual"] * 10_000
+    assert resid_bps < 0.05, (
+        f"Price-series Stage1+Stage2 algebra residual {resid_bps:.4f} bps exceeds 0.05 bps "
+        f"for SI/60_40. stage1={result['stage1']*10000:.1f} bps, "
+        f"stage2={result['stage2']*10000:.1f} bps, total={result['total']*10000:.1f} bps."
+    )
+
+
+def test_ps_two_stage_algebra_1y_60_40():
+    """Price-series Stage1+Stage2=Total within 0.05 bps for 1Y period vs 60/40 naive.
+
+    Phase 10.1 regression pin. Verifies the price-series algebra at the 1Y window,
+    which had the largest BF-internal divergence (~316 bps).
+    Skips when price data is unavailable (local empty-DB mode).
+    """
+    import datetime
+    from src.attribution import compute_two_stage_attribution, brinson_fachler_period
+    from src.benchmarks import get_custom_blended_series, get_naive_series
+    from src.holdings import get_portfolio_value_series
+
+    INCEPTION = "2025-05-01"
+    TODAY = datetime.date.today().isoformat()
+
+    try:
+        pv = get_portfolio_value_series(INCEPTION, TODAY)
+        bl = get_custom_blended_series(INCEPTION, TODAY)
+        naive = get_naive_series("60_40", INCEPTION, TODAY)
+        bf_df = brinson_fachler_period(INCEPTION, TODAY)
+    except Exception as exc:
+        pytest.skip(f"Data unavailable: {exc}")
+
+    if pv.dropna().empty or bl.dropna().empty or naive.dropna().empty or bf_df.empty:
+        pytest.skip("One or more series is empty — skipped in local/empty-DB mode")
+
+    r_p_ps  = _bpr_helper(pv, "1Y")
+    r_b_ps  = _bpr_helper(bl, "1Y")
+    naive_r = _bpr_helper(naive, "1Y")
+
+    if r_p_ps == 0.0:
+        pytest.skip("1Y portfolio price-series slice too short — insufficient data")
+
+    result = compute_two_stage_attribution(
+        port_return              = r_p_ps,
+        saa_return               = r_b_ps,
+        naive_return             = naive_r,
+        sleeve_saa_weights       = dict(zip(bf_df["sleeve"], bf_df["w_b"])),
+        sleeve_benchmark_returns = dict(zip(bf_df["sleeve"], bf_df["r_b"])),
+    )
+
+    resid_bps = result["algebra_residual"] * 10_000
+    assert resid_bps < 0.05, (
+        f"Price-series Stage1+Stage2 algebra residual {resid_bps:.4f} bps exceeds 0.05 bps "
+        f"for 1Y/60_40. stage1={result['stage1']*10000:.1f} bps, "
+        f"stage2={result['stage2']*10000:.1f} bps, total={result['total']*10000:.1f} bps."
+    )
+
+
+def test_ps_two_stage_algebra_si_spy():
+    """Price-series Stage1+Stage2=Total within 0.05 bps for SI period vs SPY naive.
+
+    Phase 10.1 regression pin. Verifies the price-series algebra holds for the SPY
+    naive baseline (Stage 1 is negative when SAA blend underperforms S&P 500).
+    Skips when price data is unavailable (local empty-DB mode).
+    """
+    import datetime
+    from src.attribution import compute_two_stage_attribution, brinson_fachler_period
+    from src.benchmarks import get_custom_blended_series, get_naive_series
+    from src.holdings import get_portfolio_value_series
+
+    INCEPTION = "2025-05-01"
+    TODAY = datetime.date.today().isoformat()
+
+    try:
+        pv = get_portfolio_value_series(INCEPTION, TODAY)
+        bl = get_custom_blended_series(INCEPTION, TODAY)
+        naive = get_naive_series("spy", INCEPTION, TODAY)
+        bf_df = brinson_fachler_period(INCEPTION, TODAY)
+    except Exception as exc:
+        pytest.skip(f"Data unavailable: {exc}")
+
+    if pv.dropna().empty or bl.dropna().empty or naive.dropna().empty or bf_df.empty:
+        pytest.skip("One or more series is empty — skipped in local/empty-DB mode")
+
+    r_p_ps  = _bpr_helper(pv, "SI")
+    r_b_ps  = _bpr_helper(bl, "SI")
+    naive_r = _bpr_helper(naive, "SI")
+
+    result = compute_two_stage_attribution(
+        port_return              = r_p_ps,
+        saa_return               = r_b_ps,
+        naive_return             = naive_r,
+        sleeve_saa_weights       = dict(zip(bf_df["sleeve"], bf_df["w_b"])),
+        sleeve_benchmark_returns = dict(zip(bf_df["sleeve"], bf_df["r_b"])),
+    )
+
+    resid_bps = result["algebra_residual"] * 10_000
+    assert resid_bps < 0.05, (
+        f"Price-series Stage1+Stage2 algebra residual {resid_bps:.4f} bps exceeds 0.05 bps "
+        f"for SI/SPY. stage1={result['stage1']*10000:.1f} bps, "
+        f"stage2={result['stage2']*10000:.1f} bps, total={result['total']*10000:.1f} bps."
+    )

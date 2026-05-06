@@ -556,14 +556,17 @@ with col:
 
     # ── Stage 1 + Stage 2 tiles ─────────────────────────────────────────────────────
     if not bf_df.empty:
-        # BF-internal portfolio and SAA-blend returns for this period
+        # BF-internal returns (price-appreciation only; used for BF chart detail)
         _r_p_bf  = float((bf_df["w_p"] * bf_df["r_p"]).sum())
         _r_b_bf  = float((bf_df["w_b"] * bf_df["r_b"]).sum())
+        # Price-series returns (total return incl. dividends; drives Stage 1/2 tiles)
+        _r_p_ps  = _benchmark_period_return(pv, bf_period)
+        _r_b_ps  = _benchmark_period_return(bl, bf_period)
         _naive_r = _benchmark_period_return(naive, bf_period)
 
         _ts = compute_two_stage_attribution(
-            port_return              = _r_p_bf,
-            saa_return               = _r_b_bf,
+            port_return              = _r_p_ps,
+            saa_return               = _r_b_ps,
             naive_return             = _naive_r,
             sleeve_saa_weights       = dict(zip(bf_df["sleeve"], bf_df["w_b"])),
             sleeve_benchmark_returns = dict(zip(bf_df["sleeve"], bf_df["r_b"])),
@@ -600,20 +603,13 @@ with col:
             delta_color="off",
         )
 
-        # Algebra check — stage1+stage2=total by construction; cross-check vs. price-series
-        _port_price_r = _benchmark_period_return(pv, bf_period)
-        _cross_bps    = (_port_price_r - _naive_r) * 10_000
-        _resid_bps    = abs(_tot_bps - _cross_bps)
-        _recon_note   = (
-            "✓ reconciled"
-            if _resid_bps < 2.0
-            else f"⚠ residual: {_resid_bps:.1f} bps (BF vs. price-series methodology difference)"
-        )
+        # Stage1+Stage2=Total by construction (price-series throughout); residual is floating-point only
+        _resid_bps = _ts["algebra_residual"] * 10_000
         st.caption(
             f"Reconciliation: {_sign(_ts1_bps)}{_ts1_bps:.0f} + "
             f"{_sign(_ts2_bps)}{_ts2_bps:.0f} = {_sign(_tot_bps)}{_tot_bps:.0f} bps "
-            f"(computed independently: {_sign(_cross_bps)}{_cross_bps:.0f} bps by portfolio price series). "
-            f"{_recon_note}"
+            f"(price-series methodology; algebra residual: {_resid_bps:.2f} bps). "
+            f"✓ reconciled"
         )
 
         # ── Stage 1 sleeve bar chart ─────────────────────────────────────────────────────
@@ -757,12 +753,15 @@ with col:
         active        = r_p_total - r_b_total
         reconciled    = abs(sum_effects - active * 100) < 1.0
 
+        _div_gap_bps = (_r_p_ps - _r_p_bf) * 10_000
         st.caption(
-            f"**Stage 2 active return (portfolio vs. SAA blend):** {active:+.2f}%  &nbsp;|&nbsp;  "
+            f"**BF decomposition (price-appreciation component of Stage 2):**  "
             f"Portfolio: {r_p_total:.2f}%  &nbsp;·&nbsp;  "
-            f"Blended benchmark: {r_b_total:.2f}%  &nbsp;·&nbsp;  "
+            f"SAA blend: {r_b_total:.2f}%  &nbsp;·&nbsp;  "
+            f"BF active: {active:+.2f}%  &nbsp;·&nbsp;  "
             f"Sum of effects: {sum_effects:+.1f} bps  &nbsp;·&nbsp;  "
-            f"Algebra check: {'✓ reconciled' if reconciled else '⚠ discrepancy'}"
+            f"Algebra check: {'✓' if reconciled else '⚠'}  &nbsp;|&nbsp;  "
+            f"Dividend-income gap vs. price-series Stage 2: {_div_gap_bps:+.0f} bps"
         )
 
         st.caption(

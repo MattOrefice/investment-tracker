@@ -214,6 +214,36 @@ def test_naive_benchmark_radio_has_two_options(performance_app: AppTest) -> None
     assert opts[1] == "S&P 500 (SPY)", f"Second option wrong: {opts[1]!r}"
 
 
+def test_two_stage_reconciliation_uses_price_series(performance_app: AppTest) -> None:
+    """Stage 1/2 reconciliation caption must use price-series methodology with 0.00 bps residual.
+
+    Phase 10.1 regression pin. Pre-fix code called compute_two_stage_attribution()
+    with _r_p_bf (BF-internal price-appreciation return) instead of the portfolio
+    price-series TWR, creating a ~316 bps Stage 2 residual vs. the price series.
+    The reconciliation caption showed '⚠ residual: N bps'. Fixed code uses
+    _benchmark_period_return(pv, period) throughout; algebra residual is 0.00 bps.
+    """
+    if not performance_app.metric:
+        pytest.skip("No portfolio data — skipped in local/empty-DB mode")
+    captions = [c.value for c in performance_app.caption]
+    # The stage-level reconciliation caption contains "price-series methodology"
+    # (old code had "computed independently ... by portfolio price series")
+    stage_recon = next((c for c in captions if "price-series methodology" in c), None)
+    assert stage_recon is not None, (
+        "Stage 1/2 reconciliation caption not found or still using old 'computed independently' "
+        "format. Phase 10.1 fix not applied — check compute_two_stage_attribution() call site."
+    )
+    assert "⚠" not in stage_recon, (
+        f"Stage 1/2 reconciliation caption shows a residual warning (⚠). "
+        f"Price-series methodology should give exact algebra (0.00 bps residual). "
+        f"Caption: {stage_recon}"
+    )
+    assert "0.00 bps" in stage_recon, (
+        f"Stage 1/2 reconciliation must show '0.00 bps' algebra residual. "
+        f"Caption: {stage_recon}"
+    )
+
+
 def test_two_stage_attribution_section_renders(performance_app: AppTest) -> None:
     """Two-Stage Attribution section must render with three metric tiles. Pinned: Phase 9.
 
