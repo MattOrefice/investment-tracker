@@ -260,7 +260,7 @@ with col:
         st.caption(
             f"CAPE in the {_ordinal(cape_pctile)} percentile historically — {pctile_label}. "
             "Only the dot-com bubble peak (1999–2001) has sustained CAPE above 40 in the "
-            "full 145-year Shiller record; the 2024–2026 stretch is the second such instance. "
+            "full 145-year Shiller record. "
             "Periods of extreme valuation have preceded materially below-average decade-ahead "
             "returns. Most directly relevant to the International Developed and US Large Value "
             "sleeves, where the discount-to-US-CAPE thesis depends on US valuations remaining "
@@ -449,7 +449,7 @@ with col:
 
         st.caption(
             "Yield curve inversions (spread < 0) have preceded each of the last seven "
-            "recessions with a 12–18 month lead time. The 2022–2023 inversion "
+            "recessions with a 12–18 month lead time. The most recent inversion "
             "preceded the 2023 banking stress episode; normalization signals end-of-cycle "
             "dynamics. Gray shading marks NBER-dated recessions."
         )
@@ -651,7 +651,7 @@ with col:
             f"of its 20-year history — {us_label} relative to history. "
             "Extended US outperformance has historically mean-reverted via valuation "
             "convergence and dollar cycle turns, supporting the International Developed "
-            "sleeve’s 19% weight and its valuation-driven thesis."
+            "sleeve and its valuation-driven thesis."
         )
 
     except Exception as exc:

@@ -99,6 +99,22 @@ def _load_drift():
     return sw, band_map
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def _load_sleeve_targets():
+    """Return (parent_weights, sleeve_weights) dicts keyed by name."""
+    with get_connection() as conn:
+        parents = conn.execute(
+            "SELECT name, target_weight FROM asset_classes WHERE parent_id IS NULL"
+        ).fetchall()
+        sleeves = conn.execute(
+            "SELECT name, target_weight FROM asset_classes WHERE parent_id IS NOT NULL"
+        ).fetchall()
+    return (
+        {r["name"]: r["target_weight"] for r in parents},
+        {r["name"]: r["target_weight"] for r in sleeves},
+    )
+
+
 def _date_offset(iso: str, days: int) -> str:
     from datetime import timedelta
     return (date.fromisoformat(iso) + timedelta(days=days)).isoformat()
@@ -228,6 +244,11 @@ with col:
         start_val = float(pv.iloc[0])
         sp, bl    = _load_benchmarks(start_val)
 
+    _saa_parents, _saa_sleeves = _load_sleeve_targets()
+    _non_eq_pct = 1.0 - _saa_parents.get("Equity", 0.72)
+    _non_us_eq  = (_saa_sleeves.get("International Developed", 0.19)
+                   + _saa_sleeves.get("Emerging Markets", 0.08))
+
     # Key scalars (Since Inception)
     si_days     = (pd.Timestamp(TODAY) - pd.Timestamp(INCEPTION)).days
     port_si     = period_return("daily", pv, cf, "SI")
@@ -266,9 +287,9 @@ with col:
               f"Since: {_pct(port_si)}")
 
     st.caption(
-        "Underperformance vs. S&P 500 reflects intentional diversification: "
-        "28% of the portfolio is non-equity (Income + Real Assets + Cash), "
-        "27% is non-US equity. The Custom Blended benchmark — a target-weighted "
+        f"Underperformance vs. S&P 500 reflects intentional diversification: "
+        f"{_non_eq_pct*100:.0f}% of the SAA is non-equity (Income + Real Assets + Cash), "
+        f"{_non_us_eq*100:.0f}% is non-US equity. The Custom Blended benchmark — a target-weighted "
         "basket of cap-weighted indices in the same SAA — is the more meaningful "
         "comparison for security selection alpha."
     )
@@ -746,9 +767,10 @@ with col:
 
         st.caption(
             "**What the two stages measure.** Stage 1 (SAA design) captures the strategic-tilt "
-            "contribution of the SAA itself — the value allocation (VTV at 8%), small-cap value "
-            "(AVUV at 7%), emerging markets (8%), real assets (10%), TIPS (6%), and the overall "
-            "~72/28 equity-vs-other-assets risk posture — measured as the SAA-blended benchmark's "
+            f"contribution of the SAA itself — the value allocation (VTV at {_saa_sleeves.get('US Large Value', 0.08)*100:.0f}%), small-cap value "
+            f"(AVUV at {_saa_sleeves.get('US Small Cap', 0.07)*100:.0f}%), emerging markets ({_saa_sleeves.get('Emerging Markets', 0.08)*100:.0f}%), "
+            f"real assets ({_saa_sleeves.get('Real Assets', 0.10)*100:.0f}%), TIPS ({_saa_sleeves.get('TIPS', 0.06)*100:.0f}%), and the overall "
+            f"~{_saa_parents.get('Equity', 0.72)*100:.0f}/{_non_eq_pct*100:.0f} equity-vs-other-assets risk posture — measured as the SAA-blended benchmark's "
             f"return spread over a {_naive_label}. This isolates what the "
             "allocation thesis itself contributed, separate from execution. Stage 2 (Implementation, "
             "decomposed above via Brinson-Fachler) captures two effects relative to the SAA's sleeve "
