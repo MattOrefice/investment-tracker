@@ -360,3 +360,57 @@ def test_prose_methodology_weight_defaults_match_db():
         f"{EXPECTED_EQUITY_PARENT:.4f}. "
         "Update the _saa_parents.get('Equity', ...) default in pages/4_Performance.py."
     )
+
+
+# ── Phase 12.1 additions ───────────────────────────────────────────────────────
+
+def test_prose_pdf_methodology_parent_weights_match_db():
+    """PDF methodology section parent weight string is DB-derived, not hardcoded.
+
+    templates/quarterly_report.html renders {{ methodology_parent_weights }} from
+    _build_methodology_vars(). This test verifies the DB produces a well-formed
+    four-category string whose weights sum to 100%.
+    """
+    import re
+    from src.db import get_connection
+
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT name, target_weight FROM asset_classes "
+            "WHERE parent_id IS NULL ORDER BY asset_class_id"
+        ).fetchall()
+
+    result = " / ".join(
+        f"{r['name']} {round(r['target_weight'] * 100):.0f}%"
+        for r in rows
+    )
+
+    for cat in ("Equity", "Income", "Real Assets", "Cash"):
+        assert cat in result, (
+            f"Parent category '{cat}' missing from methodology weight string: '{result}'"
+        )
+
+    pcts = [int(m) for m in re.findall(r"(\d+)%", result)]
+    assert sum(pcts) == 100, (
+        f"Parent weights in methodology string don't sum to 100%: {result}"
+    )
+
+
+def test_prose_pdf_methodology_sleeve_count_matches_db():
+    """PDF methodology section sleeve count (10) is DB-derived, not hardcoded.
+
+    templates/quarterly_report.html renders {{ methodology_sleeve_count }} from
+    _build_methodology_vars(). This test pins the expected count so any SAA
+    taxonomy change triggers an intentional review of the methodology prose.
+    """
+    from src.db import get_connection
+
+    with get_connection() as conn:
+        count = conn.execute(
+            "SELECT COUNT(*) FROM asset_classes WHERE parent_id IS NOT NULL"
+        ).fetchone()[0]
+
+    assert count == 10, (
+        f"Expected 10 SAA sleeves in asset_classes, got {count}. "
+        "If the SAA taxonomy changed, update the methodology template and this test."
+    )

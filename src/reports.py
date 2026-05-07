@@ -913,6 +913,35 @@ def _build_positioning_section(end_date: str) -> dict:
     }
 
 
+# ── Methodology template variables ───────────────────────────────────────────
+
+def _build_methodology_vars() -> dict:
+    """Return DB-derived values used in the PDF methodology section.
+
+    Keeps the quarterly_report.html template free of hardcoded SAA numerics.
+    Called once per report render; the DB queries are lightweight.
+    """
+    with get_connection() as conn:
+        parent_rows = conn.execute(
+            "SELECT name, target_weight FROM asset_classes "
+            "WHERE parent_id IS NULL ORDER BY asset_class_id"
+        ).fetchall()
+        sleeve_count = conn.execute(
+            "SELECT COUNT(*) FROM asset_classes WHERE parent_id IS NOT NULL"
+        ).fetchone()[0]
+
+    # "Equity 72% / Income 15% / Real Assets 10% / Cash 3%"
+    parent_weight_str = " / ".join(
+        f"{r['name']} {round(r['target_weight'] * 100):.0f}%"
+        for r in parent_rows
+    )
+
+    return {
+        "methodology_parent_weights": parent_weight_str,
+        "methodology_sleeve_count":   sleeve_count,
+    }
+
+
 # ── Main public function ──────────────────────────────────────────────────────
 
 def generate_quarterly_report(
@@ -990,6 +1019,7 @@ def generate_quarterly_report(
         bench_attr     = bench_attr_data,
         macro          = macro_data,
         thesis         = thesis_data,
+        **_build_methodology_vars(),
     )
 
     pdf_bytes = _render_pdf(html_content)
