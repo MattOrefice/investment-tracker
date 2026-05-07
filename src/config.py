@@ -22,9 +22,16 @@ except ImportError:
 
 try:
     import streamlit as st
-    FRED_API_KEY = st.secrets.get("FRED_API_KEY", os.getenv("FRED_API_KEY"))
-    _resolved_mode = st.secrets.get("TRACKER_MODE", os.getenv("TRACKER_MODE", "personal")).lower()
-except (ImportError, FileNotFoundError, AttributeError):
+    try:
+        # st.secrets behavior varies across Streamlit versions when called outside a
+        # Streamlit context (no secrets.toml). Catch any exception so env vars are
+        # always the authoritative fallback in test / CI environments.
+        FRED_API_KEY = st.secrets.get("FRED_API_KEY", os.getenv("FRED_API_KEY"))
+        _resolved_mode = st.secrets.get("TRACKER_MODE", os.getenv("TRACKER_MODE", "personal")).lower()
+    except Exception:
+        FRED_API_KEY = os.getenv("FRED_API_KEY")
+        _resolved_mode = os.getenv("TRACKER_MODE", "personal").lower()
+except ImportError:
     FRED_API_KEY = os.getenv("FRED_API_KEY")
     _resolved_mode = os.getenv("TRACKER_MODE", "personal").lower()
 

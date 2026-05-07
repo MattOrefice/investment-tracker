@@ -19,10 +19,20 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
-      - name: Install dependencies
+      - name: Install system dependencies (WeasyPrint)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz0b \
+            libgobject-2.0-0 libffi-dev
+
+      - name: Install Python dependencies
         run: pip install -r requirements.txt
 
+      - name: Show key package versions (diagnostic)
+        run: pip show streamlit weasyprint kaleido statsmodels | grep -E "^(Name|Version):"
+
       - name: Run fast tests (slow/network tests excluded)
-        run: python -m pytest -m "not slow" --tb=short -q
+        run: python -m pytest -m "not slow" --tb=long -q
         env:
           TRACKER_MODE: demo
