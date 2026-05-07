@@ -478,7 +478,7 @@ with col:
             )
         _disc_parts.append(
             f"Risk ratios at 1M and 3M windows reflect "
-            f"{_n_1m or '~21'} and {_n_3m or '~63'} daily observations respectively; "
+            f"{_n_1m or 21} and {_n_3m or 63} trading days respectively; "
             "interpret short-window Sharpe and Sortino as directional rather than "
             "statistically stable."
         )

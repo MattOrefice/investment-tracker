@@ -62,6 +62,15 @@ def compute_risk_metrics(
     port_ret  = port_ret.loc[idx2]
     bench_ret = bench_ret.loc[idx2]
 
+    # Exclude weekend/holiday non-trading days: the portfolio value series uses
+    # pd.date_range(freq='D') with ffill, producing exact-zero returns on days
+    # when markets are closed. Including these dilutes std toward zero (inflating
+    # IR) and biases Sharpe/Sortino. Filter to rows where at least one series
+    # has a non-zero return — those are actual trading days.
+    _trading = (port_ret != 0) | (bench_ret != 0)
+    port_ret  = port_ret[_trading]
+    bench_ret = bench_ret[_trading]
+
     n = len(port_ret)
     if n < 10:
         return {}
