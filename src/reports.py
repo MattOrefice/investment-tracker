@@ -284,6 +284,7 @@ def _build_executive_summary(start_date: str, end_date: str) -> dict:
     alpha_bl_bps = (portfolio_twr - bl_return) * 10_000
 
     top_contributor = top_detractor = None
+    _all_positive = False
     try:
         bf_df = brinson_fachler_period(start_date, end_date)
         if not bf_df.empty:
@@ -291,6 +292,8 @@ def _build_executive_summary(start_date: str, end_date: str) -> dict:
             worst = bf_df.loc[bf_df["total_effect"].idxmin()]
             top_contributor = (best["sleeve"],  best["total_effect"]  * 10_000)
             top_detractor   = (worst["sleeve"], worst["total_effect"] * 10_000)
+            # Suppress detractor narrative when all sleeves are within noise threshold
+            _all_positive = worst["total_effect"] * 10_000 > -5
     except Exception:
         pass
 
@@ -310,11 +313,15 @@ def _build_executive_summary(start_date: str, end_date: str) -> dict:
         f"{vs_sp} the S&P 500 by {abs(alpha_sp_bps):.0f} bps and "
         f"{vs_bl} the custom blended benchmark by {abs(alpha_bl_bps):.0f} bps.",
     ]
-    if top_contributor:
+    if top_contributor and top_contributor[1] >= 5:
         narrative.append(
             f"Top contributor: {top_contributor[0]} ({top_contributor[1]:+.0f} bps total effect)."
         )
-    if top_detractor and (not top_contributor or top_detractor[0] != top_contributor[0]):
+    if _all_positive and top_contributor:
+        narrative.append(
+            "All sleeves contributed positively or were within ±5 bps of the neutral line."
+        )
+    elif top_detractor and (not top_contributor or top_detractor[0] != top_contributor[0]):
         narrative.append(
             f"Top detractor: {top_detractor[0]} ({top_detractor[1]:+.0f} bps total effect)."
         )
@@ -560,12 +567,11 @@ def _build_attribution_section(start_date: str, end_date: str) -> dict:
         sleeve  = r["sleeve"]
         port_t  = _SLEEVE_HOLDING_TICKER.get(sleeve, "—")
         bench_t = _SLEEVE_BENCH_TICKER.get(sleeve, "—")
-        diff_bps = (r["r_p"] - r["r_b"]) * 10_000
         sel_bps  = r["selection_effect"] * 10_000
         sel_commentary.append(
             f"{sleeve}: portfolio holding ({port_t}) returned {r['r_p']*100:.1f}% "
-            f"vs benchmark {bench_t} {r['r_b']*100:.1f}% "
-            f"(Δ {diff_bps:+.0f} bps), contributing {sel_bps:+.0f} bps to active return"
+            f"vs benchmark {bench_t} {r['r_b']*100:.1f}%, "
+            f"contributing {sel_bps:+.0f} bps selection effect"
         )
 
     # Top allocation effect driver (only if >15 bps absolute)
