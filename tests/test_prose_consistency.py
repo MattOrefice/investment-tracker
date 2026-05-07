@@ -219,3 +219,119 @@ def test_prose_equity_parent_name_matches():
         "The Performance page prose uses _saa_parents.get('Equity', 0.72) — "
         "if the parent was renamed, the fallback default will be used silently."
     )
+
+
+def test_prose_fi_weights_constant_matches_db():
+    """_FI_WEIGHTS in src/factors.py must reflect DB proportions for Core FI and TIPS.
+
+    _FI_WEIGHTS = {"VGIT": 9/15, "SCHP": 6/15} weights the FI sleeve return series
+    in regress_fi_sleeve(). If either sleeve's target_weight changes, the constant
+    must be updated too — otherwise the factor regression uses wrong weights silently.
+    """
+    from src.db import get_connection
+    from src.factors import _FI_WEIGHTS
+
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT name, target_weight FROM asset_classes "
+            "WHERE name IN ('Core Fixed Income', 'TIPS')"
+        ).fetchall()
+
+    db_wts = {r["name"]: r["target_weight"] for r in rows}
+    assert "Core Fixed Income" in db_wts, "'Core Fixed Income' sleeve missing from DB"
+    assert "TIPS" in db_wts, "'TIPS' sleeve missing from DB"
+
+    total = db_wts["Core Fixed Income"] + db_wts["TIPS"]
+    expected_vgit = db_wts["Core Fixed Income"] / total
+    expected_schp = db_wts["TIPS"] / total
+
+    assert abs(_FI_WEIGHTS["VGIT"] - expected_vgit) < 1e-6, (
+        f"_FI_WEIGHTS['VGIT'] = {_FI_WEIGHTS['VGIT']:.6f} but DB implies "
+        f"{expected_vgit:.6f} (Core FI / (Core FI + TIPS)). "
+        "Update _FI_WEIGHTS in src/factors.py to match."
+    )
+    assert abs(_FI_WEIGHTS["SCHP"] - expected_schp) < 1e-6, (
+        f"_FI_WEIGHTS['SCHP'] = {_FI_WEIGHTS['SCHP']:.6f} but DB implies "
+        f"{expected_schp:.6f} (TIPS / (Core FI + TIPS)). "
+        "Update _FI_WEIGHTS in src/factors.py to match."
+    )
+
+
+def test_prose_saa_us_constants_match_db():
+    """_SAA_US in src/factors.py must match DB target_weights for US equity sleeves.
+
+    _SAA_US = {"VOO": 16, "SPHQ": 14, "VTV": 8, "AVUV": 7} stores weights as integers
+    (percent × 100). Each value must equal round(db_target_weight * 100). Designed to
+    work without a DB call at runtime, but tested here to catch SAA weight changes.
+    """
+    from src.db import get_connection
+    from src.factors import _SAA_US
+
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT s.ticker, ac.target_weight
+            FROM securities s
+            JOIN asset_classes ac ON s.asset_class_id = ac.asset_class_id
+            WHERE s.ticker IN ('VOO', 'SPHQ', 'VTV', 'AVUV')
+              AND ac.parent_id IS NOT NULL
+        """).fetchall()
+
+    db_wts = {r["ticker"]: r["target_weight"] for r in rows}
+    for ticker, pct_int in _SAA_US.items():
+        assert ticker in db_wts, (
+            f"Ticker '{ticker}' from _SAA_US not found in securities→asset_classes."
+        )
+        db_pct = round(db_wts[ticker] * 100)
+        assert pct_int == db_pct, (
+            f"_SAA_US['{ticker}'] = {pct_int}% but DB target_weight = "
+            f"{db_wts[ticker]:.4f} ({db_pct}%). "
+            "Update _SAA_US in src/factors.py and reseed asset_classes."
+        )
+
+
+def test_prose_methodology_weight_defaults_match_db():
+    """Fallback defaults in the methodology paragraph must match live DB target_weights.
+
+    pages/4_Performance.py uses _saa_sleeves.get('Sleeve Name', fallback) for five
+    sleeves in the methodology caption. The fallback values are safety nets for if
+    the DB lookup returns no data. This test verifies that the hardcoded fallback
+    values match actual DB weights so they would produce correct prose even on failure.
+    """
+    from src.db import get_connection
+
+    EXPECTED_FALLBACKS = {
+        "US Large Value":  0.08,
+        "US Small Cap":    0.07,
+        "Emerging Markets": 0.08,
+        "Real Assets":     0.10,
+        "TIPS":            0.06,
+    }
+    EXPECTED_EQUITY_PARENT = 0.72
+
+    with get_connection() as conn:
+        sleeve_rows = conn.execute(
+            "SELECT name, target_weight FROM asset_classes WHERE parent_id IS NOT NULL"
+        ).fetchall()
+        parent_rows = conn.execute(
+            "SELECT name, target_weight FROM asset_classes WHERE parent_id IS NULL"
+        ).fetchall()
+
+    sleeves = {r["name"]: r["target_weight"] for r in sleeve_rows}
+    parents = {r["name"]: r["target_weight"] for r in parent_rows}
+
+    for sleeve_name, expected in EXPECTED_FALLBACKS.items():
+        db_wt = sleeves.get(sleeve_name)
+        assert db_wt is not None, f"'{sleeve_name}' not found in asset_classes"
+        assert abs(db_wt - expected) < 1e-6, (
+            f"DB target_weight for '{sleeve_name}' is {db_wt:.4f} but methodology "
+            f"paragraph fallback default is {expected:.4f}. "
+            "Update the .get() defaults in pages/4_Performance.py lines 790-793."
+        )
+
+    eq_wt = parents.get("Equity")
+    assert eq_wt is not None, "'Equity' parent not found in asset_classes"
+    assert abs(eq_wt - EXPECTED_EQUITY_PARENT) < 1e-6, (
+        f"DB Equity target_weight is {eq_wt:.4f} but fallback default is "
+        f"{EXPECTED_EQUITY_PARENT:.4f}. "
+        "Update the _saa_parents.get('Equity', ...) default in pages/4_Performance.py."
+    )
