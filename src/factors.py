@@ -973,6 +973,14 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
         if dev else "N/A"
     )
 
+    lag_str = "N/A"
+    if us and us.get("sample_end"):
+        try:
+            _lag_days = (date.today() - date.fromisoformat(us["sample_end"])).days
+            lag_str   = f"{_lag_days}-calendar-day publication lag (factor data ends {us['sample_end']})"
+        except Exception:
+            pass
+
     return [
         f"Samples: US equity sleeve {T_us} US trading days ({us_window}), L = {L_us}. "
         f"International Developed sleeve {T_dev} US trading days ({dev_window}), L = {L_dev}. "
@@ -982,8 +990,7 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
         "on US federal holidays — its return series shows zero by forward-fill, not by "
         "market observation. The Dev FF dataset includes those holidays (international "
         "markets open); excluding them keeps both regression calendars consistent. "
-        "Sample sizes reflect the overlap with the most recent available factor data "
-        "(publication lag computed from factor-data end date to analysis date).",
+        f"Sample sizes reflect the overlap with the most recent available factor data ({lag_str}).",
 
         "Methodology: each equity sleeve is regressed against its own region-appropriate "
         "FF5 factor set — US factors for the US sleeve, Developed ex-US factors for VEA. "
