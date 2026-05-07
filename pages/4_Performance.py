@@ -456,7 +456,12 @@ with col:
             "Tracking error and information ratio vs. Custom Blended benchmark. "
             "Max drawdown = peak-to-trough decline in portfolio value within the selected window. "
             "VaR(95%) = daily loss exceeded only 5% of trading days (historical simulation). "
-            "CVaR(95%) = average daily loss on the worst 5% of trading days (Expected Shortfall)."
+            "CVaR(95%) = average daily loss on the worst 5% of trading days (Expected Shortfall). "
+            "IR formula: (geometric annualized active return) / tracking error, where both port "
+            "and benchmark returns use geometric annualization for consistency with the "
+            "GIPS-linked TWR methodology. The arithmetic convention (mean daily active × 252) "
+            "used in some institutional settings would produce a lower IR by the Jensen's "
+            "inequality correction — approximately 15–20% lower at typical portfolio volatility levels."
         )
         st.markdown(
             "*Inception period overlaps substantially with trailing 12 months. "
