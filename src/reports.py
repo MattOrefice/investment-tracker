@@ -889,12 +889,17 @@ def _build_positioning_section(end_date: str) -> dict:
     non_us     = get_non_us_equity_data(end_date)
     fi_dur    = dur["fi_sleeve_duration"]
     agg_dur   = dur["agg_benchmark"]
-    vs_agg    = "below" if fi_dur < agg_dur else "above"
     fi_wt     = dur["fi_weight_pct"]
     cash_wt   = dur["cash_weight_pct"]
+    dur_diff  = abs(fi_dur - agg_dur)
+    if dur_diff < 0.05:
+        dur_vs = "in line with benchmark"
+    else:
+        vs_agg = "below" if fi_dur < agg_dur else "above"
+        dur_vs = f"{vs_agg} benchmark by {dur_diff:.1f} yrs"
     duration_line = (
         f"Fixed Income sleeve (Core FI + TIPS) effective duration: {fi_dur} yrs "
-        f"vs Bloomberg US Agg: {agg_dur} yrs ({vs_agg} benchmark by {abs(fi_dur - agg_dur):.1f} yrs). "
+        f"vs Bloomberg US Agg: {agg_dur} yrs ({dur_vs}). "
         f"FI weight: {fi_wt}% of portfolio. "
         f"Cash/SPAXX ({cash_wt}%) excluded — not a duration-bearing asset and excluded from Bloomberg Agg."
     )

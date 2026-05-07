@@ -60,8 +60,13 @@ with col:
     agg_dur  = dur["agg_benchmark"]
     fi_wt    = dur["fi_weight_pct"]
     cash_wt  = dur["cash_weight_pct"]
-    delta_yr = round(fi_dur - agg_dur, 1)
-    vs_agg   = "below" if delta_yr < 0 else "above"
+    delta_yr  = round(fi_dur - agg_dur, 1)
+    dur_diff  = abs(fi_dur - agg_dur)
+    if dur_diff < 0.05:
+        dur_vs_caption = "in line with the Bloomberg US Agg benchmark"
+    else:
+        vs_agg = "below" if delta_yr < 0 else "above"
+        dur_vs_caption = f"{abs(delta_yr):.1f} yrs {vs_agg} the Bloomberg US Agg benchmark"
     st.metric(
         label="FI Sleeve Duration (Core FI + TIPS)",
         value=f"{fi_dur} yrs",
@@ -72,7 +77,7 @@ with col:
     st.caption(
         f"FI weight (Core FI + TIPS): {fi_wt}% of portfolio. "
         f"Cash/SPAXX: {cash_wt}% (excluded from duration calculation and from Bloomberg Agg). "
-        f"FI sleeve duration is {abs(delta_yr):.1f} yrs {vs_agg} the Bloomberg US Agg benchmark. "
+        f"FI sleeve duration is {dur_vs_caption}. "
         "Duration also flows through equity via discount-rate effects — it's a whole-portfolio consideration. "
         "Duration sourced from ETF fact-sheet values (VGIT: 5.5 yrs, SCHP: 6.8 yrs per Vanguard/Schwab Q1 2026)."
     )
