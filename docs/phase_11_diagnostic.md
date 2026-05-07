@@ -256,3 +256,19 @@ All files checked: `pages/4_Performance.py`, `pages/5_Macro.py`, `pages/6_Positi
 | 1.3 Factor regression N asymmetry | **US holiday asymmetry.** 9 US federal holidays appear in Dev FF data but not US FF data. VEA has zero return on those days (US exchange closed), biasing the Dev regression. Fix: restrict Dev sleeve series to US trading days before joining Dev FF factors. |
 | 1.4 IR formula | **No bug.** Formula uses geometric annualization; IR × TE = active return exactly. Convention differs from CFA/institutional arithmetic standard by ~50 bps Jensen's gap. Add methodology disclosure. |
 | 1.5 Hard-coded text | 11 items inventoried. Critical: static "CAPE 95th percentile" in template (line 530), reconciliation disclaimer to remove, FI weight including Cash, per-sleeve N disclosure asymmetry. |
+
+---
+
+## Section 2.3 — IEMG cache verification (post-Section 1)
+
+**Verified: 2026-05-07. Method:** fresh pull via Yahoo Finance Chart API (`src/prices.fetch_prices()`), exact 1Y window 2025-05-07 to 2026-05-07.
+
+| Source | 1Y return | Window |
+|--------|-----------|--------|
+| Cache (SQLite) | 53.47% | 2025-05-07 to 2026-05-07 |
+| Fresh (Chart API) | 53.66% | 2025-05-07 to 2026-05-07 |
+| Difference | **0.19 pp** | — |
+
+**Verdict: WITHIN 0.5 pp threshold — cache rebuild skipped.**
+
+The 5.9 pp gap vs. external TTM (~48%) flagged in Section 1.2 was a window-date artifact: the external TTM estimates reflected a window ending ~March or April 2026, while the current window (ending May 7, 2026) captures an additional period of EM strength. The cache data correctly matches the Chart API for the same window endpoints. No data integrity issue with IEMG.
