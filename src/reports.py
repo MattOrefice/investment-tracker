@@ -915,6 +915,14 @@ def _build_positioning_section(end_date: str) -> dict:
 
 # ── Methodology template variables ───────────────────────────────────────────
 
+# SAA rule: sleeves with target weight ≥10% → ±300 bps; <10% → ±200 bps.
+# Real Assets is the boundary case at exactly 10% and is assigned to the 200bps
+# tier as a deliberate exception — so MIN(target_weight) for the 300bps DB group
+# returns 0.14 (US Large Quality), not 0.10. Use the rule constant directly; do
+# not infer the threshold from DB data.
+_TOLERANCE_BAND_LARGE_CUTOFF_PCT = 10
+
+
 def _build_methodology_vars() -> dict:
     """Return DB-derived values used in the PDF methodology section.
 
@@ -932,10 +940,8 @@ def _build_methodology_vars() -> dict:
             "SELECT COUNT(*) FROM asset_classes WHERE parent_id IS NOT NULL"
         ).fetchone()[0]
         band_rows = conn.execute(
-            "SELECT CAST(ROUND(tolerance_band * 10000) AS INTEGER) AS band_bps, "
-            "MIN(target_weight) AS min_weight "
-            "FROM asset_classes WHERE parent_id IS NOT NULL "
-            "GROUP BY tolerance_band ORDER BY band_bps"
+            "SELECT DISTINCT CAST(ROUND(tolerance_band * 10000) AS INTEGER) AS band_bps "
+            "FROM asset_classes WHERE parent_id IS NOT NULL ORDER BY band_bps"
         ).fetchall()
 
     # "Equity 72% / Income 15% / Real Assets 10% / Cash 3%"
@@ -949,22 +955,20 @@ def _build_methodology_vars() -> dict:
     ra_bench_str = " + ".join(f"{round(w * 100):.0f}% {t}" for t, w in ra_bench)
 
     # Drift band tiers: smallest band (200 bps) and largest (300 bps)
-    # Largest band applies to sleeves whose min target_weight is the threshold
-    bands_sorted = [(int(r["band_bps"]), r["min_weight"]) for r in band_rows]
-    if len(bands_sorted) >= 2:
-        drift_small_bps = bands_sorted[0][0]
-        drift_large_bps, drift_large_min_weight = bands_sorted[-1]
-        drift_large_min_pct = round(drift_large_min_weight * 100)
+    band_bps_vals = [int(r["band_bps"]) for r in band_rows]
+    if len(band_bps_vals) >= 2:
+        drift_small_bps = band_bps_vals[0]
+        drift_large_bps = band_bps_vals[-1]
     else:
-        drift_small_bps, drift_large_bps, drift_large_min_pct = 200, 300, 10
+        drift_small_bps, drift_large_bps = 200, 300
 
     return {
-        "methodology_parent_weights":  parent_weight_str,
-        "methodology_sleeve_count":    sleeve_count,
-        "methodology_ra_bench":        ra_bench_str,
-        "methodology_drift_large_bps": drift_large_bps,
-        "methodology_drift_small_bps": drift_small_bps,
-        "methodology_drift_large_min_pct": drift_large_min_pct,
+        "methodology_parent_weights":      parent_weight_str,
+        "methodology_sleeve_count":        sleeve_count,
+        "methodology_ra_bench":            ra_bench_str,
+        "methodology_drift_large_bps":     drift_large_bps,
+        "methodology_drift_small_bps":     drift_small_bps,
+        "methodology_drift_large_min_pct": _TOLERANCE_BAND_LARGE_CUTOFF_PCT,
     }
 
 

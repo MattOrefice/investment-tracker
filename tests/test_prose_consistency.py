@@ -480,3 +480,26 @@ def test_prose_pdf_drift_thresholds_match_db():
         f"Expected a 300 bps (±3%) tolerance band; found: {band_bps_vals}. "
         "Update _build_methodology_vars() fallback and the methodology template."
     )
+
+
+def test_prose_drift_threshold_matches_rule_constant():
+    """_TOLERANCE_BAND_LARGE_CUTOFF_PCT must equal 10, not the data-inferred value.
+
+    The SAA rule is: sleeves with target weight ≥10% → ±300 bps.  Real Assets sits
+    at exactly 10% but is assigned to the 200 bps tier as a deliberate exception, so
+    MIN(target_weight) for the 300 bps DB group returns 14 (US Large Quality).
+    The PDF methodology prose must describe the rule (≥10%), not the DB minimum (≥14%).
+    """
+    from src.reports import _TOLERANCE_BAND_LARGE_CUTOFF_PCT, _build_methodology_vars
+
+    assert _TOLERANCE_BAND_LARGE_CUTOFF_PCT == 10, (
+        f"Rule constant is {_TOLERANCE_BAND_LARGE_CUTOFF_PCT}, expected 10. "
+        "The SAA spec says ≥10% target weight → ±300 bps tolerance band."
+    )
+
+    vars_ = _build_methodology_vars()
+    assert vars_["methodology_drift_large_min_pct"] == 10, (
+        f"_build_methodology_vars() returned drift_large_min_pct="
+        f"{vars_['methodology_drift_large_min_pct']}, expected 10. "
+        "Must use _TOLERANCE_BAND_LARGE_CUTOFF_PCT, not MIN(target_weight) from DB."
+    )
