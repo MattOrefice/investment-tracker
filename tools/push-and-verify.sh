@@ -1,10 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Push current branch to origin and verify the local HEAD matches origin's HEAD.
-# Exit 0 only if push reached origin and SHAs match.
+# Run fast tests, then push to origin and verify SHAs match.
+# Usage: bash tools/push-and-verify.sh [branch]
+# Skip test gate: SKIP_TESTS=1 bash tools/push-and-verify.sh
 
 BRANCH="${1:-main}"
+
+if [ "${SKIP_TESTS:-0}" != "1" ]; then
+  echo "Running fast test gate (slow tests excluded)..."
+  python -m pytest -m "not slow" --tb=short -q
+  echo "Tests passed."
+fi
 
 echo "Pushing $BRANCH to origin..."
 git push origin "$BRANCH"
