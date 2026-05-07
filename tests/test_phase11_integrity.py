@@ -46,7 +46,7 @@ def _cal_series(returns: np.ndarray, start: str = "2025-01-01") -> pd.Series:
 
 # ── (a) TWR ≡ absolute return for no-cash-flow series ─────────────────────────
 
-def test_twr_equals_absolute_return_no_cashflows():
+def test_identity_twr_equals_absolute_return_no_cashflows():
     """For a series with no external cash flows, daily-linked TWR must equal
     (V_end - V_start) / V_start to within floating-point tolerance.
 
@@ -69,7 +69,7 @@ def test_twr_equals_absolute_return_no_cashflows():
     )
 
 
-def test_twr_absolute_return_holds_across_multiple_seeds():
+def test_identity_twr_absolute_return_multiple_seeds():
     """Identity holds regardless of return magnitude or direction."""
     for seed in (1, 7, 99):
         rng = np.random.default_rng(seed)
@@ -82,7 +82,7 @@ def test_twr_absolute_return_holds_across_multiple_seeds():
 
 # ── (b) IR × TE = geometric active return ─────────────────────────────────────
 
-def test_ir_times_te_equals_geometric_active_return():
+def test_identity_ir_times_te_equals_geometric_active():
     """IR is defined as (ann_port − ann_bench) / TE, so IR × TE must equal
     the geometric active return (ann_port − ann_bench) to within float tolerance.
 
@@ -114,7 +114,7 @@ def test_ir_times_te_equals_geometric_active_return():
     )
 
 
-def test_ir_times_te_identity_multiple_windows():
+def test_identity_ir_times_te_multiple_windows():
     """Identity holds for 1Y and SI windows, both using trading-day-only returns."""
     import pandas as pd
     from datetime import date
@@ -141,7 +141,7 @@ def test_ir_times_te_identity_multiple_windows():
 
 # ── (c) Trading-day filter: n_days reflects trading days, not calendar days ───
 
-def test_n_days_excludes_weekend_zeros():
+def test_identity_n_days_excludes_calendar_zeros():
     """A calendar-day series (with weekend forward-fills) must yield n_days ≈
     number of trading days, not calendar days.
 
@@ -176,7 +176,7 @@ def test_n_days_excludes_weekend_zeros():
     )
 
 
-def test_calendar_vs_bday_series_produce_same_n_days():
+def test_identity_calendar_bday_same_n_days():
     """Calendar-day and business-day series built from the same underlying returns
     must produce the same n_days after the trading-day filter.
 
@@ -206,7 +206,7 @@ def test_calendar_vs_bday_series_produce_same_n_days():
     )
 
 
-def test_tracking_error_consistent_between_calendar_and_bday():
+def test_identity_tracking_error_calendar_bday_consistent():
     """Tracking error must be the same (within 0.1 pp) whether the series uses
     calendar-day or business-day indexing — the filter must normalize them.
     """
@@ -258,7 +258,7 @@ def test_em_disclosure_still_mentions_iemg():
 
 # ── (e) CAPE prose template uses {{ macro.cape.percentile }}, not static text ─
 
-def test_cape_template_percentile_is_dynamic():
+def test_prose_cape_template_uses_dynamic_percentile():
     """The quarterly report template must render the CAPE percentile via the
     Jinja2 variable {{ macro.cape.percentile }}, not a hard-coded integer string.
 
@@ -354,7 +354,7 @@ def test_macro_section_regime_pct_int_in_output():
 
 # ── (g) Duration "in line with benchmark" branch ──────────────────────────────
 
-def test_duration_in_line_with_benchmark_in_reports():
+def test_prose_duration_in_line_with_benchmark():
     """_build_positioning_section must produce 'in line with benchmark' when
     fi_sleeve_duration ≈ agg_benchmark (diff < 0.05 yrs).
 
@@ -391,7 +391,7 @@ def test_duration_in_line_with_benchmark_in_reports():
     )
 
 
-def test_duration_above_benchmark_when_diff_exceeds_threshold():
+def test_prose_duration_above_benchmark():
     """When fi_dur > agg_dur by more than 0.05 yrs, 'above benchmark' must appear."""
     import src.reports as rpt
 
@@ -419,7 +419,7 @@ def test_duration_above_benchmark_when_diff_exceeds_threshold():
     assert "1.0 yrs" in duration_line
 
 
-def test_duration_below_benchmark_when_diff_exceeds_threshold():
+def test_prose_duration_below_benchmark():
     """When fi_dur < agg_dur by more than 0.05 yrs, 'below benchmark' must appear."""
     import src.reports as rpt
 

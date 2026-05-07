@@ -119,7 +119,7 @@ def test_percentile_label_monotone():
 
 # ── DB-backed prose consistency tests ─────────────────────────────────────────
 
-def test_non_equity_fraction_algebraic_consistency():
+def test_identity_non_equity_fraction_algebraic_consistency():
     """1 - equity_weight == sum of non-equity parent weights (Income + Real Assets + Cash).
 
     The Performance page L291 computes _non_eq_pct = 1 - _saa_parents['Equity'].
@@ -146,7 +146,7 @@ def test_non_equity_fraction_algebraic_consistency():
     )
 
 
-def test_non_us_equity_fraction_matches_intl_plus_em():
+def test_identity_non_us_equity_fraction_matches_intl_plus_em():
     """Non-US equity fraction = Intl Developed + Emerging Markets target weights.
 
     The Performance page L292 computes _non_us_eq as the sum of these two
@@ -175,7 +175,7 @@ def test_non_us_equity_fraction_matches_intl_plus_em():
     )
 
 
-def test_methodology_prose_sleeve_keys_present():
+def test_prose_methodology_sleeve_keys_present():
     """All sleeve names used in the methodology paragraph exist in the SAA DB.
 
     The Performance page methodology paragraph references 'US Large Value',
@@ -205,7 +205,7 @@ def test_methodology_prose_sleeve_keys_present():
     )
 
 
-def test_equity_parent_name_matches_prose():
+def test_prose_equity_parent_name_matches():
     """Equity parent name is 'Equity' — the key used in _saa_parents.get('Equity', ...)."""
     from src.db import get_connection
 
