@@ -503,3 +503,86 @@ def test_prose_drift_threshold_matches_rule_constant():
         f"{vars_['methodology_drift_large_min_pct']}, expected 10. "
         "Must use _TOLERANCE_BAND_LARGE_CUTOFF_PCT, not MIN(target_weight) from DB."
     )
+
+
+# ── Phase 13 additions — SAA investment thesis paragraph ─────────────────────
+
+def test_saa_thesis_sleeve_weights_match_db():
+    """Sleeve weights referenced in the SAA investment thesis paragraph match DB target_weights.
+
+    pages/1_SAA.py builds the thesis paragraph dynamically from the asset_classes DB.
+    This test pins the expected weights so any SAA taxonomy change triggers an intentional
+    review of the thesis paragraph fallback defaults.
+    """
+    from src.db import get_connection
+
+    THESIS_WEIGHTS = {
+        "Equity":                  0.72,   # parent category
+        "International Developed": 0.19,
+        "Emerging Markets":        0.08,
+        "Real Assets":             0.10,
+        "TIPS":                    0.06,
+        "Core Fixed Income":       0.09,
+    }
+
+    with get_connection() as conn:
+        sleeve_rows = conn.execute(
+            "SELECT name, target_weight FROM asset_classes WHERE parent_id IS NOT NULL"
+        ).fetchall()
+        parent_rows = conn.execute(
+            "SELECT name, target_weight FROM asset_classes WHERE parent_id IS NULL"
+        ).fetchall()
+
+    all_weights = {r["name"]: r["target_weight"] for r in sleeve_rows}
+    all_weights.update({r["name"]: r["target_weight"] for r in parent_rows})
+
+    for name, expected in THESIS_WEIGHTS.items():
+        actual = all_weights.get(name)
+        assert actual is not None, (
+            f"'{name}' referenced in SAA thesis paragraph not found in asset_classes. "
+            "Update the .get() fallback defaults in pages/1_SAA.py."
+        )
+        assert abs(actual - expected) < 1e-6, (
+            f"SAA thesis paragraph uses {round(expected * 100)}% for '{name}' "
+            f"but DB has {actual:.4f} ({round(actual * 100)}%). "
+            "Update the .get() fallback defaults in pages/1_SAA.py."
+        )
+
+
+def test_saa_thesis_cape_label_matches_computed_percentile():
+    """CAPE language in the SAA thesis paragraph is consistent with percentile_label() output.
+
+    pages/1_SAA.py calls _load_cape_label() which computes the CAPE percentile from the
+    Shiller dataset and passes it through percentile_label(). This test verifies:
+    1. The cached CAPE series produces a valid percentile (not NaN / degenerate).
+    2. The resulting label is one of the recognized qualitative buckets.
+    3. CAPE is above the historical median (a sanity check — at 40x it should be far above).
+    """
+    from src.shiller import get_cape_series
+    from src.macro import percentile
+    from src.prose_helpers import percentile_label
+
+    VALID_LABELS = {
+        "historically low",
+        "below the historical median",
+        "near the historical median",
+        "elevated historically",
+        "very high historically",
+        "historically extreme",
+    }
+
+    s = get_cape_series()
+    cv = float(s.dropna().iloc[-1])
+    pct = percentile(s.dropna(), cv)
+    label = percentile_label(pct)
+
+    assert label in VALID_LABELS, (
+        f"percentile_label({pct:.1f}) returned '{label}', not in {VALID_LABELS}. "
+        "SAA thesis uses this label dynamically — check percentile_label() thresholds in "
+        "src/prose_helpers.py."
+    )
+    assert pct > 50, (
+        f"CAPE at {cv:.1f}x is at only the {pct:.0f}th historical percentile — below the median. "
+        "At sub-median CAPE, the SAA thesis claim of 'elevated valuations' is questionable. "
+        "Review the thesis paragraph in pages/1_SAA.py."
+    )

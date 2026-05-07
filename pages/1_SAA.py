@@ -8,6 +8,9 @@ import plotly.graph_objects as go
 from src.asof import as_of_banner
 from src.db import get_connection
 from src.endowment_benchmarks import CATEGORIES, ENTITIES, get_endowment_data
+from src.macro import percentile as macro_percentile
+from src.prose_helpers import percentile_label
+from src.shiller import get_cape_series
 from src.ui_helpers import render_footer
 
 PARENT_COLORS = {
@@ -22,6 +25,17 @@ def _safe_md(text):
     """Escape $ before passing to st.markdown so Streamlit doesn't treat them as LaTeX."""
     if text:
         st.markdown(text.replace("$", r"\$"))
+
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def _load_cape_label() -> str:
+    try:
+        s = get_cape_series()
+        cv = float(s.dropna().iloc[-1])
+        pct = macro_percentile(s.dropna(), cv)
+        return percentile_label(pct)
+    except Exception:
+        return "elevated historically"
 
 
 def load_saa_data():
@@ -61,6 +75,32 @@ with col:
     st.caption(f"{n_sleeves} sleeves  ·  {total_alloc:.1f}% allocated  ·  {n_parents} parent categories")
     parts = [f"{round(p['target_weight'] * 100)}% {p['name']}" for p in parents]
     st.markdown("&nbsp;&nbsp;·&nbsp;&nbsp;".join(f"**{p}**" for p in parts))
+    st.divider()
+
+# ── Investment thesis ──────────────────────────────────────────────────────────
+_, col, _ = st.columns([1, 8, 1])
+with col:
+    st.subheader("Investment Thesis")
+    _equity_wt   = next((p["target_weight"] for p in parents if p["name"] == "Equity"), 0.72)
+    _intl_dev_wt = next((s["target_weight"] for s in sub_classes if s["name"] == "International Developed"), 0.19)
+    _em_wt       = next((s["target_weight"] for s in sub_classes if s["name"] == "Emerging Markets"), 0.08)
+    _real_wt     = next((s["target_weight"] for s in sub_classes if s["name"] == "Real Assets"), 0.10)
+    _tips_wt     = next((s["target_weight"] for s in sub_classes if s["name"] == "TIPS"), 0.06)
+    _core_fi_wt  = next((s["target_weight"] for s in sub_classes if s["name"] == "Core Fixed Income"), 0.09)
+    _cape_lbl    = _load_cape_label()
+    st.markdown(
+        f"Strategic asset allocation reflects a late-cycle US equity environment with elevated valuations "
+        f"(CAPE {_cape_lbl}) balanced against a normalized 2/10 yield curve and HY credit spreads consistent "
+        f"with mid-cycle conditions. The {round(_equity_wt * 100)}% equity weight is preserved against the "
+        f"macro backdrop because the alternative — defensive positioning — has historically rewarded patience "
+        f"poorly when valuation alone is the trigger. Style tilts (quality via SPHQ, value via VTV, small-cap "
+        f"value via AVUV) target factors with positive long-run premia and reduced sensitivity to multiple "
+        f"compression. International Developed ({round(_intl_dev_wt * 100)}%) and Emerging Markets "
+        f"({round(_em_wt * 100)}%) provide valuation diversification at meaningfully lower CAPE levels than "
+        f"US equity. Real Assets ({round(_real_wt * 100)}%) and TIPS ({round(_tips_wt * 100)}%) hedge the "
+        f"unhedged inflation tail in a portfolio dominated by nominal duration. Core Fixed Income "
+        f"({round(_core_fi_wt * 100)}%) is sized for liquidity and rebalancing optionality, not yield."
+    )
     st.divider()
 
 # ── Top-level allocation chart ──────────────────────────────────────────────────
