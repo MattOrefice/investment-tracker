@@ -62,7 +62,7 @@ Three layers:
 
 **Layer 2 — Bounds.** Reasonability checks with tolerance: Sortino ≥ Sharpe (must hold when annualized return > RF), VaR/CVaR within expected regime ranges, CAPE readings within a plausible historical range, IR × TE within Jensen's gap of geometric annualized active return. Bound failures indicate data pipeline issues or computational errors.
 
-**Layer 3 — Prose-vs-data.** Every numerical citation in interpretive prose is templated from its source data, with tests asserting prose equals computed value. CAPE percentile in commentary equals CAPE percentile in the table. PDF methodology drift threshold prose derives from the SAA rule constant, not from data inference (Real Assets at 10% target weight is a boundary exception assigned to the 200 bps tier — naive `MIN()` on the DB returns 14%, not the correct 10% rule threshold). 305 tests across the three layers run on every push to main via GitHub Actions.
+**Layer 3 — Prose-vs-data.** Every numerical citation in interpretive prose is templated from its source data, with tests asserting prose equals computed value. CAPE percentile in commentary equals CAPE percentile in the table. PDF methodology drift threshold prose derives from the SAA rule constant, not from data inference (Real Assets at 10% target weight is a boundary exception assigned to the 200 bps tier — naive `MIN()` on the DB returns 14%, not the correct 10% rule threshold). 322 tests across the three layers run on every push to main via GitHub Actions.
 
 ### Data lineage
 
@@ -116,7 +116,7 @@ pages/                Streamlit pages (auto-discovered by app.py)
   6_Reports.py        Quarterly report archive and download
   7_Factor_Profile.py Per-sleeve FF5 regressions, benchmark-relative alpha, style box
 
-tests/                305 tests across three integrity layers
+tests/                322 tests across three integrity layers
   test_identity_layer1.py    Layer 1: math identities
   test_bound_layer2.py       Layer 2: reasonability bounds
   test_prose_consistency.py  Layer 3: prose-vs-data guards
@@ -164,7 +164,7 @@ The personal-mode portfolio (`TRACKER_MODE=personal`, `data/tracker.db`) is giti
 
 ### CI/CD
 
-GitHub Actions runs `pytest -m "not slow"` (305 tests, ~90 seconds) under `TRACKER_MODE=demo` on every push and pull request to `main`. The `tools/push-and-verify.sh` wrapper runs the same suite locally before every push, so failures are caught before they reach the CI queue. See `docs/ci_setup.md` for branch protection and secrets configuration.
+GitHub Actions runs `pytest -m "not slow"` (322 tests, ~90 seconds) under `TRACKER_MODE=demo` on every push and pull request to `main`. The `tools/push-and-verify.sh` wrapper runs the same suite locally before every push, so failures are caught before they reach the CI queue. See `docs/ci_setup.md` for branch protection and secrets configuration.
 
 ### Planned enhancements
 
