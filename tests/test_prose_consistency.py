@@ -414,3 +414,38 @@ def test_prose_pdf_methodology_sleeve_count_matches_db():
         f"Expected 10 SAA sleeves in asset_classes, got {count}. "
         "If the SAA taxonomy changed, update the methodology template and this test."
     )
+
+
+def test_prose_pdf_real_assets_benchmark_caption_matches_source():
+    """Real Assets benchmark description in PDF template matches _SLEEVE_BENCHMARKS.
+
+    templates/quarterly_report.html renders {{ methodology_ra_bench }} derived
+    from _SLEEVE_BENCHMARKS["Real Assets"] in src/benchmarks.py. This test
+    verifies the benchmark uses VNQ + DBC (not DJP which was delisted 2020)
+    and that the 50/50 split is intact. Note: the portfolio holds PDBC (no-K-1);
+    DBC is deliberately used as the benchmark for long price history.
+    """
+    from src.benchmarks import _SLEEVE_BENCHMARKS
+
+    ra = _SLEEVE_BENCHMARKS.get("Real Assets")
+    assert ra is not None, "'Real Assets' key missing from _SLEEVE_BENCHMARKS"
+    assert len(ra) == 2, (
+        f"Expected 2 tickers in Real Assets benchmark, got {len(ra)}: {ra}"
+    )
+
+    tickers = [t for t, _w in ra]
+    weights = [w for _t, w in ra]
+
+    assert "VNQ" in tickers, f"VNQ not in Real Assets benchmark tickers: {tickers}"
+    assert "DBC" in tickers, (
+        f"DBC not in Real Assets benchmark tickers: {tickers}. "
+        "DJP was delisted 2020; benchmark should use DBC. "
+        "If DBC was also replaced, update _SLEEVE_BENCHMARKS and this test."
+    )
+    assert abs(sum(weights) - 1.0) < 1e-9, (
+        f"Real Assets benchmark weights don't sum to 1.0: {weights}"
+    )
+    assert all(abs(w - 0.5) < 1e-9 for w in weights), (
+        f"Expected 50/50 split; got {dict(zip(tickers, weights))}. "
+        "Update templates/quarterly_report.html Real Assets benchmark description."
+    )

@@ -584,8 +584,11 @@
 
           <dt>Benchmarks</dt>
           <dd>S&amp;P 500: SPY total return (adj_close). Custom Blended: SAA target-weight basket
-          of benchmark tickers (SPY, QUAL, IWD, IWM, EFA, EEM, IEF, TIP, 50% VNQ + 50% DBC, BIL),
-          normalized to $1 on inception date.</dd>
+          of benchmark tickers (SPY, QUAL, IWD, IWM, EFA, EEM, IEF, TIP, {{ methodology_ra_bench }}, BIL),
+          normalized to $1 on inception date.
+          Real Assets benchmark uses DBC (Invesco DB Commodity index; K-1-issuing ETF);
+          the portfolio holds PDBC (C-corp structure, no K-1 issued). Selection effect
+          in the Brinson-Fachler table captures the DBC&ndash;PDBC return spread.</dd>
 
           <dt>Brinson-Fachler Attribution</dt>
           <dd>Allocation effect = (w<sub>p</sub> &minus; w<sub>b</sub>) &times; (r<sub>b</sub> &minus;

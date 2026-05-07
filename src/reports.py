@@ -921,6 +921,8 @@ def _build_methodology_vars() -> dict:
     Keeps the quarterly_report.html template free of hardcoded SAA numerics.
     Called once per report render; the DB queries are lightweight.
     """
+    from src.benchmarks import _SLEEVE_BENCHMARKS
+
     with get_connection() as conn:
         parent_rows = conn.execute(
             "SELECT name, target_weight FROM asset_classes "
@@ -936,9 +938,14 @@ def _build_methodology_vars() -> dict:
         for r in parent_rows
     )
 
+    # "50% VNQ + 50% DBC" — derived from _SLEEVE_BENCHMARKS["Real Assets"]
+    ra_bench = _SLEEVE_BENCHMARKS.get("Real Assets", [])
+    ra_bench_str = " + ".join(f"{round(w * 100):.0f}% {t}" for t, w in ra_bench)
+
     return {
         "methodology_parent_weights": parent_weight_str,
         "methodology_sleeve_count":   sleeve_count,
+        "methodology_ra_bench":       ra_bench_str,
     }
 
 
