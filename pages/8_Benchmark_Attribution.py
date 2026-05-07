@@ -8,7 +8,7 @@ st.set_page_config(page_title="Benchmark Attribution", layout="wide")
 
 from src.asof import as_of_banner
 from src.attribution import brinson_fachler_period
-from src.config import DEMO_BANNER_TEXT, IS_DEMO
+from src.config import get_demo_banner_text, IS_DEMO
 from src.factors import (
     alpha_ci_str,
     build_benchmark_methodology,
@@ -45,7 +45,7 @@ _SLEEVE_BENCH = {
 }
 
 if IS_DEMO:
-    st.info(DEMO_BANNER_TEXT)
+    st.info(get_demo_banner_text())
 
 _, col, _ = st.columns([1, 8, 1])
 with col:

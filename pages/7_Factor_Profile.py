@@ -7,7 +7,7 @@ import pandas as pd
 st.set_page_config(page_title="Factor Profile", layout="wide")
 
 from src.asof import as_of_banner
-from src.config import DEMO_BANNER_TEXT, IS_DEMO
+from src.config import get_demo_banner_text, IS_DEMO
 from src.ui_helpers import render_footer
 from src.factors import (
     EM_DISCLOSURE,
@@ -23,7 +23,7 @@ from src.factors import (
 )
 
 if IS_DEMO:
-    st.info(DEMO_BANNER_TEXT)
+    st.info(get_demo_banner_text())
 
 _, col, _ = st.columns([1, 8, 1])
 with col:

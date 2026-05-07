@@ -6,7 +6,7 @@ st.set_page_config(page_title="Research", layout="wide")
 import pandas as pd
 from collections import defaultdict
 from src.asof import as_of_banner
-from src.config import DEMO_BANNER_TEXT, IS_DEMO
+from src.config import get_demo_banner_text, IS_DEMO
 from src.db import get_connection
 from src.ui_helpers import render_footer
 
@@ -155,7 +155,7 @@ for d in sleeve_data:
             portfolio_savings_bps += w_per * (bm_er - (h_er or 0.0)) * 10_000
 
 if IS_DEMO:
-    st.info(DEMO_BANNER_TEXT)
+    st.info(get_demo_banner_text())
 
 # ── Header ─────────────────────────────────────────────────────────────────────
 _, col, _ = st.columns([1, 8, 1])
