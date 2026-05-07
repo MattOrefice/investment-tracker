@@ -754,13 +754,42 @@ def _build_macro_section() -> dict:
     try:
         cape_val = current_cape()
         cape_s   = get_cape_series()
+        try:
+            _raw_pct = percentile(cape_s, cape_val)
+            pct_str  = f"{_raw_pct:.0f}th"
+            pct_int  = int(round(_raw_pct))
+        except Exception:
+            pct_str  = "N/A"
+            pct_int  = 50
+        if pct_int >= 80:
+            _regime        = "Elevated"
+            _regime_action = "support the SAA's diversification across non-US equity and real asset sleeves"
+        elif pct_int >= 60:
+            _regime        = "Above-average"
+            _regime_action = "support modest diversification away from US large-cap"
+        elif pct_int >= 40:
+            _regime        = "Moderate"
+            _regime_action = "are consistent with the long-run average; no strong tilt signal"
+        else:
+            _regime        = "Below-average"
+            _regime_action = "support increased US equity exposure relative to SAA targets"
         macro["cape"] = {
-            "value":      f"{cape_val:.1f}x",
-            "percentile": _pct_str(cape_s, cape_val),
-            "note":       "Elevated vs. history; supports diversification into non-US and real assets.",
+            "value":         f"{cape_val:.1f}x",
+            "percentile":    pct_str,
+            "pct_int":       pct_int,
+            "regime":        _regime,
+            "regime_action": _regime_action,
+            "note":          "Elevated vs. history; supports diversification into non-US and real assets.",
         }
     except Exception:
-        macro["cape"] = {"value": "N/A", "percentile": "N/A", "note": "Data unavailable."}
+        macro["cape"] = {
+            "value":         "N/A",
+            "percentile":    "N/A",
+            "pct_int":       50,
+            "regime":        "Uncertain",
+            "regime_action": "suggest maintaining SAA diversification",
+            "note":          "Data unavailable.",
+        }
 
     try:
         yc     = get_series("T10Y2Y", "1990-01-01")
