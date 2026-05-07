@@ -10,6 +10,7 @@ from src.asof import as_of_banner
 from src.config import get_demo_banner_text, IS_DEMO
 from src.ui_helpers import render_footer
 from src.factors import (
+    _FI_WEIGHTS,
     EM_DISCLOSURE,
     GLOBAL_DAILY_FACTORS_CUTOFF,
     alpha_ci_str,
@@ -193,8 +194,12 @@ with col:
             _get_fi_result.clear()
             st.rerun()
     else:
+        _fi_pcts = " / ".join(
+            f"{round(_FI_WEIGHTS.get(t, 0) * 100):.0f}%"
+            for t in fi_result["tickers"]
+        )
         st.caption(
-            f"Tickers: {', '.join(fi_result['tickers'])} (60% / 40%, proportional to SAA) · "
+            f"Tickers: {', '.join(fi_result['tickers'])} ({_fi_pcts}, proportional to SAA) · "
             "TERM = IEF − BIL · CREDIT = HYG − IEF"
         )
         fi_rows = []

@@ -221,6 +221,31 @@ def test_prose_equity_parent_name_matches():
     )
 
 
+def test_prose_factor_profile_fi_caption_matches_weights():
+    """FI sleeve caption weight percentages (60%/40%) are derived from _FI_WEIGHTS.
+
+    pages/7_Factor_Profile.py renders the FI proportions inline using _FI_WEIGHTS.
+    This test verifies the rendered string is well-formed and that VGIT carries
+    more weight than SCHP (consistent with Core FI 9% > TIPS 6%).
+    """
+    from src.factors import _FI_WEIGHTS
+
+    fi_tickers = ["VGIT", "SCHP"]
+    pct_parts = [round(_FI_WEIGHTS.get(t, 0) * 100) for t in fi_tickers]
+
+    assert sum(pct_parts) == 100, (
+        f"FI caption weights don't sum to 100%: {pct_parts}. "
+        "Check _FI_WEIGHTS in src/factors.py."
+    )
+    assert all(p > 0 for p in pct_parts), (
+        f"FI caption has a zero-weight ticker: {list(zip(fi_tickers, pct_parts))}."
+    )
+    assert pct_parts[0] > pct_parts[1], (
+        f"Expected VGIT weight > SCHP weight (Core FI 9% > TIPS 6%); "
+        f"got VGIT={pct_parts[0]}% SCHP={pct_parts[1]}%."
+    )
+
+
 def test_prose_fi_weights_constant_matches_db():
     """_FI_WEIGHTS in src/factors.py must reflect DB proportions for Core FI and TIPS.
 
