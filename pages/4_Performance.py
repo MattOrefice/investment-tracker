@@ -299,20 +299,23 @@ with col:
         _cost_row = _rc.execute(
             "SELECT SUM(shares * price) FROM trades WHERE LOWER(action) = 'buy'"
         ).fetchone()
-    _cost_basis = float(_cost_row[0] or 0.0)
-    if _cost_basis > 0:
-        _unrealized   = current_val - _cost_basis
-        _abs_ret_pct  = (current_val / _cost_basis - 1) * 100
-        _twr_pct      = port_si * 100
+    _cost_basis    = float(_cost_row[0] or 0.0)
+    _series_start  = float(pv.iloc[0])
+    if _cost_basis > 0 and _series_start > 0:
+        _unrealized  = current_val - _cost_basis
+        _abs_ret_pct = (current_val / _series_start - 1) * 100
+        _twr_pct     = port_si * 100
         st.caption(
-            f"Reconciliation: **\\${_cost_basis:,.0f} cost basis** at inception → "
+            f"Reconciliation: **\\${_cost_basis:,.0f} deployed at inception** → "
             f"**\\${current_val:,.0f} current value** · "
-            f"**\\${_unrealized:+,.0f} unrealized gain** · "
-            f"**{_abs_ret_pct:.1f}% absolute return** vs **{_twr_pct:.1f}% cumulative TWR**. "
-            f"For a single lump-sum portfolio with no subsequent cash flows, TWR and "
-            f"absolute return converge; any residual difference reflects DRIP reinvestment "
-            f"rounding and the BIL total-return proxy applied to the SPAXX cash sleeve. "
-            f"TWR is the GIPS-correct measure for benchmark comparison."
+            f"**\\${_unrealized:+,.0f} gain on deployed capital**. "
+            f"Return calculations use the adj_close series, which starts at "
+            f"**\\${_series_start:,.2f}** — Yahoo Finance retroactively restates "
+            f"adj_close as dividends accrue, so the inception series value is lower "
+            f"than the original trade prices. Both absolute return "
+            f"(**{_abs_ret_pct:.1f}%**) and cumulative TWR (**{_twr_pct:.1f}%**) "
+            f"use the same adj_close series and are equivalent for this single "
+            f"lump-sum portfolio. TWR is the GIPS-correct measure for benchmark comparison."
         )
     # ── End reconciliation note ────────────────────────────────────────────
 
