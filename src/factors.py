@@ -131,7 +131,7 @@ _SLEEVES = {
 
 # Qualitative disclosure for the EM sleeve (no daily FF5 data available)
 EM_DISCLOSURE = (
-    "Emerging Markets sleeve (IEMG): Ken French does not publish daily EM factor data. "
+    "Ken French does not publish daily EM factor data. "
     "Monthly EM factors would yield approximately 12 observations over the current "
     "1-year window — below the threshold for stable inference. "
     "IEMG provides passive cap-weighted broad EM exposure (~27% China weight at current "
