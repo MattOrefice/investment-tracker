@@ -403,6 +403,7 @@ with tab_theses:
     with col:
         # ── Investment theses ──────────────────────────────────────────────
         st.subheader("Investment Theses")
+        st.caption("★ rating reflects conviction in the thesis (1 = exploratory, 5 = high conviction).")
         show_system = st.checkbox(
             "Show operational theses", value=False, key="theses_show_system"
         )
