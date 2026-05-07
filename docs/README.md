@@ -4,6 +4,7 @@ Internal project documentation. Not user-facing; not deployed.
 
 | File | Contents |
 |------|----------|
+| [ci_setup.md](ci_setup.md) | GitHub Actions setup: branch protection, secrets, email suppression, pre-push gate |
 | [operational_checks.md](operational_checks.md) | Periodic maintenance: cache rebuild, quarterly caption updates, deployment checklist |
 | [phase_12_prose_inventory.md](phase_12_prose_inventory.md) | Audit of hardcoded numeric literals in narrative text, with risk tiers and guard tests |
 | [phase_12_test_inventory.md](phase_12_test_inventory.md) | Full taxonomy of all tests (290+): phase introduced, type, naming convention, skip conditions |
