@@ -621,6 +621,12 @@
     </tr>
   </table>
 
+  {% if si_days is defined and si_days < 365 %}
+  <p class="muted"><strong>1Y window note:</strong> Portfolio has {{ si_days }} days of history
+  (inception {{ inception_date }}). The 1Y return period is capped at inception and equals the
+  Since Inception return. 1Y and SI windows will diverge once the portfolio crosses one year.</p>
+  {% endif %}
+
   <p class="disclosure">This report is generated from a personal investment analytics system
   for portfolio review purposes. Returns are time-weighted and do not constitute investment
   advice. Data sourced from Yahoo Finance, FRED, and Robert Shiller&rsquo;s public datasets;

@@ -464,14 +464,25 @@ with col:
             "convention (CFA, GIPS IR supplement) and would yield a higher IR — arithmetic mean "
             "≥ geometric mean by Jensen's inequality."
         )
-        st.markdown(
-            "*Inception period overlaps substantially with trailing 12 months. "
-            "Max DD, TE, and IR will diverge from Since Inception once the portfolio "
-            "crosses ~18 months of history. "
-            "Risk ratios at 1M and 3M windows reflect ~21 and ~63 daily observations "
-            "respectively; interpret short-window Sharpe and Sortino as directional "
-            "rather than statistically stable.*"
+        _18mo_days = 548   # 18 × 30.44 calendar days
+        _months_si = round(si_days / 30.44)
+        _n_1m      = _m_1m.get("n_days", 0) if _m_1m else 0
+        _n_3m      = _m_3m.get("n_days", 0) if _m_3m else 0
+
+        _disc_parts = []
+        if si_days < _18mo_days:
+            _disc_parts.append(
+                f"Inception period ({_months_si} months) overlaps substantially with the "
+                "trailing 12 months. Max DD, TE, and IR will diverge from Since Inception "
+                "once the portfolio crosses 18 months of history."
+            )
+        _disc_parts.append(
+            f"Risk ratios at 1M and 3M windows reflect "
+            f"{_n_1m or '~21'} and {_n_3m or '~63'} daily observations respectively; "
+            "interpret short-window Sharpe and Sortino as directional rather than "
+            "statistically stable."
         )
+        st.markdown("*" + " ".join(_disc_parts) + "*")
 
     st.divider()
 
@@ -880,6 +891,13 @@ with col:
     # Task 5 — Methodology validation expander
     # ──────────────────────────────────────────────────────────────────────
     with st.expander("Methodology validation"):
+        if si_days < 365:
+            st.info(
+                f"**1Y window note:** Portfolio has {si_days} days of history (inception "
+                f"{INCEPTION}). The 1Y return period is capped at inception and equals the "
+                "Since Inception return. 1Y and SI windows will diverge once the portfolio "
+                "crosses one year."
+            )
         pv2, cf2 = _load_portfolio()
         daily_si  = period_return("daily",          pv2, cf2, "SI")
         dietz_si  = period_return("modified_dietz", pv2, cf2, "SI")

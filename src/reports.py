@@ -964,6 +964,9 @@ def generate_quarterly_report(
         snap_dt = datetime.fromisoformat(snapshot_captured_at)
         snapshot_display = f"{snap_dt.strftime('%B')} {snap_dt.day}, {snap_dt.year}"
 
+    inception_str   = _inception_date()
+    si_days_report  = (date.fromisoformat(end_date) - date.fromisoformat(inception_str)).days
+
     html_content = tmpl.render(
         css_content          = css_content,
         period_label         = period_label,
@@ -971,6 +974,8 @@ def generate_quarterly_report(
         generation_date      = gen_date,
         snapshot_captured_at = snapshot_display,
         has_trades           = has_trades,
+        inception_date       = inception_str,
+        si_days              = si_days_report,
         exec           = exec_data,
         hold           = hold_data,
         perf           = perf_data,
