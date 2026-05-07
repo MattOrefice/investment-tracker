@@ -598,7 +598,8 @@
 
           <dt>Drift Status</dt>
           <dd>Flagged &ldquo;Drift&rdquo; when absolute drift exceeds the per-sleeve tolerance band
-          (&plusmn;300&nbsp;bps for sleeves with &ge;10% target weight; &plusmn;200&nbsp;bps for smaller sleeves)
+          (&plusmn;{{ methodology_drift_large_bps }}&nbsp;bps for sleeves with &ge;{{ methodology_drift_large_min_pct }}% target weight;
+          &plusmn;{{ methodology_drift_small_bps }}&nbsp;bps for smaller sleeves)
           <em>or</em> relative drift exceeds 20% of target weight.
           Both thresholds must be satisfied for &ldquo;Within&rdquo; status.</dd>
 

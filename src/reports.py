@@ -931,6 +931,12 @@ def _build_methodology_vars() -> dict:
         sleeve_count = conn.execute(
             "SELECT COUNT(*) FROM asset_classes WHERE parent_id IS NOT NULL"
         ).fetchone()[0]
+        band_rows = conn.execute(
+            "SELECT CAST(ROUND(tolerance_band * 10000) AS INTEGER) AS band_bps, "
+            "MIN(target_weight) AS min_weight "
+            "FROM asset_classes WHERE parent_id IS NOT NULL "
+            "GROUP BY tolerance_band ORDER BY band_bps"
+        ).fetchall()
 
     # "Equity 72% / Income 15% / Real Assets 10% / Cash 3%"
     parent_weight_str = " / ".join(
@@ -942,10 +948,23 @@ def _build_methodology_vars() -> dict:
     ra_bench = _SLEEVE_BENCHMARKS.get("Real Assets", [])
     ra_bench_str = " + ".join(f"{round(w * 100):.0f}% {t}" for t, w in ra_bench)
 
+    # Drift band tiers: smallest band (200 bps) and largest (300 bps)
+    # Largest band applies to sleeves whose min target_weight is the threshold
+    bands_sorted = [(int(r["band_bps"]), r["min_weight"]) for r in band_rows]
+    if len(bands_sorted) >= 2:
+        drift_small_bps = bands_sorted[0][0]
+        drift_large_bps, drift_large_min_weight = bands_sorted[-1]
+        drift_large_min_pct = round(drift_large_min_weight * 100)
+    else:
+        drift_small_bps, drift_large_bps, drift_large_min_pct = 200, 300, 10
+
     return {
-        "methodology_parent_weights": parent_weight_str,
-        "methodology_sleeve_count":   sleeve_count,
-        "methodology_ra_bench":       ra_bench_str,
+        "methodology_parent_weights":  parent_weight_str,
+        "methodology_sleeve_count":    sleeve_count,
+        "methodology_ra_bench":        ra_bench_str,
+        "methodology_drift_large_bps": drift_large_bps,
+        "methodology_drift_small_bps": drift_small_bps,
+        "methodology_drift_large_min_pct": drift_large_min_pct,
     }
 
 

@@ -449,3 +449,34 @@ def test_prose_pdf_real_assets_benchmark_caption_matches_source():
         f"Expected 50/50 split; got {dict(zip(tickers, weights))}. "
         "Update templates/quarterly_report.html Real Assets benchmark description."
     )
+
+
+def test_prose_pdf_drift_thresholds_match_db():
+    """PDF drift threshold description derives from DB tolerance_band values.
+
+    templates/quarterly_report.html lines ~598-599 render the per-sleeve tolerance
+    bands from _build_methodology_vars(). This test verifies the DB contains exactly
+    the two-tier structure (200 bps / 300 bps) that the prose template assumes.
+    """
+    from src.db import get_connection
+
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT CAST(ROUND(tolerance_band * 10000) AS INTEGER) AS band_bps "
+            "FROM asset_classes WHERE parent_id IS NOT NULL ORDER BY band_bps"
+        ).fetchall()
+
+    band_bps_vals = [r["band_bps"] for r in rows]
+
+    assert len(band_bps_vals) == 2, (
+        f"Expected exactly 2 distinct tolerance bands, got {len(band_bps_vals)}: {band_bps_vals}. "
+        "PDF drift prose assumes a two-tier band structure."
+    )
+    assert 200 in band_bps_vals, (
+        f"Expected a 200 bps (±2%) tolerance band; found: {band_bps_vals}. "
+        "Update _build_methodology_vars() fallback and the methodology template."
+    )
+    assert 300 in band_bps_vals, (
+        f"Expected a 300 bps (±3%) tolerance band; found: {band_bps_vals}. "
+        "Update _build_methodology_vars() fallback and the methodology template."
+    )
