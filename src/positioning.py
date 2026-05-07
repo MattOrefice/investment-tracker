@@ -373,49 +373,53 @@ def get_effective_duration(end_date: str) -> dict:
     Return effective duration metrics for the FI sleeves.
 
     Returns:
-        duration          — portfolio-level contribution (FI weighted by full portfolio)
-        fi_sleeve_duration — duration of the FI sleeve itself (weighted by FI weight only)
-        fi_weight_pct     — actual FI (Core FI + TIPS + Cash) weight as % of portfolio
-        agg_benchmark     — Bloomberg US Agg duration for comparison (BLOOMBERG_AGG_DURATION_YEARS)
+        duration               — portfolio-level duration contribution (Core FI + TIPS only)
+        fi_sleeve_duration     — duration of Core FI + TIPS only (cash excluded)
+        fi_weight_pct          — Core FI + TIPS weight as % of portfolio (cash excluded)
+        cash_weight_pct        — Cash / SPAXX weight as % of portfolio
+        fi_weight_incl_cash_pct — Core FI + TIPS + Cash weight (for informational use)
+        agg_benchmark          — Bloomberg US Agg duration for comparison
     """
+    _empty = {
+        "duration": 0.0, "fi_sleeve_duration": 0.0,
+        "fi_weight_pct": 0.0, "cash_weight_pct": 0.0,
+        "fi_weight_incl_cash_pct": 0.0, "agg_benchmark": BLOOMBERG_AGG_DURATION_YEARS,
+    }
     sw = get_sleeve_weights_on_date(end_date)
     if sw.empty:
-        return {
-            "duration": 0.0,
-            "fi_sleeve_duration": 0.0,
-            "fi_weight_pct": 0.0,
-            "agg_benchmark": BLOOMBERG_AGG_DURATION_YEARS,
-        }
+        return _empty
 
     total_portfolio_wt = float(sw["Actual Weight"].sum())
     if total_portfolio_wt == 0:
-        return {
-            "duration": 0.0,
-            "fi_sleeve_duration": 0.0,
-            "fi_weight_pct": 0.0,
-            "agg_benchmark": BLOOMBERG_AGG_DURATION_YEARS,
-        }
+        return _empty
 
-    weighted_dur = 0.0
-    fi_actual_wt = 0.0
+    weighted_dur    = 0.0
+    fi_wt_excl_cash = 0.0
+    fi_wt_incl_cash = 0.0
+    cash_wt         = 0.0
 
     for sleeve, ticker in _FI_SLEEVE_HOLDING.items():
         if sleeve not in sw.index:
             continue
-        actual_wt  = float(sw.loc[sleeve, "Actual Weight"])
-        duration   = ETF_DURATION.get(ticker, 0.0)
-        weighted_dur += actual_wt * duration
-        fi_actual_wt  += actual_wt
+        actual_wt = float(sw.loc[sleeve, "Actual Weight"])
+        duration  = ETF_DURATION.get(ticker, 0.0)
+        fi_wt_incl_cash += actual_wt
+        if sleeve == "Cash / SPAXX":
+            cash_wt += actual_wt
+        else:
+            weighted_dur    += actual_wt * duration
+            fi_wt_excl_cash += actual_wt
 
-    eff_duration     = weighted_dur / total_portfolio_wt
-    fi_sleeve_dur    = (weighted_dur / fi_actual_wt) if fi_actual_wt > 0 else 0.0
-    fi_weight_pct    = fi_actual_wt / total_portfolio_wt * 100
+    eff_duration  = weighted_dur / total_portfolio_wt
+    fi_sleeve_dur = weighted_dur / fi_wt_excl_cash if fi_wt_excl_cash > 0 else 0.0
 
     return {
-        "duration":           round(eff_duration, 1),
-        "fi_sleeve_duration": round(fi_sleeve_dur, 1),
-        "fi_weight_pct":      round(fi_weight_pct, 1),
-        "agg_benchmark":      BLOOMBERG_AGG_DURATION_YEARS,
+        "duration":                round(eff_duration, 1),
+        "fi_sleeve_duration":      round(fi_sleeve_dur, 1),
+        "fi_weight_pct":           round(fi_wt_excl_cash / total_portfolio_wt * 100, 1),
+        "cash_weight_pct":         round(cash_wt / total_portfolio_wt * 100, 1),
+        "fi_weight_incl_cash_pct": round(fi_wt_incl_cash / total_portfolio_wt * 100, 1),
+        "agg_benchmark":           BLOOMBERG_AGG_DURATION_YEARS,
     }
 
 

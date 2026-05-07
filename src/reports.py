@@ -887,14 +887,16 @@ def _build_positioning_section(end_date: str) -> dict:
     scenarios  = get_scenario_triggers(end_date)
     style_data = get_style_box_data(end_date)
     non_us     = get_non_us_equity_data(end_date)
-    fi_dur  = dur["fi_sleeve_duration"]
-    agg_dur = dur["agg_benchmark"]
-    vs_agg  = "below" if fi_dur < agg_dur else "above"
+    fi_dur    = dur["fi_sleeve_duration"]
+    agg_dur   = dur["agg_benchmark"]
+    vs_agg    = "below" if fi_dur < agg_dur else "above"
+    fi_wt     = dur["fi_weight_pct"]
+    cash_wt   = dur["cash_weight_pct"]
     duration_line = (
-        f"FI sleeve effective duration: {fi_dur} yrs "
-        f"(vs Bloomberg US Agg: {agg_dur} yrs — {vs_agg} benchmark by {abs(fi_dur - agg_dur):.1f} yrs). "
-        f"FI weight: {dur['fi_weight_pct']}% of portfolio. "
-        "Intermediate-Treasury focus keeps duration below the Agg, limiting sensitivity to rate moves."
+        f"Fixed Income sleeve (Core FI + TIPS) effective duration: {fi_dur} yrs "
+        f"vs Bloomberg US Agg: {agg_dur} yrs ({vs_agg} benchmark by {abs(fi_dur - agg_dur):.1f} yrs). "
+        f"FI weight: {fi_wt}% of portfolio. "
+        f"Cash/SPAXX ({cash_wt}%) excluded — not a duration-bearing asset and excluded from Bloomberg Agg."
     )
     style_box_b64 = _chart_b64(build_style_box_figure(style_data), 520, 390) if style_data else None
     return {

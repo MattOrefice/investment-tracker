@@ -122,21 +122,24 @@ def test_effective_duration_known_weights():
     with patch("src.positioning.get_sleeve_weights_on_date", return_value=sw):
         result = get_effective_duration("2026-03-31")
 
-    vgit_dur  = ETF_DURATION[_FI_SLEEVE_HOLDING["Core Fixed Income"]]
-    schp_dur  = ETF_DURATION[_FI_SLEEVE_HOLDING["TIPS"]]
-    spaxx_dur = ETF_DURATION[_FI_SLEEVE_HOLDING["Cash / SPAXX"]]
+    vgit_dur = ETF_DURATION[_FI_SLEEVE_HOLDING["Core Fixed Income"]]
+    schp_dur = ETF_DURATION[_FI_SLEEVE_HOLDING["TIPS"]]
 
-    expected_dur = (0.09 * vgit_dur + 0.06 * schp_dur + 0.03 * spaxx_dur) / 1.0
+    # Cash/SPAXX is excluded from duration; portfolio-level duration = weighted FI only
+    expected_dur = (0.09 * vgit_dur + 0.06 * schp_dur) / 1.0
     assert abs(result["duration"] - round(expected_dur, 1)) <= 0.05
 
 
 def test_effective_duration_fi_weight():
-    """FI weight % must equal (Core FI + TIPS + Cash) actual weights × 100."""
+    """fi_weight_pct = Core FI + TIPS only (cash excluded); fi_weight_incl_cash_pct adds cash."""
     rows = dict(_BASELINE_ROWS)
     sw = _make_sw(rows)
     with patch("src.positioning.get_sleeve_weights_on_date", return_value=sw):
         result = get_effective_duration("2026-03-31")
-    assert abs(result["fi_weight_pct"] - 18.0) < 0.1
+    # Core FI (9%) + TIPS (6%) = 15%; Cash/SPAXX (3%) is excluded from fi_weight_pct
+    assert abs(result["fi_weight_pct"] - 15.0) < 0.1
+    assert abs(result["cash_weight_pct"] - 3.0) < 0.1
+    assert abs(result["fi_weight_incl_cash_pct"] - 18.0) < 0.1
 
 
 def test_effective_duration_empty_portfolio():
