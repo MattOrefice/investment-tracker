@@ -209,6 +209,14 @@ tab_trades, tab_theses, tab_themes = st.tabs(["Trades", "Theses", "Themes"])
 # ────────────────────────────────────────────────────────────────────────────
 
 def render_trade_form():
+    if IS_DEMO:
+        st.info(
+            "Trade entry is disabled in demo mode. The deployed demo shows the analytical "
+            "framework against the seeded paper-trade portfolio. Personal mode "
+            "(TRACKER_MODE=personal) enables trade entry locally."
+        )
+        return
+
     securities    = data["securities"]
     accounts      = data["accounts"]
     system_theses = data["system_theses"]

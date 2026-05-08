@@ -29,3 +29,7 @@ Items deferred from pre-launch polish pass (Phase 8s, 2026-05-05). None are bloc
 ## README (separate phase)
 
 - Full README rewrite is the final action before public launch — tracked separately.
+
+## Security
+
+- **Demo mode connection-level write guard** — `src/db.py get_connection()` opens SQLite in read-write mode regardless of `IS_DEMO`. A connection-level fence (`sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)` in demo mode) would be defense-in-depth against any future code path that inserts a write without an `IS_DEMO` guard. Blocked by the fact that price, dividend, macro, and quarter-snapshot caches all write via `get_connection()` in demo mode; making those writes go through a separate writable connection requires refactoring every cache write path. Implement if a clean two-connection pattern (read-only app conn / writable cache conn) is introduced. Tracked from Phase 8k write-guard audit (2026-05-08).

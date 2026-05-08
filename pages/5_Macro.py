@@ -9,6 +9,7 @@ st.set_page_config(page_title="Macro Dashboard", layout="wide")
 
 from src import macro, shiller
 from src.asof import as_of_banner
+from src.config import IS_DEMO
 from src.prices import get_prices
 from src.prose_helpers import percentile_label
 from src.ui_helpers import render_footer
@@ -202,7 +203,7 @@ with col:
             "Data: FRED & Shiller. Percentiles are window-relative (toggle selector to recompute)."
         )
     with hdr_r:
-        if st.button("Force refresh", type="secondary",
+        if not IS_DEMO and st.button("Force refresh", type="secondary",
                      help="Bypass the disk cache and re-fetch macro data from FRED and Shiller."):
             macro.clear_macro_cache()
             shiller.clear_shiller_cache()

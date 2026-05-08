@@ -10,6 +10,7 @@ Subsections:
   1.3  Return computation identities
   1.4  Inception-date canonical-source check (DB-backed, skips on empty trades)
   1.5  Risk-free rate consistency across code and prose
+  1.6  Demo-mode write guards (source-code structural invariants)
 """
 from __future__ import annotations
 
@@ -361,4 +362,60 @@ def test_identity_rf_daily_conversion_from_annual():
     assert abs(rf_daily_expected - rf_daily_calendar) > 1e-6, (
         "Trading-day RF and calendar-day RF are equal — check the exponent in "
         "compute_risk_metrics (should be 1/252, not 1/365)."
+    )
+
+
+# ── 1.6  Demo-mode write guards ──────────────────────────────────────────────
+
+def test_identity_trade_form_has_demo_guard():
+    """render_trade_form() in pages/3_Trade_Log.py must open with an IS_DEMO guard
+    that returns early before any write path is reached.
+
+    This is a source-code structural invariant: if the guard is accidentally removed
+    in a future edit, this test fails before the omission reaches production, where
+    it would allow any public visitor to insert trades into the demo database.
+    """
+    page_path = pathlib.Path(__file__).resolve().parent.parent / "pages" / "3_Trade_Log.py"
+    source = page_path.read_text(encoding="utf-8")
+
+    # Locate the function definition
+    func_start = source.find("def render_trade_form():")
+    assert func_start != -1, "render_trade_form() not found in pages/3_Trade_Log.py — was it renamed?"
+
+    # The IS_DEMO early-return guard must appear before the first INSERT in the function body
+    func_body = source[func_start:]
+    guard_pos  = func_body.find("if IS_DEMO:")
+    insert_pos = func_body.find("INSERT INTO")
+
+    assert guard_pos != -1, (
+        "IS_DEMO guard missing from render_trade_form() in pages/3_Trade_Log.py. "
+        "Demo visitors can write trades to demo.db. Add: if IS_DEMO: st.info(...); return"
+    )
+    assert guard_pos < insert_pos, (
+        f"IS_DEMO guard (pos {guard_pos}) appears after first INSERT (pos {insert_pos}) "
+        "in render_trade_form(). The guard must come first — writes are reachable before the check."
+    )
+
+
+def test_identity_macro_force_refresh_has_demo_guard():
+    """The Force Refresh button in pages/5_Macro.py must be gated by `not IS_DEMO`.
+
+    In demo mode, the button must not render. This prevents public visitors from
+    triggering FRED API calls (quota waste) and cache deletion (macro_cache DELETE).
+    Pins the guard so it cannot be accidentally removed.
+    """
+    page_path = pathlib.Path(__file__).resolve().parent.parent / "pages" / "5_Macro.py"
+    source = page_path.read_text(encoding="utf-8")
+
+    # Find the Force Refresh button definition
+    btn_pos = source.find('"Force refresh"')
+    assert btn_pos != -1, '"Force refresh" button not found in pages/5_Macro.py — was it removed?'
+
+    # The IS_DEMO guard must appear on the same logical line / nearby before the button
+    # Check the 120 chars preceding the button string for the guard
+    context = source[max(0, btn_pos - 120):btn_pos]
+    assert "IS_DEMO" in context, (
+        "IS_DEMO guard not found immediately before the Force Refresh button in pages/5_Macro.py. "
+        "The button must be conditioned on `not IS_DEMO` to prevent demo visitors from "
+        "triggering cache deletion and FRED API calls."
     )
