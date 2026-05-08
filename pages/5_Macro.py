@@ -425,7 +425,7 @@ with col:
                 f"· data as of {cape_as_of}"
             )
             st.markdown(
-                f"**Implied forward 10Y real return:** ~{cape_implied:.1%}  \n"
+                f"**Implied forward 10Y real return:** {cape_implied:+.2%}  \n"
                 "*Historical relationship, not a forecast.*"
             )
 
@@ -813,10 +813,17 @@ with col:
         ur_1y_ago     = float(ur_1y_data.iloc[-1]) if not ur_1y_data.empty else current_ur
         ur_chg        = (current_ur - ur_1y_ago) * 100  # in basis points of percentage points
 
-        ur_window    = st.radio(
-            "Window", ["5Y", "10Y", "20Y", "Max"],
-            index=1, key="ur_window",
-        )
+        _ur_ctrl_l, _ur_ctrl_r = st.columns([3, 2])
+        with _ur_ctrl_l:
+            ur_window = st.radio(
+                "Window", ["5Y", "10Y", "20Y", "Max"],
+                index=1, key="ur_window", horizontal=True,
+            )
+        with _ur_ctrl_r:
+            ur_yaxis = st.radio(
+                "Y-axis", ["Full series", "Excl. 2020 spike"],
+                index=0, key="ur_yaxis", horizontal=True,
+            )
         ur_start     = _window_start(ur_window)
         ur_pctile_w  = _window_pctile(ur_clean, current_ur, ur_start)
         ur_data      = ur_clean.loc[ur_start:]
@@ -848,6 +855,10 @@ with col:
         )
         _apply_style(fig_ur)
         fig_ur.update_yaxes(title_text="Rate (%)")
+        if ur_yaxis == "Excl. 2020 spike":
+            _ur_excl = ur_data[ur_data.index.year != 2020]
+            _ur_ymax = float(_ur_excl.max()) * 1.15 if not _ur_excl.empty else 15.0
+            fig_ur.update_yaxes(range=[0, _ur_ymax])
         st.plotly_chart(fig_ur, width='stretch')
 
         if ur_pctile_w < 30:
@@ -893,10 +904,17 @@ with col:
         current_gdp = float(gdp_clean.iloc[-1])
         gdp_as_of   = gdp_clean.index[-1].strftime("%b %Y")
 
-        gdp_window   = st.radio(
-            "Window", ["10Y", "20Y", "Max"],
-            index=1, key="gdp_window",
-        )
+        _gdp_ctrl_l, _gdp_ctrl_r = st.columns([3, 2])
+        with _gdp_ctrl_l:
+            gdp_window = st.radio(
+                "Window", ["10Y", "20Y", "Max"],
+                index=1, key="gdp_window", horizontal=True,
+            )
+        with _gdp_ctrl_r:
+            gdp_yaxis = st.radio(
+                "Y-axis", ["Full series", "Excl. 2020 outliers"],
+                index=1, key="gdp_yaxis", horizontal=True,
+            )
         gdp_start    = _window_start(gdp_window)
         gdp_pctile_w = _window_pctile(gdp_clean, current_gdp, gdp_start)
         gdp_data     = gdp_clean.loc[gdp_start:]
@@ -926,6 +944,12 @@ with col:
         )
         _apply_style(fig_gdp)
         fig_gdp.update_yaxes(title_text="Growth (%)")
+        if gdp_yaxis == "Excl. 2020 outliers":
+            _gdp_excl = gdp_data[gdp_data.index.year != 2020]
+            if not _gdp_excl.empty:
+                _gdp_ymin = float(_gdp_excl.min()) * 1.15
+                _gdp_ymax = float(_gdp_excl.max()) * 1.15
+                fig_gdp.update_yaxes(range=[_gdp_ymin, _gdp_ymax])
         st.plotly_chart(fig_gdp, width='stretch')
 
         if current_gdp >= 3.0:
