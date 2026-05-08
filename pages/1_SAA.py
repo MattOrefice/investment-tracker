@@ -88,18 +88,26 @@ with col:
     _tips_wt     = next((s["target_weight"] for s in sub_classes if s["name"] == "TIPS"), 0.06)
     _core_fi_wt  = next((s["target_weight"] for s in sub_classes if s["name"] == "Core Fixed Income"), 0.09)
     _cape_lbl    = _load_cape_label()
+    # TODO: Static refs "comparable only to the 1929 and 1999 peaks" and "CAPE readings
+    # above 40" should be reviewed if CAPE falls materially below 40 and _cape_lbl no
+    # longer reads "historically extreme". See test_saa_thesis_above_40_cape_reference_still_relevant.
     st.markdown(
-        f"Strategic asset allocation reflects a late-cycle US equity environment with elevated valuations "
-        f"(CAPE {_cape_lbl}) balanced against a normalized 2/10 yield curve and HY credit spreads consistent "
-        f"with mid-cycle conditions. The {round(_equity_wt * 100)}% equity weight is preserved against the "
-        f"macro backdrop because the alternative — defensive positioning — has historically rewarded patience "
-        f"poorly when valuation alone is the trigger. Style tilts (quality via SPHQ, value via VTV, small-cap "
-        f"value via AVUV) target factors with positive long-run premia and reduced sensitivity to multiple "
-        f"compression. International Developed ({round(_intl_dev_wt * 100)}%) and Emerging Markets "
-        f"({round(_em_wt * 100)}%) provide valuation diversification at meaningfully lower CAPE levels than "
-        f"US equity. Real Assets ({round(_real_wt * 100)}%) and TIPS ({round(_tips_wt * 100)}%) hedge the "
-        f"unhedged inflation tail in a portfolio dominated by nominal duration. Core Fixed Income "
-        f"({round(_core_fi_wt * 100)}%) is sized for liquidity and rebalancing optionality, not yield."
+        f"Strategic asset allocation reflects a US equity environment with extreme valuations "
+        f"(CAPE {_cape_lbl} — comparable only to the 1929 and 1999 peaks) balanced against a "
+        f"normalized 2/10 yield curve and HY credit spreads that do not yet signal stress. "
+        f"The {round(_equity_wt * 100)}% equity weight is preserved at this level not because "
+        f"valuation is unimportant — historical CAPE readings above 40 have been associated with "
+        f"low or negative forward 10-year real returns — but because timing valuation alone has "
+        f"historically been a poor strategy, and the SAA framework is designed to deliver returns "
+        f"through factor and geographic diversification rather than market-timing calls. Style tilts "
+        f"(quality via SPHQ, value via VTV, small-cap value via AVUV) target factors with positive "
+        f"long-run premia and reduced sensitivity to multiple compression — particularly relevant "
+        f"given current US large-cap multiples. International Developed ({round(_intl_dev_wt * 100)}%) "
+        f"and Emerging Markets ({round(_em_wt * 100)}%) provide valuation diversification at "
+        f"meaningfully lower CAPE levels. Real Assets ({round(_real_wt * 100)}%) and TIPS "
+        f"({round(_tips_wt * 100)}%) hedge the unhedged inflation tail in a portfolio dominated by "
+        f"nominal duration. Core Fixed Income ({round(_core_fi_wt * 100)}%) is sized for liquidity "
+        f"and rebalancing optionality, not yield."
     )
     st.divider()
 

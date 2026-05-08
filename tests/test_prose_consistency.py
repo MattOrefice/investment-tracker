@@ -586,3 +586,35 @@ def test_saa_thesis_cape_label_matches_computed_percentile():
         "At sub-median CAPE, the SAA thesis claim of 'elevated valuations' is questionable. "
         "Review the thesis paragraph in pages/1_SAA.py."
     )
+
+
+def test_saa_thesis_above_40_cape_reference_still_relevant():
+    """Soft-warning test: static 'CAPE above 40' reference in SAA thesis should be reviewed
+    if current CAPE drops materially below 35.
+
+    pages/1_SAA.py contains a static empirical sentence: 'historical CAPE readings above 40
+    have been associated with low or negative forward 10-year real returns.' This is accurate
+    at extreme CAPE levels but becomes misleading if CAPE falls significantly. This test does
+    NOT fail CI — it issues a pytest warning when the cached CAPE drops below 35, signaling
+    that the static prose reference may need updating.
+    """
+    import warnings
+    from src.shiller import get_cape_series
+
+    REVIEW_THRESHOLD = 35.0
+
+    try:
+        s = get_cape_series()
+        cv = float(s.dropna().iloc[-1])
+    except Exception:
+        return  # CAPE data unavailable — skip silently
+
+    if cv < REVIEW_THRESHOLD:
+        warnings.warn(
+            f"Current CAPE ({cv:.1f}x) has dropped below {REVIEW_THRESHOLD}x. "
+            "Review the static 'CAPE above 40' sentence in the SAA thesis paragraph "
+            "(pages/1_SAA.py) and the '1929 and 1999 peaks' comparator — both may no "
+            "longer accurately describe current valuation conditions.",
+            UserWarning,
+            stacklevel=2,
+        )
