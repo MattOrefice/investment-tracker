@@ -57,12 +57,11 @@ def _window_pctile(series: pd.Series, current_val: float, w_start: str) -> float
 def _apply_style(fig: go.Figure, height: int = _CHART_H) -> go.Figure:
     fig.update_layout(
         height=height,
-        margin=dict(l=0, r=0, t=24, b=0),
+        margin=dict(l=0, r=0, t=8, b=0),
         paper_bgcolor="white",
         plot_bgcolor="#FAFAFA",
         font=dict(color="#333333", size=12),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02,
-                    xanchor="right", x=1, font_size=11),
+        showlegend=False,
         hovermode="x unified",
     )
     fig.update_xaxes(gridcolor="#EBEBEB", showgrid=True, zeroline=False, tickfont_size=11, automargin=True)
