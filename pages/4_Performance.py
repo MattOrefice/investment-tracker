@@ -287,7 +287,7 @@ with col:
     _q_alpha_sp = _q_port - _q_sp
     _q_alpha_bl = _q_port - _q_bl
 
-    st.markdown(f"#### Quarterly report — {_q_label} (locked)")
+    st.markdown(f"### Quarterly report — {_q_label} (locked)")
     q1, q2, q3 = st.columns(3)
     q1.metric(f"{_q_label} return",             _pct(_q_port),     f"{_pct(_q_sp)} S&P 500")
     q2.metric(f"vs. S&P 500 — {_q_label}",      _bps(_q_alpha_sp), f"S&P 500: {_pct(_q_sp)}",  delta_color="off")
@@ -298,7 +298,7 @@ with col:
     # ──────────────────────────────────────────────────────────────────────
     # Section 1b — Since inception headline metrics
     # ──────────────────────────────────────────────────────────────────────
-    st.markdown("#### Since inception")
+    st.markdown("### Since inception")
     m1, m2, m3, m4 = st.columns(4)
 
     inception_delta_pct = f"{port_si*100:+.1f}% since inception"
@@ -350,7 +350,7 @@ with col:
     # ──────────────────────────────────────────────────────────────────────
     # Section 2 — TWR method toggle + period returns table
     # ──────────────────────────────────────────────────────────────────────
-    st.markdown("#### Period Returns")
+    st.markdown("### Period Returns")
 
     c_left, c_right = st.columns([2, 5])
     with c_left:
@@ -433,7 +433,7 @@ with col:
     # ──────────────────────────────────────────────────────────────────────
     # Section 2b — Risk-adjusted metrics
     # ──────────────────────────────────────────────────────────────────────
-    st.markdown("#### Risk-Adjusted Metrics")
+    st.markdown("### Risk-Adjusted Metrics")
 
     # Benchmark options for relative metrics (TE, IR, beta, active return)
     _RISK_BM_OPTIONS = {
@@ -561,7 +561,7 @@ with col:
     # ──────────────────────────────────────────────────────────────────────
     # Section 3 — Cumulative return chart
     # ──────────────────────────────────────────────────────────────────────
-    st.markdown("#### Cumulative Return Since Inception")
+    st.markdown("### Cumulative Return Since Inception")
 
     # Normalize all series to start at 1.0 for return comparison
     pv_norm = pv / float(pv.iloc[0])
@@ -610,7 +610,7 @@ with col:
     # ──────────────────────────────────────────────────────────────────────
     # Section 4 — Two-Stage Attribution + Brinson-Fachler decomposition
     # ──────────────────────────────────────────────────────────────────────
-    st.markdown("#### Two-Stage Attribution")
+    st.markdown("### Two-Stage Attribution")
 
     bf_period = st.radio(
         "Attribution period",
@@ -879,7 +879,7 @@ with col:
     # ──────────────────────────────────────────────────────────────────────
     # Section 5 — Drift analysis
     # ──────────────────────────────────────────────────────────────────────
-    st.markdown("#### Drift Analysis")
+    st.markdown("### Drift Analysis")
 
     sw, band_map = _load_drift()
 
