@@ -23,8 +23,8 @@ _C = {
     "current":   "#C0392B",
 }
 
-_CHART_H      = 320
-_CHART_H_CAPE = 360
+_CHART_H      = 340
+_CHART_H_CAPE = 340
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -65,9 +65,28 @@ def _apply_style(fig: go.Figure, height: int = _CHART_H) -> go.Figure:
                     xanchor="right", x=1, font_size=11),
         hovermode="x unified",
     )
-    fig.update_xaxes(gridcolor="#EBEBEB", showgrid=True, zeroline=False, tickfont_size=11)
-    fig.update_yaxes(gridcolor="#EBEBEB", showgrid=True, zeroline=False, tickfont_size=11)
+    fig.update_xaxes(gridcolor="#EBEBEB", showgrid=True, zeroline=False, tickfont_size=11, automargin=True)
+    fig.update_yaxes(gridcolor="#EBEBEB", showgrid=True, zeroline=False, tickfont_size=11, automargin=True)
     return fig
+
+
+def _tight_yrange(series: pd.Series, extra_ys: list | None = None, pad: float = 0.05) -> list | None:
+    """Compute tight y-axis range: data extent ± 5% padding, including any annotation y-values."""
+    clean = series.dropna()
+    if clean.empty:
+        return None
+    lo = float(clean.min())
+    hi = float(clean.max())
+    if extra_ys:
+        for v in extra_ys:
+            if v is not None:
+                lo = min(lo, float(v))
+                hi = max(hi, float(v))
+    rng = hi - lo
+    if rng == 0:
+        rng = abs(hi) or 1.0
+    buf = rng * pad
+    return [lo - buf, hi + buf]
 
 
 def _add_recession_shading(fig: go.Figure, periods: list, start_filter: str) -> None:
@@ -460,6 +479,10 @@ with col:
             )
             _apply_style(fig_cape, height=_CHART_H_CAPE)
             fig_cape.update_yaxes(title_text="CAPE (×)")
+            _yr = _tight_yrange(cape_filtered, [cape_val, cape_median,
+                                                cape_median + cape_std, max(1.0, cape_median - cape_std)])
+            if _yr:
+                fig_cape.update_yaxes(range=_yr)
             st.plotly_chart(fig_cape, width='stretch')
 
         pctile_label_cape = percentile_label(cape_pctile)
@@ -544,6 +567,9 @@ with col:
             )
             _apply_style(fig_ecy, height=_CHART_H_CAPE)
             fig_ecy.update_yaxes(title_text="ECY (%)")
+            _yr = _tight_yrange(_ecy_w, [current_ecy, _ecy_median, 0.0])
+            if _yr:
+                fig_ecy.update_yaxes(range=_yr)
             st.plotly_chart(fig_ecy, width='stretch')
 
         if current_ecy >= 3.0:
@@ -638,6 +664,9 @@ with col:
         )
         _apply_style(fig_yc)
         fig_yc.update_yaxes(title_text="Spread (bps)")
+        _yr = _tight_yrange(yc_data, [current_spread_bps, 0.0])
+        if _yr:
+            fig_yc.update_yaxes(range=_yr)
         st.plotly_chart(fig_yc, width='stretch')
 
         st.caption(
@@ -697,6 +726,10 @@ with col:
         )
         _apply_style(fig_ff)
         fig_ff.update_yaxes(title_text="Rate (%)")
+        _yr = _tight_yrange(ff_data, [current_ff])
+        if _yr:
+            _yr[0] = max(0.0, _yr[0])
+            fig_ff.update_yaxes(range=_yr)
         st.plotly_chart(fig_ff, width='stretch')
 
         st.caption(_ff_interpretation(current_ff, ff_chg_bps))
@@ -773,6 +806,10 @@ with col:
         )
         _apply_style(fig_hy)
         fig_hy.update_yaxes(title_text="OAS (bps)")
+        _yr = _tight_yrange(hy_data, [current_hy, hy_median_bps])
+        if _yr:
+            _yr[0] = max(0.0, _yr[0])
+            fig_hy.update_yaxes(range=_yr)
         st.plotly_chart(fig_hy, width='stretch')
 
         hy_framing = (
@@ -855,10 +892,11 @@ with col:
         )
         _apply_style(fig_ur)
         fig_ur.update_yaxes(title_text="Rate (%)")
-        if ur_yaxis == "Excl. 2020 spike":
-            _ur_excl = ur_data[ur_data.index.year != 2020]
-            _ur_ymax = float(_ur_excl.max()) * 1.15 if not _ur_excl.empty else 15.0
-            fig_ur.update_yaxes(range=[0, _ur_ymax])
+        _ur_base = ur_data[ur_data.index.year != 2020] if ur_yaxis == "Excl. 2020 spike" else ur_data
+        _yr = _tight_yrange(_ur_base, [current_ur])
+        if _yr:
+            _yr[0] = max(0.0, _yr[0])
+            fig_ur.update_yaxes(range=_yr)
         st.plotly_chart(fig_ur, width='stretch')
 
         if ur_pctile_w < 30:
@@ -944,12 +982,10 @@ with col:
         )
         _apply_style(fig_gdp)
         fig_gdp.update_yaxes(title_text="Growth (%)")
-        if gdp_yaxis == "Excl. 2020 outliers":
-            _gdp_excl = gdp_data[gdp_data.index.year != 2020]
-            if not _gdp_excl.empty:
-                _gdp_ymin = float(_gdp_excl.min()) * 1.15
-                _gdp_ymax = float(_gdp_excl.max()) * 1.15
-                fig_gdp.update_yaxes(range=[_gdp_ymin, _gdp_ymax])
+        _gdp_base = gdp_data[gdp_data.index.year != 2020] if gdp_yaxis == "Excl. 2020 outliers" else gdp_data
+        _yr = _tight_yrange(_gdp_base, [current_gdp, 0.0])
+        if _yr:
+            fig_gdp.update_yaxes(range=_yr)
         st.plotly_chart(fig_gdp, width='stretch')
 
         if current_gdp >= 3.0:
@@ -1028,6 +1064,9 @@ with col:
         )
         _apply_style(fig_cpi)
         fig_cpi.update_yaxes(title_text="YoY Change (%)")
+        _yr = _tight_yrange(cpi_data, [current_cpi, 2.0])
+        if _yr:
+            fig_cpi.update_yaxes(range=_yr)
         st.plotly_chart(fig_cpi, width='stretch')
 
         if current_cpi > 4.0:
@@ -1130,6 +1169,9 @@ with col:
         )
         _apply_style(fig_us)
         fig_us.update_yaxes(title_text="Ratio (normalized to 1.0 at window start)")
+        _yr = _tight_yrange(ratio_norm, [ratio_20y_median_norm])
+        if _yr:
+            fig_us.update_yaxes(range=_yr)
         fig_us.add_annotation(
             xref="paper", yref="paper",
             x=0.01, y=0.98,

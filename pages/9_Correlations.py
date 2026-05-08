@@ -307,7 +307,7 @@ with col:
                     annotation_font_size=11,
                 )
                 fig_pair.update_layout(
-                    height=340,
+                    height=360,
                     margin=dict(l=0, r=80, t=24, b=0),
                     paper_bgcolor="white",
                     plot_bgcolor="#FAFAFA",
