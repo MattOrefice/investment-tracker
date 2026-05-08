@@ -15,4 +15,5 @@ xhtml2pdf>=0.2.10; sys_platform == 'win32'
 kaleido==0.2.1
 lxml>=4.9.0
 statsmodels>=0.14.0
+scipy>=1.14.0
 pytest>=8.3.0
