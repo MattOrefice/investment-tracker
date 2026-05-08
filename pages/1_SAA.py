@@ -259,7 +259,7 @@ with col:
         height=180,
         paper_bgcolor="white",
         plot_bgcolor="white",
-        margin=dict(l=0, r=0, t=8, b=4),
+        margin=dict(l=0, r=0, t=40, b=4),
         legend=dict(
             orientation="h", yanchor="bottom", y=1.02,
             xanchor="left", x=0, font_size=11,

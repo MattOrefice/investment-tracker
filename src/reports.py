@@ -531,7 +531,7 @@ def _build_attribution_section(start_date: str, end_date: str) -> dict:
     fig.update_layout(
         barmode="stack", xaxis_title="Basis Points", yaxis_title=None,
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
-        margin=dict(l=180, r=20, t=40, b=30), height=240,
+        margin=dict(l=180, r=20, t=40, b=30), height=320,
         plot_bgcolor="white", paper_bgcolor="white",
         font=dict(family="sans-serif", size=9, color="#333"),
         xaxis=dict(
@@ -588,7 +588,7 @@ def _build_attribution_section(start_date: str, end_date: str) -> dict:
 
     return {
         "rows":             rows,
-        "chart_b64":        _chart_b64(fig, 700, 240),
+        "chart_b64":        _chart_b64(fig, 700, 320),
         "total_alloc":      f"{bf_df['allocation_effect'].sum()*10000:+.1f}",
         "total_sel":        f"{bf_df['selection_effect'].sum()*10000:+.1f}",
         "total_total":      f"{bf_df['total_effect'].sum()*10000:+.1f}",
