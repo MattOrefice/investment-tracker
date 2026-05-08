@@ -147,3 +147,85 @@ def test_insufficient_data_returns_empty():
     df   = _synthetic_returns(n=8)   # fewer than min(10, window//4) for window=60
     corr = _rolling_corr_matrix(df, window=60)
     assert corr.empty, "Expected empty DataFrame for insufficient data"
+
+
+# ── Regression: pair view must use pair-specific date intersection ─────────────
+#
+# Root cause: the original pair view used the shared 9-sleeve returns_df, which
+# requires all 9 tickers to have data simultaneously. QUAL (US Large Quality)
+# launched 2013-07-18, constraining the shared DataFrame to start there even for
+# pairs like SPY (1993) × IEF (2002) that have much longer overlapping histories.
+# The fix: pair view calls _load_sleeve_returns per sleeve, not returns_df.
+# This test ensures the regression cannot reappear silently.
+
+def test_pair_specific_intersection_longer_than_shared_9sleeve():
+    """
+    Pair-specific date intersection (two sleeves) must start earlier than the
+    shared 9-sleeve intersection when one sleeve launched more recently.
+
+    Simulates the QUAL-constrained scenario: 9-sleeve shared DF starts at QUAL
+    inception (2013-07-18); the SPY × IEF pair, loaded independently, starts at
+    IEF's inception (~2002-07-30), giving 11+ additional years of history.
+    """
+    rng = np.random.default_rng(42)
+
+    # Shared 9-sleeve DataFrame: constrained by youngest sleeve (QUAL, 2013-07-18)
+    qual_start = pd.Timestamp("2013-07-18")
+    idx_shared = pd.bdate_range(qual_start, periods=700)
+    shared_df  = pd.DataFrame(
+        rng.normal(0.0004, 0.01, (700, 2)),
+        index=idx_shared,
+        columns=["A", "B"],
+    )
+    shared_roll = shared_df["A"].rolling(120).corr(shared_df["B"]).dropna()
+
+    # Pair-specific: SPY × IEF — starts at IEF inception (2002-07-30)
+    ief_start = pd.Timestamp("2002-07-30")
+    n_pair    = len(pd.bdate_range(ief_start, "2026-05-07"))
+    idx_pair  = pd.bdate_range(ief_start, periods=n_pair)
+    pair_df   = pd.DataFrame(
+        rng.normal(0.0003, 0.009, (n_pair, 2)),
+        index=idx_pair,
+        columns=["A", "B"],
+    )
+    pair_roll = pair_df["A"].rolling(120).corr(pair_df["B"]).dropna()
+
+    assert pair_roll.index.min() < shared_roll.index.min(), (
+        f"Pair-specific first date ({pair_roll.index.min().date()}) must be earlier "
+        f"than shared-DF first date ({shared_roll.index.min().date()}). "
+        "If this fails, the pair view may have regressed to using the shared DataFrame."
+    )
+    assert pair_roll.index.min().year <= 2003, (
+        f"SPY×IEF pair should start in ~2002–2003 (120 trading days after IEF 2002-07-30). "
+        f"Got {pair_roll.index.min().date()}."
+    )
+    assert shared_roll.index.min().year >= 2014, (
+        f"Shared-DF (QUAL-constrained) first date should be 2014+. "
+        f"Got {shared_roll.index.min().date()}."
+    )
+
+
+def test_pair_specific_xaxis_range_matches_data_bounds():
+    """
+    x_min and x_max for the pair chart must equal the actual index bounds of
+    roll_corr — not today's date, not a future date.
+
+    This is the guard against Plotly 6 autorange padding the x-axis into the future.
+    """
+    rng   = np.random.default_rng(7)
+    n     = 300
+    idx   = pd.bdate_range("2010-01-04", periods=n)
+    df    = pd.DataFrame(rng.normal(0, 0.01, (n, 2)), index=idx, columns=["A", "B"])
+    roll  = df["A"].rolling(60).corr(df["B"]).dropna()
+
+    x_min = roll.index.min().isoformat()[:10]
+    x_max = roll.index.max().isoformat()[:10]
+
+    assert x_min == str(roll.index.min().date()), (
+        f"x_min ({x_min}) must equal the first computed correlation date, not an earlier date"
+    )
+    assert x_max == str(roll.index.max().date()), (
+        f"x_max ({x_max}) must equal the last computed correlation date, not a future date"
+    )
+    # Ensure x_max is the actual last data point, not today (which may be a weekend)
+    assert pd.Timestamp(x_max) == roll.index.max()

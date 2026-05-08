@@ -41,6 +41,7 @@ def _load_daily_returns(start_date: str) -> pd.DataFrame:
     Return a DataFrame of daily returns for each sleeve benchmark.
     Blended sleeves (Real Assets) use weighted-average returns.
     Returns only rows where ALL sleeves have data (trading-day intersection).
+    Used by the heatmap view; the pair view uses _load_sleeve_returns instead.
     """
     end = TODAY
     ret_dict: dict[str, pd.Series] = {}
@@ -72,6 +73,35 @@ def _load_daily_returns(start_date: str) -> pd.DataFrame:
     df = df.dropna()
     non_zero = (df.abs().sum(axis=1) > 0)
     return df[non_zero]
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _load_sleeve_returns(sleeve_name: str) -> pd.Series:
+    """
+    Load full-history daily returns for a single sleeve's benchmark.
+
+    Fetches from the ticker's earliest available date (requesting from 1990-01-01
+    so get_prices returns data from the ticker's actual inception). Used by the
+    pair time-series view so each pair uses its own date intersection, not the
+    9-sleeve common intersection that _load_daily_returns produces.
+    """
+    _PAIR_HISTORY_START = "1990-01-01"
+    end = TODAY
+    components = _SLEEVES.get(sleeve_name, [])
+    blended: pd.Series | None = None
+    for ticker, weight in components:
+        try:
+            p = get_prices(ticker, _PAIR_HISTORY_START, end)
+            p.index = pd.to_datetime(p.index)
+            prices = p["adj_close"].ffill()
+            dr = prices.pct_change().dropna()
+            blended = dr * weight if blended is None else blended.add(dr * weight, fill_value=0.0)
+        except Exception:
+            return pd.Series(dtype=float)
+    if blended is None:
+        return pd.Series(dtype=float)
+    # Filter out non-trading-day zeros (ffill artefacts)
+    return blended[blended != 0]
 
 
 def _rolling_corr_matrix(returns: pd.DataFrame, window: int) -> pd.DataFrame:
@@ -236,7 +266,16 @@ with col:
         if sleeve_a == sleeve_b:
             st.info("Select two different sleeves to compare.")
         else:
-            roll_corr = _pair_corr_series(returns_df, sleeve_a, sleeve_b, window)
+            # Load each sleeve independently to use their pair-specific date
+            # intersection (not the 9-sleeve common intersection from returns_df,
+            # which is constrained by QUAL's 2013-07-18 inception).
+            with st.spinner("Loading pair history…"):
+                ret_a = _load_sleeve_returns(sleeve_a)
+                ret_b = _load_sleeve_returns(sleeve_b)
+
+            pair_df   = pd.DataFrame({"A": ret_a, "B": ret_b}).dropna()
+            pair_df   = pair_df[(pair_df.abs().sum(axis=1) > 0)]
+            roll_corr = pair_df["A"].rolling(window).corr(pair_df["B"]).dropna()
 
             if roll_corr.empty or len(roll_corr) < 5:
                 st.warning(
@@ -245,6 +284,8 @@ with col:
                 )
             else:
                 current_rho = float(roll_corr.iloc[-1])
+                x_min = roll_corr.index.min().isoformat()[:10]
+                x_max = roll_corr.index.max().isoformat()[:10]
 
                 fig_pair = go.Figure()
                 fig_pair.add_trace(go.Scatter(
@@ -276,7 +317,10 @@ with col:
                         gridcolor="#EBEBEB",
                         title="Rolling correlation (ρ)",
                     ),
-                    xaxis=dict(gridcolor="#EBEBEB"),
+                    xaxis=dict(
+                        range=[x_min, x_max],
+                        gridcolor="#EBEBEB",
+                    ),
                     hovermode="x unified",
                 )
                 st.plotly_chart(fig_pair, width="stretch")
