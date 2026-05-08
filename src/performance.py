@@ -93,12 +93,19 @@ def compute_risk_metrics(
     peak  = cum.cummax()
     max_dd = float(((cum - peak) / peak).min())
 
-    # Tracking error and information ratio
+    # Annualized portfolio volatility (std dev of daily returns * sqrt(252))
+    ann_vol = float(port_ret.std(ddof=1)) * math.sqrt(252)
+
+    # Tracking error, information ratio, beta
     active_ret     = port_ret - bench_ret
     tracking_error = float(active_ret.std(ddof=1)) * math.sqrt(252)
     ann_port       = float((1 + port_ret).prod() ** (252 / n) - 1)
     ann_bench      = float((1 + bench_ret).prod() ** (252 / n) - 1)
     ir = (ann_port - ann_bench) / tracking_error if tracking_error > 1e-10 else float("nan")
+
+    cov_mat   = np.cov(port_ret.values, bench_ret.values, ddof=1)
+    bench_var = cov_mat[1, 1]
+    beta      = cov_mat[0, 1] / bench_var if bench_var > 1e-10 else float("nan")
 
     # VaR(95%) and CVaR(95%) — daily positive loss magnitudes
     var_threshold = float(np.percentile(port_ret, 5))   # 5th percentile (negative)
@@ -109,9 +116,12 @@ def compute_risk_metrics(
     return {
         "sharpe":               sharpe,
         "sortino":              sortino,
+        "annualized_vol_pct":   ann_vol * 100,
         "max_drawdown_pct":     max_dd * 100,
         "tracking_error_pct":   tracking_error * 100,
         "information_ratio":    ir,
+        "beta":                 beta,
+        "active_return_pct":    (ann_port - ann_bench) * 100,
         "n_days":               n,
         "ann_port_return_pct":  ann_port * 100,
         "ann_bench_return_pct": ann_bench * 100,

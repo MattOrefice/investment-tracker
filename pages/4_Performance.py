@@ -431,7 +431,37 @@ with col:
     # ──────────────────────────────────────────────────────────────────────
     st.markdown("#### Risk-Adjusted Metrics")
 
-    _bl_for_metrics = bl / float(bl.iloc[0])
+    # Benchmark options for relative metrics (TE, IR, beta, active return)
+    _RISK_BM_OPTIONS = {
+        "Custom Blended SAA":        "blended",
+        "S&P 500 (SPY)":             "spy",
+        "60/40 (60% SPY / 40% AGG)": "60_40",
+    }
+    _risk_bm_sel = st.radio(
+        "Compare against",
+        list(_RISK_BM_OPTIONS.keys()),
+        horizontal=True,
+        key="risk_bm_sel",
+        help=(
+            "Tracking error, information ratio, beta, and active return recompute "
+            "against the selected benchmark. Portfolio std dev, Sharpe, Sortino, "
+            "Max DD, VaR, and CVaR are independent of benchmark selection."
+        ),
+    )
+    _risk_bm_kind = _RISK_BM_OPTIONS[_risk_bm_sel]
+
+    # Load the selected benchmark series (normalized to 1.0 for risk metric computation)
+    if _risk_bm_kind == "blended":
+        _bl_for_metrics = bl / float(bl.iloc[0])
+        _risk_bm_label  = "Custom Blended SAA"
+    elif _risk_bm_kind == "spy":
+        _bl_for_metrics = sp / float(sp.iloc[0])
+        _risk_bm_label  = "S&P 500 (SPY)"
+    else:
+        _naive_60_40 = _load_naive_benchmark(start_val, "60_40")
+        _bl_for_metrics = _naive_60_40 / float(_naive_60_40.iloc[0])
+        _risk_bm_label  = "60/40 (60% SPY / 40% AGG)"
+
     _m_si  = compute_risk_metrics(pv, _bl_for_metrics, window="SI")
     _m_1y  = compute_risk_metrics(pv, _bl_for_metrics, window="1Y")
     _m_ytd = compute_risk_metrics(pv, _bl_for_metrics, window="YTD")
@@ -440,10 +470,10 @@ with col:
 
     _RISK_WINDOW_LABELS = ["1 Month", "3 Months", "YTD", "1 Year", "Since Inception"]
     _RISK_WINDOW_MAP = {
-        "1 Month":        _m_1m,
-        "3 Months":       _m_3m,
-        "YTD":            _m_ytd,
-        "1 Year":         _m_1y,
+        "1 Month":         _m_1m,
+        "3 Months":        _m_3m,
+        "YTD":             _m_ytd,
+        "1 Year":          _m_1y,
         "Since Inception": _m_si,
     }
 
@@ -468,18 +498,28 @@ with col:
                 f"Insufficient data for {_window_label} window — requires ≥ 20 trading days."
             )
         else:
-            _c1, _c2, _c3, _c4, _c5, _c6, _c7 = st.columns(7)
-            _c1.metric("Sharpe",     _fmt_ratio(_m["sharpe"]))
-            _c2.metric("Sortino",    _fmt_ratio(_m["sortino"]))
-            _c3.metric("Max DD",     _fmt_pct(_m["max_drawdown_pct"]))
-            _c4.metric("Track. Err", _fmt_pct(_m["tracking_error_pct"]))
-            _c5.metric("Info Ratio", _fmt_ratio(_m["information_ratio"]))
-            _c6.metric("VaR (95%)",  _fmt_pct(_m["var_95_pct"]))
-            _c7.metric("CVaR (95%)", _fmt_pct(_m["cvar_95_pct"]))
+            # Row 1 — portfolio-level metrics (benchmark-independent)
+            st.caption("Portfolio metrics (independent of benchmark selection)")
+            _c1, _c2, _c3, _c4, _c5, _c6 = st.columns(6)
+            _c1.metric("Std Dev (ann.)", _fmt_pct(_m["annualized_vol_pct"]))
+            _c2.metric("Sharpe",         _fmt_ratio(_m["sharpe"]))
+            _c3.metric("Sortino",        _fmt_ratio(_m["sortino"]))
+            _c4.metric("Max DD",         _fmt_pct(_m["max_drawdown_pct"]))
+            _c5.metric("VaR (95%)",      _fmt_pct(_m["var_95_pct"]))
+            _c6.metric("CVaR (95%)",     _fmt_pct(_m["cvar_95_pct"]))
+
+            # Row 2 — benchmark-relative metrics
+            st.caption(f"vs {_risk_bm_label}")
+            _r1, _r2, _r3, _r4 = st.columns(4)
+            _r1.metric("Track. Err",      _fmt_pct(_m["tracking_error_pct"]))
+            _r2.metric("Info Ratio",       _fmt_ratio(_m["information_ratio"]))
+            _r3.metric("Beta",             _fmt_ratio(_m["beta"]))
+            _r4.metric("Active Ret (ann.)", _fmt_pct(_m["active_return_pct"]))
 
         st.caption(
+            "Std Dev: annualized portfolio return volatility (trading days only, ddof=1). "
             "Sharpe and Sortino use RF = 4.5% (current cash yield). "
-            "Tracking error and information ratio vs. Custom Blended benchmark. "
+            f"Tracking error, information ratio, beta, and active return vs. {_risk_bm_label}. "
             "Max drawdown = peak-to-trough decline in portfolio value within the selected window. "
             "VaR(95%) = daily loss exceeded only 5% of trading days (historical simulation). "
             "CVaR(95%) = average daily loss on the worst 5% of trading days (Expected Shortfall). "
