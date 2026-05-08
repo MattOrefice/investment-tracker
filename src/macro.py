@@ -167,6 +167,74 @@ def window_pctile(series: pd.Series, current_value: float, w_start: str) -> floa
     return percentile(windowed, current_value)
 
 
+_REGIME_LABELS = ("Recession", "Early-cycle", "Mid-cycle", "Late-cycle")
+
+
+def classify_regime(
+    usrec: float | None,
+    t10y2y: float | None,
+    unrate: float | None,
+) -> str:
+    """
+    Classify the macro regime given three FRED indicator values.
+
+    Rules applied in priority order (first match wins):
+      1. Recession   — USREC = 1
+      2. Early-cycle — USREC = 0, UNRATE > 5.5%, T10Y2Y > -0.25
+      3. Late-cycle  — USREC = 0, T10Y2Y < -0.25 OR UNRATE < 4.2
+      4. Mid-cycle   — default
+
+    Missing signals (None) are treated as neutral for that rule.
+    Returns one of: 'Recession', 'Early-cycle', 'Mid-cycle', 'Late-cycle'.
+    See docs/regime_classifier.md for rationale and limitations.
+    """
+    if usrec is not None and usrec >= 0.5:
+        return "Recession"
+
+    unrate_high  = unrate is not None and unrate > 5.5
+    curve_ok     = t10y2y is None or t10y2y > -0.25
+    if unrate_high and curve_ok:
+        return "Early-cycle"
+
+    curve_inv    = t10y2y is not None and t10y2y < -0.25
+    labor_tight  = unrate is not None and unrate < 4.2
+    if curve_inv or labor_tight:
+        return "Late-cycle"
+
+    return "Mid-cycle"
+
+
+def get_regime_signals(as_of_date: str | None = None) -> dict:
+    """
+    Fetch the most-recent USREC, T10Y2Y, and UNRATE values as of as_of_date.
+    Returns a dict with keys: usrec, t10y2y, unrate, label (from classify_regime).
+    """
+    from datetime import date as _date
+    end = as_of_date or _date.today().isoformat()
+
+    def _latest(series_id: str, start: str) -> float | None:
+        try:
+            s = get_series(series_id, start_date=start)
+            s = s.dropna()
+            s = s.loc[:end]
+            if s.empty:
+                return None
+            return float(s.iloc[-1])
+        except Exception:
+            return None
+
+    usrec  = _latest("USREC",   "1945-01-01")
+    t10y2y = _latest("T10Y2Y",  "1976-06-01")
+    unrate = _latest("UNRATE",  "1948-01-01")
+
+    return {
+        "usrec":   usrec,
+        "t10y2y":  t10y2y,
+        "unrate":  unrate,
+        "label":   classify_regime(usrec, t10y2y, unrate),
+    }
+
+
 def compute_cape_implied_return(cape: float) -> float:
     """
     Implied 10-year annualized real return from CAPE via log-linear regression.

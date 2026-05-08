@@ -9,7 +9,10 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from src.macro import compute_cape_implied_return, compute_ecy, percentile, window_pctile
+from src.macro import (
+    compute_cape_implied_return, compute_ecy, percentile, window_pctile,
+    classify_regime, _REGIME_LABELS,
+)
 
 
 def test_cape_16_anchor():
@@ -211,3 +214,80 @@ def test_window_pctile_10y_matches_manual_slice():
     val       = float(s.quantile(0.75))
     expected  = percentile(s.loc[w10_start:].dropna(), val)
     assert window_pctile(s, val, w10_start) == pytest.approx(expected, abs=1e-9)
+
+
+# ── classify_regime unit tests (Layer 1: no None gaps) ───────────────────────
+
+@pytest.mark.parametrize("usrec,t10y2y,unrate,expected", [
+    # Rule 1: Recession when USREC = 1
+    (1.0,  1.0,  6.0, "Recession"),
+    (1.0, -0.5,  4.0, "Recession"),
+    (1.0,  None, None, "Recession"),
+    # Rule 2: Early-cycle — USREC=0, UNRATE > 5.5, curve not deeply inverted
+    (0.0,  0.5,  7.0, "Early-cycle"),
+    (0.0,  0.0,  6.0, "Early-cycle"),
+    (0.0,  None, 8.0, "Early-cycle"),
+    # Rule 3a: Late-cycle — curve inverted
+    (0.0, -0.5,  4.5, "Late-cycle"),
+    (0.0, -0.3,  5.0, "Late-cycle"),
+    # Rule 3b: Late-cycle — labor very tight
+    (0.0,  0.5,  3.9, "Late-cycle"),
+    (0.0,  None, 4.0, "Late-cycle"),
+    # Rule 4: Mid-cycle default
+    (0.0,  1.0,  4.5, "Mid-cycle"),
+    (0.0,  0.0,  5.0, "Mid-cycle"),
+    (None, None, None, "Mid-cycle"),   # all signals missing → default
+])
+def test_classify_regime_rules(usrec, t10y2y, unrate, expected):
+    """classify_regime must return the correct label for each signal combination."""
+    assert classify_regime(usrec, t10y2y, unrate) == expected
+
+
+def test_classify_regime_always_returns_valid_label():
+    """classify_regime must always return one of the four valid labels."""
+    import itertools
+    usrec_vals  = [None, 0.0, 1.0]
+    t10y2y_vals = [None, -1.0, -0.3, -0.1, 0.0, 0.5, 2.0]
+    unrate_vals = [None, 3.5, 4.0, 4.2, 5.0, 5.5, 6.0, 8.0]
+    for u, t, r in itertools.product(usrec_vals, t10y2y_vals, unrate_vals):
+        label = classify_regime(u, t, r)
+        assert label in _REGIME_LABELS, (
+            f"classify_regime({u}, {t}, {r}) = {label!r} not in {_REGIME_LABELS}"
+        )
+
+
+def test_classify_regime_recession_overrides_all():
+    """USREC = 1 must produce 'Recession' regardless of other signal values."""
+    combos = [
+        (1.0,  2.0, 3.5),   # would otherwise be Late-cycle (tight labor)
+        (1.0, -1.0, 7.0),   # would otherwise be Late-cycle (curve inverted)
+        (1.0,  0.0, 5.2),   # would otherwise be Mid-cycle
+        (1.0,  1.0, 8.0),   # would otherwise be Early-cycle
+    ]
+    for u, t, r in combos:
+        assert classify_regime(u, t, r) == "Recession", (
+            f"Expected 'Recession' for usrec={u}, t10y2y={t}, unrate={r}"
+        )
+
+
+def test_classify_regime_backtest_has_no_gaps():
+    """
+    Layer 1: synthetic monthly backtest grid must produce a valid label for every row.
+    Uses a synthetic 40-year grid of plausible signal combinations — no FRED calls.
+    """
+    rng = np.random.default_rng(42)
+    n   = 480   # 40 years of monthly data
+    usrec_sim  = rng.choice([0.0, 1.0], n, p=[0.85, 0.15])
+    t10y2y_sim = rng.normal(0.5, 1.2, n)         # mean slightly positive
+    unrate_sim = rng.uniform(3.0, 10.0, n)
+
+    labels = [
+        classify_regime(float(usrec_sim[i]), float(t10y2y_sim[i]), float(unrate_sim[i]))
+        for i in range(n)
+    ]
+
+    assert len(labels) == n, "Backtest produced fewer labels than input rows"
+    assert all(lbl in _REGIME_LABELS for lbl in labels), (
+        f"Backtest produced invalid label(s): {set(labels) - set(_REGIME_LABELS)}"
+    )
+    assert None not in labels, "Backtest produced None labels (gaps)"

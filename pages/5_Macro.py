@@ -218,6 +218,7 @@ with col:
 
     with st.spinner("Loading FRED data…"):
         rec_periods, _rec_err    = _try_rec()
+        usrec,       _usrec_err  = _try_fred("USREC",             "1945-01-01")
         t10y2y,      _t10y2y_err = _try_fred("T10Y2Y",           "1976-06-01")
         dff,         _dff_err    = _try_fred("DFF",               "1954-07-01")
         hy_oas,      _hy_oas_err = _try_fred("BAMLH0A0HYM2",     "1996-12-31")
@@ -226,6 +227,152 @@ with col:
         unrate,      _unrate_err = _try_fred("UNRATE",            "1948-01-01")
         gdp_gr,      _gdp_err    = _try_fred("A191RL1Q225SBEA",   "1947-01-01")
         core_cpi,    _cpi_err    = _try_fred("CPILFESL",          "1957-01-01")
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # REGIME CLASSIFIER (prominent header)
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    _REGIME_COLORS = {
+        "Recession":   ("#7B2D2D", "#FDE8E8"),
+        "Early-cycle": ("#1A5C2E", "#E8F5EC"),
+        "Mid-cycle":   ("#1A3A5C", "#E8EFF7"),
+        "Late-cycle":  ("#7B5C00", "#FDF5E0"),
+    }
+    _REGIME_PROSE = {
+        "Recession":   (
+            "Output is contracting and the NBER has declared a recession. "
+            "Quality equities and intermediate duration have historically held up best. "
+            "Avoid adding cyclical risk; focus on rebalancing into weakness."
+        ),
+        "Early-cycle": (
+            "The economy is recovering from a downturn: unemployment remains elevated "
+            "but the yield curve is no longer inverted. Historically the strongest phase "
+            "for small-cap and value factor returns. The SAA's 7% small-cap and 8% value "
+            "sleeves are positioned for this environment."
+        ),
+        "Mid-cycle":   (
+            "Growth is moderate, the yield curve is positively sloped, and labor markets "
+            "are neither too tight nor too loose. SAA weights are calibrated for this baseline "
+            "environment. No tactical tilt is warranted by current signals."
+        ),
+        "Late-cycle":  (
+            "The yield curve is inverted or labor markets are historically tight — both "
+            "signal late-expansion risk. Quality and inflation-linked assets (TIPS, Real Assets) "
+            "have historically held up better in this phase. Duration should be watched carefully."
+        ),
+    }
+
+    _cur_usrec  = float(usrec.dropna().iloc[-1])  if usrec  is not None and not usrec.empty  else None
+    _cur_t10y2y = float(t10y2y.dropna().iloc[-1]) if t10y2y is not None and not t10y2y.empty else None
+    _cur_unrate = float(unrate.dropna().iloc[-1]) if unrate is not None and not unrate.empty else None
+
+    _regime_label = macro.classify_regime(_cur_usrec, _cur_t10y2y, _cur_unrate)
+    _r_fg, _r_bg  = _REGIME_COLORS[_regime_label]
+
+    with st.container(border=True):
+        st.markdown(
+            f"<div style='background:{_r_bg};border-left:5px solid {_r_fg};"
+            f"padding:12px 16px;border-radius:4px;margin-bottom:8px'>"
+            f"<span style='font-size:1.4rem;font-weight:700;color:{_r_fg}'>"
+            f"Current Regime: {_regime_label}</span></div>",
+            unsafe_allow_html=True,
+        )
+        st.caption(_REGIME_PROSE[_regime_label])
+
+        sig_l, sig_m, sig_r = st.columns(3)
+        with sig_l:
+            st.metric("NBER Recession (USREC)",
+                      "Active" if (_cur_usrec or 0) >= 0.5 else "None",
+                      help="1 = NBER-declared recession; 0 = expansion")
+        with sig_m:
+            st.metric("Yield Curve (10Y–2Y)",
+                      f"{_cur_t10y2y:+.2f}%" if _cur_t10y2y is not None else "—",
+                      help="Negative = inverted; < -0.25% triggers Late-cycle")
+        with sig_r:
+            st.metric("Unemployment Rate",
+                      f"{_cur_unrate:.1f}%" if _cur_unrate is not None else "—",
+                      help="> 5.5% = Early-cycle; < 4.2% = Late-cycle trigger")
+
+        # Backtest: apply classifier across common history of all three signals
+        try:
+            if usrec is not None and t10y2y is not None and unrate is not None:
+                _bt_usrec  = usrec.resample("MS").last().ffill()
+                _bt_curve  = t10y2y.resample("MS").last().ffill()
+                _bt_ur     = unrate.resample("MS").last().ffill()
+                _bt_common = _bt_usrec.index \
+                    .intersection(_bt_curve.index) \
+                    .intersection(_bt_ur.index)
+                _bt_common = _bt_common[_bt_common >= "1976-06-01"]
+
+                _regime_map = {"Recession": 0, "Early-cycle": 1, "Mid-cycle": 2, "Late-cycle": 3}
+                _regime_num = [
+                    _regime_map[macro.classify_regime(
+                        float(_bt_usrec.loc[d]),
+                        float(_bt_curve.loc[d]),
+                        float(_bt_ur.loc[d]),
+                    )]
+                    for d in _bt_common
+                ]
+                _bt_labels = [
+                    macro.classify_regime(
+                        float(_bt_usrec.loc[d]),
+                        float(_bt_curve.loc[d]),
+                        float(_bt_ur.loc[d]),
+                    )
+                    for d in _bt_common
+                ]
+                _bt_series = pd.Series(_regime_num, index=_bt_common)
+
+                _color_map = {
+                    0: _REGIME_COLORS["Recession"][0],
+                    1: _REGIME_COLORS["Early-cycle"][0],
+                    2: _REGIME_COLORS["Mid-cycle"][0],
+                    3: _REGIME_COLORS["Late-cycle"][0],
+                }
+
+                with st.expander("Historical regime backtest (since 1976)", expanded=False):
+                    fig_bt = go.Figure()
+                    for _num, _lbl in [(0, "Recession"), (1, "Early-cycle"),
+                                       (2, "Mid-cycle"), (3, "Late-cycle")]:
+                        _mask = _bt_series == _num
+                        if not _mask.any():
+                            continue
+                        _dates = _bt_series[_mask].index
+                        fig_bt.add_trace(go.Scatter(
+                            x=_dates, y=[_num] * len(_dates),
+                            mode="markers",
+                            marker=dict(color=_REGIME_COLORS[_lbl][0], size=5, symbol="square"),
+                            name=_lbl,
+                        ))
+                    fig_bt.update_layout(
+                        height=200,
+                        margin=dict(l=0, r=0, t=16, b=0),
+                        paper_bgcolor="white",
+                        plot_bgcolor="#FAFAFA",
+                        yaxis=dict(
+                            tickvals=[0, 1, 2, 3],
+                            ticktext=["Recession", "Early-cycle", "Mid-cycle", "Late-cycle"],
+                            showgrid=True, gridcolor="#EBEBEB",
+                        ),
+                        xaxis=dict(showgrid=True, gridcolor="#EBEBEB"),
+                        showlegend=False,
+                    )
+                    st.plotly_chart(fig_bt, width="stretch")
+                    st.caption(
+                        "Regime labels are applied retroactively using USREC, T10Y2Y, and UNRATE. "
+                        "USREC is declared by NBER and can lag real recession starts by 6–18 months. "
+                        "This backtest uses hindsight-available data — it is not a real-time signal."
+                    )
+        except Exception:
+            pass
+
+        st.caption(
+            "⚠️ **Disclaimer:** This classifier is a rules-based heuristic, not a forecast or "
+            "trading signal. USREC is declared retroactively by the NBER and may lag actual "
+            "recession onset by 6–18 months. See docs/regime_classifier.md for full methodology."
+        )
+
+    st.divider()
 
     # ═══════════════════════════════════════════════════════════════════════════
     # VALUATION
