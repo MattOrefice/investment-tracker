@@ -1,14 +1,15 @@
-"""Tests for src/macro.py — CAPE implied return formula, ECY, and FRED retry."""
+"""Tests for src/macro.py — CAPE implied return formula, ECY, FRED retry, window_pctile."""
 import math
 import sys
 import pathlib
 
+import numpy as np
 import pandas as pd
 import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from src.macro import compute_cape_implied_return, compute_ecy
+from src.macro import compute_cape_implied_return, compute_ecy, percentile, window_pctile
 
 
 def test_cape_16_anchor():
@@ -125,3 +126,88 @@ def test_fredetcherror_carries_series_id():
     assert err.series_id == "DGS10"
     assert err.cause is cause
     assert "DGS10" in str(err)
+
+
+# ── window_pctile unit tests ───────────────────────────────────────────────────
+
+def _synthetic_series(n: int = 300, seed: int = 0) -> pd.Series:
+    rng  = np.random.default_rng(seed)
+    vals = rng.normal(0, 1, n)
+    idx  = pd.date_range("2015-01-01", periods=n, freq="ME")
+    return pd.Series(vals, index=idx)
+
+
+def test_window_pctile_max_uses_full_series():
+    """'1800-01-01' sentinel must use the entire series, same as percentile()."""
+    s   = _synthetic_series()
+    val = float(s.iloc[-1])
+    assert abs(window_pctile(s, val, "1800-01-01") - percentile(s, val)) < 1e-9
+
+
+def test_window_pctile_5y_differs_from_full():
+    """5Y window percentile must differ from full-history percentile for a trending series."""
+    # Monotonically increasing series: last 5 years cluster at the top
+    idx = pd.date_range("2010-01-01", periods=180, freq="ME")
+    s   = pd.Series(range(180), index=idx, dtype=float)
+    val = float(s.iloc[-1])          # maximum value
+
+    full_pctile = percentile(s, val)          # should be ~100
+    w5_start    = (idx[-1] - pd.DateOffset(years=5)).isoformat()[:10]
+    w5_pctile   = window_pctile(s, val, w5_start)   # also ~100 since val is still max
+
+    # Both should be 100 for the absolute maximum
+    assert full_pctile == pytest.approx(100.0, abs=1.0)
+    assert w5_pctile   == pytest.approx(100.0, abs=1.0)
+
+    # Now test a mid-range value — windowed pctile should differ from full
+    mid_val     = float(s.iloc[150])          # 150/180 = 83rd percentile full history
+    full_mid    = percentile(s, mid_val)
+    w5_mid      = window_pctile(s, mid_val, w5_start)
+    # The 5Y window only has values 120..179, so mid_val (150) is below the median
+    # of the 5Y window (median ~149.5) — roughly the 50th percentile of that window
+    assert w5_mid < full_mid, (
+        f"5Y window pctile ({w5_mid:.1f}) should be lower than full ({full_mid:.1f}) "
+        "for a value that's mid-history in a monotonically increasing series"
+    )
+
+
+def test_window_pctile_10y_uses_only_windowed_data():
+    """10Y window percentile is computed strictly on data from w_start onward."""
+    idx = pd.date_range("2005-01-01", periods=240, freq="ME")
+    s   = pd.Series(range(240), index=idx, dtype=float)
+
+    w10_start = (idx[-1] - pd.DateOffset(years=10)).isoformat()[:10]
+    val       = float(s.loc[w10_start:].median())
+    w10_pctile = window_pctile(s, val, w10_start)
+
+    # Median of the 10Y window = 50th percentile of that window
+    assert 48.0 < w10_pctile < 52.0, f"Median should be near 50th pctile; got {w10_pctile:.1f}"
+
+
+def test_window_pctile_empty_window_falls_back_to_full():
+    """If window start is after all data, falls back to full-series percentile."""
+    idx = pd.date_range("2010-01-01", periods=60, freq="ME")
+    s   = pd.Series(np.linspace(1, 60, 60), index=idx)
+    val = float(s.iloc[30])
+
+    # Window starting after end of data
+    future_start = "2030-01-01"
+    assert window_pctile(s, val, future_start) == pytest.approx(percentile(s, val), abs=1e-9)
+
+
+def test_window_pctile_5y_matches_manual_slice():
+    """window_pctile must exactly equal percentile(series[w_start:].dropna(), val)."""
+    s         = _synthetic_series(n=120, seed=7)
+    w5_start  = (s.index[-1] - pd.DateOffset(years=5)).isoformat()[:10]
+    val       = float(s.iloc[-1])
+    expected  = percentile(s.loc[w5_start:].dropna(), val)
+    assert window_pctile(s, val, w5_start) == pytest.approx(expected, abs=1e-9)
+
+
+def test_window_pctile_10y_matches_manual_slice():
+    """window_pctile 10Y window must equal percentile(series[w_start:].dropna(), val)."""
+    s         = _synthetic_series(n=240, seed=13)
+    w10_start = (s.index[-1] - pd.DateOffset(years=10)).isoformat()[:10]
+    val       = float(s.quantile(0.75))
+    expected  = percentile(s.loc[w10_start:].dropna(), val)
+    assert window_pctile(s, val, w10_start) == pytest.approx(expected, abs=1e-9)

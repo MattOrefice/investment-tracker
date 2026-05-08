@@ -152,6 +152,21 @@ def percentile(series: pd.Series, current_value: float) -> float:
     return float((clean <= current_value).mean() * 100)
 
 
+def window_pctile(series: pd.Series, current_value: float, w_start: str) -> float:
+    """Percentile of current_value within series windowed from w_start onward.
+
+    Falls back to the full series when the windowed slice is empty (w_start
+    predates available data or '1800-01-01' sentinel for 'Max' window).
+    """
+    if w_start == "1800-01-01":
+        windowed = series.dropna()
+    else:
+        windowed = series.loc[w_start:].dropna()
+    if windowed.empty:
+        return percentile(series, current_value)
+    return percentile(windowed, current_value)
+
+
 def compute_cape_implied_return(cape: float) -> float:
     """
     Implied 10-year annualized real return from CAPE via log-linear regression.
