@@ -422,7 +422,11 @@ with col:
 
     tbl_df = pd.DataFrame(display).T
     tbl_df.index.name = "Period"
-    st.dataframe(tbl_df, width='stretch')
+    styled = tbl_df.style.set_properties(
+        subset=["vs S&P 500", "vs Blended"],
+        **{"font-weight": "bold"},
+    )
+    st.dataframe(styled, width='stretch')
 
     st.divider()
 
@@ -507,6 +511,8 @@ with col:
             _c4.metric("Max DD",         _fmt_pct(_m["max_drawdown_pct"]))
             _c5.metric("VaR (95%)",      _fmt_pct(_m["var_95_pct"]))
             _c6.metric("CVaR (95%)",     _fmt_pct(_m["cvar_95_pct"]))
+
+            st.markdown("---")
 
             # Row 2 — benchmark-relative metrics
             st.caption(f"vs {_risk_bm_label}")
@@ -636,6 +642,23 @@ with col:
         else "S&P 500 baseline (SPY total return)"
     )
     _naive_short = "60/40" if naive_kind == "60_40" else "S&P 500"
+
+    st.caption(
+        "**What the two stages measure.** Stage 1 (SAA design) captures the strategic-tilt "
+        f"contribution of the SAA itself — the value allocation (VTV at {_saa_sleeves.get('US Large Value', 0.08)*100:.0f}%), small-cap value "
+        f"(AVUV at {_saa_sleeves.get('US Small Cap', 0.07)*100:.0f}%), emerging markets ({_saa_sleeves.get('Emerging Markets', 0.08)*100:.0f}%), "
+        f"real assets ({_saa_sleeves.get('Real Assets', 0.10)*100:.0f}%), TIPS ({_saa_sleeves.get('TIPS', 0.06)*100:.0f}%), and the overall "
+        f"~{_saa_parents.get('Equity', 0.72)*100:.0f}/{_non_eq_pct*100:.0f} equity-vs-other-assets risk posture — measured as the SAA-blended benchmark's "
+        f"return spread over a {_naive_label}. This isolates what the "
+        "allocation thesis itself contributed, separate from execution. Stage 2 (Implementation, "
+        "decomposed via Brinson-Fachler below) captures two effects relative to the SAA's sleeve "
+        "targets: **allocation effect** — over/underweights from SAA targets, primarily driven by "
+        "drift since this portfolio is not rebalanced intra-quarter; and **selection effect** — the "
+        "chosen ETF return vs. the sleeve benchmark return, typically near-zero for passive ETF "
+        f"holdings. Stage 1 + Stage 2 = Portfolio return vs. {_naive_short} (algebra-checked in the summary tiles). The "
+        "Factor Profile page provides an independent factor-loading view of the same strategic tilts "
+        "(HML, SMB, RMW, CMA loadings on the US sleeve regression)."
+    )
 
     with st.spinner("Computing attribution…"):
         bf_df = _load_attribution(bf_period)
@@ -849,23 +872,6 @@ with col:
             f"Sum of effects: {sum_effects:+.1f} bps  &nbsp;·&nbsp;  "
             f"Algebra check: {'✓' if reconciled else '⚠'}  &nbsp;·&nbsp;  "
             f"vs. Stage 2: {'✓' if _bf_reconciled else '⚠'} {_bf_s2_gap_bps:+.2f} bps"
-        )
-
-        st.caption(
-            "**What the two stages measure.** Stage 1 (SAA design) captures the strategic-tilt "
-            f"contribution of the SAA itself — the value allocation (VTV at {_saa_sleeves.get('US Large Value', 0.08)*100:.0f}%), small-cap value "
-            f"(AVUV at {_saa_sleeves.get('US Small Cap', 0.07)*100:.0f}%), emerging markets ({_saa_sleeves.get('Emerging Markets', 0.08)*100:.0f}%), "
-            f"real assets ({_saa_sleeves.get('Real Assets', 0.10)*100:.0f}%), TIPS ({_saa_sleeves.get('TIPS', 0.06)*100:.0f}%), and the overall "
-            f"~{_saa_parents.get('Equity', 0.72)*100:.0f}/{_non_eq_pct*100:.0f} equity-vs-other-assets risk posture — measured as the SAA-blended benchmark's "
-            f"return spread over a {_naive_label}. This isolates what the "
-            "allocation thesis itself contributed, separate from execution. Stage 2 (Implementation, "
-            "decomposed above via Brinson-Fachler) captures two effects relative to the SAA's sleeve "
-            "targets: **allocation effect** — over/underweights from SAA targets, primarily driven by "
-            "drift since this portfolio is not rebalanced intra-quarter; and **selection effect** — the "
-            "chosen ETF return vs. the sleeve benchmark return, typically near-zero for passive ETF "
-            f"holdings. Stage 1 + Stage 2 = Portfolio return vs. {_naive_short} (algebra-checked above). The "
-            "Factor Profile page provides an independent factor-loading view of the same strategic tilts "
-            "(HML, SMB, RMW, CMA loadings on the US sleeve regression)."
         )
 
     st.divider()
