@@ -422,7 +422,7 @@ with col:
 
     tbl_df = pd.DataFrame(display).T
     tbl_df.index.name = "Period"
-    st.dataframe(tbl_df, use_container_width=True)
+    st.dataframe(tbl_df, width='stretch')
 
     st.divider()
 
@@ -557,7 +557,7 @@ with col:
                    dtick=10, ticksuffix="%"),
         xaxis=dict(gridcolor="#E8E8E8"),
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
     st.divider()
 
@@ -697,7 +697,7 @@ with col:
             yaxis=dict(autorange="reversed"),
             xaxis=dict(gridcolor="#E8E8E8", zeroline=True, zerolinecolor="#888"),
         )
-        st.plotly_chart(_fig_s1, use_container_width=True)
+        st.plotly_chart(_fig_s1, width='stretch')
 
         _sleeve_sum_bps = sum(_sleeve_vals_bps)
         st.caption(
@@ -773,7 +773,7 @@ with col:
                 xaxis=dict(gridcolor="#E8E8E8", zeroline=True,
                            zerolinecolor="#888"),
             )
-            st.plotly_chart(fig2, use_container_width=True)
+            st.plotly_chart(fig2, width='stretch')
 
         # — Attribution table —
         with bf_table_col:
@@ -790,7 +790,7 @@ with col:
                     "Total (bps)":   f"{row['total_effect']*10000:+.1f}",
                 })
             st.dataframe(pd.DataFrame(tbl_data), hide_index=True,
-                         use_container_width=True)
+                         width='stretch')
 
         # — Algebra summary —
         sum_effects   = bf_df["total_effect"].sum() * 10_000
@@ -882,7 +882,7 @@ with col:
             font=dict(family="sans-serif", size=11, color="#333"),
             xaxis=dict(gridcolor="#E8E8E8"),
         )
-        st.plotly_chart(_fig_alloc, use_container_width=True)
+        st.plotly_chart(_fig_alloc, width='stretch')
 
         drift_rows = []
         outside_band_count = 0
@@ -905,7 +905,7 @@ with col:
 
         # Sort by absolute drift descending
         drift_rows.sort(key=lambda r: abs(int(r["Drift (bps)"].replace("+", ""))), reverse=True)
-        st.dataframe(pd.DataFrame(drift_rows), hide_index=True, use_container_width=True)
+        st.dataframe(pd.DataFrame(drift_rows), hide_index=True, width='stretch')
         st.caption(
             f"Rebalance candidates: **{outside_band_count}** sleeve"
             f"{'s' if outside_band_count != 1 else ''} outside tolerance band"

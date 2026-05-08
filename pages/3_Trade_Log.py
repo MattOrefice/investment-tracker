@@ -284,7 +284,7 @@ def render_trade_form():
             price = st.number_input("Price ($)", min_value=0.0, step=0.01, format="%.2f")
             fees  = st.number_input("Fees ($)", min_value=0.0, value=0.0, step=0.01, format="%.2f")
         notes     = st.text_area("Notes (optional)", height=68)
-        submitted = st.form_submit_button("Log trade", use_container_width=True)
+        submitted = st.form_submit_button("Log trade", width='stretch')
 
         if submitted:
             ticker   = st.session_state.get("tl_ticker", "")
@@ -382,7 +382,7 @@ with tab_trades:
             df = pd.DataFrame(rows)
             st.dataframe(
                 df,
-                use_container_width=True,
+                width='stretch',
                 hide_index=True,
                 column_config={
                     "Price":       st.column_config.NumberColumn(format="$%.2f"),
@@ -503,7 +503,7 @@ with tab_theses:
                 })
             st.dataframe(
                 pd.DataFrame(pos_rows),
-                use_container_width=True,
+                width='stretch',
                 hide_index=True,
             )
 

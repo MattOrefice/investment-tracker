@@ -102,7 +102,7 @@ with col:
 
     st.dataframe(
         pd.DataFrame(table_rows).set_index("Factor"),
-        use_container_width=True,
+        width='stretch',
     )
     st.caption(
         "* p < 0.10 &nbsp; ** p < 0.05 &nbsp; *** p < 0.01 &nbsp;|&nbsp; "

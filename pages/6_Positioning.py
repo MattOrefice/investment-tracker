@@ -106,7 +106,7 @@ with col:
         fig = build_style_box_figure(style_data)
         box_col, _ = st.columns([3, 2])
         with box_col:
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
         st.caption(
             "Morningstar 3×3 style box · x-axis: 4-factor value-growth score (z-scored vs SPY) · "
             "y-axis: log market cap · dot size = portfolio weight · US equity sleeves only"

@@ -245,7 +245,7 @@ with col:
             if len(pairs) > 1:
                 st.caption(f"{'REITs (50% of sleeve)' if i == 0 else 'Commodities (50% of sleeve)'}")
             df = _comparison_df(bm, h, self_bm=p["self_bm"], show_type=is_cash)
-            st.dataframe(df, use_container_width=True)
+            st.dataframe(df, width='stretch')
 
             caption = _savings_caption(
                 bm.get("expense_ratio") if bm else None,

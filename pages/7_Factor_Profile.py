@@ -107,7 +107,7 @@ with col:
                 "p-value":      f"{p:.3f}",
                 "Significance": sig_marker(p),
             })
-        st.dataframe(pd.DataFrame(rows).set_index("Factor"), use_container_width=True)
+        st.dataframe(pd.DataFrame(rows).set_index("Factor"), width='stretch')
         st.caption(
             "* p < 0.10 &nbsp; ** p < 0.05 &nbsp; *** p < 0.01 &nbsp;|&nbsp; "
             f"Standard errors: Newey-West HAC &nbsp;|&nbsp; R² = {res['r_squared']:.3f} &nbsp; "
@@ -223,7 +223,7 @@ with col:
 
         st.dataframe(
             pd.DataFrame(fi_rows).set_index("Factor"),
-            use_container_width=True,
+            width='stretch',
         )
         st.caption(
             "* p < 0.10 &nbsp; ** p < 0.05 &nbsp; *** p < 0.01 &nbsp;|&nbsp; "

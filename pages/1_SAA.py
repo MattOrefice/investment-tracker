@@ -141,7 +141,7 @@ with col:
         yaxis=dict(showticklabels=False, showgrid=False,
                    zeroline=False, fixedrange=True),
     )
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    st.plotly_chart(fig, width='stretch', config={"displayModeBar": False})
     # Legend row anchors small-segment labels that can't fit inside the bar
     legend_parts = []
     for p in parents:
@@ -171,7 +171,7 @@ with col:
     df = pd.DataFrame(rows)
     st.dataframe(
         df,
-        use_container_width=True,
+        width='stretch',
         hide_index=True,
         column_config={
             "Target (%)": st.column_config.NumberColumn(format="%.1f"),
@@ -254,7 +254,7 @@ with col:
         ),
         yaxis=dict(showgrid=False),
     )
-    st.plotly_chart(_fig_endo, use_container_width=True, config={"displayModeBar": False})
+    st.plotly_chart(_fig_endo, width='stretch', config={"displayModeBar": False})
 
     st.markdown(
         "Endowments achieving institutional-grade returns do so with heavy "
