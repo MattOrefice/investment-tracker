@@ -271,20 +271,46 @@ with col:
     st.divider()
 
     # ──────────────────────────────────────────────────────────────────────
-    # Section 1 — Headline metrics
+    # Section 1a — Quarterly snapshot (most recently completed quarter)
     # ──────────────────────────────────────────────────────────────────────
+    _q_start, _q_end, _q_label = _most_recent_completed_quarter()
+    _q_ts_start = pd.Timestamp(_q_start)
+    _q_ts_end   = pd.Timestamp(_q_end)
+
+    def _q_ret(s: pd.Series) -> float:
+        sliced = s[(s.index >= _q_ts_start) & (s.index <= _q_ts_end)]
+        return float(sliced.iloc[-1] / sliced.iloc[0] - 1) if len(sliced) >= 2 else 0.0
+
+    _q_port     = _q_ret(pv)
+    _q_sp       = _q_ret(sp)
+    _q_bl       = _q_ret(bl)
+    _q_alpha_sp = _q_port - _q_sp
+    _q_alpha_bl = _q_port - _q_bl
+
+    st.markdown(f"#### Quarterly report — {_q_label} (locked)")
+    q1, q2, q3 = st.columns(3)
+    q1.metric(f"{_q_label} return",             _pct(_q_port),     f"S&P 500: {_pct(_q_sp)}")
+    q2.metric(f"vs. S&P 500 — {_q_label}",      _bps(_q_alpha_sp), f"S&P 500: {_pct(_q_sp)}",  delta_color="off")
+    q3.metric(f"vs. Custom Blended — {_q_label}", _bps(_q_alpha_bl), f"Blended: {_pct(_q_bl)}", delta_color="off")
+
+    st.divider()
+
+    # ──────────────────────────────────────────────────────────────────────
+    # Section 1b — Since inception headline metrics
+    # ──────────────────────────────────────────────────────────────────────
+    st.markdown("#### Since inception")
     m1, m2, m3, m4 = st.columns(4)
 
     inception_delta_pct = f"{port_si*100:+.1f}% since inception"
-    m1.metric("Current Value",      f"${current_val:,.0f}", inception_delta_pct)
-    m2.metric("vs. S&P 500",        _bps(alpha_sp),
-              f"SI: {_pct(sp500_si)} S&P 500",
+    m1.metric("Portfolio value",              f"${current_val:,.0f}", inception_delta_pct)
+    m2.metric("vs. S&P 500 (since inception)",    _bps(alpha_sp),
+              f"S&P 500: {_pct(sp500_si)} SI",
               delta_color="off")
-    m3.metric("vs. Custom Blended", _bps(alpha_bl),
-              f"SI: {_pct(blended_si)} blended",
+    m3.metric("vs. Custom Blended (since inception)", _bps(alpha_bl),
+              f"Blended: {_pct(blended_si)} SI",
               delta_color="off")
-    m4.metric("YTD Return",         _pct(ytd_return),
-              f"Since: {_pct(port_si)}")
+    m4.metric(f"YTD return ({TODAY[:4]})",    _pct(ytd_return),
+              f"SI cumulative: {_pct(port_si)}")
 
     st.caption(
         f"Underperformance vs. S&P 500 reflects intentional diversification: "
