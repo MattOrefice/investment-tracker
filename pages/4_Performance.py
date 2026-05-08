@@ -289,7 +289,7 @@ with col:
 
     st.markdown(f"#### Quarterly report — {_q_label} (locked)")
     q1, q2, q3 = st.columns(3)
-    q1.metric(f"{_q_label} return",             _pct(_q_port),     f"S&P 500: {_pct(_q_sp)}")
+    q1.metric(f"{_q_label} return",             _pct(_q_port),     f"{_pct(_q_sp)} S&P 500")
     q2.metric(f"vs. S&P 500 — {_q_label}",      _bps(_q_alpha_sp), f"S&P 500: {_pct(_q_sp)}",  delta_color="off")
     q3.metric(f"vs. Custom Blended — {_q_label}", _bps(_q_alpha_bl), f"Blended: {_pct(_q_bl)}", delta_color="off")
 
@@ -310,11 +310,11 @@ with col:
               f"Blended: {_pct(blended_si)} SI",
               delta_color="off")
     m4.metric(f"YTD return ({TODAY[:4]})",    _pct(ytd_return),
-              f"SI cumulative: {_pct(port_si)}")
+              f"{_pct(port_si)} SI cumulative")
 
     st.caption(
         f"Underperformance vs. S&P 500 reflects intentional diversification: "
-        f"{_non_eq_pct*100:.0f}% of the SAA is non-equity (Income + Real Assets + Cash), "
+        f"{_non_eq_pct*100:.0f}% of the SAA is non-equity (Fixed Income + Real Assets + Cash), "
         f"{_non_us_eq*100:.0f}% is non-US equity. The Custom Blended benchmark — a target-weighted "
         "basket of cap-weighted indices in the same SAA — is the more meaningful "
         "comparison for security selection alpha."

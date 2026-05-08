@@ -14,11 +14,17 @@ from src.shiller import get_cape_series
 from src.ui_helpers import render_footer
 
 PARENT_COLORS = {
-    "Equity":      "#3D5A80",
-    "Income":      "#4A7C59",
-    "Real Assets": "#8B7355",
-    "Cash":        "#AEAEAE",
+    "Equity":        "#3D5A80",
+    "Fixed Income":  "#4A7C59",
+    "Real Assets":   "#8B7355",
+    "Cash":          "#AEAEAE",
 }
+
+_DISPLAY_NAMES = {"Income": "Fixed Income"}
+
+
+def _dn(name: str) -> str:
+    return _DISPLAY_NAMES.get(name, name)
 
 
 def _safe_md(text):
@@ -73,7 +79,7 @@ with col:
     st.caption("Target weights, tolerance bands, and rationale")
     st.caption(as_of_banner())
     st.caption(f"{n_sleeves} sleeves  ·  {total_alloc:.1f}% allocated  ·  {n_parents} parent categories")
-    parts = [f"{round(p['target_weight'] * 100)}% {p['name']}" for p in parents]
+    parts = [f"{round(p['target_weight'] * 100)}% {_dn(p['name'])}" for p in parents]
     st.markdown("&nbsp;&nbsp;·&nbsp;&nbsp;".join(f"**{p}**" for p in parts))
     st.divider()
 
@@ -117,16 +123,17 @@ with col:
     fig = go.Figure()
     for p in parents:
         pct   = round(p["target_weight"] * 100, 1)
-        color = PARENT_COLORS.get(p["name"], "#888888")
+        dname = _dn(p["name"])
+        color = PARENT_COLORS.get(dname, "#888888")
         # Abbreviated labels for segments too narrow to hold full text
         if pct >= 14:
-            label = f"<b>{p['name']}</b>  {pct}%"
+            label = f"<b>{dname}</b>  {pct}%"
         elif pct >= 7:
-            label = f"<b>{p['name']}</b>"
+            label = f"<b>{dname}</b>"
         else:
             label = f"{pct:.0f}%"
         fig.add_trace(go.Bar(
-            name=p["name"],
+            name=dname,
             x=[pct],
             y=[""],
             orientation="h",
@@ -153,11 +160,12 @@ with col:
     # Legend row anchors small-segment labels that can't fit inside the bar
     legend_parts = []
     for p in parents:
-        c   = PARENT_COLORS.get(p["name"], "#888")
-        pct = round(p["target_weight"] * 100)
+        dname = _dn(p["name"])
+        c     = PARENT_COLORS.get(dname, "#888")
+        pct   = round(p["target_weight"] * 100)
         legend_parts.append(
             f'<span style="color:{c}">■</span>'
-            f'&nbsp;<span style="color:#555; font-size:0.85rem">{p["name"]} {pct}%</span>'
+            f'&nbsp;<span style="color:#555; font-size:0.85rem">{dname} {pct}%</span>'
         )
     st.markdown("&emsp;".join(legend_parts), unsafe_allow_html=True)
     st.divider()
@@ -169,7 +177,7 @@ with col:
     rows = [
         {
             "Sleeve":      sc["name"],
-            "Category":    sc["parent_name"],
+            "Category":    _dn(sc["parent_name"]),
             "Target (%)":  round(sc["target_weight"] * 100, 1),
             "Band (±%)":   round(sc["tolerance_band"] * 100, 1),
             "Benchmark":   sc["benchmark_ticker"] or "—",
