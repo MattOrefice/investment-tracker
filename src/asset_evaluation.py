@@ -306,7 +306,7 @@ def compute_mv_analysis(
     candidate_ret: pd.Series,
     sleeve_rets: pd.DataFrame,
     rf_annual: float = RF_ANNUAL,
-    max_wt: float = 0.10,
+    max_wt: float = 0.25,
 ) -> dict:
     """
     Full MV analysis: unconstrained and constrained tangency with/without candidate.
@@ -315,7 +315,8 @@ def compute_mv_analysis(
       sleeves               — ordered list of sleeve names (no BTC)
       w_unc_no, w_unc_with  — unconstrained tangency weights (9 sleeves / 10 incl. BTC)
       w_con_no, w_con_with  — constrained tangency weights
-      sharpe_unc_no/with, sharpe_con_no/with — annualized Sharpe ratios
+      sharpe_unc_no/with    — theoretical max-Sharpe: √((μ-rf)'Σ⁻¹(μ-rf)) × √252
+      sharpe_con_no/with    — Sharpe of the constrained tangency portfolio
     """
     cand_a, slv_a  = align_to_equity_days(candidate_ret, sleeve_rets)
     sleeves_list   = list(slv_a.columns)
@@ -323,7 +324,7 @@ def compute_mv_analysis(
     mu_nb  = slv_a.mean().values
     cov_nb = slv_a.cov().values
 
-    combined       = slv_a.copy()
+    combined        = slv_a.copy()
     combined["BTC"] = cand_a
     mu_wb  = combined.mean().values
     cov_wb = combined.cov().values
@@ -333,16 +334,32 @@ def compute_mv_analysis(
     w_unc_wb = solve_tangency_unconstrained(mu_wb, cov_wb, rf_annual)
     w_con_wb = solve_tangency_constrained(mu_wb, cov_wb, rf_annual, max_wt)
 
+    # Unconstrained Sharpe: √((μ-rf)'Σ⁻¹(μ-rf)) × √252 — non-negative by construction.
+    # Using portfolio_sharpe_annual on normalized weights can produce negative Sharpe when
+    # the normalization denominator (1'Σ⁻¹excess) is negative, flipping all weight signs.
+    rf_daily   = rf_annual / TRADING_DAYS
+    excess_nb  = mu_nb - rf_daily
+    cov_inv_nb = np.linalg.pinv(cov_nb)
+    sharpe_unc_no = float(
+        np.sqrt(max(float(excess_nb @ cov_inv_nb @ excess_nb), 0.0)) * np.sqrt(TRADING_DAYS)
+    )
+
+    excess_wb  = mu_wb - rf_daily
+    cov_inv_wb = np.linalg.pinv(cov_wb)
+    sharpe_unc_with = float(
+        np.sqrt(max(float(excess_wb @ cov_inv_wb @ excess_wb), 0.0)) * np.sqrt(TRADING_DAYS)
+    )
+
     return {
-        "sleeves":        sleeves_list,
-        "w_unc_no":       w_unc_nb,
-        "w_unc_with":     w_unc_wb,
-        "w_con_no":       w_con_nb,
-        "w_con_with":     w_con_wb,
-        "sharpe_unc_no":  portfolio_sharpe_annual(w_unc_nb, mu_nb, cov_nb, rf_annual),
-        "sharpe_unc_with":portfolio_sharpe_annual(w_unc_wb, mu_wb, cov_wb, rf_annual),
-        "sharpe_con_no":  portfolio_sharpe_annual(w_con_nb, mu_nb, cov_nb, rf_annual),
-        "sharpe_con_with":portfolio_sharpe_annual(w_con_wb, mu_wb, cov_wb, rf_annual),
+        "sleeves":         sleeves_list,
+        "w_unc_no":        w_unc_nb,
+        "w_unc_with":      w_unc_wb,
+        "w_con_no":        w_con_nb,
+        "w_con_with":      w_con_wb,
+        "sharpe_unc_no":   sharpe_unc_no,
+        "sharpe_unc_with": sharpe_unc_with,
+        "sharpe_con_no":   portfolio_sharpe_annual(w_con_nb, mu_nb, cov_nb, rf_annual),
+        "sharpe_con_with": portfolio_sharpe_annual(w_con_wb, mu_wb, cov_wb, rf_annual),
         "mu_nb": mu_nb, "cov_nb": cov_nb,
         "mu_wb": mu_wb, "cov_wb": cov_wb,
     }

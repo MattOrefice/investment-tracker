@@ -178,10 +178,19 @@ with col:
     st.markdown(
         "**Mean-variance impact** is assessed by computing the tangency (maximum-Sharpe) portfolio "
         "with and without the candidate asset. Both unconstrained (closed-form) and constrained "
-        "(max 10% per asset, SLSQP) solutions are presented. The unconstrained result is shown "
+        "(max 25% per sleeve, SLSQP) solutions are presented. The unconstrained result is shown "
         "for completeness only — unconstrained MV optimization is highly sensitive to estimation "
         "error and routinely produces extreme short positions that are not implementable. "
         "The constrained result better reflects a realistic institutional allocation."
+    )
+    st.markdown(
+        "Mean-variance optimization is presented as a directional sanity check, "
+        "not a portfolio recommendation. The instability of sample-period mean estimates "
+        "and the documented sensitivity of MVO weights to small perturbations (Michaud 1989) "
+        "make raw optimizer output unsuitable as an allocation tool. The primary analytical "
+        "frame is marginal contribution against the existing SAA target weights — the question "
+        "is what the candidate does to the actual portfolio, not what it does to a hypothetical "
+        "unconstrained portfolio."
     )
     st.markdown(
         "**Decision framework:** this page surfaces tradeoffs, not a single recommendation. "
@@ -501,6 +510,11 @@ with col:
                 f"{sharpe_unc_with:.3f}",
                 delta=f"{delta_bps:+.0f} bps",
             )
+            st.caption(
+                "Unconstrained Sharpe = √[(μ−rf)'Σ⁻¹(μ−rf)] × √252 — "
+                "the theoretical maximum of the unconstrained efficient frontier. "
+                "Normalized weights are directionally interpretable only."
+            )
 
         st.markdown(
             "Unconstrained MV optimization is a mathematical exercise, not a portfolio "
@@ -518,7 +532,7 @@ with col:
 
 _, col, _ = st.columns([1, 8, 1])
 with col:
-    st.subheader("5f — Mean-Variance: Constrained Tangency (max 10%)")
+    st.subheader("5f — Mean-Variance: Constrained Tangency (max 25%)")
 
     if not mv:
         st.info("Mean-variance analysis unavailable.")
@@ -544,22 +558,33 @@ with col:
             use_container_width=True,
         )
         st.caption(
-            "Note: with 9 sleeves and a 10% per-asset cap, the constraint Σw=1 is "
-            "infeasible at 10% uniform (9×10%=90%<100%), so the optimizer returns "
-            "approximately 11.1% per sleeve. With 10 assets including BTC, "
-            "the cap is binding and all weights converge to 10%."
+            "With a 25% per-sleeve cap, the constraint Σw=1 is feasible for any 4+ asset "
+            "universe (4×25%=100%), allowing the optimizer to actually concentrate weights "
+            "based on Sharpe contribution rather than filling uniformly."
         )
 
+        btc_wt_con = float(mv["w_con_with"][-1])
+        if btc_wt_con >= 0.249:
+            btc_wt_note = (
+                "the mean-variance optimizer fills Bitcoin to its 25% cap, "
+                "driven by BTC's exceptional sample-period realized return — "
+                "not a forward-looking expected return and should not be interpreted as such"
+            )
+        else:
+            btc_wt_note = (
+                f"the mean-variance optimizer assigns Bitcoin a {btc_wt_con:.1%} weight"
+            )
+
         st.markdown(
-            f"Under realistic institutional constraints (max 10% per sleeve), "
-            "the mean-variance optimizer assigns Bitcoin to its maximum allowable "
-            f"weight of 10%, suggesting marginal Sharpe improvement at each incremental "
-            f"BTC allocation up to the constraint. "
+            f"Under realistic institutional constraints (max 25% per sleeve), "
+            f"{btc_wt_note}. "
             f"The constrained Sharpe rises from {sharpe_con_no:.3f} (without BTC) "
             f"to {sharpe_con_with:.3f} (with BTC), an improvement of {delta_bps_con:.0f} bps. "
             "This result is driven by BTC's high expected return over the sample period — "
             "it does not account for estimation error in the mean, which is extremely large "
-            "for a 7-year history of a volatile, regime-shifting asset."
+            "for a 7-year history of a volatile, regime-shifting asset. "
+            "See section 5g for the SAA-anchored marginal contribution analysis, "
+            "which is the primary analytical frame."
         )
 
     st.divider()
@@ -751,15 +776,22 @@ with col:
     args_for: list[str] = []
     args_against: list[str] = []
 
-    if mv:
-        sharpe_con_no   = mv["sharpe_con_no"]
-        sharpe_con_with = mv["sharpe_con_with"]
-        if sharpe_con_with > sharpe_con_no:
-            delta_bps_j = (sharpe_con_with - sharpe_con_no) * 10_000
-            args_for.append(
-                f"Sharpe-improving under constrained MV optimization "
-                f"({sharpe_con_no:.3f} → {sharpe_con_with:.3f}, +{delta_bps_j:.0f} bps)"
-            )
+    # Primary frame: SAA-based marginal Sharpe at 10% BTC (from marginal Sharpe curve, section 5g)
+    if not msc.empty:
+        _rows_0   = msc[msc["btc_alloc"] == 0.00]
+        _rows_10  = msc[msc["btc_alloc"] == 0.10]
+        if not _rows_0.empty and not _rows_10.empty:
+            _saa_sh0  = float(_rows_0["sharpe"].iloc[0])
+            _saa_sh10 = float(_rows_10["sharpe"].iloc[0])
+            if _saa_sh10 > _saa_sh0:
+                _delta_bps_saa = (_saa_sh10 - _saa_sh0) * 10_000
+                _mvo_ok = bool(mv and mv["sharpe_con_with"] > mv["sharpe_con_no"])
+                _mvo_note = " — MVO sanity check directionally consistent" if _mvo_ok else ""
+                args_for.append(
+                    f"Sharpe-improving against SAA target weights at 10% allocation "
+                    f"({_saa_sh0:.3f} → {_saa_sh10:.3f}, "
+                    f"+{_delta_bps_saa:.0f} bps over the 2018-present sample){_mvo_note}"
+                )
 
     if not corr.empty:
         low_corr_sleeves = [s for s in ae.SLEEVES if not np.isnan(corr.get(s, float("nan"))) and corr[s] < 0.1]
@@ -848,11 +880,15 @@ with col:
             "aligned trading days since 2018-01-01. Rolling uses a 60-day trailing "
             "window. Weekly resamples to Friday-to-Friday cumulative returns before "
             "correlating.\n\n"
-            "**MV optimization:** Unconstrained tangency computed via closed-form "
-            "solution w* = Σ⁻¹(μ − rf·1) / [1'Σ⁻¹(μ − rf·1)], where μ and Σ are "
-            "sample daily mean and covariance. Constrained tangency uses "
-            "scipy.optimize.minimize (SLSQP) with bounds 0 ≤ w_i ≤ 10% and Σw = 1, "
-            "maximizing annualized Sharpe.\n\n"
+            "**MV optimization:** Unconstrained tangency direction w_raw = Σ⁻¹(μ − rf·1). "
+            "Headline Sharpe reported as √[(μ−rf)'Σ⁻¹(μ−rf)] × √252 — the theoretical "
+            "maximum of the unconstrained efficient frontier, non-negative by construction. "
+            "Normalized weights w* = w_raw / (1'w_raw) are shown for directional "
+            "interpretation only; when the normalization denominator is negative, the "
+            "normalized weights flip sign and their portfolio Sharpe is negative — hence "
+            "the information-ratio formula is used for the headline metric instead. "
+            "Constrained tangency uses scipy.optimize.minimize (SLSQP) with bounds "
+            "0 ≤ w_i ≤ 25% and Σw = 1, maximizing annualized Sharpe.\n\n"
             f"**Risk-free rate:** {ae.RF_ANNUAL:.2%} annual ({ae.RF_ANNUAL * 100:.2f} bps), "
             "consistent with the Performance page Sharpe disclosure. "
             "Converted to daily as rf_annual / 252 for MV optimization internals.\n\n"
