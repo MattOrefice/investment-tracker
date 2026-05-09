@@ -470,18 +470,14 @@ with col:
         if _yr:
             fig_cape.update_yaxes(range=_yr)
         st.plotly_chart(fig_cape, width='stretch')
-        mc, _ = st.columns([1, 3])
-        with mc:
-            st.metric("Shiller CAPE", f"{cape_val:.1f}×")
-            st.caption(
-                f"{_ordinal(cape_pctile_w)} percentile of {cape_window} window "
-                f"· full history: {_ordinal(cape_pctile)} pct since 1881 "
-                f"· data as of {cape_as_of}"
-            )
-            st.markdown(
-                f"**Implied forward 10Y real return:** {cape_implied:+.2%}  \n"
-                "*Historical relationship, not a forecast.*"
-            )
+        st.metric("Shiller CAPE", f"{cape_val:.1f}×")
+        st.caption(
+            f"{_ordinal(cape_pctile_w)} percentile of {cape_window} window "
+            f"· full history: {_ordinal(cape_pctile)} pct since 1881 "
+            f"· data as of {cape_as_of}  \n"
+            f"**Implied forward 10Y real return:** {cape_implied:+.2%} "
+            "*(historical relationship, not a forecast)*"
+        )
 
         pctile_label_cape = percentile_label(cape_pctile)
         st.caption(
@@ -557,15 +553,13 @@ with col:
         if _yr:
             fig_ecy.update_yaxes(range=_yr)
         st.plotly_chart(fig_ecy, width='stretch')
-        mc, _ = st.columns([1, 3])
-        with mc:
-            st.metric("ECY", f"{current_ecy:.2f}%")
-            st.caption(
-                f"{_ordinal(ecy_pctile_w)} percentile of {ecy_window} window "
-                f"(full history since {ecy_since}: {_ordinal(ecy_pctile)} pct)  \n"
-                f"CAPE yield {100/cape_val:.2f}% vs real rate {_real_rate:.2f}% "
-                f"({current_dgs10:.2f}% − {current_t10yie:.2f}%)"
-            )
+        st.metric("ECY", f"{current_ecy:.2f}%")
+        st.caption(
+            f"{_ordinal(ecy_pctile_w)} percentile of {ecy_window} window "
+            f"(full history since {ecy_since}: {_ordinal(ecy_pctile)} pct)  \n"
+            f"CAPE yield {100/cape_val:.2f}% vs real rate {_real_rate:.2f}% "
+            f"({current_dgs10:.2f}% − {current_t10yie:.2f}%)"
+        )
 
         if current_ecy >= 3.0:
             _ecy_interp = (
@@ -649,13 +643,11 @@ with col:
         if _yr:
             fig_yc.update_yaxes(range=_yr)
         st.plotly_chart(fig_yc, width='stretch')
-        mc, _ = st.columns([1, 3])
-        with mc:
-            st.metric("10Y − 2Y Spread", f"{sign}{current_spread_bps:.0f} bps")
-            st.caption(
-                f"{curve_state} · "
-                f"{_ordinal(yc_pctile_w)} percentile of {yc_window} window"
-            )
+        st.metric("10Y − 2Y Spread", f"{sign}{current_spread_bps:.0f} bps")
+        st.caption(
+            f"{curve_state} · "
+            f"{_ordinal(yc_pctile_w)} percentile of {yc_window} window"
+        )
 
         st.caption(
             "Yield curve inversions (spread < 0) have preceded each of the last seven "
@@ -705,13 +697,11 @@ with col:
             _yr[0] = max(0.0, _yr[0])
             fig_ff.update_yaxes(range=_yr)
         st.plotly_chart(fig_ff, width='stretch')
-        mc, _ = st.columns([1, 3])
-        with mc:
-            st.metric("Fed Funds Rate", f"{current_ff:.2f}%")
-            st.caption(
-                f"{chg_sign}{ff_chg_bps:.0f} bps from {ff_1y_date} · "
-                f"{_ordinal(ff_pctile_w)} percentile of {ff_window} window"
-            )
+        st.metric("Fed Funds Rate", f"{current_ff:.2f}%")
+        st.caption(
+            f"{chg_sign}{ff_chg_bps:.0f} bps from {ff_1y_date} · "
+            f"{_ordinal(ff_pctile_w)} percentile of {ff_window} window"
+        )
 
         st.caption(_ff_interpretation(current_ff, ff_chg_bps))
         st.divider()
@@ -777,13 +767,11 @@ with col:
             _yr[0] = max(0.0, _yr[0])
             fig_hy.update_yaxes(range=_yr)
         st.plotly_chart(fig_hy, width='stretch')
-        mc, _ = st.columns([1, 3])
-        with mc:
-            st.metric("HY OAS", f"{current_hy:.0f} bps")
-            st.caption(
-                f"{_ordinal(hy_pctile_w)} percentile of available history "
-                f"(data from {hy_since})"
-            )
+        st.metric("HY OAS", f"{current_hy:.0f} bps")
+        st.caption(
+            f"{_ordinal(hy_pctile_w)} percentile of available history "
+            f"(data from {hy_since})"
+        )
 
         hy_framing = (
             "suggests late-cycle complacency — limited cushion for additional compression"
@@ -854,13 +842,11 @@ with col:
             _yr[0] = max(0.0, _yr[0])
             fig_ur.update_yaxes(range=_yr)
         st.plotly_chart(fig_ur, width='stretch')
-        mc, _ = st.columns([1, 3])
-        with mc:
-            st.metric("Unemployment Rate", f"{current_ur:.1f}%")
-            st.caption(
-                f"{chg_sign}{ur_chg:.0f} bps from one year ago · "
-                f"{_ordinal(ur_pctile_w)} percentile of {ur_window} window"
-            )
+        st.metric("Unemployment Rate", f"{current_ur:.1f}%")
+        st.caption(
+            f"{chg_sign}{ur_chg:.0f} bps from one year ago · "
+            f"{_ordinal(ur_pctile_w)} percentile of {ur_window} window"
+        )
 
         if ur_pctile_w < 30:
             _ur_interp = (
@@ -933,13 +919,11 @@ with col:
         if _yr:
             fig_gdp.update_yaxes(range=_yr)
         st.plotly_chart(fig_gdp, width='stretch')
-        mc, _ = st.columns([1, 3])
-        with mc:
-            st.metric("Real GDP Growth (QoQ ann.)", f"{current_gdp:.1f}%")
-            st.caption(
-                f"As of {gdp_as_of} (quarterly release, 1-2 quarter lag) · "
-                f"{_ordinal(gdp_pctile_w)} percentile of {gdp_window} window"
-            )
+        st.metric("Real GDP Growth (QoQ ann.)", f"{current_gdp:.1f}%")
+        st.caption(
+            f"As of {gdp_as_of} (quarterly release, 1-2 quarter lag) · "
+            f"{_ordinal(gdp_pctile_w)} percentile of {gdp_window} window"
+        )
 
         if current_gdp >= 3.0:
             _gdp_interp = f"GDP growth of {current_gdp:.1f}% is above trend — consistent with expansion."
@@ -1007,13 +991,11 @@ with col:
         if _yr:
             fig_cpi.update_yaxes(range=_yr)
         st.plotly_chart(fig_cpi, width='stretch')
-        mc, _ = st.columns([1, 3])
-        with mc:
-            st.metric("Core CPI YoY", f"{current_cpi:.1f}%")
-            st.caption(
-                f"As of {cpi_as_of} · "
-                f"{_ordinal(cpi_pctile_w)} percentile of {cpi_window} window"
-            )
+        st.metric("Core CPI YoY", f"{current_cpi:.1f}%")
+        st.caption(
+            f"As of {cpi_as_of} · "
+            f"{_ordinal(cpi_pctile_w)} percentile of {cpi_window} window"
+        )
 
         if current_cpi > 4.0:
             _cpi_interp = (
@@ -1114,12 +1096,10 @@ with col:
             xanchor="left", yanchor="top",
         )
         st.plotly_chart(fig_us, width='stretch')
-        mc, _ = st.columns([1, 3])
-        with mc:
-            st.metric(f"US/Intl Ratio ({us_window} percentile)", _ordinal(ratio_pctile_w))
-            st.caption(
-                f"US {rel_dir} international by {abs(rel_perf_bps):.0f} bps over last 12 months"
-            )
+        st.metric(f"US/Intl Ratio ({us_window} percentile)", _ordinal(ratio_pctile_w))
+        st.caption(
+            f"US {rel_dir} international by {abs(rel_perf_bps):.0f} bps over last 12 months"
+        )
 
         us_label = percentile_label(ratio_pctile_w)
         st.caption(
