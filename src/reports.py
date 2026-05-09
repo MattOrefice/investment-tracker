@@ -33,8 +33,8 @@ from src.factors import (
     EM_DISCLOSURE,
     build_benchmark_methodology, build_benchmark_prose,
     build_factor_methodology_notes, build_factor_prose,
-    run_benchmark_attribution_regression,
-    run_sleeve_regressions, sig_marker,
+    regress_fi_sleeve, run_benchmark_attribution_regression,
+    run_intl_global_regression, run_sleeve_regressions, sig_marker,
 )
 from src.holdings import get_inception_date, get_portfolio_value_series, get_sleeve_weights_on_date
 from src.macro import compute_cape_implied_return, get_series, percentile
@@ -604,6 +604,18 @@ def _build_factor_section(end_date: str) -> Optional[dict]:
     if not any(v is not None for v in results.values()):
         return None
 
+    fi_result: Optional[dict] = None
+    try:
+        fi_result = regress_fi_sleeve(inception, end_date)
+    except Exception:
+        pass
+
+    global_result: Optional[dict] = None
+    try:
+        global_result = run_intl_global_regression(inception, end_date)
+    except Exception:
+        pass
+
     def _fmt_date_local(iso: str) -> str:
         d = date.fromisoformat(iso)
         return f"{d.strftime('%B')} {d.day}, {d.year}"
@@ -652,8 +664,8 @@ def _build_factor_section(end_date: str) -> Optional[dict]:
     return {
         "sleeves":           sleeves,
         "em_note":           EM_DISCLOSURE,
-        "prose":             build_factor_prose(results),
-        "methodology_notes": build_factor_methodology_notes(results),
+        "prose":             build_factor_prose(results, fi_result=fi_result, global_result=global_result),
+        "methodology_notes": build_factor_methodology_notes(results, fi_result=fi_result),
     }
 
 
