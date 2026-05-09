@@ -812,10 +812,18 @@ with col:
         "generating short-term ordinary income on positions held under 12 months "
         "and long-term gains on positions held over 12 months — unfavorable vs. ETFs "
         "which qualify for in-kind creation/redemption",
-        "Operational complexity: self-custody introduces key management risk; "
-        "exchange-held BTC introduces counterparty risk (FTX 2022); "
-        "ETF wrappers (IBIT, FBTC) add 0.12–0.25% in fees and may not be available "
-        "in all account types",
+        "Operational complexity: self-custody introduces key management risk "
+        "and exchange-held BTC introduces counterparty risk (FTX 2022). The "
+        "2024 launch of spot Bitcoin ETFs (IBIT, FBTC, BITB) materially reduces "
+        "these operational frictions for retail and most institutional "
+        "implementations — Bitcoin can now be held in a standard brokerage "
+        "account at 0.12–0.25% expense ratios, with creation/redemption "
+        "mechanics that mirror commodity ETF wrappers. The remaining "
+        "operational considerations are the expense drag (real over a multi-year "
+        "hold) and tax classification: spot Bitcoin ETFs are structured as "
+        "grantor trusts, so they pass through as direct commodity ownership "
+        "for tax purposes — no qualified-dividend treatment, no wash-sale rule "
+        "applicability under current IRS guidance",
         "No intrinsic cash flow, earnings, or fundamental anchor for valuation — "
         "expected return is purely sentiment-driven, making MV inputs highly unreliable",
     ])
@@ -844,10 +852,17 @@ with col:
         "The post-2020 correlation structure, the 2022 joint drawdown, and the "
         "fundamental absence of cash flows make a strong case against inclusion "
         "in a tax-aware taxable account with an institutional-style SAA. "
-        "The framework does not foreclose future re-evaluation if: (1) the "
-        "correlation regime reverts toward zero, (2) regulated custodial solutions "
-        "reduce operational risk materially, or (3) the asset develops a cleaner "
-        "valuation framework. This page will update automatically as new data arrives."
+        "The 2024 spot ETF launches have already partially satisfied the "
+        "operational-risk concern that historically gated institutional "
+        "adoption — IBIT, FBTC, and similar wrappers remove the custody and "
+        "counterparty frictions that defined the pre-2024 implementation "
+        "landscape. The remaining barriers to inclusion under this framework "
+        "are analytical (the correlation regime and the 2022 joint stress) and "
+        "fundamental (no cash flow anchor for valuation), not operational. "
+        "The framework does not foreclose future re-evaluation if (1) the "
+        "correlation regime reverts toward zero or (2) the asset develops a "
+        "cleaner valuation framework. This page will update automatically as "
+        "new data arrives."
     )
 
     st.divider()
