@@ -921,6 +921,276 @@ def _build_positioning_section(end_date: str) -> dict:
     }
 
 
+def _build_asset_eval_section() -> dict:
+    """Build the Asset Evaluation section — same source as pages/10_Asset_Evaluation.py."""
+    import src.asset_evaluation as ae
+
+    _empty: dict = {
+        "sample_start":     ae.SAMPLE_START,
+        "uni_rows":         [],
+        "corr_chart_b64":   None,
+        "corr_prose":       None,
+        "rolling_chart_b64": None,
+        "rolling_prose":    None,
+        "con_rows":         [],
+        "sharpe_con_no":    None,
+        "sharpe_con_with":  None,
+        "delta_bps_con":    None,
+        "msc_chart_b64":    None,
+        "dd_rows":          [],
+        "args_for":         [],
+        "args_against":     [],
+        "conclusion": (
+            "Bitcoin's sample-period Sharpe improvement is real but almost entirely "
+            "attributable to its exceptional 2020–2021 bull market return. The post-2020 "
+            "correlation structure, the 2022 joint drawdown, and the fundamental absence "
+            "of cash flows make a strong case against inclusion in a tax-aware taxable "
+            "account with an institutional-style SAA. The 2024 spot ETF launches (IBIT, FBTC) "
+            "have reduced operational barriers — the remaining barriers are analytical "
+            "(correlation regime, 2022 joint stress) and fundamental (no cash flow anchor)."
+        ),
+    }
+
+    try:
+        btc_ret = ae.get_candidate_returns("BTC-USD", ae.SAMPLE_START)
+        slv_ret = ae.get_sleeve_returns(ae.SAMPLE_START)
+        spy_ret = ae.get_candidate_returns("SPY", ae.SAMPLE_START)
+        if btc_ret.empty or slv_ret.empty:
+            return _empty
+    except Exception:
+        logging.exception("asset_eval data load failed — section omitted from PDF")
+        return _empty
+
+    result = {k: (list(v) if isinstance(v, list) else v) for k, v in _empty.items()}
+
+    # 5a: Univariate statistics
+    try:
+        uni_tbl = ae.build_univariate_table()
+        if not uni_tbl.empty:
+            for name, row in uni_tbl.iterrows():
+                result["uni_rows"].append({
+                    "asset":        name,
+                    "ann_return":   f"{row['ann_return']:.1%}",
+                    "ann_vol":      f"{row['ann_vol']:.1%}",
+                    "sharpe":       f"{row['sharpe']:.2f}",
+                    "max_drawdown": f"{row['max_drawdown']:.1%}",
+                    "skewness":     f"{row['skewness']:.2f}",
+                    "kurtosis":     f"{row['kurtosis']:.2f}",
+                })
+    except Exception:
+        pass
+
+    # 5b: Full-sample correlation heatmap
+    corr: pd.Series = pd.Series(dtype=float)
+    try:
+        corr = ae.compute_full_sample_correlations(btc_ret, slv_ret)
+        if not corr.empty:
+            fig_heat = go.Figure(go.Heatmap(
+                z=[[corr[s] for s in ae.SLEEVES]],
+                x=ae.SLEEVES,
+                y=["BTC"],
+                colorscale="RdYlGn",
+                zmid=0, zmin=-1, zmax=1,
+                text=[[f"{corr[s]:.2f}" for s in ae.SLEEVES]],
+                texttemplate="%{text}",
+                showscale=True,
+            ))
+            fig_heat.update_layout(
+                height=200,
+                margin=dict(l=60, r=20, t=10, b=80),
+                paper_bgcolor="white", plot_bgcolor="white",
+                font=dict(family="sans-serif", size=9, color="#333"),
+            )
+            fig_heat.update_xaxes(tickangle=45)
+            result["corr_chart_b64"] = _chart_b64(fig_heat, 700, 200)
+
+            btc_spy_corr   = float(corr.get("US Large Core",     float("nan")))
+            fi_corr        = float(corr.get("Core Fixed Income", float("nan")))
+            highest_sleeve = corr.idxmax()
+            highest_val    = float(corr.max())
+            lowest_sleeve  = corr.idxmin()
+            lowest_val     = float(corr.min())
+
+            parts = []
+            if not np.isnan(btc_spy_corr):
+                parts.append(f"BTC full-sample correlation with US Large Core: {btc_spy_corr:.2f}.")
+            parts.append(
+                f"Highest sleeve: {highest_sleeve} ({highest_val:.2f}); "
+                f"lowest: {lowest_sleeve} ({lowest_val:.2f})."
+            )
+            if not np.isnan(fi_corr):
+                parts.append(f"Core Fixed Income: {fi_corr:.2f}.")
+            result["corr_prose"] = " ".join(parts)
+    except Exception:
+        pass
+
+    # 5c: Rolling 60-day correlation (BTC vs SPY)
+    try:
+        rolling_corr = ae.compute_rolling_correlation(btc_ret, spy_ret, window=60)
+        if not rolling_corr.empty:
+            fig_roll = go.Figure()
+            fig_roll.add_hline(y=0, line_dash="dash", line_color="#9E9E9E", line_width=1)
+            fig_roll.add_trace(go.Scatter(
+                x=rolling_corr.index, y=rolling_corr.values,
+                mode="lines",
+                line=dict(color="#2E4057", width=1.5),
+                name="BTC-SPY 60d",
+            ))
+            fig_roll.update_layout(
+                height=200,
+                margin=dict(l=45, r=10, t=8, b=30),
+                paper_bgcolor="white", plot_bgcolor="#FAFAFA",
+                showlegend=False,
+                yaxis=dict(gridcolor="#EBEBEB", range=[-1.05, 1.05], title="Correlation"),
+                xaxis=dict(gridcolor="#EBEBEB"),
+                font=dict(family="sans-serif", size=9, color="#333"),
+            )
+            result["rolling_chart_b64"] = _chart_b64(fig_roll, 700, 200)
+
+            post_2020    = rolling_corr.loc["2020-01-01":]
+            pre_2020     = rolling_corr.loc[:"2019-12-31"]
+            post_avg     = float(post_2020.mean()) if len(post_2020) > 0 else float("nan")
+            pre_avg      = float(pre_2020.mean())  if len(pre_2020) > 0  else float("nan")
+            prose_parts: list[str] = []
+            if not np.isnan(pre_avg):
+                prose_parts.append(
+                    f"Pre-2020 average: {pre_avg:.2f} "
+                    "(consistent with 'uncorrelated alternative' narrative)."
+                )
+            if not np.isnan(post_avg):
+                prose_parts.append(
+                    f"Post-2020 average: {post_avg:.2f} — persistently elevated after "
+                    "institutionalization; correlation rises precisely when diversification "
+                    "is most needed."
+                )
+            result["rolling_prose"] = " ".join(prose_parts)
+    except Exception:
+        pass
+
+    # 5f: Constrained MV analysis
+    mv_result: dict = {}
+    msc: pd.DataFrame = pd.DataFrame()
+    try:
+        mv_result = ae.compute_mv_analysis(btc_ret, slv_ret, ae.RF_ANNUAL)
+        if mv_result:
+            sleeves_list    = mv_result["sleeves"]
+            w_con_no        = mv_result["w_con_no"]
+            w_con_with      = mv_result["w_con_with"]
+            sharpe_con_no   = mv_result["sharpe_con_no"]
+            sharpe_con_with = mv_result["sharpe_con_with"]
+            delta_bps_con   = (sharpe_con_with - sharpe_con_no) * 10_000
+            btc_wt_con      = float(w_con_with[-1])
+
+            for i, s in enumerate(sleeves_list):
+                result["con_rows"].append({
+                    "sleeve": s,
+                    "w_no":   f"{w_con_no[i]:.1%}",
+                    "w_with": f"{w_con_with[i]:.1%}",
+                })
+            result["con_rows"].append({
+                "sleeve": "BTC",
+                "w_no":   "—",
+                "w_with": f"{btc_wt_con:.1%}",
+            })
+            result["sharpe_con_no"]   = f"{sharpe_con_no:.3f}"
+            result["sharpe_con_with"] = f"{sharpe_con_with:.3f}"
+            result["delta_bps_con"]   = f"{delta_bps_con:+.0f}"
+    except Exception:
+        pass
+
+    # 5g: Marginal Sharpe curve
+    try:
+        msc = ae.compute_marginal_sharpe_curve(btc_ret, slv_ret, ae.SLEEVE_WEIGHTS, ae.RF_ANNUAL)
+        if not msc.empty:
+            fig_msc = go.Figure()
+            fig_msc.add_trace(go.Scatter(
+                x=msc["btc_alloc"] * 100,
+                y=msc["sharpe"],
+                mode="lines+markers",
+                line=dict(color="#2E4057", width=2),
+                marker=dict(size=6),
+                name="Portfolio Sharpe",
+            ))
+            fig_msc.update_layout(
+                height=200,
+                margin=dict(l=50, r=10, t=8, b=40),
+                paper_bgcolor="white", plot_bgcolor="#FAFAFA",
+                showlegend=False,
+                xaxis=dict(title="BTC Allocation (%)", gridcolor="#EBEBEB"),
+                yaxis=dict(title="Portfolio Sharpe",   gridcolor="#EBEBEB"),
+                font=dict(family="sans-serif", size=9, color="#333"),
+            )
+            result["msc_chart_b64"] = _chart_b64(fig_msc, 700, 200)
+    except Exception:
+        pass
+
+    # 5h: Drawdown sensitivity
+    try:
+        dd_sens = ae.compute_drawdown_sensitivity(
+            btc_ret, slv_ret, ae.SLEEVE_WEIGHTS, rf_annual=ae.RF_ANNUAL
+        )
+        if not dd_sens.empty:
+            for _, row in dd_sens.iterrows():
+                mdd22_val = row["2022 MDD"]
+                result["dd_rows"].append({
+                    "alloc":  row["BTC Alloc"],
+                    "cagr":   f"{row['CAGR']:.1%}",
+                    "max_dd": f"{row['Max DD']:.1%}",
+                    "sharpe": f"{row['Sharpe']:.2f}",
+                    "mdd22":  f"{mdd22_val:.1%}" if not np.isnan(mdd22_val) else "—",
+                })
+    except Exception:
+        pass
+
+    # 5j: Decision framework
+    try:
+        args_for: list[str]     = []
+        args_against: list[str] = []
+
+        if not msc.empty:
+            rows_0  = msc[msc["btc_alloc"] == 0.00]
+            rows_10 = msc[msc["btc_alloc"] == 0.10]
+            if not rows_0.empty and not rows_10.empty:
+                saa_sh0  = float(rows_0["sharpe"].iloc[0])
+                saa_sh10 = float(rows_10["sharpe"].iloc[0])
+                if saa_sh10 > saa_sh0:
+                    delta_saa = (saa_sh10 - saa_sh0) * 10_000
+                    mvo_ok    = bool(
+                        mv_result
+                        and mv_result.get("sharpe_con_with", 0) > mv_result.get("sharpe_con_no", 0)
+                    )
+                    mvo_note = " — MVO sanity check directionally consistent" if mvo_ok else ""
+                    args_for.append(
+                        f"Sharpe-improving against SAA target weights at 10% allocation "
+                        f"({saa_sh0:.3f} → {saa_sh10:.3f}, "
+                        f"+{delta_saa:.0f} bps over {ae.SAMPLE_START}–present){mvo_note}"
+                    )
+
+        if not corr.empty:
+            btc_spy_j = float(corr.get("US Large Core", float("nan")))
+            if not np.isnan(btc_spy_j) and btc_spy_j > 0.3:
+                args_against.append(
+                    f"Equity-like correlation with US Large Core ({btc_spy_j:.2f}) post-2020 — "
+                    "co-movement spikes during stress precisely when a hedge is most valuable"
+                )
+
+        args_against.extend([
+            "Maximum historical drawdown exceeding 80% — 2022 coincided with equity and bond "
+            "losses simultaneously (no diversification benefit when needed)",
+            "Commodity tax treatment: short-term ordinary income / long-term capital gains, "
+            "no qualified-dividend treatment — unfavorable vs. equity ETFs in taxable accounts",
+            "No intrinsic cash flow or fundamental valuation anchor — expected return is "
+            "purely sentiment-driven, making MV inputs unreliable for forward-looking allocation",
+        ])
+
+        result["args_for"]     = args_for
+        result["args_against"] = args_against
+    except Exception:
+        pass
+
+    return result
+
+
 # ── Methodology template variables ───────────────────────────────────────────
 
 # SAA rule: sleeves with target weight ≥10% → ±300 bps; <10% → ±200 bps.
@@ -989,7 +1259,7 @@ def generate_quarterly_report(
     output_path: Optional[Path] = None,
 ) -> Path:
     """
-    Generate an 8-page quarterly PDF report.
+    Generate a quarterly PDF report.
 
     Returns the Path of the written PDF file.
     When zero trades exist, produces a structural report (SAA + macro + theses only).
@@ -1021,6 +1291,7 @@ def generate_quarterly_report(
         bench_attr_data  = _build_benchmark_section(start_date, end_date)  if has_trades else None
         macro_data       = _build_macro_section()
         thesis_data      = _build_thesis_section(start_date, end_date)
+        asset_eval_data  = _build_asset_eval_section()
 
     css_content = (TEMPLATES_DIR / "report_styles.css").read_text(encoding="utf-8")
 
@@ -1057,6 +1328,7 @@ def generate_quarterly_report(
         bench_attr     = bench_attr_data,
         macro          = macro_data,
         thesis         = thesis_data,
+        asset_eval     = asset_eval_data,
         **_build_methodology_vars(),
     )
 
