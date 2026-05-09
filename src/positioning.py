@@ -443,12 +443,13 @@ def get_scenario_triggers(end_date: str, max_scenarios: int = 4) -> list[dict]:
         return float(sw.loc[sleeve, "Target Weight"]) if sleeve in sw.index else 0.0
 
     dur = get_effective_duration(end_date)
-    eff_duration  = dur["duration"]
-    fi_weight_pct = dur["fi_weight_pct"]
-    fi_target_pct = (
+    fi_weight_pct        = dur["fi_weight_pct"]
+    fi_sleeve_dur        = dur["fi_sleeve_duration"]
+    agg_benchmark        = dur["agg_benchmark"]
+    # Target for Core FI + TIPS only — Cash excluded so actual and target are comparable.
+    fi_target_no_cash_pct = (
         _target_wt("Core Fixed Income") +
-        _target_wt("TIPS") +
-        _target_wt("Cash / SPAXX")
+        _target_wt("TIPS")
     ) * 100
 
     non_us_actual_pp = (_actual_wt("International Developed") + _actual_wt("Emerging Markets")) * 100
@@ -478,18 +479,44 @@ def get_scenario_triggers(end_date: str, max_scenarios: int = 4) -> list[dict]:
             "weight": _drift_bps("Cash / SPAXX"),
         })
 
-    if eff_duration < 3.0 and fi_weight_pct < fi_target_pct - 0.5:
+    # "Higher-for-longer": two distinct sources of rate resilience — FI underweight
+    # (fewer bonds = less price exposure) and short FI sleeve duration (bonds held
+    # are less sensitive to rates). Prose branches on which condition fires so the
+    # scenario correctly describes the actual exposure, not a generic label.
+    _fi_underweight_bps = max(0.0, fi_target_no_cash_pct - fi_weight_pct) * 100
+    _dur_short_bps      = max(0.0, agg_benchmark - fi_sleeve_dur) * 100
+    _is_fi_underweight  = fi_weight_pct < fi_target_no_cash_pct - 0.5
+    _is_short_dur       = fi_sleeve_dur < agg_benchmark - 0.5
+
+    if _is_fi_underweight or _is_short_dur:
+        if _is_fi_underweight and _is_short_dur:
+            _hl_text = (
+                "FI underweight and shorter-duration sleeve both reduce bond-price "
+                "exposure — benefits when rates remain elevated"
+            )
+        elif _is_fi_underweight:
+            _hl_text = (
+                "FI underweight limits bond-price exposure — fewer bonds benefit "
+                "relative to SAA targets when rates stay elevated"
+            )
+        else:
+            _hl_text = (
+                "Short-duration FI sleeve outperforms longer-duration peers "
+                "in a sticky higher-for-longer rate environment"
+            )
         candidates.append({
             "name":   "Higher-for-longer rates",
-            "text":   "Short-duration positioning benefits as longer-duration peers underperform in a sticky-rate environment",
-            "weight": (3.0 - eff_duration) * 100,
+            "text":   _hl_text,
+            "weight": _fi_underweight_bps + _dur_short_bps,
         })
 
-    if eff_duration > 5.0 or _drift_bps("Core Fixed Income") > 0:
+    # "Rate cut acceleration": FI overweight or above-benchmark sleeve duration.
+    if fi_sleeve_dur > agg_benchmark + 0.5 or _drift_bps("Core Fixed Income") > 0:
         candidates.append({
             "name":   "Rate cut acceleration",
-            "text":   "Duration overweight rewards as yields fall and bond prices rise faster than the short end",
-            "weight": max(eff_duration * 10, _drift_bps("Core Fixed Income")),
+            "text":   "Duration exposure rewards as yields fall and bond prices rise faster than the short end",
+            "weight": max(max(0.0, fi_sleeve_dur - agg_benchmark) * 100,
+                          _drift_bps("Core Fixed Income")),
         })
 
     if _drift_bps("Real Assets") > 0:
