@@ -17,33 +17,8 @@ from src.factors import (
     run_benchmark_attribution_regression,
     sig_marker,
 )
+from src.reports import SLEEVE_HOLDING_TICKER as _SLEEVE_HOLDING, SLEEVE_BENCH_TICKER as _SLEEVE_BENCH
 from src.ui_helpers import render_footer
-
-# Locked Phase 2 holdings and benchmarks per sleeve — used for BHB cross-reference
-_SLEEVE_HOLDING = {
-    "US Large Core":           "VOO",
-    "US Large Quality":        "SPHQ",
-    "US Large Value":          "VTV",
-    "US Small Cap":            "AVUV",
-    "International Developed": "VEA",
-    "Emerging Markets":        "IEMG",
-    "Core Fixed Income":       "VGIT",
-    "TIPS":                    "SCHP",
-    "Real Assets":             "VNQ / PDBC",
-    "Cash / SPAXX":            "SPAXX",
-}
-_SLEEVE_BENCH = {
-    "US Large Core":           "SPY",
-    "US Large Quality":        "QUAL",
-    "US Large Value":          "IWD",
-    "US Small Cap":            "IWM",
-    "International Developed": "EFA",
-    "Emerging Markets":        "EEM",
-    "Core Fixed Income":       "IEF",
-    "TIPS":                    "TIP",
-    "Real Assets":             "VNQ / DBC",
-    "Cash / SPAXX":            "BIL",
-}
 
 if IS_DEMO:
     st.info(get_demo_banner_text())

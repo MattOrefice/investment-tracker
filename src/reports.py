@@ -59,8 +59,9 @@ _PALETTE = {
     "selection": "#A67B5B",
 }
 
-# Phase 2 locked picks — holding ticker and benchmark ticker per sleeve
-_SLEEVE_HOLDING_TICKER: dict[str, str] = {
+# Phase 2 locked picks — holding ticker and benchmark ticker per sleeve.
+# Public so pages/8_Benchmark_Attribution.py can import rather than duplicate.
+SLEEVE_HOLDING_TICKER: dict[str, str] = {
     "US Large Core":           "VOO",
     "US Large Quality":        "SPHQ",
     "US Large Value":          "VTV",
@@ -72,7 +73,7 @@ _SLEEVE_HOLDING_TICKER: dict[str, str] = {
     "Real Assets":             "VNQ / PDBC",
     "Cash / SPAXX":            "SPAXX",
 }
-_SLEEVE_BENCH_TICKER: dict[str, str] = {
+SLEEVE_BENCH_TICKER: dict[str, str] = {
     "US Large Core":           "SPY",
     "US Large Quality":        "QUAL",
     "US Large Value":          "IWD",
@@ -556,8 +557,8 @@ def _build_attribution_section(start_date: str, end_date: str) -> dict:
     ).head(3)
     for _, r in sel_sorted.iterrows():
         sleeve  = r["sleeve"]
-        port_t  = _SLEEVE_HOLDING_TICKER.get(sleeve, "—")
-        bench_t = _SLEEVE_BENCH_TICKER.get(sleeve, "—")
+        port_t  = SLEEVE_HOLDING_TICKER.get(sleeve, "—")
+        bench_t = SLEEVE_BENCH_TICKER.get(sleeve, "—")
         sel_bps  = r["selection_effect"] * 10_000
         sel_commentary.append(
             f"{sleeve}: portfolio holding ({port_t}) returned {r['r_p']*100:.1f}% "
@@ -728,8 +729,8 @@ def _build_benchmark_section(start_date: str, end_date: str) -> Optional[dict]:
             for _, row in top3.iterrows():
                 sleeve = row["sleeve"]
                 bhb_top.append({
-                    "holding": _SLEEVE_HOLDING_TICKER.get(sleeve, sleeve),
-                    "bench":   _SLEEVE_BENCH_TICKER.get(sleeve, sleeve),
+                    "holding": SLEEVE_HOLDING_TICKER.get(sleeve, sleeve),
+                    "bench":   SLEEVE_BENCH_TICKER.get(sleeve, sleeve),
                     "sel_bps": row["raw_diff"] * 10_000,
                 })
     except Exception:
