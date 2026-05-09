@@ -263,40 +263,34 @@ def test_identity_risk_metrics_uses_trading_day_annualization():
 # ── 1.4  Inception-date canonical-source check ───────────────────────────────
 
 def test_identity_performance_page_inception_constant_matches_fallback():
-    """The INCEPTION constant in pages/4_Performance.py must equal the fallback
-    value that _inception_date() returns when the trades table is empty.
+    """get_inception_date() fallback must be the canonical portfolio launch date.
 
-    Both are "2025-05-01". If one is changed without updating the other, this
-    test fails and forces reconciliation.
+    pages/4_Performance.py now calls get_inception_date() at import time; the
+    fallback hard-coded in src/holdings.py is the only remaining literal and must
+    stay set to '2025-05-01'. This test fails if the fallback is changed without
+    a deliberate portfolio-relaunch decision.
     """
-    # Read INCEPTION directly from the page module constant
-    page_path = pathlib.Path(__file__).resolve().parent.parent / "pages" / "4_Performance.py"
-    source = page_path.read_text(encoding="utf-8")
     import re
-    match = re.search(r'^INCEPTION\s*=\s*["\']([0-9]{4}-[0-9]{2}-[0-9]{2})["\']', source, re.MULTILINE)
-    assert match, "INCEPTION constant not found in pages/4_Performance.py — may have been renamed"
-    page_inception = match.group(1)
-
-    # Read fallback from _inception_date
-    from src.reports import _inception_date
-    src_path = pathlib.Path(__file__).resolve().parent.parent / "src" / "reports.py"
+    src_path = pathlib.Path(__file__).resolve().parent.parent / "src" / "holdings.py"
     src_text = src_path.read_text(encoding="utf-8")
-    src_match = re.search(r'return ["\']([0-9]{4}-[0-9]{2}-[0-9]{2})["\']', src_text)
-    # Fallback is the literal date in _inception_date's except/else clause
-    fallback_inception = "2025-05-01"  # canonical portfolio launch date
-
-    assert page_inception == fallback_inception, (
-        f"pages/4_Performance.py INCEPTION='{page_inception}' ≠ "
-        f"canonical launch date '{fallback_inception}'. "
-        "Update both to the same date."
+    # Find the fallback literal inside get_inception_date
+    match = re.search(
+        r'def get_inception_date.*?return\s+["\']([0-9]{4}-[0-9]{2}-[0-9]{2})["\']',
+        src_text, re.DOTALL,
+    )
+    assert match, "get_inception_date fallback literal not found in src/holdings.py"
+    fallback = match.group(1)
+    assert fallback == "2025-05-01", (
+        f"get_inception_date fallback is '{fallback}', expected '2025-05-01' "
+        "(canonical portfolio launch date)."
     )
 
 
 def test_identity_inception_matches_db_min_trade_date():
-    """When the trades table is populated, _inception_date() must return MIN(trade_date).
+    """When the trades table is populated, get_inception_date() must return MIN(trade_date).
 
     This test skips if trades table is empty (local development). On Cloud with
-    demo.db, the MIN(trade_date) should match INCEPTION = '2025-05-01'.
+    demo.db, the MIN(trade_date) should match '2025-05-01'.
     """
     with get_connection() as conn:
         row = conn.execute("SELECT MIN(trade_date) AS inception FROM trades").fetchone()
@@ -304,11 +298,11 @@ def test_identity_inception_matches_db_min_trade_date():
     if not row or not row["inception"]:
         pytest.skip("Trades table empty — skipped in local/empty-DB mode")
 
-    from src.reports import _inception_date
-    reported = _inception_date()
+    from src.holdings import get_inception_date
+    reported = get_inception_date()
 
     assert reported == row["inception"], (
-        f"_inception_date() returned '{reported}' but MIN(trade_date) = '{row['inception']}'. "
+        f"get_inception_date() returned '{reported}' but MIN(trade_date) = '{row['inception']}'. "
         "The inception date has drifted from the DB canonical source."
     )
 

@@ -14,7 +14,7 @@ from src.attribution import brinson_fachler_period, compute_two_stage_attributio
 from src.benchmarks import get_custom_blended_series, get_naive_60_40_series, get_naive_series, get_sp500_series
 from src.db import get_connection
 from src.factors import run_sleeve_regressions
-from src.holdings import get_portfolio_value_series, get_sleeve_weights_on_date
+from src.holdings import get_inception_date, get_portfolio_value_series, get_sleeve_weights_on_date
 from src.performance import compute_risk_metrics
 from src.reports import generate_quarterly_report
 from src.returns import annualize, period_return, twr_daily_linked
@@ -22,7 +22,7 @@ from src.ui_helpers import render_footer
 
 _REPORTS_DIR = Path(__file__).parent.parent / "data" / "reports"
 
-INCEPTION    = "2025-05-01"
+INCEPTION    = get_inception_date()
 TODAY        = date.today().isoformat()
 PERIODS      = ["1M", "3M", "YTD", "1Y", "SI"]
 PERIOD_LABEL = {"1M": "1 Month", "3M": "3 Months", "YTD": "YTD",

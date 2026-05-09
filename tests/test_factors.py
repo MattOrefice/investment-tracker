@@ -744,7 +744,7 @@ def test_factor_section_values_match_raw_result():
 
     with patch("src.factors._get_sleeve_return_series", return_value=mock_ret), \
          patch("src.factors.load_factors", return_value=mock_ff), \
-         patch("src.reports._inception_date", return_value="2025-05-01"):
+         patch("src.reports.get_inception_date", return_value="2025-05-01"):
         section = _build_factor_section("2025-09-30")
 
     assert section is not None

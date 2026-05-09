@@ -22,6 +22,7 @@ from src.factors import (
     run_sleeve_regressions_mom,
     sig_marker,
 )
+from src.holdings import get_inception_date
 
 if IS_DEMO:
     st.info(get_demo_banner_text())
@@ -37,7 +38,7 @@ with col:
     st.divider()
 
     end_date  = date.today().isoformat()
-    inception = "2025-05-01"
+    inception = get_inception_date()
 
     @st.cache_data(ttl=3600)
     def _get_factor_results(inception_date: str, end: str) -> dict:

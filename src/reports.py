@@ -36,7 +36,7 @@ from src.factors import (
     run_benchmark_attribution_regression,
     run_sleeve_regressions, sig_marker,
 )
-from src.holdings import get_portfolio_value_series, get_sleeve_weights_on_date
+from src.holdings import get_inception_date, get_portfolio_value_series, get_sleeve_weights_on_date
 from src.macro import get_series, percentile
 from src.positioning import (
     build_style_box_figure, get_active_tilts, get_effective_duration,
@@ -223,16 +223,6 @@ def _drift_status(drift_bps: float, target_bps: float, band_bps: float = 200) ->
     return "Within" if abs(drift_bps) <= band_bps and abs(drift_bps / target_bps) <= 0.20 else "Drift"
 
 
-def _inception_date() -> str:
-    """Return date of first trade, falling back to 2025-05-01."""
-    try:
-        with get_connection() as conn:
-            row = conn.execute("SELECT MIN(trade_date) FROM trades").fetchone()
-        return row[0] if row and row[0] else "2025-05-01"
-    except Exception:
-        return "2025-05-01"
-
-
 # ── Benchmark period return helper ────────────────────────────────────────────
 
 def _bm_period_return(series: pd.Series, period: str) -> float:
@@ -265,7 +255,7 @@ def _build_executive_summary(start_date: str, end_date: str) -> dict:
     # (buy-and-hold from inception drifts weights and produces a different result).
     # start_date is always a trading day (Dec-31 for Q1, Mar-31 for Q2, etc.) so
     # no holiday-bfill risk exists for the fresh blended series.
-    inception = _inception_date()
+    inception = get_inception_date()
 
     pv_since_inception = get_portfolio_value_series(inception, end_date)
     current_val = float(pv_since_inception.iloc[-1]) if not pv_since_inception.empty else 0.0
@@ -447,7 +437,7 @@ def _build_cumulative_chart(
 
 
 def _build_performance_section(start_date: str, end_date: str) -> dict:
-    inception = _inception_date()
+    inception = get_inception_date()
     pv = get_portfolio_value_series(inception, end_date)
     if pv.empty or float(pv.max()) == 0.0:
         return {"period_rows": [], "chart_b64": None}
@@ -604,7 +594,7 @@ def _build_factor_section(end_date: str) -> Optional[dict]:
     the template.  Returns None only if both sleeves fail; partial results (one
     sleeve None) are still returned so the template can render what it has.
     """
-    inception = _inception_date()
+    inception = get_inception_date()
     try:
         results = run_sleeve_regressions(inception, end_date)
     except Exception:
@@ -678,7 +668,7 @@ def _build_benchmark_section(start_date: str, end_date: str) -> Optional[dict]:
     differential (r_p − r_b) so prose reads "AVUV outperformed IWM by 768 bps"
     rather than the portfolio-weighted selection effect.
     """
-    inception = _inception_date()
+    inception = get_inception_date()
     try:
         result = run_benchmark_attribution_regression(inception, end_date)
     except Exception:
@@ -1030,7 +1020,7 @@ def generate_quarterly_report(
         snap_dt = datetime.fromisoformat(snapshot_captured_at)
         snapshot_display = f"{snap_dt.strftime('%B')} {snap_dt.day}, {snap_dt.year}"
 
-    inception_str   = _inception_date()
+    inception_str   = get_inception_date()
     si_days_report  = (date.fromisoformat(end_date) - date.fromisoformat(inception_str)).days
 
     html_content = tmpl.render(

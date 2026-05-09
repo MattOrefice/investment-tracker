@@ -9,6 +9,7 @@ st.set_page_config(page_title="Benchmark Attribution", layout="wide")
 from src.asof import as_of_banner
 from src.attribution import brinson_fachler_period
 from src.config import get_demo_banner_text, IS_DEMO
+from src.holdings import get_inception_date
 from src.factors import (
     alpha_ci_str,
     build_benchmark_methodology,
@@ -59,7 +60,7 @@ with col:
     st.divider()
 
     end_date  = date.today().isoformat()
-    inception = "2025-05-01"
+    inception = get_inception_date()
 
     @st.cache_data(ttl=3600)
     def _get_benchmark_result(inception_date: str, end: str) -> dict | None:
