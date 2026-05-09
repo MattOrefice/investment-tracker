@@ -717,7 +717,10 @@
           <dd>Daily-linked chain-linked TWR (GIPS-compliant). For each day t:
           r<sub>t</sub> = (V<sub>t</sub> &minus; V<sub>t&minus;1</sub> &minus; CF<sub>t</sub>) / V<sub>t&minus;1</sub>.
           Cash flows assumed at beginning of day. Cumulative return is
-          &prod;(1 + r<sub>t</sub>) &minus; 1.</dd>
+          &prod;(1 + r<sub>t</sub>) &minus; 1.{% if si_days is defined and si_days < 365 %}
+          1Y window note: while portfolio history is under one year (currently {{ si_days }} days),
+          the 1Y period is capped at inception and equals SI; the windows diverge once the
+          portfolio crosses one year.{% endif %}</dd>
 
           <dt>Benchmarks</dt>
           <dd>S&amp;P 500: SPY total return (adj_close). Custom Blended: SAA target-weight basket
@@ -758,11 +761,6 @@
           <dd>{{ methodology_parent_weights }}. {{ methodology_sleeve_count }} sleeves with tolerance
           bands (&plusmn;2&ndash;3%). Full rationale in the SAA section of the application.</dd>
 
-          {% if si_days is defined and si_days < 365 %}
-          <dt>1Y Return Window</dt>
-          <dd>Portfolio has {{ si_days }} days of history. The 1Y period is capped at inception
-          and equals SI; windows diverge after the portfolio crosses one year.</dd>
-          {% endif %}
         </dl>
       </td>
     </tr>
