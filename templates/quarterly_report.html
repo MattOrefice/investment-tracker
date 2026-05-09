@@ -757,16 +757,17 @@
           <dt>SAA &amp; Sleeve Targets</dt>
           <dd>{{ methodology_parent_weights }}. {{ methodology_sleeve_count }} sleeves with tolerance
           bands (&plusmn;2&ndash;3%). Full rationale in the SAA section of the application.</dd>
+
+          {% if si_days is defined and si_days < 365 %}
+          <dt>1Y Return Window</dt>
+          <dd>Portfolio has {{ si_days }} days of history (inception {{ inception_date }}).
+          The 1Y return period is capped at inception and equals the Since Inception return.
+          1Y and SI windows will diverge once the portfolio crosses one year.</dd>
+          {% endif %}
         </dl>
       </td>
     </tr>
   </table>
-
-  {% if si_days is defined and si_days < 365 %}
-  <p class="muted"><strong>1Y window note:</strong> Portfolio has {{ si_days }} days of history
-  (inception {{ inception_date }}). The 1Y return period is capped at inception and equals the
-  Since Inception return. 1Y and SI windows will diverge once the portfolio crosses one year.</p>
-  {% endif %}
 
   <p class="disclosure">This report is generated from a personal investment analytics system
   for portfolio review purposes. Returns are time-weighted and do not constitute investment

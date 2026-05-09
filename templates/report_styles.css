@@ -152,8 +152,8 @@ table.metric-table td.metric-card {
 
 /* ── Disclosure footer ───────────────────────────────────────────────────── */
 .disclosure {
-    margin-top: 1.8em;
-    padding-top: 0.8em;
+    margin-top: 0.5em;
+    padding-top: 0.3em;
     border-top: 1px solid #ddd;
     font-size: 7.5pt;
     color: #999;
