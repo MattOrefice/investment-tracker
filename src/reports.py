@@ -37,7 +37,7 @@ from src.factors import (
     run_sleeve_regressions, sig_marker,
 )
 from src.holdings import get_inception_date, get_portfolio_value_series, get_sleeve_weights_on_date
-from src.macro import get_series, percentile
+from src.macro import compute_cape_implied_return, get_series, percentile
 from src.positioning import (
     build_style_box_figure, get_active_tilts, get_effective_duration,
     get_non_us_equity_data, get_scenario_triggers, get_style_box_data,
@@ -770,22 +770,25 @@ def _build_macro_section() -> dict:
         else:
             _regime        = "Below-average"
             _regime_action = "support increased US equity exposure relative to SAA targets"
+        cape_implied = compute_cape_implied_return(cape_val)
         macro["cape"] = {
-            "value":         f"{cape_val:.1f}x",
-            "percentile":    pct_str,
-            "pct_int":       pct_int,
-            "regime":        _regime,
-            "regime_action": _regime_action,
-            "note":          "Elevated vs. history; supports diversification into non-US and real assets.",
+            "value":          f"{cape_val:.1f}x",
+            "percentile":     pct_str,
+            "pct_int":        pct_int,
+            "regime":         _regime,
+            "regime_action":  _regime_action,
+            "note":           f"{_regime} vs. history ({pct_str}); valuations {_regime_action}.",
+            "implied_return": f"{cape_implied:+.2%}",
         }
     except Exception:
         macro["cape"] = {
-            "value":         "N/A",
-            "percentile":    "N/A",
-            "pct_int":       50,
-            "regime":        "Uncertain",
-            "regime_action": "suggest maintaining SAA diversification",
-            "note":          "Data unavailable.",
+            "value":          "N/A",
+            "percentile":     "N/A",
+            "pct_int":        50,
+            "regime":         "Uncertain",
+            "regime_action":  "suggest maintaining SAA diversification",
+            "note":           "Data unavailable.",
+            "implied_return": None,
         }
 
     try:

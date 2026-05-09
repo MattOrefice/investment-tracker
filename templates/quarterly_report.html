@@ -525,8 +525,10 @@
   </table>
 
   <p class="muted">{{ macro.cape.regime }} US equity valuations (CAPE {{ macro.cape.percentile }})
-  {{ macro.cape.regime_action }}. Indicators are reference data;
-  tactical positioning remains anchored to SAA targets.</p>
+  {{ macro.cape.regime_action }}.{% if macro.cape.implied_return %}
+  Implied 10Y real return (r&nbsp;&asymp;&nbsp;&minus;0.070&nbsp;&times;&nbsp;ln(CAPE/16)&nbsp;+&nbsp;0.066):
+  <strong>{{ macro.cape.implied_return }}</strong> (historical relationship, not a forecast).{% endif %}
+  Indicators are reference data; tactical positioning remains anchored to SAA targets.</p>
 
   <p class="muted">CAPE from Robert Shiller / Yale (econ.yale.edu). Yield curve, Fed Funds,
   and HY spread from FRED (St. Louis Fed). Historical percentile computed over available
