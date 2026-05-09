@@ -260,12 +260,14 @@ dl.methodology dt {
     font-family: Helvetica, Arial, sans-serif;
     font-size: 9.5pt;
     color: #222;
+    page-break-after: avoid;
 }
 dl.methodology dd {
     margin-left: 1.5em;
     font-size: 9pt;
     color: #555;
     margin-bottom: 0.05em;
+    page-break-inside: avoid;
     line-height: 1.3;
 }
 

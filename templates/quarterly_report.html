@@ -760,9 +760,8 @@
 
           {% if si_days is defined and si_days < 365 %}
           <dt>1Y Return Window</dt>
-          <dd>Portfolio has {{ si_days }} days of history (inception {{ inception_date }}).
-          The 1Y return period is capped at inception and equals the Since Inception return.
-          1Y and SI windows will diverge once the portfolio crosses one year.</dd>
+          <dd>Portfolio has {{ si_days }} days of history. The 1Y period is capped at inception
+          and equals SI; windows diverge after the portfolio crosses one year.</dd>
           {% endif %}
         </dl>
       </td>
