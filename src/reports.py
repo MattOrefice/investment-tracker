@@ -42,6 +42,7 @@ from src.positioning import (
     build_style_box_figure, get_active_tilts, get_effective_duration,
     get_non_us_equity_data, get_scenario_triggers, get_style_box_data,
 )
+from src.style_box import STYLE_BOX_CAPTION
 from src.returns import period_return, twr_daily_linked
 from src.shiller import current_cape, get_cape_series
 
@@ -905,11 +906,12 @@ def _build_positioning_section(end_date: str) -> dict:
     )
     style_box_b64 = _chart_b64(build_style_box_figure(style_data), 520, 390) if style_data else None
     return {
-        "tilts":          tilts,
-        "duration_line":  duration_line,
-        "scenarios":      scenarios,
-        "style_box_b64":  style_box_b64,
-        "non_us":         non_us,
+        "tilts":             tilts,
+        "duration_line":     duration_line,
+        "scenarios":         scenarios,
+        "style_box_b64":     style_box_b64,
+        "style_box_caption": STYLE_BOX_CAPTION,
+        "non_us":            non_us,
     }
 
 
