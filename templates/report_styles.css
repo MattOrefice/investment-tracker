@@ -157,6 +157,7 @@ table.metric-table td.metric-card {
     border-top: 1px solid #ddd;
     font-size: 7.5pt;
     color: #999;
+    page-break-before: avoid;
 }
 
 /* ── Section / page breaks ───────────────────────────────────────────────── */

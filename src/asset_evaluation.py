@@ -51,6 +51,26 @@ _raw_total    = sum(_RAW_WEIGHTS.values())
 SLEEVE_WEIGHTS: dict[str, float] = {k: v / _raw_total for k, v in _RAW_WEIGHTS.items()}
 SLEEVES       = list(SLEEVE_BENCHMARKS.keys())
 
+# Shared conclusion — used by both pages/10_Asset_Evaluation.py and src/reports.py.
+# Excludes the Streamlit-specific "This page will update automatically" sentence.
+CONCLUSION = (
+    "Bitcoin's sample-period Sharpe improvement is real but almost entirely "
+    "attributable to its exceptional 2020–2021 bull market return. "
+    "The post-2020 correlation structure, the 2022 joint drawdown, and the "
+    "fundamental absence of cash flows make a strong case against inclusion "
+    "in a tax-aware taxable account with an institutional-style SAA. "
+    "The 2024 spot ETF launches have already partially satisfied the "
+    "operational-risk concern that historically gated institutional "
+    "adoption — IBIT, FBTC, and similar wrappers remove the custody and "
+    "counterparty frictions that defined the pre-2024 implementation "
+    "landscape. The remaining barriers to inclusion under this framework "
+    "are analytical (the correlation regime and the 2022 joint stress) and "
+    "fundamental (no cash flow anchor for valuation), not operational. "
+    "The framework does not foreclose future re-evaluation if (1) the "
+    "correlation regime reverts toward zero or (2) the asset develops a "
+    "cleaner valuation framework."
+)
+
 
 # ── Data loading ─────────────────────────────────────────────────────────────
 

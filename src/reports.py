@@ -940,15 +940,7 @@ def _build_asset_eval_section() -> dict:
         "dd_rows":          [],
         "args_for":         [],
         "args_against":     [],
-        "conclusion": (
-            "Bitcoin's sample-period Sharpe improvement is real but almost entirely "
-            "attributable to its exceptional 2020–2021 bull market return. The post-2020 "
-            "correlation structure, the 2022 joint drawdown, and the fundamental absence "
-            "of cash flows make a strong case against inclusion in a tax-aware taxable "
-            "account with an institutional-style SAA. The 2024 spot ETF launches (IBIT, FBTC) "
-            "have reduced operational barriers — the remaining barriers are analytical "
-            "(correlation regime, 2022 joint stress) and fundamental (no cash flow anchor)."
-        ),
+        "conclusion": ae.CONCLUSION,
     }
 
     try:

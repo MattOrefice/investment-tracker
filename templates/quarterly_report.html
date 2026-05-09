@@ -389,17 +389,10 @@
     {% endfor %}
   </div>
 
-  <div class="bf-commentary" style="margin-top: 8px;">
-    <p class="bf-comm-title">Methodology Disclosure</p>
-    <ul class="bf-comm-list">
-      {% for note in factor.methodology_notes %}
-      <li>{{ note }}</li>
-      {% endfor %}
-    </ul>
-    <p class="muted" style="margin: 4px 0 0; font-size: 0.80em;">
-      * p &lt; 0.10 &nbsp;&nbsp; ** p &lt; 0.05 &nbsp;&nbsp; *** p &lt; 0.01
-    </p>
-  </div>
+  <p class="muted" style="margin-top: 6px; font-size: 0.80em;">
+    * p &lt; 0.10 &nbsp;&nbsp; ** p &lt; 0.05 &nbsp;&nbsp; *** p &lt; 0.01 &nbsp;&middot;&nbsp;
+    Full regression methodology in the Methodology &amp; Data Sources section.
+  </p>
 
   {% else %}
   <div class="empty-banner">
@@ -468,17 +461,10 @@
     {% endfor %}
   </div>
 
-  <div class="bf-commentary" style="margin-top: 8px;">
-    <p class="bf-comm-title">Methodology Disclosure</p>
-    <ul class="bf-comm-list">
-      {% for note in bench_attr.methodology_notes %}
-      <li>{{ note }}</li>
-      {% endfor %}
-    </ul>
-    <p class="muted" style="margin: 4px 0 0; font-size: 0.80em;">
-      * p &lt; 0.10 &nbsp;&nbsp; ** p &lt; 0.05 &nbsp;&nbsp; *** p &lt; 0.01
-    </p>
-  </div>
+  <p class="muted" style="margin-top: 6px; font-size: 0.80em;">
+    * p &lt; 0.10 &nbsp;&nbsp; ** p &lt; 0.05 &nbsp;&nbsp; *** p &lt; 0.01 &nbsp;&middot;&nbsp;
+    Full regression methodology in the Methodology &amp; Data Sources section.
+  </p>
 
   {% else %}
   <div class="empty-banner">
