@@ -70,8 +70,8 @@ def _apply_style(fig: go.Figure, height: int = _CHART_H) -> go.Figure:
     return fig
 
 
-def _tight_yrange(series: pd.Series, extra_ys: list | None = None, pad: float = 0.05) -> list | None:
-    """Compute tight y-axis range: data extent ± 5% padding, including any annotation y-values."""
+def _tight_yrange(series: pd.Series, extra_ys: list | None = None, pad: float = 0.10) -> list | None:
+    """Compute tight y-axis range: data extent ± 10% padding, including any annotation y-values."""
     clean = series.dropna()
     if clean.empty:
         return None
