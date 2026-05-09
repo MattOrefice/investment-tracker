@@ -718,9 +718,7 @@
           r<sub>t</sub> = (V<sub>t</sub> &minus; V<sub>t&minus;1</sub> &minus; CF<sub>t</sub>) / V<sub>t&minus;1</sub>.
           Cash flows assumed at beginning of day. Cumulative return is
           &prod;(1 + r<sub>t</sub>) &minus; 1.{% if si_days is defined and si_days < 365 %}
-          1Y window note: while portfolio history is under one year (currently {{ si_days }} days),
-          the 1Y period is capped at inception and equals SI; the windows diverge once the
-          portfolio crosses one year.{% endif %}</dd>
+          1Y note: while history is under one year (currently {{ si_days }}d), the 1Y period equals SI.{% endif %}</dd>
 
           <dt>Benchmarks</dt>
           <dd>S&amp;P 500: SPY total return (adj_close). Custom Blended: SAA target-weight basket
@@ -758,8 +756,7 @@
           BAMLH0A0HYM2 = ICE BofA HY OAS (available May 2023+).</dd>
 
           <dt>SAA &amp; Sleeve Targets</dt>
-          <dd>{{ methodology_parent_weights }}. {{ methodology_sleeve_count }} sleeves with tolerance
-          bands (&plusmn;2&ndash;3%). Full rationale in the SAA section of the application.</dd>
+          <dd>{{ methodology_parent_weights }}. {{ methodology_sleeve_count }} sleeves; full rationale in the SAA section.</dd>
 
         </dl>
       </td>
