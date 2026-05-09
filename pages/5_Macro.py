@@ -24,8 +24,8 @@ _C = {
     "current":   "#C0392B",
 }
 
-_CHART_H      = 420
-_CHART_H_CAPE = 420
+_CHART_H      = 280
+_CHART_H_CAPE = 320
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -435,8 +435,43 @@ with col:
         cape_filtered = cape_series[cape_series.index >= w_start_cape].dropna()
         cape_pctile_w = _window_pctile(cape_series, cape_val, w_start_cape)
 
-        col_l, col_r = st.columns([1, 2])
-        with col_l:
+        fig_cape = go.Figure()
+        fig_cape.add_trace(go.Scatter(
+            x=cape_filtered.index, y=cape_filtered.values,
+            mode="lines", name="CAPE",
+            line=dict(color=_C["primary"], width=2),
+        ))
+        fig_cape.add_hline(
+            y=cape_median,
+            line_dash="dash", line_color=_C["ref"], line_width=1,
+            annotation_text=f"Median {cape_median:.0f}×",
+            annotation_position="right", annotation_font_size=10,
+        )
+        fig_cape.add_hline(
+            y=cape_median + cape_std,
+            line_dash="dot", line_color=_C["ref"], line_width=1,
+            annotation_text=f"+1σ  {cape_median+cape_std:.0f}×",
+            annotation_position="right", annotation_font_size=10,
+        )
+        fig_cape.add_hline(
+            y=max(1.0, cape_median - cape_std),
+            line_dash="dot", line_color=_C["ref"], line_width=1,
+            annotation_text=f"−1σ  {cape_median-cape_std:.0f}×",
+            annotation_position="right", annotation_font_size=10,
+        )
+        _add_current_annotation(
+            fig_cape, cape_val,
+            f"Current {cape_val:.1f}× ({_ordinal(cape_pctile_w)} pct, {cape_window})",
+        )
+        _apply_style(fig_cape, height=_CHART_H_CAPE)
+        fig_cape.update_yaxes(title_text="CAPE (×)")
+        _yr = _tight_yrange(cape_filtered, [cape_val, cape_median,
+                                            cape_median + cape_std, max(1.0, cape_median - cape_std)])
+        if _yr:
+            fig_cape.update_yaxes(range=_yr)
+        st.plotly_chart(fig_cape, width='stretch')
+        mc, _ = st.columns([1, 3])
+        with mc:
             st.metric("Shiller CAPE", f"{cape_val:.1f}×")
             st.caption(
                 f"{_ordinal(cape_pctile_w)} percentile of {cape_window} window "
@@ -447,43 +482,6 @@ with col:
                 f"**Implied forward 10Y real return:** {cape_implied:+.2%}  \n"
                 "*Historical relationship, not a forecast.*"
             )
-
-        with col_r:
-            fig_cape = go.Figure()
-            fig_cape.add_trace(go.Scatter(
-                x=cape_filtered.index, y=cape_filtered.values,
-                mode="lines", name="CAPE",
-                line=dict(color=_C["primary"], width=2),
-            ))
-            fig_cape.add_hline(
-                y=cape_median,
-                line_dash="dash", line_color=_C["ref"], line_width=1,
-                annotation_text=f"Median {cape_median:.0f}×",
-                annotation_position="right", annotation_font_size=10,
-            )
-            fig_cape.add_hline(
-                y=cape_median + cape_std,
-                line_dash="dot", line_color=_C["ref"], line_width=1,
-                annotation_text=f"+1σ  {cape_median+cape_std:.0f}×",
-                annotation_position="right", annotation_font_size=10,
-            )
-            fig_cape.add_hline(
-                y=max(1.0, cape_median - cape_std),
-                line_dash="dot", line_color=_C["ref"], line_width=1,
-                annotation_text=f"−1σ  {cape_median-cape_std:.0f}×",
-                annotation_position="right", annotation_font_size=10,
-            )
-            _add_current_annotation(
-                fig_cape, cape_val,
-                f"Current {cape_val:.1f}× ({_ordinal(cape_pctile_w)} pct, {cape_window})",
-            )
-            _apply_style(fig_cape, height=_CHART_H_CAPE)
-            fig_cape.update_yaxes(title_text="CAPE (×)")
-            _yr = _tight_yrange(cape_filtered, [cape_val, cape_median,
-                                                cape_median + cape_std, max(1.0, cape_median - cape_std)])
-            if _yr:
-                fig_cape.update_yaxes(range=_yr)
-            st.plotly_chart(fig_cape, width='stretch')
 
         pctile_label_cape = percentile_label(cape_pctile)
         st.caption(
@@ -529,8 +527,38 @@ with col:
         ecy_pctile_w  = _window_pctile(_ecy_hist, current_ecy, w_start_ecy)
         ecy_pctile    = macro.percentile(_ecy_hist, current_ecy)
 
-        col_l, col_r = st.columns([1, 2])
-        with col_l:
+        _ecy_w = _ecy_hist[_ecy_hist.index >= pd.Timestamp(w_start_ecy)]
+        fig_ecy = go.Figure()
+        fig_ecy.add_trace(go.Scatter(
+            x=_ecy_w.index, y=_ecy_w.values,
+            mode="lines", name="ECY (%)",
+            line=dict(color=_C["primary"], width=2),
+        ))
+        fig_ecy.add_hline(
+            y=_ecy_median,
+            line_dash="dash", line_color=_C["ref"], line_width=1,
+            annotation_text=f"Median {_ecy_median:.1f}%",
+            annotation_position="right", annotation_font_size=10,
+        )
+        fig_ecy.add_hline(
+            y=0,
+            line_dash="dot", line_color="#CC4444", line_width=1,
+            annotation_text="0 = bonds match equities",
+            annotation_position="top left", annotation_font_size=9,
+            annotation_font_color="#888",
+        )
+        _add_current_annotation(
+            fig_ecy, current_ecy,
+            f"Current {current_ecy:.2f}% ({_ordinal(ecy_pctile_w)} pct, {ecy_window})",
+        )
+        _apply_style(fig_ecy, height=_CHART_H_CAPE)
+        fig_ecy.update_yaxes(title_text="ECY (%)")
+        _yr = _tight_yrange(_ecy_w, [current_ecy, _ecy_median, 0.0])
+        if _yr:
+            fig_ecy.update_yaxes(range=_yr)
+        st.plotly_chart(fig_ecy, width='stretch')
+        mc, _ = st.columns([1, 3])
+        with mc:
             st.metric("ECY", f"{current_ecy:.2f}%")
             st.caption(
                 f"{_ordinal(ecy_pctile_w)} percentile of {ecy_window} window "
@@ -538,39 +566,6 @@ with col:
                 f"CAPE yield {100/cape_val:.2f}% vs real rate {_real_rate:.2f}% "
                 f"({current_dgs10:.2f}% − {current_t10yie:.2f}%)"
             )
-
-        with col_r:
-            _ecy_w_start = _window_start(ecy_window)
-            _ecy_w       = _ecy_hist[_ecy_hist.index >= pd.Timestamp(_ecy_w_start)]
-            fig_ecy = go.Figure()
-            fig_ecy.add_trace(go.Scatter(
-                x=_ecy_w.index, y=_ecy_w.values,
-                mode="lines", name="ECY (%)",
-                line=dict(color=_C["primary"], width=2),
-            ))
-            fig_ecy.add_hline(
-                y=_ecy_median,
-                line_dash="dash", line_color=_C["ref"], line_width=1,
-                annotation_text=f"Median {_ecy_median:.1f}%",
-                annotation_position="right", annotation_font_size=10,
-            )
-            fig_ecy.add_hline(
-                y=0,
-                line_dash="dot", line_color="#CC4444", line_width=1,
-                annotation_text="0 = bonds match equities",
-                annotation_position="top left", annotation_font_size=9,
-                annotation_font_color="#888",
-            )
-            _add_current_annotation(
-                fig_ecy, current_ecy,
-                f"Current {current_ecy:.2f}% ({_ordinal(ecy_pctile_w)} pct, {ecy_window})",
-            )
-            _apply_style(fig_ecy, height=_CHART_H_CAPE)
-            fig_ecy.update_yaxes(title_text="ECY (%)")
-            _yr = _tight_yrange(_ecy_w, [current_ecy, _ecy_median, 0.0])
-            if _yr:
-                fig_ecy.update_yaxes(range=_yr)
-            st.plotly_chart(fig_ecy, width='stretch')
 
         if current_ecy >= 3.0:
             _ecy_interp = (
@@ -623,45 +618,44 @@ with col:
         curve_state        = _yield_curve_state(t10y2y_clean)
         t10y2y_bps         = t10y2y_clean * 100
 
-        col_l, col_r = st.columns([1, 2])
-        with col_l:
-            yc_window = st.radio(
-                "Window", ["5Y", "10Y", "20Y", "Max"],
-                index=1, key="yc_window",
-            )
-            yc_start    = _window_start(yc_window)
-            yc_pctile_w = _window_pctile(t10y2y_bps, current_spread_bps, yc_start)
-            yc_data     = t10y2y_bps.loc[yc_start:]
-            sign = "+" if current_spread_bps >= 0 else ""
+        yc_window = st.radio(
+            "Window", ["5Y", "10Y", "20Y", "Max"],
+            index=1, key="yc_window", horizontal=True,
+        )
+        yc_start    = _window_start(yc_window)
+        yc_pctile_w = _window_pctile(t10y2y_bps, current_spread_bps, yc_start)
+        yc_data     = t10y2y_bps.loc[yc_start:]
+        sign = "+" if current_spread_bps >= 0 else ""
+        fig_yc = go.Figure()
+        _add_recession_shading(fig_yc, rec_periods or [], yc_start)
+        fig_yc.add_trace(go.Scatter(
+            x=yc_data.index, y=yc_data.values,
+            mode="lines", name="10Y−2Y (bps)",
+            line=dict(color=_C["primary"], width=2),
+        ))
+        fig_yc.add_hline(
+            y=0, line_dash="dash", line_color=_C["ref"], line_width=1,
+            annotation_text="0 = flat  |  above: normal  |  below: inverted",
+            annotation_position="top left", annotation_font_size=9,
+            annotation_font_color="#888",
+        )
+        _add_current_annotation(
+            fig_yc, current_spread_bps,
+            f"Current {current_spread_bps:+.0f} bps ({_ordinal(yc_pctile_w)} pct, {yc_window})",
+        )
+        _apply_style(fig_yc)
+        fig_yc.update_yaxes(title_text="Spread (bps)")
+        _yr = _tight_yrange(yc_data, [current_spread_bps, 0.0])
+        if _yr:
+            fig_yc.update_yaxes(range=_yr)
+        st.plotly_chart(fig_yc, width='stretch')
+        mc, _ = st.columns([1, 3])
+        with mc:
             st.metric("10Y − 2Y Spread", f"{sign}{current_spread_bps:.0f} bps")
             st.caption(
                 f"{curve_state} · "
                 f"{_ordinal(yc_pctile_w)} percentile of {yc_window} window"
             )
-        with col_r:
-            fig_yc = go.Figure()
-            _add_recession_shading(fig_yc, rec_periods or [], yc_start)
-            fig_yc.add_trace(go.Scatter(
-                x=yc_data.index, y=yc_data.values,
-                mode="lines", name="10Y−2Y (bps)",
-                line=dict(color=_C["primary"], width=2),
-            ))
-            fig_yc.add_hline(
-                y=0, line_dash="dash", line_color=_C["ref"], line_width=1,
-                annotation_text="0 = flat  |  above: normal  |  below: inverted",
-                annotation_position="top left", annotation_font_size=9,
-                annotation_font_color="#888",
-            )
-            _add_current_annotation(
-                fig_yc, current_spread_bps,
-                f"Current {current_spread_bps:+.0f} bps ({_ordinal(yc_pctile_w)} pct, {yc_window})",
-            )
-            _apply_style(fig_yc)
-            fig_yc.update_yaxes(title_text="Spread (bps)")
-            _yr = _tight_yrange(yc_data, [current_spread_bps, 0.0])
-            if _yr:
-                fig_yc.update_yaxes(range=_yr)
-            st.plotly_chart(fig_yc, width='stretch')
 
         st.caption(
             "Yield curve inversions (spread < 0) have preceded each of the last seven "
@@ -685,40 +679,39 @@ with col:
         ff_1y_date  = dff_1y_data.index[-1].strftime("%b %Y") if not dff_1y_data.empty else ""
         ff_chg_bps  = (current_ff - ff_1y_ago) * 100
 
-        col_l, col_r = st.columns([1, 2])
-        with col_l:
-            ff_window = st.radio(
-                "Window", ["5Y", "10Y", "20Y", "Max"],
-                index=1, key="ff_window",
-            )
-            ff_start    = _window_start(ff_window)
-            ff_pctile_w = _window_pctile(dff_clean, current_ff, ff_start)
-            ff_data     = dff_clean.loc[ff_start:]
-            chg_sign = "+" if ff_chg_bps >= 0 else ""
+        ff_window = st.radio(
+            "Window", ["5Y", "10Y", "20Y", "Max"],
+            index=1, key="ff_window", horizontal=True,
+        )
+        ff_start    = _window_start(ff_window)
+        ff_pctile_w = _window_pctile(dff_clean, current_ff, ff_start)
+        ff_data     = dff_clean.loc[ff_start:]
+        chg_sign = "+" if ff_chg_bps >= 0 else ""
+        fig_ff = go.Figure()
+        _add_recession_shading(fig_ff, rec_periods or [], ff_start)
+        fig_ff.add_trace(go.Scatter(
+            x=ff_data.index, y=ff_data.values,
+            mode="lines", name="Fed Funds (%)",
+            line=dict(color=_C["primary"], width=2),
+        ))
+        _add_current_annotation(
+            fig_ff, current_ff,
+            f"Current {current_ff:.2f}% ({_ordinal(ff_pctile_w)} pct, {ff_window})",
+        )
+        _apply_style(fig_ff)
+        fig_ff.update_yaxes(title_text="Rate (%)")
+        _yr = _tight_yrange(ff_data, [current_ff])
+        if _yr:
+            _yr[0] = max(0.0, _yr[0])
+            fig_ff.update_yaxes(range=_yr)
+        st.plotly_chart(fig_ff, width='stretch')
+        mc, _ = st.columns([1, 3])
+        with mc:
             st.metric("Fed Funds Rate", f"{current_ff:.2f}%")
             st.caption(
                 f"{chg_sign}{ff_chg_bps:.0f} bps from {ff_1y_date} · "
                 f"{_ordinal(ff_pctile_w)} percentile of {ff_window} window"
             )
-        with col_r:
-            fig_ff = go.Figure()
-            _add_recession_shading(fig_ff, rec_periods or [], ff_start)
-            fig_ff.add_trace(go.Scatter(
-                x=ff_data.index, y=ff_data.values,
-                mode="lines", name="Fed Funds (%)",
-                line=dict(color=_C["primary"], width=2),
-            ))
-            _add_current_annotation(
-                fig_ff, current_ff,
-                f"Current {current_ff:.2f}% ({_ordinal(ff_pctile_w)} pct, {ff_window})",
-            )
-            _apply_style(fig_ff)
-            fig_ff.update_yaxes(title_text="Rate (%)")
-            _yr = _tight_yrange(ff_data, [current_ff])
-            if _yr:
-                _yr[0] = max(0.0, _yr[0])
-                fig_ff.update_yaxes(range=_yr)
-            st.plotly_chart(fig_ff, width='stretch')
 
         st.caption(_ff_interpretation(current_ff, ff_chg_bps))
         st.divider()
@@ -744,54 +737,53 @@ with col:
         hy_since       = hy_bps.index[0].strftime("%b %Y")
         hy_data_start  = hy_bps.index[0]
 
-        col_l, col_r = st.columns([1, 2])
-        with col_l:
-            hy_window = st.radio(
-                "Window", ["5Y", "10Y", "20Y", "Max"],
-                index=1, key="hy_window",
+        hy_window = st.radio(
+            "Window", ["5Y", "10Y", "20Y", "Max"],
+            index=1, key="hy_window", horizontal=True,
+        )
+        hy_start    = _window_start(hy_window)
+        hy_pctile_w = _window_pctile(hy_bps, current_hy, hy_start)
+        hy_data     = hy_bps.loc[hy_start:]
+        # F.1 fix: warn when selected window predates available data
+        _hy_avail_start = hy_data_start.date()
+        _hy_window_start_date = date.fromisoformat(hy_start) if hy_start != "1800-01-01" else date(1800, 1, 1)
+        if _hy_window_start_date < _hy_avail_start:
+            st.info(
+                f"HY OAS data starts **{hy_since}** (FRED restricts BAMLH0A0HYM2 to this date). "
+                f"Selecting a {hy_window} window shows only ~{len(hy_clean)} trading days of data. "
+                "The percentile is computed over the available window, not the full requested window."
             )
-            hy_start    = _window_start(hy_window)
-            hy_pctile_w = _window_pctile(hy_bps, current_hy, hy_start)
-            hy_data     = hy_bps.loc[hy_start:]
-            # F.1 fix: warn when selected window predates available data
-            _hy_avail_start = hy_data_start.date()
-            _hy_window_start_date = date.fromisoformat(hy_start) if hy_start != "1800-01-01" else date(1800, 1, 1)
-            if _hy_window_start_date < _hy_avail_start:
-                st.info(
-                    f"HY OAS data starts **{hy_since}** (FRED restricts BAMLH0A0HYM2 to this date). "
-                    f"Selecting a {hy_window} window shows only ~{len(hy_clean)} trading days of data. "
-                    "The percentile is computed over the available window, not the full requested window."
-                )
+        fig_hy = go.Figure()
+        _add_recession_shading(fig_hy, rec_periods or [], hy_start)
+        fig_hy.add_trace(go.Scatter(
+            x=hy_data.index, y=hy_data.values,
+            mode="lines", name="HY OAS (bps)",
+            line=dict(color=_C["primary"], width=2),
+        ))
+        fig_hy.add_hline(
+            y=hy_median_bps,
+            line_dash="dash", line_color=_C["ref"], line_width=1,
+            annotation_text=f"Median {hy_median_bps:.0f} bps",
+            annotation_position="right", annotation_font_size=10,
+        )
+        _add_current_annotation(
+            fig_hy, current_hy,
+            f"Current {current_hy:.0f} bps ({_ordinal(hy_pctile_w)} pct, {hy_since}+)",
+        )
+        _apply_style(fig_hy)
+        fig_hy.update_yaxes(title_text="OAS (bps)")
+        _yr = _tight_yrange(hy_data, [current_hy, hy_median_bps])
+        if _yr:
+            _yr[0] = max(0.0, _yr[0])
+            fig_hy.update_yaxes(range=_yr)
+        st.plotly_chart(fig_hy, width='stretch')
+        mc, _ = st.columns([1, 3])
+        with mc:
             st.metric("HY OAS", f"{current_hy:.0f} bps")
             st.caption(
                 f"{_ordinal(hy_pctile_w)} percentile of available history "
                 f"(data from {hy_since})"
             )
-        with col_r:
-            fig_hy = go.Figure()
-            _add_recession_shading(fig_hy, rec_periods or [], hy_start)
-            fig_hy.add_trace(go.Scatter(
-                x=hy_data.index, y=hy_data.values,
-                mode="lines", name="HY OAS (bps)",
-                line=dict(color=_C["primary"], width=2),
-            ))
-            fig_hy.add_hline(
-                y=hy_median_bps,
-                line_dash="dash", line_color=_C["ref"], line_width=1,
-                annotation_text=f"Median {hy_median_bps:.0f} bps",
-                annotation_position="right", annotation_font_size=10,
-            )
-            _add_current_annotation(
-                fig_hy, current_hy,
-                f"Current {current_hy:.0f} bps ({_ordinal(hy_pctile_w)} pct, {hy_since}+)",
-            )
-            _apply_style(fig_hy)
-            fig_hy.update_yaxes(title_text="OAS (bps)")
-            _yr = _tight_yrange(hy_data, [current_hy, hy_median_bps])
-            if _yr:
-                _yr[0] = max(0.0, _yr[0])
-                fig_hy.update_yaxes(range=_yr)
-            st.plotly_chart(fig_hy, width='stretch')
 
         hy_framing = (
             "suggests late-cycle complacency — limited cushion for additional compression"
@@ -831,45 +823,44 @@ with col:
         ur_1y_ago     = float(ur_1y_data.iloc[-1]) if not ur_1y_data.empty else current_ur
         ur_chg        = (current_ur - ur_1y_ago) * 100  # in basis points of percentage points
 
-        col_l, col_r = st.columns([1, 2])
-        with col_l:
-            ur_window = st.radio(
-                "Window", ["5Y", "10Y", "20Y", "Max"],
-                index=1, key="ur_window", horizontal=True,
-            )
-            ur_yaxis = st.radio(
-                "Y-axis", ["Full series", "Excl. 2020 spike"],
-                index=0, key="ur_yaxis", horizontal=True,
-            )
-            ur_start    = _window_start(ur_window)
-            ur_pctile_w = _window_pctile(ur_clean, current_ur, ur_start)
-            ur_data     = ur_clean.loc[ur_start:]
-            chg_sign = "+" if ur_chg >= 0 else ""
+        ur_window = st.radio(
+            "Window", ["5Y", "10Y", "20Y", "Max"],
+            index=1, key="ur_window", horizontal=True,
+        )
+        ur_yaxis = st.radio(
+            "Y-axis", ["Full series", "Excl. 2020 spike"],
+            index=0, key="ur_yaxis", horizontal=True,
+        )
+        ur_start    = _window_start(ur_window)
+        ur_pctile_w = _window_pctile(ur_clean, current_ur, ur_start)
+        ur_data     = ur_clean.loc[ur_start:]
+        chg_sign = "+" if ur_chg >= 0 else ""
+        fig_ur = go.Figure()
+        _add_recession_shading(fig_ur, rec_periods or [], ur_start)
+        fig_ur.add_trace(go.Scatter(
+            x=ur_data.index, y=ur_data.values,
+            mode="lines", name="Unemployment (%)",
+            line=dict(color=_C["primary"], width=2),
+        ))
+        _add_current_annotation(
+            fig_ur, current_ur,
+            f"Current {current_ur:.1f}% ({_ordinal(ur_pctile_w)} pct, {ur_window})",
+        )
+        _apply_style(fig_ur)
+        fig_ur.update_yaxes(title_text="Rate (%)")
+        _ur_base = ur_data[ur_data.index.year != 2020] if ur_yaxis == "Excl. 2020 spike" else ur_data
+        _yr = _tight_yrange(_ur_base, [current_ur])
+        if _yr:
+            _yr[0] = max(0.0, _yr[0])
+            fig_ur.update_yaxes(range=_yr)
+        st.plotly_chart(fig_ur, width='stretch')
+        mc, _ = st.columns([1, 3])
+        with mc:
             st.metric("Unemployment Rate", f"{current_ur:.1f}%")
             st.caption(
                 f"{chg_sign}{ur_chg:.0f} bps from one year ago · "
                 f"{_ordinal(ur_pctile_w)} percentile of {ur_window} window"
             )
-        with col_r:
-            fig_ur = go.Figure()
-            _add_recession_shading(fig_ur, rec_periods or [], ur_start)
-            fig_ur.add_trace(go.Scatter(
-                x=ur_data.index, y=ur_data.values,
-                mode="lines", name="Unemployment (%)",
-                line=dict(color=_C["primary"], width=2),
-            ))
-            _add_current_annotation(
-                fig_ur, current_ur,
-                f"Current {current_ur:.1f}% ({_ordinal(ur_pctile_w)} pct, {ur_window})",
-            )
-            _apply_style(fig_ur)
-            fig_ur.update_yaxes(title_text="Rate (%)")
-            _ur_base = ur_data[ur_data.index.year != 2020] if ur_yaxis == "Excl. 2020 spike" else ur_data
-            _yr = _tight_yrange(_ur_base, [current_ur])
-            if _yr:
-                _yr[0] = max(0.0, _yr[0])
-                fig_ur.update_yaxes(range=_yr)
-            st.plotly_chart(fig_ur, width='stretch')
 
         if ur_pctile_w < 30:
             _ur_interp = (
@@ -914,42 +905,41 @@ with col:
         current_gdp = float(gdp_clean.iloc[-1])
         gdp_as_of   = gdp_clean.index[-1].strftime("%b %Y")
 
-        col_l, col_r = st.columns([1, 2])
-        with col_l:
-            gdp_window = st.radio(
-                "Window", ["10Y", "20Y", "Max"],
-                index=1, key="gdp_window", horizontal=True,
-            )
-            gdp_yaxis = st.radio(
-                "Y-axis", ["Full series", "Excl. 2020 outliers"],
-                index=1, key="gdp_yaxis", horizontal=True,
-            )
-            gdp_start    = _window_start(gdp_window)
-            gdp_pctile_w = _window_pctile(gdp_clean, current_gdp, gdp_start)
-            gdp_data     = gdp_clean.loc[gdp_start:]
+        gdp_window = st.radio(
+            "Window", ["10Y", "20Y", "Max"],
+            index=1, key="gdp_window", horizontal=True,
+        )
+        gdp_yaxis = st.radio(
+            "Y-axis", ["Full series", "Excl. 2020 outliers"],
+            index=1, key="gdp_yaxis", horizontal=True,
+        )
+        gdp_start    = _window_start(gdp_window)
+        gdp_pctile_w = _window_pctile(gdp_clean, current_gdp, gdp_start)
+        gdp_data     = gdp_clean.loc[gdp_start:]
+        _gdp_base = gdp_data[gdp_data.index.year != 2020] if gdp_yaxis == "Excl. 2020 outliers" else gdp_data
+        fig_gdp = go.Figure()
+        _add_recession_shading(fig_gdp, rec_periods or [], gdp_start)
+        fig_gdp.add_trace(go.Bar(
+            x=gdp_data.index, y=gdp_data.values,
+            name="Real GDP QoQ ann. (%)",
+            marker_color=[_C["primary"] if v >= 0 else "#C0392B" for v in gdp_data.values],
+        ))
+        fig_gdp.add_hline(
+            y=0, line_color=_C["ref"], line_width=1, line_dash="dash",
+        )
+        _apply_style(fig_gdp)
+        fig_gdp.update_yaxes(title_text="Growth (%)")
+        _yr = _tight_yrange(_gdp_base, [current_gdp, 0.0])
+        if _yr:
+            fig_gdp.update_yaxes(range=_yr)
+        st.plotly_chart(fig_gdp, width='stretch')
+        mc, _ = st.columns([1, 3])
+        with mc:
             st.metric("Real GDP Growth (QoQ ann.)", f"{current_gdp:.1f}%")
             st.caption(
                 f"As of {gdp_as_of} (quarterly release, 1-2 quarter lag) · "
                 f"{_ordinal(gdp_pctile_w)} percentile of {gdp_window} window"
             )
-        with col_r:
-            fig_gdp = go.Figure()
-            _add_recession_shading(fig_gdp, rec_periods or [], gdp_start)
-            fig_gdp.add_trace(go.Bar(
-                x=gdp_data.index, y=gdp_data.values,
-                name="Real GDP QoQ ann. (%)",
-                marker_color=[_C["primary"] if v >= 0 else "#C0392B" for v in gdp_data.values],
-            ))
-            fig_gdp.add_hline(
-                y=0, line_color=_C["ref"], line_width=1, line_dash="dash",
-            )
-            _apply_style(fig_gdp)
-            fig_gdp.update_yaxes(title_text="Growth (%)")
-            _gdp_base = gdp_data[gdp_data.index.year != 2020] if gdp_yaxis == "Excl. 2020 outliers" else gdp_data
-            _yr = _tight_yrange(_gdp_base, [current_gdp, 0.0])
-            if _yr:
-                fig_gdp.update_yaxes(range=_yr)
-            st.plotly_chart(fig_gdp, width='stretch')
 
         if current_gdp >= 3.0:
             _gdp_interp = f"GDP growth of {current_gdp:.1f}% is above trend — consistent with expansion."
@@ -988,43 +978,42 @@ with col:
         current_cpi  = float(cpi_yoy.iloc[-1])
         cpi_as_of    = cpi_yoy.index[-1].strftime("%b %Y")
 
-        col_l, col_r = st.columns([1, 2])
-        with col_l:
-            cpi_window   = st.radio(
-                "Window", ["5Y", "10Y", "20Y", "Max"],
-                index=1, key="cpi_window",
-            )
-            cpi_start    = _window_start(cpi_window)
-            cpi_pctile_w = _window_pctile(cpi_yoy, current_cpi, cpi_start)
-            cpi_data     = cpi_yoy.loc[cpi_start:]
+        cpi_window = st.radio(
+            "Window", ["5Y", "10Y", "20Y", "Max"],
+            index=1, key="cpi_window", horizontal=True,
+        )
+        cpi_start    = _window_start(cpi_window)
+        cpi_pctile_w = _window_pctile(cpi_yoy, current_cpi, cpi_start)
+        cpi_data     = cpi_yoy.loc[cpi_start:]
+        fig_cpi = go.Figure()
+        _add_recession_shading(fig_cpi, rec_periods or [], cpi_start)
+        fig_cpi.add_trace(go.Scatter(
+            x=cpi_data.index, y=cpi_data.values,
+            mode="lines", name="Core CPI YoY (%)",
+            line=dict(color=_C["primary"], width=2),
+        ))
+        fig_cpi.add_hline(
+            y=2.0, line_dash="dash", line_color=_C["ref"], line_width=1,
+            annotation_text="Fed target 2%",
+            annotation_position="right", annotation_font_size=10,
+        )
+        _add_current_annotation(
+            fig_cpi, current_cpi,
+            f"Current {current_cpi:.1f}% ({_ordinal(cpi_pctile_w)} pct, {cpi_window})",
+        )
+        _apply_style(fig_cpi)
+        fig_cpi.update_yaxes(title_text="YoY Change (%)")
+        _yr = _tight_yrange(cpi_data, [current_cpi, 2.0])
+        if _yr:
+            fig_cpi.update_yaxes(range=_yr)
+        st.plotly_chart(fig_cpi, width='stretch')
+        mc, _ = st.columns([1, 3])
+        with mc:
             st.metric("Core CPI YoY", f"{current_cpi:.1f}%")
             st.caption(
                 f"As of {cpi_as_of} · "
                 f"{_ordinal(cpi_pctile_w)} percentile of {cpi_window} window"
             )
-        with col_r:
-            fig_cpi = go.Figure()
-            _add_recession_shading(fig_cpi, rec_periods or [], cpi_start)
-            fig_cpi.add_trace(go.Scatter(
-                x=cpi_data.index, y=cpi_data.values,
-                mode="lines", name="Core CPI YoY (%)",
-                line=dict(color=_C["primary"], width=2),
-            ))
-            fig_cpi.add_hline(
-                y=2.0, line_dash="dash", line_color=_C["ref"], line_width=1,
-                annotation_text="Fed target 2%",
-                annotation_position="right", annotation_font_size=10,
-            )
-            _add_current_annotation(
-                fig_cpi, current_cpi,
-                f"Current {current_cpi:.1f}% ({_ordinal(cpi_pctile_w)} pct, {cpi_window})",
-            )
-            _apply_style(fig_cpi)
-            fig_cpi.update_yaxes(title_text="YoY Change (%)")
-            _yr = _tight_yrange(cpi_data, [current_cpi, 2.0])
-            if _yr:
-                fig_cpi.update_yaxes(range=_yr)
-            st.plotly_chart(fig_cpi, width='stretch')
 
         if current_cpi > 4.0:
             _cpi_interp = (
@@ -1086,52 +1075,51 @@ with col:
         ratio_1y_ago  = float(ratio_1y_base.iloc[-1]) if not ratio_1y_base.empty else current_ratio
         rel_perf_bps  = (current_ratio / ratio_1y_ago - 1) * 10000
 
-        col_l, col_r = st.columns([1, 2])
-        with col_l:
-            us_window  = st.radio(
-                "Window", ["5Y", "10Y", "20Y", "Max"],
-                index=1, key="us_window",
-            )
-            us_start       = _window_start(us_window)
-            ratio_w        = ratio[ratio.index >= pd.Timestamp(us_start)]
-            ratio_pctile_w = _window_pctile(ratio, current_ratio, us_start)
-            rel_dir = "outperformed" if rel_perf_bps >= 0 else "underperformed"
+        us_window = st.radio(
+            "Window", ["5Y", "10Y", "20Y", "Max"],
+            index=1, key="us_window", horizontal=True,
+        )
+        us_start       = _window_start(us_window)
+        ratio_w        = ratio[ratio.index >= pd.Timestamp(us_start)]
+        ratio_pctile_w = _window_pctile(ratio, current_ratio, us_start)
+        rel_dir = "outperformed" if rel_perf_bps >= 0 else "underperformed"
+        ratio_norm = ratio_w / float(ratio_w.iloc[0])
+        ratio_20y_median_norm = (
+            float(ratio_20y.median()) / float(ratio_w.iloc[0])
+            if not ratio_20y.empty and ratio_w.iloc[0] != 0 else 1.0
+        )
+        fig_us = go.Figure()
+        fig_us.add_trace(go.Scatter(
+            x=ratio_norm.index, y=ratio_norm.values,
+            mode="lines", name="SPY / EFA (normalized)",
+            line=dict(color=_C["primary"], width=2),
+        ))
+        fig_us.add_hline(
+            y=ratio_20y_median_norm,
+            line_dash="dash", line_color=_C["ref"], line_width=1,
+            annotation_text="20Y median",
+            annotation_position="right", annotation_font_size=10,
+        )
+        _apply_style(fig_us)
+        fig_us.update_yaxes(title_text="Ratio (normalized to 1.0 at window start)")
+        _yr = _tight_yrange(ratio_norm, [ratio_20y_median_norm])
+        if _yr:
+            fig_us.update_yaxes(range=_yr)
+        fig_us.add_annotation(
+            xref="paper", yref="paper",
+            x=0.01, y=0.98,
+            text="Rising = US outperforming international",
+            showarrow=False,
+            font=dict(size=9, color="#888"),
+            xanchor="left", yanchor="top",
+        )
+        st.plotly_chart(fig_us, width='stretch')
+        mc, _ = st.columns([1, 3])
+        with mc:
             st.metric(f"US/Intl Ratio ({us_window} percentile)", _ordinal(ratio_pctile_w))
             st.caption(
                 f"US {rel_dir} international by {abs(rel_perf_bps):.0f} bps over last 12 months"
             )
-        with col_r:
-            ratio_norm = ratio_w / float(ratio_w.iloc[0])
-            ratio_20y_median_norm = (
-                float(ratio_20y.median()) / float(ratio_w.iloc[0])
-                if not ratio_20y.empty and ratio_w.iloc[0] != 0 else 1.0
-            )
-            fig_us = go.Figure()
-            fig_us.add_trace(go.Scatter(
-                x=ratio_norm.index, y=ratio_norm.values,
-                mode="lines", name="SPY / EFA (normalized)",
-                line=dict(color=_C["primary"], width=2),
-            ))
-            fig_us.add_hline(
-                y=ratio_20y_median_norm,
-                line_dash="dash", line_color=_C["ref"], line_width=1,
-                annotation_text="20Y median",
-                annotation_position="right", annotation_font_size=10,
-            )
-            _apply_style(fig_us)
-            fig_us.update_yaxes(title_text="Ratio (normalized to 1.0 at window start)")
-            _yr = _tight_yrange(ratio_norm, [ratio_20y_median_norm])
-            if _yr:
-                fig_us.update_yaxes(range=_yr)
-            fig_us.add_annotation(
-                xref="paper", yref="paper",
-                x=0.01, y=0.98,
-                text="Rising = US outperforming international",
-                showarrow=False,
-                font=dict(size=9, color="#888"),
-                xanchor="left", yanchor="top",
-            )
-            st.plotly_chart(fig_us, width='stretch')
 
         us_label = percentile_label(ratio_pctile_w)
         st.caption(
