@@ -92,6 +92,7 @@ CREATE TABLE IF NOT EXISTS trades (
     price         REAL NOT NULL,
     fees          REAL DEFAULT 0,
     notes         TEXT,
+    lot_source    TEXT DEFAULT 'initial',
     created_at    TEXT DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (account_id) REFERENCES accounts(account_id),
     FOREIGN KEY (ticker)     REFERENCES securities(ticker),
@@ -144,6 +145,17 @@ def _auto_migrate(conn: sqlite3.Connection) -> None:
             "    ON prices(ticker, price_date);"
             "PRAGMA foreign_keys = ON;"
         )
+
+    # Migration: add lot_source column to trades for per-lot tax tracking.
+    trade_cols = [
+        row[1] for row in conn.execute("PRAGMA table_info(trades)").fetchall()
+    ]
+    if "lot_source" not in trade_cols:
+        conn.execute("ALTER TABLE trades ADD COLUMN lot_source TEXT DEFAULT 'initial'")
+        conn.execute(
+            "UPDATE trades SET lot_source = 'initial' WHERE lot_source IS NULL"
+        )
+        conn.commit()
 
 
 def get_connection():
