@@ -92,6 +92,21 @@ _PERIOD_LABELS = {
     "YTD": "YTD", "1Y": "1 Year", "SI": "Since Inception",
 }
 
+REPORT_DISCLAIMER = (
+    "This report documents the author's personal investment portfolio "
+    "and is provided for informational and educational purposes only. "
+    "Nothing in this report constitutes investment advice, a "
+    "recommendation to buy or sell any security, or an offer to provide "
+    "advisory services. Past performance does not predict future "
+    "results, and all return figures are time-weighted historical "
+    "calculations subject to data and methodology limitations. No "
+    "fiduciary, advisory, or client relationship is created by accessing "
+    "this report or the underlying analytics system. Data sourced from "
+    "Yahoo Finance, FRED, and Robert Shiller’s public datasets; "
+    "calculations are best-effort and may contain methodological "
+    "simplifications."
+)
+
 
 # ── PDF rendering ─────────────────────────────────────────────────────────────
 
@@ -1311,6 +1326,7 @@ def generate_quarterly_report(
         has_trades           = has_trades,
         inception_date       = inception_str,
         si_days              = si_days_report,
+        report_disclaimer    = REPORT_DISCLAIMER,
         exec           = exec_data,
         hold           = hold_data,
         perf           = perf_data,
