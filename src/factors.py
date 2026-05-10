@@ -131,7 +131,7 @@ _SLEEVES = {
 
 # Qualitative disclosure for the EM sleeve (no daily FF5 data available)
 EM_DISCLOSURE = (
-    "Emerging Markets sleeve (IEMG): Ken French does not publish daily EM factor data. "
+    "Ken French does not publish daily EM factor data. "
     "Monthly EM factors would yield approximately 12 observations over the current "
     "1-year window — below the threshold for stable inference. "
     "IEMG provides passive cap-weighted broad EM exposure (~27% China weight at current "
@@ -550,6 +550,18 @@ def run_sleeve_regression(
     ff = load_factors(region)
     ff.index = pd.to_datetime(ff.index)
 
+    # VEA trades on US exchanges and has no price information on US federal
+    # holidays — its return series shows zero by forward-fill, not by
+    # observation. The Dev FF calendar includes those dates (international
+    # markets open); the US FF calendar excludes them. Filter to US trading
+    # days so both sleeves use the same calendar and US-holiday rows with
+    # artificially zeroed VEA returns are excluded.
+    if region == "developed_exus":
+        ff_us = load_factors("us")
+        ff_us.index = pd.to_datetime(ff_us.index)
+        us_trading_days = ff_us.loc[inception:end_date].index
+        daily_ret = daily_ret.reindex(us_trading_days).dropna()
+
     merged = daily_ret.to_frame(name="R_sleeve").join(ff, how="inner").dropna()
 
     if len(merged) < 30:
@@ -663,6 +675,12 @@ def run_sleeve_regressions_mom(inception: str, end_date: str) -> dict:
 
             ff = load_factors(spec["region"])
             ff.index = pd.to_datetime(ff.index)
+
+            if spec["region"] == "developed_exus":
+                ff_us = load_factors("us")
+                ff_us.index = pd.to_datetime(ff_us.index)
+                us_trading_days = ff_us.loc[inception:end_date].index
+                daily_ret = daily_ret.reindex(us_trading_days).dropna()
 
             merged = (
                 daily_ret.to_frame(name="R_sleeve")
@@ -955,12 +973,24 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
         if dev else "N/A"
     )
 
+    lag_str = "N/A"
+    if us and us.get("sample_end"):
+        try:
+            _lag_days = (date.today() - date.fromisoformat(us["sample_end"])).days
+            lag_str   = f"{_lag_days}-calendar-day publication lag (factor data ends {us['sample_end']})"
+        except Exception:
+            pass
+
     return [
-        f"Samples: US equity sleeve {T_us} trading days ({us_window}), L = {L_us}. "
-        f"International Developed sleeve {T_dev} trading days ({dev_window}), L = {L_dev}. "
-        "Sample sizes reflect the overlap between portfolio inception (May 1, 2025) and "
-        "the most recent available factor data (~65 calendar-day publication lag "
-        "at current Ken French release cadence).",
+        f"Samples: US equity sleeve {T_us} US trading days ({us_window}), L = {L_us}. "
+        f"International Developed sleeve {T_dev} US trading days ({dev_window}), L = {L_dev}. "
+        "Both sleeves are restricted to US equity market trading days (dates present "
+        "in the Ken French US factor calendar). The Developed sleeve applies this "
+        "restriction explicitly: VEA trades on US exchanges and has no price observation "
+        "on US federal holidays — its return series shows zero by forward-fill, not by "
+        "market observation. The Dev FF dataset includes those holidays (international "
+        "markets open); excluding them keeps both regression calendars consistent. "
+        f"Sample sizes reflect the overlap with the most recent available factor data ({lag_str}).",
 
         "Methodology: each equity sleeve is regressed against its own region-appropriate "
         "FF5 factor set — US factors for the US sleeve, Developed ex-US factors for VEA. "

@@ -8,20 +8,40 @@ import plotly.graph_objects as go
 from src.asof import as_of_banner
 from src.db import get_connection
 from src.endowment_benchmarks import CATEGORIES, ENTITIES, get_endowment_data
+from src.macro import percentile as macro_percentile
+from src.prose_helpers import percentile_label
+from src.shiller import get_cape_series
 from src.ui_helpers import render_footer
 
 PARENT_COLORS = {
-    "Equity":      "#3D5A80",
-    "Income":      "#4A7C59",
-    "Real Assets": "#8B7355",
-    "Cash":        "#AEAEAE",
+    "Equity":        "#3D5A80",
+    "Fixed Income":  "#4A7C59",
+    "Real Assets":   "#8B7355",
+    "Cash":          "#AEAEAE",
 }
+
+_DISPLAY_NAMES = {"Income": "Fixed Income"}
+
+
+def _dn(name: str) -> str:
+    return _DISPLAY_NAMES.get(name, name)
 
 
 def _safe_md(text):
     """Escape $ before passing to st.markdown so Streamlit doesn't treat them as LaTeX."""
     if text:
         st.markdown(text.replace("$", r"\$"))
+
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def _load_cape_label() -> str:
+    try:
+        s = get_cape_series()
+        cv = float(s.dropna().iloc[-1])
+        pct = macro_percentile(s.dropna(), cv)
+        return percentile_label(pct)
+    except Exception:
+        return "elevated historically"
 
 
 def load_saa_data():
@@ -59,8 +79,42 @@ with col:
     st.caption("Target weights, tolerance bands, and rationale")
     st.caption(as_of_banner())
     st.caption(f"{n_sleeves} sleeves  ·  {total_alloc:.1f}% allocated  ·  {n_parents} parent categories")
-    parts = [f"{round(p['target_weight'] * 100)}% {p['name']}" for p in parents]
+    parts = [f"{round(p['target_weight'] * 100)}% {_dn(p['name'])}" for p in parents]
     st.markdown("&nbsp;&nbsp;·&nbsp;&nbsp;".join(f"**{p}**" for p in parts))
+    st.divider()
+
+# ── Investment thesis ──────────────────────────────────────────────────────────
+_, col, _ = st.columns([1, 8, 1])
+with col:
+    st.subheader("Investment Thesis")
+    _equity_wt   = next((p["target_weight"] for p in parents if p["name"] == "Equity"), 0.72)
+    _intl_dev_wt = next((s["target_weight"] for s in sub_classes if s["name"] == "International Developed"), 0.19)
+    _em_wt       = next((s["target_weight"] for s in sub_classes if s["name"] == "Emerging Markets"), 0.08)
+    _real_wt     = next((s["target_weight"] for s in sub_classes if s["name"] == "Real Assets"), 0.10)
+    _tips_wt     = next((s["target_weight"] for s in sub_classes if s["name"] == "TIPS"), 0.06)
+    _core_fi_wt  = next((s["target_weight"] for s in sub_classes if s["name"] == "Core Fixed Income"), 0.09)
+    _cape_lbl    = _load_cape_label()
+    # TODO: Static refs "comparable only to the 1929 and 1999 peaks" and "CAPE readings
+    # above 40" should be reviewed if CAPE falls materially below 40 and _cape_lbl no
+    # longer reads "historically extreme". See test_saa_thesis_above_40_cape_reference_still_relevant.
+    st.markdown(
+        f"Strategic asset allocation reflects a US equity environment with extreme valuations "
+        f"(CAPE {_cape_lbl} — comparable only to the 1929 and 1999 peaks) balanced against a "
+        f"normalized 2/10 yield curve and HY credit spreads that do not yet signal stress. "
+        f"The {round(_equity_wt * 100)}% equity weight is preserved at this level not because "
+        f"valuation is unimportant — historical CAPE readings above 40 have been associated with "
+        f"low or negative forward 10-year real returns — but because timing valuation alone has "
+        f"historically been a poor strategy, and the SAA framework is designed to deliver returns "
+        f"through factor and geographic diversification rather than market-timing calls. Style tilts "
+        f"(quality via SPHQ, value via VTV, small-cap value via AVUV) target factors with positive "
+        f"long-run premia and reduced sensitivity to multiple compression — particularly relevant "
+        f"given current US large-cap multiples. International Developed ({round(_intl_dev_wt * 100)}%) "
+        f"and Emerging Markets ({round(_em_wt * 100)}%) provide valuation diversification at "
+        f"meaningfully lower CAPE levels. Real Assets ({round(_real_wt * 100)}%) and TIPS "
+        f"({round(_tips_wt * 100)}%) hedge the unhedged inflation tail in a portfolio dominated by "
+        f"nominal duration. Core Fixed Income ({round(_core_fi_wt * 100)}%) is sized for liquidity "
+        f"and rebalancing optionality, not yield."
+    )
     st.divider()
 
 # ── Top-level allocation chart ──────────────────────────────────────────────────
@@ -69,16 +123,17 @@ with col:
     fig = go.Figure()
     for p in parents:
         pct   = round(p["target_weight"] * 100, 1)
-        color = PARENT_COLORS.get(p["name"], "#888888")
+        dname = _dn(p["name"])
+        color = PARENT_COLORS.get(dname, "#888888")
         # Abbreviated labels for segments too narrow to hold full text
         if pct >= 14:
-            label = f"<b>{p['name']}</b>  {pct}%"
+            label = f"<b>{dname}</b>  {pct}%"
         elif pct >= 7:
-            label = f"<b>{p['name']}</b>"
+            label = f"<b>{dname}</b>"
         else:
             label = f"{pct:.0f}%"
         fig.add_trace(go.Bar(
-            name=p["name"],
+            name=dname,
             x=[pct],
             y=[""],
             orientation="h",
@@ -101,15 +156,16 @@ with col:
         yaxis=dict(showticklabels=False, showgrid=False,
                    zeroline=False, fixedrange=True),
     )
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    st.plotly_chart(fig, width='stretch', config={"displayModeBar": False})
     # Legend row anchors small-segment labels that can't fit inside the bar
     legend_parts = []
     for p in parents:
-        c   = PARENT_COLORS.get(p["name"], "#888")
-        pct = round(p["target_weight"] * 100)
+        dname = _dn(p["name"])
+        c     = PARENT_COLORS.get(dname, "#888")
+        pct   = round(p["target_weight"] * 100)
         legend_parts.append(
             f'<span style="color:{c}">■</span>'
-            f'&nbsp;<span style="color:#555; font-size:0.85rem">{p["name"]} {pct}%</span>'
+            f'&nbsp;<span style="color:#555; font-size:0.85rem">{dname} {pct}%</span>'
         )
     st.markdown("&emsp;".join(legend_parts), unsafe_allow_html=True)
     st.divider()
@@ -121,7 +177,7 @@ with col:
     rows = [
         {
             "Sleeve":      sc["name"],
-            "Category":    sc["parent_name"],
+            "Category":    _dn(sc["parent_name"]),
             "Target (%)":  round(sc["target_weight"] * 100, 1),
             "Band (±%)":   round(sc["tolerance_band"] * 100, 1),
             "Benchmark":   sc["benchmark_ticker"] or "—",
@@ -131,7 +187,7 @@ with col:
     df = pd.DataFrame(rows)
     st.dataframe(
         df,
-        use_container_width=True,
+        width='stretch',
         hide_index=True,
         column_config={
             "Target (%)": st.column_config.NumberColumn(format="%.1f"),
@@ -203,7 +259,7 @@ with col:
         height=180,
         paper_bgcolor="white",
         plot_bgcolor="white",
-        margin=dict(l=0, r=0, t=8, b=4),
+        margin=dict(l=0, r=0, t=40, b=4),
         legend=dict(
             orientation="h", yanchor="bottom", y=1.02,
             xanchor="left", x=0, font_size=11,
@@ -214,7 +270,7 @@ with col:
         ),
         yaxis=dict(showgrid=False),
     )
-    st.plotly_chart(_fig_endo, use_container_width=True, config={"displayModeBar": False})
+    st.plotly_chart(_fig_endo, width='stretch', config={"displayModeBar": False})
 
     st.markdown(
         "Endowments achieving institutional-grade returns do so with heavy "

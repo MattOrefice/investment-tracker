@@ -291,14 +291,11 @@
   <h3>Equity Style Profile</h3>
   <div style="text-align: center; margin: 8px 0 4px;">
     <img src="data:image/png;base64,{{ pos.style_box_b64 }}" style="max-width: 360px;" alt="Equity Style Profile" />
-    <p style="font-size: 0.78em; color: #666; margin: 2px 0 0;">
-      Morningstar 3&times;3 style box &middot; x-axis: 4-factor value-growth score (z-scored vs SPY) &middot;
-      y-axis: log market cap &middot; dot size = portfolio weight &middot; US equity sleeves only
-    </p>
+    <p style="font-size: 0.85em; color: #666; margin: 2px 0 0;">{{ pos.style_box_caption }}</p>
   </div>
 
   {% if pos.non_us %}
-  <div style="margin: 8px 0 0; padding: 8px 12px; background: #F7F7F7; border-left: 3px solid #CCCCCC; font-size: 0.85em;">
+  <div style="margin: 8px 0 0; padding: 8px 12px; background: #F7F7F7; border-left: 3px solid #CCCCCC; font-size: 0.85em; page-break-inside: avoid; break-inside: avoid;">
     <strong>Non-US Equity Sleeve</strong>
     <ul style="margin: 4px 0 4px 16px; padding: 0;">
     {% for item in pos.non_us %}
@@ -392,17 +389,10 @@
     {% endfor %}
   </div>
 
-  <div class="bf-commentary" style="margin-top: 8px;">
-    <p class="bf-comm-title">Methodology Disclosure</p>
-    <ul class="bf-comm-list">
-      {% for note in factor.methodology_notes %}
-      <li>{{ note }}</li>
-      {% endfor %}
-    </ul>
-    <p class="muted" style="margin: 4px 0 0; font-size: 0.80em;">
-      * p &lt; 0.10 &nbsp;&nbsp; ** p &lt; 0.05 &nbsp;&nbsp; *** p &lt; 0.01
-    </p>
-  </div>
+  <p class="muted" style="margin-top: 6px; font-size: 0.80em;">
+    * p &lt; 0.10 &nbsp;&nbsp; ** p &lt; 0.05 &nbsp;&nbsp; *** p &lt; 0.01 &nbsp;&middot;&nbsp;
+    Full regression methodology in the Methodology &amp; Data Sources section.
+  </p>
 
   {% else %}
   <div class="empty-banner">
@@ -471,17 +461,10 @@
     {% endfor %}
   </div>
 
-  <div class="bf-commentary" style="margin-top: 8px;">
-    <p class="bf-comm-title">Methodology Disclosure</p>
-    <ul class="bf-comm-list">
-      {% for note in bench_attr.methodology_notes %}
-      <li>{{ note }}</li>
-      {% endfor %}
-    </ul>
-    <p class="muted" style="margin: 4px 0 0; font-size: 0.80em;">
-      * p &lt; 0.10 &nbsp;&nbsp; ** p &lt; 0.05 &nbsp;&nbsp; *** p &lt; 0.01
-    </p>
-  </div>
+  <p class="muted" style="margin-top: 6px; font-size: 0.80em;">
+    * p &lt; 0.10 &nbsp;&nbsp; ** p &lt; 0.05 &nbsp;&nbsp; *** p &lt; 0.01 &nbsp;&middot;&nbsp;
+    Full regression methodology in the Methodology &amp; Data Sources section.
+  </p>
 
   {% else %}
   <div class="empty-banner">
@@ -527,16 +510,170 @@
     </tbody>
   </table>
 
-  <p class="muted">Elevated US equity valuations (CAPE 95th percentile) support the SAA&rsquo;s
-  diversification across non-US equity and real asset sleeves. Indicators are reference data;
-  tactical positioning remains anchored to SAA targets.</p>
+  <p class="muted">{{ macro.cape.regime }} US equity valuations (CAPE {{ macro.cape.percentile }})
+  {{ macro.cape.regime_action }}.{% if macro.cape.implied_return %}
+  Implied 10Y real return (r&nbsp;&asymp;&nbsp;&minus;0.070&nbsp;&times;&nbsp;ln(CAPE/16)&nbsp;+&nbsp;0.066):
+  <strong>{{ macro.cape.implied_return }}</strong> (historical relationship, not a forecast).{% endif %}
+  Indicators are reference data; tactical positioning remains anchored to SAA targets.</p>
 
   <p class="muted">CAPE from Robert Shiller / Yale (econ.yale.edu). Yield curve, Fed Funds,
   and HY spread from FRED (St. Louis Fed). Historical percentile computed over available
   data window. HY spread data available from May 2023 only due to FRED licensing restrictions.</p>
 </section>
 
-{# ── Page 9: Methodology ────────────────────────────────────────────────────── #}
+{# ── Page 9: Asset Evaluation ─────────────────────────────────────────────── #}
+<section>
+  <h2>Asset Evaluation &mdash; Case Study: Bitcoin</h2>
+
+  {% if not asset_eval or not asset_eval.uni_rows %}
+  <div class="empty-banner">Asset evaluation data unavailable &mdash; requires market data access.</div>
+  {% else %}
+
+  <p class="muted">BTC-USD &middot; {{ asset_eval.sample_start }} to present &middot;
+  daily returns &middot; 252-day annualization &middot; Candidate asset evaluation for SAA
+  inclusion under the same analytical framework as the Streamlit Asset Evaluation page.</p>
+
+  <h3>Univariate Statistics ({{ asset_eval.sample_start }}&ndash;present)</h3>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Asset</th>
+        <th class="num">Ann. Return</th>
+        <th class="num">Ann. Vol</th>
+        <th class="num">Sharpe</th>
+        <th class="num">Max Drawdown</th>
+        <th class="num">Skewness</th>
+        <th class="num">Kurtosis</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in asset_eval.uni_rows %}
+      <tr class="{{ loop.cycle('', 'row-even') }}">
+        <td><strong>{{ row.asset }}</strong></td>
+        <td class="num">{{ row.ann_return }}</td>
+        <td class="num">{{ row.ann_vol }}</td>
+        <td class="num">{{ row.sharpe }}</td>
+        <td class="num">{{ row.max_drawdown }}</td>
+        <td class="num">{{ row.skewness }}</td>
+        <td class="num">{{ row.kurtosis }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h3>Full-Sample Correlation vs SAA Sleeves</h3>
+  {% if asset_eval.corr_chart_b64 %}
+  <img class="chart" src="data:image/png;base64,{{ asset_eval.corr_chart_b64 }}" alt="BTC correlation heatmap">
+  {% else %}
+  <div class="chart-placeholder">Correlation heatmap unavailable</div>
+  {% endif %}
+  {% if asset_eval.corr_prose %}
+  <p class="muted">{{ asset_eval.corr_prose }}</p>
+  {% endif %}
+
+  <h3>Rolling 60-Day Correlation: BTC vs SPY</h3>
+  {% if asset_eval.rolling_chart_b64 %}
+  <img class="chart" src="data:image/png;base64,{{ asset_eval.rolling_chart_b64 }}" alt="Rolling correlation">
+  {% else %}
+  <div class="chart-placeholder">Rolling correlation chart unavailable</div>
+  {% endif %}
+  {% if asset_eval.rolling_prose %}
+  <p class="muted">{{ asset_eval.rolling_prose }}</p>
+  {% endif %}
+
+  {% if asset_eval.con_rows %}
+  <h3>Mean-Variance: Constrained Tangency (max 25% per sleeve)</h3>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Sleeve</th>
+        <th class="num">w/o BTC</th>
+        <th class="num">w/ BTC</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in asset_eval.con_rows %}
+      <tr class="{{ loop.cycle('', 'row-even') }}">
+        <td>{{ row.sleeve }}</td>
+        <td class="num">{{ row.w_no }}</td>
+        <td class="num">{{ row.w_with }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if asset_eval.sharpe_con_no and asset_eval.sharpe_con_with %}
+  <p class="muted">Constrained Sharpe: {{ asset_eval.sharpe_con_no }} (w/o BTC) &rarr;
+  {{ asset_eval.sharpe_con_with }} (w/ BTC), {{ asset_eval.delta_bps_con }} bps.
+  Driven by BTC&rsquo;s realized return over the 2018&ndash;present sample;
+  not a forward-looking result (sample-period mean estimates are unreliable for a volatile,
+  regime-shifting asset).</p>
+  {% endif %}
+  {% endif %}
+
+  {% if asset_eval.msc_chart_b64 %}
+  <h3>Marginal Sharpe Contribution</h3>
+  <img class="chart" src="data:image/png;base64,{{ asset_eval.msc_chart_b64 }}" alt="Marginal Sharpe curve">
+  <p class="muted">Portfolio Sharpe at each BTC allocation level, holding remaining weights
+  proportional to SAA targets. Curve reflects sample-period arithmetic only.</p>
+  {% endif %}
+
+  {% if asset_eval.dd_rows %}
+  <h3>Drawdown Sensitivity</h3>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>BTC Alloc</th>
+        <th class="num">CAGR</th>
+        <th class="num">Max DD</th>
+        <th class="num">Sharpe</th>
+        <th class="num">2022 MDD</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in asset_eval.dd_rows %}
+      <tr class="{{ loop.cycle('', 'row-even') }}">
+        <td>{{ row.alloc }}</td>
+        <td class="num">{{ row.cagr }}</td>
+        <td class="num">{{ row.max_dd }}</td>
+        <td class="num">{{ row.sharpe }}</td>
+        <td class="num">{{ row.mdd22 }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="muted">2022 stress scenario: equities &minus;20%, bonds &minus;15%, BTC &minus;65%
+  simultaneously. The 2022 MDD column is the critical test &mdash; diversification value
+  eroded precisely when it was most needed.</p>
+  {% endif %}
+
+  <h3>Decision Framework</h3>
+  {% if asset_eval.args_for %}
+  <p><strong>Arguments for inclusion:</strong></p>
+  <ul style="page-break-inside: avoid; break-inside: avoid;">
+    {% for arg in asset_eval.args_for %}
+    <li style="margin-bottom:0.3em; font-size:9pt;">{{ arg }}</li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p><strong>Arguments for inclusion:</strong> None identified from available data.</p>
+  {% endif %}
+
+  <p><strong>Arguments against inclusion:</strong></p>
+  <ul style="page-break-inside: avoid; break-inside: avoid;">
+    {% for arg in asset_eval.args_against %}
+    <li style="margin-bottom:0.3em; font-size:9pt;">{{ arg }}</li>
+    {% endfor %}
+  </ul>
+
+  <div class="bf-commentary">
+    <p class="bf-comm-title">Conclusion</p>
+    <p style="font-size:9.5pt; margin:0;">{{ asset_eval.conclusion }}</p>
+  </div>
+
+  {% endif %}
+</section>
+
+{# ── Page 10: Methodology ────────────────────────────────────────────────────── #}
 <section>
   <h2>Methodology &amp; Data Sources</h2>
 
@@ -548,9 +685,9 @@
           <dd><strong>Size (y-axis):</strong> log<sub>10</sub>(weighted-average market cap in $B),
           additive-shifted so SPY anchors at y=2.0 (Large/Blend centre). Large/Mid boundary ≈ $79B,
           Mid/Small boundary ≈ $7.9B at current calibration.
-          <strong>Value-growth (x-axis):</strong> four-factor z-score &mdash; book-to-price, earnings-to-price,
-          dividend yield, cash-flow-to-price &mdash; each normalised as fractional deviation from SPY,
-          averaged, then mapped to x with VALUE_SCALE=0.85; SPY/VOO anchors at x=1.0 (Blend centre).
+          <strong>Value-growth (x-axis):</strong> four-factor fractional-deviation composite &mdash; book-to-price, earnings-to-price,
+          dividend yield, cash-flow-to-price &mdash; each normalised as fractional deviation from SPY
+          (ratio &minus; 1), averaged, then mapped to x with VALUE_SCALE=0.85; SPY/VOO anchors at x=1.0 (Blend centre).
           <strong>Simplification:</strong> 4-factor trailing approximation of Morningstar&rsquo;s
           proprietary 10-factor score. Treat dot positions as directional indicators of factor tilt,
           not precise Morningstar equivalents.
@@ -580,12 +717,16 @@
           <dd>Daily-linked chain-linked TWR (GIPS-compliant). For each day t:
           r<sub>t</sub> = (V<sub>t</sub> &minus; V<sub>t&minus;1</sub> &minus; CF<sub>t</sub>) / V<sub>t&minus;1</sub>.
           Cash flows assumed at beginning of day. Cumulative return is
-          &prod;(1 + r<sub>t</sub>) &minus; 1.</dd>
+          &prod;(1 + r<sub>t</sub>) &minus; 1.{% if si_days is defined and si_days < 365 %}
+          1Y note: while history is under one year (currently {{ si_days }}d), the 1Y period equals SI.{% endif %}</dd>
 
           <dt>Benchmarks</dt>
           <dd>S&amp;P 500: SPY total return (adj_close). Custom Blended: SAA target-weight basket
-          of benchmark tickers (SPY, QUAL, IWD, IWM, EFA, EEM, IEF, TIP, 50% VNQ + 50% DBC, BIL),
-          normalized to $1 on inception date.</dd>
+          of benchmark tickers (SPY, QUAL, IWD, IWM, EFA, EEM, IEF, TIP, {{ methodology_ra_bench }}, BIL),
+          normalized to $1 on inception date.
+          Real Assets benchmark uses DBC (Invesco DB Commodity index; K-1-issuing ETF);
+          the portfolio holds PDBC (C-corp structure, no K-1 issued). Selection effect
+          in the Brinson-Fachler table captures the DBC&ndash;PDBC return spread.</dd>
 
           <dt>Brinson-Fachler Attribution</dt>
           <dd>Allocation effect = (w<sub>p</sub> &minus; w<sub>b</sub>) &times; (r<sub>b</sub> &minus;
@@ -595,7 +736,8 @@
 
           <dt>Drift Status</dt>
           <dd>Flagged &ldquo;Drift&rdquo; when absolute drift exceeds the per-sleeve tolerance band
-          (&plusmn;300&nbsp;bps for sleeves with &ge;10% target weight; &plusmn;200&nbsp;bps for smaller sleeves)
+          (&plusmn;{{ methodology_drift_large_bps }}&nbsp;bps for sleeves with &ge;{{ methodology_drift_large_min_pct }}% target weight;
+          &plusmn;{{ methodology_drift_small_bps }}&nbsp;bps for smaller sleeves)
           <em>or</em> relative drift exceeds 20% of target weight.
           Both thresholds must be satisfied for &ldquo;Within&rdquo; status.</dd>
 
@@ -614,17 +756,14 @@
           BAMLH0A0HYM2 = ICE BofA HY OAS (available May 2023+).</dd>
 
           <dt>SAA &amp; Sleeve Targets</dt>
-          <dd>Equity 72% / Income 15% / Real Assets 10% / Cash 3%. Ten sleeves with tolerance
-          bands (&plusmn;2&ndash;3%). Full rationale in the SAA section of the application.</dd>
+          <dd>{{ methodology_parent_weights }}. {{ methodology_sleeve_count }} sleeves; full rationale in the SAA section.</dd>
+
         </dl>
       </td>
     </tr>
   </table>
 
-  <p class="disclosure">This report is generated from a personal investment analytics system
-  for portfolio review purposes. Returns are time-weighted and do not constitute investment
-  advice. Data sourced from Yahoo Finance, FRED, and Robert Shiller&rsquo;s public datasets;
-  calculations are best-effort and may contain methodological simplifications.</p>
+  <p class="disclosure">{{ report_disclaimer }}</p>
 </section>
 
 </body>

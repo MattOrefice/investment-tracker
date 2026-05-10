@@ -22,9 +22,16 @@ except ImportError:
 
 try:
     import streamlit as st
-    FRED_API_KEY = st.secrets.get("FRED_API_KEY", os.getenv("FRED_API_KEY"))
-    _resolved_mode = st.secrets.get("TRACKER_MODE", os.getenv("TRACKER_MODE", "personal")).lower()
-except (ImportError, FileNotFoundError, AttributeError):
+    try:
+        # st.secrets behavior varies across Streamlit versions when called outside a
+        # Streamlit context (no secrets.toml). Catch any exception so env vars are
+        # always the authoritative fallback in test / CI environments.
+        FRED_API_KEY = st.secrets.get("FRED_API_KEY", os.getenv("FRED_API_KEY"))
+        _resolved_mode = st.secrets.get("TRACKER_MODE", os.getenv("TRACKER_MODE", "personal")).lower()
+    except Exception:
+        FRED_API_KEY = os.getenv("FRED_API_KEY")
+        _resolved_mode = os.getenv("TRACKER_MODE", "personal").lower()
+except ImportError:
     FRED_API_KEY = os.getenv("FRED_API_KEY")
     _resolved_mode = os.getenv("TRACKER_MODE", "personal").lower()
 
@@ -54,6 +61,26 @@ def is_demo() -> bool:
 
 IS_DEMO = is_demo()
 
+
+def get_demo_banner_text() -> str:
+    """Return the demo-mode info banner, with inception month sourced from the DB."""
+    inception_month = "May 2025"  # fallback if DB unavailable
+    try:
+        from src.db import get_connection  # lazy import — avoids circular at module level
+        from datetime import date as _date
+        with get_connection() as _conn:
+            _row = _conn.execute("SELECT MIN(trade_date) FROM trades").fetchone()
+        if _row and _row[0]:
+            inception_month = _date.fromisoformat(_row[0]).strftime("%B %Y")
+    except Exception:
+        pass
+    return (
+        f"**Demo mode** — analytics computed on a paper-trade portfolio simulated from {inception_month}. "
+        "Methodology and inference are real; positions are illustrative."
+    )
+
+
+# Kept for backward compatibility; pages should prefer get_demo_banner_text().
 DEMO_BANNER_TEXT = (
     "**Demo mode** — analytics computed on a paper-trade portfolio simulated from May 2025. "
     "Methodology and inference are real; positions are illustrative."

@@ -33,15 +33,16 @@ from src.factors import (
     EM_DISCLOSURE,
     build_benchmark_methodology, build_benchmark_prose,
     build_factor_methodology_notes, build_factor_prose,
-    run_benchmark_attribution_regression,
-    run_sleeve_regressions, sig_marker,
+    regress_fi_sleeve, run_benchmark_attribution_regression,
+    run_intl_global_regression, run_sleeve_regressions, sig_marker,
 )
-from src.holdings import get_portfolio_value_series, get_sleeve_weights_on_date
-from src.macro import get_series, percentile
+from src.holdings import get_inception_date, get_portfolio_value_series, get_sleeve_weights_on_date
+from src.macro import compute_cape_implied_return, get_series, percentile
 from src.positioning import (
     build_style_box_figure, get_active_tilts, get_effective_duration,
     get_non_us_equity_data, get_scenario_triggers, get_style_box_data,
 )
+from src.style_box import STYLE_BOX_CAPTION
 from src.returns import period_return, twr_daily_linked
 from src.shiller import current_cape, get_cape_series
 
@@ -58,8 +59,9 @@ _PALETTE = {
     "selection": "#A67B5B",
 }
 
-# Phase 2 locked picks — holding ticker and benchmark ticker per sleeve
-_SLEEVE_HOLDING_TICKER: dict[str, str] = {
+# Phase 2 locked picks — holding ticker and benchmark ticker per sleeve.
+# Public so pages/8_Benchmark_Attribution.py can import rather than duplicate.
+SLEEVE_HOLDING_TICKER: dict[str, str] = {
     "US Large Core":           "VOO",
     "US Large Quality":        "SPHQ",
     "US Large Value":          "VTV",
@@ -71,7 +73,7 @@ _SLEEVE_HOLDING_TICKER: dict[str, str] = {
     "Real Assets":             "VNQ / PDBC",
     "Cash / SPAXX":            "SPAXX",
 }
-_SLEEVE_BENCH_TICKER: dict[str, str] = {
+SLEEVE_BENCH_TICKER: dict[str, str] = {
     "US Large Core":           "SPY",
     "US Large Quality":        "QUAL",
     "US Large Value":          "IWD",
@@ -89,6 +91,21 @@ _PERIOD_LABELS = {
     "1M": "1 Month", "3M": "3 Months",
     "YTD": "YTD", "1Y": "1 Year", "SI": "Since Inception",
 }
+
+REPORT_DISCLAIMER = (
+    "This report documents the author's personal investment portfolio "
+    "and is provided for informational and educational purposes only. "
+    "Nothing in this report constitutes investment advice, a "
+    "recommendation to buy or sell any security, or an offer to provide "
+    "advisory services. Past performance does not predict future "
+    "results, and all return figures are time-weighted historical "
+    "calculations subject to data and methodology limitations. No "
+    "fiduciary, advisory, or client relationship is created by accessing "
+    "this report or the underlying analytics system. Data sourced from "
+    "Yahoo Finance, FRED, and Robert Shiller’s public datasets; "
+    "calculations are best-effort and may contain methodological "
+    "simplifications."
+)
 
 
 # ── PDF rendering ─────────────────────────────────────────────────────────────
@@ -222,16 +239,6 @@ def _drift_status(drift_bps: float, target_bps: float, band_bps: float = 200) ->
     return "Within" if abs(drift_bps) <= band_bps and abs(drift_bps / target_bps) <= 0.20 else "Drift"
 
 
-def _inception_date() -> str:
-    """Return date of first trade, falling back to 2025-05-01."""
-    try:
-        with get_connection() as conn:
-            row = conn.execute("SELECT MIN(trade_date) FROM trades").fetchone()
-        return row[0] if row and row[0] else "2025-05-01"
-    except Exception:
-        return "2025-05-01"
-
-
 # ── Benchmark period return helper ────────────────────────────────────────────
 
 def _bm_period_return(series: pd.Series, period: str) -> float:
@@ -264,7 +271,7 @@ def _build_executive_summary(start_date: str, end_date: str) -> dict:
     # (buy-and-hold from inception drifts weights and produces a different result).
     # start_date is always a trading day (Dec-31 for Q1, Mar-31 for Q2, etc.) so
     # no holiday-bfill risk exists for the fresh blended series.
-    inception = _inception_date()
+    inception = get_inception_date()
 
     pv_since_inception = get_portfolio_value_series(inception, end_date)
     current_val = float(pv_since_inception.iloc[-1]) if not pv_since_inception.empty else 0.0
@@ -284,6 +291,7 @@ def _build_executive_summary(start_date: str, end_date: str) -> dict:
     alpha_bl_bps = (portfolio_twr - bl_return) * 10_000
 
     top_contributor = top_detractor = None
+    _all_positive = False
     try:
         bf_df = brinson_fachler_period(start_date, end_date)
         if not bf_df.empty:
@@ -291,6 +299,8 @@ def _build_executive_summary(start_date: str, end_date: str) -> dict:
             worst = bf_df.loc[bf_df["total_effect"].idxmin()]
             top_contributor = (best["sleeve"],  best["total_effect"]  * 10_000)
             top_detractor   = (worst["sleeve"], worst["total_effect"] * 10_000)
+            # Suppress detractor narrative when all sleeves are within noise threshold
+            _all_positive = worst["total_effect"] * 10_000 > -5
     except Exception:
         pass
 
@@ -310,11 +320,15 @@ def _build_executive_summary(start_date: str, end_date: str) -> dict:
         f"{vs_sp} the S&P 500 by {abs(alpha_sp_bps):.0f} bps and "
         f"{vs_bl} the custom blended benchmark by {abs(alpha_bl_bps):.0f} bps.",
     ]
-    if top_contributor:
+    if top_contributor and top_contributor[1] >= 5:
         narrative.append(
             f"Top contributor: {top_contributor[0]} ({top_contributor[1]:+.0f} bps total effect)."
         )
-    if top_detractor and (not top_contributor or top_detractor[0] != top_contributor[0]):
+    if _all_positive and top_contributor:
+        narrative.append(
+            "All sleeves contributed positively or were within ±5 bps of the neutral line."
+        )
+    elif top_detractor and (not top_contributor or top_detractor[0] != top_contributor[0]):
         narrative.append(
             f"Top detractor: {top_detractor[0]} ({top_detractor[1]:+.0f} bps total effect)."
         )
@@ -439,7 +453,7 @@ def _build_cumulative_chart(
 
 
 def _build_performance_section(start_date: str, end_date: str) -> dict:
-    inception = _inception_date()
+    inception = get_inception_date()
     pv = get_portfolio_value_series(inception, end_date)
     if pv.empty or float(pv.max()) == 0.0:
         return {"period_rows": [], "chart_b64": None}
@@ -524,7 +538,7 @@ def _build_attribution_section(start_date: str, end_date: str) -> dict:
     fig.update_layout(
         barmode="stack", xaxis_title="Basis Points", yaxis_title=None,
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
-        margin=dict(l=180, r=20, t=40, b=30), height=240,
+        margin=dict(l=180, r=20, t=40, b=30), height=320,
         plot_bgcolor="white", paper_bgcolor="white",
         font=dict(family="sans-serif", size=9, color="#333"),
         xaxis=dict(
@@ -558,14 +572,13 @@ def _build_attribution_section(start_date: str, end_date: str) -> dict:
     ).head(3)
     for _, r in sel_sorted.iterrows():
         sleeve  = r["sleeve"]
-        port_t  = _SLEEVE_HOLDING_TICKER.get(sleeve, "—")
-        bench_t = _SLEEVE_BENCH_TICKER.get(sleeve, "—")
-        diff_bps = (r["r_p"] - r["r_b"]) * 10_000
+        port_t  = SLEEVE_HOLDING_TICKER.get(sleeve, "—")
+        bench_t = SLEEVE_BENCH_TICKER.get(sleeve, "—")
         sel_bps  = r["selection_effect"] * 10_000
         sel_commentary.append(
             f"{sleeve}: portfolio holding ({port_t}) returned {r['r_p']*100:.1f}% "
-            f"vs benchmark {bench_t} {r['r_b']*100:.1f}% "
-            f"(Δ {diff_bps:+.0f} bps), contributing {sel_bps:+.0f} bps to active return"
+            f"vs benchmark {bench_t} {r['r_b']*100:.1f}%, "
+            f"contributing {sel_bps:+.0f} bps selection effect"
         )
 
     # Top allocation effect driver (only if >15 bps absolute)
@@ -582,7 +595,7 @@ def _build_attribution_section(start_date: str, end_date: str) -> dict:
 
     return {
         "rows":             rows,
-        "chart_b64":        _chart_b64(fig, 700, 240),
+        "chart_b64":        _chart_b64(fig, 700, 320),
         "total_alloc":      f"{bf_df['allocation_effect'].sum()*10000:+.1f}",
         "total_sel":        f"{bf_df['selection_effect'].sum()*10000:+.1f}",
         "total_total":      f"{bf_df['total_effect'].sum()*10000:+.1f}",
@@ -597,7 +610,7 @@ def _build_factor_section(end_date: str) -> Optional[dict]:
     the template.  Returns None only if both sleeves fail; partial results (one
     sleeve None) are still returned so the template can render what it has.
     """
-    inception = _inception_date()
+    inception = get_inception_date()
     try:
         results = run_sleeve_regressions(inception, end_date)
     except Exception:
@@ -606,6 +619,18 @@ def _build_factor_section(end_date: str) -> Optional[dict]:
 
     if not any(v is not None for v in results.values()):
         return None
+
+    fi_result: Optional[dict] = None
+    try:
+        fi_result = regress_fi_sleeve(inception, end_date)
+    except Exception:
+        pass
+
+    global_result: Optional[dict] = None
+    try:
+        global_result = run_intl_global_regression(inception, end_date)
+    except Exception:
+        pass
 
     def _fmt_date_local(iso: str) -> str:
         d = date.fromisoformat(iso)
@@ -655,8 +680,8 @@ def _build_factor_section(end_date: str) -> Optional[dict]:
     return {
         "sleeves":           sleeves,
         "em_note":           EM_DISCLOSURE,
-        "prose":             build_factor_prose(results),
-        "methodology_notes": build_factor_methodology_notes(results),
+        "prose":             build_factor_prose(results, fi_result=fi_result, global_result=global_result),
+        "methodology_notes": build_factor_methodology_notes(results, fi_result=fi_result),
     }
 
 
@@ -671,7 +696,7 @@ def _build_benchmark_section(start_date: str, end_date: str) -> Optional[dict]:
     differential (r_p − r_b) so prose reads "AVUV outperformed IWM by 768 bps"
     rather than the portfolio-weighted selection effect.
     """
-    inception = _inception_date()
+    inception = get_inception_date()
     try:
         result = run_benchmark_attribution_regression(inception, end_date)
     except Exception:
@@ -719,8 +744,8 @@ def _build_benchmark_section(start_date: str, end_date: str) -> Optional[dict]:
             for _, row in top3.iterrows():
                 sleeve = row["sleeve"]
                 bhb_top.append({
-                    "holding": _SLEEVE_HOLDING_TICKER.get(sleeve, sleeve),
-                    "bench":   _SLEEVE_BENCH_TICKER.get(sleeve, sleeve),
+                    "holding": SLEEVE_HOLDING_TICKER.get(sleeve, sleeve),
+                    "bench":   SLEEVE_BENCH_TICKER.get(sleeve, sleeve),
                     "sel_bps": row["raw_diff"] * 10_000,
                 })
     except Exception:
@@ -754,13 +779,45 @@ def _build_macro_section() -> dict:
     try:
         cape_val = current_cape()
         cape_s   = get_cape_series()
+        try:
+            _raw_pct = percentile(cape_s, cape_val)
+            pct_str  = f"{_raw_pct:.0f}th"
+            pct_int  = int(round(_raw_pct))
+        except Exception:
+            pct_str  = "N/A"
+            pct_int  = 50
+        if pct_int >= 80:
+            _regime        = "Elevated"
+            _regime_action = "support the SAA's diversification across non-US equity and real asset sleeves"
+        elif pct_int >= 60:
+            _regime        = "Above-average"
+            _regime_action = "support modest diversification away from US large-cap"
+        elif pct_int >= 40:
+            _regime        = "Moderate"
+            _regime_action = "are consistent with the long-run average; no strong tilt signal"
+        else:
+            _regime        = "Below-average"
+            _regime_action = "support increased US equity exposure relative to SAA targets"
+        cape_implied = compute_cape_implied_return(cape_val)
         macro["cape"] = {
-            "value":      f"{cape_val:.1f}x",
-            "percentile": _pct_str(cape_s, cape_val),
-            "note":       "Elevated vs. history; supports diversification into non-US and real assets.",
+            "value":          f"{cape_val:.1f}x",
+            "percentile":     pct_str,
+            "pct_int":        pct_int,
+            "regime":         _regime,
+            "regime_action":  _regime_action,
+            "note":           f"{_regime} vs. history ({pct_str}); valuations {_regime_action}.",
+            "implied_return": f"{cape_implied:+.2%}",
         }
     except Exception:
-        macro["cape"] = {"value": "N/A", "percentile": "N/A", "note": "Data unavailable."}
+        macro["cape"] = {
+            "value":          "N/A",
+            "percentile":     "N/A",
+            "pct_int":        50,
+            "regime":         "Uncertain",
+            "regime_action":  "suggest maintaining SAA diversification",
+            "note":           "Data unavailable.",
+            "implied_return": None,
+        }
 
     try:
         yc     = get_series("T10Y2Y", "1990-01-01")
@@ -852,22 +909,351 @@ def _build_positioning_section(end_date: str) -> dict:
     scenarios  = get_scenario_triggers(end_date)
     style_data = get_style_box_data(end_date)
     non_us     = get_non_us_equity_data(end_date)
-    fi_dur  = dur["fi_sleeve_duration"]
-    agg_dur = dur["agg_benchmark"]
-    vs_agg  = "below" if fi_dur < agg_dur else "above"
+    fi_dur    = dur["fi_sleeve_duration"]
+    agg_dur   = dur["agg_benchmark"]
+    fi_wt     = dur["fi_weight_pct"]
+    cash_wt   = dur["cash_weight_pct"]
+    dur_diff  = abs(fi_dur - agg_dur)
+    if dur_diff < 0.05:
+        dur_vs = "in line with benchmark"
+    else:
+        vs_agg = "below" if fi_dur < agg_dur else "above"
+        dur_vs = f"{vs_agg} benchmark by {dur_diff:.1f} yrs"
     duration_line = (
-        f"FI sleeve effective duration: {fi_dur} yrs "
-        f"(vs Bloomberg US Agg: {agg_dur} yrs — {vs_agg} benchmark by {abs(fi_dur - agg_dur):.1f} yrs). "
-        f"FI weight: {dur['fi_weight_pct']}% of portfolio. "
-        "Intermediate-Treasury focus keeps duration below the Agg, limiting sensitivity to rate moves."
+        f"Fixed Income sleeve (Core FI + TIPS) effective duration: {fi_dur} yrs "
+        f"vs Bloomberg US Agg: {agg_dur} yrs ({dur_vs}). "
+        f"FI weight: {fi_wt}% of portfolio. "
+        f"Cash/SPAXX ({cash_wt}%) excluded — not a duration-bearing asset and excluded from Bloomberg Agg."
     )
-    style_box_b64 = _chart_b64(build_style_box_figure(style_data), 520, 390) if style_data else None
+    style_box_b64 = _chart_b64(build_style_box_figure(style_data), 520, 300) if style_data else None
     return {
-        "tilts":          tilts,
-        "duration_line":  duration_line,
-        "scenarios":      scenarios,
-        "style_box_b64":  style_box_b64,
-        "non_us":         non_us,
+        "tilts":             tilts,
+        "duration_line":     duration_line,
+        "scenarios":         scenarios,
+        "style_box_b64":     style_box_b64,
+        "style_box_caption": STYLE_BOX_CAPTION,
+        "non_us":            non_us,
+    }
+
+
+def _build_asset_eval_section() -> dict:
+    """Build the Asset Evaluation section — same source as pages/10_Asset_Evaluation.py."""
+    import src.asset_evaluation as ae
+
+    _empty: dict = {
+        "sample_start":     ae.SAMPLE_START,
+        "uni_rows":         [],
+        "corr_chart_b64":   None,
+        "corr_prose":       None,
+        "rolling_chart_b64": None,
+        "rolling_prose":    None,
+        "con_rows":         [],
+        "sharpe_con_no":    None,
+        "sharpe_con_with":  None,
+        "delta_bps_con":    None,
+        "msc_chart_b64":    None,
+        "dd_rows":          [],
+        "args_for":         [],
+        "args_against":     [],
+        "conclusion": ae.CONCLUSION,
+    }
+
+    try:
+        btc_ret = ae.get_candidate_returns("BTC-USD", ae.SAMPLE_START)
+        slv_ret = ae.get_sleeve_returns(ae.SAMPLE_START)
+        spy_ret = ae.get_candidate_returns("SPY", ae.SAMPLE_START)
+        if btc_ret.empty or slv_ret.empty:
+            return _empty
+    except Exception:
+        logging.exception("asset_eval data load failed — section omitted from PDF")
+        return _empty
+
+    result = {k: (list(v) if isinstance(v, list) else v) for k, v in _empty.items()}
+
+    # 5a: Univariate statistics
+    try:
+        uni_tbl = ae.build_univariate_table()
+        if not uni_tbl.empty:
+            for name, row in uni_tbl.iterrows():
+                result["uni_rows"].append({
+                    "asset":        name,
+                    "ann_return":   f"{row['ann_return']:.1%}",
+                    "ann_vol":      f"{row['ann_vol']:.1%}",
+                    "sharpe":       f"{row['sharpe']:.2f}",
+                    "max_drawdown": f"{row['max_drawdown']:.1%}",
+                    "skewness":     f"{row['skewness']:.2f}",
+                    "kurtosis":     f"{row['kurtosis']:.2f}",
+                })
+    except Exception:
+        pass
+
+    # 5b: Full-sample correlation heatmap
+    corr: pd.Series = pd.Series(dtype=float)
+    try:
+        corr = ae.compute_full_sample_correlations(btc_ret, slv_ret)
+        if not corr.empty:
+            fig_heat = go.Figure(go.Heatmap(
+                z=[[corr[s] for s in ae.SLEEVES]],
+                x=ae.SLEEVES,
+                y=["BTC"],
+                colorscale="RdYlGn",
+                zmid=0, zmin=-1, zmax=1,
+                text=[[f"{corr[s]:.2f}" for s in ae.SLEEVES]],
+                texttemplate="%{text}",
+                showscale=True,
+            ))
+            fig_heat.update_layout(
+                height=200,
+                margin=dict(l=60, r=20, t=10, b=80),
+                paper_bgcolor="white", plot_bgcolor="white",
+                font=dict(family="sans-serif", size=9, color="#333"),
+            )
+            fig_heat.update_xaxes(tickangle=45)
+            result["corr_chart_b64"] = _chart_b64(fig_heat, 700, 200)
+
+            btc_spy_corr   = float(corr.get("US Large Core",     float("nan")))
+            fi_corr        = float(corr.get("Core Fixed Income", float("nan")))
+            highest_sleeve = corr.idxmax()
+            highest_val    = float(corr.max())
+            lowest_sleeve  = corr.idxmin()
+            lowest_val     = float(corr.min())
+
+            parts = []
+            if not np.isnan(btc_spy_corr):
+                parts.append(f"BTC full-sample correlation with US Large Core: {btc_spy_corr:.2f}.")
+            parts.append(
+                f"Highest sleeve: {highest_sleeve} ({highest_val:.2f}); "
+                f"lowest: {lowest_sleeve} ({lowest_val:.2f})."
+            )
+            if not np.isnan(fi_corr):
+                parts.append(f"Core Fixed Income: {fi_corr:.2f}.")
+            result["corr_prose"] = " ".join(parts)
+    except Exception:
+        pass
+
+    # 5c: Rolling 60-day correlation (BTC vs SPY)
+    try:
+        rolling_corr = ae.compute_rolling_correlation(btc_ret, spy_ret, window=60)
+        if not rolling_corr.empty:
+            fig_roll = go.Figure()
+            fig_roll.add_hline(y=0, line_dash="dash", line_color="#9E9E9E", line_width=1)
+            fig_roll.add_trace(go.Scatter(
+                x=rolling_corr.index, y=rolling_corr.values,
+                mode="lines",
+                line=dict(color="#2E4057", width=1.5),
+                name="BTC-SPY 60d",
+            ))
+            fig_roll.update_layout(
+                height=200,
+                margin=dict(l=45, r=10, t=8, b=30),
+                paper_bgcolor="white", plot_bgcolor="#FAFAFA",
+                showlegend=False,
+                yaxis=dict(gridcolor="#EBEBEB", range=[-1.05, 1.05], title="Correlation"),
+                xaxis=dict(gridcolor="#EBEBEB"),
+                font=dict(family="sans-serif", size=9, color="#333"),
+            )
+            result["rolling_chart_b64"] = _chart_b64(fig_roll, 700, 200)
+
+            post_2020    = rolling_corr.loc["2020-01-01":]
+            pre_2020     = rolling_corr.loc[:"2019-12-31"]
+            post_avg     = float(post_2020.mean()) if len(post_2020) > 0 else float("nan")
+            pre_avg      = float(pre_2020.mean())  if len(pre_2020) > 0  else float("nan")
+            prose_parts: list[str] = []
+            if not np.isnan(pre_avg):
+                prose_parts.append(
+                    f"Pre-2020 average: {pre_avg:.2f} "
+                    "(consistent with 'uncorrelated alternative' narrative)."
+                )
+            if not np.isnan(post_avg):
+                prose_parts.append(
+                    f"Post-2020 average: {post_avg:.2f} — persistently elevated after "
+                    "institutionalization; correlation rises precisely when diversification "
+                    "is most needed."
+                )
+            result["rolling_prose"] = " ".join(prose_parts)
+    except Exception:
+        pass
+
+    # 5f: Constrained MV analysis
+    mv_result: dict = {}
+    msc: pd.DataFrame = pd.DataFrame()
+    try:
+        mv_result = ae.compute_mv_analysis(btc_ret, slv_ret, ae.RF_ANNUAL)
+        if mv_result:
+            sleeves_list    = mv_result["sleeves"]
+            w_con_no        = mv_result["w_con_no"]
+            w_con_with      = mv_result["w_con_with"]
+            sharpe_con_no   = mv_result["sharpe_con_no"]
+            sharpe_con_with = mv_result["sharpe_con_with"]
+            delta_bps_con   = (sharpe_con_with - sharpe_con_no) * 10_000
+            btc_wt_con      = float(w_con_with[-1])
+
+            for i, s in enumerate(sleeves_list):
+                result["con_rows"].append({
+                    "sleeve": s,
+                    "w_no":   f"{w_con_no[i]:.1%}",
+                    "w_with": f"{w_con_with[i]:.1%}",
+                })
+            result["con_rows"].append({
+                "sleeve": "BTC",
+                "w_no":   "—",
+                "w_with": f"{btc_wt_con:.1%}",
+            })
+            result["sharpe_con_no"]   = f"{sharpe_con_no:.3f}"
+            result["sharpe_con_with"] = f"{sharpe_con_with:.3f}"
+            result["delta_bps_con"]   = f"{delta_bps_con:+.0f}"
+    except Exception:
+        pass
+
+    # 5g: Marginal Sharpe curve
+    try:
+        msc = ae.compute_marginal_sharpe_curve(btc_ret, slv_ret, ae.SLEEVE_WEIGHTS, ae.RF_ANNUAL)
+        if not msc.empty:
+            fig_msc = go.Figure()
+            fig_msc.add_trace(go.Scatter(
+                x=msc["btc_alloc"] * 100,
+                y=msc["sharpe"],
+                mode="lines+markers",
+                line=dict(color="#2E4057", width=2),
+                marker=dict(size=6),
+                name="Portfolio Sharpe",
+            ))
+            fig_msc.update_layout(
+                height=200,
+                margin=dict(l=50, r=10, t=8, b=40),
+                paper_bgcolor="white", plot_bgcolor="#FAFAFA",
+                showlegend=False,
+                xaxis=dict(title="BTC Allocation (%)", gridcolor="#EBEBEB"),
+                yaxis=dict(title="Portfolio Sharpe",   gridcolor="#EBEBEB"),
+                font=dict(family="sans-serif", size=9, color="#333"),
+            )
+            result["msc_chart_b64"] = _chart_b64(fig_msc, 700, 200)
+    except Exception:
+        pass
+
+    # 5h: Drawdown sensitivity
+    try:
+        dd_sens = ae.compute_drawdown_sensitivity(
+            btc_ret, slv_ret, ae.SLEEVE_WEIGHTS, rf_annual=ae.RF_ANNUAL
+        )
+        if not dd_sens.empty:
+            for _, row in dd_sens.iterrows():
+                mdd22_val = row["2022 MDD"]
+                result["dd_rows"].append({
+                    "alloc":  row["BTC Alloc"],
+                    "cagr":   f"{row['CAGR']:.1%}",
+                    "max_dd": f"{row['Max DD']:.1%}",
+                    "sharpe": f"{row['Sharpe']:.2f}",
+                    "mdd22":  f"{mdd22_val:.1%}" if not np.isnan(mdd22_val) else "—",
+                })
+    except Exception:
+        pass
+
+    # 5j: Decision framework
+    try:
+        args_for: list[str]     = []
+        args_against: list[str] = []
+
+        if not msc.empty:
+            rows_0  = msc[msc["btc_alloc"] == 0.00]
+            rows_10 = msc[msc["btc_alloc"] == 0.10]
+            if not rows_0.empty and not rows_10.empty:
+                saa_sh0  = float(rows_0["sharpe"].iloc[0])
+                saa_sh10 = float(rows_10["sharpe"].iloc[0])
+                if saa_sh10 > saa_sh0:
+                    delta_saa = (saa_sh10 - saa_sh0) * 10_000
+                    mvo_ok    = bool(
+                        mv_result
+                        and mv_result.get("sharpe_con_with", 0) > mv_result.get("sharpe_con_no", 0)
+                    )
+                    mvo_note = " — MVO sanity check directionally consistent" if mvo_ok else ""
+                    args_for.append(
+                        f"Sharpe-improving against SAA target weights at 10% allocation "
+                        f"({saa_sh0:.3f} → {saa_sh10:.3f}, "
+                        f"+{delta_saa:.0f} bps over {ae.SAMPLE_START}–present){mvo_note}"
+                    )
+
+        if not corr.empty:
+            btc_spy_j = float(corr.get("US Large Core", float("nan")))
+            if not np.isnan(btc_spy_j) and btc_spy_j > 0.3:
+                args_against.append(
+                    f"Equity-like correlation with US Large Core ({btc_spy_j:.2f}) post-2020 — "
+                    "co-movement spikes during stress precisely when a hedge is most valuable"
+                )
+
+        args_against.extend([
+            "Maximum historical drawdown exceeding 80% — 2022 coincided with equity and bond "
+            "losses simultaneously (no diversification benefit when needed)",
+            "Commodity tax treatment: short-term ordinary income / long-term capital gains, "
+            "no qualified-dividend treatment — unfavorable vs. equity ETFs in taxable accounts",
+            "No intrinsic cash flow or fundamental valuation anchor — expected return is "
+            "purely sentiment-driven, making MV inputs unreliable for forward-looking allocation",
+        ])
+
+        result["args_for"]     = args_for
+        result["args_against"] = args_against
+    except Exception:
+        pass
+
+    return result
+
+
+# ── Methodology template variables ───────────────────────────────────────────
+
+# SAA rule: sleeves with target weight ≥10% → ±300 bps; <10% → ±200 bps.
+# Real Assets is the boundary case at exactly 10% and is assigned to the 200bps
+# tier as a deliberate exception — so MIN(target_weight) for the 300bps DB group
+# returns 0.14 (US Large Quality), not 0.10. Use the rule constant directly; do
+# not infer the threshold from DB data.
+_TOLERANCE_BAND_LARGE_CUTOFF_PCT = 10
+
+
+def _build_methodology_vars() -> dict:
+    """Return DB-derived values used in the PDF methodology section.
+
+    Keeps the quarterly_report.html template free of hardcoded SAA numerics.
+    Called once per report render; the DB queries are lightweight.
+    """
+    from src.benchmarks import _SLEEVE_BENCHMARKS
+
+    with get_connection() as conn:
+        parent_rows = conn.execute(
+            "SELECT name, target_weight FROM asset_classes "
+            "WHERE parent_id IS NULL ORDER BY asset_class_id"
+        ).fetchall()
+        sleeve_count = conn.execute(
+            "SELECT COUNT(*) FROM asset_classes WHERE parent_id IS NOT NULL"
+        ).fetchone()[0]
+        band_rows = conn.execute(
+            "SELECT DISTINCT CAST(ROUND(tolerance_band * 10000) AS INTEGER) AS band_bps "
+            "FROM asset_classes WHERE parent_id IS NOT NULL ORDER BY band_bps"
+        ).fetchall()
+
+    # "Equity 72% / Income 15% / Real Assets 10% / Cash 3%"
+    parent_weight_str = " / ".join(
+        f"{r['name']} {round(r['target_weight'] * 100):.0f}%"
+        for r in parent_rows
+    )
+
+    # "50% VNQ + 50% DBC" — derived from _SLEEVE_BENCHMARKS["Real Assets"]
+    ra_bench = _SLEEVE_BENCHMARKS.get("Real Assets", [])
+    ra_bench_str = " + ".join(f"{round(w * 100):.0f}% {t}" for t, w in ra_bench)
+
+    # Drift band tiers: smallest band (200 bps) and largest (300 bps)
+    band_bps_vals = [int(r["band_bps"]) for r in band_rows]
+    if len(band_bps_vals) >= 2:
+        drift_small_bps = band_bps_vals[0]
+        drift_large_bps = band_bps_vals[-1]
+    else:
+        drift_small_bps, drift_large_bps = 200, 300
+
+    return {
+        "methodology_parent_weights":      parent_weight_str,
+        "methodology_sleeve_count":        sleeve_count,
+        "methodology_ra_bench":            ra_bench_str,
+        "methodology_drift_large_bps":     drift_large_bps,
+        "methodology_drift_small_bps":     drift_small_bps,
+        "methodology_drift_large_min_pct": _TOLERANCE_BAND_LARGE_CUTOFF_PCT,
     }
 
 
@@ -880,7 +1266,7 @@ def generate_quarterly_report(
     output_path: Optional[Path] = None,
 ) -> Path:
     """
-    Generate an 8-page quarterly PDF report.
+    Generate a quarterly PDF report.
 
     Returns the Path of the written PDF file.
     When zero trades exist, produces a structural report (SAA + macro + theses only).
@@ -912,6 +1298,7 @@ def generate_quarterly_report(
         bench_attr_data  = _build_benchmark_section(start_date, end_date)  if has_trades else None
         macro_data       = _build_macro_section()
         thesis_data      = _build_thesis_section(start_date, end_date)
+        asset_eval_data  = _build_asset_eval_section()
 
     css_content = (TEMPLATES_DIR / "report_styles.css").read_text(encoding="utf-8")
 
@@ -927,6 +1314,9 @@ def generate_quarterly_report(
         snap_dt = datetime.fromisoformat(snapshot_captured_at)
         snapshot_display = f"{snap_dt.strftime('%B')} {snap_dt.day}, {snap_dt.year}"
 
+    inception_str   = get_inception_date()
+    si_days_report  = (date.fromisoformat(end_date) - date.fromisoformat(inception_str)).days
+
     html_content = tmpl.render(
         css_content          = css_content,
         period_label         = period_label,
@@ -934,6 +1324,9 @@ def generate_quarterly_report(
         generation_date      = gen_date,
         snapshot_captured_at = snapshot_display,
         has_trades           = has_trades,
+        inception_date       = inception_str,
+        si_days              = si_days_report,
+        report_disclaimer    = REPORT_DISCLAIMER,
         exec           = exec_data,
         hold           = hold_data,
         perf           = perf_data,
@@ -943,6 +1336,8 @@ def generate_quarterly_report(
         bench_attr     = bench_attr_data,
         macro          = macro_data,
         thesis         = thesis_data,
+        asset_eval     = asset_eval_data,
+        **_build_methodology_vars(),
     )
 
     pdf_bytes = _render_pdf(html_content)

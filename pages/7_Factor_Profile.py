@@ -7,9 +7,10 @@ import pandas as pd
 st.set_page_config(page_title="Factor Profile", layout="wide")
 
 from src.asof import as_of_banner
-from src.config import DEMO_BANNER_TEXT, IS_DEMO
+from src.config import get_demo_banner_text, IS_DEMO
 from src.ui_helpers import render_footer
 from src.factors import (
+    _FI_WEIGHTS,
     EM_DISCLOSURE,
     GLOBAL_DAILY_FACTORS_CUTOFF,
     alpha_ci_str,
@@ -21,9 +22,10 @@ from src.factors import (
     run_sleeve_regressions_mom,
     sig_marker,
 )
+from src.holdings import get_inception_date
 
 if IS_DEMO:
-    st.info(DEMO_BANNER_TEXT)
+    st.info(get_demo_banner_text())
 
 _, col, _ = st.columns([1, 8, 1])
 with col:
@@ -36,7 +38,7 @@ with col:
     st.divider()
 
     end_date  = date.today().isoformat()
-    inception = "2025-05-01"
+    inception = get_inception_date()
 
     @st.cache_data(ttl=3600)
     def _get_factor_results(inception_date: str, end: str) -> dict:
@@ -106,7 +108,7 @@ with col:
                 "p-value":      f"{p:.3f}",
                 "Significance": sig_marker(p),
             })
-        st.dataframe(pd.DataFrame(rows).set_index("Factor"), use_container_width=True)
+        st.dataframe(pd.DataFrame(rows).set_index("Factor"), width='stretch')
         st.caption(
             "* p < 0.10 &nbsp; ** p < 0.05 &nbsp; *** p < 0.01 &nbsp;|&nbsp; "
             f"Standard errors: Newey-West HAC &nbsp;|&nbsp; R² = {res['r_squared']:.3f} &nbsp; "
@@ -193,8 +195,12 @@ with col:
             _get_fi_result.clear()
             st.rerun()
     else:
+        _fi_pcts = " / ".join(
+            f"{round(_FI_WEIGHTS.get(t, 0) * 100):.0f}%"
+            for t in fi_result["tickers"]
+        )
         st.caption(
-            f"Tickers: {', '.join(fi_result['tickers'])} (60% / 40%, proportional to SAA) · "
+            f"Tickers: {', '.join(fi_result['tickers'])} ({_fi_pcts}, proportional to SAA) · "
             "TERM = IEF − BIL · CREDIT = HYG − IEF"
         )
         fi_rows = []
@@ -218,7 +224,7 @@ with col:
 
         st.dataframe(
             pd.DataFrame(fi_rows).set_index("Factor"),
-            use_container_width=True,
+            width='stretch',
         )
         st.caption(
             "* p < 0.10 &nbsp; ** p < 0.05 &nbsp; *** p < 0.01 &nbsp;|&nbsp; "

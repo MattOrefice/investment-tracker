@@ -53,7 +53,7 @@ def test_two_sleeve_hand_calculation():
     assert row_b["total_effect"]      == pytest.approx(-0.011, abs=1e-10)
 
 
-def test_algebra_check_passes():
+def test_identity_bf_effects_sum_to_active_return():
     """Sum of BF effects must equal portfolio − benchmark return within 1 bp."""
     pw = {"Equity": 0.70, "Bonds": 0.30}
     bw = {"Equity": 0.60, "Bonds": 0.40}
@@ -97,7 +97,7 @@ def test_equal_returns_no_selection_effect():
 
 # ── Two-stage attribution unit tests ─────────────────────────────────────────
 
-def test_two_stage_reconciliation():
+def test_identity_stage1_plus_stage2_equals_total():
     """Stage1 + Stage2 = Total = port_return - naive_return within floating-point precision.
 
     Regression pin: Phase 9. Tests the algebraic identity that holds by construction
@@ -131,7 +131,7 @@ def test_two_stage_reconciliation():
     )
 
 
-def test_stage1_sleeve_decomposition_reconciles():
+def test_identity_stage1_sleeve_contributions_sum_to_total():
     """Sum of per-sleeve Stage 1 contributions = Stage 1 total.
 
     Stage1_i = w_b_i * (r_b_i - naive). Sum = sum(w_b_i * r_b_i) - naive * sum(w_b_i).
@@ -380,7 +380,7 @@ def _bpr_helper(series: "pd.Series", period: str) -> float:
     return float(sliced.iloc[-1] / sliced.iloc[0] - 1)
 
 
-def test_ps_two_stage_algebra_si_60_40():
+def test_identity_ps_two_stage_si_60_40():
     """Price-series Stage1+Stage2=Total within 0.05 bps for SI period vs 60/40 naive.
 
     Phase 10.1 regression pin. Pre-fix code used _r_p_bf (BF-internal,
@@ -427,7 +427,7 @@ def test_ps_two_stage_algebra_si_60_40():
     )
 
 
-def test_ps_two_stage_algebra_1y_60_40():
+def test_identity_ps_two_stage_1y_60_40():
     """Price-series Stage1+Stage2=Total within 0.05 bps for 1Y period vs 60/40 naive.
 
     Phase 10.1 regression pin. Verifies the price-series algebra at the 1Y window,
@@ -476,7 +476,7 @@ def test_ps_two_stage_algebra_1y_60_40():
     )
 
 
-def test_ps_two_stage_algebra_si_spy():
+def test_identity_ps_two_stage_si_spy():
     """Price-series Stage1+Stage2=Total within 0.05 bps for SI period vs SPY naive.
 
     Phase 10.1 regression pin. Verifies the price-series algebra holds for the SPY
@@ -522,7 +522,7 @@ def test_ps_two_stage_algebra_si_spy():
     )
 
 
-def test_bf_sum_reconciles_to_stage2():
+def test_identity_bf_sum_reconciles_to_stage2():
     """BF active return (Σ effects) must reconcile with Stage 2 within 0.5 bps for all windows.
 
     Phase 10.2 regression pin. After (1) DRIP-aligning brinson_fachler_period() sleeve

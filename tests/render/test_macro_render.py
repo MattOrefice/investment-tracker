@@ -67,11 +67,17 @@ def test_hy_oas_panel_renders(macro_app: AppTest) -> None:
 
 
 def test_force_refresh_button_present(macro_app: AppTest) -> None:
-    """Force refresh button must render. Pinned: Phase 8l Section 3.4."""
+    """Force refresh button renders in personal mode; hidden in demo mode (write guard)."""
+    from src.config import IS_DEMO
     button_labels = [b.label for b in macro_app.button]
-    assert any("refresh" in label.lower() for label in button_labels), (
-        "Force refresh button missing — possible Phase 8l regression"
-    )
+    if IS_DEMO:
+        assert not any("refresh" in label.lower() for label in button_labels), (
+            "Force refresh button must be hidden in demo mode — demo write guard."
+        )
+    else:
+        assert any("refresh" in label.lower() for label in button_labels), (
+            "Force refresh button missing in personal mode — possible Phase 8l regression."
+        )
 
 
 def test_data_freshness_disclosure_present(macro_app: AppTest) -> None:

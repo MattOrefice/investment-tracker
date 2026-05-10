@@ -9,12 +9,12 @@ import streamlit as st
 st.set_page_config(page_title="Performance & Attribution", layout="wide")
 
 from src.asof import as_of_banner
-from src.config import DEMO_BANNER_TEXT, IS_DEMO
+from src.config import get_demo_banner_text, IS_DEMO
 from src.attribution import brinson_fachler_period, compute_two_stage_attribution
 from src.benchmarks import get_custom_blended_series, get_naive_60_40_series, get_naive_series, get_sp500_series
 from src.db import get_connection
 from src.factors import run_sleeve_regressions
-from src.holdings import get_portfolio_value_series, get_sleeve_weights_on_date
+from src.holdings import get_inception_date, get_portfolio_value_series, get_sleeve_weights_on_date
 from src.performance import compute_risk_metrics
 from src.reports import generate_quarterly_report
 from src.returns import annualize, period_return, twr_daily_linked
@@ -22,7 +22,7 @@ from src.ui_helpers import render_footer
 
 _REPORTS_DIR = Path(__file__).parent.parent / "data" / "reports"
 
-INCEPTION    = "2025-05-01"
+INCEPTION    = get_inception_date()
 TODAY        = date.today().isoformat()
 PERIODS      = ["1M", "3M", "YTD", "1Y", "SI"]
 PERIOD_LABEL = {"1M": "1 Month", "3M": "3 Months", "YTD": "YTD",
@@ -155,7 +155,7 @@ def _bps(v: float) -> str:
 # ── Page ─────────────────────────────────────────────────────────────────────
 
 if IS_DEMO:
-    st.info(DEMO_BANNER_TEXT)
+    st.info(get_demo_banner_text())
 
 _, col, _ = st.columns([1, 8, 1])
 with col:
@@ -271,24 +271,50 @@ with col:
     st.divider()
 
     # ──────────────────────────────────────────────────────────────────────
-    # Section 1 — Headline metrics
+    # Section 1a — Quarterly snapshot (most recently completed quarter)
     # ──────────────────────────────────────────────────────────────────────
+    _q_start, _q_end, _q_label = _most_recent_completed_quarter()
+    _q_ts_start = pd.Timestamp(_q_start)
+    _q_ts_end   = pd.Timestamp(_q_end)
+
+    def _q_ret(s: pd.Series) -> float:
+        sliced = s[(s.index >= _q_ts_start) & (s.index <= _q_ts_end)]
+        return float(sliced.iloc[-1] / sliced.iloc[0] - 1) if len(sliced) >= 2 else 0.0
+
+    _q_port     = _q_ret(pv)
+    _q_sp       = _q_ret(sp)
+    _q_bl       = _q_ret(bl)
+    _q_alpha_sp = _q_port - _q_sp
+    _q_alpha_bl = _q_port - _q_bl
+
+    st.markdown(f"### Quarterly report — {_q_label} (locked)")
+    q1, q2, q3 = st.columns(3)
+    q1.metric(f"{_q_label} return",             _pct(_q_port),     f"{_pct(_q_sp)} S&P 500")
+    q2.metric(f"vs. S&P 500 — {_q_label}",      _bps(_q_alpha_sp), f"S&P 500: {_pct(_q_sp)}",  delta_color="off")
+    q3.metric(f"vs. Custom Blended — {_q_label}", _bps(_q_alpha_bl), f"Blended: {_pct(_q_bl)}", delta_color="off")
+
+    st.divider()
+
+    # ──────────────────────────────────────────────────────────────────────
+    # Section 1b — Since inception headline metrics
+    # ──────────────────────────────────────────────────────────────────────
+    st.markdown("### Since inception")
     m1, m2, m3, m4 = st.columns(4)
 
     inception_delta_pct = f"{port_si*100:+.1f}% since inception"
-    m1.metric("Current Value",      f"${current_val:,.0f}", inception_delta_pct)
-    m2.metric("vs. S&P 500",        _bps(alpha_sp),
-              f"SI: {_pct(sp500_si)} S&P 500",
+    m1.metric("Portfolio value",              f"${current_val:,.0f}", inception_delta_pct)
+    m2.metric("vs. S&P 500 (since inception)",    _bps(alpha_sp),
+              f"S&P 500: {_pct(sp500_si)} SI",
               delta_color="off")
-    m3.metric("vs. Custom Blended", _bps(alpha_bl),
-              f"SI: {_pct(blended_si)} blended",
+    m3.metric("vs. Custom Blended (since inception)", _bps(alpha_bl),
+              f"Blended: {_pct(blended_si)} SI",
               delta_color="off")
-    m4.metric("YTD Return",         _pct(ytd_return),
-              f"Since: {_pct(port_si)}")
+    m4.metric(f"YTD return ({TODAY[:4]})",    _pct(ytd_return),
+              f"{_pct(port_si)} SI cumulative")
 
     st.caption(
         f"Underperformance vs. S&P 500 reflects intentional diversification: "
-        f"{_non_eq_pct*100:.0f}% of the SAA is non-equity (Income + Real Assets + Cash), "
+        f"{_non_eq_pct*100:.0f}% of the SAA is non-equity (Fixed Income + Real Assets + Cash), "
         f"{_non_us_eq*100:.0f}% is non-US equity. The Custom Blended benchmark — a target-weighted "
         "basket of cap-weighted indices in the same SAA — is the more meaningful "
         "comparison for security selection alpha."
@@ -299,20 +325,23 @@ with col:
         _cost_row = _rc.execute(
             "SELECT SUM(shares * price) FROM trades WHERE LOWER(action) = 'buy'"
         ).fetchone()
-    _cost_basis = float(_cost_row[0] or 0.0)
-    if _cost_basis > 0:
-        _unrealized   = current_val - _cost_basis
-        _abs_ret_pct  = (current_val / _cost_basis - 1) * 100
-        _twr_pct      = port_si * 100
+    _cost_basis    = float(_cost_row[0] or 0.0)
+    _series_start  = float(pv.iloc[0])
+    if _cost_basis > 0 and _series_start > 0:
+        _unrealized  = current_val - _cost_basis
+        _abs_ret_pct = (current_val / _series_start - 1) * 100
+        _twr_pct     = port_si * 100
         st.caption(
-            f"Reconciliation: **\\${_cost_basis:,.0f} cost basis** at inception → "
+            f"Reconciliation: **\\${_cost_basis:,.0f} deployed at inception** → "
             f"**\\${current_val:,.0f} current value** · "
-            f"**\\${_unrealized:+,.0f} unrealized gain** · "
-            f"**{_abs_ret_pct:.1f}% absolute return** vs **{_twr_pct:.1f}% cumulative TWR**. "
-            f"For a single lump-sum portfolio with no subsequent cash flows, TWR and "
-            f"absolute return converge; any residual difference reflects DRIP reinvestment "
-            f"rounding and the BIL total-return proxy applied to the SPAXX cash sleeve. "
-            f"TWR is the GIPS-correct measure for benchmark comparison."
+            f"**\\${_unrealized:+,.0f} gain on deployed capital**. "
+            f"Return calculations use the adj_close series, which starts at "
+            f"**\\${_series_start:,.2f}** — Yahoo Finance retroactively restates "
+            f"adj_close as dividends accrue, so the inception series value is lower "
+            f"than the original trade prices. Both absolute return "
+            f"(**{_abs_ret_pct:.1f}%**) and cumulative TWR (**{_twr_pct:.1f}%**) "
+            f"use the same adj_close series and are equivalent for this single "
+            f"lump-sum portfolio. TWR is the GIPS-correct measure for benchmark comparison."
         )
     # ── End reconciliation note ────────────────────────────────────────────
 
@@ -321,7 +350,7 @@ with col:
     # ──────────────────────────────────────────────────────────────────────
     # Section 2 — TWR method toggle + period returns table
     # ──────────────────────────────────────────────────────────────────────
-    st.markdown("#### Period Returns")
+    st.markdown("### Period Returns")
 
     c_left, c_right = st.columns([2, 5])
     with c_left:
@@ -393,16 +422,50 @@ with col:
 
     tbl_df = pd.DataFrame(display).T
     tbl_df.index.name = "Period"
-    st.dataframe(tbl_df, use_container_width=True)
+    styled = tbl_df.style.set_properties(
+        subset=["vs S&P 500", "vs Blended"],
+        **{"font-weight": "bold"},
+    )
+    st.dataframe(styled, width='stretch')
 
     st.divider()
 
     # ──────────────────────────────────────────────────────────────────────
     # Section 2b — Risk-adjusted metrics
     # ──────────────────────────────────────────────────────────────────────
-    st.markdown("#### Risk-Adjusted Metrics")
+    st.markdown("### Risk-Adjusted Metrics")
 
-    _bl_for_metrics = bl / float(bl.iloc[0])
+    # Benchmark options for relative metrics (TE, IR, beta, active return)
+    _RISK_BM_OPTIONS = {
+        "Custom Blended SAA":        "blended",
+        "S&P 500 (SPY)":             "spy",
+        "60/40 (60% SPY / 40% AGG)": "60_40",
+    }
+    _risk_bm_sel = st.radio(
+        "Compare against",
+        list(_RISK_BM_OPTIONS.keys()),
+        horizontal=True,
+        key="risk_bm_sel",
+        help=(
+            "Tracking error, information ratio, beta, and active return recompute "
+            "against the selected benchmark. Portfolio std dev, Sharpe, Sortino, "
+            "Max DD, VaR, and CVaR are independent of benchmark selection."
+        ),
+    )
+    _risk_bm_kind = _RISK_BM_OPTIONS[_risk_bm_sel]
+
+    # Load the selected benchmark series (normalized to 1.0 for risk metric computation)
+    if _risk_bm_kind == "blended":
+        _bl_for_metrics = bl / float(bl.iloc[0])
+        _risk_bm_label  = "Custom Blended SAA"
+    elif _risk_bm_kind == "spy":
+        _bl_for_metrics = sp / float(sp.iloc[0])
+        _risk_bm_label  = "S&P 500 (SPY)"
+    else:
+        _naive_60_40 = _load_naive_benchmark(start_val, "60_40")
+        _bl_for_metrics = _naive_60_40 / float(_naive_60_40.iloc[0])
+        _risk_bm_label  = "60/40 (60% SPY / 40% AGG)"
+
     _m_si  = compute_risk_metrics(pv, _bl_for_metrics, window="SI")
     _m_1y  = compute_risk_metrics(pv, _bl_for_metrics, window="1Y")
     _m_ytd = compute_risk_metrics(pv, _bl_for_metrics, window="YTD")
@@ -411,10 +474,10 @@ with col:
 
     _RISK_WINDOW_LABELS = ["1 Month", "3 Months", "YTD", "1 Year", "Since Inception"]
     _RISK_WINDOW_MAP = {
-        "1 Month":        _m_1m,
-        "3 Months":       _m_3m,
-        "YTD":            _m_ytd,
-        "1 Year":         _m_1y,
+        "1 Month":         _m_1m,
+        "3 Months":        _m_3m,
+        "YTD":             _m_ytd,
+        "1 Year":          _m_1y,
         "Since Inception": _m_si,
     }
 
@@ -439,37 +502,66 @@ with col:
                 f"Insufficient data for {_window_label} window — requires ≥ 20 trading days."
             )
         else:
-            _c1, _c2, _c3, _c4, _c5, _c6, _c7 = st.columns(7)
-            _c1.metric("Sharpe",     _fmt_ratio(_m["sharpe"]))
-            _c2.metric("Sortino",    _fmt_ratio(_m["sortino"]))
-            _c3.metric("Max DD",     _fmt_pct(_m["max_drawdown_pct"]))
-            _c4.metric("Track. Err", _fmt_pct(_m["tracking_error_pct"]))
-            _c5.metric("Info Ratio", _fmt_ratio(_m["information_ratio"]))
-            _c6.metric("VaR (95%)",  _fmt_pct(_m["var_95_pct"]))
-            _c7.metric("CVaR (95%)", _fmt_pct(_m["cvar_95_pct"]))
+            # Row 1 — portfolio-level metrics (benchmark-independent)
+            st.caption("Portfolio metrics (independent of benchmark selection)")
+            _c1, _c2, _c3, _c4, _c5, _c6 = st.columns(6)
+            _c1.metric("Std Dev (ann.)", _fmt_pct(_m["annualized_vol_pct"]))
+            _c2.metric("Sharpe",         _fmt_ratio(_m["sharpe"]))
+            _c3.metric("Sortino",        _fmt_ratio(_m["sortino"]))
+            _c4.metric("Max DD",         _fmt_pct(_m["max_drawdown_pct"]))
+            _c5.metric("VaR (95%)",      _fmt_pct(_m["var_95_pct"]))
+            _c6.metric("CVaR (95%)",     _fmt_pct(_m["cvar_95_pct"]))
+
+            st.markdown("---")
+
+            # Row 2 — benchmark-relative metrics
+            st.caption(f"vs {_risk_bm_label}")
+            _r1, _r2, _r3, _r4 = st.columns(4)
+            _r1.metric("Track. Err",      _fmt_pct(_m["tracking_error_pct"]))
+            _r2.metric("Info Ratio",       _fmt_ratio(_m["information_ratio"]))
+            _r3.metric("Beta",             _fmt_ratio(_m["beta"]))
+            _r4.metric("Active Ret (ann.)", _fmt_pct(_m["active_return_pct"]))
 
         st.caption(
+            "Std Dev: annualized portfolio return volatility (trading days only, ddof=1). "
             "Sharpe and Sortino use RF = 4.5% (current cash yield). "
-            "Tracking error and information ratio vs. Custom Blended benchmark. "
+            f"Tracking error, information ratio, beta, and active return vs. {_risk_bm_label}. "
             "Max drawdown = peak-to-trough decline in portfolio value within the selected window. "
             "VaR(95%) = daily loss exceeded only 5% of trading days (historical simulation). "
-            "CVaR(95%) = average daily loss on the worst 5% of trading days (Expected Shortfall)."
+            "CVaR(95%) = average daily loss on the worst 5% of trading days (Expected Shortfall). "
+            "IR formula: (geometric annualized active return) / tracking error. "
+            "Geometric annualization is used for consistency with the GIPS-linked TWR methodology "
+            "(same compounding convention as the cumulative return chart above). "
+            "Arithmetic annualization (mean daily active × 252) is the alternative institutional "
+            "convention (CFA, GIPS IR supplement) and would yield a higher IR — arithmetic mean "
+            "≥ geometric mean by Jensen's inequality."
         )
-        st.markdown(
-            "*Inception period overlaps substantially with trailing 12 months. "
-            "Max DD, TE, and IR will diverge from Since Inception once the portfolio "
-            "crosses ~18 months of history. "
-            "Risk ratios at 1M and 3M windows reflect ~21 and ~63 daily observations "
-            "respectively; interpret short-window Sharpe and Sortino as directional "
-            "rather than statistically stable.*"
+        _18mo_days = 548   # 18 × 30.44 calendar days
+        _months_si = round(si_days / 30.44)
+        _n_1m      = _m_1m.get("n_days", 0) if _m_1m else 0
+        _n_3m      = _m_3m.get("n_days", 0) if _m_3m else 0
+
+        _disc_parts = []
+        if si_days < _18mo_days:
+            _disc_parts.append(
+                f"Inception period ({_months_si} months) overlaps substantially with the "
+                "trailing 12 months. Max DD, TE, and IR will diverge from Since Inception "
+                "once the portfolio crosses 18 months of history."
+            )
+        _disc_parts.append(
+            f"Risk ratios at 1M and 3M windows reflect "
+            f"{_n_1m or 21} and {_n_3m or 63} trading days respectively; "
+            "interpret short-window Sharpe and Sortino as directional rather than "
+            "statistically stable."
         )
+        st.markdown("*" + " ".join(_disc_parts) + "*")
 
     st.divider()
 
     # ──────────────────────────────────────────────────────────────────────
     # Section 3 — Cumulative return chart
     # ──────────────────────────────────────────────────────────────────────
-    st.markdown("#### Cumulative Return Since Inception")
+    st.markdown("### Cumulative Return Since Inception")
 
     # Normalize all series to start at 1.0 for return comparison
     pv_norm = pv / float(pv.iloc[0])
@@ -502,7 +594,7 @@ with col:
         xaxis_title=None,
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
         margin=dict(l=0, r=0, t=40, b=0),
-        height=360,
+        height=380,
         hovermode="x unified",
         plot_bgcolor="white",
         paper_bgcolor="white",
@@ -511,14 +603,14 @@ with col:
                    dtick=10, ticksuffix="%"),
         xaxis=dict(gridcolor="#E8E8E8"),
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
     st.divider()
 
     # ──────────────────────────────────────────────────────────────────────
     # Section 4 — Two-Stage Attribution + Brinson-Fachler decomposition
     # ──────────────────────────────────────────────────────────────────────
-    st.markdown("#### Two-Stage Attribution")
+    st.markdown("### Two-Stage Attribution")
 
     bf_period = st.radio(
         "Attribution period",
@@ -550,6 +642,23 @@ with col:
         else "S&P 500 baseline (SPY total return)"
     )
     _naive_short = "60/40" if naive_kind == "60_40" else "S&P 500"
+
+    st.caption(
+        "**What the two stages measure.** Stage 1 (SAA design) captures the strategic-tilt "
+        f"contribution of the SAA itself — the value allocation (VTV at {_saa_sleeves.get('US Large Value', 0.08)*100:.0f}%), small-cap value "
+        f"(AVUV at {_saa_sleeves.get('US Small Cap', 0.07)*100:.0f}%), emerging markets ({_saa_sleeves.get('Emerging Markets', 0.08)*100:.0f}%), "
+        f"real assets ({_saa_sleeves.get('Real Assets', 0.10)*100:.0f}%), TIPS ({_saa_sleeves.get('TIPS', 0.06)*100:.0f}%), and the overall "
+        f"~{_saa_parents.get('Equity', 0.72)*100:.0f}/{_non_eq_pct*100:.0f} equity-vs-other-assets risk posture — measured as the SAA-blended benchmark's "
+        f"return spread over a {_naive_label}. This isolates what the "
+        "allocation thesis itself contributed, separate from execution. Stage 2 (Implementation, "
+        "decomposed via Brinson-Fachler below) captures two effects relative to the SAA's sleeve "
+        "targets: **allocation effect** — over/underweights from SAA targets, primarily driven by "
+        "drift since this portfolio is not rebalanced intra-quarter; and **selection effect** — the "
+        "chosen ETF return vs. the sleeve benchmark return, typically near-zero for passive ETF "
+        f"holdings. Stage 1 + Stage 2 = Portfolio return vs. {_naive_short} (algebra-checked in the summary tiles). The "
+        "Factor Profile page provides an independent factor-loading view of the same strategic tilts "
+        "(HML, SMB, RMW, CMA loadings on the US sleeve regression)."
+    )
 
     with st.spinner("Computing attribution…"):
         bf_df = _load_attribution(bf_period)
@@ -644,14 +753,14 @@ with col:
             yaxis_title=None,
             showlegend=False,
             margin=dict(l=0, r=80, t=20, b=0),
-            height=300,
+            height=380,
             plot_bgcolor="white",
             paper_bgcolor="white",
             font=dict(family="sans-serif", size=11, color="#333"),
             yaxis=dict(autorange="reversed"),
             xaxis=dict(gridcolor="#E8E8E8", zeroline=True, zerolinecolor="#888"),
         )
-        st.plotly_chart(_fig_s1, use_container_width=True)
+        st.plotly_chart(_fig_s1, width='stretch')
 
         _sleeve_sum_bps = sum(_sleeve_vals_bps)
         st.caption(
@@ -719,7 +828,7 @@ with col:
                 legend=dict(orientation="h", yanchor="bottom", y=1.02,
                             xanchor="left", x=0),
                 margin=dict(l=0, r=60, t=40, b=0),
-                height=360,
+                height=400,
                 plot_bgcolor="white",
                 paper_bgcolor="white",
                 font=dict(family="sans-serif", size=11, color="#333"),
@@ -727,7 +836,7 @@ with col:
                 xaxis=dict(gridcolor="#E8E8E8", zeroline=True,
                            zerolinecolor="#888"),
             )
-            st.plotly_chart(fig2, use_container_width=True)
+            st.plotly_chart(fig2, width='stretch')
 
         # — Attribution table —
         with bf_table_col:
@@ -744,7 +853,7 @@ with col:
                     "Total (bps)":   f"{row['total_effect']*10000:+.1f}",
                 })
             st.dataframe(pd.DataFrame(tbl_data), hide_index=True,
-                         use_container_width=True)
+                         width='stretch')
 
         # — Algebra summary —
         sum_effects   = bf_df["total_effect"].sum() * 10_000
@@ -765,29 +874,12 @@ with col:
             f"vs. Stage 2: {'✓' if _bf_reconciled else '⚠'} {_bf_s2_gap_bps:+.2f} bps"
         )
 
-        st.caption(
-            "**What the two stages measure.** Stage 1 (SAA design) captures the strategic-tilt "
-            f"contribution of the SAA itself — the value allocation (VTV at {_saa_sleeves.get('US Large Value', 0.08)*100:.0f}%), small-cap value "
-            f"(AVUV at {_saa_sleeves.get('US Small Cap', 0.07)*100:.0f}%), emerging markets ({_saa_sleeves.get('Emerging Markets', 0.08)*100:.0f}%), "
-            f"real assets ({_saa_sleeves.get('Real Assets', 0.10)*100:.0f}%), TIPS ({_saa_sleeves.get('TIPS', 0.06)*100:.0f}%), and the overall "
-            f"~{_saa_parents.get('Equity', 0.72)*100:.0f}/{_non_eq_pct*100:.0f} equity-vs-other-assets risk posture — measured as the SAA-blended benchmark's "
-            f"return spread over a {_naive_label}. This isolates what the "
-            "allocation thesis itself contributed, separate from execution. Stage 2 (Implementation, "
-            "decomposed above via Brinson-Fachler) captures two effects relative to the SAA's sleeve "
-            "targets: **allocation effect** — over/underweights from SAA targets, primarily driven by "
-            "drift since this portfolio is not rebalanced intra-quarter; and **selection effect** — the "
-            "chosen ETF return vs. the sleeve benchmark return, typically near-zero for passive ETF "
-            f"holdings. Stage 1 + Stage 2 = Portfolio return vs. {_naive_short} (algebra-checked above). The "
-            "Factor Profile page provides an independent factor-loading view of the same strategic tilts "
-            "(HML, SMB, RMW, CMA loadings on the US sleeve regression)."
-        )
-
     st.divider()
 
     # ──────────────────────────────────────────────────────────────────────
     # Section 5 — Drift analysis
     # ──────────────────────────────────────────────────────────────────────
-    st.markdown("#### Drift Analysis")
+    st.markdown("### Drift Analysis")
 
     sw, band_map = _load_drift()
 
@@ -830,13 +922,13 @@ with col:
             yaxis_title=None,
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
             margin=dict(l=0, r=0, t=40, b=0),
-            height=320,
+            height=380,
             plot_bgcolor="white",
             paper_bgcolor="white",
             font=dict(family="sans-serif", size=11, color="#333"),
             xaxis=dict(gridcolor="#E8E8E8"),
         )
-        st.plotly_chart(_fig_alloc, use_container_width=True)
+        st.plotly_chart(_fig_alloc, width='stretch')
 
         drift_rows = []
         outside_band_count = 0
@@ -859,7 +951,7 @@ with col:
 
         # Sort by absolute drift descending
         drift_rows.sort(key=lambda r: abs(int(r["Drift (bps)"].replace("+", ""))), reverse=True)
-        st.dataframe(pd.DataFrame(drift_rows), hide_index=True, use_container_width=True)
+        st.dataframe(pd.DataFrame(drift_rows), hide_index=True, width='stretch')
         st.caption(
             f"Rebalance candidates: **{outside_band_count}** sleeve"
             f"{'s' if outside_band_count != 1 else ''} outside tolerance band"
@@ -871,6 +963,13 @@ with col:
     # Task 5 — Methodology validation expander
     # ──────────────────────────────────────────────────────────────────────
     with st.expander("Methodology validation"):
+        if si_days < 365:
+            st.info(
+                f"**1Y window note:** Portfolio has {si_days} days of history (inception "
+                f"{INCEPTION}). The 1Y return period is capped at inception and equals the "
+                "Since Inception return. 1Y and SI windows will diverge once the portfolio "
+                "crosses one year."
+            )
         pv2, cf2 = _load_portfolio()
         daily_si  = period_return("daily",          pv2, cf2, "SI")
         dietz_si  = period_return("modified_dietz", pv2, cf2, "SI")

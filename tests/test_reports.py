@@ -147,7 +147,7 @@ def test_cover_twr_uses_inception_slice_not_period_scoped():
     bl_flat = _flat_series(inception, end_date)
 
     with patch.object(rpt, "get_portfolio_value_series", return_value=pv_full), \
-         patch.object(rpt, "_inception_date", return_value=inception), \
+         patch.object(rpt, "get_inception_date", return_value=inception), \
          patch.object(rpt, "get_sp500_series", return_value=sp_flat), \
          patch.object(rpt, "get_custom_blended_series", return_value=bl_flat), \
          patch.object(rpt, "brinson_fachler_period", side_effect=Exception("no db")), \
@@ -176,7 +176,7 @@ def test_cover_current_value_reflects_full_portfolio():
     bl_flat = _flat_series(inception, end_date)
 
     with patch.object(rpt, "get_portfolio_value_series", return_value=pv_full), \
-         patch.object(rpt, "_inception_date", return_value=inception), \
+         patch.object(rpt, "get_inception_date", return_value=inception), \
          patch.object(rpt, "get_sp500_series", return_value=sp_flat), \
          patch.object(rpt, "get_custom_blended_series", return_value=bl_flat), \
          patch.object(rpt, "brinson_fachler_period", side_effect=Exception("no db")), \
@@ -204,7 +204,7 @@ def _make_exec_summary_mocks(inception: str, start_date: str, end_date: str,
         return bl_full[bl_full.index >= pd.Timestamp(start)]
 
     with patch.object(rpt, "get_portfolio_value_series", return_value=pv_full), \
-         patch.object(rpt, "_inception_date", return_value=inception), \
+         patch.object(rpt, "get_inception_date", return_value=inception), \
          patch.object(rpt, "get_sp500_series", return_value=sp_full), \
          patch.object(rpt, "get_custom_blended_series", side_effect=_blended_side_effect), \
          patch.object(rpt, "brinson_fachler_period", side_effect=Exception("no db")), \

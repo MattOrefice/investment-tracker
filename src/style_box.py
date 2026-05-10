@@ -52,6 +52,15 @@ COLLISION_DIST   = 0.15  # cell-units; dots closer than this would need leader l
 US_EQUITY_TICKERS = frozenset({"VOO", "VTV", "SPHQ", "AVUV"})
 NON_US_EQUITY_MAP = {"VEA": "Developed", "IEMG": "Emerging"}
 
+# Single-source caption used in both the Streamlit page and the PDF template.
+# "fractional deviation from SPY" is the precise term: z_i = (ETF_ratio / SPY_ratio) - 1,
+# not a z-score (no std-dev normalization).
+STYLE_BOX_CAPTION = (
+    "Morningstar 3×3 style box · x-axis: 4-factor value-growth score "
+    "(fractional deviation from SPY, averaged) · y-axis: log market cap "
+    "· dot size = portfolio weight · US equity sleeves only"
+)
+
 
 def _load_metadata() -> dict:
     with open(_META_PATH) as f:

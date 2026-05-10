@@ -119,7 +119,7 @@ def test_percentile_label_monotone():
 
 # ── DB-backed prose consistency tests ─────────────────────────────────────────
 
-def test_non_equity_fraction_algebraic_consistency():
+def test_identity_non_equity_fraction_algebraic_consistency():
     """1 - equity_weight == sum of non-equity parent weights (Income + Real Assets + Cash).
 
     The Performance page L291 computes _non_eq_pct = 1 - _saa_parents['Equity'].
@@ -146,7 +146,7 @@ def test_non_equity_fraction_algebraic_consistency():
     )
 
 
-def test_non_us_equity_fraction_matches_intl_plus_em():
+def test_identity_non_us_equity_fraction_matches_intl_plus_em():
     """Non-US equity fraction = Intl Developed + Emerging Markets target weights.
 
     The Performance page L292 computes _non_us_eq as the sum of these two
@@ -175,7 +175,7 @@ def test_non_us_equity_fraction_matches_intl_plus_em():
     )
 
 
-def test_methodology_prose_sleeve_keys_present():
+def test_prose_methodology_sleeve_keys_present():
     """All sleeve names used in the methodology paragraph exist in the SAA DB.
 
     The Performance page methodology paragraph references 'US Large Value',
@@ -205,7 +205,7 @@ def test_methodology_prose_sleeve_keys_present():
     )
 
 
-def test_equity_parent_name_matches_prose():
+def test_prose_equity_parent_name_matches():
     """Equity parent name is 'Equity' — the key used in _saa_parents.get('Equity', ...)."""
     from src.db import get_connection
 
@@ -219,3 +219,402 @@ def test_equity_parent_name_matches_prose():
         "The Performance page prose uses _saa_parents.get('Equity', 0.72) — "
         "if the parent was renamed, the fallback default will be used silently."
     )
+
+
+def test_prose_factor_profile_fi_caption_matches_weights():
+    """FI sleeve caption weight percentages (60%/40%) are derived from _FI_WEIGHTS.
+
+    pages/7_Factor_Profile.py renders the FI proportions inline using _FI_WEIGHTS.
+    This test verifies the rendered string is well-formed and that VGIT carries
+    more weight than SCHP (consistent with Core FI 9% > TIPS 6%).
+    """
+    from src.factors import _FI_WEIGHTS
+
+    fi_tickers = ["VGIT", "SCHP"]
+    pct_parts = [round(_FI_WEIGHTS.get(t, 0) * 100) for t in fi_tickers]
+
+    assert sum(pct_parts) == 100, (
+        f"FI caption weights don't sum to 100%: {pct_parts}. "
+        "Check _FI_WEIGHTS in src/factors.py."
+    )
+    assert all(p > 0 for p in pct_parts), (
+        f"FI caption has a zero-weight ticker: {list(zip(fi_tickers, pct_parts))}."
+    )
+    assert pct_parts[0] > pct_parts[1], (
+        f"Expected VGIT weight > SCHP weight (Core FI 9% > TIPS 6%); "
+        f"got VGIT={pct_parts[0]}% SCHP={pct_parts[1]}%."
+    )
+
+
+def test_prose_fi_weights_constant_matches_db():
+    """_FI_WEIGHTS in src/factors.py must reflect DB proportions for Core FI and TIPS.
+
+    _FI_WEIGHTS = {"VGIT": 9/15, "SCHP": 6/15} weights the FI sleeve return series
+    in regress_fi_sleeve(). If either sleeve's target_weight changes, the constant
+    must be updated too — otherwise the factor regression uses wrong weights silently.
+    """
+    from src.db import get_connection
+    from src.factors import _FI_WEIGHTS
+
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT name, target_weight FROM asset_classes "
+            "WHERE name IN ('Core Fixed Income', 'TIPS')"
+        ).fetchall()
+
+    db_wts = {r["name"]: r["target_weight"] for r in rows}
+    assert "Core Fixed Income" in db_wts, "'Core Fixed Income' sleeve missing from DB"
+    assert "TIPS" in db_wts, "'TIPS' sleeve missing from DB"
+
+    total = db_wts["Core Fixed Income"] + db_wts["TIPS"]
+    expected_vgit = db_wts["Core Fixed Income"] / total
+    expected_schp = db_wts["TIPS"] / total
+
+    assert abs(_FI_WEIGHTS["VGIT"] - expected_vgit) < 1e-6, (
+        f"_FI_WEIGHTS['VGIT'] = {_FI_WEIGHTS['VGIT']:.6f} but DB implies "
+        f"{expected_vgit:.6f} (Core FI / (Core FI + TIPS)). "
+        "Update _FI_WEIGHTS in src/factors.py to match."
+    )
+    assert abs(_FI_WEIGHTS["SCHP"] - expected_schp) < 1e-6, (
+        f"_FI_WEIGHTS['SCHP'] = {_FI_WEIGHTS['SCHP']:.6f} but DB implies "
+        f"{expected_schp:.6f} (TIPS / (Core FI + TIPS)). "
+        "Update _FI_WEIGHTS in src/factors.py to match."
+    )
+
+
+def test_prose_saa_us_constants_match_db():
+    """_SAA_US in src/factors.py must match DB target_weights for US equity sleeves.
+
+    _SAA_US = {"VOO": 16, "SPHQ": 14, "VTV": 8, "AVUV": 7} stores weights as integers
+    (percent × 100). Each value must equal round(db_target_weight * 100). Designed to
+    work without a DB call at runtime, but tested here to catch SAA weight changes.
+    """
+    from src.db import get_connection
+    from src.factors import _SAA_US
+
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT s.ticker, ac.target_weight
+            FROM securities s
+            JOIN asset_classes ac ON s.asset_class_id = ac.asset_class_id
+            WHERE s.ticker IN ('VOO', 'SPHQ', 'VTV', 'AVUV')
+              AND ac.parent_id IS NOT NULL
+        """).fetchall()
+
+    db_wts = {r["ticker"]: r["target_weight"] for r in rows}
+    for ticker, pct_int in _SAA_US.items():
+        assert ticker in db_wts, (
+            f"Ticker '{ticker}' from _SAA_US not found in securities→asset_classes."
+        )
+        db_pct = round(db_wts[ticker] * 100)
+        assert pct_int == db_pct, (
+            f"_SAA_US['{ticker}'] = {pct_int}% but DB target_weight = "
+            f"{db_wts[ticker]:.4f} ({db_pct}%). "
+            "Update _SAA_US in src/factors.py and reseed asset_classes."
+        )
+
+
+def test_prose_methodology_weight_defaults_match_db():
+    """Fallback defaults in the methodology paragraph must match live DB target_weights.
+
+    pages/4_Performance.py uses _saa_sleeves.get('Sleeve Name', fallback) for five
+    sleeves in the methodology caption. The fallback values are safety nets for if
+    the DB lookup returns no data. This test verifies that the hardcoded fallback
+    values match actual DB weights so they would produce correct prose even on failure.
+    """
+    from src.db import get_connection
+
+    EXPECTED_FALLBACKS = {
+        "US Large Value":  0.08,
+        "US Small Cap":    0.07,
+        "Emerging Markets": 0.08,
+        "Real Assets":     0.10,
+        "TIPS":            0.06,
+    }
+    EXPECTED_EQUITY_PARENT = 0.72
+
+    with get_connection() as conn:
+        sleeve_rows = conn.execute(
+            "SELECT name, target_weight FROM asset_classes WHERE parent_id IS NOT NULL"
+        ).fetchall()
+        parent_rows = conn.execute(
+            "SELECT name, target_weight FROM asset_classes WHERE parent_id IS NULL"
+        ).fetchall()
+
+    sleeves = {r["name"]: r["target_weight"] for r in sleeve_rows}
+    parents = {r["name"]: r["target_weight"] for r in parent_rows}
+
+    for sleeve_name, expected in EXPECTED_FALLBACKS.items():
+        db_wt = sleeves.get(sleeve_name)
+        assert db_wt is not None, f"'{sleeve_name}' not found in asset_classes"
+        assert abs(db_wt - expected) < 1e-6, (
+            f"DB target_weight for '{sleeve_name}' is {db_wt:.4f} but methodology "
+            f"paragraph fallback default is {expected:.4f}. "
+            "Update the .get() defaults in pages/4_Performance.py lines 790-793."
+        )
+
+    eq_wt = parents.get("Equity")
+    assert eq_wt is not None, "'Equity' parent not found in asset_classes"
+    assert abs(eq_wt - EXPECTED_EQUITY_PARENT) < 1e-6, (
+        f"DB Equity target_weight is {eq_wt:.4f} but fallback default is "
+        f"{EXPECTED_EQUITY_PARENT:.4f}. "
+        "Update the _saa_parents.get('Equity', ...) default in pages/4_Performance.py."
+    )
+
+
+# ── Phase 12.1 additions ───────────────────────────────────────────────────────
+
+def test_prose_pdf_methodology_parent_weights_match_db():
+    """PDF methodology section parent weight string is DB-derived, not hardcoded.
+
+    templates/quarterly_report.html renders {{ methodology_parent_weights }} from
+    _build_methodology_vars(). This test verifies the DB produces a well-formed
+    four-category string whose weights sum to 100%.
+    """
+    import re
+    from src.db import get_connection
+
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT name, target_weight FROM asset_classes "
+            "WHERE parent_id IS NULL ORDER BY asset_class_id"
+        ).fetchall()
+
+    result = " / ".join(
+        f"{r['name']} {round(r['target_weight'] * 100):.0f}%"
+        for r in rows
+    )
+
+    for cat in ("Equity", "Income", "Real Assets", "Cash"):
+        assert cat in result, (
+            f"Parent category '{cat}' missing from methodology weight string: '{result}'"
+        )
+
+    pcts = [int(m) for m in re.findall(r"(\d+)%", result)]
+    assert sum(pcts) == 100, (
+        f"Parent weights in methodology string don't sum to 100%: {result}"
+    )
+
+
+def test_prose_pdf_methodology_sleeve_count_matches_db():
+    """PDF methodology section sleeve count (10) is DB-derived, not hardcoded.
+
+    templates/quarterly_report.html renders {{ methodology_sleeve_count }} from
+    _build_methodology_vars(). This test pins the expected count so any SAA
+    taxonomy change triggers an intentional review of the methodology prose.
+    """
+    from src.db import get_connection
+
+    with get_connection() as conn:
+        count = conn.execute(
+            "SELECT COUNT(*) FROM asset_classes WHERE parent_id IS NOT NULL"
+        ).fetchone()[0]
+
+    assert count == 10, (
+        f"Expected 10 SAA sleeves in asset_classes, got {count}. "
+        "If the SAA taxonomy changed, update the methodology template and this test."
+    )
+
+
+def test_prose_pdf_real_assets_benchmark_caption_matches_source():
+    """Real Assets benchmark description in PDF template matches _SLEEVE_BENCHMARKS.
+
+    templates/quarterly_report.html renders {{ methodology_ra_bench }} derived
+    from _SLEEVE_BENCHMARKS["Real Assets"] in src/benchmarks.py. This test
+    verifies the benchmark uses VNQ + DBC (not DJP which was delisted 2020)
+    and that the 50/50 split is intact. Note: the portfolio holds PDBC (no-K-1);
+    DBC is deliberately used as the benchmark for long price history.
+    """
+    from src.benchmarks import _SLEEVE_BENCHMARKS
+
+    ra = _SLEEVE_BENCHMARKS.get("Real Assets")
+    assert ra is not None, "'Real Assets' key missing from _SLEEVE_BENCHMARKS"
+    assert len(ra) == 2, (
+        f"Expected 2 tickers in Real Assets benchmark, got {len(ra)}: {ra}"
+    )
+
+    tickers = [t for t, _w in ra]
+    weights = [w for _t, w in ra]
+
+    assert "VNQ" in tickers, f"VNQ not in Real Assets benchmark tickers: {tickers}"
+    assert "DBC" in tickers, (
+        f"DBC not in Real Assets benchmark tickers: {tickers}. "
+        "DJP was delisted 2020; benchmark should use DBC. "
+        "If DBC was also replaced, update _SLEEVE_BENCHMARKS and this test."
+    )
+    assert abs(sum(weights) - 1.0) < 1e-9, (
+        f"Real Assets benchmark weights don't sum to 1.0: {weights}"
+    )
+    assert all(abs(w - 0.5) < 1e-9 for w in weights), (
+        f"Expected 50/50 split; got {dict(zip(tickers, weights))}. "
+        "Update templates/quarterly_report.html Real Assets benchmark description."
+    )
+
+
+def test_prose_pdf_drift_thresholds_match_db():
+    """PDF drift threshold description derives from DB tolerance_band values.
+
+    templates/quarterly_report.html lines ~598-599 render the per-sleeve tolerance
+    bands from _build_methodology_vars(). This test verifies the DB contains exactly
+    the two-tier structure (200 bps / 300 bps) that the prose template assumes.
+    """
+    from src.db import get_connection
+
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT CAST(ROUND(tolerance_band * 10000) AS INTEGER) AS band_bps "
+            "FROM asset_classes WHERE parent_id IS NOT NULL ORDER BY band_bps"
+        ).fetchall()
+
+    band_bps_vals = [r["band_bps"] for r in rows]
+
+    assert len(band_bps_vals) == 2, (
+        f"Expected exactly 2 distinct tolerance bands, got {len(band_bps_vals)}: {band_bps_vals}. "
+        "PDF drift prose assumes a two-tier band structure."
+    )
+    assert 200 in band_bps_vals, (
+        f"Expected a 200 bps (±2%) tolerance band; found: {band_bps_vals}. "
+        "Update _build_methodology_vars() fallback and the methodology template."
+    )
+    assert 300 in band_bps_vals, (
+        f"Expected a 300 bps (±3%) tolerance band; found: {band_bps_vals}. "
+        "Update _build_methodology_vars() fallback and the methodology template."
+    )
+
+
+def test_prose_drift_threshold_matches_rule_constant():
+    """_TOLERANCE_BAND_LARGE_CUTOFF_PCT must equal 10, not the data-inferred value.
+
+    The SAA rule is: sleeves with target weight ≥10% → ±300 bps.  Real Assets sits
+    at exactly 10% but is assigned to the 200 bps tier as a deliberate exception, so
+    MIN(target_weight) for the 300 bps DB group returns 14 (US Large Quality).
+    The PDF methodology prose must describe the rule (≥10%), not the DB minimum (≥14%).
+    """
+    from src.reports import _TOLERANCE_BAND_LARGE_CUTOFF_PCT, _build_methodology_vars
+
+    assert _TOLERANCE_BAND_LARGE_CUTOFF_PCT == 10, (
+        f"Rule constant is {_TOLERANCE_BAND_LARGE_CUTOFF_PCT}, expected 10. "
+        "The SAA spec says ≥10% target weight → ±300 bps tolerance band."
+    )
+
+    vars_ = _build_methodology_vars()
+    assert vars_["methodology_drift_large_min_pct"] == 10, (
+        f"_build_methodology_vars() returned drift_large_min_pct="
+        f"{vars_['methodology_drift_large_min_pct']}, expected 10. "
+        "Must use _TOLERANCE_BAND_LARGE_CUTOFF_PCT, not MIN(target_weight) from DB."
+    )
+
+
+# ── Phase 13 additions — SAA investment thesis paragraph ─────────────────────
+
+def test_saa_thesis_sleeve_weights_match_db():
+    """Sleeve weights referenced in the SAA investment thesis paragraph match DB target_weights.
+
+    pages/1_SAA.py builds the thesis paragraph dynamically from the asset_classes DB.
+    This test pins the expected weights so any SAA taxonomy change triggers an intentional
+    review of the thesis paragraph fallback defaults.
+    """
+    from src.db import get_connection
+
+    THESIS_WEIGHTS = {
+        "Equity":                  0.72,   # parent category
+        "International Developed": 0.19,
+        "Emerging Markets":        0.08,
+        "Real Assets":             0.10,
+        "TIPS":                    0.06,
+        "Core Fixed Income":       0.09,
+    }
+
+    with get_connection() as conn:
+        sleeve_rows = conn.execute(
+            "SELECT name, target_weight FROM asset_classes WHERE parent_id IS NOT NULL"
+        ).fetchall()
+        parent_rows = conn.execute(
+            "SELECT name, target_weight FROM asset_classes WHERE parent_id IS NULL"
+        ).fetchall()
+
+    all_weights = {r["name"]: r["target_weight"] for r in sleeve_rows}
+    all_weights.update({r["name"]: r["target_weight"] for r in parent_rows})
+
+    for name, expected in THESIS_WEIGHTS.items():
+        actual = all_weights.get(name)
+        assert actual is not None, (
+            f"'{name}' referenced in SAA thesis paragraph not found in asset_classes. "
+            "Update the .get() fallback defaults in pages/1_SAA.py."
+        )
+        assert abs(actual - expected) < 1e-6, (
+            f"SAA thesis paragraph uses {round(expected * 100)}% for '{name}' "
+            f"but DB has {actual:.4f} ({round(actual * 100)}%). "
+            "Update the .get() fallback defaults in pages/1_SAA.py."
+        )
+
+
+def test_saa_thesis_cape_label_matches_computed_percentile():
+    """CAPE language in the SAA thesis paragraph is consistent with percentile_label() output.
+
+    pages/1_SAA.py calls _load_cape_label() which computes the CAPE percentile from the
+    Shiller dataset and passes it through percentile_label(). This test verifies:
+    1. The cached CAPE series produces a valid percentile (not NaN / degenerate).
+    2. The resulting label is one of the recognized qualitative buckets.
+    3. CAPE is above the historical median (a sanity check — at 40x it should be far above).
+    """
+    from src.shiller import get_cape_series
+    from src.macro import percentile
+    from src.prose_helpers import percentile_label
+
+    VALID_LABELS = {
+        "historically low",
+        "below the historical median",
+        "near the historical median",
+        "elevated historically",
+        "very high historically",
+        "historically extreme",
+    }
+
+    s = get_cape_series()
+    cv = float(s.dropna().iloc[-1])
+    pct = percentile(s.dropna(), cv)
+    label = percentile_label(pct)
+
+    assert label in VALID_LABELS, (
+        f"percentile_label({pct:.1f}) returned '{label}', not in {VALID_LABELS}. "
+        "SAA thesis uses this label dynamically — check percentile_label() thresholds in "
+        "src/prose_helpers.py."
+    )
+    assert pct > 50, (
+        f"CAPE at {cv:.1f}x is at only the {pct:.0f}th historical percentile — below the median. "
+        "At sub-median CAPE, the SAA thesis claim of 'elevated valuations' is questionable. "
+        "Review the thesis paragraph in pages/1_SAA.py."
+    )
+
+
+def test_saa_thesis_above_40_cape_reference_still_relevant():
+    """Soft-warning test: static 'CAPE above 40' reference in SAA thesis should be reviewed
+    if current CAPE drops materially below 35.
+
+    pages/1_SAA.py contains a static empirical sentence: 'historical CAPE readings above 40
+    have been associated with low or negative forward 10-year real returns.' This is accurate
+    at extreme CAPE levels but becomes misleading if CAPE falls significantly. This test does
+    NOT fail CI — it issues a pytest warning when the cached CAPE drops below 35, signaling
+    that the static prose reference may need updating.
+    """
+    import warnings
+    from src.shiller import get_cape_series
+
+    REVIEW_THRESHOLD = 35.0
+
+    try:
+        s = get_cape_series()
+        cv = float(s.dropna().iloc[-1])
+    except Exception:
+        return  # CAPE data unavailable — skip silently
+
+    if cv < REVIEW_THRESHOLD:
+        warnings.warn(
+            f"Current CAPE ({cv:.1f}x) has dropped below {REVIEW_THRESHOLD}x. "
+            "Review the static 'CAPE above 40' sentence in the SAA thesis paragraph "
+            "(pages/1_SAA.py) and the '1929 and 1999 peaks' comparator — both may no "
+            "longer accurately describe current valuation conditions.",
+            UserWarning,
+            stacklevel=2,
+        )

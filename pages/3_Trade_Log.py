@@ -9,7 +9,7 @@ import streamlit as st
 st.set_page_config(page_title="Trade Log", layout="wide")
 
 from src.asof import as_of_banner
-from src.config import DEMO_BANNER_TEXT, IS_DEMO
+from src.config import get_demo_banner_text, IS_DEMO
 from src.db import get_connection
 from src.ui_helpers import render_footer
 
@@ -178,7 +178,7 @@ c    = data["counts"]
 
 
 if IS_DEMO:
-    st.info(DEMO_BANNER_TEXT)
+    st.info(get_demo_banner_text())
 
 # ── Header ────────────────────────────────────────────────────────────────────
 _, col, _ = st.columns([1, 8, 1])
@@ -209,6 +209,14 @@ tab_trades, tab_theses, tab_themes = st.tabs(["Trades", "Theses", "Themes"])
 # ────────────────────────────────────────────────────────────────────────────
 
 def render_trade_form():
+    if IS_DEMO:
+        st.info(
+            "Trade entry is disabled in demo mode. The deployed demo shows the analytical "
+            "framework against the seeded paper-trade portfolio. Personal mode "
+            "(TRACKER_MODE=personal) enables trade entry locally."
+        )
+        return
+
     securities    = data["securities"]
     accounts      = data["accounts"]
     system_theses = data["system_theses"]
@@ -284,7 +292,7 @@ def render_trade_form():
             price = st.number_input("Price ($)", min_value=0.0, step=0.01, format="%.2f")
             fees  = st.number_input("Fees ($)", min_value=0.0, value=0.0, step=0.01, format="%.2f")
         notes     = st.text_area("Notes (optional)", height=68)
-        submitted = st.form_submit_button("Log trade", use_container_width=True)
+        submitted = st.form_submit_button("Log trade", width='stretch')
 
         if submitted:
             ticker   = st.session_state.get("tl_ticker", "")
@@ -382,7 +390,7 @@ with tab_trades:
             df = pd.DataFrame(rows)
             st.dataframe(
                 df,
-                use_container_width=True,
+                width='stretch',
                 hide_index=True,
                 column_config={
                     "Price":       st.column_config.NumberColumn(format="$%.2f"),
@@ -403,6 +411,7 @@ with tab_theses:
     with col:
         # ── Investment theses ──────────────────────────────────────────────
         st.subheader("Investment Theses")
+        st.caption("★ rating reflects conviction in the thesis (1 = exploratory, 5 = high conviction).")
         show_system = st.checkbox(
             "Show operational theses", value=False, key="theses_show_system"
         )
@@ -502,7 +511,7 @@ with tab_theses:
                 })
             st.dataframe(
                 pd.DataFrame(pos_rows),
-                use_container_width=True,
+                width='stretch',
                 hide_index=True,
             )
 

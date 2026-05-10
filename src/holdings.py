@@ -242,3 +242,13 @@ def get_sleeve_weights_on_date(date_str: str) -> pd.DataFrame:
         )
 
     return pd.DataFrame(rows).set_index("Sleeve")
+
+
+def get_inception_date() -> str:
+    """Return ISO date of the first recorded trade, falling back to '2025-05-01'."""
+    try:
+        with get_connection() as conn:
+            row = conn.execute("SELECT MIN(trade_date) FROM trades").fetchone()
+        return row[0] if row and row[0] else "2025-05-01"
+    except Exception:
+        return "2025-05-01"

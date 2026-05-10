@@ -8,7 +8,8 @@ st.set_page_config(page_title="Benchmark Attribution", layout="wide")
 
 from src.asof import as_of_banner
 from src.attribution import brinson_fachler_period
-from src.config import DEMO_BANNER_TEXT, IS_DEMO
+from src.config import get_demo_banner_text, IS_DEMO
+from src.holdings import get_inception_date
 from src.factors import (
     alpha_ci_str,
     build_benchmark_methodology,
@@ -16,36 +17,11 @@ from src.factors import (
     run_benchmark_attribution_regression,
     sig_marker,
 )
+from src.reports import SLEEVE_HOLDING_TICKER as _SLEEVE_HOLDING, SLEEVE_BENCH_TICKER as _SLEEVE_BENCH
 from src.ui_helpers import render_footer
 
-# Locked Phase 2 holdings and benchmarks per sleeve — used for BHB cross-reference
-_SLEEVE_HOLDING = {
-    "US Large Core":           "VOO",
-    "US Large Quality":        "SPHQ",
-    "US Large Value":          "VTV",
-    "US Small Cap":            "AVUV",
-    "International Developed": "VEA",
-    "Emerging Markets":        "IEMG",
-    "Core Fixed Income":       "VGIT",
-    "TIPS":                    "SCHP",
-    "Real Assets":             "VNQ / PDBC",
-    "Cash / SPAXX":            "SPAXX",
-}
-_SLEEVE_BENCH = {
-    "US Large Core":           "SPY",
-    "US Large Quality":        "QUAL",
-    "US Large Value":          "IWD",
-    "US Small Cap":            "IWM",
-    "International Developed": "EFA",
-    "Emerging Markets":        "EEM",
-    "Core Fixed Income":       "IEF",
-    "TIPS":                    "TIP",
-    "Real Assets":             "VNQ / DBC",
-    "Cash / SPAXX":            "BIL",
-}
-
 if IS_DEMO:
-    st.info(DEMO_BANNER_TEXT)
+    st.info(get_demo_banner_text())
 
 _, col, _ = st.columns([1, 8, 1])
 with col:
@@ -59,7 +35,7 @@ with col:
     st.divider()
 
     end_date  = date.today().isoformat()
-    inception = "2025-05-01"
+    inception = get_inception_date()
 
     @st.cache_data(ttl=3600)
     def _get_benchmark_result(inception_date: str, end: str) -> dict | None:
@@ -102,7 +78,7 @@ with col:
 
     st.dataframe(
         pd.DataFrame(table_rows).set_index("Factor"),
-        use_container_width=True,
+        width='stretch',
     )
     st.caption(
         "* p < 0.10 &nbsp; ** p < 0.05 &nbsp; *** p < 0.01 &nbsp;|&nbsp; "

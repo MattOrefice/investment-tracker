@@ -58,7 +58,7 @@ def test_midperiod_deposit_modified_dietz():
 
 # ── Test 3: multi-sub-period GIPS chain-link ────────────────────────────────
 
-def test_gips_multiperiod_chain_link():
+def test_identity_gips_multiperiod_chain_link():
     """
     Three sub-periods, no cash flows (textbook GIPS example):
       R_1 = +10%: 1000 → 1100

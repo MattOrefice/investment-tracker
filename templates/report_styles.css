@@ -101,6 +101,8 @@ tr.row-even td { background: #f7f7f8; }
     margin: 0;
     padding-left: 1.2em;
     color: #444;
+    page-break-inside: avoid;
+    break-inside: avoid;
 }
 .bf-comm-list li { margin-bottom: 0.2em; }
 
@@ -152,11 +154,13 @@ table.metric-table td.metric-card {
 
 /* ── Disclosure footer ───────────────────────────────────────────────────── */
 .disclosure {
-    margin-top: 1.8em;
-    padding-top: 0.8em;
+    margin-top: 0.35em;
+    padding-top: 0.3em;
     border-top: 1px solid #ddd;
-    font-size: 7.5pt;
+    font-size: 7pt;
+    line-height: 1.25;
     color: #999;
+    page-break-before: avoid;
 }
 
 /* ── Section / page breaks ───────────────────────────────────────────────── */
@@ -255,16 +259,18 @@ table.two-col td:last-child { padding-right: 0; }
 /* ── Methodology ─────────────────────────────────────────────────────────── */
 dl.methodology dt {
     font-weight: 600;
-    margin-top: 0.5em;
+    margin-top: 0.35em;
     font-family: Helvetica, Arial, sans-serif;
-    font-size: 9.5pt;
+    font-size: 9pt;
     color: #222;
+    page-break-after: avoid;
 }
 dl.methodology dd {
     margin-left: 1.5em;
-    font-size: 9pt;
+    font-size: 8.5pt;
     color: #555;
     margin-bottom: 0.05em;
+    page-break-inside: avoid;
     line-height: 1.3;
 }
 
