@@ -101,6 +101,8 @@ tr.row-even td { background: #f7f7f8; }
     margin: 0;
     padding-left: 1.2em;
     color: #444;
+    page-break-inside: avoid;
+    break-inside: avoid;
 }
 .bf-comm-list li { margin-bottom: 0.2em; }
 

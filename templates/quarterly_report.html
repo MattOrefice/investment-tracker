@@ -295,7 +295,7 @@
   </div>
 
   {% if pos.non_us %}
-  <div style="margin: 8px 0 0; padding: 8px 12px; background: #F7F7F7; border-left: 3px solid #CCCCCC; font-size: 0.85em;">
+  <div style="margin: 8px 0 0; padding: 8px 12px; background: #F7F7F7; border-left: 3px solid #CCCCCC; font-size: 0.85em; page-break-inside: avoid; break-inside: avoid;">
     <strong>Non-US Equity Sleeve</strong>
     <ul style="margin: 4px 0 4px 16px; padding: 0;">
     {% for item in pos.non_us %}
@@ -649,7 +649,7 @@
   <h3>Decision Framework</h3>
   {% if asset_eval.args_for %}
   <p><strong>Arguments for inclusion:</strong></p>
-  <ul>
+  <ul style="page-break-inside: avoid; break-inside: avoid;">
     {% for arg in asset_eval.args_for %}
     <li style="margin-bottom:0.3em; font-size:9pt;">{{ arg }}</li>
     {% endfor %}
@@ -659,7 +659,7 @@
   {% endif %}
 
   <p><strong>Arguments against inclusion:</strong></p>
-  <ul>
+  <ul style="page-break-inside: avoid; break-inside: avoid;">
     {% for arg in asset_eval.args_against %}
     <li style="margin-bottom:0.3em; font-size:9pt;">{{ arg }}</li>
     {% endfor %}

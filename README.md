@@ -1,16 +1,14 @@
-# Personal Investment Analytics System
+# Investment Analytics Tracker
 
-**Multi-asset portfolio analytics with institutional-grade attribution and risk decomposition.**
+Personal portfolio analytics system tracking a thesis-driven multi-asset strategic asset allocation across ten sleeves, built to institutional-allocator standards. Deploys daily-linked TWR, Brinson-Fachler attribution, per-sleeve Fama-French factor regressions, and a locked-quarter PDF report. Intended as a working artifact for buy-side allocator and investment due diligence roles.
 
-Matt Orefice, CFA · [Live Demo](https://mattorefice-investment.streamlit.app/) · [LinkedIn](https://www.linkedin.com/in/matthew-orefice-cfa-83536b190/) · [GitHub](https://github.com/MattOrefice/investment-tracker)
+[Live Demo](https://mattorefice-investment.streamlit.app/) &nbsp;·&nbsp; [LinkedIn](https://www.linkedin.com/in/matthew-orefice-cfa-83536b190/) &nbsp;·&nbsp; [GitHub](https://github.com/MattOrefice/investment-tracker)
 
 ![CI](https://github.com/MattOrefice/investment-tracker/actions/workflows/ci.yml/badge.svg)
 
-A Python-based portfolio analytics platform tracking a thesis-driven multi-asset strategic asset allocation across ten sleeves. Implements daily-linked TWR (GIPS-compliant), two-stage Brinson-Fachler attribution, per-sleeve Fama-French 5-factor regressions with Newey-West HAC standard errors, and a three-layer integrity test suite enforced via GitHub Actions CI. Deployed as a live Streamlit demo and locked-quarter PDF report.
-
 ---
 
-## Current snapshot
+## Current Snapshot
 
 *Prices update daily. Snapshot as of May 7, 2026 (371 calendar days since inception May 1, 2025).*
 
@@ -24,17 +22,7 @@ A Python-based portfolio analytics platform tracking a thesis-driven multi-asset
 | Information Ratio | 3.63 | Since Inception, vs. Custom Blended |
 | Q1 2026 Active Return | +189 bps vs. blended; +735 bps vs. S&P 500 | Q1 2026 (locked) |
 
-The primary performance benchmark is the custom SAA-blended basket, not the S&P 500. SI active return vs. S&P 500 is intentionally disclosed alongside: a near-zero SI spread against the S&P 500 is an expected outcome for a portfolio whose 72% equity sleeve closely mirrors broad market beta with modest factor tilts.
-
-See [methodology](#methodology) for return computation and benchmarking approach.
-
----
-
-## What the system does
-
-Tracks a paper-trade portfolio deployed May 1, 2025 against a target SAA across ten sleeves: US Large Core (16%), US Large Quality (14%), US Large Value (8%), US Small Cap (7%), International Developed (19%), Emerging Markets (8%), Real Assets (10%), Core Fixed Income (9%), TIPS (6%), and Cash (3%). Computes daily-linked TWR, Brinson-Fachler attribution, per-sleeve factor regression decomposition, macro context indicators, and risk-adjusted metrics. Generates a locked-quarter PDF report and serves a live Streamlit demo.
-
-The demo database uses paper trades from May 2025 against the same SAA and methodology as the personal portfolio. The purpose is to make the analytical framework inspectable without exposing real position data.
+The primary benchmark is the custom SAA-blended basket, not the S&P 500. A near-zero SI spread against the S&P 500 is an expected outcome for a portfolio whose 72% equity sleeve closely mirrors broad market beta with modest factor tilts. See [Methodology](#methodology) for return computation and benchmarking details.
 
 ---
 
@@ -42,96 +30,87 @@ The demo database uses paper trades from May 2025 against the same SAA and metho
 
 ### Returns
 
-Daily-linked TWR chains sub-period returns: `TWR = ∏(1 + r_t) − 1`, where `r_t = (V_t − V_{t−1} − CF_t) / V_{t−1}`. Cash flows treated at beginning of period. For this portfolio (single initial deposit, no subsequent external cash flows), daily-linked TWR and Modified Dietz converge within 1 bp — verified by the identity test suite.
+Daily-linked TWR chains sub-period returns as `TWR = ∏(1 + r_t) − 1`, where `r_t = (V_t − V_{t−1} − CF_t) / V_{t−1}`. Cash flows are treated at the beginning of each period. For the lump-sum single-deposit case, daily-linked TWR and Modified Dietz converge within 1 basis point — verified by an identity test in the suite.
 
-### Three-layer attribution stack
+### Brinson-Fachler Attribution
 
-**Stage 1 — SAA design effect.** The custom SAA-blended benchmark return is computed as the target-weight average of per-sleeve benchmark proxies (SPY, QUAL, IWD, IWM, EFA, EEM, IEF, TIP, 50% VNQ + 50% DBC, BIL), normalized to $1 at inception. This stage isolates how much of total active return derives from the SAA design itself versus the S&P 500 or 60/40 baselines.
+Active return is decomposed per sleeve into allocation effect `(w_p − w_b)(r_b − r_b,total)` and selection effect `w_p(r_p − r_b)`. Allocation effect captures sleeve weighting decisions relative to the SAA-blended benchmark; selection effect captures holding-vs-benchmark performance within each sleeve. The two effects sum to total active return within 1 basis point, enforced by an algebraic identity test.
 
-**Stage 2 — Brinson-Fachler implementation effect.** Active return relative to the SAA-blended benchmark is decomposed per sleeve into allocation effect and selection effect using the BF (1985) framework. Allocation effect = `(w_p − w_b)(r_b − r_b,total)`; selection effect = `w_p(r_p − r_b)`. The two effects sum to active return within 1 bp — enforced by an algebraic identity test. Stage 1 + Stage 2 reconcile to total active return within 1 bp.
+### Per-Sleeve Fama-French 5-Factor Regression
 
-**Per-sleeve Fama-French 5-factor regressions.** Each equity sleeve is regressed against its region-appropriate FF5 factor set — US factors for the US equity sleeves (VOO, SPHQ, VTV, AVUV), Developed ex-US factors for the international sleeve (VEA). Running per-sleeve regressions avoids the model-misspecification that occurs when non-US and real-asset returns flow unspanned into a single full-portfolio alpha estimate. Newey-West HAC standard errors (lag = `floor(4 × (T/100)^(2/9))`) correct for heteroskedasticity and serial correlation.
+Each equity sleeve is regressed against its region-appropriate FF5 factor set — US factors (Ken French Data Library) for the US equity sleeves (VOO, SPHQ, VTV, AVUV), Developed ex-US factors for the international sleeve (VEA). Per-sleeve regressions avoid the model misspecification that arises when non-US and real-asset returns flow into a single full-portfolio alpha estimate. Newey-West HAC standard errors (lag = ⌊4 × (T/100)^(2/9)⌋) correct for heteroskedasticity and serial correlation.
 
-**Benchmark-relative regression (institutional alpha).** Portfolio excess returns are regressed on the custom SAA-blended benchmark return plus HML, SMB, and RMW style factors. The regression intercept is the active return component not explained by benchmark beta or style tilts — the definition used in institutional attribution frameworks (cf. PRINCO, JPM IDD methodology).
+### Custom-Benchmark Attribution Regression
 
-### Integrity testing
+Portfolio excess returns are regressed on the custom SAA-blended benchmark return plus HML, SMB, and RMW style factors. The regression intercept is the active return component unexplained by benchmark beta or factor tilts — the institutional alpha definition used by PRINCO and JPM IDD. CMA is excluded; for a passive/semi-passive multi-ETF implementation it captures ETF-level capex differences rather than deliberate active tilts.
 
-Three layers:
+### Equity Style Box
 
-**Layer 1 — Identities.** Mathematical relationships that must hold by construction: BF effects sum to active return, Stage 1 + Stage 2 = Total, sleeve weights sum to 100%, cumulative TWR equals the absolute return for the lump-sum single-cashflow case. These are caught at construction time, not during QA.
+The style box approximates Morningstar's factor placement using four trailing valuation metrics (book-to-price, earnings-to-price, dividend yield, cash-flow-to-price), each normalized as a fractional deviation from SPY. Size is log₁₀(weighted-average market cap in $B), calibrated so SPY anchors at the Large/Blend center. Coverage is US equity ETFs only (VOO, VTV, SPHQ, AVUV); non-US holdings are excluded with a disclosure note referencing regional style box methodology.
 
-**Layer 2 — Bounds.** Reasonability checks with tolerance: Sortino ≥ Sharpe (must hold when annualized return > RF), VaR/CVaR within expected regime ranges, CAPE readings within a plausible historical range, IR × TE within Jensen's gap of geometric annualized active return. Bound failures indicate data pipeline issues or computational errors.
+### Asset Evaluation Framework
 
-**Layer 3 — Prose-vs-data.** Every numerical citation in interpretive prose is templated from its source data, with tests asserting prose equals computed value. CAPE percentile in commentary equals CAPE percentile in the table. PDF methodology drift threshold prose derives from the SAA rule constant, not from data inference (Real Assets at 10% target weight is a boundary exception assigned to the 200 bps tier — naive `MIN()` on the DB returns 14%, not the correct 10% rule threshold). 322 tests across the three layers run on every push to main via GitHub Actions.
+Evaluates prospective asset additions using marginal Sharpe contribution, drawdown sensitivity, and correlation analysis relative to the existing 10-sleeve SAA. The framework separates sample-period arithmetic (unreliable for volatile, regime-shifting assets) from forward-looking properties, and produces a structured decision conclusion with explicit arguments for and against inclusion. Bitcoin is the current case study.
 
-### Data lineage
+### Macro Panel
 
-| Source | Data | Caching |
-|--------|------|---------|
-| Yahoo Finance | Daily adjusted-close prices (all holdings and benchmarks) | SQLite cache; locked on quarterly report date to prevent retroactive adj_close revisions from shifting historical numbers |
-| FRED | T10Y2Y, DFF, BAMLH0A0HYM2 (HY OAS), USREC | SQLite cache with 24h TTL |
-| Robert Shiller / Yale | CAPE (monthly) | Local CSV with monthly refresh |
-| Ken French Data Library (Dartmouth) | FF5 factors (US, Developed ex-US) | Downloaded and cached per regression run |
+Tracks four indicators — Shiller CAPE (with implied 10-year real return r ≈ −0.070 × ln(CAPE/16) + 0.066), yield curve (10Y−2Y), Fed Funds Rate, and ICE BofA HY OAS — via FRED integration with a 24-hour SQLite cache. Each indicator includes historical percentile context relative to the available data window. A rules-based regime classifier summarizes the combined macro environment relative to SAA positioning.
 
-**Real Assets benchmark disclosure.** The portfolio holds PDBC (Invesco Optimum Yield Diversified Commodity Strategy; C-corp structure, no K-1 issued). The benchmark uses DBC (Invesco DB Commodity Index Tracking Fund; K-1-issuing). Selection effect in the Brinson-Fachler attribution captures the DBC–PDBC return spread. This asymmetry is documented rather than hidden.
+### Integrity Testing
 
-### Methodology decisions worth flagging
+Three layers: (1) math identities that must hold by construction (BF effects sum to active return, sleeve weights sum to 100%, TWR equals absolute return for the lump-sum case); (2) reasonability bounds with tolerance (Sortino ≥ Sharpe, VaR/CVaR within expected range, IR × TE within Jensen's gap); (3) prose-vs-data guards asserting that every numerical citation in interpretive text derives from its source computation, not from a hardcoded constant. 408 tests across all three layers run on every push via GitHub Actions.
 
-**EM factor regression deferred.** Ken French does not publish daily EM factor data. Monthly EM factors at the current sample size (≈12 months) yield insufficient observations for stable inference. EM factor coverage is scoped to `docs/post_launch_backlog.md` pending 3+ years of history.
+### Data Sources
 
-**CMA excluded from benchmark-relative regression.** For a passive multi-ETF implementation, CMA primarily captures ETF-level capital expenditure differences rather than a deliberate active investment decision. Including it adds collinearity without informational gain.
+| Source | Series | Caching |
+|--------|--------|---------|
+| Yahoo Finance | Daily adjusted-close (all holdings and benchmarks) | SQLite; locked on quarterly report date to prevent retroactive revisions |
+| FRED | T10Y2Y, DFF, BAMLH0A0HYM2 (HY OAS), USREC | SQLite, 24-hour TTL |
+| Robert Shiller / Yale | CAPE (monthly) | Local CSV, monthly refresh |
+| Ken French Data Library | FF5 factors (US, Developed ex-US), UMD momentum | Downloaded and cached per regression run |
 
-**Zero-return rows excluded from vol and Sharpe computation.** The original implementation forward-filled weekend prices, producing zero-return rows that diluted standard deviation and inflated risk-adjusted metrics by approximately 15–25%. The bug was identified during Phase 11 integrity testing and corrected. See `docs/phase_11_diagnostic.md` for the full write-up.
-
-**Benchmark vs. holding distinction is intentional.** Benchmark tickers (SPY, QUAL, IWD, IWM, EFA, EEM, IEF, TIP, DJP/DBC, BIL) are institutional convention; holding tickers (VOO, SPHQ, VTV, AVUV, VEA, IEMG, VGIT, SCHP, VNQ, PDBC, SPAXX) are selected for after-tax efficiency in a taxable account. Blended weighted-average ER of holdings is ~10 bps. The rationale for each divergence is documented in the Research page.
+**Real Assets benchmark disclosure.** The portfolio holds PDBC (C-corp structure, no K-1 issued); the benchmark uses DBC (K-1-issuing). Selection effect in the Brinson-Fachler table captures the DBC–PDBC return spread. This asymmetry is documented rather than hidden.
 
 ---
 
-## Tech stack and repo structure
+## Architecture
 
-### Stack
+Python 3.11 · Streamlit · SQLite · pandas · NumPy · statsmodels (OLS, NW-HAC) · Plotly + kaleido · WeasyPrint (PDF on Linux/Cloud) · xhtml2pdf (Windows fallback) · fredapi · Jinja2 · pytest · GitHub Actions
 
-Python 3.11 · Streamlit · SQLite · pandas · NumPy · statsmodels (OLS, NW-HAC) · Plotly + kaleido (static chart export for PDF) · WeasyPrint (PDF rendering on Linux/Cloud) · xhtml2pdf (Windows local fallback) · yfinance · fredapi · Jinja2 · pytest · GitHub Actions
-
-### Repository layout
+Core logic resides in `src/` with no Streamlit imports, making it fully unit-testable. Streamlit pages in `pages/` are auto-discovered by `app.py`. Price data is cached in SQLite to avoid repeated Yahoo Finance API calls. PDF reports are assembled via Jinja2 templates and rendered through WeasyPrint on Linux/Cloud. The single canonical import pattern throughout is `from src.X import Y`.
 
 ```
-src/                  Core logic (no Streamlit imports; fully unit-testable)
-  attribution.py      Brinson-Fachler decomposition, two-stage reconciliation
-  benchmarks.py       SAA-blended benchmark, per-sleeve benchmark series
-  factors.py          FF5 regressions, benchmark-relative regression, style box
-  holdings.py         Net shares, portfolio value series, sleeve weights
-  macro.py            FRED integration (yield curve, Fed Funds, HY OAS, USREC)
-  prices.py           Yahoo Finance fetcher with SQLite cache
-  reports.py          PDF generator: data assembly, Jinja2 render, WeasyPrint/xhtml2pdf
-  returns.py          Daily-linked TWR, Modified Dietz, annualization, period slicing
-  shiller.py          CAPE from Yale dataset with local CSV fallback
+src/
+  attribution.py        Brinson-Fachler decomposition, two-stage reconciliation
+  benchmarks.py         SAA-blended benchmark, per-sleeve benchmark series
+  factors.py            FF5 regressions, benchmark-relative regression, style box
+  holdings.py           Net shares, portfolio value series, sleeve weights
+  macro.py              FRED integration (yield curve, Fed Funds, HY OAS, USREC)
+  prices.py             Yahoo Finance fetcher with SQLite cache
+  reports.py            PDF generator: data assembly, Jinja2 render, WeasyPrint
+  returns.py            Daily-linked TWR, Modified Dietz, annualization, period slicing
+  shiller.py            CAPE from Yale dataset with local CSV fallback
 
-pages/                Streamlit pages (auto-discovered by app.py)
-  1_SAA.py            SAA allocation chart, per-sleeve rationale, drift placeholder
-  2_Research.py       ETF selection: benchmark vs. holding comparison, ER breakdown
-  3_Trade_Log.py      Trade entry form, investment/position thesis browser, themes
-  4_Performance.py    TWR, BF attribution, cumulative chart, drift table, PDF export
-  5_Macro.py          CAPE, yield curve, Fed Funds, HY OAS with NBER recession shading
-  6_Reports.py        Quarterly report archive and download
-  7_Factor_Profile.py Per-sleeve FF5 regressions, benchmark-relative alpha, style box
+pages/
+  1_SAA.py              SAA allocation chart, per-sleeve rationale
+  2_Research.py         ETF selection: benchmark vs. holding, ER breakdown
+  3_Trade_Log.py        Trade entry, investment/position thesis browser, themes
+  4_Performance.py      TWR, BF attribution, cumulative chart, drift, PDF export
+  5_Macro.py            CAPE, yield curve, Fed Funds, HY OAS, regime classifier
+  6_Reports.py          Quarterly report archive and download
+  7_Factor_Profile.py   Per-sleeve FF5 regressions, benchmark-relative alpha, style box
+  8_Benchmark_Attribution.py  Custom-benchmark regression
+  9_Correlations.py     Rolling sleeve correlation matrix
+  10_Asset_Evaluation.py  Bitcoin case study: marginal Sharpe, drawdown, decision framework
 
-tests/                322 tests across three integrity layers
-  test_identity_layer1.py    Layer 1: math identities
-  test_bound_layer2.py       Layer 2: reasonability bounds
-  test_prose_consistency.py  Layer 3: prose-vs-data guards
-  test_returns.py            Unit tests for TWR and period slicing
-  test_attribution.py        Unit tests for BF decomposition
-  (additional per-module tests)
-
-templates/            PDF report (Jinja2 HTML + CSS)
-docs/                 Methodology diagnostics, test inventory, prose inventory,
-                      CI setup, operational runbooks, phase diagnostics
-tools/                push-and-verify.sh (pre-push test gate)
-scripts/              rebuild_prices_cache.py (maintenance utility)
+templates/              PDF report (Jinja2 HTML + CSS)
+tests/                  408 tests across three integrity layers
+docs/                   Methodology diagnostics, phase notes, operational runbooks
 ```
 
-### Running locally
+---
+
+## Running Locally
 
 ```bash
 git clone https://github.com/MattOrefice/investment-tracker.git
@@ -146,9 +125,9 @@ source .venv/bin/activate
 
 pip install -r requirements.txt
 
-# Run the demo (paper-trade portfolio, no real holdings needed)
-TRACKER_MODE=demo streamlit run app.py          # macOS / Linux
-$env:TRACKER_MODE="demo"; streamlit run app.py  # Windows PowerShell
+# Run the demo (paper-trade portfolio, no real holdings required)
+TRACKER_MODE=demo streamlit run app.py           # macOS / Linux
+$env:TRACKER_MODE="demo"; streamlit run app.py   # Windows PowerShell
 ```
 
 To generate a quarterly PDF: open the demo, navigate to **Performance**, and click **Generate Quarterly Report**. WeasyPrint is used on Linux/Cloud; xhtml2pdf is the fallback on Windows.
@@ -160,24 +139,28 @@ TRACKER_MODE=demo python -m pytest -m "not slow"    # macOS / Linux
 $env:TRACKER_MODE="demo"; python -m pytest -m "not slow"  # Windows PowerShell
 ```
 
-The personal-mode portfolio (`TRACKER_MODE=personal`, `data/tracker.db`) is gitignored and only exists locally. The demo portfolio (`data/demo.db`) is committed and is what the Streamlit Cloud deployment uses.
+The personal portfolio (`TRACKER_MODE=personal`, `data/tracker.db`) is gitignored and exists locally only. The demo portfolio (`data/demo.db`) is committed and is what the Streamlit Cloud deployment uses.
 
-### CI/CD
+---
 
-GitHub Actions runs `pytest -m "not slow"` (322 tests, ~90 seconds) under `TRACKER_MODE=demo` on every push and pull request to `main`. The `tools/push-and-verify.sh` wrapper runs the same suite locally before every push, so failures are caught before they reach the CI queue. See `docs/ci_setup.md` for branch protection and secrets configuration.
+## CI/CD
 
-### Planned enhancements
+GitHub Actions runs `pytest -m "not slow"` (408 tests, approximately 90 seconds) under `TRACKER_MODE=demo` on every push and pull request to `main`. See `docs/ci_setup.md` for branch protection and secrets configuration.
 
-- **Sleeve correlation matrix** with rolling-window view — tests whether the diversification thesis (Real Assets, Intl Developed, EM providing low correlation to US equity) holds across regime changes, particularly the 2022 inflation shock.
-- **EM factor regression** once portfolio history reaches 3+ years and monthly FF factor observations become sufficient for stable inference.
-- **Tax-aware reporting layer** — qualified vs. unqualified dividend tracking, wash-sale awareness, estimated after-tax return. Particularly relevant for the Real Assets sleeve (REIT distributions are predominantly non-qualified income).
+---
 
-See `docs/post_launch_backlog.md` for the full backlog.
+## Disclaimer
 
-### License
+The in-report legal disclaimer is defined as `REPORT_DISCLAIMER` in `src/reports.py` and is rendered on the final page of every generated PDF. This system is a personal investment analytics project provided for informational and educational purposes only. Nothing in this project constitutes investment advice, a recommendation to buy or sell any security, or an offer to provide advisory services.
+
+---
+
+## License
 
 MIT. See `LICENSE`.
 
 ---
 
-*Open to allocator-side and investment due diligence roles. Reach out via [LinkedIn](https://www.linkedin.com/in/matthew-orefice-cfa-83536b190/).*
+## Author
+
+Matt Orefice, CFA (April 2026). Former Investment Data Analyst II at MissionSquare Retirement. Contact via [LinkedIn](https://www.linkedin.com/in/matthew-orefice-cfa-83536b190/).
