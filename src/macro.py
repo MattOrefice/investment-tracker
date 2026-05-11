@@ -481,3 +481,18 @@ def interpret_us_vs_intl_spread(spread_pp: float, rolling_mean_pp: float) -> str
         f"Over the trailing 12 months, US equities (SPY) have {direction} international "
         f"developed (EFA) by {abs_spread:.1f}%. On a 5-year rolling basis, {mean_context}"
     )
+
+
+def format_ur_delta(delta_bps: float) -> str:
+    """Format the unemployment rate year-over-year delta for display.
+
+    Args:
+        delta_bps: change in bps of percentage points (current − year_ago) × 100.
+    Returns:
+        Human-readable string, e.g. "+20 bps from one year ago" or "Flat vs one year ago".
+    """
+    rounded = round(delta_bps)
+    if abs(rounded) < 1:
+        return "Flat vs one year ago"
+    sign = "+" if rounded > 0 else ""
+    return f"{sign}{rounded} bps from one year ago"

@@ -11,6 +11,7 @@ from src import macro, shiller
 from src.asof import as_of_banner
 from src.config import IS_DEMO
 from src.macro import (
+    format_ur_delta,
     interpret_curve_spread,
     interpret_excess_cape,
     interpret_gdp_growth,
@@ -799,7 +800,6 @@ with col:
         ur_start    = _window_start(ur_window)
         ur_pctile_w = _window_pctile(ur_clean, current_ur, ur_start)
         ur_data     = ur_clean.loc[ur_start:]
-        chg_sign = "+" if ur_chg >= 0 else ""
         fig_ur = go.Figure()
         _add_recession_shading(fig_ur, rec_periods or [], ur_start)
         fig_ur.add_trace(go.Scatter(
@@ -821,7 +821,7 @@ with col:
         st.plotly_chart(fig_ur, width='stretch')
         st.metric("Unemployment Rate", f"{current_ur:.1f}%")
         st.caption(
-            f"{chg_sign}{ur_chg:.0f} bps from one year ago · "
+            f"{format_ur_delta(ur_chg)} · "
             f"{_ordinal(ur_pctile_w)} percentile of {ur_window} window"
         )
 
@@ -1069,7 +1069,7 @@ with col:
         fig_us.add_annotation(
             xref="paper", yref="paper",
             x=0.01, y=0.98,
-            text="Above 0 = US outperforming international",
+            text="Positive = US outperforming international",
             showarrow=False,
             font=dict(size=9, color="#888"),
             xanchor="left", yanchor="top",

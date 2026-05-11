@@ -11,7 +11,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from src.macro import (
     compute_cape_implied_return, compute_ecy, percentile, window_pctile,
-    classify_regime, _REGIME_LABELS,
+    classify_regime, _REGIME_LABELS, format_ur_delta,
 )
 
 
@@ -291,3 +291,20 @@ def test_classify_regime_backtest_has_no_gaps():
         f"Backtest produced invalid label(s): {set(labels) - set(_REGIME_LABELS)}"
     )
     assert None not in labels, "Backtest produced None labels (gaps)"
+
+
+# ── format_ur_delta ────────────────────────────────────────────────────────
+
+def test_format_ur_delta_zero_is_flat():
+    assert format_ur_delta(0.0) == "Flat vs one year ago"
+
+def test_format_ur_delta_near_zero_rounds_flat():
+    # 0.4 bps rounds to 0 → still Flat
+    assert format_ur_delta(0.4) == "Flat vs one year ago"
+    assert format_ur_delta(-0.4) == "Flat vs one year ago"
+
+def test_format_ur_delta_positive():
+    assert format_ur_delta(20.0) == "+20 bps from one year ago"
+
+def test_format_ur_delta_negative():
+    assert format_ur_delta(-30.0) == "-30 bps from one year ago"
