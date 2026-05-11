@@ -200,7 +200,7 @@ def persist_drip_lots(ticker: str, lots: list[dict]) -> int:
             if already:
                 continue
 
-            conn.execute(
+            conn.execute(  # write-guard-exempt: admin backfill tool, not user-triggered
                 """INSERT INTO trades
                    (account_id, ticker, trade_date, action, shares, price,
                     fees, notes, lot_source)

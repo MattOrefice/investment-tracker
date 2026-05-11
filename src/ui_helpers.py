@@ -9,3 +9,12 @@ def render_footer() -> None:
     caption = render_build_caption()
     if caption:
         st.caption(caption)
+
+
+def write_guard_toast() -> None:
+    """Emit a demo-mode toast when a write action is blocked."""
+    st.toast(
+        "Demo mode — trades not written. "
+        "This is a public demo; write actions are disabled.",
+        icon="🔒",
+    )

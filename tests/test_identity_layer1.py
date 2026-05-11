@@ -362,12 +362,15 @@ def test_identity_rf_daily_conversion_from_annual():
 # ── 1.6  Demo-mode write guards ──────────────────────────────────────────────
 
 def test_identity_trade_form_has_demo_guard():
-    """render_trade_form() in pages/3_Trade_Log.py must open with an IS_DEMO guard
-    that returns early before any write path is reached.
+    """render_trade_form() in pages/3_Trade_Log.py must open with an is_write_enabled()
+    guard that returns early before any write path is reached.
 
     This is a source-code structural invariant: if the guard is accidentally removed
     in a future edit, this test fails before the omission reaches production, where
     it would allow any public visitor to insert trades into the demo database.
+
+    Phase 22 upgraded the guard from `if IS_DEMO:` to `if not is_write_enabled():`.
+    Both patterns are accepted here so the test does not hard-code the idiom.
     """
     page_path = pathlib.Path(__file__).resolve().parent.parent / "pages" / "3_Trade_Log.py"
     source = page_path.read_text(encoding="utf-8")
@@ -376,17 +379,22 @@ def test_identity_trade_form_has_demo_guard():
     func_start = source.find("def render_trade_form():")
     assert func_start != -1, "render_trade_form() not found in pages/3_Trade_Log.py — was it renamed?"
 
-    # The IS_DEMO early-return guard must appear before the first INSERT in the function body
     func_body = source[func_start:]
-    guard_pos  = func_body.find("if IS_DEMO:")
     insert_pos = func_body.find("INSERT INTO")
 
+    # Accept either guard idiom: old IS_DEMO or new is_write_enabled()
+    guard_pos_demo  = func_body.find("if IS_DEMO:")
+    guard_pos_write = func_body.find("if not is_write_enabled():")
+    guard_pos = max(p for p in (guard_pos_demo, guard_pos_write) if p != -1) \
+        if any(p != -1 for p in (guard_pos_demo, guard_pos_write)) else -1
+
     assert guard_pos != -1, (
-        "IS_DEMO guard missing from render_trade_form() in pages/3_Trade_Log.py. "
-        "Demo visitors can write trades to demo.db. Add: if IS_DEMO: st.info(...); return"
+        "Write guard missing from render_trade_form() in pages/3_Trade_Log.py. "
+        "Demo visitors can write trades to demo.db. "
+        "Add: if not is_write_enabled(): write_guard_toast(); return"
     )
     assert guard_pos < insert_pos, (
-        f"IS_DEMO guard (pos {guard_pos}) appears after first INSERT (pos {insert_pos}) "
+        f"Write guard (pos {guard_pos}) appears after first INSERT (pos {insert_pos}) "
         "in render_trade_form(). The guard must come first — writes are reachable before the check."
     )
 

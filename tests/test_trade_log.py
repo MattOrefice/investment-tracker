@@ -1,6 +1,7 @@
 """Unit tests for Trade Log display-layer transforms (no DB, no Streamlit)."""
 import sys
 import pathlib
+from unittest.mock import patch, MagicMock
 
 import pytest
 
@@ -148,3 +149,20 @@ def test_discretionary_row_unaffected_by_drip_logic():
     assert row["Position Thesis"] == "US Large Core — VOO"
     assert row["Investment Thesis"] == "US Large Core"
     assert row["Action"] == "Buy"
+
+
+# ── Test 12: write_guard_toast calls st.toast with the demo-mode message ─────
+
+def test_write_guard_toast_calls_st_toast():
+    """write_guard_toast() must call st.toast with a message containing 'Demo mode'
+    and the lock icon.  This is the message the public demo visitor sees when any
+    write action is blocked."""
+    with patch("src.ui_helpers.st") as mock_st:
+        from src.ui_helpers import write_guard_toast
+        write_guard_toast()
+
+    mock_st.toast.assert_called_once()
+    call_args = mock_st.toast.call_args
+    msg = call_args.args[0] if call_args.args else ""
+    assert "Demo mode" in msg
+    assert call_args.kwargs.get("icon") == "🔒"

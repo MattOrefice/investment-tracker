@@ -125,7 +125,7 @@ def capture_quarter_snapshot(quarter_id: str) -> tuple:
     snap_df.index = pd.to_datetime(snap_df.index).date
 
     captured_at = datetime.now().isoformat(timespec="seconds")
-    blob = snap_df.to_json(orient="split", date_format="iso")
+    blob = snap_df.to_json(orient="split", date_format="iso")  # write-guard-exempt: portfolio snapshot cache, not user-mutable data
 
     _ensure_table()
     with get_connection() as conn:

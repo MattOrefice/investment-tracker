@@ -9,9 +9,9 @@ import streamlit as st
 st.set_page_config(page_title="Trade Log", layout="wide")
 
 from src.asof import as_of_banner
-from src.config import get_demo_banner_text, IS_DEMO
+from src.config import get_demo_banner_text, IS_DEMO, is_write_enabled
 from src.db import get_connection
-from src.ui_helpers import render_footer
+from src.ui_helpers import render_footer, write_guard_toast
 
 STATUS_COLOR = {
     "active":      "#2d6a4f",
@@ -222,7 +222,7 @@ tab_trades, tab_theses, tab_themes = st.tabs(["Trades", "Theses", "Themes"])
 # ────────────────────────────────────────────────────────────────────────────
 
 def render_trade_form():
-    if IS_DEMO:
+    if not is_write_enabled():
         st.info(
             "Trade entry is disabled in demo mode. The deployed demo shows the analytical "
             "framework against the seeded paper-trade portfolio. Personal mode "
@@ -327,6 +327,8 @@ def render_trade_form():
             if errors:
                 for e in errors:
                     st.error(e)
+            elif not is_write_enabled():
+                write_guard_toast()
             else:
                 with get_connection() as conn:
                     acct = next(
