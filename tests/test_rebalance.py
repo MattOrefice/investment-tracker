@@ -353,10 +353,95 @@ def test_suggest_contributions_above_target_rationale():
 
 def test_suggest_contributions_assertion_fires_on_missing_ticker_coverage():
     # Bonds sleeve gets an allocation in Step 3 but has no ticker in the map →
-    # raw_total < cash → AssertionError
+    # Suggested $ sum < cash → AssertionError
     ticker_map_core_only = {"CORE_ETF": "Core"}
     with pytest.raises(AssertionError, match="suggest_contributions"):
         suggest_contributions(
             10_000, 1_000, {"Core": 0.60, "Bonds": 0.40},
             _SC_TARGETS, ticker_map_core_only, _SC_PRICES,
         )
+
+
+# ── Production-scenario test (the test that should have existed before the bug) ─
+
+# Full SAA targets mirroring the DB
+_PROD_TARGETS = {
+    "US Large Core":           0.16,
+    "US Large Quality":        0.14,
+    "US Large Value":          0.08,
+    "US Small Cap":            0.07,
+    "International Developed": 0.19,
+    "Emerging Markets":        0.08,
+    "Core Fixed Income":       0.09,
+    "TIPS":                    0.06,
+    "Real Assets":             0.10,
+    "Cash / SPAXX":            0.03,
+}
+
+# Full ticker_to_sleeve including benchmarks — exactly as the securities table
+# JOIN produces it.  Benchmarks are the keys absent from _PROD_PRICES.
+_PROD_TICKER_MAP = {
+    # holdings
+    "VOO":   "US Large Core",
+    "SPHQ":  "US Large Quality",
+    "VTV":   "US Large Value",
+    "AVUV":  "US Small Cap",
+    "VEA":   "International Developed",
+    "IEMG":  "Emerging Markets",
+    "VGIT":  "Core Fixed Income",
+    "SCHP":  "TIPS",
+    "VNQ":   "Real Assets",
+    "PDBC":  "Real Assets",
+    "SPAXX": "Cash / SPAXX",
+    # benchmarks (not in prices — were the root cause of the 50% bug)
+    "SPY":   "US Large Core",
+    "QUAL":  "US Large Quality",
+    "IWD":   "US Large Value",
+    "IWM":   "US Small Cap",
+    "EFA":   "International Developed",
+    "EEM":   "Emerging Markets",
+    "IEF":   "Core Fixed Income",
+    "TIP":   "TIPS",
+    "DJP":   "Real Assets",
+    "BIL":   "Cash / SPAXX",
+}
+
+# Only holding tickers — benchmarks absent, as in production
+_PROD_PRICES = {
+    "VOO": 520.0, "SPHQ": 52.0, "VTV": 155.0, "AVUV": 95.0,
+    "VEA": 50.0, "IEMG": 60.0, "VGIT": 62.0, "SCHP": 53.0,
+    "VNQ": 90.0, "PDBC": 15.0,
+}
+
+# Weights reflecting observed production state: 6 sleeves overweight,
+# 4 below target (SPHQ, VTV, VGIT, SCHP)
+_PROD_WEIGHTS = {
+    "US Large Core":           0.170,   # above 0.16
+    "US Large Quality":        0.120,   # below 0.14
+    "US Large Value":          0.070,   # below 0.08
+    "US Small Cap":            0.080,   # above 0.07
+    "International Developed": 0.210,   # above 0.19
+    "Emerging Markets":        0.090,   # above 0.08
+    "Core Fixed Income":       0.080,   # below 0.09
+    "TIPS":                    0.050,   # below 0.06
+    "Real Assets":             0.120,   # above 0.10
+    "Cash / SPAXX":            0.010,
+}
+
+
+def test_suggest_contributions_production_scenario_sum_invariant():
+    # The bug scenario: full SAA ticker map with holdings + benchmarks,
+    # benchmarks absent from prices.  Before the fix, $100 → $50.89 (50% loss).
+    for cash in [100.0, 500.0, 1_000.0]:
+        result = suggest_contributions(
+            100_000, cash, _PROD_WEIGHTS,
+            _PROD_TARGETS, _PROD_TICKER_MAP, _PROD_PRICES,
+        )
+        assert not result.empty, f"Expected non-empty result for cash={cash}"
+        total = float(result["Suggested $"].sum())
+        assert abs(total - cash) <= 0.02, (
+            f"Sum invariant violated for cash=${cash}: "
+            f"allocated ${total:.4f} (diff=${abs(total - cash):.4f})"
+        )
+        for bm in ("SPY", "QUAL", "IWD", "IWM", "EFA", "EEM", "IEF", "TIP", "DJP", "BIL"):
+            assert bm not in result["Ticker"].values, f"Benchmark {bm} in output"

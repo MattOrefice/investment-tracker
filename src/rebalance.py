@@ -261,8 +261,9 @@ def suggest_contributions(
             )
 
     if rows:
-        assert abs(raw_total - X) <= 0.01, (
-            f"suggest_contributions: allocated {raw_total:.4f} but cash={X:.4f}; "
+        final_sum = sum(r["Suggested $"] for r in rows)
+        assert abs(final_sum - X) <= 0.10, (
+            f"suggest_contributions: Suggested $ sum {final_sum:.4f} ≠ cash {X:.4f}; "
             "check that all investable sleeves have at least one priced ticker"
         )
     return pd.DataFrame(rows) if rows else _EMPTY
