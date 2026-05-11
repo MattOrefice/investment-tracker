@@ -149,7 +149,7 @@ if cash_input > 0:
     )
 
     if buy_df.empty:
-        st.info("No underweight sleeves — portfolio is in balance.")
+        st.info("All sleeves within tolerance bands. No rebalancing required.")
     else:
         total_suggested = float(buy_df["Suggested $"].sum())
         leftover        = cash_input - total_suggested

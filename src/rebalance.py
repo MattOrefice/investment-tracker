@@ -86,7 +86,7 @@ def suggest_buys(
         return _EMPTY
 
     underweight = drift_df[
-        (drift_df["Drift"] < 0) & (~drift_df.index.isin([_CASH_SLEEVE]))
+        (~drift_df["In Band"]) & (drift_df["Drift"] < 0) & (~drift_df.index.isin([_CASH_SLEEVE]))
     ].copy()
     if underweight.empty:
         return _EMPTY

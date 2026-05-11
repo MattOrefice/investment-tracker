@@ -114,14 +114,56 @@ def test_suggest_buys_proportional_allocation():
 
 
 def test_suggest_buys_full_fill_when_shortfall_under_cash():
-    # Core 1pp under (shortfall $100), cash $500 — only $100 deployed
-    df = _drift({"US Large Core": 0.15, "US Large Quality": 0.14,
-                 "International Developed": 0.19, "Cash / SPAXX": 0.52})
+    # Core = 0.12 (target=0.16, band=±0.03, lower=0.13) → breached, 4pp under
+    # shortfall $400 < cash $500 → full fill, only $400 deployed
+    df = _drift({"US Large Core": 0.12, "US Large Quality": 0.14,
+                 "International Developed": 0.19, "Cash / SPAXX": 0.55})
+    assert not df.loc["US Large Core", "In Band"]   # confirm breach
     result = suggest_buys(df, 10_000.0, 500.0, _TICKER_MAP, _PRICES)
 
     assert not result.empty
-    # Only Core is underweight; shortfall = 0.01 × 10000 = $100
-    assert result["Suggested $"].sum() == pytest.approx(100.0, rel=1e-3)
+    # shortfall = 0.04 × 10000 = $400 (gap to target, not band edge)
+    assert result["Suggested $"].sum() == pytest.approx(400.0, rel=1e-3)
+
+
+def test_suggest_buys_in_band_below_target_returns_empty():
+    # Core = 0.15 (target=0.16, band=±0.03, lower=0.13) → within band
+    # Below target but NOT breached → no action
+    weights = {"US Large Core": 0.15, "US Large Quality": 0.14,
+               "International Developed": 0.19, "Cash / SPAXX": 0.52}
+    df = _drift(weights)
+    assert df.loc["US Large Core", "In Band"]    # confirm in band
+    assert df.loc["US Large Core", "Drift"] < 0  # confirm below target
+    result = suggest_buys(df, 10_000.0, 500.0, _TICKER_MAP, _PRICES)
+    assert result.empty
+
+
+def test_suggest_buys_band_breach_shortfall_to_target_not_band_edge():
+    # Core = 0.10 (target=0.16, band=±0.03, lower=0.13) → breached 3pp below lower
+    # Shortfall must be gap-to-TARGET ($600), not gap-to-lower-edge ($300)
+    weights = {"US Large Core": 0.10, "US Large Quality": 0.14,
+               "International Developed": 0.19, "Cash / SPAXX": 0.57}
+    df = _drift(weights)
+    assert not df.loc["US Large Core", "In Band"]
+    result = suggest_buys(df, 10_000.0, 10_000.0, _TICKER_MAP, _PRICES)
+    assert not result.empty
+    voo_dollars = float(result.loc[result["Ticker"] == "VOO", "Suggested $"].iloc[0])
+    assert voo_dollars == pytest.approx(600.0, rel=1e-3)   # 0.06 × 10000 to target
+
+
+def test_suggest_buys_mixed_breached_and_in_band():
+    # Core = 0.10 (breached below lower=0.13); Quality = 0.13 (in band, lower=0.11)
+    # Only Core should appear in suggestions
+    weights = {"US Large Core": 0.10, "US Large Quality": 0.13,
+               "International Developed": 0.19, "Cash / SPAXX": 0.58}
+    df = _drift(weights)
+    assert not df.loc["US Large Core", "In Band"]
+    assert df.loc["US Large Quality", "In Band"]    # below target but in band
+    assert df.loc["US Large Quality", "Drift"] < 0
+    result = suggest_buys(df, 10_000.0, 1_000.0, _TICKER_MAP, _PRICES)
+    assert not result.empty
+    assert "VOO" in result["Ticker"].values
+    assert "SPHQ" not in result["Ticker"].values    # Quality in band → excluded
 
 
 def test_suggest_buys_multi_ticker_sleeve():
