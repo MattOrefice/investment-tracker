@@ -7,7 +7,7 @@ import pandas as pd
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from src.rebalance import compute_drift, suggest_buys
+from src.rebalance import compute_drift, suggest_buys, suggest_contributions
 
 
 _TARGETS = {
@@ -182,3 +182,111 @@ def test_suggest_buys_multi_ticker_sleeve():
     vnq_d = float(result.loc[result["Ticker"] == "VNQ",  "Suggested $"].iloc[0])
     pdbc_d = float(result.loc[result["Ticker"] == "PDBC", "Suggested $"].iloc[0])
     assert vnq_d == pytest.approx(pdbc_d, rel=1e-3)
+
+
+# ── suggest_contributions ────────────────────────────────────────────────────
+# Fixtures: 2-sleeve portfolio (Core 60%, Bonds 40%), no cash sleeve, so
+# investable_total = 1.0 and residual math is clean.
+
+_SC_TARGETS    = {"Core": 0.60, "Bonds": 0.40}
+_SC_TICKER_MAP = {"CORE_ETF": "Core", "BOND_ETF": "Bonds"}
+_SC_PRICES     = {"CORE_ETF": 100.0, "BOND_ETF": 50.0}
+
+
+def _sc(weights, cash):
+    return suggest_contributions(10_000, cash, weights, _SC_TARGETS, _SC_TICKER_MAP, _SC_PRICES)
+
+
+def test_suggest_contributions_zero_cash_returns_empty():
+    result = _sc({"Core": 0.60, "Bonds": 0.40}, 0)
+    assert result.empty
+
+
+def test_suggest_contributions_on_target_pure_target_split():
+    # Portfolio at target → shortfalls = 0 → Step 3, residual = $1000
+    # Core: $600 (0.60 × 1000), Bonds: $400 (0.40 × 1000)
+    result = _sc({"Core": 0.60, "Bonds": 0.40}, 1_000)
+    core_d = float(result.loc[result["Ticker"] == "CORE_ETF", "Suggested $"].iloc[0])
+    bond_d = float(result.loc[result["Ticker"] == "BOND_ETF", "Suggested $"].iloc[0])
+    assert core_d == pytest.approx(600.0, rel=1e-3)
+    assert bond_d == pytest.approx(400.0, rel=1e-3)
+    assert result["Suggested $"].sum() == pytest.approx(1_000.0, rel=1e-3)
+
+
+def test_suggest_contributions_one_underweight_gap_exceeds_cash():
+    # Core: 40% actual (target 60%) → shortfall = $2000; Bonds at target (sf=0)
+    # Cash $500 < shortfall $2000 → Step 2 → all $500 to Core, Bonds gets nothing
+    result = _sc({"Core": 0.40, "Bonds": 0.40}, 500)
+    assert not result.empty
+    assert "BOND_ETF" not in result["Ticker"].values
+    core_d = float(result.loc[result["Ticker"] == "CORE_ETF", "Suggested $"].iloc[0])
+    assert core_d == pytest.approx(500.0, rel=1e-3)
+
+
+def test_suggest_contributions_one_underweight_gap_less_than_cash():
+    # Core: 55% actual (target 60%) → shortfall = $500; Bonds at target (sf=0)
+    # Cash $1000 > shortfall $500 → Step 3
+    # Core: $500 (close) + $500 × 0.60 = $800   rationale "mixed"
+    # Bonds: $0 + $500 × 0.40 = $200             rationale "maintain target"
+    result = _sc({"Core": 0.55, "Bonds": 0.40}, 1_000)
+    core_d = float(result.loc[result["Ticker"] == "CORE_ETF", "Suggested $"].iloc[0])
+    bond_d = float(result.loc[result["Ticker"] == "BOND_ETF", "Suggested $"].iloc[0])
+    assert core_d == pytest.approx(800.0, rel=1e-3)
+    assert bond_d == pytest.approx(200.0, rel=1e-3)
+    assert result["Suggested $"].sum() == pytest.approx(1_000.0, rel=1e-3)
+
+
+def test_suggest_contributions_multiple_underweight_total_gap_exceeds_cash():
+    # Core: 50% (sf=$1000), Bonds: 30% (sf=$1000) → total $2000 > cash $600
+    # Step 2: proportional (50/50) → Core $300, Bonds $300
+    result = _sc({"Core": 0.50, "Bonds": 0.30}, 600)
+    core_d = float(result.loc[result["Ticker"] == "CORE_ETF", "Suggested $"].iloc[0])
+    bond_d = float(result.loc[result["Ticker"] == "BOND_ETF", "Suggested $"].iloc[0])
+    assert core_d == pytest.approx(300.0, rel=1e-3)
+    assert bond_d == pytest.approx(300.0, rel=1e-3)
+    assert result["Suggested $"].sum() == pytest.approx(600.0, rel=1e-3)
+
+
+def test_suggest_contributions_multiple_underweight_total_gap_less_than_cash():
+    # Core: 57% (sf=$300), Bonds: 38% (sf=$200) → total $500 < cash $1000
+    # Step 3: full close + residual $500 by target weight
+    # Core: $300 + $500×0.60 = $600; Bonds: $200 + $500×0.40 = $400
+    result = _sc({"Core": 0.57, "Bonds": 0.38}, 1_000)
+    core_d = float(result.loc[result["Ticker"] == "CORE_ETF", "Suggested $"].iloc[0])
+    bond_d = float(result.loc[result["Ticker"] == "BOND_ETF", "Suggested $"].iloc[0])
+    assert core_d == pytest.approx(600.0, rel=1e-3)
+    assert bond_d == pytest.approx(400.0, rel=1e-3)
+    assert result["Suggested $"].sum() == pytest.approx(1_000.0, rel=1e-3)
+
+
+def test_suggest_contributions_rationale_tagging():
+    # Step 3 case: Core below target → "mixed"; Bonds at target → "maintain target"
+    result_s3 = _sc({"Core": 0.57, "Bonds": 0.40}, 1_000)
+    core_rat = result_s3.loc[result_s3["Ticker"] == "CORE_ETF", "Rationale"].iloc[0]
+    bond_rat = result_s3.loc[result_s3["Ticker"] == "BOND_ETF", "Rationale"].iloc[0]
+    assert core_rat == "mixed"
+    assert bond_rat == "maintain target"
+
+    # Step 2 case: Core severely underweight, shortfall > cash → "close drift"
+    result_s2 = _sc({"Core": 0.40, "Bonds": 0.40}, 200)
+    core_rat2 = result_s2.loc[result_s2["Ticker"] == "CORE_ETF", "Rationale"].iloc[0]
+    assert core_rat2 == "close drift"
+    assert "BOND_ETF" not in result_s2["Ticker"].values  # Bonds sf=0 → excluded in Step 2
+
+
+def test_suggest_contributions_sum_invariant():
+    # Every non-empty result must sum to cash_to_deploy within $0.01
+    cases = [
+        ({"Core": 0.60, "Bonds": 0.40}, 1_000),   # on target
+        ({"Core": 0.40, "Bonds": 0.40}, 500),      # one underweight, Step 2
+        ({"Core": 0.55, "Bonds": 0.40}, 1_000),    # one underweight, Step 3
+        ({"Core": 0.50, "Bonds": 0.30}, 600),      # both underweight, Step 2
+        ({"Core": 0.57, "Bonds": 0.38}, 1_000),    # both underweight, Step 3
+    ]
+    for weights, cash in cases:
+        result = _sc(weights, cash)
+        if not result.empty:
+            total = float(result["Suggested $"].sum())
+            assert abs(total - cash) < 0.01, (
+                f"Sum {total:.4f} differs from cash {cash} for weights={weights}"
+            )

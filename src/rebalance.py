@@ -1,4 +1,4 @@
-"""Rebalancing engine — buy-only, cash-deploy mode.
+"""Capital deployment engine — contribution allocation and band-breach rebalancing.
 
 Pure functions only — no DB access. DB-backed helpers live in the page layer.
 """
@@ -124,6 +124,132 @@ def suggest_buys(
                 {
                     "Ticker":           ticker,
                     "Sleeve":           sleeve,
+                    "Price":            round(price, 2),
+                    "Suggested $":      round(per_ticker, 2),
+                    "Suggested Shares": round(per_ticker / price, 6),
+                }
+            )
+
+    return pd.DataFrame(rows) if rows else _EMPTY
+
+
+def suggest_contributions(
+    portfolio_value: float,
+    cash_to_deploy: float,
+    sleeve_weights: dict[str, float],
+    saa_targets: dict[str, float],
+    ticker_to_sleeve: dict[str, str],
+    prices: dict[str, float],
+) -> pd.DataFrame:
+    """
+    Suggest how to allocate new cash contributions across sleeves.
+
+    Hybrid algorithm — close drift first, then maintain SAA policy on residual.
+
+    Step 1: For each investable (non-cash) sleeve, compute current dollar
+            shortfall vs SAA target:
+                shortfall_i = portfolio_value × max(0, target_i − actual_i)
+
+    Step 2: If sum(shortfall) >= cash: allocate proportionally to shortfall.
+            Only underweight sleeves (shortfall > 0) receive cash.
+
+    Step 3: If sum(shortfall) < cash:
+            - Fully close all shortfalls.
+            - Distribute residual = cash − sum(shortfall) across ALL
+              investable sleeves proportionally to their target weights
+              (normalized to exclude Cash / SPAXX).
+
+    Cash / SPAXX is excluded; new cash is deployed into investable sleeves.
+
+    Rationale column:
+        "close drift"     — sleeve is below target, Step 2 allocation
+        "mixed"           — sleeve is below target AND receives residual (Step 3)
+        "maintain target" — sleeve is at/above target, residual only (Step 3)
+
+    Args:
+        portfolio_value:  current total portfolio value in dollars
+        cash_to_deploy:   new cash to invest
+        sleeve_weights:   current actual weights per sleeve (fractions)
+        saa_targets:      SAA target weights per sleeve (fractions)
+        ticker_to_sleeve: ticker → sleeve name
+        prices:           ticker → current price
+
+    Returns DataFrame with columns:
+        Ticker, Sleeve, Rationale, Price, Suggested $, Suggested Shares.
+    Empty DataFrame if cash <= 0 or no investable sleeves with ticker mappings.
+    """
+    _EMPTY = pd.DataFrame(
+        columns=["Ticker", "Sleeve", "Rationale", "Price", "Suggested $", "Suggested Shares"]
+    )
+
+    if cash_to_deploy <= 0 or portfolio_value < 0:
+        return _EMPTY
+
+    # Investable = all sleeves except cash
+    investable = {s: t for s, t in saa_targets.items() if s != _CASH_SLEEVE}
+    investable_total = sum(investable.values())
+    if not investable or investable_total <= 0:
+        return _EMPTY
+
+    V = portfolio_value
+    X = cash_to_deploy
+
+    # Dollar shortfall per sleeve (current deficit only — does not include
+    # the proportional share of new cash each sleeve would need to stay flat)
+    shortfalls = {
+        sleeve: V * max(0.0, target - sleeve_weights.get(sleeve, 0.0))
+        for sleeve, target in investable.items()
+    }
+    total_shortfall = sum(shortfalls.values())
+
+    if total_shortfall >= X:
+        # Step 2: proportional to shortfall; only underweight sleeves participate
+        sleeve_alloc: dict[str, float] = {
+            s: (sf / total_shortfall) * X
+            for s, sf in shortfalls.items()
+            if sf > 0
+        }
+        step = 2
+    else:
+        # Step 3: full close + residual proportional to normalized target weight
+        residual = X - total_shortfall
+        sleeve_alloc = {
+            sleeve: shortfalls.get(sleeve, 0.0) + residual * (target / investable_total)
+            for sleeve, target in investable.items()
+        }
+        step = 3
+
+    def _rationale(sleeve: str) -> str:
+        if step == 2:
+            return "close drift"
+        return "mixed" if shortfalls.get(sleeve, 0.0) > 0 else "maintain target"
+
+    # Sleeve → [tickers], excluding SPAXX ticker and cash sleeve
+    sleeve_to_tickers: dict[str, list[str]] = {}
+    for ticker, sleeve in ticker_to_sleeve.items():
+        if ticker == _CASH_TICKER or sleeve == _CASH_SLEEVE:
+            continue
+        sleeve_to_tickers.setdefault(sleeve, []).append(ticker)
+
+    rows = []
+    for sleeve in sorted(sleeve_alloc, key=lambda s: -sleeve_alloc[s]):
+        dollars = sleeve_alloc[sleeve]
+        if dollars < 0.005:
+            continue
+        tickers_in_sleeve = sorted(sleeve_to_tickers.get(sleeve, []))
+        if not tickers_in_sleeve:
+            continue
+        per_ticker = dollars / len(tickers_in_sleeve)
+        rationale = _rationale(sleeve)
+        for ticker in tickers_in_sleeve:
+            price = prices.get(ticker, 0.0)
+            if price <= 0:
+                continue
+            rows.append(
+                {
+                    "Ticker":           ticker,
+                    "Sleeve":           sleeve,
+                    "Rationale":        rationale,
                     "Price":            round(price, 2),
                     "Suggested $":      round(per_ticker, 2),
                     "Suggested Shares": round(per_ticker / price, 6),
