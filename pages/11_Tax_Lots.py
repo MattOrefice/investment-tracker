@@ -418,9 +418,9 @@ else:
         )
 
 st.caption(
-    "Note: DRIP reinvestments are included in portfolio value calculations (TWR) "
-    "but are not persisted as separate lot rows. The lot inventory reflects only "
-    "explicit trade entries. Cost basis uses execution price (adj_close at purchase). "
+    "Note: DRIP reinvestments are persisted as separate lot rows with "
+    "lot_source = 'drip'. Cost basis uses ex-dividend-date closing price "
+    "(adj_close); holding period begins on the ex-dividend date. "
     "Long-term qualification: held more than 365 calendar days (day 366+)."
 )
 
