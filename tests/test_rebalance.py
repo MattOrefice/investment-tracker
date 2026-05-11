@@ -282,6 +282,7 @@ def test_suggest_contributions_sum_invariant():
         ({"Core": 0.55, "Bonds": 0.40}, 1_000),    # one underweight, Step 3
         ({"Core": 0.50, "Bonds": 0.30}, 600),      # both underweight, Step 2
         ({"Core": 0.57, "Bonds": 0.38}, 1_000),    # both underweight, Step 3
+        ({"Core": 0.70, "Bonds": 0.40}, 1_000),    # Core overweight, Step 3 "above target"
     ]
     for weights, cash in cases:
         result = _sc(weights, cash)
@@ -290,3 +291,72 @@ def test_suggest_contributions_sum_invariant():
             assert abs(total - cash) < 0.01, (
                 f"Sum {total:.4f} differs from cash {cash} for weights={weights}"
             )
+
+
+def test_suggest_contributions_benchmark_tickers_excluded_from_division():
+    # Each sleeve has 1 holding + 1 benchmark (benchmark not in prices);
+    # without the price-filter fix this would silently halve each sleeve's allocation.
+    ticker_map = {
+        "CORE_ETF": "Core",
+        "CORE_BM":  "Core",   # benchmark — absent from prices
+        "BOND_ETF": "Bonds",
+        "BOND_BM":  "Bonds",  # benchmark — absent from prices
+    }
+    prices = {"CORE_ETF": 100.0, "BOND_ETF": 50.0}
+
+    result = suggest_contributions(
+        10_000, 1_000, {"Core": 0.60, "Bonds": 0.40},
+        _SC_TARGETS, ticker_map, prices,
+    )
+
+    assert not result.empty
+    assert "CORE_BM" not in result["Ticker"].values
+    assert "BOND_BM" not in result["Ticker"].values
+    assert result["Suggested $"].sum() == pytest.approx(1_000.0, rel=1e-3)
+    core_d = float(result.loc[result["Ticker"] == "CORE_ETF", "Suggested $"].iloc[0])
+    bond_d = float(result.loc[result["Ticker"] == "BOND_ETF", "Suggested $"].iloc[0])
+    assert core_d == pytest.approx(600.0, rel=1e-3)
+    assert bond_d == pytest.approx(400.0, rel=1e-3)
+
+
+def test_suggest_contributions_step3_residual_distribution():
+    # 3-sleeve at-target portfolio — residual distributes exactly by target weight
+    targets_3    = {"Core": 0.60, "Bonds": 0.30, "Alt": 0.10}
+    ticker_map_3 = {"CORE_ETF": "Core", "BOND_ETF": "Bonds", "ALT_ETF": "Alt"}
+    prices_3     = {"CORE_ETF": 100.0, "BOND_ETF": 50.0, "ALT_ETF": 25.0}
+
+    result = suggest_contributions(
+        10_000, 1_000,
+        {"Core": 0.60, "Bonds": 0.30, "Alt": 0.10},
+        targets_3, ticker_map_3, prices_3,
+    )
+
+    core_d = float(result.loc[result["Ticker"] == "CORE_ETF", "Suggested $"].iloc[0])
+    bond_d = float(result.loc[result["Ticker"] == "BOND_ETF", "Suggested $"].iloc[0])
+    alt_d  = float(result.loc[result["Ticker"] == "ALT_ETF",  "Suggested $"].iloc[0])
+    assert core_d == pytest.approx(600.0, rel=1e-3)
+    assert bond_d == pytest.approx(300.0, rel=1e-3)
+    assert alt_d  == pytest.approx(100.0, rel=1e-3)
+    assert result["Suggested $"].sum() == pytest.approx(1_000.0, rel=1e-3)
+
+
+def test_suggest_contributions_above_target_rationale():
+    # Core overweight (70% vs 60% target), Bonds at target → Step 3
+    # Core has no shortfall but is above target → "above target"
+    # Bonds has no shortfall and is not above target → "maintain target"
+    result = _sc({"Core": 0.70, "Bonds": 0.40}, 1_000)
+    core_rat = result.loc[result["Ticker"] == "CORE_ETF", "Rationale"].iloc[0]
+    bond_rat = result.loc[result["Ticker"] == "BOND_ETF", "Rationale"].iloc[0]
+    assert core_rat == "above target"
+    assert bond_rat == "maintain target"
+
+
+def test_suggest_contributions_assertion_fires_on_missing_ticker_coverage():
+    # Bonds sleeve gets an allocation in Step 3 but has no ticker in the map →
+    # raw_total < cash → AssertionError
+    ticker_map_core_only = {"CORE_ETF": "Core"}
+    with pytest.raises(AssertionError, match="suggest_contributions"):
+        suggest_contributions(
+            10_000, 1_000, {"Core": 0.60, "Bonds": 0.40},
+            _SC_TARGETS, ticker_map_core_only, _SC_PRICES,
+        )

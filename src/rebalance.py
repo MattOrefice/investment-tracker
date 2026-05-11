@@ -102,12 +102,13 @@ def suggest_buys(
             for sleeve, shortfall in underweight["Shortfall $"].items()
         }
 
-    # Build sleeve → [tickers], excluding SPAXX ticker
+    # Build sleeve → [tickers], only tickers with known prices (excludes benchmarks)
     sleeve_to_tickers: dict[str, list[str]] = {}
     for ticker, sleeve in ticker_to_sleeve.items():
         if ticker == _CASH_TICKER:
             continue
-        sleeve_to_tickers.setdefault(sleeve, []).append(ticker)
+        if prices.get(ticker, 0.0) > 0:
+            sleeve_to_tickers.setdefault(sleeve, []).append(ticker)
 
     rows = []
     for sleeve in sorted(allocations, key=lambda s: -allocations[s]):
@@ -117,9 +118,7 @@ def suggest_buys(
             continue
         per_ticker = dollars / len(tickers_in_sleeve)
         for ticker in tickers_in_sleeve:
-            price = prices.get(ticker, 0.0)
-            if price <= 0:
-                continue
+            price = prices[ticker]   # guaranteed > 0 by filter above
             rows.append(
                 {
                     "Ticker":           ticker,
@@ -222,16 +221,22 @@ def suggest_contributions(
     def _rationale(sleeve: str) -> str:
         if step == 2:
             return "close drift"
-        return "mixed" if shortfalls.get(sleeve, 0.0) > 0 else "maintain target"
+        if shortfalls.get(sleeve, 0.0) > 0:
+            return "mixed"
+        if V * (sleeve_weights.get(sleeve, 0.0) - investable.get(sleeve, 0.0)) > 0.01:
+            return "above target"
+        return "maintain target"
 
-    # Sleeve → [tickers], excluding SPAXX ticker and cash sleeve
+    # Sleeve → [tickers], only tickers with known prices (excludes benchmarks)
     sleeve_to_tickers: dict[str, list[str]] = {}
     for ticker, sleeve in ticker_to_sleeve.items():
         if ticker == _CASH_TICKER or sleeve == _CASH_SLEEVE:
             continue
-        sleeve_to_tickers.setdefault(sleeve, []).append(ticker)
+        if prices.get(ticker, 0.0) > 0:
+            sleeve_to_tickers.setdefault(sleeve, []).append(ticker)
 
     rows = []
+    raw_total = 0.0
     for sleeve in sorted(sleeve_alloc, key=lambda s: -sleeve_alloc[s]):
         dollars = sleeve_alloc[sleeve]
         if dollars < 0.005:
@@ -240,11 +245,10 @@ def suggest_contributions(
         if not tickers_in_sleeve:
             continue
         per_ticker = dollars / len(tickers_in_sleeve)
+        raw_total += dollars
         rationale = _rationale(sleeve)
         for ticker in tickers_in_sleeve:
-            price = prices.get(ticker, 0.0)
-            if price <= 0:
-                continue
+            price = prices[ticker]   # guaranteed > 0 by filter above
             rows.append(
                 {
                     "Ticker":           ticker,
@@ -256,4 +260,9 @@ def suggest_contributions(
                 }
             )
 
+    if rows:
+        assert abs(raw_total - X) <= 0.01, (
+            f"suggest_contributions: allocated {raw_total:.4f} but cash={X:.4f}; "
+            "check that all investable sleeves have at least one priced ticker"
+        )
     return pd.DataFrame(rows) if rows else _EMPTY

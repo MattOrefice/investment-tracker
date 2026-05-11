@@ -134,6 +134,154 @@ if contrib_cash > 0:
         prices=prices,
     )
 
+    # ── Phase 21.2 instrumentation ───────────────────────────────────────────
+    with st.expander("Debug — Phase 21.2 instrumentation", expanded=True):
+        _DBG_CASH_SLEEVE = "Cash / SPAXX"
+        _DBG_CASH_TICKER = "SPAXX"
+        _X = float(contrib_cash)
+        _V = portfolio_value
+
+        # 1. All SAA sleeves
+        st.markdown("**1. All SAA sleeves (`saa_targets`)**")
+        _all_df = pd.DataFrame(
+            [{"Sleeve": s, "Target Weight": t} for s, t in sorted(saa_targets.items())]
+        )
+        st.dataframe(_all_df, hide_index=True, use_container_width=True)
+        st.write(f"Sum of ALL target weights: **{sum(saa_targets.values()):.6f}**")
+
+        # 2. Investable set
+        _investable = {s: t for s, t in saa_targets.items() if s != _DBG_CASH_SLEEVE}
+        _investable_total = sum(_investable.values())
+        st.markdown("**2. Investable set (excludes Cash / SPAXX)**")
+        _inv_df = pd.DataFrame(
+            [{"Sleeve": s, "Target Weight": t} for s, t in sorted(_investable.items())]
+        )
+        st.dataframe(_inv_df, hide_index=True, use_container_width=True)
+
+        # 3. Normalization denominator
+        st.write(f"**3. investable_total (residual normalization denominator): {_investable_total:.6f}**")
+
+        # 4. Per-sleeve gap_to_target
+        _shortfalls = {
+            sleeve: _V * max(0.0, target - sleeve_weights.get(sleeve, 0.0))
+            for sleeve, target in _investable.items()
+        }
+        _total_sf = sum(_shortfalls.values())
+        st.markdown("**4. Per-sleeve gap_to_target (shortfall)**")
+        _sf_df = pd.DataFrame([
+            {
+                "Sleeve":         sleeve,
+                "Actual Weight":  sleeve_weights.get(sleeve, 0.0),
+                "Target Weight":  target,
+                "Gap $":          _shortfalls[sleeve],
+            }
+            for sleeve, target in sorted(_investable.items())
+        ])
+        st.dataframe(_sf_df, hide_index=True, use_container_width=True)
+
+        # 5. total_shortfall
+        st.write(f"**5. total_shortfall: ${_total_sf:.4f}**")
+
+        # 6. residual and step
+        if _total_sf >= _X:
+            _step = 2
+            _residual = 0.0
+            _sleeve_alloc = {
+                s: (sf / _total_sf) * _X
+                for s, sf in _shortfalls.items() if sf > 0
+            }
+            st.write(f"**6. Step 2** (total_shortfall {_total_sf:.2f} ≥ cash {_X:.2f}); residual = n/a")
+        else:
+            _step = 3
+            _residual = _X - _total_sf
+            _sleeve_alloc = {
+                sleeve: _shortfalls.get(sleeve, 0.0) + _residual * (target / _investable_total)
+                for sleeve, target in _investable.items()
+            }
+            st.write(f"**6. Step 3** (total_shortfall {_total_sf:.2f} < cash {_X:.2f}); **residual = ${_residual:.4f}**")
+
+        # 7-9. Per-sleeve allocation breakdown
+        st.markdown("**7–9. Per-sleeve base / residual / final allocation**")
+        _alloc_rows = []
+        for sleeve, target in sorted(_investable.items()):
+            if _step == 2:
+                base = ((_shortfalls[sleeve] / _total_sf) * _X) if _total_sf > 0 and _shortfalls[sleeve] > 0 else 0.0
+                res_share = 0.0
+            else:
+                base = _shortfalls.get(sleeve, 0.0)
+                res_share = _residual * (target / _investable_total)
+            _alloc_rows.append({
+                "Sleeve":     sleeve,
+                "Base $":     round(base, 4),
+                "Residual $": round(res_share, 4),
+                "Final $":    round(_sleeve_alloc.get(sleeve, 0.0), 4),
+            })
+        st.dataframe(pd.DataFrame(_alloc_rows), hide_index=True, use_container_width=True)
+
+        # 10. Sum BEFORE ticker filter
+        _sum_before = sum(_sleeve_alloc.values())
+        st.write(f"**10. Sum(final_allocation) BEFORE ticker filter: ${_sum_before:.4f}**")
+
+        # 11. Ticker filter: show all non-cash tickers and whether they pass
+        st.markdown("**11. Priced-ticker filter (`ticker_to_sleeve` → `prices`)**")
+        _filter_rows = []
+        _sleeve_to_tickers_dbg: dict[str, list[str]] = {}
+        for ticker, sleeve in sorted(ticker_to_sleeve.items()):
+            if ticker == _DBG_CASH_TICKER or sleeve == _DBG_CASH_SLEEVE:
+                continue
+            price = prices.get(ticker, 0.0)
+            included = price > 0
+            _filter_rows.append({
+                "Ticker":   ticker,
+                "Sleeve":   sleeve,
+                "Price":    price,
+                "Included": "✓" if included else "✗",
+            })
+            if included:
+                _sleeve_to_tickers_dbg.setdefault(sleeve, []).append(ticker)
+        st.dataframe(pd.DataFrame(_filter_rows), hide_index=True, use_container_width=True)
+        st.write(f"Sleeves with ≥1 priced ticker: {sorted(_sleeve_to_tickers_dbg.keys())}")
+        st.write(f"Sleeves in sleeve_alloc but NO priced ticker: "
+                 f"{[s for s in _sleeve_alloc if s not in _sleeve_to_tickers_dbg and _sleeve_alloc.get(s,0) >= 0.005]}")
+
+        # 12. Per-ticker output and final sum
+        st.markdown("**12. Per-ticker output (what goes into Suggested $)**")
+        _out_rows = []
+        _raw_total_dbg = 0.0
+        for sleeve in sorted(_sleeve_alloc, key=lambda s: -_sleeve_alloc[s]):
+            dollars = _sleeve_alloc[sleeve]
+            if dollars < 0.005:
+                continue
+            tickers_here = sorted(_sleeve_to_tickers_dbg.get(sleeve, []))
+            if not tickers_here:
+                continue
+            n = len(tickers_here)
+            per_t = dollars / n
+            _raw_total_dbg += dollars
+            for t in tickers_here:
+                _out_rows.append({
+                    "Sleeve":        sleeve,
+                    "Ticker":        t,
+                    "Sleeve $ (dollars)": round(dollars, 4),
+                    "n_tickers":     n,
+                    "per_ticker $":  round(per_t, 4),
+                    "Suggested $ (rounded)": round(per_t, 2),
+                })
+        if _out_rows:
+            _out_df = pd.DataFrame(_out_rows)
+            st.dataframe(_out_df, hide_index=True, use_container_width=True)
+            _sum_after_unrounded = sum(r["per_ticker $"]   for r in _out_rows)
+            _sum_after_rounded   = sum(r["Suggested $ (rounded)"] for r in _out_rows)
+            st.write(f"raw_total (sum of sleeve dollars where tickers exist): **${_raw_total_dbg:.4f}**")
+            st.write(f"Sum(per_ticker $) unrounded: **${_sum_after_unrounded:.4f}**")
+            st.write(f"Sum(Suggested $ rounded to cents): **${_sum_after_rounded:.4f}**")
+        st.write(f"cash_to_deploy (X): **${_X:.4f}**")
+        st.markdown("---")
+        st.write("**orig_suggestions (raw function output):**")
+        st.dataframe(orig_suggestions, hide_index=True, use_container_width=True)
+        st.write(f"orig_suggestions['Suggested $'].sum() = **${orig_suggestions['Suggested $'].sum():.4f}**")
+    # ── end Phase 21.2 instrumentation ──────────────────────────────────────
+
     if orig_suggestions.empty:
         st.info("No investable sleeves with known prices — check the securities table.")
     else:
@@ -149,7 +297,7 @@ if contrib_cash > 0:
                     "Suggested $",
                     format="$%.2f",
                     min_value=0.0,
-                    step=1.0,
+                    step=0.01,
                 ),
             },
             use_container_width=True,
