@@ -1,5 +1,6 @@
 """Tax Lot Inventory — per-lot cost basis, holding period, and unrealized G/L."""
-from datetime import date
+import math
+from datetime import date, timedelta
 
 import pandas as pd
 import streamlit as st
@@ -16,6 +17,12 @@ from src.tax_lots import (
     lot_count_label,
     summary_metrics,
 )
+from src.harvest import (
+    HARVEST_ACTION_THRESHOLD,
+    HARVEST_PCT_THRESHOLD,
+    compute_harvest_candidates,
+)
+from src.prices import get_prices
 from src.ui_helpers import render_footer
 
 TODAY = date.today().isoformat()
@@ -26,6 +33,20 @@ TODAY = date.today().isoformat()
 @st.cache_data(ttl=3600, show_spinner=False)
 def _load_lots(as_of: str) -> pd.DataFrame:
     return get_lot_inventory(as_of)
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _get_replacement_price(ticker: str, as_of: str) -> float | None:
+    """Fetch the most recent close for a replacement ticker. Returns None if unavailable."""
+    look_back = (date.fromisoformat(as_of) - timedelta(days=7)).isoformat()
+    try:
+        p = get_prices(ticker, look_back, as_of)
+        if not p.empty:
+            series = p["adj_close"].fillna(p["close"]).dropna()
+            return float(series.iloc[-1]) if not series.empty else None
+    except Exception:
+        pass
+    return None
 
 
 # ── Formatting helpers ────────────────────────────────────────────────────────
@@ -239,6 +260,124 @@ else:
             "Lot Source":       st.column_config.TextColumn("Lot Source"),
         },
     )
+
+st.divider()
+
+# ── Tax-Loss Harvest Candidates ───────────────────────────────────────────────
+
+_candidates = compute_harvest_candidates(lots)
+_has_candidates = len(_candidates) > 0
+
+_ASSUMPTION_TEXT = (
+    "Tax-loss harvesting estimates assume a 22% federal marginal rate on short-term "
+    "gains and 15% on long-term gains. Capital losses offset capital gains first "
+    "(ST losses against ST gains, LT against LT, then cross-character), then up to "
+    "$3,000 of ordinary income per year, with excess carried forward indefinitely. "
+    "State taxes not modeled. Replacement security suggestions are educational — "
+    "consult a tax advisor before executing trades. Wash sale rule (IRC § 1091) "
+    "prohibits repurchase of the security or substantially identical securities "
+    "within 30 days before or after the loss sale."
+)
+
+with st.expander("Tax-Loss Harvest Candidates", expanded=_has_candidates):
+    st.caption(_ASSUMPTION_TEXT)
+
+    if not _has_candidates:
+        st.info(
+            f"No material harvest candidates at the action threshold "
+            f"(${HARVEST_ACTION_THRESHOLD:.0f} minimum loss, "
+            f"{HARVEST_PCT_THRESHOLD * 100:.0f}% minimum loss percentage)."
+        )
+    else:
+        n_cands = len(_candidates)
+        plural  = "s" if n_cands != 1 else ""
+        st.markdown(
+            f"**{n_cands} material harvest candidate{plural} identified** "
+            f"(≥ ${HARVEST_ACTION_THRESHOLD:.0f} loss and "
+            f"≥ {HARVEST_PCT_THRESHOLD * 100:.0f}% loss percentage, "
+            f"federal rate assumed 22% ST / 15% LT)."
+        )
+
+        # Candidate summary table
+        rows = []
+        for c in _candidates:
+            ws = (
+                f"{c['wash_sale_start_date'].strftime('%b %d, %Y')} – "
+                f"{c['wash_sale_end_date'].strftime('%b %d, %Y')}"
+            )
+            rows.append(
+                {
+                    "Ticker":               c["ticker"],
+                    "Sleeve":               c["sleeve"],
+                    "Tax Status":           c["tax_status"],
+                    "Shares":               c["shares"],
+                    "Unrealized Loss":      c["unrealized_loss"],
+                    "Unrealized Loss %":    c["unrealized_loss_pct"] * 100,
+                    "Est. Tax Benefit":     c["estimated_tax_benefit"],
+                    "Suggested Replacement": c["replacement_ticker"] or "—",
+                    "Wash Sale Window":     ws,
+                }
+            )
+
+        st.dataframe(
+            pd.DataFrame(rows),
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Ticker":                st.column_config.TextColumn("Ticker"),
+                "Sleeve":                st.column_config.TextColumn("Sleeve"),
+                "Tax Status":            st.column_config.TextColumn("Tax Status"),
+                "Shares":                st.column_config.NumberColumn("Shares", format="%.6f"),
+                "Unrealized Loss":       st.column_config.NumberColumn("Unrealized Loss", format="$%.2f"),
+                "Unrealized Loss %":     st.column_config.NumberColumn("Unrealized Loss %", format="%.1f%%"),
+                "Est. Tax Benefit":      st.column_config.NumberColumn("Est. Tax Benefit", format="$%.2f"),
+                "Suggested Replacement": st.column_config.TextColumn("Suggested Replacement"),
+                "Wash Sale Window":      st.column_config.TextColumn("Wash Sale Window"),
+            },
+        )
+
+        # Per-candidate action blocks
+        for c in _candidates:
+            ticker  = c["ticker"]
+            shares  = c["shares"]
+            price   = c["current_price"]
+            loss    = c["unrealized_loss"]
+            sleeve  = c["sleeve"]
+            repl    = c["replacement_ticker"]
+            note    = c["replacement_rationale"]
+            ws_s    = c["wash_sale_start_date"].strftime("%B %d, %Y")
+            ws_e    = c["wash_sale_end_date"].strftime("%B %d, %Y")
+
+            st.markdown("---")
+
+            if repl is not None:
+                repl_price = _get_replacement_price(repl, TODAY)
+                if repl_price and repl_price > 0:
+                    repl_shares = math.floor((shares * price) / repl_price)
+                    repl_clause = (
+                        f"Replace with approximately **{repl_shares:,} shares of {repl}** "
+                        f"(at ~${repl_price:.2f}/share) to maintain {sleeve} exposure. "
+                        f"*{note}*"
+                    )
+                else:
+                    repl_clause = (
+                        f"Replace with **{repl}** to maintain {sleeve} exposure. "
+                        f"*{note}*"
+                    )
+                st.markdown(
+                    f"**{ticker}:** Sell **{shares:,.6f} shares** at **${price:.2f}/share** "
+                    f"to realize a **${loss:,.2f}** capital loss. "
+                    + repl_clause
+                    + f" Do not repurchase {ticker} or substantially identical securities "
+                    f"between **{ws_s}** and **{ws_e}**."
+                )
+            else:
+                st.markdown(
+                    f"**{ticker}:** Sell **{shares:,.6f} shares** at **${price:.2f}/share** "
+                    f"to realize a **${loss:,.2f}** capital loss. "
+                    f"No clean replacement available. {note} "
+                    f"Do not repurchase {ticker} within 30 days before or after the sale."
+                )
 
 st.divider()
 
