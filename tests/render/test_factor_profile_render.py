@@ -73,9 +73,12 @@ def test_factor_profile_has_dataframes(factor_profile_app: AppTest) -> None:
     )
 
 
-def test_build_caption_renders(factor_profile_app: AppTest) -> None:
-    """Footer must include deployed build SHA. Pinned: Phase 8o."""
+def test_build_caption_suppressed_without_env(factor_profile_app: AppTest) -> None:
+    """Build caption must be absent when SHOW_BUILD_HASH env var is not set (Phase 15.1)."""
+    import os
+    if os.environ.get("SHOW_BUILD_HASH"):
+        pytest.skip("SHOW_BUILD_HASH is set — caption gating not active in this environment")
     captions = [c.value for c in factor_profile_app.caption]
-    assert any("Build" in c for c in captions), (
-        f"Deployed SHA caption not rendered — captions: {captions[:5]}"
+    assert not any("Build" in c for c in captions), (
+        f"Build caption should be suppressed but found: {[c for c in captions if 'Build' in c]}"
     )

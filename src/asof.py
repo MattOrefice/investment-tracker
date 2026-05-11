@@ -21,17 +21,25 @@ def _most_recent_completed_quarter(today: date | None = None) -> tuple[date, dat
     return date(d.year - 1, 9, 30), date(d.year - 1, 12, 31), f"Q4 {d.year - 1}"
 
 
+def as_of_live_line() -> str:
+    """Return the live-data line only. e.g. 'Live data as of May 10, 2026.'"""
+    today = date.today()
+    today_str = f"{today.strftime('%B')} {today.day}, {today.year}"
+    return f"Live data as of {today_str}."
+
+
+def as_of_report_line() -> str:
+    """Return the locked-report line only. e.g. 'Latest locked quarterly report: Q1 2026 (March 31, 2026).'"""
+    today = date.today()
+    _, q_end, q_label = _most_recent_completed_quarter(today)
+    q_end_str = f"{q_end.strftime('%B')} {q_end.day}, {q_end.year}"
+    return f"Latest locked quarterly report: {q_label} ({q_end_str})."
+
+
 def as_of_banner() -> str:
     """Return muted one-line as-of banner for display under each page title.
 
     Format: "Live data as of May 4, 2026. Latest locked quarterly report: Q1 2026 (March 31, 2026)."
     Both dates are computed dynamically — no hardcoded strings.
     """
-    today = date.today()
-    _, q_end, q_label = _most_recent_completed_quarter(today)
-    today_str = f"{today.strftime('%B')} {today.day}, {today.year}"
-    q_end_str = f"{q_end.strftime('%B')} {q_end.day}, {q_end.year}"
-    return (
-        f"Live data as of {today_str}. "
-        f"Latest locked quarterly report: {q_label} ({q_end_str})."
-    )
+    return f"{as_of_live_line()} {as_of_report_line()}"

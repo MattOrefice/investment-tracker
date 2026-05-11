@@ -9,14 +9,18 @@ import pytest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from src.tax_lots import (
+    HARVEST_MATERIALITY_THRESHOLD,
     _LT_THRESHOLD_DAYS,
     _fifo_open_lots,
+    apply_sleeve_filter,
     compute_days_held,
     compute_days_to_lt,
+    compute_harvest_pool,
     compute_tax_status,
     compute_unrealized_gl,
     compute_unrealized_gl_pct,
     get_sleeve_rollup,
+    lot_count_label,
     summary_metrics,
 )
 
@@ -286,3 +290,97 @@ def test_summary_metrics_lt_st_split():
     assert m["unrealized_lt_gain"] == pytest.approx(40.0)   # VOO 30 + AVUV 10
     assert m["unrealized_st_gain"] == pytest.approx(0.0)    # VTV is a loss, not a gain
     assert m["unrealized_loss"] == pytest.approx(-15.0)
+
+
+# ── Sleeve filter ─────────────────────────────────────────────────────────────
+
+def test_sleeve_filter_empty_returns_all():
+    """Empty selected_sleeves list → all lots returned (show-all semantics)."""
+    lots = _make_lots(
+        ticker=["VOO", "IEMG"],
+        sleeve=["US Large Core", "Emerging Markets"],
+    )
+    result = apply_sleeve_filter(lots, [])
+    assert len(result) == 2
+
+
+def test_sleeve_filter_subset():
+    """Non-empty list → only matching sleeve rows returned."""
+    lots = _make_lots(
+        ticker=["VOO", "IEMG"],
+        sleeve=["US Large Core", "Emerging Markets"],
+    )
+    result = apply_sleeve_filter(lots, ["US Large Core"])
+    assert len(result) == 1
+    assert result.iloc[0]["ticker"] == "VOO"
+
+
+def test_sleeve_filter_no_match_returns_empty():
+    """Selecting a sleeve not present in lots → empty DataFrame."""
+    lots = _make_lots(ticker=["VOO"], sleeve=["US Large Core"])
+    result = apply_sleeve_filter(lots, ["Emerging Markets"])
+    assert result.empty
+
+
+# ── Harvest candidate pool ────────────────────────────────────────────────────
+
+def test_harvest_pool_no_losses():
+    """All lots in gain → pool is $0 and count is 0."""
+    lots = _make_lots(
+        unrealized_gl=[10.0, 20.0],
+        ticker=["VOO", "VTV"],
+        sleeve=["US Large Core", "US Large Value"],
+    )
+    pool, n = compute_harvest_pool(lots)
+    assert pool == pytest.approx(0.0)
+    assert n == 0
+
+
+def test_harvest_pool_all_below_threshold():
+    """Losses smaller than threshold don't count as material."""
+    lots = _make_lots(
+        unrealized_gl=[-5.0, -10.0],
+        ticker=["VOO", "VTV"],
+        sleeve=["US Large Core", "US Large Value"],
+    )
+    pool, n = compute_harvest_pool(lots, threshold=25.0)
+    assert pool == pytest.approx(0.0)
+    assert n == 0
+
+
+def test_harvest_pool_material_losses():
+    """Only lots with |loss| > threshold are counted; pool equals their sum."""
+    lots = _make_lots(
+        unrealized_gl=[-10.0, -30.0, -50.0, 5.0],
+        ticker=["VOO", "VTV", "AVUV", "IEMG"],
+        sleeve=["US Large Core", "US Large Value", "US Small Cap", "Emerging Markets"],
+    )
+    pool, n = compute_harvest_pool(lots, threshold=25.0)
+    assert n == 2
+    assert pool == pytest.approx(-80.0)
+
+
+def test_harvest_pool_empty_lots():
+    """Empty DataFrame → (0.0, 0)."""
+    pool, n = compute_harvest_pool(pd.DataFrame())
+    assert pool == pytest.approx(0.0)
+    assert n == 0
+
+
+def test_harvest_materiality_threshold_constant():
+    """HARVEST_MATERIALITY_THRESHOLD must be 25.0."""
+    assert HARVEST_MATERIALITY_THRESHOLD == 25.0
+
+
+# ── Lot count label ───────────────────────────────────────────────────────────
+
+def test_lot_count_label_zero():
+    assert lot_count_label(0) == "0 lots"
+
+
+def test_lot_count_label_one():
+    assert lot_count_label(1) == "1 lot"
+
+
+def test_lot_count_label_many():
+    assert lot_count_label(5) == "5 lots"

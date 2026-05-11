@@ -6,8 +6,16 @@ import streamlit as st
 
 st.set_page_config(page_title="Tax Lot Inventory", layout="wide")
 
-from src.asof import as_of_banner
-from src.tax_lots import get_lot_inventory, get_sleeve_rollup, summary_metrics
+from src.asof import as_of_live_line, as_of_report_line
+from src.tax_lots import (
+    HARVEST_MATERIALITY_THRESHOLD,
+    apply_sleeve_filter,
+    compute_harvest_pool,
+    get_lot_inventory,
+    get_sleeve_rollup,
+    lot_count_label,
+    summary_metrics,
+)
 from src.ui_helpers import render_footer
 
 TODAY = date.today().isoformat()
@@ -43,7 +51,8 @@ def _fmt_signed_pct(v: float) -> str:
 # ── Page ──────────────────────────────────────────────────────────────────────
 
 st.title("Tax Lot Inventory")
-st.caption(as_of_banner())
+st.caption(as_of_live_line())
+st.caption(as_of_report_line())
 
 lots = _load_lots(TODAY)
 
@@ -58,6 +67,7 @@ if lots.empty:
 # ── Summary metric cards ──────────────────────────────────────────────────────
 
 metrics = summary_metrics(lots)
+harvest_pool, harvest_n = compute_harvest_pool(lots)
 
 c1, c2, c3 = st.columns(3)
 c4, c5, c6 = st.columns(3)
@@ -80,9 +90,15 @@ with c4:
 with c5:
     st.metric("LT Unrealized Gain", _fmt_dollar(metrics["unrealized_lt_gain"]))
 with c6:
-    loss = metrics["unrealized_loss"]
-    label = "Harvest Candidate Pool" if loss < 0 else "Unrealized Loss"
-    st.metric(label, _fmt_dollar(loss))
+    if harvest_n == 0:
+        st.metric("Harvest Candidate Pool", "$0.00")
+        st.caption("No material harvest candidates")
+    else:
+        st.metric("Harvest Candidate Pool", _fmt_dollar(abs(harvest_pool)))
+        st.caption(
+            f"n={harvest_n} material {lot_count_label(harvest_n).split()[1]} "
+            f"(threshold: ${HARVEST_MATERIALITY_THRESHOLD:.0f}/lot)"
+        )
 
 st.divider()
 
@@ -92,11 +108,14 @@ st.subheader("Filters")
 fc1, fc2, fc3, fc4 = st.columns(4)
 
 all_sleeves = sorted(lots["sleeve"].unique().tolist())
+st_lot_count = int((lots["tax_status"] == "ST").sum())
+
 with fc1:
     selected_sleeves = st.multiselect(
         "Sleeve",
         options=all_sleeves,
-        default=all_sleeves,
+        default=[],
+        placeholder="All sleeves",
         label_visibility="visible",
     )
 
@@ -115,17 +134,29 @@ with fc3:
     )
 
 with fc4:
-    days_to_lt_max = st.number_input(
-        "Days to LT ≤ (ST lots)",
-        min_value=0,
-        max_value=366,
-        value=366,
-        step=5,
-        help="Show ST lots within this many days of long-term qualification. Set to 366 to show all.",
-    )
+    if st_lot_count == 0:
+        st.number_input(
+            "Days to LT ≤ (ST lots)",
+            min_value=0,
+            max_value=366,
+            value=366,
+            step=5,
+            disabled=True,
+            help="No short-term lots in inventory — filter activates when lots within 1 year of purchase exist.",
+        )
+        days_to_lt_max = 366
+    else:
+        days_to_lt_max = st.number_input(
+            "Days to LT ≤ (ST lots)",
+            min_value=0,
+            max_value=366,
+            value=366,
+            step=5,
+            help="Show ST lots within this many days of long-term qualification. Set to 366 to show all.",
+        )
 
 # Apply filters
-filtered = lots[lots["sleeve"].isin(selected_sleeves)].copy()
+filtered = apply_sleeve_filter(lots, selected_sleeves)
 
 if tax_status_filter == "ST only":
     filtered = filtered[filtered["tax_status"] == "ST"]
@@ -146,7 +177,8 @@ st.divider()
 
 # ── Lot detail table ──────────────────────────────────────────────────────────
 
-st.subheader(f"Lot Detail — {len(filtered)} lot(s)")
+n_filtered = len(filtered)
+st.subheader(f"Lot Detail — {lot_count_label(n_filtered)}")
 
 if filtered.empty:
     st.info("No lots match the current filter combination.")

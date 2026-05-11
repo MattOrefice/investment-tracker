@@ -89,9 +89,12 @@ def test_data_freshness_disclosure_present(macro_app: AppTest) -> None:
     )
 
 
-def test_build_caption_renders(macro_app: AppTest) -> None:
-    """Section 1 deliverable: footer must include deployed build SHA."""
+def test_build_caption_suppressed_without_env(macro_app: AppTest) -> None:
+    """Build caption must be absent when SHOW_BUILD_HASH env var is not set (Phase 15.1)."""
+    import os
+    if os.environ.get("SHOW_BUILD_HASH"):
+        pytest.skip("SHOW_BUILD_HASH is set — caption gating not active in this environment")
     captions = [c.value for c in macro_app.caption]
-    assert any("Build" in c for c in captions), (
-        f"Deployed SHA caption not rendered — captions found: {captions[:5]}"
+    assert not any("Build" in c for c in captions), (
+        f"Build caption should be suppressed but found: {[c for c in captions if 'Build' in c]}"
     )

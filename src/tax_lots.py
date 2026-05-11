@@ -17,6 +17,10 @@ from src.prices import get_prices
 # Day 366 is the first day of long-term treatment.
 _LT_THRESHOLD_DAYS = 366
 
+# Minimum per-lot loss magnitude (dollars) to count as a harvest candidate.
+# Below this level, round-trip transaction friction typically exceeds the benefit.
+HARVEST_MATERIALITY_THRESHOLD = 25.0
+
 
 # ── Pure computation functions (no DB, fully testable) ────────────────────────
 
@@ -38,6 +42,30 @@ def compute_days_to_lt(days_held: int) -> int:
 def compute_unrealized_gl(shares: float, cost_per_share: float, current_price: float) -> float:
     """Unrealized gain/(loss) in dollars. Positive = gain, negative = loss."""
     return shares * (current_price - cost_per_share)
+
+
+def apply_sleeve_filter(lots: pd.DataFrame, selected_sleeves: list[str]) -> pd.DataFrame:
+    """Return lots filtered to selected_sleeves. Empty list means show all."""
+    if not selected_sleeves:
+        return lots
+    return lots[lots["sleeve"].isin(selected_sleeves)]
+
+
+def compute_harvest_pool(
+    lots: pd.DataFrame,
+    threshold: float = HARVEST_MATERIALITY_THRESHOLD,
+) -> tuple[float, int]:
+    """Return (pool_total, material_lot_count) where pool_total is the sum of
+    per-lot losses whose magnitude exceeds threshold. Both values are ≥ 0 / ≥ 0."""
+    if lots.empty:
+        return 0.0, 0
+    losses = lots[lots["unrealized_gl"] < -threshold]["unrealized_gl"]
+    return float(losses.sum()), int(len(losses))
+
+
+def lot_count_label(n: int) -> str:
+    """Return 'N lot' or 'N lots' with correct plurality."""
+    return f"{n} lot" if n == 1 else f"{n} lots"
 
 
 def compute_unrealized_gl_pct(gl: float, cost_basis_total: float) -> float:

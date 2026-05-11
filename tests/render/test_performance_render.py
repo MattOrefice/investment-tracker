@@ -85,13 +85,16 @@ def test_methodology_expander_present(performance_app: AppTest) -> None:
     )
 
 
-def test_build_caption_renders(performance_app: AppTest) -> None:
-    """Footer must include deployed build SHA. Pinned: Phase 8o."""
+def test_build_caption_suppressed_without_env(performance_app: AppTest) -> None:
+    """Build caption must be absent when SHOW_BUILD_HASH env var is not set (Phase 15.1)."""
+    import os
     if not performance_app.metric:
         pytest.skip("No portfolio data — skipped in local/empty-DB mode")
+    if os.environ.get("SHOW_BUILD_HASH"):
+        pytest.skip("SHOW_BUILD_HASH is set — caption gating not active in this environment")
     captions = [c.value for c in performance_app.caption]
-    assert any("Build" in c for c in captions), (
-        f"Deployed SHA caption not rendered — captions found: {captions[:5]}"
+    assert not any("Build" in c for c in captions), (
+        f"Build caption should be suppressed but found: {[c for c in captions if 'Build' in c]}"
     )
 
 
