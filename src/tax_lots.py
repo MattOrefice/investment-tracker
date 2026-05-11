@@ -1,9 +1,8 @@
 """Tax lot inventory derived from the trades ledger.
 
 The trades table is the lot ledger. Each BUY row is one lot. SELLs are matched
-against open lots on a FIFO basis. DRIP reinvestments are computed in-memory by
-get_portfolio_value_series for TWR accuracy but are not persisted as separate lot
-rows; only explicit trade rows appear in the lot inventory.
+against open lots on a FIFO basis. DRIP reinvestments are persisted as separate
+lot rows with lot_source='drip'; discretionary trades carry lot_source='initial'.
 """
 from datetime import date, timedelta
 from typing import Optional
@@ -315,3 +314,21 @@ def summary_metrics(lots: pd.DataFrame) -> dict:
         ].sum(),
         "unrealized_loss": lots.loc[lots["unrealized_gl"] < 0, "unrealized_gl"].sum(),
     }
+
+
+def discretionary_trade_count() -> int:
+    """Count of non-DRIP trades (lot_source != 'drip') in the trades table."""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM trades WHERE COALESCE(lot_source, 'initial') != 'drip'"
+        ).fetchone()
+    return int(row[0]) if row else 0
+
+
+def drip_lot_count() -> int:
+    """Count of DRIP lots (lot_source = 'drip') in the trades table."""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM trades WHERE lot_source = 'drip'"
+        ).fetchone()
+    return int(row[0]) if row else 0

@@ -63,6 +63,7 @@ def load_all():
         trades = [dict(r) for r in conn.execute("""
             SELECT tr.trade_id, tr.trade_date, tr.action, tr.ticker,
                    tr.shares, tr.price, tr.fees, tr.notes,
+                   COALESCE(tr.lot_source, 'initial') AS lot_source,
                    pt.title  AS position_thesis,
                    it.title  AS investment_thesis
             FROM trades tr
@@ -153,10 +154,11 @@ def load_all():
 
         counts = dict(conn.execute("""
             SELECT
-                (SELECT COUNT(*) FROM trades)                                              AS n_trades,
-                (SELECT COUNT(*) FROM theses WHERE level='investment' AND status='active') AS n_inv,
-                (SELECT COUNT(*) FROM theses WHERE level='position'   AND status='active') AS n_pos,
-                (SELECT COUNT(*) FROM themes)                                              AS n_themes
+                (SELECT COUNT(*) FROM trades WHERE COALESCE(lot_source,'initial') != 'drip') AS n_disc_trades,
+                (SELECT COUNT(*) FROM trades WHERE lot_source = 'drip')                      AS n_drip,
+                (SELECT COUNT(*) FROM theses WHERE level='investment' AND status='active')    AS n_inv,
+                (SELECT COUNT(*) FROM theses WHERE level='position'   AND status='active')    AS n_pos,
+                (SELECT COUNT(*) FROM themes)                                                 AS n_themes
         """).fetchone())
 
     return dict(
@@ -176,6 +178,10 @@ def load_all():
 data = load_all()
 c    = data["counts"]
 
+# Initialise toggle state before the header renders so the banner is correct
+# on the first load (before the toggle widget inside the tab fires a rerun).
+if "tl_show_drip" not in st.session_state:
+    st.session_state["tl_show_drip"] = False
 
 if IS_DEMO:
     st.info(get_demo_banner_text())
@@ -189,8 +195,15 @@ with col:
         "an investment view, which carries theme tags."
     )
     st.caption(as_of_banner())
+
+    _show_drip = st.session_state.get("tl_show_drip", False)
+    _drip_part = (
+        f"{c['n_drip']} DRIP reinvestments"
+        if _show_drip
+        else f"{c['n_drip']} DRIP reinvestments hidden"
+    )
     st.caption(
-        f"{c['n_trades']} trades  ·  "
+        f"{c['n_disc_trades']} discretionary trades  ·  {_drip_part}  ·  "
         f"{c['n_inv']} active investment theses  ·  "
         f"{c['n_pos']} active position theses  ·  "
         f"{c['n_themes']} themes"
@@ -363,10 +376,28 @@ def render_trade_form():
 # Tab 1: Trades
 # ────────────────────────────────────────────────────────────────────────────
 
+_DRIP_TOGGLE_HELP = (
+    "DRIP reinvestments are mechanical reinvestments of distributions, not "
+    "discretionary trades. They inherit the position thesis of the parent holding."
+)
+
 with tab_trades:
     _, col, _ = st.columns([1, 8, 1])
     with col:
-        trades = data["trades"]
+        show_drip = st.toggle(
+            "Show DRIP reinvestments",
+            value=False,
+            key="tl_show_drip",
+            help=_DRIP_TOGGLE_HELP,
+        )
+
+        trades_all = data["trades"]
+        trades = (
+            trades_all
+            if show_drip
+            else [t for t in trades_all if t.get("lot_source") != "drip"]
+        )
+
         if not trades:
             st.info(
                 "No trades logged yet. The portfolio is currently 100% cash. "

@@ -19,6 +19,8 @@ from src.tax_lots import (
     compute_tax_status,
     compute_unrealized_gl,
     compute_unrealized_gl_pct,
+    discretionary_trade_count,
+    drip_lot_count,
     get_sleeve_rollup,
     lot_count_label,
     summary_metrics,
@@ -384,3 +386,96 @@ def test_lot_count_label_one():
 
 def test_lot_count_label_many():
     assert lot_count_label(5) == "5 lots"
+
+
+# ── DRIP filter — pure DataFrame logic ───────────────────────────────────────
+
+def _make_mixed_lots() -> pd.DataFrame:
+    """DataFrame with 3 'initial' lots and 2 'drip' lots for filter testing."""
+    base_date = date(2025, 5, 1)
+    rows = []
+    for i, src in enumerate(["initial", "initial", "initial", "drip", "drip"]):
+        rows.append({
+            "trade_id":             i + 1,
+            "ticker":               "VOO",
+            "sleeve":               "US Large Core",
+            "trade_date":           base_date,
+            "days_held":            366,
+            "shares":               1.0,
+            "cost_basis_per_share": 100.0,
+            "cost_basis_total":     100.0,
+            "current_price":        110.0,
+            "market_value":         110.0,
+            "unrealized_gl":        10.0,
+            "unrealized_gl_pct":    0.10,
+            "tax_status":           "LT",
+            "days_to_lt":           0,
+            "lot_source":           src,
+        })
+    return pd.DataFrame(rows)
+
+
+def test_drip_toggle_off_excludes_drip_lots():
+    """Filtering lot_source != 'drip' leaves only initial lots."""
+    lots = _make_mixed_lots()
+    display = lots[lots["lot_source"] != "drip"].copy()
+    assert len(display) == 3
+    assert (display["lot_source"] == "initial").all()
+
+
+def test_drip_toggle_on_includes_all_lots():
+    """When show_drip is True, display_lots equals lots unchanged."""
+    lots = _make_mixed_lots()
+    display = lots  # no filter
+    assert len(display) == 5
+
+
+def test_drip_toggle_off_summary_metrics_initial_only():
+    """summary_metrics on initial-only lots uses only 3 lots worth of values."""
+    lots = _make_mixed_lots()
+    display = lots[lots["lot_source"] != "drip"].copy()
+    m = summary_metrics(display)
+    assert m["cost_basis_total"] == pytest.approx(300.0)
+    assert m["market_value_total"] == pytest.approx(330.0)
+
+
+def test_drip_toggle_off_harvest_pool_initial_only():
+    """compute_harvest_pool on initial-only lots excludes DRIP lot losses."""
+    lots = _make_mixed_lots()
+    # Make one DRIP lot a material loss, one initial lot a smaller loss
+    lots = lots.copy()
+    lots.loc[lots["lot_source"] == "drip", "unrealized_gl"] = -200.0
+    lots.loc[lots["lot_source"] == "initial", "unrealized_gl"] = -10.0  # below threshold
+
+    display = lots[lots["lot_source"] != "drip"].copy()
+    pool, n = compute_harvest_pool(display, threshold=25.0)
+    assert n == 0  # initial losses are only $10, below $25 threshold
+    assert pool == pytest.approx(0.0)
+
+
+def test_drip_toggle_off_zero_discretionary_lots():
+    """When all lots are DRIP, filtering to initial-only returns empty DataFrame."""
+    lots = _make_mixed_lots()
+    drip_only = lots[lots["lot_source"] == "drip"].copy()
+    display = drip_only[drip_only["lot_source"] != "drip"].copy()
+    assert display.empty
+    m = summary_metrics(display)
+    assert m["cost_basis_total"] == 0.0
+
+
+# ── Banner count helpers — require demo DB ────────────────────────────────────
+
+@pytest.mark.slow
+def test_discretionary_trade_count_demo_db():
+    """discretionary_trade_count() returns 11 against demo DB."""
+    import os
+    os.environ.setdefault("TRACKER_MODE", "demo")
+    assert discretionary_trade_count() == 11
+
+
+@pytest.mark.slow
+def test_drip_lot_count_demo_db():
+    """drip_lot_count() returns 49 against demo DB."""
+    import os
+    os.environ.setdefault("TRACKER_MODE", "demo")
+    assert drip_lot_count() == 49

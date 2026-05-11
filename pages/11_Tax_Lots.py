@@ -85,10 +85,29 @@ if lots.empty:
     render_footer()
     st.stop()
 
+_DRIP_TOGGLE_HELP = (
+    "DRIP reinvestments are mechanical reinvestments of distributions, not "
+    "discretionary trades. They inherit the position thesis of the parent holding."
+)
+
+# ── DRIP visibility toggle ────────────────────────────────────────────────────
+
+st.subheader("Filters")
+
+show_drip = st.toggle(
+    "Show DRIP reinvestments",
+    value=True,
+    key="tl_show_drip",
+    help=_DRIP_TOGGLE_HELP,
+)
+
+# Single source of truth: all downstream computations use display_lots
+display_lots = lots if show_drip else lots[lots["lot_source"] != "drip"].copy()
+
 # ── Summary metric cards ──────────────────────────────────────────────────────
 
-metrics = summary_metrics(lots)
-harvest_pool, harvest_n = compute_harvest_pool(lots)
+metrics = summary_metrics(display_lots)
+harvest_pool, harvest_n = compute_harvest_pool(display_lots)
 
 c1, c2, c3 = st.columns(3)
 c4, c5, c6 = st.columns(3)
@@ -125,11 +144,10 @@ st.divider()
 
 # ── Filter controls ───────────────────────────────────────────────────────────
 
-st.subheader("Filters")
 fc1, fc2, fc3, fc4 = st.columns(4)
 
-all_sleeves = sorted(lots["sleeve"].unique().tolist())
-st_lot_count = int((lots["tax_status"] == "ST").sum())
+all_sleeves = sorted(display_lots["sleeve"].unique().tolist())
+st_lot_count = int((display_lots["tax_status"] == "ST").sum())
 
 with fc1:
     selected_sleeves = st.multiselect(
@@ -176,8 +194,8 @@ with fc4:
             help="Show ST lots within this many days of long-term qualification. Set to 366 to show all.",
         )
 
-# Apply filters
-filtered = apply_sleeve_filter(lots, selected_sleeves)
+# Apply filters — sleeve filter starts from display_lots (respects DRIP toggle)
+filtered = apply_sleeve_filter(display_lots, selected_sleeves)
 
 if tax_status_filter == "ST only":
     filtered = filtered[filtered["tax_status"] == "ST"]
@@ -199,7 +217,8 @@ st.divider()
 # ── Lot detail table ──────────────────────────────────────────────────────────
 
 n_filtered = len(filtered)
-st.subheader(f"Lot Detail — {lot_count_label(n_filtered)}")
+_drip_suffix = "" if show_drip else " (DRIP hidden)"
+st.subheader(f"Lot Detail — {lot_count_label(n_filtered)}{_drip_suffix}")
 
 if filtered.empty:
     st.info("No lots match the current filter combination.")
@@ -265,7 +284,7 @@ st.divider()
 
 # ── Tax-Loss Harvest Candidates ───────────────────────────────────────────────
 
-_candidates = compute_harvest_candidates(lots)
+_candidates = compute_harvest_candidates(display_lots)
 _has_candidates = len(_candidates) > 0
 
 _ASSUMPTION_TEXT = (
