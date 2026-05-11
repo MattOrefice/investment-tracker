@@ -9,6 +9,7 @@ import streamlit as st
 st.set_page_config(page_title="Correlations", layout="wide")
 
 from src.asof import as_of_banner
+from src.factors import interpret_correlations
 from src.prices import get_prices
 from src.ui_helpers import render_footer
 
@@ -248,6 +249,10 @@ with col:
             with notable_r:
                 st.caption("Most correlated (highest ρ)")
                 st.dataframe(highest, hide_index=True, width="stretch")
+
+            _corr_interp = interpret_correlations(corr)
+            if _corr_interp:
+                st.caption(_corr_interp)
 
     # ── Pair time-series view ─────────────────────────────────────────────────
 

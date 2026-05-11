@@ -415,7 +415,13 @@ else:
         hide_index=True,
         column_config={
             "Sleeve":           st.column_config.TextColumn("Sleeve"),
-            "Lot Count":        st.column_config.NumberColumn("Lots", format="%d"),
+            "Lot Count":        st.column_config.NumberColumn(
+                "Lots", format="%d",
+                help=(
+                    "Number of tax lots in this sleeve. Each purchase date and "
+                    "DRIP reinvestment creates a separate lot for cost-basis tracking."
+                ),
+            ),
             "Cost Basis":       st.column_config.NumberColumn("Cost Basis", format="$%.2f"),
             "Market Value":     st.column_config.NumberColumn("Market Value", format="$%.2f"),
             "Unrealized G/L":   st.column_config.NumberColumn("Unrealized G/L", format="$%.2f"),

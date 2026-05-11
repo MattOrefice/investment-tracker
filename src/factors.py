@@ -1309,3 +1309,262 @@ def build_benchmark_methodology(result: Optional[dict]) -> list[str]:
         "the style factors most informative for this portfolio's deliberate tilts "
         "(value via VTV, size via AVUV, quality/profitability via SPHQ).",
     ]
+
+
+# ── Per-sleeve and per-regression dynamic interpretation ──────────────────────
+
+_T_SIG = 2.0   # |t| threshold for "statistically significant"
+_R2_LOW = 0.70  # R² below this flags a weak model fit
+
+
+def interpret_sleeve_regression(res: dict, factor_names: list | None = None) -> str:
+    """
+    Generate 2–4 sentences interpreting a single sleeve's factor regression.
+
+    Works for both FF5 equity regressions and TERM/CREDIT FI regressions.
+    Identifies statistically significant factor loadings, flags alpha significance,
+    and notes low R² when present.
+
+    Args:
+        res:          Result dict from run_sleeve_regressions / regress_fi_sleeve.
+        factor_names: Factor names to inspect (defaults to all in res["betas"]).
+    """
+    if res is None:
+        return "Regression result unavailable."
+
+    betas    = res.get("betas", {})
+    t_stats  = res.get("t_stats", {})
+    a_bps    = res.get("alpha_annual_bps", 0.0)
+    t_alpha  = res.get("t_alpha", 0.0)
+    r2       = res.get("r_squared", 0.0)
+    T        = res.get("T", 0)
+    label    = res.get("sleeve_label", "This sleeve")
+    factors  = factor_names or list(betas.keys())
+
+    parts: list[str] = []
+
+    # Significant factor loadings
+    sig_factors = [f for f in factors if abs(t_stats.get(f, 0.0)) >= _T_SIG]
+    for f in sig_factors:
+        b = betas[f]
+        t = t_stats[f]
+        direction = "positive" if b > 0 else "negative"
+        parts.append(
+            f"{f} loading: {b:+.3f} (t = {t:.2f}, {direction}, significant)"
+        )
+
+    factor_sentence = ""
+    if sig_factors:
+        factor_sentence = (
+            f"{label} shows significant loadings on: "
+            + "; ".join(parts) + ". "
+        )
+    else:
+        factor_sentence = (
+            f"{label} has no statistically significant factor loadings "
+            f"at the |t| > {_T_SIG:.0f} threshold across the {T} observed trading days. "
+            "This may reflect a short sample period, not an absence of factor exposure. "
+        )
+
+    # Alpha interpretation
+    alpha_sig = abs(t_alpha) >= _T_SIG
+    if alpha_sig:
+        alpha_dir = "positive" if a_bps > 0 else "negative"
+        alpha_sentence = (
+            f"Annualized alpha is {a_bps:+.0f} bps (t = {t_alpha:.2f}), "
+            f"statistically significant — a {alpha_dir} active return not explained by "
+            "the factor model. Given the short sample, this estimate carries wide uncertainty "
+            "and should not be read as evidence of persistent skill."
+        )
+    else:
+        alpha_sentence = (
+            f"Annualized alpha of {a_bps:+.0f} bps (t = {t_alpha:.2f}) is not statistically "
+            "significant — the sleeve's returns are consistent with factor exposures alone."
+        )
+
+    # R² note
+    r2_sentence = ""
+    if r2 < _R2_LOW:
+        r2_sentence = (
+            f" R² = {r2:.3f} is below {_R2_LOW:.0f}, indicating the factor model explains "
+            "only a portion of this sleeve's variance — either a universe mismatch "
+            "or factors outside the standard FF5 set are at play."
+        )
+
+    return factor_sentence + alpha_sentence + r2_sentence
+
+
+def interpret_benchmark_attribution(result: dict) -> str:
+    """
+    Generate a focused interpretation of the benchmark attribution regression.
+
+    This regression is a SELECTION-and-INTRA-SLEEVE-TILT model:
+      (R_p − RF) ~ β_bench(R_b − RF) + β_HML·HML + β_SMB·SMB + β_RMW·RMW + α
+
+    The blended benchmark (R_b) captures the SAA policy allocation.
+    Style factor loadings ABOVE the benchmark capture residual tilts not
+    explained by the SAA's target weights. Alpha is the active return
+    after controlling for both the benchmark and those residual style tilts.
+    This is NOT a Brinson-Fachler decomposition; that lives on the
+    Performance page.
+
+    Args:
+        result: result dict from run_benchmark_attribution_regression.
+    """
+    if result is None:
+        return "Benchmark attribution regression unavailable."
+
+    b_bench = result["betas"]["Bench-RF"]
+    t_bench = result["t_stats"]["Bench-RF"]
+    b_hml   = result["betas"]["HML"]
+    t_hml   = result["t_stats"]["HML"]
+    b_smb   = result["betas"]["SMB"]
+    t_smb   = result["t_stats"]["SMB"]
+    b_rmw   = result["betas"]["RMW"]
+    t_rmw   = result["t_stats"]["RMW"]
+    a_bps   = result["alpha_annual_bps"]
+    t_alpha = result["t_alpha"]
+    r2      = result["r_squared"]
+
+    # Benchmark beta sentence
+    if abs(b_bench - 1.0) < 0.10:
+        bench_sentence = (
+            f"The portfolio's benchmark beta of {b_bench:.3f} (t = {t_bench:.2f}) "
+            "indicates it tracks its SAA policy benchmark closely, as expected for a "
+            "fully-invested passive/semi-passive implementation."
+        )
+    else:
+        bench_sentence = (
+            f"The portfolio's benchmark beta of {b_bench:.3f} (t = {t_bench:.2f}) "
+            "departs from the expected 1.0, reflecting cross-sleeve return dispersion "
+            "or cash drag."
+        )
+
+    # Style tilt sentences — only report significant ones
+    style_parts = []
+    for fname, beta, tstat, context in [
+        ("HML", b_hml, t_hml, "value tilt (VTV, AVUV)"),
+        ("SMB", b_smb, t_smb, "small-cap tilt (AVUV)"),
+        ("RMW", b_rmw, t_rmw, "profitability tilt (SPHQ, AVUV)"),
+    ]:
+        if abs(tstat) >= _T_SIG:
+            direction = "positive" if beta > 0 else "negative"
+            style_parts.append(
+                f"{fname} β = {beta:+.3f} (t = {tstat:.2f}, {direction} — {context})"
+            )
+
+    if style_parts:
+        style_sentence = (
+            "Residual style tilts beyond the SAA benchmark: "
+            + "; ".join(style_parts) + ". "
+            "These represent the portfolio's active factor exposures relative to "
+            "the SAA policy benchmark, not explained by the target weights."
+        )
+    else:
+        style_sentence = (
+            "No statistically significant residual style tilts beyond the SAA benchmark "
+            "are detected at the current sample length. "
+        )
+
+    # Alpha sentence
+    alpha_sig = abs(t_alpha) >= _T_SIG
+    if alpha_sig:
+        alpha_dir = "positive" if a_bps > 0 else "negative"
+        alpha_sentence = (
+            f"The active return intercept is {a_bps:+.0f} bps (t = {t_alpha:.2f}), "
+            f"statistically significant — a {alpha_dir} return after accounting for "
+            "both the SAA benchmark and residual style exposures. "
+            "The Brinson-Fachler attribution on the Performance page decomposes this "
+            "into allocation and selection effects at the sleeve level."
+        )
+    else:
+        alpha_sentence = (
+            f"The active return intercept of {a_bps:+.0f} bps (t = {t_alpha:.2f}) is not "
+            "statistically significant at the current sample length — the portfolio's return "
+            "is consistent with its SAA benchmark exposure and residual style tilts alone."
+        )
+
+    return bench_sentence + " " + style_sentence + " " + alpha_sentence
+
+
+def interpret_correlations(corr: pd.DataFrame) -> str:
+    """
+    Generate 2–3 sentences interpreting a correlation matrix of sleeve returns.
+
+    Identifies highest and lowest off-diagonal pairs, cross-asset patterns,
+    and flags any unexpected correlations. Returns an empty string if the
+    matrix has fewer than 3 sleeves.
+
+    Args:
+        corr: square correlation DataFrame (sleeves as both index and columns).
+    """
+    if corr.empty or len(corr) < 3:
+        return ""
+
+    # Build sorted list of off-diagonal pairs
+    pairs: list[tuple[str, str, float]] = []
+    cols = list(corr.columns)
+    for i in range(len(cols)):
+        for j in range(i + 1, len(cols)):
+            pairs.append((cols[i], cols[j], float(corr.iloc[i, j])))
+
+    if not pairs:
+        return ""
+
+    pairs_sorted = sorted(pairs, key=lambda x: x[2])
+    lowest  = pairs_sorted[:2]
+    highest = pairs_sorted[-3:][::-1]   # top 3, highest first
+
+    # Cross-asset classification: equity vs bond/non-equity
+    _BOND_SLEEVES = {"Core Fixed Income", "TIPS"}
+    _EQUITY_SLEEVES = {
+        "US Large Core", "US Large Quality", "US Large Value",
+        "US Small Cap", "Intl Developed", "Emerging Markets",
+    }
+
+    # Highest correlations sentence
+    high_parts = [
+        f"{a} × {b} (ρ = {r:.2f})" for a, b, r in highest if r < 0.999
+    ]
+    high_sentence = (
+        f"The strongest cross-sleeve correlations are {', '.join(high_parts)}, "
+        "all within the broad equity bucket — expected co-movement driven by common "
+        "global market risk."
+    ) if high_parts else ""
+
+    # Lowest correlations sentence
+    low_parts = [
+        f"{a} × {b} (ρ = {r:.2f})" for a, b, r in lowest
+    ]
+    low_sentence = (
+        f"The most diversifying pairs are {' and '.join(low_parts)}, "
+        "providing meaningful return offsets in normal market conditions."
+    ) if low_parts else ""
+
+    # Cross-asset bond-equity average correlation
+    bond_equity_corrs = [
+        r for a, b, r in pairs
+        if (a in _BOND_SLEEVES) != (b in _BOND_SLEEVES)   # one bond, one equity
+    ]
+    if bond_equity_corrs:
+        avg_be = sum(bond_equity_corrs) / len(bond_equity_corrs)
+        if avg_be < 0.2:
+            cross_asset = (
+                f"Bond sleeves are weakly correlated with equities on average (ρ ≈ {avg_be:.2f}), "
+                "consistent with their role as portfolio ballast."
+            )
+        elif avg_be > 0.5:
+            cross_asset = (
+                f"Bond sleeves show unexpectedly high correlation with equities (ρ ≈ {avg_be:.2f}); "
+                "this may reflect an inflationary regime where bonds and equities declined together."
+            )
+        else:
+            cross_asset = (
+                f"Bond–equity correlations average ρ ≈ {avg_be:.2f}, "
+                "a modest positive relationship within the selected window."
+            )
+    else:
+        cross_asset = ""
+
+    sentences = [s for s in [high_sentence, low_sentence, cross_asset] if s]
+    return "  \n".join(sentences)

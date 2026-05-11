@@ -16,6 +16,7 @@ from src.factors import (
     alpha_ci_str,
     build_factor_methodology_notes,
     build_factor_prose,
+    interpret_sleeve_regression,
     regress_fi_sleeve,
     run_intl_global_regression,
     run_sleeve_regressions,
@@ -73,6 +74,20 @@ with col:
     except Exception as exc:
         st.error(f"Factor regression unavailable: {exc}")
         st.stop()
+
+    # ── Factor definitions panel ─────────────────────────────────────────────
+    with st.container(border=True):
+        st.markdown("**Fama-French Factor Definitions**")
+        st.markdown(
+            "| Factor | Definition |\n"
+            "|--------|------------|\n"
+            "| **Mkt-RF** | Market excess return — broad market return minus risk-free rate |\n"
+            "| **SMB** | Small Minus Big — small-cap minus large-cap returns |\n"
+            "| **HML** | High Minus Low — value minus growth (high book-to-market minus low) |\n"
+            "| **RMW** | Robust Minus Weak — high-profitability minus low-profitability firms |\n"
+            "| **CMA** | Conservative Minus Aggressive — low-investment minus high-investment firms |"
+        )
+    st.divider()
 
     _FACTORS = ["Mkt-RF", "SMB", "HML", "RMW", "CMA"]
 
@@ -143,6 +158,7 @@ with col:
             with tab_dev:
                 _render_factor_table(res, _FACTORS, label="FF5 — Developed ex-US")
                 _render_fit_metrics(res)
+                st.caption(interpret_sleeve_regression(res, _FACTORS))
                 res_mom = results_mom.get(key)
                 if res_mom is not None:
                     with st.expander("Carhart Momentum Supplement (FF5 + UMD)", expanded=False):
@@ -158,6 +174,7 @@ with col:
                 if global_result is not None:
                     _render_factor_table(global_result, _FACTORS, label="FF5 — Global")
                     _render_fit_metrics(global_result)
+                    st.caption(interpret_sleeve_regression(global_result, _FACTORS))
                 else:
                     st.info(
                         "Global daily factor data discontinued — Ken French ceased "
@@ -170,6 +187,7 @@ with col:
         else:
             _render_factor_table(res, _FACTORS)
             _render_fit_metrics(res)
+            st.caption(interpret_sleeve_regression(res, _FACTORS))
             res_mom = results_mom.get(key)
             if res_mom is not None:
                 with st.expander("Carhart Momentum Supplement (FF5 + UMD)", expanded=False):
@@ -243,6 +261,7 @@ with col:
         c3.metric("Observations", str(fi_result["T"]))
         c4.metric("NW Lags (L)",  str(fi_result["nw_lags"]))
         st.caption(f"Sample window: {fi_win}")
+        st.caption(interpret_sleeve_regression(fi_result, ["TERM", "CREDIT"]))
         st.divider()
 
     # ── Emerging Markets disclosure ───────────────────────────────────────────
@@ -250,10 +269,13 @@ with col:
 
     st.divider()
 
-    # ── Interpretation ────────────────────────────────────────────────────────
-    st.subheader("Interpretation")
-    for sentence in build_factor_prose(results, fi_result=fi_result, global_result=global_result):
-        st.write(sentence)
+    # ── Scope notes ──────────────────────────────────────────────────────────
+    st.subheader("Scope Notes")
+    # Full narrative retained for PDF export; inline per-sleeve interpretation above
+    _full_prose = build_factor_prose(results, fi_result=fi_result, global_result=global_result)
+    # Show only the exclusion / scope notes (last sentence covers EM + Real Assets)
+    if _full_prose:
+        st.write(_full_prose[-1])
 
     st.divider()
 

@@ -14,6 +14,7 @@ from src.factors import (
     alpha_ci_str,
     build_benchmark_methodology,
     build_benchmark_prose,
+    interpret_benchmark_attribution,
     run_benchmark_attribution_regression,
     sig_marker,
 )
@@ -53,6 +54,24 @@ with col:
             "Section will populate as portfolio history grows."
         )
         st.stop()
+
+    # ── Factor definitions panel ─────────────────────────────────────────────
+    with st.container(border=True):
+        st.markdown("**Factor Definitions**")
+        st.markdown(
+            "| Factor | Definition |\n"
+            "|--------|------------|\n"
+            "| **Bench-RF** | Custom SAA-target-weighted blended benchmark excess return (vs risk-free) |\n"
+            "| **HML** | High Minus Low — value minus growth (Fama-French) |\n"
+            "| **SMB** | Small Minus Big — small-cap minus large-cap returns |\n"
+            "| **RMW** | Robust Minus Weak — high-profitability minus low-profitability |"
+        )
+        st.caption(
+            "This regression isolates *residual style tilts beyond the SAA policy benchmark*. "
+            "It is a selection-and-intra-sleeve-tilt model, not a Brinson-Fachler "
+            "allocation/selection decomposition — that lives on the Performance page."
+        )
+    st.divider()
 
     _BENCH_FACTORS = ["Bench-RF", "HML", "SMB", "RMW"]
 
@@ -98,6 +117,7 @@ with col:
     c3.metric("Observations", str(result["T"]))
     c4.metric("NW Lags (L)",  str(result["nw_lags"]))
     st.caption(f"Sample window: {window_str}")
+    st.caption(interpret_benchmark_attribution(result))
 
     st.divider()
 

@@ -10,6 +10,13 @@ st.set_page_config(page_title="Macro Dashboard", layout="wide")
 from src import macro, shiller
 from src.asof import as_of_banner
 from src.config import IS_DEMO
+from src.macro import (
+    interpret_curve_spread,
+    interpret_excess_cape,
+    interpret_gdp_growth,
+    interpret_hy_spread,
+    interpret_us_vs_intl_spread,
+)
 from src.prices import get_prices
 from src.prose_helpers import percentile_label
 from src.ui_helpers import render_footer
@@ -561,31 +568,8 @@ with col:
             f"({current_dgs10:.2f}% − {current_t10yie:.2f}%)"
         )
 
-        if current_ecy >= 3.0:
-            _ecy_interp = (
-                f"ECY of {current_ecy:.2f}% signals equities offer a substantial earnings yield "
-                "above real bond yields — historically associated with attractive equity forward "
-                "returns relative to fixed income."
-            )
-        elif current_ecy >= 1.0:
-            _ecy_interp = (
-                f"ECY of {current_ecy:.2f}% reflects a modest equity premium above real bond yields — "
-                "historically consistent with reasonable forward returns, though the margin of safety "
-                "is thinner than the post-2008 zero-real-rate era."
-            )
-        elif current_ecy >= 0.0:
-            _ecy_interp = (
-                f"ECY of {current_ecy:.2f}% places equities near parity with real bond yields — "
-                "limited yield premium above what intermediate Treasuries offer in real terms."
-            )
-        else:
-            _ecy_interp = (
-                f"ECY of {current_ecy:.2f}% indicates real bonds yield more than equities — "
-                "a historically unusual regime where fixed income competes directly with equity returns."
-            )
-
         st.caption(
-            _ecy_interp + " "
+            interpret_excess_cape(current_ecy) + " "
             f"Current reading at the {_ordinal(ecy_pctile_w)} percentile of its "
             f"{ecy_window} window ({ecy_since}–present for full history; "
             "T10YIE breakeven data starts Jan 2003)."
@@ -649,9 +633,10 @@ with col:
             f"{_ordinal(yc_pctile_w)} percentile of {yc_window} window"
         )
 
+        st.caption(interpret_curve_spread(current_spread_bps))
         st.caption(
-            "Yield curve inversions (spread < 0) have preceded each of the last seven "
-            "recessions with a 12–18 month lead time. Gray shading marks NBER-dated recessions."
+            "Gray shading marks NBER-dated recessions. "
+            "Percentile computed relative to the selected window."
         )
         st.divider()
     else:
@@ -773,18 +758,10 @@ with col:
             f"(data from {hy_since})"
         )
 
-        hy_framing = (
-            "suggests late-cycle complacency — limited cushion for additional compression"
-            if hy_pctile_w < 40 else
-            "is near the median for the available window, consistent with a neutral credit environment"
-            if hy_pctile_w < 60 else
-            "reflects elevated stress or risk aversion, pricing in meaningful default risk"
-        )
+        st.caption(interpret_hy_spread(current_hy))
         st.caption(
-            f"HY spreads at the {_ordinal(hy_pctile_w)} percentile of the available history "
-            f"({hy_since}+) — {hy_framing}. "
-            "Low spreads historically correspond to late-cycle dynamics where credit risk "
-            "is under-priced. Gray shading marks NBER-dated recessions. "
+            f"HY spreads at the {_ordinal(hy_pctile_w)} percentile of available history "
+            f"({hy_since}+). Gray shading marks NBER-dated recessions. "
             f"*FRED restricts this ICE BofA series to {hy_since}+; full pre-2023 history "
             "is unavailable from FRED's API.*"
         )
@@ -925,17 +902,8 @@ with col:
             f"{_ordinal(gdp_pctile_w)} percentile of {gdp_window} window"
         )
 
-        if current_gdp >= 3.0:
-            _gdp_interp = f"GDP growth of {current_gdp:.1f}% is above trend — consistent with expansion."
-        elif current_gdp >= 0.0:
-            _gdp_interp = f"GDP growth of {current_gdp:.1f}% is positive but below the long-run trend of ~2%."
-        else:
-            _gdp_interp = (
-                f"GDP growth of {current_gdp:.1f}% is negative. Two consecutive negative quarters "
-                "satisfies the informal (not NBER) recession definition."
-            )
         st.caption(
-            _gdp_interp + " "
+            interpret_gdp_growth(current_gdp) + " "
             "FRED A191RL1Q225SBEA: real GDP percent change from preceding period, "
             "seasonally adjusted annual rate. Gray shading = NBER recessions."
         )
@@ -1046,69 +1014,77 @@ with col:
 
         aligned = pd.concat([spy_raw, efa_raw], axis=1).dropna()
         aligned.columns = ["SPY", "EFA"]
-        aligned.index = pd.to_datetime(aligned.index)
-        ratio = (aligned["SPY"] / aligned["EFA"]).dropna()
+        aligned.index   = pd.to_datetime(aligned.index)
 
-        twenty_start  = _window_start("20Y")
-        ratio_20y     = ratio[ratio.index >= pd.Timestamp(twenty_start)]
-        current_ratio = float(ratio.iloc[-1])
+        # Rolling 12-month return spread: SPY 12M return minus EFA 12M return (in pp)
+        spy_ret12 = aligned["SPY"].pct_change(252) * 100
+        efa_ret12 = aligned["EFA"].pct_change(252) * 100
+        spread12  = (spy_ret12 - efa_ret12).dropna()
 
-        ratio_1y_base = ratio[ratio.index <= ONE_YR_AGO]
-        ratio_1y_ago  = float(ratio_1y_base.iloc[-1]) if not ratio_1y_base.empty else current_ratio
-        rel_perf_bps  = (current_ratio / ratio_1y_ago - 1) * 10000
+        current_spread_pp = float(spread12.iloc[-1])
+
+        # 5-year rolling mean of the 12M spread (for mean-reversion context)
+        rolling_mean_5y = spread12.rolling(252 * 5).mean()
+        current_mean_5y = (
+            float(rolling_mean_5y.dropna().iloc[-1])
+            if not rolling_mean_5y.dropna().empty else 0.0
+        )
 
         us_window = st.radio(
             "Window", ["5Y", "10Y", "20Y", "Max"],
             index=1, key="us_window", horizontal=True,
         )
-        us_start       = _window_start(us_window)
-        ratio_w        = ratio[ratio.index >= pd.Timestamp(us_start)]
-        ratio_pctile_w = _window_pctile(ratio, current_ratio, us_start)
-        rel_dir = "outperformed" if rel_perf_bps >= 0 else "underperformed"
-        ratio_norm = ratio_w / float(ratio_w.iloc[0])
-        ratio_20y_median_norm = (
-            float(ratio_20y.median()) / float(ratio_w.iloc[0])
-            if not ratio_20y.empty and ratio_w.iloc[0] != 0 else 1.0
-        )
+        us_start    = _window_start(us_window)
+        spread_w    = spread12[spread12.index >= pd.Timestamp(us_start)]
+        mean_w      = float(spread_w.mean()) if not spread_w.empty else 0.0
+        spread_sign = "+" if current_spread_pp >= 0 else ""
+
         fig_us = go.Figure()
         fig_us.add_trace(go.Scatter(
-            x=ratio_norm.index, y=ratio_norm.values,
-            mode="lines", name="SPY / EFA (normalized)",
+            x=spread_w.index, y=spread_w.values,
+            mode="lines", name="12M return spread (pp)",
             line=dict(color=_C["primary"], width=2),
         ))
         fig_us.add_hline(
-            y=ratio_20y_median_norm,
-            line_dash="dash", line_color=_C["ref"], line_width=1,
-            annotation_text="20Y median",
+            y=0, line_dash="dash", line_color=_C["ref"], line_width=1,
+            annotation_text="0 = parity",
+            annotation_position="top left", annotation_font_size=9,
+            annotation_font_color="#888",
+        )
+        fig_us.add_hline(
+            y=mean_w,
+            line_dash="dot", line_color=_C["ref"], line_width=1,
+            annotation_text=f"{us_window} mean {mean_w:+.1f} pp",
             annotation_position="right", annotation_font_size=10,
         )
+        _add_current_annotation(
+            fig_us, current_spread_pp,
+            f"Current {spread_sign}{current_spread_pp:.1f} pp",
+        )
         _apply_style(fig_us)
-        fig_us.update_yaxes(title_text="Ratio (normalized to 1.0 at window start)")
-        _yr = _tight_yrange(ratio_norm, [ratio_20y_median_norm])
+        fig_us.update_yaxes(title_text="12M return spread (pp, US minus Intl)")
+        _yr = _tight_yrange(spread_w, [current_spread_pp, 0.0, mean_w])
         if _yr:
             fig_us.update_yaxes(range=_yr)
         fig_us.add_annotation(
             xref="paper", yref="paper",
             x=0.01, y=0.98,
-            text="Rising = US outperforming international",
+            text="Above 0 = US outperforming international",
             showarrow=False,
             font=dict(size=9, color="#888"),
             xanchor="left", yanchor="top",
         )
         st.plotly_chart(fig_us, width='stretch')
-        st.metric(f"US/Intl Ratio ({us_window} percentile)", _ordinal(ratio_pctile_w))
+        st.metric(
+            "Trailing 12M return spread (US − Intl)",
+            f"{spread_sign}{current_spread_pp:.1f} pp",
+        )
         st.caption(
-            f"US {rel_dir} international by {abs(rel_perf_bps):.0f} bps over last 12 months"
+            f"Rolling 12-month total return spread: SPY minus EFA (percentage points). "
+            f"Positive = US outperforming. {us_window} window mean: {mean_w:+.1f} pp."
         )
 
-        us_label = percentile_label(ratio_pctile_w)
-        st.caption(
-            f"US outperformance vs. international is at the {_ordinal(ratio_pctile_w)} percentile "
-            f"of the {us_window} window — {us_label} relative to that window. "
-            "Extended US outperformance has historically mean-reverted via valuation "
-            "convergence and dollar cycle turns, supporting the International Developed "
-            "sleeve and its valuation-driven thesis."
-        )
+        st.caption(interpret_us_vs_intl_spread(current_spread_pp, current_mean_5y))
 
     except Exception as exc:
         st.error(f"US vs. International data unavailable: {exc}")
@@ -1148,7 +1124,7 @@ with col:
         ]
         _src_lines.append(
             "**Yahoo Finance** (SPY, EFA): daily prices via local SQLite cache · "
-            "used for the US vs. International relative performance panel"
+            "used for the US vs. International rolling 12-month return spread panel"
         )
         _src_lines.append(
             "**ISM Manufacturing PMI**: not available via FRED API — see post-launch backlog for status."
