@@ -204,7 +204,7 @@ def persist_drip_lots(ticker: str, lots: list[dict]) -> int:
                 """INSERT INTO trades
                    (account_id, ticker, trade_date, action, shares, price,
                     fees, notes, lot_source)
-                   VALUES (?, ?, ?, 'buy', ?, ?, 0, 'DRIP', 'drip')""",
+                   VALUES (?, ?, ?, 'Buy', ?, ?, 0, 'DRIP', 'drip')""",
                 (
                     account_id,
                     ticker,

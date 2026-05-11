@@ -398,6 +398,21 @@ with tab_trades:
             else [t for t in trades_all if t.get("lot_source") != "drip"]
         )
 
+        # Build ticker → (pos_thesis_title, inv_thesis_title) from active
+        # position theses so DRIP rows can inherit the same thesis display
+        # as their discretionary counterpart for the same ticker.
+        _ticker_thesis: dict[str, tuple[str, str]] = {}
+        for _pt in data["pos_theses"]:
+            if _pt.get("status") != "active":
+                continue
+            _parts = (_pt.get("title") or "").rsplit(" — ", 1)
+            if len(_parts) == 2:
+                _sym = _parts[-1].strip()
+                _ticker_thesis[_sym] = (
+                    _pt["title"],
+                    _pt.get("parent_title") or "—",
+                )
+
         if not trades:
             st.info(
                 "No trades logged yet. The portfolio is currently 100% cash. "
@@ -408,15 +423,21 @@ with tab_trades:
         else:
             rows = []
             for t in trades:
+                pos_t = t["position_thesis"]
+                inv_t = t["investment_thesis"]
+                if t.get("lot_source") == "drip" and not pos_t:
+                    _inherited = _ticker_thesis.get(t["ticker"])
+                    if _inherited:
+                        pos_t, inv_t = _inherited
                 rows.append({
                     "Date":              t["trade_date"],
-                    "Action":            t["action"],
+                    "Action":            t["action"].title(),
                     "Ticker":            t["ticker"],
                     "Shares":            t["shares"],
                     "Price":             t["price"],
                     "Total Value":       round(t["shares"] * t["price"], 2),
-                    "Position Thesis":   t["position_thesis"] or "—",
-                    "Investment Thesis": t["investment_thesis"] or "—",
+                    "Position Thesis":   pos_t or "—",
+                    "Investment Thesis": inv_t or "—",
                 })
             df = pd.DataFrame(rows)
             st.dataframe(
