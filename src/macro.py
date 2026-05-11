@@ -258,11 +258,17 @@ def compute_ecy(cape: float, t10y_pct: float, t10yie_pct: float) -> float:
 
 # ── Interpretation thresholds ──────────────────────────────────────────────────
 
-# ECY (all in percent, same units as compute_ecy output)
+# ECY (all in percent, same units as compute_ecy output) — legacy absolute thresholds kept for tests
 EXCESS_CAPE_RICH_THRESHOLD: float = -2.0   # deeply negative → bonds substantially outyield equities
 EXCESS_CAPE_RICH: float             =  0.0   # near parity → limited equity premium
 EXCESS_CAPE_FAIR: float             =  2.0   # low-to-moderate premium → fair range
 EXCESS_CAPE_CHEAP: float            =  4.0   # high premium → equities cheap vs bonds
+
+# ECY percentile thresholds (0.0–1.0) — used by interpret_excess_cape for regime branching
+ECY_EXTREME_LOW_PCT:  float = 0.10   # bottom decile → extreme compression
+ECY_LOW_PCT:          float = 0.30   # bottom tercile → below-average premium
+ECY_HIGH_PCT:         float = 0.70   # top tercile → above-average premium
+ECY_EXTREME_HIGH_PCT: float = 0.90   # top decile → historically wide premium
 
 # Yield curve (basis points)
 CURVE_INVERTED: float =   0.0
@@ -280,39 +286,50 @@ GDP_TREND:       float = 2.5   # CBO long-run potential output
 GDP_ABOVE_TREND: float = 3.5   # solidly above trend
 
 
-def interpret_excess_cape(value: float) -> str:
-    """Dynamic 1–2 sentence interpretation of the Excess CAPE Yield (in percent)."""
-    if value < EXCESS_CAPE_RICH_THRESHOLD:
+def interpret_excess_cape(value: float, percentile: float) -> str:
+    """
+    Dynamic 1–2 sentence interpretation of the Excess CAPE Yield.
+
+    Args:
+        value:      ECY in percent (e.g. 0.48 means 0.48%).
+        percentile: ECY's rank in its historical distribution, 0.0–1.0.
+                    The Jan 2003+ window is used (T10YIE inception).
+    """
+    assert 0.0 <= percentile <= 1.0, (
+        f"percentile must be a fraction 0.0–1.0, got {percentile} "
+        f"(units bug? if 0–100 scale, divide by 100 at call site)"
+    )
+    pct_label = f"{percentile:.0%}"
+    if percentile < ECY_EXTREME_LOW_PCT:
         return (
-            f"ECY of {value:.2f}% is deeply negative — real bonds yield substantially more than "
-            f"equities by {abs(value):.2f} pp. This regime has historically preceded muted equity "
-            "risk premiums; the Core Fixed Income and TIPS sleeves are competitively priced on "
-            "a real-yield basis relative to equities."
+            f"ECY of {value:.2f}% is at extreme compression — at the {pct_label} percentile of "
+            "the Jan 2003+ history, equities offer essentially no real-yield premium over bonds. "
+            "This historically precedes muted forward equity returns; the Core Fixed Income and "
+            "TIPS sleeves are competitively priced relative to equities on a real-yield basis."
         )
-    elif value < EXCESS_CAPE_RICH:
+    elif percentile < ECY_LOW_PCT:
         return (
-            f"ECY of {value:.2f}% places equities near or below parity with real bond yields. "
-            "The equity risk premium above real bonds is thin at current CAPE levels, "
+            f"ECY of {value:.2f}% is below average at the {pct_label} percentile. "
+            "The equity risk premium over real bond yields is thin by historical standards, "
             "suggesting forward equity returns may be below long-run averages."
         )
-    elif value < EXCESS_CAPE_FAIR:
+    elif percentile < ECY_HIGH_PCT:
         return (
-            f"ECY of {value:.2f}% sits in the long-run fair range "
-            f"(0% to {EXCESS_CAPE_FAIR:.0f}%). "
-            "Equities offer a modest real-yield premium over bonds — neither a strong buy "
-            "nor a strong sell signal from valuation alone."
+            f"ECY of {value:.2f}% is near the historical median (at the {pct_label} percentile). "
+            "Equities offer a moderate real-yield premium over bonds — neither a strong valuation "
+            "tailwind nor headwind for forward returns."
         )
-    elif value < EXCESS_CAPE_CHEAP:
+    elif percentile < ECY_EXTREME_HIGH_PCT:
         return (
-            f"ECY of {value:.2f}% indicates equities offer a meaningful real-yield premium "
-            "over bonds, historically associated with above-average forward equity returns. "
+            f"ECY of {value:.2f}% is above average at the {pct_label} percentile, indicating "
+            "equities offer a meaningful real-yield premium over bonds. "
             "The International Developed and US Large Value sleeves, trading at a discount "
             "to US CAPE, benefit most from wide ECY readings."
         )
     else:
         return (
-            f"ECY of {value:.2f}% is unusually wide — equities offer a large real-yield premium "
-            f"over bonds by historical standards (above {EXCESS_CAPE_CHEAP:.0f}%). "
+            f"ECY of {value:.2f}% is unusually wide — at the {pct_label} percentile of the "
+            "Jan 2003+ history, equities offer a large real-yield premium over bonds. "
             "This has historically signalled materially undervalued equity markets."
         )
 
@@ -353,7 +370,7 @@ def interpret_hy_spread(value_bps: float) -> str:
         return (
             f"HY spreads at {value_bps:.0f} bps are historically tight (below {HY_SPREAD_TIGHT:.0f} bps) — "
             "late-cycle credit market complacency. Tight spreads limit the cushion for further "
-            "compression; historical episodes of sub-{HY_SPREAD_TIGHT:.0f} bps spreads have preceded "
+            f"compression; historical episodes of sub-{HY_SPREAD_TIGHT:.0f} bps spreads have preceded "
             "equity peaks and subsequent spread blowouts."
         )
     elif value_bps < HY_SPREAD_NORMAL:
@@ -432,35 +449,35 @@ def interpret_us_vs_intl_spread(spread_pp: float, rolling_mean_pp: float) -> str
 
     if delta > 10:
         mean_context = (
-            f"the spread is {delta:.1f} pp above its 5-year rolling average of "
-            f"{rolling_mean_pp:.1f} pp — well into extended US-leadership territory. "
+            f"the spread is {delta:.1f}% above its 5-year rolling average of "
+            f"{rolling_mean_pp:.1f}% — well into extended US-leadership territory. "
             "Historically such extremes have mean-reverted via valuation convergence "
             "and dollar cycle turns, supporting the case for the International Developed sleeve."
         )
     elif delta > 3:
         mean_context = (
-            f"the spread is {delta:.1f} pp above its 5-year rolling average of "
-            f"{rolling_mean_pp:.1f} pp, indicating continued US leadership."
+            f"the spread is {delta:.1f}% above its 5-year rolling average of "
+            f"{rolling_mean_pp:.1f}%, indicating continued US leadership."
         )
     elif delta > -3:
         mean_context = (
-            f"the spread is near its 5-year rolling average of {rolling_mean_pp:.1f} pp — "
+            f"the spread is near its 5-year rolling average of {rolling_mean_pp:.1f}% — "
             "US and international relative performance is close to its recent historical norm."
         )
     elif delta > -10:
         mean_context = (
-            f"the spread is {abs(delta):.1f} pp below its 5-year rolling average of "
-            f"{rolling_mean_pp:.1f} pp, consistent with international narrowing the performance gap."
+            f"the spread is {abs(delta):.1f}% below its 5-year rolling average of "
+            f"{rolling_mean_pp:.1f}%, consistent with international narrowing the performance gap."
         )
     else:
         mean_context = (
-            f"the spread is {abs(delta):.1f} pp below its 5-year rolling average of "
-            f"{rolling_mean_pp:.1f} pp — a strong reversal in international's favor, "
+            f"the spread is {abs(delta):.1f}% below its 5-year rolling average of "
+            f"{rolling_mean_pp:.1f}% — a strong reversal in international's favor, "
             "consistent with the valuation mean-reversion thesis underlying "
             "the 19% International Developed sleeve weight."
         )
 
     return (
         f"Over the trailing 12 months, US equities (SPY) have {direction} international "
-        f"developed (EFA) by {abs_spread:.1f} pp. On a 5-year rolling basis, {mean_context}"
+        f"developed (EFA) by {abs_spread:.1f}%. On a 5-year rolling basis, {mean_context}"
     )

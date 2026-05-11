@@ -569,7 +569,7 @@ with col:
         )
 
         st.caption(
-            interpret_excess_cape(current_ecy) + " "
+            interpret_excess_cape(current_ecy, ecy_pctile / 100) + " "
             f"Current reading at the {_ordinal(ecy_pctile_w)} percentile of its "
             f"{ecy_window} window ({ecy_since}–present for full history; "
             "T10YIE breakeven data starts Jan 2003)."
@@ -1042,7 +1042,7 @@ with col:
         fig_us = go.Figure()
         fig_us.add_trace(go.Scatter(
             x=spread_w.index, y=spread_w.values,
-            mode="lines", name="12M return spread (pp)",
+            mode="lines", name="12M return spread (%)",
             line=dict(color=_C["primary"], width=2),
         ))
         fig_us.add_hline(
@@ -1054,15 +1054,15 @@ with col:
         fig_us.add_hline(
             y=mean_w,
             line_dash="dot", line_color=_C["ref"], line_width=1,
-            annotation_text=f"{us_window} mean {mean_w:+.1f} pp",
+            annotation_text=f"{us_window} mean {mean_w:+.1f}%",
             annotation_position="right", annotation_font_size=10,
         )
         _add_current_annotation(
             fig_us, current_spread_pp,
-            f"Current {spread_sign}{current_spread_pp:.1f} pp",
+            f"Current {spread_sign}{current_spread_pp:.1f}%",
         )
         _apply_style(fig_us)
-        fig_us.update_yaxes(title_text="12M return spread (pp, US minus Intl)")
+        fig_us.update_yaxes(title_text="12M return spread (%, US minus Intl)")
         _yr = _tight_yrange(spread_w, [current_spread_pp, 0.0, mean_w])
         if _yr:
             fig_us.update_yaxes(range=_yr)
@@ -1077,11 +1077,11 @@ with col:
         st.plotly_chart(fig_us, width='stretch')
         st.metric(
             "Trailing 12M return spread (US − Intl)",
-            f"{spread_sign}{current_spread_pp:.1f} pp",
+            f"{spread_sign}{current_spread_pp:.1f}%",
         )
         st.caption(
-            f"Rolling 12-month total return spread: SPY minus EFA (percentage points). "
-            f"Positive = US outperforming. {us_window} window mean: {mean_w:+.1f} pp."
+            f"Rolling 12-month total return spread: SPY minus EFA. "
+            f"Positive = US outperforming. {us_window} window mean: {mean_w:+.1f}%."
         )
 
         st.caption(interpret_us_vs_intl_spread(current_spread_pp, current_mean_5y))

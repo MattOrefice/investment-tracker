@@ -1,4 +1,5 @@
 """Tests for dynamic interpretation functions in src/macro.py and src/factors.py."""
+import re
 import sys
 import pathlib
 
@@ -12,6 +13,10 @@ from src.macro import (
     EXCESS_CAPE_FAIR,
     EXCESS_CAPE_RICH,
     EXCESS_CAPE_RICH_THRESHOLD,
+    ECY_EXTREME_LOW_PCT,
+    ECY_LOW_PCT,
+    ECY_HIGH_PCT,
+    ECY_EXTREME_HIGH_PCT,
     CURVE_FLAT,
     CURVE_INVERTED,
     CURVE_NORMAL,
@@ -34,57 +39,97 @@ from src.factors import (
 )
 
 
+# ── Placeholder guard utility ────────────────────────────────────────────────
+# Matches {NAME}, {NAME:fmt}, [NAME], [NAME:fmt], %(name)s, ${NAME} patterns.
+_PLACEHOLDER_PATTERNS = [
+    r"\{[A-Z_][A-Z_0-9]*(?::[^}]+)?\}",       # {NAME} or {NAME:fmt}
+    r"\[[A-Z_][A-Z_0-9]*(?::[^\]]+)?\]",       # [NAME] or [NAME:fmt]
+    r"%\([A-Za-z_][A-Za-z_0-9]*\)[sdif]",      # %(name)s style
+    r"\$\{[A-Za-z_][A-Za-z_0-9]*\}",           # ${NAME} style
+]
+
+def _assert_no_placeholders(text: str) -> None:
+    for pattern in _PLACEHOLDER_PATTERNS:
+        matches = re.findall(pattern, text)
+        assert not matches, f"Unrendered placeholder found in output: {matches!r}\nFull text: {text!r}"
+
+
 # ── 1. interpret_excess_cape ─────────────────────────────────────────────────
 
 class TestInterpretExcessCape:
-    def test_deeply_negative(self):
-        text = interpret_excess_cape(EXCESS_CAPE_RICH_THRESHOLD - 1.0)  # -3.0%
-        assert "deeply negative" in text.lower() or "substantially" in text.lower()
+    def test_extreme_low_percentile(self):
+        # Bottom decile → extreme compression branch
+        text = interpret_excess_cape(0.48, ECY_EXTREME_LOW_PCT - 0.05)
+        assert "extreme" in text.lower() or "compression" in text.lower()
         assert "bond" in text.lower()
 
-    def test_near_rich(self):
-        text = interpret_excess_cape(EXCESS_CAPE_RICH - 0.5)  # -0.5%
-        assert "parity" in text.lower() or "thin" in text.lower() or "limited" in text.lower()
+    def test_low_percentile(self):
+        # Between ECY_EXTREME_LOW_PCT and ECY_LOW_PCT → below-average branch
+        text = interpret_excess_cape(1.0, (ECY_EXTREME_LOW_PCT + ECY_LOW_PCT) / 2)
+        assert "below" in text.lower() or "thin" in text.lower()
 
-    def test_fair_range(self):
-        text = interpret_excess_cape((EXCESS_CAPE_RICH + EXCESS_CAPE_FAIR) / 2)  # 1.0%
-        assert "fair" in text.lower() or "neutral" in text.lower() or "modest" in text.lower()
+    def test_median_percentile(self):
+        # Between ECY_LOW_PCT and ECY_HIGH_PCT → near median branch
+        text = interpret_excess_cape(2.5, (ECY_LOW_PCT + ECY_HIGH_PCT) / 2)
+        assert "median" in text.lower() or "moderate" in text.lower() or "near" in text.lower()
 
-    def test_cheap(self):
-        text = interpret_excess_cape((EXCESS_CAPE_FAIR + EXCESS_CAPE_CHEAP) / 2)  # 3.0%
-        assert "premium" in text.lower() or "meaningful" in text.lower()
+    def test_high_percentile(self):
+        # Between ECY_HIGH_PCT and ECY_EXTREME_HIGH_PCT → above-average branch
+        text = interpret_excess_cape(3.5, (ECY_HIGH_PCT + ECY_EXTREME_HIGH_PCT) / 2)
+        assert "premium" in text.lower() or "meaningful" in text.lower() or "above" in text.lower()
 
-    def test_very_cheap(self):
-        text = interpret_excess_cape(EXCESS_CAPE_CHEAP + 1.0)  # 5.0%
+    def test_extreme_high_percentile(self):
+        # Top decile → unusually wide branch
+        text = interpret_excess_cape(5.0, ECY_EXTREME_HIGH_PCT + 0.05)
         assert "unusually" in text.lower() or "large" in text.lower() or "wide" in text.lower()
 
     def test_returns_f_string_with_value(self):
-        text = interpret_excess_cape(1.73)
+        text = interpret_excess_cape(1.73, 0.50)
         assert "1.73" in text
+
+    def test_production_scenario_not_fair_range(self):
+        # ECY=0.48% at 0th percentile must NOT return "fair range" text
+        text = interpret_excess_cape(0.48, 0.00)
+        assert "fair" not in text.lower()
+        assert "extreme" in text.lower() or "compression" in text.lower()
+
+    def test_runtime_assertion_fires_on_percentage_units(self):
+        # percentile=50.0 is a units bug (should be 0.50); assert must fire
+        with pytest.raises(AssertionError):
+            interpret_excess_cape(0.48, 50.0)
+
+    def test_no_unrendered_placeholders(self):
+        for pct in [0.00, 0.05, 0.20, 0.50, 0.80, 0.95, 1.00]:
+            text = interpret_excess_cape(2.0, pct)
+            _assert_no_placeholders(text)
 
 
 # ── 2. interpret_curve_spread ────────────────────────────────────────────────
 
 class TestInterpretCurveSpread:
     def test_inverted(self):
-        text = interpret_curve_spread(-50.0)  # inverted
+        text = interpret_curve_spread(-50.0)
         assert "inverted" in text.lower()
 
     def test_flat(self):
-        text = interpret_curve_spread(30.0)   # between 0 and CURVE_FLAT (50)
+        text = interpret_curve_spread(30.0)
         assert "flat" in text.lower() or "compressed" in text.lower()
 
     def test_normal(self):
-        text = interpret_curve_spread(100.0)  # between CURVE_FLAT and CURVE_NORMAL
+        text = interpret_curve_spread(100.0)
         assert "normal" in text.lower() or "positive" in text.lower() or "upward" in text.lower()
 
     def test_steep(self):
-        text = interpret_curve_spread(200.0)  # above CURVE_NORMAL
+        text = interpret_curve_spread(200.0)
         assert "steep" in text.lower()
 
     def test_returns_f_string_with_value(self):
         text = interpret_curve_spread(-25.0)
         assert "-25" in text or "−25" in text or "25" in text
+
+    def test_no_unrendered_placeholders(self):
+        for val in [-100.0, -10.0, 0.0, 30.0, 100.0, 200.0]:
+            _assert_no_placeholders(interpret_curve_spread(val))
 
 
 # ── 3. interpret_hy_spread ───────────────────────────────────────────────────
@@ -114,6 +159,19 @@ class TestInterpretHySpread:
         text = interpret_hy_spread(350.0)
         assert "350" in text
 
+    def test_tight_branch_renders_threshold_value(self):
+        # The tight branch must render the HY_SPREAD_TIGHT constant (300), not leave a placeholder
+        text = interpret_hy_spread(250.0)
+        assert "300" in text, f"HY_SPREAD_TIGHT value not rendered — possible f-string bug: {text!r}"
+
+    def test_tight_branch_no_unrendered_placeholders(self):
+        # Specifically tests the branch that had the f-string bug
+        _assert_no_placeholders(interpret_hy_spread(250.0))
+
+    def test_no_unrendered_placeholders(self):
+        for val in [200.0, 250.0, 375.0, 525.0, 700.0, 900.0]:
+            _assert_no_placeholders(interpret_hy_spread(val))
+
 
 # ── 4. interpret_gdp_growth ──────────────────────────────────────────────────
 
@@ -140,6 +198,10 @@ class TestInterpretGdpGrowth:
         text = interpret_gdp_growth(2.8)
         assert "2.8" in text
 
+    def test_no_unrendered_placeholders(self):
+        for val in [-2.0, 0.0, 1.5, 2.5, 3.0, 4.5]:
+            _assert_no_placeholders(interpret_gdp_growth(val))
+
 
 # ── 5. interpret_us_vs_intl_spread ──────────────────────────────────────────
 
@@ -165,6 +227,16 @@ class TestInterpretUsVsIntlSpread:
         text = interpret_us_vs_intl_spread(-8.5, 3.0)
         assert "8.5" in text
         assert "underperformed" in text.lower()
+
+    def test_uses_percent_not_pp(self):
+        # Units convention: interpretation must use "%" not " pp"
+        text = interpret_us_vs_intl_spread(6.7, 4.9)
+        assert "%" in text
+        assert " pp" not in text
+
+    def test_no_unrendered_placeholders(self):
+        for spread, mean in [(20.0, 5.0), (8.0, 5.0), (5.0, 5.0), (-5.0, 5.0), (-15.0, 5.0)]:
+            _assert_no_placeholders(interpret_us_vs_intl_spread(spread, mean))
 
 
 # ── 6. interpret_sleeve_regression ──────────────────────────────────────────
@@ -238,6 +310,14 @@ class TestInterpretSleeveRegression:
         text = interpret_sleeve_regression(None)
         assert "unavailable" in text.lower()
 
+    def test_no_unrendered_placeholders(self):
+        res = _make_res(
+            betas={"Mkt-RF": 1.0, "HML": 0.30, "SMB": 0.05, "RMW": -0.10, "CMA": 0.02},
+            t_stats={"Mkt-RF": 20.0, "HML": 3.5, "SMB": 0.8, "RMW": -2.5, "CMA": 0.4},
+        )
+        text = interpret_sleeve_regression(res, ["Mkt-RF", "HML", "SMB", "RMW", "CMA"])
+        _assert_no_placeholders(text)
+
 
 # ── 7. interpret_benchmark_attribution ──────────────────────────────────────
 
@@ -298,6 +378,9 @@ class TestInterpretBenchmarkAttribution:
         text = interpret_benchmark_attribution(None)
         assert "unavailable" in text.lower()
 
+    def test_no_unrendered_placeholders(self):
+        _assert_no_placeholders(interpret_benchmark_attribution(_make_bench_res()))
+
 
 # ── 8. interpret_correlations ────────────────────────────────────────────────
 
@@ -306,7 +389,6 @@ def _make_corr() -> pd.DataFrame:
         "US Large Core", "US Large Quality", "US Small Cap",
         "Core Fixed Income", "TIPS",
     ]
-    # Construct a plausible correlation matrix
     vals = {
         "US Large Core":     [1.00, 0.92, 0.85, 0.10, 0.15],
         "US Large Quality":  [0.92, 1.00, 0.80, 0.08, 0.12],
@@ -328,7 +410,6 @@ class TestInterpretCorrelations:
 
     def test_identifies_diversifying_pair(self):
         text = interpret_correlations(_make_corr())
-        # Core Fixed Income vs equities should appear as diversifying
         assert "Core Fixed Income" in text or "diversif" in text.lower() or "ballast" in text.lower()
 
     def test_bond_equity_cross_asset_noted(self):
@@ -344,3 +425,6 @@ class TestInterpretCorrelations:
             index=["A", "B"], columns=["A", "B"]
         )
         assert interpret_correlations(tiny) == ""
+
+    def test_no_unrendered_placeholders(self):
+        _assert_no_placeholders(interpret_correlations(_make_corr()))
