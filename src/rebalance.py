@@ -9,6 +9,8 @@ import pandas as pd
 _CASH_SLEEVE = "Cash / SPAXX"
 _CASH_TICKER = "SPAXX"
 
+SUM_INVARIANT_TOLERANCE = 0.10
+
 
 def compute_drift(
     sleeve_weights: dict[str, float],
@@ -262,7 +264,7 @@ def suggest_contributions(
 
     if rows:
         final_sum = sum(r["Suggested $"] for r in rows)
-        assert abs(final_sum - X) <= 0.10, (
+        assert abs(final_sum - X) <= SUM_INVARIANT_TOLERANCE, (
             f"suggest_contributions: Suggested $ sum {final_sum:.4f} ≠ cash {X:.4f}; "
             "check that all investable sleeves have at least one priced ticker"
         )

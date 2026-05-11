@@ -10,7 +10,7 @@ from src.config import is_write_enabled
 from src.db import get_connection
 from src.holdings import get_sleeve_weights_on_date, get_holdings_on_date
 from src.prices import get_prices
-from src.rebalance import compute_drift, suggest_buys, suggest_contributions
+from src.rebalance import compute_drift, suggest_buys, suggest_contributions, SUM_INVARIANT_TOLERANCE
 from src.trade_writer import build_thesis_lookup, write_trades_batch
 from src.ui_helpers import render_footer, write_guard_toast
 
@@ -280,12 +280,13 @@ if contrib_cash > 0:
             )
 
         shares_valid = bool((edited_df["Suggested Shares"].fillna(0) > 0).all())
-        btn_disabled = (abs(diff) >= 0.01) or not shares_valid
+        btn_disabled = (abs(diff) > SUM_INVARIANT_TOLERANCE) or not shares_valid
         if btn_disabled:
-            if abs(diff) >= 0.01:
+            if abs(diff) > SUM_INVARIANT_TOLERANCE:
                 _btn_help = (
                     f"{'Overallocated' if diff > 0 else 'Underallocated'} by "
-                    f"${abs(diff):,.2f} — adjust amounts above to match cash to deploy."
+                    f"${abs(diff):,.2f} — reconciliation difference exceeds ${SUM_INVARIANT_TOLERANCE:.2f}; "
+                    "adjust amounts above to match cash to deploy."
                 )
             else:
                 _btn_help = "One or more rows have zero or negative shares."

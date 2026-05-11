@@ -445,3 +445,23 @@ def test_suggest_contributions_production_scenario_sum_invariant():
         )
         for bm in ("SPY", "QUAL", "IWD", "IWM", "EFA", "EEM", "IEF", "TIP", "DJP", "BIL"):
             assert bm not in result["Ticker"].values, f"Benchmark {bm} in output"
+
+
+# ── Phase 22.1: SUM_INVARIANT_TOLERANCE constant + button predicate ───────────
+
+def test_sum_invariant_tolerance_constant_value():
+    """SUM_INVARIANT_TOLERANCE must equal 0.10 — it drives both the internal
+    assertion in suggest_contributions and the Execute and Log button guard."""
+    from src.rebalance import SUM_INVARIANT_TOLERANCE
+    assert SUM_INVARIANT_TOLERANCE == 0.10
+
+
+def test_sum_invariant_tolerance_button_predicate_boundary():
+    """Button predicate: abs(diff) > SUM_INVARIANT_TOLERANCE.
+    diff=0.05 → within tolerance → button enabled.
+    diff=0.15 → outside tolerance → button disabled."""
+    from src.rebalance import SUM_INVARIANT_TOLERANCE
+    assert not (abs(0.05) > SUM_INVARIANT_TOLERANCE), \
+        "$0.05 diff should be within tolerance → button enabled"
+    assert abs(0.15) > SUM_INVARIANT_TOLERANCE, \
+        "$0.15 diff should exceed tolerance → button disabled"

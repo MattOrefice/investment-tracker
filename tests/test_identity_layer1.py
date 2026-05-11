@@ -399,6 +399,37 @@ def test_identity_trade_form_has_demo_guard():
     )
 
 
+def test_trade_form_no_early_return_in_demo_guard():
+    """render_trade_form() must NOT early-return when write is disabled.
+
+    Phase 22.1 changed the pattern: the guard block now shows an info banner
+    and continues into the form, rather than returning early. The write is
+    blocked at submit time via write_guard_toast(). Pinning the absence of an
+    early return ensures demo visitors can see and interact with the form.
+    """
+    page_path = pathlib.Path(__file__).resolve().parent.parent / "pages" / "3_Trade_Log.py"
+    source = page_path.read_text(encoding="utf-8")
+
+    func_start = source.find("def render_trade_form():")
+    assert func_start != -1, "render_trade_form() not found"
+
+    func_body = source[func_start:]
+    guard_start = func_body.find("if not is_write_enabled():")
+    assert guard_start != -1, "is_write_enabled guard not found in render_trade_form()"
+
+    # The form body begins at the first assignment to `securities`
+    form_body_start = func_body.find("securities    = data")
+    assert form_body_start != -1, "'securities    = data' marker not found in render_trade_form()"
+
+    # No bare `return` should appear between the guard and the form body
+    guard_region = func_body[guard_start:form_body_start]
+    assert "\n        return" not in guard_region, (
+        "render_trade_form() early-returns inside the is_write_enabled guard. "
+        "Demo visitors cannot see the trade form. Remove the early return; "
+        "the write should be blocked at submit time via write_guard_toast()."
+    )
+
+
 def test_identity_macro_force_refresh_has_demo_guard():
     """The Force Refresh button in pages/5_Macro.py must be gated by `not IS_DEMO`.
 
