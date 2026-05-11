@@ -10,7 +10,9 @@ import pytest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from src.drip import (
+    PAYMENT_DATE_OFFSET_TRADING_DAYS,
     compute_drip_lots,
+    derive_payment_date,
     fetch_distributions,
     persist_drip_lots,
     backfill_all_drip_lots,
@@ -109,13 +111,14 @@ def test_single_distribution_correct_cost_basis():
 
 
 def test_single_distribution_correct_purchase_date():
-    """purchase_date on the returned lot equals the ex_date."""
-    ex = date(2025, 9, 29)
+    """purchase_date on the returned lot equals payment_date (ex_date + 2 trading days)."""
+    ex = date(2025, 9, 29)   # Monday → payment_date = Wednesday 2025-10-01
+    expected_pay = date(2025, 10, 1)
     initial = _make_initial(10.0)
     dists   = _make_distributions((ex, 1.5))
-    prices  = _make_prices({ex: 100.0})
+    prices  = _make_prices({ex: 100.0, expected_pay: 100.0})
     result  = compute_drip_lots("VOO", initial, dists, prices)
-    assert result[0]["purchase_date"] == ex
+    assert result[0]["purchase_date"] == expected_pay
 
 
 def test_single_distribution_lot_source_is_drip():
@@ -310,3 +313,98 @@ def test_twr_reconciliation_within_5bps():
             f"{period} TWR diverged: baseline={baseline * 100:.4f}% "
             f"actual={actual * 100:.4f}% diff={diff * 100:.4f}% > 5bps"
         )
+
+
+# ── derive_payment_date ───────────────────────────────────────────────────────
+
+def test_derive_payment_date_constant_is_two():
+    assert PAYMENT_DATE_OFFSET_TRADING_DAYS == 2
+
+
+def test_derive_payment_date_mid_week():
+    """Monday ex-date + 2 trading days = Wednesday."""
+    ex = date(2025, 9, 29)  # Monday
+    assert derive_payment_date(ex) == date(2025, 10, 1)  # Wednesday
+
+
+def test_derive_payment_date_thursday_skips_weekend():
+    """Thursday ex-date + 2 trading days skips weekend → Monday."""
+    ex = date(2025, 6, 26)  # Thursday
+    pay = derive_payment_date(ex)
+    # Fri 2025-06-27 (+1), Mon 2025-06-30 (+2)
+    assert pay == date(2025, 6, 30)
+
+
+def test_derive_payment_date_friday_skips_weekend():
+    """Friday ex-date + 2 trading days skips weekend → Tuesday."""
+    ex = date(2026, 3, 27)  # Friday (VOO Q1 2026 ex-date)
+    pay = derive_payment_date(ex)
+    # Mon 2026-03-30 (+1), Tue 2026-03-31 (+2)
+    assert pay == date(2026, 3, 31)
+
+
+def test_derive_payment_date_ticker_unused_by_default():
+    """Passing a ticker with no override produces the same result as no ticker."""
+    ex = date(2025, 7, 1)  # Tuesday
+    assert derive_payment_date(ex, "VOO") == derive_payment_date(ex)
+
+
+# ── compute_drip_lots uses payment_date ──────────────────────────────────────
+
+def test_compute_drip_lots_purchase_date_is_payment_date():
+    """purchase_date on returned lot equals ex_date + 2 trading days."""
+    ex = date(2025, 9, 29)   # Monday
+    expected_pay = date(2025, 10, 1)  # Wednesday
+
+    initial  = _make_initial(10.0)
+    dists    = _make_distributions((ex, 1.0))
+    # Provide prices through payment_date
+    prices   = _make_prices({ex: 100.0, expected_pay: 101.0})
+    result   = compute_drip_lots("VOO", initial, dists, prices)
+
+    assert len(result) == 1
+    assert result[0]["purchase_date"] == expected_pay
+
+
+def test_compute_drip_lots_basis_uses_payment_date_price():
+    """cost_basis_per_share uses payment_date adj_close, not ex_date adj_close."""
+    ex = date(2025, 9, 29)   # Monday
+    pay = date(2025, 10, 1)  # Wednesday
+
+    initial = _make_initial(10.0)
+    dists   = _make_distributions((ex, 1.0))
+    prices  = _make_prices({ex: 100.0, pay: 105.0})
+    result  = compute_drip_lots("VOO", initial, dists, prices)
+
+    assert result[0]["cost_basis_per_share"] == pytest.approx(105.0)
+
+
+def test_compute_drip_lots_shares_use_payment_date_price():
+    """new_shares = cash_div / payment_date_price."""
+    ex = date(2025, 9, 29)
+    pay = date(2025, 10, 1)
+
+    initial = _make_initial(10.0)
+    dists   = _make_distributions((ex, 2.0))   # cash_div = 10 × 2 = $20
+    prices  = _make_prices({ex: 100.0, pay: 200.0})  # $20 / $200 = 0.1 shares
+    result  = compute_drip_lots("VOO", initial, dists, prices)
+
+    assert result[0]["shares"] == pytest.approx(0.1)
+
+
+def test_compute_drip_lots_payment_date_price_falls_back_to_prior_trading_day():
+    """If payment_date has no price, falls back to the last available price before it."""
+    ex = date(2025, 6, 26)   # Thursday → pay date = Monday 2025-06-30
+    pay = date(2025, 6, 30)
+    friday = date(2025, 6, 27)
+
+    initial = _make_initial(10.0)
+    dists   = _make_distributions((ex, 1.0))
+    # Only Friday price available; Monday (pay_date) has no price
+    prices  = _make_prices({ex: 90.0, friday: 92.0})
+    result  = compute_drip_lots("VOO", initial, dists, prices)
+
+    assert len(result) == 1
+    # price_history[index <= pay_date].iloc[-1] = Friday's price (last before Monday)
+    assert result[0]["cost_basis_per_share"] == pytest.approx(92.0)
+    assert result[0]["purchase_date"] == pay

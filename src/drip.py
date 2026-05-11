@@ -7,18 +7,24 @@ is unchanged by this module.
 
 PDBC NOTE: PDBC distributions have mixed tax character (qualified dividend,
 return of capital, ordinary income). Phase 17 treats PDBC identically to other
-ETFs — distributions are reinvested at ex-date adj_close. Tax-character
+ETFs — distributions are reinvested at payment-date adj_close. Tax-character
 splitting for PDBC cost basis is deferred to a future phase.
 
 PRICE CONVENTION: DRIP share counts and cost_basis_per_share use adj_close
 (total-return basis), consistent with the TWR methodology used throughout.
 This ensures get_portfolio_value_series produces identical results whether
 DRIP is computed in-memory or from persisted lots.
+
+PAYMENT DATE: DRIP executes on payment_date (the date Fidelity actually
+reinvests the dividend), not on ex_dividend_date. Payment date is derived
+as ex_date + PAYMENT_DATE_OFFSET_TRADING_DAYS trading days (weekday arithmetic,
+Saturday/Sunday skipped). NYSE holidays are not currently modeled — a future
+phase may add pandas_market_calendars for exact holiday-aware arithmetic.
 """
 from __future__ import annotations
 
 import warnings
-from datetime import date
+from datetime import date, timedelta
 
 import pandas as pd
 
@@ -26,6 +32,39 @@ from src.db import get_connection
 from src.prices import get_dividends, get_prices
 
 _SPAXX_TICKER = "SPAXX"
+
+# Trading days to add to ex_dividend_date to derive payment_date.
+# Vanguard, iShares, Schwab, and Invesco ETFs in the SAA typically execute
+# DRIP reinvestment 1–3 trading days after ex-date; +2 is the adopted default.
+PAYMENT_DATE_OFFSET_TRADING_DAYS = 2
+
+# Per-ticker overrides if a specific fund is known to deviate from the default.
+# Keys are ticker symbols; values are integer trading-day offsets.
+_PAYMENT_DATE_OVERRIDES: dict[str, int] = {}
+
+
+def derive_payment_date(ex_date: date, ticker: str = "") -> date:
+    """Return the DRIP payment date for a distribution with the given ex_date.
+
+    Adds PAYMENT_DATE_OFFSET_TRADING_DAYS (or a per-ticker override) trading
+    days to ex_date, skipping Saturday and Sunday. NYSE holidays are not
+    modeled (no pandas_market_calendars dependency).
+
+    Args:
+        ex_date: The ex-dividend date of the distribution.
+        ticker:  Ticker symbol, used to look up per-ticker offset overrides.
+
+    Returns:
+        The derived payment date as a datetime.date.
+    """
+    offset = _PAYMENT_DATE_OVERRIDES.get(ticker, PAYMENT_DATE_OFFSET_TRADING_DAYS)
+    d = ex_date
+    added = 0
+    while added < offset:
+        d += timedelta(days=1)
+        if d.weekday() < 5:  # Mon=0 … Fri=4
+            added += 1
+    return d
 
 
 def fetch_distributions(
@@ -60,13 +99,17 @@ def compute_drip_lots(
     For each distribution event, in chronological order:
       1. shares_before = initial shares held strictly BEFORE ex_date
                          + cumulative DRIP shares from prior events
-      2. price = adj_close on or before ex_date (last trading-day close)
-      3. new_shares = (shares_before × dividend_per_share) / price
-      4. cumulative_drip += new_shares  (compounding for subsequent events)
+      2. payment_date  = derive_payment_date(ex_date, ticker)
+      3. price         = adj_close on or before payment_date
+      4. new_shares    = (shares_before × dividend_per_share) / price
+      5. cumulative_drip += new_shares  (compounding for subsequent events)
+
+    The dividend entitlement is determined by shares held on ex_date (Fidelity
+    pays based on the record date, which is T+1 from ex_date). Reinvestment
+    executes at the payment_date closing price, matching Fidelity DRIP mechanics.
 
     Events where shares_before == 0 are skipped. This correctly excludes
-    distributions dated on or before inception when no portfolio existed yet
-    (matches the in-memory algorithm in get_portfolio_value_series).
+    distributions dated on or before inception when no portfolio existed yet.
 
     Args:
         ticker: ticker symbol, stored on each returned lot dict.
@@ -77,8 +120,9 @@ def compute_drip_lots(
         price_history: adj_close Series indexed by datetime.date.
 
     Returns:
-        List of lot dicts with keys: ticker, purchase_date (datetime.date),
-        shares (float), cost_basis_per_share (float), lot_source='drip'.
+        List of lot dicts with keys: ticker, ex_date (datetime.date),
+        purchase_date (datetime.date, = payment_date), shares (float),
+        cost_basis_per_share (float), lot_source='drip'.
         Empty list if no qualifying events.
     """
     if distributions.empty:
@@ -91,7 +135,7 @@ def compute_drip_lots(
         ex_date = row["ex_date"]  # datetime.date
         dps     = float(row["dividend_per_share"])
 
-        # Shares held strictly before ex_date
+        # Shares held strictly before ex_date (dividend entitlement date)
         before = initial_shares[initial_shares.index < ex_date]
         shares_initial = float(before.iloc[-1]) if not before.empty else 0.0
         shares_before  = shares_initial + cumulative_drip
@@ -99,8 +143,9 @@ def compute_drip_lots(
         if shares_before <= 0:
             continue
 
-        # adj_close on or before ex_date (handles weekends / holidays via trading-day filter)
-        avail = price_history[price_history.index <= ex_date].dropna()
+        # Derive payment_date and look up adj_close on or before it
+        payment_date = derive_payment_date(ex_date, ticker)
+        avail = price_history[price_history.index <= payment_date].dropna()
         if avail.empty:
             continue
         price = float(avail.iloc[-1])
@@ -114,7 +159,8 @@ def compute_drip_lots(
         lots.append(
             {
                 "ticker":               ticker,
-                "purchase_date":        ex_date,
+                "ex_date":              ex_date,
+                "purchase_date":        payment_date,
                 "shares":               new_shares,
                 "cost_basis_per_share": price,
                 "lot_source":           "drip",

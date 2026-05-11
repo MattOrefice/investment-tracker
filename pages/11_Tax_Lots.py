@@ -419,9 +419,10 @@ else:
 
 st.caption(
     "Note: DRIP reinvestments are persisted as separate lot rows with "
-    "lot_source = 'drip'. Cost basis uses ex-dividend-date closing price "
-    "(adj_close); holding period begins on the ex-dividend date. "
-    "Long-term qualification: held more than 365 calendar days (day 366+)."
+    "lot_source = 'drip'. Cost basis uses payment-date closing price "
+    "(matches Fidelity DRIP execution); holding period begins on the "
+    "payment date. Long-term qualification: held more than 365 calendar "
+    "days (day 366+)."
 )
 
 render_footer()
