@@ -13,7 +13,7 @@ from streamlit.testing.v1 import AppTest
 @pytest.fixture(scope="module")
 def performance_app() -> AppTest:
     """Run the Performance page once and return the rendered AppTest object."""
-    at = AppTest.from_file("pages/4_Performance.py", default_timeout=120)
+    at = AppTest.from_file("pages/2_Performance.py", default_timeout=120)
     at.run()
     return at
 
@@ -122,7 +122,7 @@ def test_risk_metrics_1m_window_no_nan() -> None:
     shared widget state. Sets the risk_metrics_window radio to '1 Month' and
     re-runs the page, then asserts all rendered metric values are finite.
     """
-    at = AppTest.from_file("pages/4_Performance.py", default_timeout=120)
+    at = AppTest.from_file("pages/2_Performance.py", default_timeout=120)
     at.run()
     if not at.metric:
         pytest.skip("No portfolio data — skipped in local/empty-DB mode")
@@ -147,7 +147,7 @@ def test_risk_metrics_1m_sharpe_differs_from_si() -> None:
 
     Fix if failing: restore .copy() after each cutoff slice in compute_risk_metrics.
     """
-    at = AppTest.from_file("pages/4_Performance.py", default_timeout=120)
+    at = AppTest.from_file("pages/2_Performance.py", default_timeout=120)
     at.run()
     if not at.metric:
         pytest.skip("No portfolio data — skipped in local/empty-DB mode")
@@ -269,7 +269,7 @@ def test_two_stage_attribution_section_renders(performance_app: AppTest) -> None
     )
 
     # Switching the BF period radio must change Stage 1 value (window-sensitivity check)
-    at = AppTest.from_file("pages/4_Performance.py", default_timeout=120)
+    at = AppTest.from_file("pages/2_Performance.py", default_timeout=120)
     at.run()
     if not at.metric:
         pytest.skip("No portfolio data in fresh AppTest instance")

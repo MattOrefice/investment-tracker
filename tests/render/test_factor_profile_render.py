@@ -15,7 +15,7 @@ from streamlit.testing.v1 import AppTest
 @pytest.fixture(scope="module")
 def factor_profile_app() -> AppTest:
     """Run the Factor Profile page once and return the rendered AppTest object."""
-    at = AppTest.from_file("pages/7_Factor_Profile.py", default_timeout=120)
+    at = AppTest.from_file("pages/4_Factor_Profile.py", default_timeout=120)
     at.run()
     return at
 

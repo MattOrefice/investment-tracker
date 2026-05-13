@@ -324,7 +324,7 @@ def test_identity_rf_default_matches_caption_disclosure():
     )
 
     # Also confirm the caption string contains the matching text
-    page_path = pathlib.Path(__file__).resolve().parent.parent / "pages" / "4_Performance.py"
+    page_path = pathlib.Path(__file__).resolve().parent.parent / "pages" / "2_Performance.py"
     source = page_path.read_text(encoding="utf-8")
     rf_pct_str = f"{rf_default * 100:.1f}%"  # "4.5%"
     assert f"RF = {rf_pct_str}" in source, (
@@ -372,7 +372,7 @@ def test_identity_trade_form_has_demo_guard():
     Phase 22 upgraded the guard from `if IS_DEMO:` to `if not is_write_enabled():`.
     Both patterns are accepted here so the test does not hard-code the idiom.
     """
-    page_path = pathlib.Path(__file__).resolve().parent.parent / "pages" / "3_Trade_Log.py"
+    page_path = pathlib.Path(__file__).resolve().parent.parent / "pages" / "9_Trade_Log.py"
     source = page_path.read_text(encoding="utf-8")
 
     # Locate the function definition
@@ -407,7 +407,7 @@ def test_trade_form_no_early_return_in_demo_guard():
     blocked at submit time via write_guard_toast(). Pinning the absence of an
     early return ensures demo visitors can see and interact with the form.
     """
-    page_path = pathlib.Path(__file__).resolve().parent.parent / "pages" / "3_Trade_Log.py"
+    page_path = pathlib.Path(__file__).resolve().parent.parent / "pages" / "9_Trade_Log.py"
     source = page_path.read_text(encoding="utf-8")
 
     func_start = source.find("def render_trade_form():")
@@ -437,7 +437,7 @@ def test_identity_macro_force_refresh_has_demo_guard():
     triggering FRED API calls (quota waste) and cache deletion (macro_cache DELETE).
     Pins the guard so it cannot be accidentally removed.
     """
-    page_path = pathlib.Path(__file__).resolve().parent.parent / "pages" / "5_Macro.py"
+    page_path = pathlib.Path(__file__).resolve().parent.parent / "pages" / "3_Macro.py"
     source = page_path.read_text(encoding="utf-8")
 
     # Find the Force Refresh button definition

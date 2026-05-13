@@ -16,7 +16,7 @@ from streamlit.testing.v1 import AppTest
 @pytest.fixture(scope="module")
 def macro_app() -> AppTest:
     """Run the Macro page once and return the rendered AppTest object."""
-    at = AppTest.from_file("pages/5_Macro.py", default_timeout=60)
+    at = AppTest.from_file("pages/3_Macro.py", default_timeout=60)
     at.run()
     return at
 
