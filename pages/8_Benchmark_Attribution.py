@@ -19,7 +19,7 @@ from src.factors import (
     sig_marker,
 )
 from src.reports import SLEEVE_HOLDING_TICKER as _SLEEVE_HOLDING, SLEEVE_BENCH_TICKER as _SLEEVE_BENCH
-from src.ui_helpers import render_footer
+from src.ui_helpers import render_footer, render_sidebar_footer
 
 if IS_DEMO:
     st.info(get_demo_banner_text())
@@ -166,3 +166,4 @@ with col:
             "most recent factor date exceeds 35-day publication lag."
         )
     render_footer()
+render_sidebar_footer()

@@ -9,7 +9,7 @@ st.set_page_config(
 
 from src.asof import as_of_banner
 from src.db import initialize_db
-from src.ui_helpers import render_footer
+from src.ui_helpers import render_footer, render_sidebar_footer
 
 initialize_db()
 
@@ -35,3 +35,4 @@ with col:
         "SAA framework · thesis-driven execution · BF attribution · macro overlay"
     )
     render_footer()
+render_sidebar_footer()

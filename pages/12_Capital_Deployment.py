@@ -12,7 +12,7 @@ from src.holdings import get_sleeve_weights_on_date, get_holdings_on_date
 from src.prices import get_prices
 from src.rebalance import compute_drift, suggest_buys, suggest_contributions, SUM_INVARIANT_TOLERANCE
 from src.trade_writer import build_thesis_lookup, write_trades_batch
-from src.ui_helpers import render_footer, write_guard_toast
+from src.ui_helpers import render_footer, render_sidebar_footer, write_guard_toast
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -472,3 +472,4 @@ else:
     st.info("Enter a cash amount above to see band-breach buy suggestions.")
 
 render_footer()
+render_sidebar_footer()

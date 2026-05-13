@@ -8,7 +8,7 @@ from collections import defaultdict
 from src.asof import as_of_banner
 from src.config import get_demo_banner_text, IS_DEMO
 from src.db import get_connection
-from src.ui_helpers import render_footer
+from src.ui_helpers import render_footer, render_sidebar_footer
 
 SPAXX_RATIONALE = (
     "SPAXX is Fidelity's default money market fund and the natural cash vehicle — no transaction "
@@ -262,3 +262,4 @@ with col:
 
     st.divider()
     render_footer()
+render_sidebar_footer()

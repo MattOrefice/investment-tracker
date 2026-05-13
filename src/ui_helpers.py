@@ -11,6 +11,26 @@ def render_footer() -> None:
         st.caption(caption)
 
 
+def render_sidebar_footer() -> None:
+    """Persistent contact footer at the bottom of the sidebar on every page.
+
+    Call once at the END of each page script so it renders below any
+    page-specific sidebar widgets.
+    """
+    with st.sidebar:
+        st.markdown("---")
+        st.markdown(
+            "**Matt Orefice, CFA**  \n"
+            "[mattorefice0@gmail.com](mailto:mattorefice0@gmail.com)  \n"
+            "[LinkedIn](https://www.linkedin.com/in/matthew-orefice-cfa-83536b190/)  \n"
+            "[GitHub](https://github.com/MattOrefice/investment-tracker)"
+        )
+        st.caption(
+            "Available for buy-side allocator and "
+            "investment due diligence roles."
+        )
+
+
 def write_guard_toast() -> None:
     """Emit a demo-mode toast when a write action is blocked."""
     st.toast(

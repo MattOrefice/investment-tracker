@@ -11,7 +11,7 @@ from src.endowment_benchmarks import CATEGORIES, ENTITIES, get_endowment_data
 from src.macro import percentile as macro_percentile
 from src.prose_helpers import percentile_label
 from src.shiller import get_cape_series
-from src.ui_helpers import render_footer
+from src.ui_helpers import render_footer, render_sidebar_footer
 
 PARENT_COLORS = {
     "Equity":        "#3D5A80",
@@ -291,4 +291,5 @@ with col:
         "for comparability."
     )
     render_footer()
+render_sidebar_footer()
 

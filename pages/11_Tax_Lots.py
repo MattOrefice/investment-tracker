@@ -23,7 +23,7 @@ from src.harvest import (
     compute_harvest_candidates,
 )
 from src.prices import get_prices
-from src.ui_helpers import render_footer
+from src.ui_helpers import render_footer, render_sidebar_footer
 
 TODAY = date.today().isoformat()
 
@@ -451,3 +451,4 @@ st.caption(
 )
 
 render_footer()
+render_sidebar_footer()

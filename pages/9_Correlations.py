@@ -11,7 +11,7 @@ st.set_page_config(page_title="Correlations", layout="wide")
 from src.asof import as_of_banner
 from src.factors import interpret_correlations
 from src.prices import get_prices
-from src.ui_helpers import render_footer
+from src.ui_helpers import render_footer, render_sidebar_footer
 
 TODAY = date.today().isoformat()
 
@@ -362,3 +362,4 @@ with col:
         )
 
     render_footer()
+render_sidebar_footer()

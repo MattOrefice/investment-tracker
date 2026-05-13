@@ -12,7 +12,7 @@ import plotly.graph_objects as go
 from src import asset_evaluation as ae
 from src.asof import as_of_banner
 from src.macro import get_recession_periods
-from src.ui_helpers import render_footer
+from src.ui_helpers import render_footer, render_sidebar_footer
 
 TODAY = date.today().isoformat()
 
@@ -898,3 +898,4 @@ with col:
         )
 
 render_footer()
+render_sidebar_footer()
