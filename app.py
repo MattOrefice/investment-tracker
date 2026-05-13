@@ -66,13 +66,15 @@ with c3:
     st.page_link("pages/3_Macro.py", label="Open Macro")
 
 with c4:
-    st.markdown("**Factor Profile**")
+    st.markdown("**Asset Evaluation**")
     st.markdown(
-        "Per-sleeve Fama-French 5-factor regressions with Newey-West HAC "
-        "standard errors. Region-appropriate factor universes; alpha "
-        "decomposition with universe-mismatch disclosures."
+        "Candidate-asset evaluation framework with worked Bitcoin "
+        "case study: univariate statistics, regime-conditional "
+        "correlation, mean-variance contribution, and a decision "
+        "framework enumerating liquidity, tax, operational, and "
+        "mandate-fit considerations."
     )
-    st.page_link("pages/4_Factor_Profile.py", label="Open Factor Profile")
+    st.page_link("pages/5_Asset_Evaluation.py", label="Open Asset Evaluation")
 
 render_footer()
 render_sidebar_footer()

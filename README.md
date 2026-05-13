@@ -45,6 +45,8 @@ The primary benchmark is the custom SAA-blended basket, not the S&P 500. A near-
 
 - **Tax-aware accounting.** Lot-level inventory with DRIP inheritance, harvest candidate identification, and trade log normalization.
 
+- **Candidate asset evaluation.** Univariate statistics (annualized return, vol, Sharpe, drawdown, skew, kurtosis), full-sample and rolling correlations against SAA sleeves, regime-conditional correlation by NBER cycle phase, mean-variance contribution (unconstrained and constrained), and a decision framework that surfaces allocator-side considerations (liquidity, tax treatment, operational complexity, mandate fit) rather than reducing the decision to a single Sharpe-improvement number.
+
 ### Returns
 
 Daily-linked TWR chains sub-period returns as `TWR = ∏(1 + r_t) − 1`, where `r_t = (V_t − V_{t−1} − CF_t) / V_{t−1}`. Cash flows are treated at the beginning of each period. For the lump-sum single-deposit case, daily-linked TWR and Modified Dietz converge within 1 basis point — verified by an identity test in the suite.
@@ -122,16 +124,18 @@ src/
 
 pages/
   1_SAA.py              SAA allocation chart, per-sleeve rationale
-  2_Research.py         ETF selection: benchmark vs. holding, ER breakdown
-  3_Trade_Log.py        Trade entry, investment/position thesis browser, themes
-  4_Performance.py      TWR, BF attribution, cumulative chart, drift, PDF export
-  5_Macro.py            CAPE, yield curve, Fed Funds, HY OAS, regime classifier
-  7_Factor_Profile.py   Per-sleeve FF5 regressions, benchmark-relative alpha, style box
-  8_Benchmark_Attribution.py  Custom-benchmark regression
+  1_SAA.py              SAA allocation chart, per-sleeve rationale
+  2_Performance.py      TWR, BF attribution, cumulative chart, drift, PDF export
+  3_Macro.py            CAPE, yield curve, Fed Funds, HY OAS, regime classifier
+  4_Factor_Profile.py   Per-sleeve FF5 regressions, benchmark-relative alpha, style box
+  5_Asset_Evaluation.py  Bitcoin case study: marginal Sharpe, drawdown, decision framework
+  6_Benchmark_Attribution.py  Custom-benchmark regression
+  7_Positioning.py      Active tilts, effective duration, scenario analysis
+  8_Research.py         ETF selection: benchmark vs. holding, ER breakdown
   9_Correlations.py     Rolling sleeve correlation matrix
-  10_Asset_Evaluation.py  Bitcoin case study: marginal Sharpe, drawdown, decision framework
-  11_Tax_Lots.py        Lot-level cost basis, holding period, harvest candidates
-  12_Capital_Deployment.py  Contribution allocation and band-breach rebalancing
+  10_Trade_Log.py       Trade entry, investment/position thesis browser, themes
+  11_Capital_Deployment.py  Contribution allocation and band-breach rebalancing
+  12_Tax_Lots.py        Lot-level cost basis, holding period, harvest candidates
 
 templates/              PDF report (Jinja2 HTML + CSS)
 tests/                  590+ tests across three integrity layers

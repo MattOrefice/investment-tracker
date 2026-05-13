@@ -372,7 +372,7 @@ def test_identity_trade_form_has_demo_guard():
     Phase 22 upgraded the guard from `if IS_DEMO:` to `if not is_write_enabled():`.
     Both patterns are accepted here so the test does not hard-code the idiom.
     """
-    page_path = pathlib.Path(__file__).resolve().parent.parent / "pages" / "9_Trade_Log.py"
+    page_path = pathlib.Path(__file__).resolve().parent.parent / "pages" / "10_Trade_Log.py"
     source = page_path.read_text(encoding="utf-8")
 
     # Locate the function definition
@@ -407,7 +407,7 @@ def test_trade_form_no_early_return_in_demo_guard():
     blocked at submit time via write_guard_toast(). Pinning the absence of an
     early return ensures demo visitors can see and interact with the form.
     """
-    page_path = pathlib.Path(__file__).resolve().parent.parent / "pages" / "9_Trade_Log.py"
+    page_path = pathlib.Path(__file__).resolve().parent.parent / "pages" / "10_Trade_Log.py"
     source = page_path.read_text(encoding="utf-8")
 
     func_start = source.find("def render_trade_form():")
