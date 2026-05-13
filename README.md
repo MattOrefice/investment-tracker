@@ -84,11 +84,23 @@ Three layers: (1) math identities that must hold by construction (BF effects sum
 
 ---
 
-## Architecture
+## Implementation
 
-Python 3.11 · Streamlit · SQLite · pandas · NumPy · statsmodels (OLS, NW-HAC) · Plotly + kaleido · WeasyPrint (PDF on Linux/Cloud) · xhtml2pdf (Windows fallback) · fredapi · Jinja2 · pytest · GitHub Actions
+- **Stack:** Python 3.11, Streamlit, pandas, NumPy, statsmodels, plotly, SQLite
+- **Data sources:** FRED API (macro), Ken French Data Library (factors), Shiller / Yale (CAPE), yfinance (prices)
+- **Test coverage:** 590+ unit and integration tests covering return calculation, attribution math, factor regression plumbing, and dynamic-interpretation guards
+- **Deployment:** Streamlit Community Cloud, redeploy on push to main
 
-Core logic resides in `src/` with no Streamlit imports, making it fully unit-testable. Streamlit pages in `pages/` are auto-discovered by `app.py`. Price data is cached in SQLite to avoid repeated Yahoo Finance API calls. PDF reports are assembled via Jinja2 templates and rendered through WeasyPrint on Linux/Cloud. The single canonical import pattern throughout is `from src.X import Y`.
+Core logic resides in `src/` with no Streamlit imports, making it fully unit-testable. Streamlit pages in `pages/` are auto-discovered by `app.py`. Price data is cached in SQLite to avoid repeated Yahoo Finance API calls. PDF reports are assembled via Jinja2 templates and rendered through WeasyPrint on Linux/Cloud.
+
+## Repository structure
+
+- `app.py` — landing page and entry point
+- `pages/` — 12 analytical pages (SAA, Performance, Macro, Factor Profile, Benchmark Attribution, Correlations, Tax Lots, Capital Deployment, and others)
+- `src/` — analytical modules (attribution, regression, macro, drip, rebalance, interpretations)
+- `tests/` — pytest suite
+- `templates/` — Jinja2 HTML and CSS for quarterly PDF report
+- `docs/` — methodology documentation, phase notes, operational runbooks
 
 ```
 src/
@@ -108,14 +120,15 @@ pages/
   3_Trade_Log.py        Trade entry, investment/position thesis browser, themes
   4_Performance.py      TWR, BF attribution, cumulative chart, drift, PDF export
   5_Macro.py            CAPE, yield curve, Fed Funds, HY OAS, regime classifier
-  6_Reports.py          Quarterly report archive and download
   7_Factor_Profile.py   Per-sleeve FF5 regressions, benchmark-relative alpha, style box
   8_Benchmark_Attribution.py  Custom-benchmark regression
   9_Correlations.py     Rolling sleeve correlation matrix
   10_Asset_Evaluation.py  Bitcoin case study: marginal Sharpe, drawdown, decision framework
+  11_Tax_Lots.py        Lot-level cost basis, holding period, harvest candidates
+  12_Capital_Deployment.py  Contribution allocation and band-breach rebalancing
 
 templates/              PDF report (Jinja2 HTML + CSS)
-tests/                  408 tests across three integrity layers
+tests/                  590+ tests across three integrity layers
 docs/                   Methodology diagnostics, phase notes, operational runbooks
 ```
 
