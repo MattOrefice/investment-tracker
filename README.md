@@ -1,10 +1,11 @@
 # Investment Analytics Tracker
 
-Personal portfolio analytics system tracking a thesis-driven multi-asset strategic asset allocation across ten sleeves, built to institutional-allocator standards. Deploys daily-linked TWR, Brinson-Fachler attribution, per-sleeve Fama-French factor regressions, and a locked-quarter PDF report. Intended as a working artifact for buy-side allocator and investment due diligence roles.
+Multi-asset portfolio analytics with institutional-grade performance attribution, factor regression, and macro regime monitoring.
 
-[Live Demo](https://mattorefice-investment.streamlit.app/) &nbsp;·&nbsp; [LinkedIn](https://www.linkedin.com/in/matthew-orefice-cfa-83536b190/) &nbsp;·&nbsp; [GitHub](https://github.com/MattOrefice/investment-tracker)
+**Live demo:** [mattorefice-investment.streamlit.app](https://mattorefice-investment.streamlit.app/) &nbsp;·&nbsp; ![CI](https://github.com/MattOrefice/investment-tracker/actions/workflows/ci.yml/badge.svg)
 
-![CI](https://github.com/MattOrefice/investment-tracker/actions/workflows/ci.yml/badge.svg)
+Built by [Matt Orefice, CFA](https://www.linkedin.com/in/matthew-orefice-cfa-83536b190/).
+Available for buy-side allocator and investment due diligence roles.
 
 ---
 
