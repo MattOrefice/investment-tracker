@@ -1,7 +1,7 @@
 """
-Captures a hero screenshot of the Benchmark Attribution page from a
-locally-running Streamlit demo instance. Saves to
-docs/images/hero_benchmark_attribution.png.
+Captures the README hero screenshot from a locally-running Streamlit
+demo instance. The target page is configured via LIVE_URL below.
+Saves output to OUTPUT_PATH (docs/images/).
 
 Run manually when the page's visual centerpiece changes meaningfully.
 Not part of CI — screenshots should not be regenerated on every push.
@@ -24,7 +24,7 @@ from pathlib import Path
 
 from playwright.async_api import async_playwright
 
-OUTPUT_PATH = Path("docs/images/hero_benchmark_attribution.png")
+OUTPUT_PATH = Path("docs/images/hero_macro.png")
 STREAMLIT_PORT = 8502   # 8502 to avoid clashing with any running instance on 8501
 SETTLE_DELAY_MS = 15000
 VIEWPORT = {"width": 1920, "height": 1080}
@@ -72,7 +72,7 @@ async def capture() -> None:
             context = await browser.new_context(viewport=VIEWPORT)
             page = await context.new_page()
             await page.goto(
-                f"http://localhost:{STREAMLIT_PORT}/Benchmark_Attribution",
+                f"http://localhost:{STREAMLIT_PORT}/Macro",
                 wait_until="load",
             )
             print(f"Page loaded. Waiting {SETTLE_DELAY_MS}ms for charts to render...")

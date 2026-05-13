@@ -9,9 +9,9 @@ Available for buy-side allocator and investment due diligence roles.
 
 ---
 
-![Benchmark Attribution dashboard showing factor regression decomposition of portfolio excess return against the custom SAA-blended benchmark, with Newey-West HAC standard errors and significance markers across HML, SMB, and RMW style factors](docs/images/hero_benchmark_attribution.png)
+![Macro Dashboard showing current regime classification — Mid-cycle — with NBER recession indicator, 10Y-2Y yield curve spread, and unemployment rate as KPIs, alongside the long-run Shiller CAPE chart](docs/images/hero_macro.png)
 
-*Benchmark Attribution page — factor regression isolating residual alpha from benchmark sensitivity and style tilts. Alpha: +385 bps/yr (p < 0.01).*
+*Macro Dashboard — regime classification with dynamic interpretations of CAPE, ECY, yield curve, credit spreads, labor, and growth indicators against historical percentile bands.*
 
 ---
 
