@@ -35,6 +35,23 @@ with col:
     st.caption(as_of_banner())
     st.divider()
 
+    with st.expander("How to read this page", expanded=False):
+        st.markdown(
+            "This page is **distinct from the Brinson-Fachler attribution** on the Performance "
+            "page. BF decomposes active return into allocation and selection effects per sleeve — "
+            "*what weights did we hold, and did our ETF choices beat their sleeve benchmarks?*\n\n"
+            "This page asks a different question: *what factor tilts explain portfolio performance "
+            "relative to the SAA policy benchmark?* The model is:\n\n"
+            "> **R_portfolio − RF = α + β₁·(R_benchmark − RF) + β₂·HML + β₃·SMB + β₄·RMW + ε**\n\n"
+            "**R_benchmark − RF** is the custom SAA-target-weighted blended benchmark excess "
+            "return (not the S&P 500). **HML, SMB, RMW** are Fama-French style factors. "
+            "**Alpha (α)** is the active return unexplained by benchmark beta or factor tilts — "
+            "the institutional alpha definition used in endowment and IDD contexts.\n\n"
+            "CMA is excluded: for a passive/semi-passive ETF implementation, CMA captures "
+            "ETF-level capex differences rather than deliberate active tilts, so its inclusion "
+            "would misattribute passive implementation choices as active factor bets."
+        )
+
     end_date  = date.today().isoformat()
     inception = get_inception_date()
 

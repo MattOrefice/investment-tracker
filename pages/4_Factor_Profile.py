@@ -38,6 +38,25 @@ with col:
     st.caption(as_of_banner())
     st.divider()
 
+    with st.expander("How to read this page", expanded=False):
+        st.markdown(
+            "Each equity sleeve is regressed against its **region-appropriate Fama-French factor "
+            "set**: US factors (Ken French Data Library) for the US equity sleeves (VOO, SPHQ, "
+            "VTV, AVUV), and Developed ex-US factors for the international sleeve (VEA). "
+            "Per-sleeve regressions avoid the model misspecification that arises when non-US "
+            "returns flow into a single US-factor model.\n\n"
+            "**Alpha (α):** the excess return not explained by factor exposures. Positive alpha "
+            "means the holding outperformed a passive factor-matching portfolio. With ~1 year of "
+            "history, alpha estimates are noisy — factor loadings (the β coefficients) are more "
+            "stable and more interpretable at this horizon.\n\n"
+            "**Factor loadings (β):** Mkt-RF captures market beta (>1 = more market risk than "
+            "benchmark); HML >0 tilts value; SMB >0 tilts small-cap; RMW >0 tilts profitability; "
+            "CMA >0 tilts conservative investment.\n\n"
+            "**Significance:** \\* p<0.10 · \\*\\* p<0.05 · \\*\\*\\* p<0.01. "
+            "All standard errors are Newey-West HAC-corrected for heteroskedasticity and "
+            "serial correlation (lag = ⌊4 × (T/100)^(2/9)⌋)."
+        )
+
     end_date  = date.today().isoformat()
     inception = get_inception_date()
 

@@ -156,9 +156,27 @@ with col:
     st.caption(as_of_banner())
     st.divider()
 
-# 2. Framework methodology preamble
+# 2. How to read this page + framework methodology preamble
 _, col, _ = st.columns([1, 8, 1])
 with col:
+    with st.expander("How to read this page", expanded=False):
+        st.markdown(
+            "This page applies a five-step framework to Bitcoin as a worked case study for SAA "
+            "inclusion. The framework is **descriptive, not prescriptive** — numbers reflect the "
+            "2018–present sample period and quantify observed behavior, not a forecast.\n\n"
+            "**Sections in order:** univariate statistics → correlation behavior (full-sample and "
+            "rolling) → regime-conditional correlation by NBER cycle phase → mean-variance "
+            "contribution (unconstrained and constrained tangency) → drawdown sensitivity table → "
+            "decision framework.\n\n"
+            "The **decision framework** section is the conclusion. It separates sample-period "
+            "arithmetic (which favors high-return assets mechanically) from forward-looking "
+            "allocator considerations: liquidity, tax treatment, operational complexity, mandate "
+            "fit, and expected behavior under different macro regimes. Those factors cannot be "
+            "reduced to a Sharpe improvement number.\n\n"
+            "**Sample start:** 2018-01-01. Earlier BTC history exists but covers only one "
+            "bull market. Starting from 2018 captures both the 2018 bear, the 2020 COVID crash, "
+            "the 2021 peak, and the 2022 drawdown — a more complete behavioral picture."
+        )
     st.markdown(
         "**Univariate statistics** characterize a candidate asset in isolation: "
         "annualized return, annualized volatility, Sharpe ratio (excess return per unit of risk), "
