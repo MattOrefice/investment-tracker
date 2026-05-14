@@ -448,13 +448,18 @@ with col:
         key="risk_bm_sel",
         help=(
             "Tracking error, information ratio, beta, and active return recompute "
-            "against the selected benchmark. Portfolio std dev, Sharpe, Sortino, "
-            "Max DD, VaR, and CVaR are independent of benchmark selection."
+            "against the selected benchmark. Risk metrics (Std Dev, Sharpe, Sortino, "
+            "Max DD, VaR, CVaR) are shown for both portfolio and benchmark."
         ),
     )
     _risk_bm_kind = _RISK_BM_OPTIONS[_risk_bm_sel]
 
     # Load the selected benchmark series (normalized to 1.0 for risk metric computation)
+    _BM_ROW_LABELS = {
+        "blended": "Custom Blended SAA",
+        "spy":     "S&P 500 (SPY)",
+        "60_40":   "60/40",
+    }
     if _risk_bm_kind == "blended":
         _bl_for_metrics = bl / float(bl.iloc[0])
         _risk_bm_label  = "Custom Blended SAA"
@@ -465,6 +470,7 @@ with col:
         _naive_60_40 = _load_naive_benchmark(start_val, "60_40")
         _bl_for_metrics = _naive_60_40 / float(_naive_60_40.iloc[0])
         _risk_bm_label  = "60/40 (60% SPY / 40% AGG)"
+    _bm_row_label = _BM_ROW_LABELS[_risk_bm_kind]
 
     _m_si  = compute_risk_metrics(pv, _bl_for_metrics, window="SI")
     _m_1y  = compute_risk_metrics(pv, _bl_for_metrics, window="1Y")
@@ -502,8 +508,8 @@ with col:
                 f"Insufficient data for {_window_label} window — requires ≥ 20 trading days."
             )
         else:
-            # Row 1 — portfolio-level metrics (benchmark-independent)
-            st.caption("Portfolio metrics (independent of benchmark selection)")
+            # Row 1 — portfolio metrics
+            st.caption("Portfolio")
             _c1, _c2, _c3, _c4, _c5, _c6 = st.columns(6)
             _c1.metric("Std Dev (ann.)", _fmt_pct(_m["annualized_vol_pct"]))
             _c2.metric("Sharpe",         _fmt_ratio(_m["sharpe"]))
@@ -512,9 +518,19 @@ with col:
             _c5.metric("VaR (95%)",      _fmt_pct(_m["var_95_pct"]))
             _c6.metric("CVaR (95%)",     _fmt_pct(_m["cvar_95_pct"]))
 
+            # Row 2 — benchmark metrics (same window and trading-day filter)
+            st.caption(_bm_row_label)
+            _b1, _b2, _b3, _b4, _b5, _b6 = st.columns(6)
+            _b1.metric("Std Dev (ann.)", _fmt_pct(_m["bench_annualized_vol_pct"]))
+            _b2.metric("Sharpe",         _fmt_ratio(_m["bench_sharpe"]))
+            _b3.metric("Sortino",        _fmt_ratio(_m["bench_sortino"]))
+            _b4.metric("Max DD",         _fmt_pct(_m["bench_max_drawdown_pct"]))
+            _b5.metric("VaR (95%)",      _fmt_pct(_m["bench_var_95_pct"]))
+            _b6.metric("CVaR (95%)",     _fmt_pct(_m["bench_cvar_95_pct"]))
+
             st.markdown("---")
 
-            # Row 2 — benchmark-relative metrics
+            # Row 3 — benchmark-relative metrics
             st.caption(f"vs {_risk_bm_label}")
             _r1, _r2, _r3, _r4 = st.columns(4)
             _r1.metric("Track. Err",      _fmt_pct(_m["tracking_error_pct"]))
@@ -523,10 +539,12 @@ with col:
             _r4.metric("Active Ret (ann.)", _fmt_pct(_m["active_return_pct"]))
 
         st.caption(
-            "Std Dev: annualized portfolio return volatility (trading days only, ddof=1). "
+            "Std Dev: annualized return volatility (trading days only, ddof=1). "
             "Sharpe and Sortino use RF = 4.5% (current cash yield). "
+            "Benchmark metrics computed from the same return series used in the vs-benchmark "
+            "statistics below, over the selected window. "
             f"Tracking error, information ratio, beta, and active return vs. {_risk_bm_label}. "
-            "Max drawdown = peak-to-trough decline in portfolio value within the selected window. "
+            "Max drawdown = peak-to-trough decline within the selected window. "
             "VaR(95%) = daily loss exceeded only 5% of trading days (historical simulation). "
             "CVaR(95%) = average daily loss on the worst 5% of trading days (Expected Shortfall). "
             "IR formula: (geometric annualized active return) / tracking error. "

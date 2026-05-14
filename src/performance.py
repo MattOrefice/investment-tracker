@@ -113,18 +113,47 @@ def compute_risk_metrics(
     tail_mask     = port_ret <= var_threshold
     cvar_95       = -float(port_ret[tail_mask].mean()) if tail_mask.any() else var_95
 
+    # Benchmark standalone metrics — same trading-day filter and RF as portfolio row
+    bench_excess      = bench_ret - rf_daily
+    _bench_excess_std = bench_excess.std(ddof=1)
+    bench_sharpe = (
+        (bench_excess.mean() / _bench_excess_std) * math.sqrt(252)
+        if _bench_excess_std > 1e-10 else float("nan")
+    )
+    _bench_neg      = bench_excess[bench_excess < 0]
+    if len(_bench_neg) > 1:
+        bench_sortino = (
+            (bench_excess.mean() / math.sqrt((_bench_neg ** 2).mean())) * math.sqrt(252)
+        )
+    else:
+        bench_sortino = float("nan")
+    bench_cum      = (1 + bench_ret).cumprod()
+    bench_peak     = bench_cum.cummax()
+    bench_max_dd   = float(((bench_cum - bench_peak) / bench_peak).min())
+    bench_ann_vol  = float(bench_ret.std(ddof=1)) * math.sqrt(252)
+    bench_var_thr  = float(np.percentile(bench_ret, 5))
+    bench_var_95   = -bench_var_thr
+    bench_tail     = bench_ret <= bench_var_thr
+    bench_cvar_95  = -float(bench_ret[bench_tail].mean()) if bench_tail.any() else bench_var_95
+
     return {
-        "sharpe":               sharpe,
-        "sortino":              sortino,
-        "annualized_vol_pct":   ann_vol * 100,
-        "max_drawdown_pct":     max_dd * 100,
-        "tracking_error_pct":   tracking_error * 100,
-        "information_ratio":    ir,
-        "beta":                 beta,
-        "active_return_pct":    (ann_port - ann_bench) * 100,
-        "n_days":               n,
-        "ann_port_return_pct":  ann_port * 100,
-        "ann_bench_return_pct": ann_bench * 100,
-        "var_95_pct":           var_95 * 100,
-        "cvar_95_pct":          cvar_95 * 100,
+        "sharpe":                    sharpe,
+        "sortino":                   sortino,
+        "annualized_vol_pct":        ann_vol * 100,
+        "max_drawdown_pct":          max_dd * 100,
+        "tracking_error_pct":        tracking_error * 100,
+        "information_ratio":         ir,
+        "beta":                      beta,
+        "active_return_pct":         (ann_port - ann_bench) * 100,
+        "n_days":                    n,
+        "ann_port_return_pct":       ann_port * 100,
+        "ann_bench_return_pct":      ann_bench * 100,
+        "var_95_pct":                var_95 * 100,
+        "cvar_95_pct":               cvar_95 * 100,
+        "bench_sharpe":              bench_sharpe,
+        "bench_sortino":             bench_sortino,
+        "bench_annualized_vol_pct":  bench_ann_vol * 100,
+        "bench_max_drawdown_pct":    bench_max_dd * 100,
+        "bench_var_95_pct":          bench_var_95 * 100,
+        "bench_cvar_95_pct":         bench_cvar_95 * 100,
     }
