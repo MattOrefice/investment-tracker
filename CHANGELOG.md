@@ -1,0 +1,379 @@
+# Changelog
+
+All notable changes to this project are documented below. Phases represent grouped
+deliverables — analytical features, polish passes, and infrastructure work — rather
+than arbitrary version bumps.
+
+The live demo is at https://mattorefice-investment.streamlit.app/.
+
+---
+
+## Phase 24 — Landing page treatment and consolidation
+*May 13, 2026*
+
+Rebuilt the landing page as an institutional entry point and reordered the sidebar
+to surface the four analytical centerpieces. Extended the README with a hero
+screenshot, expanded methodology section, and implementation details.
+
+- **24** — Twelve pages renumbered to put Performance, Macro, Factor Profile, and
+  Asset Evaluation at positions 2–5; landing page rebuilt with byline, context
+  paragraph, and four "start here" cards (328c628)
+- **24.1** — Hero screenshot of Benchmark Attribution page captured via Playwright
+  and embedded in README (cee87ee, superseded by 24.2)
+- **24.2** — Hero image swapped to the Macro Dashboard (c505569)
+- **24.3** — Asset Evaluation promoted from position 12 to position 5; landing card 4
+  swapped from Factor Profile to Asset Evaluation; sixth README methodology bullet
+  added (8ced911)
+- **24.4** — Collapsed "How to read this page" expanders added to Factor Profile,
+  Asset Evaluation, and Benchmark Attribution; date stamp audit confirmed existing
+  consistency across all pages (8b4ee09)
+- **24.5** — Snapshot tests pinning the exact output of all 8 dynamic interpretation
+  functions; 20 tests with per-branch coverage; bug-catching demo confirmed (b414112)
+
+## Phase 23 — Dynamic macro interpretations and repo polish
+*May 11–13, 2026*
+
+Added threshold-and-branch interpretation functions for every macro and factor panel,
+converting static prose into dynamic text derived from live data values. Cleaned the
+git commit history and polished the README for public presentation.
+
+- **23** — Dynamic interpretations for ECY, HY spreads, yield curve, GDP growth,
+  and US vs. International return spread; Fama-French factor glossary panel; US vs.
+  International return spread added to Macro dashboard; Tax Lots tooltip (755ac3f)
+- **23.2** — Fix ECY/HY interpretation unit mismatch (percent vs. decimal); extended
+  placeholder guard to catch both curly-brace and square-bracket unrendered
+  templates (cde49cf)
+- **23.3** — Naming consistency across pages; unemployment rate delta field; US vs.
+  Intl annotation labels (2f0a1b8)
+- **23.4** — Persistent contact footer (`render_sidebar_footer`) added to the sidebar
+  on every page; CI guard test confirms all pages call it (11d1a4d)
+- **23.5** — Stripped AI-tool attribution trailers from all 192 historical commits
+  via `git-filter-repo`; commit identity normalized to Matthew Orefice throughout
+- **23.6** — README rebuilt with header polish, methodology section (SAA-as-policy,
+  BHB, FF5, regime, tax-aware, candidate asset evaluation), and implementation
+  details (f04250d, 8e070ab, 823e4f5)
+
+## Phase 22 — Write protection and Capital Deployment UX
+*May 11, 2026*
+
+Added a global write guard blocking demo-mode data mutations; introduced an Execute
+and Log button on Capital Deployment to record approved trades directly from the
+allocation-suggestion workflow.
+
+- **22** — Global write guard (`DEMO_WRITE_GUARD`) raises on any DB write in demo
+  mode; Execute and Log button with confirmation modal on Capital Deployment (24ffb77)
+- **22.1** — Tolerance constant extracted; button guard fix; trade form always visible
+  regardless of write-guard state (8ca5106)
+
+## Phase 21 — Contribution allocator
+*May 11, 2026*
+
+Implemented a contribution allocator that translates a new cash deposit into
+per-sleeve purchase suggestions based on current drift from SAA targets.
+
+- **21** — Contribution allocator with editable suggestions per sleeve; deploy-and-
+  execute workflow (60bcb62)
+- **21.2** — Sum-invariant constraint fix (suggestions always sum to deposit amount);
+  removed debug expander; added production test (3d0aa85)
+
+## Phase 20 — Buy-only rebalancer
+*May 11, 2026*
+
+Added a cash-deploy rebalancing tool that identifies band-breach sleeves and sizes
+purchase orders to restore each sleeve to within its SAA tolerance band.
+
+- **20** — Buy-only rebalancing tool; band-breach detection; purchase order sizes
+  derived from target weight and current portfolio value (aebd9f6)
+- **20.1** — Fix underweight predicate to use band-breach semantics (actual drift
+  exceeds tolerance band, not merely below target) (f9f016d)
+
+## Phase 19 — DRIP visibility controls
+*May 11, 2026*
+
+Added toggle controls to show or hide DRIP lots on the Trade Log and Tax Lots pages,
+reducing visual noise when reviewing deliberate trades.
+
+- **19** — DRIP visibility toggle on Trade Log and Tax Lots (cbaa16e)
+- **19.1** — Trade Log action case normalization; DRIP lots inherit the position
+  thesis of the parent holding (0c4e6cc)
+
+## Phase 18 — DRIP timing alignment
+*May 10, 2026*
+
+Corrected DRIP lot cost basis to use the payment-date closing price rather than the
+ex-dividend date, matching the actual execution price of automatic reinvestment.
+
+- **18** — DRIP timing aligned to payment-date close price (e36a7a9)
+
+## Phase 17 — DRIP persistence
+*May 10, 2026*
+
+Moved DRIP dividend reinvestment lots from in-memory computation to persistent
+SQLite storage, making the lot record durable across restarts and enabling
+lot-level cost basis tracking.
+
+- **17** — DRIP lots persisted to database; in-memory DRIP removed from holdings
+  calculation and Brinson-Fachler attribution (0d68a58)
+
+## Phase 16 — Tax-loss harvest recommendations
+*May 10, 2026*
+
+Added a harvest candidate identification section to the Tax Lots page, surfacing
+positions eligible for tax-loss harvesting alongside 30-day wash-sale window
+awareness.
+
+- **16** — Harvest candidates panel: unrealized loss threshold, lot-level eligibility,
+  wash-sale guard (a3b4086)
+
+## Phase 15 — Tax lot inventory
+*May 10, 2026*
+
+Built a dedicated Tax Lots page with lot-level cost basis, holding period
+classification (short-term vs. long-term), and per-lot realized and unrealized
+gain summary.
+
+- **15** — Tax lot inventory page: per-lot G/L, holding period, lot-level detail
+  (0aa2a82)
+- **15.1** — Sleeve filter; harvest pool panel; build hash gate to prevent duplicate
+  lot seeding across app restarts (c4b7802)
+
+## Phase 14 — PDF polish and README rewrite
+*May 10, 2026*
+
+Fixed PDF rendering edge cases (orphan tails at page boundaries, bullet glyph
+incompatibility across platforms) and rewrote the README for a public
+recruiter-facing audience.
+
+- **14** — Orphan tail fix; bullet glyph guards for cross-platform PDF rendering;
+  README rewrite (2788a4d)
+
+## Phase 13 — Disclaimer hardening and README launch polish
+*May 7–10, 2026*
+
+Single-sourced the quarterly report legal disclaimer through a module-level constant
+so all PDF paths render identical text; tightened PDF CSS to keep the disclaimer on
+its own final page; rewrote the README for the public GitHub launch.
+
+- README rewrite — archived prior README; rebuilt for recruiter audience with project
+  framing, methodology summary, and phase narrative (39a8d07)
+- **13** — Legal disclaimer single-sourced via `REPORT_DISCLAIMER` in `src/reports.py`
+  (eecf982)
+- **13.1** — Tighten disclosure CSS to land the five-sentence disclaimer on the final
+  page (d3ab9a3)
+- **13.2** — Shrink methodology font size to recover page space for the disclaimer
+  (0033a55)
+
+## Phase 12 — Integrity test suite and PDF completion
+*May 7–9, 2026*
+
+Built a three-layer integrity test suite (math identities, reasonability bounds,
+prose-vs-data guards) and wired continuous integration via GitHub Actions. Completed
+the quarterly PDF report with an Asset Evaluation section and templated prose derived
+from live database values.
+
+- **12 Sections 0–5** — Layer 1 identity tests (BF effects sum to active return,
+  sleeve weights sum to 100%, TWR equals absolute return for the lump-sum case);
+  Layer 2 reasonability bounds (Sortino ≥ Sharpe, VaR/CVaR within expected range,
+  IR × TE within Jensen's gap); Layer 3 prose-vs-data guards; pytest config; GitHub
+  Actions CI workflow (4cef3dd → b0ca484)
+- **12.1** — Extended prose inventory; templated FI weight captions, parent weights,
+  Real Assets benchmark, and drift thresholds from DB rather than hardcoded strings
+  (7bba4ee → bf9fdd6)
+- **12.2** — Diagnosed CI failure in `config.py` secrets handling; templated drift
+  threshold from tolerance band constant; documented CI setup in `docs/ci_setup.md`
+  (48efa3f → f751fb4)
+- **12 Items 1–9, closeout** — PDF fixes: style box caption unit (z-score →
+  fractional deviation), FI scenario trigger, CAPE implied return added, Asset
+  Evaluation section in PDF, page count reduced by 3, BTC conclusion single-sourced;
+  page layout tightened to reclaim the final page (01c48a8 → 0e16844)
+- **8j.1 addendum** — Late Phase 8 fix committed during Phase 12 window: multi-series
+  chart top margin, PDF Benchmark Attribution chart height, style box caption width
+  (186f61a, May 8)
+
+## Phase 11 — Data integrity diagnostic and prose template refactors
+*May 7, 2026*
+
+Diagnosed a series of data integrity issues against live market data and fixed the
+root causes; replaced static percentile text and factor commentary with dynamic
+templates derived from live computation.
+
+- **11 Sections 0–4** — Push-and-verify wrapper; integrity diagnostic; reconciliation
+  base fix (use adj_close series start, not Jan 1); Dev sleeve federal-holiday
+  exclusion from regression calendar; IEMG cache verification; dynamic CAPE percentile
+  prose; IR methodology disclosure; factor publication lag computed dynamically
+  (833d533 → 7ea1d6c)
+- **11 follow-ups** — Filter calendar-day zeros from risk metric computation; remove
+  duplicate EM sleeve label; correct IR prose direction and exponent (85b3aeb →
+  d098ffd)
+
+## Phase 10 — Attribution math fixes and prose consolidation
+*May 6, 2026*
+
+Fixed two Brinson-Fachler attribution bugs affecting return alignment; audited
+and consolidated static prose strings into reusable helpers, reducing the surface
+area for stale text.
+
+- **10 Sections 0–4** — Prose audit classification; static-stale-risk prose refactors;
+  `prose_helpers.py` with significance and percentile label consolidation;
+  prose-vs-table consistency tests (0f0cc3c → 481accb)
+- **10.1** — Fix two-stage attribution to use price-series portfolio return, not
+  beginning-of-period weights (29789f9)
+- **10.2** — Align BF sleeve returns to total return for all reporting windows
+  (bb477ac)
+
+## Phase 9 — Two-stage Brinson attribution
+*May 6, 2026*
+
+Decomposed Brinson-Fachler active return into a SAA design effect (systematic tilts
+from policy weights) and an implementation effect (holding vs. benchmark within each
+sleeve), enabling more precise attribution of active return sources.
+
+- **9** — Two-stage BHB decomposition; naive benchmark toggle; design effect and
+  implementation effect calculations (4ca2924)
+
+## Phase 8 — Comprehensive analytics build-out
+*May 3–6, 2026 (with late addendum May 8)*
+
+A major multi-sub-phase build-out spanning per-sleeve Fama-French 5-factor
+regressions, equity style box, benchmark attribution regression, risk metrics
+(VaR/CVaR), ECY panel, Endowment comparison, Active Positioning page, rolling sleeve
+correlations, regime classifier, and the Bitcoin Asset Evaluation case study.
+Deployed to Streamlit Cloud and resolved cloud-specific rendering and caching issues.
+
+- **8a** — Portfolio rebase; Active Positioning page with duration and scenario
+  analysis (21ac087)
+- **8b** — Equity style box: 4-dot cell, label density controls, cover TWR fix
+  (0a09f48)
+- **8c** — Fama-French 5-factor regression with Newey-West HAC standard errors;
+  per-sleeve regional factor universes (US and Developed ex-US) (a20471d, 54923de)
+- **8e** — Continuous-coordinate style box with fundamentals-driven placement using
+  four valuation metrics normalized to SPY (ea28cbb)
+- **8f/8g** — Benchmark attribution regression:
+  R_p − RF ~ (R_b − RF) + HML + SMB + RMW; prose and significance labels (3a2dd2f)
+- **8h** — Compact PDF layout targeting 9–11 pages (8de3653)
+- **8i** — Quarter-start date fix: prior-quarter-end used as base price, not Jan 1;
+  propagated fix to cover page, blended series, and BHB prose (9bda473)
+- **8j** — Pre-interview audit (18 polish items across A/B/C priority buckets);
+  quarter-snapshot price lock for deterministic PDF generation (62dec42)
+- **8k** — VaR(95%) and CVaR(95%) on Performance page; ECY (Excess CAPE Yield) panel
+  on Macro; Endowment comparison panel on SAA; five UI polish items; CAPE freshness
+  warning (8k commits, May 5)
+- **8l/8m/8n** — Factor model enhancements (FI TERM/CREDIT, Carhart momentum, Global
+  factors, confidence intervals); per-panel error states; FRED and Ken French fetch
+  retry with exponential backoff; pre-bundled factor cache for Streamlit Cloud cold
+  start; landing page and demo banner standardization (8l–8n commits, May 5)
+- **8o** — AppTest render pilot (221 tests); deployed SHA footer on every page
+  (4496534)
+- **8p** — Fixed flat portfolio value bug on Streamlit Cloud caused by duplicate
+  price-date index and stale `@st.cache_data` serving a pre-fix $30 value (dfbbfb7)
+- **8q–8u** — Global Factors discontinued disclosure; Performance reconciliation note;
+  risk metrics layout; MissionSquare reference; risk-adjusted metrics extended to
+  five-window selector; window-collapse bug fix (c33e522 → 3b27668)
+- **Asset Evaluation** — Bitcoin case study page: univariate statistics, full-sample
+  and rolling correlations, regime-conditional correlation by NBER cycle phase,
+  unconstrained and constrained MV contribution, drawdown sensitivity table, decision
+  framework (7851fe1)
+- **Macro enhancements** — HY OAS continuity fix; window-anchored percentiles; rolling
+  sleeve correlation matrix page; regime classifier panel (f9e1495, 7f0d8fb)
+- **Demo write protection** — Hidden trade form, hidden Macro force refresh, and guard
+  tests in demo mode (cea8014)
+
+## Phase 7 — Public-facing polish and deployment prep
+*May 3, 2026*
+
+Rewrote the README for a recruiter and hiring-manager audience; fixed chart axis
+labels across Performance, Holdings, and Correlations pages; wired Streamlit Cloud
+deployment configuration.
+
+- **7** — README rewrite for public-facing audience; chart axis fixes (Holdings
+  Y-labels, Cumulative Return Y-ticks, drift chart); home page banner; SECURITY.md;
+  `.env.example`; LinkedIn project entry drafts (b7d774e)
+- Streamlit Cloud deployment — `requirements.txt` modernized to `>=` pins; WeasyPrint
+  system deps in `packages.txt`; secrets template; `demo.db` committed to repo
+  (3ccdfa7)
+
+## Phase 6 — Quarterly PDF report
+*May 3, 2026*
+
+Implemented quarterly PDF report generation with a WeasyPrint (Linux/Cloud) and
+xhtml2pdf (Windows) dual-backend approach; 8-section Jinja2 template covering cover,
+executive summary, holdings, performance, attribution, macro, theses, and methodology.
+
+- **6** — `src/reports.py` PDF generator; Jinja2 HTML + CSS template; Plotly chart
+  rendering via kaleido with 25-second daemon timeout; "Generate Quarterly Report"
+  button with period selector and download (0a14883)
+- **6 polish** — 14 layout, logic, and content fixes for cloud PDF rendering: cover
+  date, macro fallback, thesis cleanup, visual formatting (3f68b19 → e12ff59)
+
+## Phase 5 — Macro dashboard
+*May 2, 2026*
+
+Built the macro dashboard integrating FRED data (yield curve, Fed Funds, HY OAS,
+NBER recession indicator) and Shiller CAPE from Yale, with historical percentile
+context, NBER recession shading, and a rules-based regime classifier.
+
+- **5** — FRED integration with 24-hour SQLite cache; Shiller CAPE (Yale dataset,
+  local CSV fallback); five-panel dashboard; CAPE implied 10-year real return formula;
+  NBER recession shading; force-refresh button (630a482)
+
+## Phase 4 — Performance tracking and attribution
+*May 1, 2026*
+
+Implemented daily-linked TWR and Modified Dietz return calculation; built
+Brinson-Fachler per-sleeve attribution; seeded paper trades ($10k across 10 ETFs)
+and wired the Performance page with headline metrics, cumulative return chart,
+and attribution breakdown.
+
+- **4 Session 1** — Yahoo Finance fetcher with SQLite price cache; paper trade seed
+  on 2025-05-01 using floor(target / price) whole shares; `src/holdings.py`
+  (54c15cb)
+- **4 Session 2** — Daily-linked TWR and Modified Dietz (`src/returns.py`);
+  Brinson-Fachler attribution (`src/attribution.py`); custom SAA-blended benchmark
+  (`src/benchmarks.py`); Performance page with cumulative chart, BF attribution
+  table, and drift analysis (e4953e4)
+- **4 polish** — SPAXX via BIL proxy for weights consistency; DBC commodity
+  benchmark; color and framing polish (96e8702)
+
+## Phase 3 — Thesis and trade log
+*May 1, 2026*
+
+Built a two-tier thesis system linking investment theses (strategic views per SAA
+sleeve) to position theses (per-holding rationale), with theme tags, lifecycle states
+(active / closed / invalidated), and a trade entry form with dynamic thesis filtering.
+
+- **3 schema** — `theses` table extended with level, parent_thesis_id, target_sleeves,
+  invalidation conditions, expected return scenario, and post-mortem fields; `themes`
+  join table; 12 investment theses and 11 position theses pre-seeded; 5 starter themes
+  (f2541cd)
+- **3 UI** — Trade log with dynamic ticker-to-thesis filtering; investment thesis
+  browser with theme pills and status badges; theme aggregation view (b9a57ef)
+- **3 polish** — Thesis sort and title display; tax efficiency theme tags; button
+  color; status column cleanup (2e6cf16)
+
+## Phase 2 — ETF research and securities seeding
+*April 30–May 1, 2026*
+
+Locked ETF picks for all 10 SAA sleeves with written rationale documenting the
+benchmark-vs-holding distinction; seeded the securities table with holdings and
+benchmarks; built the Research page with blended ER header and per-holding rationale
+expanders.
+
+- **2** — 10 holding picks (VOO, SPHQ, VTV, AVUV, VEA, IEMG, VGIT, SCHP, VNQ,
+  PDBC) with documented rationale; `securities` table seeded; Research page built
+  (a1f87f8)
+- **2 polish** — Growth → Equity parent category rename (institutional taxonomy);
+  sort order fix; benchmark ER display; blended weighted-average ER metric; layout
+  consistency (1f5187a → 91f96ac)
+
+## Phases 0–1 — Project foundation and SAA framework
+*April 29, 2026*
+
+Initial commit establishing the project architecture (Streamlit multi-page app,
+SQLite schema, dual-mode personal/demo design via `TRACKER_MODE` env var); locked
+the 10-sleeve strategic asset allocation with target weights, tolerance bands, and
+per-sleeve investment rationale.
+
+- **0–1** — Project scaffolding; `src/config.py` dual-mode foundation; SQLite schema
+  (`accounts`, `asset_classes`, `securities`, `theses`, `trades`, `prices`);
+  10-sleeve SAA seeded (Equity 72% / Income 15% / Real Assets 10% / Cash 3%);
+  SAA page with allocation chart and rationale expanders (1ee9da3)
