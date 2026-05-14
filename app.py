@@ -96,9 +96,9 @@ with c4:
     st.markdown("### Asset Evaluation")
     st.markdown(
         "Candidate-asset evaluation framework with worked Bitcoin "
-        "case study. Covers univariate statistics, regime-conditional "
-        "correlation, mean-variance contribution, and a decision "
-        "framework enumerating allocator-side tradeoffs."
+        "case study. Univariate statistics, regime-conditional "
+        "correlation, mean-variance contribution, and allocator-side "
+        "tradeoffs."
     )
     st.page_link("pages/5_Asset_Evaluation.py", label="Open")
 
