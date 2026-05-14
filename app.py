@@ -32,16 +32,6 @@ st.markdown(
     a[data-testid="stPageLink-NavLink"]:hover {
         background-color: #1d4ed8;
     }
-    /* Equal-height cards: push Open button to bottom of each column */
-    div[data-testid="stColumn"] > div[data-testid="stVerticalBlock"] {
-        height: 100%;
-        display: flex;
-        flex-direction: column;
-    }
-    div[data-testid="stColumn"] .stPageLink {
-        margin-top: auto;
-        padding-top: 0.5rem;
-    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -73,7 +63,7 @@ st.markdown(
     "current conditions warrant any tactical tilt."
 )
 
-c1, c2, c3, c4 = st.columns(4)
+c1, c2, c3, c4 = st.columns(4, vertical_alignment="bottom")
 
 with c1:
     st.markdown("### Strategic Asset Allocation")
