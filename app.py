@@ -13,16 +13,41 @@ from src.ui_helpers import render_footer, render_sidebar_footer
 
 initialize_db()
 
+# Style st.page_link calls as institutional blue buttons.
+st.markdown(
+    """
+    <style>
+    a[data-testid="stPageLink-NavLink"] {
+        background-color: #2563eb;
+        color: white !important;
+        padding: 0.5rem 1.25rem;
+        border-radius: 0.375rem;
+        text-decoration: none;
+        font-weight: 500;
+        display: inline-block;
+        transition: background-color 0.2s;
+    }
+    a[data-testid="stPageLink-NavLink"]:hover {
+        background-color: #1d4ed8;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 st.title("Investment Analytics Tracker")
 st.markdown(
-    "**Multi-asset portfolio analytics with institutional-grade "
+    "Multi-asset portfolio analytics with institutional-grade "
     "performance attribution, factor regression, and macro regime "
-    "monitoring.**"
+    "monitoring."
 )
-st.caption(
-    "Built by Matt Orefice, CFA · Available for buy-side "
-    "allocator and investment due diligence roles"
+st.markdown(
+    "**Built by Matt Orefice, CFA** · Available for buy-side "
+    "allocator and investment due diligence roles  \n"
+    f"*{as_of_banner()}*"
 )
+
+st.divider()
 
 st.markdown(
     "This system maintains a 10-sleeve strategic asset allocation as policy, "
@@ -34,10 +59,6 @@ st.markdown(
     "current conditions warrant any tactical tilt."
 )
 
-st.caption(as_of_banner())
-
-st.divider()
-
 c1, c2, c3, c4 = st.columns(4)
 
 with c1:
@@ -46,7 +67,7 @@ with c1:
         "10-sleeve SAA policy: target weights, tolerance bands, "
         "and the drift thresholds that define when rebalancing is warranted."
     )
-    st.page_link("pages/1_SAA.py", label="Open SAA")
+    st.page_link("pages/1_SAA.py", label="Open")
 
 with c2:
     st.markdown("**Performance**")
@@ -54,7 +75,7 @@ with c2:
         "Time-weighted return vs SAA-target-weighted blended benchmark. "
         "Cover narrative, cumulative return chart, and period-by-period BHB attribution."
     )
-    st.page_link("pages/2_Performance.py", label="Open Performance")
+    st.page_link("pages/2_Performance.py", label="Open")
 
 with c3:
     st.markdown("**Macro**")
@@ -63,7 +84,7 @@ with c3:
         "yield curve, credit spreads, labor, and growth indicators against "
         "historical percentile bands."
     )
-    st.page_link("pages/3_Macro.py", label="Open Macro")
+    st.page_link("pages/3_Macro.py", label="Open")
 
 with c4:
     st.markdown("**Asset Evaluation**")
@@ -74,7 +95,7 @@ with c4:
         "framework enumerating liquidity, tax, operational, and "
         "mandate-fit considerations."
     )
-    st.page_link("pages/5_Asset_Evaluation.py", label="Open Asset Evaluation")
+    st.page_link("pages/5_Asset_Evaluation.py", label="Open")
 
 render_footer()
 render_sidebar_footer()
