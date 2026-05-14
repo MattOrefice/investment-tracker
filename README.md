@@ -99,6 +99,8 @@ Three layers: (1) math identities that must hold by construction (BF effects sum
 - **Test coverage:** 590+ unit and integration tests covering return calculation, attribution math, factor regression plumbing, and dynamic-interpretation guards
 - **Deployment:** Streamlit Community Cloud, redeploy on push to main
 
+Technical architecture documented in [docs/architecture.md](docs/architecture.md).
+
 Core logic resides in `src/` with no Streamlit imports, making it fully unit-testable. Streamlit pages in `pages/` are auto-discovered by `app.py`. Price data is cached in SQLite to avoid repeated Yahoo Finance API calls. PDF reports are assembled via Jinja2 templates and rendered through WeasyPrint on Linux/Cloud.
 
 ## Repository structure
