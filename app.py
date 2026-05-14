@@ -15,13 +15,11 @@ initialize_db()
 
 st.markdown(
     """
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400;600&display=swap" rel="stylesheet">
-
     <style>
+    @import url('https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400;600&display=swap');
+
     .endow-title {
-        font-family: 'EB Garamond', Georgia, serif;
+        font-family: 'EB Garamond', Georgia, 'Times New Roman', serif !important;
         font-weight: 600;
         font-size: 2.75rem;
         color: #1e3a5f;
@@ -55,14 +53,23 @@ st.markdown(
         color: #1f2937;
         line-height: 1.7;
     }
+
+    /* Equal-height cards: force Streamlit columns to be flex columns */
+    div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
+        display: flex;
+        flex-direction: column;
+    }
+
     .endow-card {
         background-color: #f8fafb;
         border-left: 3px solid #1e3a5f;
         padding: 1rem 1.25rem;
-        height: 100%;
+        flex: 1 1 auto;
+        display: flex;
+        flex-direction: column;
     }
     .endow-card-header {
-        font-family: 'EB Garamond', Georgia, serif;
+        font-family: 'EB Garamond', Georgia, 'Times New Roman', serif !important;
         font-weight: 600;
         font-size: 1.5rem;
         color: #1e3a5f;
@@ -75,12 +82,19 @@ st.markdown(
         font-size: 0.9375rem;
         line-height: 1.55;
         margin-bottom: 0;
+        flex: 1 1 auto;
+    }
+    .endow-card-body-clamp {
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
     }
 
     /* Open buttons (st.page_link) */
     a[data-testid="stPageLink-NavLink"] {
         background-color: #1e3a5f;
-        color: white !important;
+        color: #ffffff !important;
         padding: 0.375rem 1rem;
         border-radius: 0.375rem;
         text-decoration: none;
@@ -92,6 +106,11 @@ st.markdown(
     }
     a[data-testid="stPageLink-NavLink"]:hover {
         background-color: #152a48;
+    }
+    /* Force label text white — st.page_link renders label inside <p> */
+    a[data-testid="stPageLink-NavLink"] p,
+    a[data-testid="stPageLink-NavLink"] span {
+        color: #ffffff !important;
     }
     </style>
     """,
@@ -122,16 +141,16 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-c1, c2, c3, c4 = st.columns(4, vertical_alignment="bottom")
+c1, c2, c3, c4 = st.columns(4, vertical_alignment="top")
 
 with c1:
     st.markdown(
         """
         <div class="endow-card">
             <h3 class="endow-card-header">Strategic Asset Allocation</h3>
-            <p class="endow-card-body">10-sleeve SAA policy with target weights and tolerance bands.
-            Drift thresholds define when rebalancing is warranted; the framework treats SAA as
-            policy, not as a starting point for tactical tilts.</p>
+            <p class="endow-card-body endow-card-body-clamp">10-sleeve SAA policy with target weights
+            and tolerance bands. Drift thresholds define when rebalancing is warranted; the framework
+            treats SAA as policy, not as a starting point for tactical tilts.</p>
         </div>
         """,
         unsafe_allow_html=True,
@@ -143,8 +162,9 @@ with c2:
         """
         <div class="endow-card">
             <h3 class="endow-card-header">Performance</h3>
-            <p class="endow-card-body">Time-weighted return vs SAA-target-weighted blended benchmark.
-            Cover narrative, cumulative return chart, and period-by-period BHB attribution.</p>
+            <p class="endow-card-body endow-card-body-clamp">Time-weighted return vs
+            SAA-target-weighted blended benchmark. Cover narrative, cumulative return chart,
+            and period-by-period BHB attribution.</p>
         </div>
         """,
         unsafe_allow_html=True,
@@ -156,9 +176,9 @@ with c3:
         """
         <div class="endow-card">
             <h3 class="endow-card-header">Macro</h3>
-            <p class="endow-card-body">Regime classification with dynamic interpretations of CAPE, ECY,
-            yield curve, credit spreads, labor, and growth indicators against historical percentile
-            bands.</p>
+            <p class="endow-card-body endow-card-body-clamp">Regime classification with dynamic
+            interpretations of CAPE, ECY, yield curve, credit spreads, labor, and growth
+            indicators against historical percentile bands.</p>
         </div>
         """,
         unsafe_allow_html=True,
@@ -170,9 +190,9 @@ with c4:
         """
         <div class="endow-card">
             <h3 class="endow-card-header">Asset Evaluation</h3>
-            <p class="endow-card-body">Candidate-asset evaluation framework with worked Bitcoin
-            case study. Univariate statistics, regime-conditional correlation, mean-variance
-            contribution, and allocator-side tradeoffs.</p>
+            <p class="endow-card-body endow-card-body-clamp">Candidate-asset evaluation framework
+            with worked Bitcoin case study. Univariate statistics, regime-conditional correlation,
+            mean-variance contribution, and allocator-side tradeoffs.</p>
         </div>
         """,
         unsafe_allow_html=True,
