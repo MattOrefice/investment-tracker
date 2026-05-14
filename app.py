@@ -68,8 +68,10 @@ c1, c2, c3, c4 = st.columns(4, vertical_alignment="bottom")
 with c1:
     st.markdown("### Strategic Asset Allocation")
     st.markdown(
-        "10-sleeve SAA policy: target weights, tolerance bands, "
-        "and the drift thresholds that define when rebalancing is warranted."
+        "10-sleeve SAA policy with target weights and tolerance bands. "
+        "Drift thresholds define when rebalancing is warranted; the "
+        "framework treats SAA as policy, not as a starting point for "
+        "tactical tilts."
     )
     st.page_link("pages/1_SAA.py", label="Open")
 
@@ -94,10 +96,9 @@ with c4:
     st.markdown("### Asset Evaluation")
     st.markdown(
         "Candidate-asset evaluation framework with worked Bitcoin "
-        "case study: univariate statistics, regime-conditional "
+        "case study. Covers univariate statistics, regime-conditional "
         "correlation, mean-variance contribution, and a decision "
-        "framework enumerating liquidity, tax, operational, and "
-        "mandate-fit considerations."
+        "framework enumerating allocator-side tradeoffs."
     )
     st.page_link("pages/5_Asset_Evaluation.py", label="Open")
 
