@@ -8,9 +8,9 @@ st.set_page_config(page_title="Factor Profile", layout="wide")
 
 from src.asof import as_of_banner
 from src.config import get_demo_banner_text, IS_DEMO
-from src.ui_helpers import render_footer, render_sidebar_header, render_sidebar_footer
+from src.ui_helpers import render_footer, render_page_header
+render_page_header()
 
-render_sidebar_header()
 from src.factors import (
     _FI_WEIGHTS,
     EM_DISCLOSURE,
@@ -320,4 +320,3 @@ with col:
             "factor date exceeds 35 days lag."
         )
     render_footer()
-render_sidebar_footer()

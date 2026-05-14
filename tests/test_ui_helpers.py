@@ -28,17 +28,14 @@ def test_render_footer_is_callable():
         assert callable(_mod.render_footer)
 
 
-def test_all_pages_call_render_sidebar_footer():
-    """Every file in pages/ must contain a render_sidebar_footer() call.
+def test_app_py_calls_render_sidebar_footer():
+    """app.py must call render_sidebar_footer().
 
-    Prevents new pages from shipping without the contact footer.
+    Phase 29 centralized the sidebar footer to app.py (called once after
+    nav.run() so it renders below any page-specific sidebar widgets).
     """
-    page_files = sorted(PAGES_DIR.glob("*.py"))
-    assert page_files, "No page files found — check PAGES_DIR path"
-    missing = [
-        p.name for p in page_files
-        if "render_sidebar_footer()" not in p.read_text(encoding="utf-8")
-    ]
-    assert not missing, (
-        f"These pages are missing render_sidebar_footer(): {missing}"
+    app_py = pathlib.Path(__file__).resolve().parent.parent / "app.py"
+    src = app_py.read_text(encoding="utf-8")
+    assert "render_sidebar_footer()" in src, (
+        "render_sidebar_footer() call missing from app.py"
     )

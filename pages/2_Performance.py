@@ -18,9 +18,9 @@ from src.holdings import get_inception_date, get_portfolio_value_series, get_sle
 from src.performance import compute_risk_metrics
 from src.reports import generate_quarterly_report
 from src.returns import annualize, period_return, twr_daily_linked
-from src.ui_helpers import render_footer, render_sidebar_header, render_sidebar_footer
+from src.ui_helpers import render_footer, render_page_header
+render_page_header()
 
-render_sidebar_header()
 
 _REPORTS_DIR = Path(__file__).parent.parent / "data" / "reports"
 
@@ -1028,4 +1028,3 @@ with col:
         st.markdown(f"**Price cache rows:** {n_days:,}")
         st.markdown(f"**Last price date in cache:** {last_refresh}")
     render_footer()
-render_sidebar_footer()
