@@ -13,22 +13,34 @@ from src.ui_helpers import render_footer, render_sidebar_footer
 
 initialize_db()
 
-# Style st.page_link calls as institutional blue buttons.
 st.markdown(
     """
     <style>
+    /* Open buttons: institutional blue, compact size */
     a[data-testid="stPageLink-NavLink"] {
         background-color: #2563eb;
         color: white !important;
-        padding: 0.5rem 1.25rem;
+        padding: 0.375rem 1rem;
         border-radius: 0.375rem;
         text-decoration: none;
         font-weight: 500;
+        font-size: 0.875rem;
+        line-height: 1.25;
         display: inline-block;
         transition: background-color 0.2s;
     }
     a[data-testid="stPageLink-NavLink"]:hover {
         background-color: #1d4ed8;
+    }
+    /* Equal-height cards: push Open button to bottom of each column */
+    div[data-testid="stColumn"] > div[data-testid="stVerticalBlock"] {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+    }
+    div[data-testid="stColumn"] .stPageLink {
+        margin-top: auto;
+        padding-top: 0.5rem;
     }
     </style>
     """,
@@ -37,17 +49,19 @@ st.markdown(
 
 st.title("Investment Analytics Tracker")
 st.markdown(
-    "Multi-asset portfolio analytics with institutional-grade "
+    "**Multi-asset portfolio analytics with institutional-grade "
     "performance attribution, factor regression, and macro regime "
-    "monitoring."
+    "monitoring.**"
 )
 st.markdown(
     "**Built by Matt Orefice, CFA** · Available for buy-side "
     "allocator and investment due diligence roles  \n"
     f"*{as_of_banner()}*"
 )
-
-st.divider()
+st.markdown(
+    "<hr style='margin: 1.5rem 0; border: none; border-top: 1px solid #e5e7eb;'>",
+    unsafe_allow_html=True,
+)
 
 st.markdown(
     "This system maintains a 10-sleeve strategic asset allocation as policy, "
@@ -62,7 +76,7 @@ st.markdown(
 c1, c2, c3, c4 = st.columns(4)
 
 with c1:
-    st.markdown("**Strategic Asset Allocation**")
+    st.markdown("### Strategic Asset Allocation")
     st.markdown(
         "10-sleeve SAA policy: target weights, tolerance bands, "
         "and the drift thresholds that define when rebalancing is warranted."
@@ -70,7 +84,7 @@ with c1:
     st.page_link("pages/1_SAA.py", label="Open")
 
 with c2:
-    st.markdown("**Performance**")
+    st.markdown("### Performance")
     st.markdown(
         "Time-weighted return vs SAA-target-weighted blended benchmark. "
         "Cover narrative, cumulative return chart, and period-by-period BHB attribution."
@@ -78,7 +92,7 @@ with c2:
     st.page_link("pages/2_Performance.py", label="Open")
 
 with c3:
-    st.markdown("**Macro**")
+    st.markdown("### Macro")
     st.markdown(
         "Regime classification with dynamic interpretations of CAPE, ECY, "
         "yield curve, credit spreads, labor, and growth indicators against "
@@ -87,7 +101,7 @@ with c3:
     st.page_link("pages/3_Macro.py", label="Open")
 
 with c4:
-    st.markdown("**Asset Evaluation**")
+    st.markdown("### Asset Evaluation")
     st.markdown(
         "Candidate-asset evaluation framework with worked Bitcoin "
         "case study: univariate statistics, regime-conditional "
