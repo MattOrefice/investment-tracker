@@ -149,8 +149,8 @@ with c1:
         <div class="endow-card">
             <h3 class="endow-card-header">Strategic Asset Allocation</h3>
             <p class="endow-card-body endow-card-body-clamp">10-sleeve SAA policy with target weights
-            and tolerance bands. Drift thresholds define when rebalancing is warranted; the framework
-            treats SAA as policy, not as a starting point for tactical tilts.</p>
+            and tolerance bands. Drift thresholds define when rebalancing is warranted; SAA is treated
+            as policy, not a starting point for tactical tilts.</p>
         </div>
         """,
         unsafe_allow_html=True,
@@ -190,9 +190,9 @@ with c4:
         """
         <div class="endow-card">
             <h3 class="endow-card-header">Asset Evaluation</h3>
-            <p class="endow-card-body endow-card-body-clamp">Candidate-asset evaluation framework
-            with worked Bitcoin case study. Univariate statistics, regime-conditional correlation,
-            mean-variance contribution, and allocator-side tradeoffs.</p>
+            <p class="endow-card-body endow-card-body-clamp">Candidate-asset evaluation with worked
+            Bitcoin case study. Univariate statistics, regime-conditional correlation,
+            mean-variance contribution, and allocator tradeoffs.</p>
         </div>
         """,
         unsafe_allow_html=True,

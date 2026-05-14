@@ -50,17 +50,21 @@ def test_navy_color_is_correct():
 # ── Test 4: card description text unchanged ───────────────────────────────────
 
 def test_card_descriptions_unchanged():
-    """The four card body descriptions must match the Phase 24.11/24.12 locked text.
+    """The four card body descriptions must match the Phase 27.2 locked text.
 
-    Checks for key phrase substrings that are unique to each card's description
-    and would catch accidental wording changes during the HTML restructure.
+    SAA and Asset Evaluation were trimmed in Phase 27.2 to remove Cloud ellipsis.
+    Performance and Macro are unchanged from Phase 24.11/24.12.
+
+    Pins phrases unique to each current version — would fail on revert to old copy.
     """
     src = _app_text()
 
-    saa_phrase = "Drift thresholds define when rebalancing is warranted"
+    # SAA: "the framework treats" was dropped; "SAA is treated" is unique to the new phrasing
+    saa_phrase = "SAA is treated"
     perf_phrase = "SAA-target-weighted blended benchmark"
     macro_phrase = "CAPE, ECY"
-    ae_phrase = "worked Bitcoin"
+    # AE: "allocator-side" became "allocator tradeoffs" (no "-side", no "framework")
+    ae_phrase = "allocator tradeoffs"
 
     assert saa_phrase in src, (
         f"SAA card description changed — phrase not found: {saa_phrase!r}"
