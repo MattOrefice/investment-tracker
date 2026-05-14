@@ -5,7 +5,9 @@ st.set_page_config(page_title="Active Positioning", layout="wide")
 
 from src.asof import as_of_banner
 from src.config import get_demo_banner_text, IS_DEMO
-from src.ui_helpers import render_footer, render_sidebar_footer
+from src.ui_helpers import render_footer, render_sidebar_header, render_sidebar_footer
+
+render_sidebar_header()
 from src.positioning import (
     build_style_box_figure,
     get_active_tilts,

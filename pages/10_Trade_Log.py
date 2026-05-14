@@ -11,7 +11,9 @@ st.set_page_config(page_title="Trade Log", layout="wide")
 from src.asof import as_of_banner
 from src.config import get_demo_banner_text, IS_DEMO, is_write_enabled
 from src.db import get_connection
-from src.ui_helpers import render_footer, render_sidebar_footer, write_guard_toast
+from src.ui_helpers import render_footer, render_sidebar_header, render_sidebar_footer, write_guard_toast
+
+render_sidebar_header()
 
 STATUS_COLOR = {
     "active":      "#2d6a4f",

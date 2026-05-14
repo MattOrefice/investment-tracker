@@ -19,7 +19,9 @@ from src.factors import (
     sig_marker,
 )
 from src.reports import SLEEVE_HOLDING_TICKER as _SLEEVE_HOLDING, SLEEVE_BENCH_TICKER as _SLEEVE_BENCH
-from src.ui_helpers import render_footer, render_sidebar_footer
+from src.ui_helpers import render_footer, render_sidebar_header, render_sidebar_footer
+
+render_sidebar_header()
 
 if IS_DEMO:
     st.info(get_demo_banner_text())

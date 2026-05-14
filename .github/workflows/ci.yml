@@ -32,6 +32,12 @@ jobs:
       - name: Show key package versions (diagnostic)
         run: pip show streamlit weasyprint kaleido statsmodels | grep -E "^(Name|Version):"
 
+      - name: Guard — render_sidebar_header called in all pages and app.py
+        run: grep -rn "render_sidebar_header" pages/ app.py
+
+      - name: Guard — render_sidebar_footer called in all pages and app.py
+        run: grep -rn "render_sidebar_footer" pages/ app.py
+
       - name: Run fast tests (slow/network tests excluded)
         run: python -m pytest -m "not slow" --tb=long -q
         env:

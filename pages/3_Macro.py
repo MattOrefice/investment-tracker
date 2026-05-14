@@ -20,7 +20,9 @@ from src.macro import (
 )
 from src.prices import get_prices
 from src.prose_helpers import percentile_label
-from src.ui_helpers import render_footer, render_sidebar_footer
+from src.ui_helpers import render_footer, render_sidebar_header, render_sidebar_footer
+
+render_sidebar_header()
 
 TODAY      = date.today().isoformat()
 ONE_YR_AGO = (date.fromisoformat(TODAY) - timedelta(days=365)).isoformat()

@@ -9,9 +9,10 @@ st.set_page_config(
 
 from src.asof import as_of_banner
 from src.db import initialize_db
-from src.ui_helpers import render_footer, render_sidebar_footer
+from src.ui_helpers import render_footer, render_sidebar_header, render_sidebar_footer
 
 initialize_db()
+render_sidebar_header()
 
 st.markdown(
     """
