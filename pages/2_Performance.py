@@ -18,6 +18,7 @@ from src.holdings import get_inception_date, get_portfolio_value_series, get_sle
 from src.performance import compute_risk_metrics
 from src.reports import generate_quarterly_report
 from src.returns import annualize, period_return, twr_daily_linked
+from src.positioning import get_effective_duration
 from src.ui_helpers import render_footer, render_page_header
 render_page_header()
 
@@ -1027,4 +1028,37 @@ with col:
         conn2.close()
         st.markdown(f"**Price cache rows:** {n_days:,}")
         st.markdown(f"**Last price date in cache:** {last_refresh}")
+
+    st.divider()
+
+    # ── Fixed Income Effective Duration ───────────────────────────────────────
+    st.subheader("Fixed Income Effective Duration")
+    dur      = get_effective_duration(TODAY)
+    fi_dur   = dur["fi_sleeve_duration"]
+    agg_dur  = dur["agg_benchmark"]
+    fi_wt    = dur["fi_weight_pct"]
+    cash_wt  = dur["cash_weight_pct"]
+    delta_yr  = round(fi_dur - agg_dur, 1)
+    dur_diff  = abs(fi_dur - agg_dur)
+    if dur_diff < 0.05:
+        dur_vs_caption = "in line with the Bloomberg US Agg benchmark"
+    else:
+        vs_agg = "below" if delta_yr < 0 else "above"
+        dur_vs_caption = f"{abs(delta_yr):.1f} yrs {vs_agg} the Bloomberg US Agg benchmark"
+    st.metric(
+        label="FI Sleeve Duration (Core FI + TIPS)",
+        value=f"{fi_dur} yrs",
+        delta=f"{delta_yr:+.1f} yrs vs Bloomberg US Agg ({agg_dur} yrs)",
+        help=(
+            "Weighted average duration of Core Fixed Income (VGIT) and TIPS (SCHP) only. "
+            "Cash/SPAXX is excluded — it carries zero duration and is not in the Bloomberg Agg."
+        ),
+    )
+    st.caption(
+        f"FI weight (Core FI + TIPS): {fi_wt}% of portfolio. "
+        f"Cash/SPAXX: {cash_wt}% (excluded from duration calculation and from Bloomberg Agg). "
+        f"FI sleeve duration is {dur_vs_caption}. "
+        "Duration also flows through equity via discount-rate effects — it's a whole-portfolio consideration. "
+        "Duration sourced from ETF fact-sheet values (VGIT: 5.5 yrs, SCHP: 6.8 yrs per Vanguard/Schwab Q1 2026)."
+    )
     render_footer()

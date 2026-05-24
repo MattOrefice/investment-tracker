@@ -128,13 +128,11 @@ src/
 
 pages/
   1_SAA.py              SAA allocation chart, per-sleeve rationale
-  1_SAA.py              SAA allocation chart, per-sleeve rationale
-  2_Performance.py      TWR, BF attribution, cumulative chart, drift, PDF export
+  2_Performance.py      TWR, BF attribution, cumulative chart, drift, FI duration, PDF export
   3_Macro.py            CAPE, yield curve, Fed Funds, HY OAS, regime classifier
-  4_Factor_Profile.py   Per-sleeve FF5 regressions, benchmark-relative alpha, style box
+  4_Factor_Profile.py   Per-sleeve FF5 regressions, benchmark-relative alpha, equity style box
   5_Asset_Evaluation.py  Bitcoin case study: marginal Sharpe, drawdown, decision framework
   6_Benchmark_Attribution.py  Custom-benchmark regression
-  7_Positioning.py      Active tilts, effective duration, scenario analysis
   8_Research.py         ETF selection: benchmark vs. holding, ER breakdown
   9_Correlations.py     Rolling sleeve correlation matrix
   10_Trade_Log.py       Trade entry, investment/position thesis browser, themes

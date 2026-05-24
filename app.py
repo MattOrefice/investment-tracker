@@ -212,7 +212,6 @@ nav = st.navigation(
             st.Page("pages/2_Performance.py", title="Performance"),
             st.Page("pages/6_Benchmark_Attribution.py", title="Benchmark Attribution"),
             st.Page("pages/4_Factor_Profile.py", title="Factor Profile"),
-            st.Page("pages/7_Positioning.py", title="Positioning"),
         ],
         "Markets & Macro": [
             st.Page("pages/3_Macro.py", title="Macro"),

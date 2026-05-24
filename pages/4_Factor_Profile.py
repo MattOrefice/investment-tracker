@@ -8,6 +8,8 @@ st.set_page_config(page_title="Factor Profile", layout="wide")
 
 from src.asof import as_of_banner
 from src.config import get_demo_banner_text, IS_DEMO
+from src.positioning import build_style_box_figure, get_non_us_equity_data, get_style_box_data
+from src.style_box import STYLE_BOX_CAPTION
 from src.ui_helpers import render_footer, render_page_header
 render_page_header()
 
@@ -297,6 +299,39 @@ with col:
     # Show only the exclusion / scope notes (last sentence covers EM + Real Assets)
     if _full_prose:
         st.write(_full_prose[-1])
+
+    st.divider()
+
+    # ── Equity Style Profile ──────────────────────────────────────────────────
+    st.subheader("Equity Style Profile")
+    style_data = get_style_box_data(end_date)
+    non_us     = get_non_us_equity_data(end_date)
+
+    if style_data:
+        fig = build_style_box_figure(style_data)
+        box_col, _ = st.columns([3, 2])
+        with box_col:
+            st.plotly_chart(fig, width='stretch')
+        st.caption(STYLE_BOX_CAPTION)
+        st.caption(
+            "Empty cells reflect deliberate construction: the SAA does not include mid-cap or "
+            "pure-growth tilts. Quality (SPHQ) and value (VTV, AVUV) are the chosen factor exposures."
+        )
+
+        if non_us:
+            st.markdown("**Non-US Equity Sleeve**")
+            for item in non_us:
+                st.markdown(
+                    f"- **{item['ticker']}** ({item['region_label']}) — "
+                    f"{item['weight_pct']:.1f}% of portfolio"
+                )
+            st.caption(
+                "Non-US holdings are not directly comparable to US value/growth and "
+                "market-cap distributions. See Morningstar regional style boxes for "
+                "international placement methodology."
+            )
+    else:
+        st.info("No equity holdings found.")
 
     st.divider()
 

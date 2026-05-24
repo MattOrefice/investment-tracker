@@ -24,7 +24,6 @@ _EXPECTED_PAGES = [
     "pages/4_Factor_Profile.py",
     "pages/5_Asset_Evaluation.py",
     "pages/6_Benchmark_Attribution.py",
-    "pages/7_Positioning.py",
     "pages/8_Research.py",
     "pages/9_Correlations.py",
     "pages/10_Trade_Log.py",
@@ -97,8 +96,8 @@ def test_render_page_header_exists():
 
 def test_all_pages_call_render_page_header():
     page_files = sorted(PAGES_DIR.glob("[0-9]*.py"))
-    assert len(page_files) >= 12, (
-        f"Expected at least 12 page files, found {len(page_files)}"
+    assert len(page_files) >= 11, (
+        f"Expected at least 11 page files, found {len(page_files)}"
     )
     missing = [
         p.name for p in page_files
