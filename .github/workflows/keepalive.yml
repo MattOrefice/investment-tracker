@@ -4,17 +4,42 @@ on:
   schedule:
     # Every 5 minutes
     - cron: '*/5 * * * *'
-  workflow_dispatch:  # allow manual trigger from the Actions tab
+  workflow_dispatch:  # allow manual trigger
 
 jobs:
   ping:
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 3
     steps:
       - name: Ping Streamlit app
         run: |
-          curl -fsSL --max-time 60 \
-            -A "GitHubActions-Keepalive/1.0" \
-            https://mattorefice-investment.streamlit.app/ \
-            -o /dev/null
-          echo "Pinged at $(date -u +%FT%TZ)"
+          set -e
+          URL="https://mattorefice-investment.streamlit.app/"
+          UA="Mozilla/5.0 (compatible; GitHubActions-Keepalive/1.0; +https://github.com/MattOrefice/investment-tracker)"
+
+          # Allow redirects, retry transient failures, accept 200 or 503 (cold-start) as success
+          HTTP_CODE=$(curl -sL \
+            --max-time 90 \
+            --max-redirs 10 \
+            --retry 3 \
+            --retry-delay 5 \
+            --retry-connrefused \
+            -A "$UA" \
+            -o /dev/null \
+            -w "%{http_code}" \
+            "$URL" || echo "000")
+
+          echo "Pinged $URL at $(date -u +%FT%TZ) — HTTP $HTTP_CODE"
+
+          # Treat 200 (live) and 503 (cold-start/waking) as success.
+          # Any other code (including 000 = curl error) is a failure.
+          case "$HTTP_CODE" in
+            200|503)
+              echo "Keepalive ping accepted"
+              exit 0
+              ;;
+            *)
+              echo "Unexpected HTTP code — failing the run for visibility"
+              exit 1
+              ;;
+          esac
