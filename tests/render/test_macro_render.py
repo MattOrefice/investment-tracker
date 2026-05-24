@@ -156,3 +156,46 @@ def test_usd_index_panel_renders(macro_app: AppTest) -> None:
     assert any("DTWEXBGS" in h or "USD Index" in h or "Trade-Weighted" in h for h in headings), (
         "USD index panel heading not found — possible Phase 33 regression"
     )
+
+
+# ── Phase 35 — polish additions ──────────────────────────────────────────────
+
+def test_treasury_yield_curve_panel_renders(macro_app: AppTest) -> None:
+    """Treasury Yield Curve spot chart panel renders. Pinned: Phase 35."""
+    headings = [m.value for m in macro_app.markdown]
+    assert any("Treasury Yield Curve" in h for h in headings), (
+        "Treasury Yield Curve panel heading not found — possible Phase 35 regression"
+    )
+
+
+def test_fomc_calendar_renders(macro_app: AppTest) -> None:
+    """2026 FOMC Meeting Calendar section renders. Pinned: Phase 35."""
+    headings = [m.value for m in macro_app.markdown]
+    assert any("FOMC" in h for h in headings), (
+        "FOMC calendar heading not found — possible Phase 35 regression"
+    )
+
+
+def test_oas_methodology_expander_renders(macro_app: AppTest) -> None:
+    """Credit section OAS methodology expander renders. Pinned: Phase 35."""
+    expander_labels = [e.label for e in macro_app.expander]
+    assert any("credit spread" in lbl.lower() or "OAS" in lbl or "about credit" in lbl.lower()
+               for lbl in expander_labels), (
+        f"OAS methodology expander not found — possible Phase 35 regression. Expanders: {expander_labels}"
+    )
+
+
+def test_regime_transition_paragraph_renders(macro_app: AppTest) -> None:
+    """Regime section 'How regimes transition' paragraph renders. Pinned: Phase 35."""
+    headings = [m.value for m in macro_app.markdown]
+    assert any("How regimes transition" in h for h in headings), (
+        "Regime transition paragraph heading not found — possible Phase 35 regression"
+    )
+
+
+def test_regime_methodology_paragraph_renders(macro_app: AppTest) -> None:
+    """Regime section expanded Methodology block renders. Pinned: Phase 35."""
+    headings = [m.value for m in macro_app.markdown]
+    assert any(h == "**Methodology**" for h in headings), (
+        "Regime Methodology block not found — possible Phase 35 regression"
+    )

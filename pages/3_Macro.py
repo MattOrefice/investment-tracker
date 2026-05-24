@@ -257,6 +257,8 @@ with col:
         ig_oas,      _ig_oas_err = _try_fred("BAMLC0A0CM",       "1996-01-01")
         ccc_oas,     _ccc_oas_err = _try_fred("BAMLH0A3HYC",     "1996-01-01")
         dgs10,       _dgs10_err  = _try_fred("DGS10",             "1990-01-01")
+        dgs3mo,      _dgs3mo_err = _try_fred("DGS3MO",            "1990-01-01")
+        dgs2,        _dgs2_err   = _try_fred("DGS2",              "1990-01-01")
         t10yie,      _t10yie_err = _try_fred("T10YIE",            "2003-01-01")
         dfii10,      _dfii10_err = _try_fred("DFII10",            "2003-01-01")
         unrate,      _unrate_err = _try_fred("UNRATE",            "1948-01-01")
@@ -311,8 +313,11 @@ with col:
         ),
         "Mid-cycle":   (
             "Growth is moderate, the yield curve is positively sloped, and labor markets "
-            "are neither too tight nor too loose. SAA weights are calibrated for this baseline "
-            "environment. No tactical tilt is warranted by current signals."
+            "are neither too tight nor too loose. The SAA is calibrated for diversification "
+            "across regimes — explicit factor tilts toward value and quality, intermediate-duration "
+            "Treasury exposure for recession hedging, inflation-protected securities, and broad "
+            "geographic diversification — rather than for adjustment based on regime classification. "
+            "The regime indicators on this page inform context, not positioning."
         ),
         "Late-cycle":  (
             "The yield curve is inverted or labor markets are historically tight — both "
@@ -351,6 +356,19 @@ with col:
             st.metric("Unemployment Rate",
                       f"{_cur_unrate:.1f}%" if _cur_unrate is not None else "—",
                       help="> 5.5% = Early-cycle; < 4.2% = Late-cycle trigger")
+
+        st.markdown("**How regimes transition**")
+        st.caption(
+            "Cycle regimes shift gradually as the three input variables evolve. Mid-cycle becomes "
+            "late-cycle as the yield curve flattens or inverts (Fed tightening to slow growth), "
+            "unemployment troughs and begins rising from cycle lows, and credit spreads compress "
+            "before widening on rising defaults. Late-cycle becomes recession when NBER officially "
+            "declares it (with a 6–18 month lag) and unemployment rises sharply. Recession becomes "
+            "early-cycle as the curve re-steepens (Fed easing), unemployment peaks and begins "
+            "falling, and credit spreads peak and start tightening. The transitions are not "
+            "discrete — they reflect gradual shifts in the underlying variables, which is why the "
+            "regime classifier captures direction-of-travel rather than predicting turning points."
+        )
 
         try:
             if usrec is not None and t10y2y is not None and unrate is not None:
@@ -409,10 +427,18 @@ with col:
         except Exception:
             pass
 
+        st.markdown("**Methodology**")
         st.caption(
-            "⚠️ **Disclaimer:** This classifier is a rules-based heuristic, not a forecast or "
-            "trading signal. USREC is declared retroactively by the NBER and may lag actual "
-            "recession onset by 6–18 months. See docs/regime_classifier.md for full methodology."
+            "The regime classifier maps three FRED variables — USREC (NBER recession indicator), "
+            "T10Y2Y (10Y minus 2Y Treasury spread), and UNRATE (unemployment rate) — to one of "
+            "four labels: Recession, Late-cycle, Mid-cycle, or Early-cycle. Rules are applied in "
+            "priority order: (1) Recession when USREC = 1; (2) Early-cycle when UNRATE > 5.5% "
+            "and T10Y2Y > −0.25 (labor still healing, curve not inverted); (3) Late-cycle when "
+            "T10Y2Y < −0.25 or UNRATE < 4.2% (inverted curve or historically tight labor); "
+            "(4) Mid-cycle as the default. Full rules and threshold rationale in "
+            "docs/regime_classifier.md. This is a rules-based heuristic, not a forecast or "
+            "trading signal — USREC is declared retroactively by the NBER and may lag actual "
+            "recession onset by 6–18 months."
         )
 
     st.divider()
@@ -671,6 +697,12 @@ with col:
             f"As of {cpi_as_of} · "
             f"{_ordinal(cpi_pctile_w)} percentile of {cpi_window} window"
         )
+        st.caption(
+            "Core CPI strips out food and energy because those components are volatile on a "
+            "month-to-month basis driven by commodity-price shocks; the core reading is the "
+            "Fed's preferred gauge of underlying inflation trends because it more closely tracks "
+            "the wage-and-services dynamics that monetary policy can actually influence."
+        )
 
         if current_cpi > 4.0:
             _cpi_interp = (
@@ -909,6 +941,68 @@ with col:
         _panel_error("2/10 Yield Curve Spread", _t10y2y_err, "retry_yc")
         st.divider()
 
+    # ── Treasury Yield Curve (spot) ───────────────────────────────────────────
+
+    st.markdown("#### Treasury Yield Curve")
+    _yc_3m  = float(dgs3mo.dropna().iloc[-1]) if dgs3mo is not None and not dgs3mo.dropna().empty else None
+    _yc_2y  = float(dgs2.dropna().iloc[-1])   if dgs2  is not None and not dgs2.dropna().empty  else None
+    _yc_10y = float(dgs10.dropna().iloc[-1])  if dgs10 is not None and not dgs10.dropna().empty else None
+
+    if _yc_3m is not None and _yc_2y is not None and _yc_10y is not None:
+        fig_yc_spot = go.Figure()
+        fig_yc_spot.add_trace(go.Scatter(
+            x=["3M", "2Y", "10Y"],
+            y=[_yc_3m, _yc_2y, _yc_10y],
+            mode="lines+markers",
+            line=dict(color=_C["primary"], width=2),
+            marker=dict(size=8, color=_C["primary"]),
+            name="Treasury Yield (%)",
+        ))
+        _apply_style(fig_yc_spot)
+        fig_yc_spot.update_layout(
+            height=240,
+            xaxis=dict(title="Maturity"),
+            yaxis=dict(title="Yield (%)"),
+        )
+        _yr_spot = _tight_yrange(pd.Series([_yc_3m, _yc_2y, _yc_10y]), [])
+        if _yr_spot:
+            fig_yc_spot.update_yaxes(range=_yr_spot)
+        st.plotly_chart(fig_yc_spot, width="stretch")
+
+        m1, m2, m3 = st.columns(3)
+        with m1:
+            st.metric("3M Yield", f"{_yc_3m:.2f}%")
+        with m2:
+            st.metric("2Y Yield", f"{_yc_2y:.2f}%")
+        with m3:
+            st.metric("10Y Yield", f"{_yc_10y:.2f}%")
+
+        if _yc_10y > _yc_2y > _yc_3m:
+            _yc_shape = "normally upward-sloping across all maturities"
+        elif _yc_10y > _yc_3m and _yc_2y >= _yc_10y:
+            _yc_shape = "humped — 2Y above 10Y, with the front end elevated relative to the back end"
+        elif _yc_3m > _yc_10y:
+            _yc_shape = "inverted at the front end — short rates above long rates"
+        elif _yc_10y > _yc_2y and _yc_2y < _yc_3m:
+            _yc_shape = "mildly inverted at the front end, steepening beyond the 2-year maturity"
+        else:
+            _yc_shape = "flat to mildly upward-sloping"
+
+        st.caption(
+            f"The Treasury yield curve is the term structure of risk-free nominal yields across "
+            f"maturities. Shape conveys market expectations of future short rates plus a term "
+            f"premium — a positively-sloped curve implies markets expect higher short rates ahead "
+            f"and/or demand compensation for duration risk; an inverted curve (short above long) "
+            f"has historically preceded recessions. Current shape at 3M {_yc_3m:.2f}%, "
+            f"2Y {_yc_2y:.2f}%, 10Y {_yc_10y:.2f}% is {_yc_shape}, reflecting current Fed policy "
+            f"and market rate expectations. FRED DGS3MO, DGS2, DGS10."
+        )
+        st.divider()
+    else:
+        _missing = [s for s, v in [("DGS3MO", _yc_3m), ("DGS2", _yc_2y), ("DGS10", _yc_10y)] if v is None]
+        st.info(f"Treasury Yield Curve unavailable — missing series: {', '.join(_missing)}")
+        st.divider()
+
     # ── Fed Funds Rate ────────────────────────────────────────────────────────
 
     st.markdown("#### Effective Federal Funds Rate")
@@ -959,6 +1053,45 @@ with col:
     else:
         _panel_error("Effective Federal Funds Rate", _dff_err, "retry_ff")
         st.divider()
+
+    # ── FOMC Meeting Calendar ─────────────────────────────────────────────────
+
+    st.markdown("#### 2026 FOMC Meeting Calendar")
+    _fomc_data = {
+        "Date": [
+            "Jan 27–28, 2026",
+            "Mar 17–18, 2026",
+            "Apr 28–29, 2026",
+            "Jun 16–17, 2026",
+            "Jul 28–29, 2026",
+            "Sep 15–16, 2026",
+            "Oct 27–28, 2026",
+            "Dec 15–16, 2026",
+        ],
+        "Meeting Type": [
+            "Two-day meeting",
+            "Two-day meeting (SEP release)",
+            "Two-day meeting",
+            "Two-day meeting (SEP release)",
+            "Two-day meeting",
+            "Two-day meeting (SEP release)",
+            "Two-day meeting",
+            "Two-day meeting (SEP release)",
+        ],
+    }
+    st.dataframe(
+        pd.DataFrame(_fomc_data),
+        hide_index=True,
+        use_container_width=True,
+    )
+    st.caption(
+        "FOMC meeting dates set 12 months in advance by the Federal Reserve. "
+        "SEP releases (Summary of Economic Projections, including the dot plot of FOMC members' "
+        "rate projections) occur four times per year at March, June, September, and December "
+        "meetings. For real-time market-implied probabilities of rate changes at each meeting, "
+        "see the CME FedWatch Tool, which derives probabilities from Fed Funds futures pricing."
+    )
+    st.divider()
 
     # ── Rate Volatility (10Y Realized — VXTLT proxy) ─────────────────────────
 
@@ -1042,6 +1175,27 @@ with col:
     # ═══════════════════════════════════════════════════════════════════════════
 
     st.markdown("### Credit")
+
+    with st.expander("About credit spreads on this page", expanded=False):
+        st.caption(
+            "**Option-Adjusted Spread (OAS)** is the yield premium a corporate bond offers above "
+            "a duration-matched Treasury, adjusted for embedded options like callability. OAS "
+            "isolates the compensation investors demand for credit risk — wider OAS means more "
+            "compensation per unit of duration."
+        )
+        st.caption(
+            "The three indices displayed are nested by credit quality:\n"
+            "- **IG (BAMLC0A0CM):** all US investment-grade corporates rated BBB and above\n"
+            "- **HY (BAMLH0A0HYM2):** all US high-yield corporates rated BB+ and below\n"
+            "- **CCC (BAMLH0A3HYC):** the lowest-rated subset of HY (CCC and lower ratings)"
+        )
+        st.caption(
+            "HY OAS can be tight while CCC OAS is elevated because the HY index is dominated by "
+            "BB and B issuers — roughly 85% of HY index weight. CCC names are only ~12–15% of HY "
+            "weight, so distress concentrated in the tail can leave headline HY spreads compressed "
+            "while CCC widens. The dispersion between HY and CCC is itself a leading indicator: "
+            "rising CCC spreads typically precede broader HY weakening by 6–12 months."
+        )
 
     # ── IG Credit Spreads ────────────────────────────────────────────────────
 
@@ -1619,9 +1773,24 @@ with col:
             )
 
         st.caption(
-            f"Broad trade-weighted USD at {current_dtwex:.1f} ({_dtwex_strength} relative to {dtwex_window} window). "
-            + _dtwex_impl
-            + " FRED DTWEXBGS: Nominal Broad U.S. Dollar Index (goods and services). "
+            "The Broad Trade-Weighted USD Index (DTWEXBGS) measures the value of the US dollar "
+            "against a basket of currencies of US trading partners, weighted by trade flow (goods "
+            "plus services). The basket includes major currencies — euro, yen, pound, Canadian "
+            "dollar, Swiss franc, Australian dollar — plus emerging-market currencies including "
+            "Chinese renminbi, Mexican peso, Korean won, and others. The 'broad' version "
+            "distinguishes it from the narrower DXY, which only covers six major currencies."
+        )
+        st.caption(
+            f"Current value of {current_dtwex:.1f} is at the {_ordinal(dtwex_pctile_w)} percentile "
+            f"of the {dtwex_window} window ({_dtwex_strength}). "
+            + _dtwex_impl + " "
+            "Dollar strength affects multiple portfolio dimensions: a stronger dollar reduces USD "
+            "returns on unhedged international equity sleeves (translation effect), pressures "
+            "emerging-market sovereign and corporate debt (since EM borrowers' USD-denominated "
+            "liabilities become harder to service), and generally accompanies tighter global "
+            "financial conditions. The portfolio holds 27% non-US equity (VEA + IEMG), so USD "
+            "direction is a meaningful translation factor on roughly a quarter of the book. "
+            "FRED DTWEXBGS: Nominal Broad U.S. Dollar Index (goods and services). "
             "Gray shading = NBER recessions."
         )
         st.divider()
@@ -1649,6 +1818,8 @@ with col:
             return f"**{label}**: unavailable"
 
         _src_lines += [
+            _fred_src("FRED DGS3MO (3-Month Treasury Rate)",                   dgs3mo)     + " · daily",
+            _fred_src("FRED DGS2 (2-Year Treasury Rate)",                      dgs2)       + " · daily",
             _fred_src("FRED DGS10 (10-Year Treasury Rate)",                    dgs10)      + " · daily",
             _fred_src("FRED T10YIE (10-Year Breakeven Inflation)",             t10yie)     + " · daily · starts Jan 2003",
             _fred_src("FRED DFII10 (10-Year TIPS Yield — Real Rate)",          dfii10)     + " · daily · starts Jan 2003",
