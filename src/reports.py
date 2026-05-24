@@ -82,7 +82,7 @@ SLEEVE_BENCH_TICKER: dict[str, str] = {
     "Emerging Markets":        "EEM",
     "Core Fixed Income":       "IEF",
     "TIPS":                    "TIP",
-    "Real Assets":             "VNQ / DBC",
+    "Real Assets":             "VNQ (50%) + DBC (50%)",
     "Cash / SPAXX":            "BIL",
 }
 

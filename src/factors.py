@@ -947,7 +947,7 @@ def build_factor_prose(
         "The Emerging Markets sleeve (IEMG) is excluded from regression analysis: "
         "Ken French does not publish daily EM factor data, and the current "
         "portfolio history is insufficient for a meaningful monthly-frequency regression. "
-        "Real assets (VNQ, PDBC) are excluded — no liquid daily factor proxy set spans "
+        "Real assets (VNQ 50%, DBC 50%) are excluded — no liquid daily factor proxy set spans "
         "REIT and commodity exposure simultaneously."
     )
 
@@ -1051,7 +1051,7 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
             "Equity FF5 factors do not span fixed income; this dedicated two-factor model "
             "captures duration and credit risk explicitly. RF from Ken French US daily factors.",
 
-            "Real assets (VNQ, PDBC) remain excluded: no liquid daily factor proxy set spans "
+            "Real assets (VNQ 50%, DBC 50%) remain excluded: no liquid daily factor proxy set spans "
             "REIT and commodity exposure simultaneously. Factor models for real assets are "
             "a future extension.",
         ]
@@ -1059,7 +1059,7 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
         notes.append(
             "Fixed income (VGIT, SCHP): TERM/CREDIT factor model (IEF−BIL duration premium, "
             "HYG−IEF credit spread premium) in scope — see FI Sleeve panel above. "
-            "Real assets (VNQ, PDBC) remain excluded; no liquid daily factor proxy set "
+            "Real assets (VNQ 50%, DBC 50%) remain excluded; no liquid daily factor proxy set "
             "spans REIT and commodity exposure simultaneously."
         )
 

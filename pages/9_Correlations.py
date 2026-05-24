@@ -347,7 +347,7 @@ with col:
     with st.expander("Methodology", expanded=False):
         st.markdown(
             "**Tickers used:** Each sleeve's SAA benchmark ticker is used for the return "
-            "series (SPY, QUAL, IWD, IWM, EFA, EEM, IEF, TIP, and a 50/50 VNQ+DBC blend "
+            "series (SPY, QUAL, IWD, IWM, EFA, EEM, IEF, TIP, and a 50% VNQ + 50% DBC blend "
             "for Real Assets). Cash / SPAXX is excluded — its near-zero daily variance "
             "makes correlation estimates unstable.  \n\n"
             "**Return computation:** Daily log-approximate returns via `adj_close.pct_change()`. "

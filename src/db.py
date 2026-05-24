@@ -157,6 +157,18 @@ def _auto_migrate(conn: sqlite3.Connection) -> None:
         )
         conn.commit()
 
+    # Migration: surface VNQ/DBC split in Real Assets benchmark label.
+    has_ac = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='asset_classes'"
+    ).fetchone()
+    if has_ac:
+        conn.execute(
+            "UPDATE asset_classes SET benchmark_ticker = 'VNQ (50%) + DBC (50%)' "
+            "WHERE name = 'Real Assets' AND parent_id IS NOT NULL "
+            "AND benchmark_ticker IN ('VNQ+DBC', 'VNQ+DJP')"
+        )
+        conn.commit()
+
 
 def get_connection():
     """Return a SQLite connection with foreign keys enabled."""
