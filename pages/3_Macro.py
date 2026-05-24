@@ -81,7 +81,6 @@ def _apply_style(fig: go.Figure, height: int = _CHART_H) -> go.Figure:
 
 
 def _tight_yrange(series: pd.Series, extra_ys: list | None = None, pad: float = 0.10) -> list | None:
-    """Compute tight y-axis range: data extent ± 10% padding, including any annotation y-values."""
     clean = series.dropna()
     if clean.empty:
         return None
@@ -117,7 +116,6 @@ def _add_recession_shading(fig: go.Figure, periods: list, start_filter: str) -> 
 
 
 def _add_current_annotation(fig: go.Figure, val: float, label: str) -> None:
-    """Add a horizontal line at current value with a window-percentile annotation."""
     fig.add_hline(
         y=val,
         line_dash="solid",
@@ -203,7 +201,11 @@ _, col, _ = st.columns([1, 8, 1])
 with col:
 
     st.markdown("## Macro Dashboard")
-    st.caption("Regime indicators relevant to portfolio positioning.")
+    st.caption(
+        "Macro indicators across growth, inflation, monetary policy, credit, valuation, "
+        "and cross-asset performance. Used as reference data — positioning remains "
+        "policy-driven, not view-driven."
+    )
     st.caption(as_of_banner())
 
     hdr_l, hdr_r = st.columns([3, 1])
@@ -222,10 +224,9 @@ with col:
 
     st.divider()
 
-    # ── Load all FRED data upfront ────────────────────────────────────────────
+    # ── helpers defined inside col ────────────────────────────────────────────
 
     def _try_fred(series_id: str, start_date: str):
-        """Return (series, None) on success or (None, exc) on failure."""
         try:
             return _load_fred(series_id, start_date), None
         except Exception as exc:
@@ -245,20 +246,49 @@ with col:
                 _load_fred.clear()
                 st.rerun()
 
+    # ── Load all FRED data upfront ────────────────────────────────────────────
+
     with st.spinner("Loading FRED data…"):
         rec_periods, _rec_err    = _try_rec()
         usrec,       _usrec_err  = _try_fred("USREC",             "1945-01-01")
         t10y2y,      _t10y2y_err = _try_fred("T10Y2Y",           "1976-06-01")
         dff,         _dff_err    = _try_fred("DFF",               "1954-07-01")
         hy_oas,      _hy_oas_err = _try_fred("BAMLH0A0HYM2",     "1996-12-31")
-        dgs10,       _dgs10_err  = _try_fred("DGS10",             "2003-01-01")
+        ig_oas,      _ig_oas_err = _try_fred("BAMLC0A0CM",       "1996-01-01")
+        ccc_oas,     _ccc_oas_err = _try_fred("BAMLH0A3HYC",     "1996-01-01")
+        dgs10,       _dgs10_err  = _try_fred("DGS10",             "1990-01-01")
         t10yie,      _t10yie_err = _try_fred("T10YIE",            "2003-01-01")
+        dfii10,      _dfii10_err = _try_fred("DFII10",            "2003-01-01")
         unrate,      _unrate_err = _try_fred("UNRATE",            "1948-01-01")
         gdp_gr,      _gdp_err    = _try_fred("A191RL1Q225SBEA",   "1947-01-01")
         core_cpi,    _cpi_err    = _try_fred("CPILFESL",          "1957-01-01")
+        cfnai_diff,  _cfnai_err  = _try_fred("CFNAIDIFF",         "1967-01-01")
+        dtwexbgs,    _dtwex_err  = _try_fred("DTWEXBGS",          "2006-01-01")
+
+    # ── Compute rate volatility from DGS10 (VXTLT unavailable on Yahoo Finance) ──
+    rate_vol_21 = None
+    if dgs10 is not None:
+        _dgs10_ch  = dgs10.dropna().diff().dropna()
+        rate_vol_21 = (_dgs10_ch.rolling(21).std() * (252 ** 0.5)).dropna()
+
+    # ── Pre-compute cross-panel reference values ──────────────────────────────
+    _shared_cpi_pct = None
+    if core_cpi is not None:
+        _cpi_yoy_shared = core_cpi.dropna().pct_change(12) * 100
+        _cpi_yoy_shared = _cpi_yoy_shared.dropna()
+        if not _cpi_yoy_shared.empty:
+            _shared_cpi_pct = float(_cpi_yoy_shared.iloc[-1])
+
+    _shared_t10yie_pct = None
+    if t10yie is not None and not t10yie.dropna().empty:
+        _shared_t10yie_pct = float(t10yie.dropna().iloc[-1])
+
+    _shared_hy_bps = None
+    if hy_oas is not None and not hy_oas.dropna().empty:
+        _shared_hy_bps = float(hy_oas.dropna().iloc[-1]) * 100
 
     # ═══════════════════════════════════════════════════════════════════════════
-    # REGIME CLASSIFIER (prominent header)
+    # 1. REGIME CLASSIFIER
     # ═══════════════════════════════════════════════════════════════════════════
 
     _REGIME_COLORS = {
@@ -322,7 +352,6 @@ with col:
                       f"{_cur_unrate:.1f}%" if _cur_unrate is not None else "—",
                       help="> 5.5% = Early-cycle; < 4.2% = Late-cycle trigger")
 
-        # Backtest: apply classifier across common history of all three signals
         try:
             if usrec is not None and t10y2y is not None and unrate is not None:
                 _bt_usrec  = usrec.resample("MS").last().ffill()
@@ -342,22 +371,7 @@ with col:
                     )]
                     for d in _bt_common
                 ]
-                _bt_labels = [
-                    macro.classify_regime(
-                        float(_bt_usrec.loc[d]),
-                        float(_bt_curve.loc[d]),
-                        float(_bt_ur.loc[d]),
-                    )
-                    for d in _bt_common
-                ]
                 _bt_series = pd.Series(_regime_num, index=_bt_common)
-
-                _color_map = {
-                    0: _REGIME_COLORS["Recession"][0],
-                    1: _REGIME_COLORS["Early-cycle"][0],
-                    2: _REGIME_COLORS["Mid-cycle"][0],
-                    3: _REGIME_COLORS["Late-cycle"][0],
-                }
 
                 with st.expander("Historical regime backtest (since 1976)", expanded=False):
                     fig_bt = go.Figure()
@@ -404,12 +418,875 @@ with col:
     st.divider()
 
     # ═══════════════════════════════════════════════════════════════════════════
-    # VALUATION
+    # 2. GROWTH
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    st.markdown("### Growth")
+
+    # ── Real GDP ─────────────────────────────────────────────────────────────
+
+    st.markdown("#### Real GDP Growth (QoQ Annualized)")
+    if gdp_gr is not None:
+
+        gdp_clean   = gdp_gr.dropna()
+        current_gdp = float(gdp_clean.iloc[-1])
+        gdp_as_of   = gdp_clean.index[-1].strftime("%b %Y")
+
+        gdp_window = st.radio(
+            "Window", ["10Y", "20Y", "Max"],
+            index=1, key="gdp_window", horizontal=True,
+        )
+        gdp_yaxis = st.radio(
+            "Y-axis", ["Full series", "Excl. 2020 outliers"],
+            index=1, key="gdp_yaxis", horizontal=True,
+        )
+        gdp_start    = _window_start(gdp_window)
+        gdp_pctile_w = _window_pctile(gdp_clean, current_gdp, gdp_start)
+        gdp_data     = gdp_clean.loc[gdp_start:]
+        _gdp_base = gdp_data[gdp_data.index.year != 2020] if gdp_yaxis == "Excl. 2020 outliers" else gdp_data
+        fig_gdp = go.Figure()
+        _add_recession_shading(fig_gdp, rec_periods or [], gdp_start)
+        fig_gdp.add_trace(go.Bar(
+            x=gdp_data.index, y=gdp_data.values,
+            name="Real GDP QoQ ann. (%)",
+            marker_color=[_C["primary"] if v >= 0 else "#C0392B" for v in gdp_data.values],
+        ))
+        fig_gdp.add_hline(
+            y=0, line_color=_C["ref"], line_width=1, line_dash="dash",
+        )
+        _apply_style(fig_gdp)
+        fig_gdp.update_yaxes(title_text="Growth (%)")
+        _yr = _tight_yrange(_gdp_base, [current_gdp, 0.0])
+        if _yr:
+            fig_gdp.update_yaxes(range=_yr)
+        st.plotly_chart(fig_gdp, width='stretch')
+        st.metric("Real GDP Growth (QoQ ann.)", f"{current_gdp:.1f}%")
+        st.caption(
+            f"As of {gdp_as_of} (quarterly release, 1-2 quarter lag) · "
+            f"{_ordinal(gdp_pctile_w)} percentile of {gdp_window} window"
+        )
+
+        st.caption(
+            interpret_gdp_growth(current_gdp) + " "
+            "FRED A191RL1Q225SBEA: real GDP percent change from preceding period, "
+            "seasonally adjusted annual rate. Gray shading = NBER recessions."
+        )
+        st.divider()
+    else:
+        _panel_error("Real GDP Growth", _gdp_err, "retry_gdp")
+        st.divider()
+
+    # ── Unemployment Rate (moved from Labor section) ──────────────────────────
+
+    st.markdown("#### Unemployment Rate (UNRATE)")
+    if unrate is not None:
+
+        ur_clean      = unrate.dropna()
+        current_ur    = float(ur_clean.iloc[-1])
+        ur_since      = ur_clean.index[0].strftime("%b %Y")
+        ur_1y_data    = ur_clean[ur_clean.index <= ONE_YR_AGO]
+        ur_1y_ago     = float(ur_1y_data.iloc[-1]) if not ur_1y_data.empty else current_ur
+        ur_chg        = (current_ur - ur_1y_ago) * 100
+
+        ur_window = st.radio(
+            "Window", ["5Y", "10Y", "20Y", "Max"],
+            index=1, key="ur_window", horizontal=True,
+        )
+        ur_yaxis = st.radio(
+            "Y-axis", ["Full series", "Excl. 2020 spike"],
+            index=0, key="ur_yaxis", horizontal=True,
+        )
+        ur_start    = _window_start(ur_window)
+        ur_pctile_w = _window_pctile(ur_clean, current_ur, ur_start)
+        ur_data     = ur_clean.loc[ur_start:]
+        fig_ur = go.Figure()
+        _add_recession_shading(fig_ur, rec_periods or [], ur_start)
+        fig_ur.add_trace(go.Scatter(
+            x=ur_data.index, y=ur_data.values,
+            mode="lines", name="Unemployment (%)",
+            line=dict(color=_C["primary"], width=2),
+        ))
+        _add_current_annotation(
+            fig_ur, current_ur,
+            f"Current {current_ur:.1f}% ({_ordinal(ur_pctile_w)} pct, {ur_window})",
+        )
+        _apply_style(fig_ur)
+        fig_ur.update_yaxes(title_text="Rate (%)")
+        _ur_base = ur_data[ur_data.index.year != 2020] if ur_yaxis == "Excl. 2020 spike" else ur_data
+        _yr = _tight_yrange(_ur_base, [current_ur])
+        if _yr:
+            _yr[0] = max(0.0, _yr[0])
+            fig_ur.update_yaxes(range=_yr)
+        st.plotly_chart(fig_ur, width='stretch')
+        st.metric("Unemployment Rate", f"{current_ur:.1f}%")
+        st.caption(
+            f"{format_ur_delta(ur_chg)} · "
+            f"{_ordinal(ur_pctile_w)} percentile of {ur_window} window"
+        )
+
+        if ur_pctile_w < 30:
+            _ur_interp = (
+                f"Unemployment at {current_ur:.1f}% is in the {_ordinal(ur_pctile_w)} percentile "
+                f"of the {ur_window} window — historically low, consistent with a tight labor market "
+                "and late-cycle conditions. Low unemployment has historically preceded cyclical peaks."
+            )
+        elif ur_pctile_w < 60:
+            _ur_interp = (
+                f"Unemployment at {current_ur:.1f}% is in the {_ordinal(ur_pctile_w)} percentile "
+                f"of the {ur_window} window — near the historical median for this window, "
+                "consistent with a mid-cycle labor market."
+            )
+        else:
+            _ur_interp = (
+                f"Unemployment at {current_ur:.1f}% is in the {_ordinal(ur_pctile_w)} percentile "
+                f"of the {ur_window} window — elevated relative to recent history, "
+                "potentially consistent with recessionary or early-recovery conditions."
+            )
+        st.caption(
+            _ur_interp + " "
+            "Rising unemployment from a cyclical low is a key recession coincident indicator. "
+            "Gray shading marks NBER-dated recessions."
+        )
+        st.divider()
+    else:
+        _panel_error("Unemployment Rate", _unrate_err, "retry_ur")
+        st.divider()
+
+    # ── Manufacturing Activity — CFNAIDIFF (ISM PMI proxy) ────────────────────
+
+    st.markdown("#### Manufacturing Activity (CFNAIDIFF — ISM PMI Proxy)")
+    if cfnai_diff is not None:
+
+        cfnai_clean   = cfnai_diff.dropna()
+        current_cfnai = float(cfnai_clean.iloc[-1])
+        cfnai_as_of   = cfnai_clean.index[-1].strftime("%b %Y")
+        sign_cfnai    = "+" if current_cfnai >= 0 else ""
+
+        cfnai_window = st.radio(
+            "Window", ["5Y", "10Y", "20Y", "Max"],
+            index=1, key="cfnai_window", horizontal=True,
+        )
+        cfnai_start    = _window_start(cfnai_window)
+        cfnai_pctile_w = _window_pctile(cfnai_clean, current_cfnai, cfnai_start)
+        cfnai_data     = cfnai_clean.loc[cfnai_start:]
+
+        fig_cfnai = go.Figure()
+        _add_recession_shading(fig_cfnai, rec_periods or [], cfnai_start)
+        fig_cfnai.add_trace(go.Bar(
+            x=cfnai_data.index, y=cfnai_data.values,
+            name="CFNAIDIFF",
+            marker_color=[_C["primary"] if v >= 0 else "#C0392B" for v in cfnai_data.values],
+        ))
+        fig_cfnai.add_hline(
+            y=0, line_color=_C["ref"], line_width=1, line_dash="dash",
+        )
+        _add_current_annotation(
+            fig_cfnai, current_cfnai,
+            f"Current {sign_cfnai}{current_cfnai:.2f} ({_ordinal(cfnai_pctile_w)} pct, {cfnai_window})",
+        )
+        _apply_style(fig_cfnai)
+        fig_cfnai.update_yaxes(title_text="Diffusion Index")
+        _yr = _tight_yrange(cfnai_data, [current_cfnai, 0.0])
+        if _yr:
+            fig_cfnai.update_yaxes(range=_yr)
+        st.plotly_chart(fig_cfnai, width='stretch')
+        st.metric("CFNAIDIFF (PMI Proxy)", f"{sign_cfnai}{current_cfnai:.2f}")
+        st.caption(
+            f"As of {cfnai_as_of} (monthly, ~1-month lag) · "
+            f"{_ordinal(cfnai_pctile_w)} percentile of {cfnai_window} window"
+        )
+
+        if current_cfnai > 0:
+            _cfnai_direction = "above zero — above-trend economic breadth"
+            _cfnai_cycle = (
+                "Positive diffusion is consistent with mid-to-late-cycle expansion momentum "
+                "and correlates with tightening credit spreads and support for cyclical equity sleeves."
+            )
+        else:
+            _cfnai_direction = "below zero — below-trend economic breadth"
+            _cfnai_cycle = (
+                "Negative diffusion is consistent with below-trend activity or early-cycle conditions. "
+                "Historically precedes credit-spread widening and supports a quality bias in equity sleeves."
+            )
+        st.caption(
+            f"CFNAIDIFF (ISM PMI proxy; NAPM series unavailable on FRED) measures the breadth of "
+            f"economic indicators above vs. below trend — zero is the neutral line, positive is expansionary. "
+            f"At {sign_cfnai}{current_cfnai:.2f}, the index is {_cfnai_direction}. "
+            + _cfnai_cycle
+            + " FRED CFNAIDIFF. Gray shading = NBER recessions."
+        )
+        st.divider()
+    else:
+        _panel_error("Manufacturing Activity (CFNAIDIFF)", _cfnai_err, "retry_cfnai")
+        st.divider()
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # 3. INFLATION & REAL RATES
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    st.markdown("### Inflation & Real Rates")
+
+    # ── Core CPI ─────────────────────────────────────────────────────────────
+
+    st.markdown("#### Core CPI (ex Food & Energy) — Year-over-Year")
+    if core_cpi is not None:
+
+        cpi_clean    = core_cpi.dropna()
+        cpi_yoy      = cpi_clean.pct_change(12) * 100
+        cpi_yoy      = cpi_yoy.dropna()
+        current_cpi  = float(cpi_yoy.iloc[-1])
+        cpi_as_of    = cpi_yoy.index[-1].strftime("%b %Y")
+
+        cpi_window = st.radio(
+            "Window", ["5Y", "10Y", "20Y", "Max"],
+            index=1, key="cpi_window", horizontal=True,
+        )
+        cpi_start    = _window_start(cpi_window)
+        cpi_pctile_w = _window_pctile(cpi_yoy, current_cpi, cpi_start)
+        cpi_data     = cpi_yoy.loc[cpi_start:]
+        fig_cpi = go.Figure()
+        _add_recession_shading(fig_cpi, rec_periods or [], cpi_start)
+        fig_cpi.add_trace(go.Scatter(
+            x=cpi_data.index, y=cpi_data.values,
+            mode="lines", name="Core CPI YoY (%)",
+            line=dict(color=_C["primary"], width=2),
+        ))
+        fig_cpi.add_hline(
+            y=2.0, line_dash="dash", line_color=_C["ref"], line_width=1,
+            annotation_text="Fed target 2%",
+            annotation_position="right", annotation_font_size=10,
+        )
+        _add_current_annotation(
+            fig_cpi, current_cpi,
+            f"Current {current_cpi:.1f}% ({_ordinal(cpi_pctile_w)} pct, {cpi_window})",
+        )
+        _apply_style(fig_cpi)
+        fig_cpi.update_yaxes(title_text="YoY Change (%)")
+        _yr = _tight_yrange(cpi_data, [current_cpi, 2.0])
+        if _yr:
+            fig_cpi.update_yaxes(range=_yr)
+        st.plotly_chart(fig_cpi, width='stretch')
+        st.metric("Core CPI YoY", f"{current_cpi:.1f}%")
+        st.caption(
+            f"As of {cpi_as_of} · "
+            f"{_ordinal(cpi_pctile_w)} percentile of {cpi_window} window"
+        )
+
+        if current_cpi > 4.0:
+            _cpi_interp = (
+                f"Core CPI at {current_cpi:.1f}% is well above the Fed's 2% target — "
+                "an inflationary regime where TIPS and Real Assets provide direct portfolio hedging."
+            )
+        elif current_cpi > 2.5:
+            _cpi_interp = (
+                f"Core CPI at {current_cpi:.1f}% remains above target — "
+                "disinflation in progress but not yet complete. "
+                "TIPS sleeve remains a relevant inflation hedge."
+            )
+        elif current_cpi > 1.5:
+            _cpi_interp = (
+                f"Core CPI at {current_cpi:.1f}% is near or slightly above the Fed's 2% target — "
+                "a regime where nominal duration (Core Fixed Income) is reasonably priced."
+            )
+        else:
+            _cpi_interp = (
+                f"Core CPI at {current_cpi:.1f}% is below target — "
+                "disinflationary conditions that historically support nominal bond returns "
+                "and may reduce the immediate urgency of the TIPS inflation hedge."
+            )
+        st.caption(
+            _cpi_interp + " "
+            "FRED CPILFESL: CPI for All Urban Consumers, All Items Less Food and Energy, "
+            "12-month percent change. Gray shading = NBER recessions."
+        )
+        st.divider()
+    else:
+        _panel_error("Core CPI YoY", _cpi_err, "retry_cpi")
+        st.divider()
+
+    # ── 10Y Breakeven Inflation (T10YIE) ─────────────────────────────────────
+
+    st.markdown("#### 10-Year Breakeven Inflation (T10YIE)")
+    if t10yie is not None:
+
+        be_clean    = t10yie.dropna()
+        current_be  = float(be_clean.iloc[-1])
+        be_as_of    = be_clean.index[-1].strftime("%b %Y")
+        be_since    = be_clean.index[0].strftime("%b %Y")
+
+        be_window = st.radio(
+            "Window", ["5Y", "10Y", "Max"],
+            index=1, key="be_window", horizontal=True,
+        )
+        be_start    = _window_start(be_window)
+        be_pctile_w = _window_pctile(be_clean, current_be, be_start)
+        be_data     = be_clean.loc[be_start:]
+
+        fig_be = go.Figure()
+        _add_recession_shading(fig_be, rec_periods or [], be_start)
+        fig_be.add_trace(go.Scatter(
+            x=be_data.index, y=be_data.values,
+            mode="lines", name="Breakeven (%)",
+            line=dict(color=_C["primary"], width=2),
+        ))
+        fig_be.add_hline(
+            y=2.0, line_dash="dash", line_color=_C["ref"], line_width=1,
+            annotation_text="Fed target 2%",
+            annotation_position="right", annotation_font_size=10,
+        )
+        _add_current_annotation(
+            fig_be, current_be,
+            f"Current {current_be:.2f}% ({_ordinal(be_pctile_w)} pct, {be_window})",
+        )
+        _apply_style(fig_be)
+        fig_be.update_yaxes(title_text="Breakeven Inflation (%)")
+        _yr = _tight_yrange(be_data, [current_be, 2.0])
+        if _yr:
+            fig_be.update_yaxes(range=_yr)
+        st.plotly_chart(fig_be, width='stretch')
+        st.metric("10Y Breakeven Inflation", f"{current_be:.2f}%")
+        st.caption(
+            f"As of {be_as_of} · {_ordinal(be_pctile_w)} percentile of {be_window} window "
+            f"(data since {be_since})"
+        )
+
+        _cpi_ref = f"{_shared_cpi_pct:.1f}%" if _shared_cpi_pct is not None else "N/A"
+        if _shared_cpi_pct is not None and _shared_cpi_pct > current_be + 0.3:
+            _be_framing = "pricing disinflation toward target — the market expects inflation to fall from current levels"
+        elif _shared_cpi_pct is not None and abs(_shared_cpi_pct - current_be) <= 0.3:
+            _be_framing = "in line with current realized inflation — the market is not pricing significant directional change"
+        else:
+            _be_framing = "pricing persistence near or above current CPI levels"
+
+        st.caption(
+            f"10Y breakeven at {current_be:.2f}% is the market-implied average inflation rate "
+            f"over 10 years (nominal 10Y yield minus TIPS yield, FRED-computed). "
+            f"Compared to Core CPI at {_cpi_ref}, the market is {_be_framing}. "
+            f"Breakeven is the hurdle rate for TIPS-vs-nominal-Treasury outperformance — "
+            f"directly relevant to the 6% TIPS sleeve."
+        )
+        st.divider()
+    else:
+        _panel_error("10Y Breakeven Inflation (T10YIE)", _t10yie_err, "retry_be")
+        st.divider()
+
+    # ── Real 10Y Treasury Yield (DFII10) ─────────────────────────────────────
+
+    st.markdown("#### Real 10-Year Treasury Yield (DFII10 — TIPS)")
+    if dfii10 is not None:
+
+        dfii10_clean    = dfii10.dropna()
+        current_real10y = float(dfii10_clean.iloc[-1])
+        real10y_as_of   = dfii10_clean.index[-1].strftime("%b %Y")
+        real10y_since   = dfii10_clean.index[0].strftime("%b %Y")
+
+        real10y_window = st.radio(
+            "Window", ["5Y", "10Y", "Max"],
+            index=1, key="real10y_window", horizontal=True,
+        )
+        real10y_start    = _window_start(real10y_window)
+        real10y_pctile_w = _window_pctile(dfii10_clean, current_real10y, real10y_start)
+        real10y_data     = dfii10_clean.loc[real10y_start:]
+
+        fig_r10 = go.Figure()
+        _add_recession_shading(fig_r10, rec_periods or [], real10y_start)
+        fig_r10.add_trace(go.Scatter(
+            x=real10y_data.index, y=real10y_data.values,
+            mode="lines", name="Real 10Y (%)",
+            line=dict(color=_C["primary"], width=2),
+        ))
+        fig_r10.add_hline(
+            y=0, line_dash="dash", line_color=_C["ref"], line_width=1,
+            annotation_text="0 = zero real yield (ZIRP era)",
+            annotation_position="top left", annotation_font_size=9,
+            annotation_font_color="#888",
+        )
+        _add_current_annotation(
+            fig_r10, current_real10y,
+            f"Current {current_real10y:+.2f}% ({_ordinal(real10y_pctile_w)} pct, {real10y_window})",
+        )
+        _apply_style(fig_r10)
+        fig_r10.update_yaxes(title_text="Real Yield (%)")
+        _yr = _tight_yrange(real10y_data, [current_real10y, 0.0])
+        if _yr:
+            fig_r10.update_yaxes(range=_yr)
+        st.plotly_chart(fig_r10, width='stretch')
+        st.metric("Real 10Y Yield (TIPS)", f"{current_real10y:+.2f}%")
+        st.caption(
+            f"As of {real10y_as_of} · {_ordinal(real10y_pctile_w)} percentile of {real10y_window} window "
+            f"(data since {real10y_since})"
+        )
+
+        if current_real10y > 1.5:
+            _real10y_interp = (
+                f"Real 10Y at {current_real10y:+.2f}% is well above zero — a structural shift from "
+                f"the ZIRP era of 2010–2022. Positive real rates above 1.5% raise discount rates for "
+                f"long-duration growth equities, support USD strength, and make TIPS attractive as "
+                f"a source of real yield with inflation protection."
+            )
+        elif current_real10y > 0:
+            _real10y_interp = (
+                f"Real 10Y at {current_real10y:+.2f}% is modestly positive — above the ZIRP era but "
+                f"below the threshold typically associated with broad rate-driven equity pressure. "
+                f"TIPS yield at this level offers positive real return for the TIPS sleeve."
+            )
+        else:
+            _real10y_interp = (
+                f"Real 10Y at {current_real10y:+.2f}% is negative — consistent with financial repression "
+                f"or aggressive policy easing. Negative real rates are historically supportive of equities, "
+                f"real assets, and gold, but reduce the real return available from the TIPS sleeve."
+            )
+        st.caption(
+            _real10y_interp + " "
+            "FRED DFII10: 10-Year Treasury Inflation-Indexed Security Yield (TIPS). "
+            "Gray shading = NBER recessions."
+        )
+        st.divider()
+    else:
+        _panel_error("Real 10Y Treasury Yield (DFII10)", _dfii10_err, "retry_real10y")
+        st.divider()
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # 4. MONETARY POLICY & RATE VOLATILITY
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    st.markdown("### Monetary Policy & Rate Volatility")
+
+    # ── 2/10 Yield Curve ─────────────────────────────────────────────────────
+
+    st.markdown("#### 2/10 Yield Curve Spread")
+    if t10y2y is not None:
+
+        t10y2y_clean       = t10y2y.dropna()
+        current_spread_bps = float(t10y2y_clean.iloc[-1]) * 100
+        curve_state        = _yield_curve_state(t10y2y_clean)
+        t10y2y_bps         = t10y2y_clean * 100
+
+        yc_window = st.radio(
+            "Window", ["5Y", "10Y", "20Y", "Max"],
+            index=1, key="yc_window", horizontal=True,
+        )
+        yc_start    = _window_start(yc_window)
+        yc_pctile_w = _window_pctile(t10y2y_bps, current_spread_bps, yc_start)
+        yc_data     = t10y2y_bps.loc[yc_start:]
+        sign = "+" if current_spread_bps >= 0 else ""
+        fig_yc = go.Figure()
+        _add_recession_shading(fig_yc, rec_periods or [], yc_start)
+        fig_yc.add_trace(go.Scatter(
+            x=yc_data.index, y=yc_data.values,
+            mode="lines", name="10Y−2Y (bps)",
+            line=dict(color=_C["primary"], width=2),
+        ))
+        fig_yc.add_hline(
+            y=0, line_dash="dash", line_color=_C["ref"], line_width=1,
+            annotation_text="0 = flat  |  above: normal  |  below: inverted",
+            annotation_position="top left", annotation_font_size=9,
+            annotation_font_color="#888",
+        )
+        _add_current_annotation(
+            fig_yc, current_spread_bps,
+            f"Current {current_spread_bps:+.0f} bps ({_ordinal(yc_pctile_w)} pct, {yc_window})",
+        )
+        _apply_style(fig_yc)
+        fig_yc.update_yaxes(title_text="Spread (bps)")
+        _yr = _tight_yrange(yc_data, [current_spread_bps, 0.0])
+        if _yr:
+            fig_yc.update_yaxes(range=_yr)
+        st.plotly_chart(fig_yc, width='stretch')
+        st.metric("10Y − 2Y Spread", f"{sign}{current_spread_bps:.0f} bps")
+        st.caption(
+            f"{curve_state} · "
+            f"{_ordinal(yc_pctile_w)} percentile of {yc_window} window"
+        )
+
+        st.caption(interpret_curve_spread(current_spread_bps))
+        st.caption(
+            "Gray shading marks NBER-dated recessions. "
+            "Percentile computed relative to the selected window."
+        )
+        st.divider()
+    else:
+        _panel_error("2/10 Yield Curve Spread", _t10y2y_err, "retry_yc")
+        st.divider()
+
+    # ── Fed Funds Rate ────────────────────────────────────────────────────────
+
+    st.markdown("#### Effective Federal Funds Rate")
+    if dff is not None:
+
+        dff_clean  = dff.dropna()
+        current_ff = float(dff_clean.iloc[-1])
+
+        dff_1y_data = dff_clean[dff_clean.index <= ONE_YR_AGO]
+        ff_1y_ago   = float(dff_1y_data.iloc[-1]) if not dff_1y_data.empty else current_ff
+        ff_1y_date  = dff_1y_data.index[-1].strftime("%b %Y") if not dff_1y_data.empty else ""
+        ff_chg_bps  = (current_ff - ff_1y_ago) * 100
+
+        ff_window = st.radio(
+            "Window", ["5Y", "10Y", "20Y", "Max"],
+            index=1, key="ff_window", horizontal=True,
+        )
+        ff_start    = _window_start(ff_window)
+        ff_pctile_w = _window_pctile(dff_clean, current_ff, ff_start)
+        ff_data     = dff_clean.loc[ff_start:]
+        chg_sign = "+" if ff_chg_bps >= 0 else ""
+        fig_ff = go.Figure()
+        _add_recession_shading(fig_ff, rec_periods or [], ff_start)
+        fig_ff.add_trace(go.Scatter(
+            x=ff_data.index, y=ff_data.values,
+            mode="lines", name="Fed Funds (%)",
+            line=dict(color=_C["primary"], width=2),
+        ))
+        _add_current_annotation(
+            fig_ff, current_ff,
+            f"Current {current_ff:.2f}% ({_ordinal(ff_pctile_w)} pct, {ff_window})",
+        )
+        _apply_style(fig_ff)
+        fig_ff.update_yaxes(title_text="Rate (%)")
+        _yr = _tight_yrange(ff_data, [current_ff])
+        if _yr:
+            _yr[0] = max(0.0, _yr[0])
+            fig_ff.update_yaxes(range=_yr)
+        st.plotly_chart(fig_ff, width='stretch')
+        st.metric("Fed Funds Rate", f"{current_ff:.2f}%")
+        st.caption(
+            f"{chg_sign}{ff_chg_bps:.0f} bps from {ff_1y_date} · "
+            f"{_ordinal(ff_pctile_w)} percentile of {ff_window} window"
+        )
+
+        st.caption(_ff_interpretation(current_ff, ff_chg_bps))
+        st.divider()
+    else:
+        _panel_error("Effective Federal Funds Rate", _dff_err, "retry_ff")
+        st.divider()
+
+    # ── Rate Volatility (10Y Realized — VXTLT proxy) ─────────────────────────
+
+    st.markdown("#### Rate Volatility (10Y Realized — DGS10 Rolling 21-Day)")
+    if rate_vol_21 is not None and not rate_vol_21.empty:
+
+        current_rv = float(rate_vol_21.iloc[-1])
+        rv_as_of   = rate_vol_21.index[-1].strftime("%b %d, %Y")
+
+        rv_window = st.radio(
+            "Window", ["5Y", "10Y", "20Y", "Max"],
+            index=1, key="rv_window", horizontal=True,
+        )
+        rv_start    = _window_start(rv_window)
+        rv_pctile_w = _window_pctile(rate_vol_21, current_rv, rv_start)
+        rv_data     = rate_vol_21.loc[rv_start:]
+
+        fig_rv = go.Figure()
+        _add_recession_shading(fig_rv, rec_periods or [], rv_start)
+        fig_rv.add_trace(go.Scatter(
+            x=rv_data.index, y=rv_data.values,
+            mode="lines", name="Rate Vol (%)",
+            line=dict(color=_C["primary"], width=1.5),
+        ))
+        _add_current_annotation(
+            fig_rv, current_rv,
+            f"Current {current_rv:.2f}% ({_ordinal(rv_pctile_w)} pct, {rv_window})",
+        )
+        _apply_style(fig_rv)
+        fig_rv.update_yaxes(title_text="Annualized Vol (%)")
+        _yr = _tight_yrange(rv_data, [current_rv])
+        if _yr:
+            _yr[0] = max(0.0, _yr[0])
+            fig_rv.update_yaxes(range=_yr)
+        st.plotly_chart(fig_rv, width='stretch')
+        st.metric("Rate Volatility (10Y Realized)", f"{current_rv:.2f}%")
+        st.caption(
+            f"As of {rv_as_of} · {_ordinal(rv_pctile_w)} percentile of {rv_window} window  \n"
+            "Rolling 21-day stdev of daily DGS10 changes, annualized (×√252). "
+            "MOVE Index proxy — VXTLT (CBOE TLT vol) unavailable via Yahoo Finance."
+        )
+
+        if rv_pctile_w > 70:
+            _rv_interp = (
+                f"Rate volatility at {current_rv:.2f}% (annualized) is elevated — "
+                f"{_ordinal(rv_pctile_w)} percentile of the {rv_window} window. "
+                "Elevated rate vol compresses carry strategies, widens bid-ask spreads in credit, "
+                "and creates an environment where active duration management adds more value "
+                "than passive carry harvesting."
+            )
+        elif rv_pctile_w > 30:
+            _rv_interp = (
+                f"Rate volatility at {current_rv:.2f}% (annualized) is moderate — "
+                f"{_ordinal(rv_pctile_w)} percentile of the {rv_window} window. "
+                "Moderate rate vol is consistent with a stable rate environment where "
+                "passive duration earns carry without significant mark-to-market risk."
+            )
+        else:
+            _rv_interp = (
+                f"Rate volatility at {current_rv:.2f}% (annualized) is low — "
+                f"{_ordinal(rv_pctile_w)} percentile of the {rv_window} window. "
+                "Low rate vol compresses manager dispersion in fixed income; "
+                "passive duration harvesting is sufficient and active duration management "
+                "adds limited edge in this environment."
+            )
+        st.caption(
+            _rv_interp + " "
+            "Relevant for evaluating active FI manager performance environments. "
+            "Gray shading = NBER recessions."
+        )
+        st.divider()
+    else:
+        if _dgs10_err:
+            _panel_error("Rate Volatility (10Y Realized)", _dgs10_err, "retry_rv")
+        else:
+            st.info("Rate volatility requires DGS10 data (insufficient history for 21-day window).")
+        st.divider()
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # 5. CREDIT
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    st.markdown("### Credit")
+
+    # ── IG Credit Spreads ────────────────────────────────────────────────────
+
+    st.markdown("#### IG Credit Spreads (OAS) — BAMLC0A0CM")
+    if ig_oas is not None:
+
+        ig_clean      = ig_oas.dropna()
+        ig_bps        = ig_clean * 100
+        current_ig    = float(ig_bps.iloc[-1])
+        ig_median_bps = float(ig_bps.median())
+        ig_since      = ig_bps.index[0].strftime("%b %Y")
+        ig_data_start = ig_bps.index[0]
+
+        ig_window = st.radio(
+            "Window", ["5Y", "10Y", "Max"],
+            index=0, key="ig_window", horizontal=True,
+        )
+        ig_start    = _window_start(ig_window)
+        ig_pctile_w = _window_pctile(ig_bps, current_ig, ig_start)
+        ig_data     = ig_bps.loc[ig_start:]
+
+        _ig_avail_start      = ig_data_start.date()
+        _ig_window_start_dt  = date.fromisoformat(ig_start) if ig_start != "1800-01-01" else date(1800, 1, 1)
+        if _ig_window_start_dt < _ig_avail_start:
+            st.info(
+                f"IG OAS data starts **{ig_since}** (FRED restricts BAMLC0A0CM to this date). "
+                "Percentile computed over available window."
+            )
+
+        fig_ig = go.Figure()
+        _add_recession_shading(fig_ig, rec_periods or [], ig_start)
+        fig_ig.add_trace(go.Scatter(
+            x=ig_data.index, y=ig_data.values,
+            mode="lines", name="IG OAS (bps)",
+            line=dict(color=_C["primary"], width=2),
+        ))
+        fig_ig.add_hline(
+            y=ig_median_bps,
+            line_dash="dash", line_color=_C["ref"], line_width=1,
+            annotation_text=f"Median {ig_median_bps:.0f} bps",
+            annotation_position="right", annotation_font_size=10,
+        )
+        _add_current_annotation(
+            fig_ig, current_ig,
+            f"Current {current_ig:.0f} bps ({_ordinal(ig_pctile_w)} pct, {ig_since}+)",
+        )
+        _apply_style(fig_ig)
+        fig_ig.update_yaxes(title_text="OAS (bps)")
+        _yr = _tight_yrange(ig_data, [current_ig, ig_median_bps])
+        if _yr:
+            _yr[0] = max(0.0, _yr[0])
+            fig_ig.update_yaxes(range=_yr)
+        st.plotly_chart(fig_ig, width='stretch')
+        st.metric("IG OAS", f"{current_ig:.0f} bps")
+        st.caption(
+            f"{_ordinal(ig_pctile_w)} percentile of available history (data from {ig_since})"
+        )
+
+        _hy_ig_extra = ""
+        if _shared_hy_bps is not None and current_ig > 0:
+            _ratio = _shared_hy_bps / current_ig
+            if _ratio > 4.5:
+                _ratio_framing = "elevated, consistent with tail-risk concerns in lower-quality debt"
+            elif _ratio > 3.0:
+                _ratio_framing = "moderate, within historical mid-cycle norms"
+            else:
+                _ratio_framing = "compressed, indicating tight spreads across the corporate credit stack"
+            _hy_ig_extra = f" HY/IG ratio: {_ratio:.1f}× — {_ratio_framing}."
+
+        if ig_pctile_w < 25:
+            _ig_tier = "historically tight — strong demand for IG credit with low perceived default risk"
+        elif ig_pctile_w < 60:
+            _ig_tier = "near median — consistent with a mid-cycle credit environment"
+        else:
+            _ig_tier = "elevated — reflecting credit stress or risk-off positioning even in higher-quality issuers"
+
+        st.caption(
+            f"IG OAS at {current_ig:.0f} bps reflects investment-grade corporate spread over Treasuries — "
+            f"{_ig_tier}.{_hy_ig_extra} "
+            "FRED BAMLC0A0CM: ICE BofA US Corporate Index OAS."
+        )
+        st.divider()
+    else:
+        _panel_error("IG Credit Spreads (OAS)", _ig_oas_err, "retry_ig")
+        st.divider()
+
+    # ── HY Credit Spreads ────────────────────────────────────────────────────
+
+    st.markdown("#### HY Credit Spreads (OAS)")
+    if hy_oas is not None:
+
+        hy_clean       = hy_oas.dropna()
+        hy_bps         = hy_clean * 100
+        current_hy     = float(hy_bps.iloc[-1])
+        hy_median_bps  = float(hy_bps.median())
+        hy_since       = hy_bps.index[0].strftime("%b %Y")
+        hy_data_start  = hy_bps.index[0]
+
+        hy_window = st.radio(
+            "Window", ["5Y", "10Y", "20Y", "Max"],
+            index=1, key="hy_window", horizontal=True,
+        )
+        hy_start    = _window_start(hy_window)
+        hy_pctile_w = _window_pctile(hy_bps, current_hy, hy_start)
+        hy_data     = hy_bps.loc[hy_start:]
+        _hy_avail_start = hy_data_start.date()
+        _hy_window_start_date = date.fromisoformat(hy_start) if hy_start != "1800-01-01" else date(1800, 1, 1)
+        if _hy_window_start_date < _hy_avail_start:
+            st.info(
+                f"HY OAS data starts **{hy_since}** (FRED restricts BAMLH0A0HYM2 to this date). "
+                f"Selecting a {hy_window} window shows only ~{len(hy_clean)} trading days of data. "
+                "The percentile is computed over the available window, not the full requested window."
+            )
+        fig_hy = go.Figure()
+        _add_recession_shading(fig_hy, rec_periods or [], hy_start)
+        fig_hy.add_trace(go.Scatter(
+            x=hy_data.index, y=hy_data.values,
+            mode="lines", name="HY OAS (bps)",
+            line=dict(color=_C["primary"], width=2),
+        ))
+        fig_hy.add_hline(
+            y=hy_median_bps,
+            line_dash="dash", line_color=_C["ref"], line_width=1,
+            annotation_text=f"Median {hy_median_bps:.0f} bps",
+            annotation_position="right", annotation_font_size=10,
+        )
+        _add_current_annotation(
+            fig_hy, current_hy,
+            f"Current {current_hy:.0f} bps ({_ordinal(hy_pctile_w)} pct, {hy_since}+)",
+        )
+        _apply_style(fig_hy)
+        fig_hy.update_yaxes(title_text="OAS (bps)")
+        _yr = _tight_yrange(hy_data, [current_hy, hy_median_bps])
+        if _yr:
+            _yr[0] = max(0.0, _yr[0])
+            fig_hy.update_yaxes(range=_yr)
+        st.plotly_chart(fig_hy, width='stretch')
+        st.metric("HY OAS", f"{current_hy:.0f} bps")
+        st.caption(
+            f"{_ordinal(hy_pctile_w)} percentile of available history "
+            f"(data from {hy_since})"
+        )
+
+        st.caption(interpret_hy_spread(current_hy))
+        st.caption(
+            f"HY spreads at the {_ordinal(hy_pctile_w)} percentile of available history "
+            f"({hy_since}+). Gray shading marks NBER-dated recessions. "
+            f"*FRED restricts this ICE BofA series to {hy_since}+; full pre-2023 history "
+            "is unavailable from FRED's API.*"
+        )
+        st.divider()
+    else:
+        _panel_error("HY Credit Spreads (OAS)", _hy_oas_err, "retry_hy")
+        st.divider()
+
+    # ── CCC Credit Spreads ────────────────────────────────────────────────────
+
+    st.markdown("#### CCC Credit Spreads (OAS) — BAMLH0A3HYC")
+    if ccc_oas is not None:
+
+        ccc_clean      = ccc_oas.dropna()
+        ccc_bps        = ccc_clean * 100
+        current_ccc    = float(ccc_bps.iloc[-1])
+        ccc_median_bps = float(ccc_bps.median())
+        ccc_since      = ccc_bps.index[0].strftime("%b %Y")
+        ccc_data_start = ccc_bps.index[0]
+
+        ccc_window = st.radio(
+            "Window", ["5Y", "10Y", "Max"],
+            index=0, key="ccc_window", horizontal=True,
+        )
+        ccc_start    = _window_start(ccc_window)
+        ccc_pctile_w = _window_pctile(ccc_bps, current_ccc, ccc_start)
+        ccc_data     = ccc_bps.loc[ccc_start:]
+
+        _ccc_avail_start     = ccc_data_start.date()
+        _ccc_window_start_dt = date.fromisoformat(ccc_start) if ccc_start != "1800-01-01" else date(1800, 1, 1)
+        if _ccc_window_start_dt < _ccc_avail_start:
+            st.info(
+                f"CCC OAS data starts **{ccc_since}** (FRED restricts BAMLH0A3HYC to this date). "
+                "Percentile computed over available window."
+            )
+
+        fig_ccc = go.Figure()
+        _add_recession_shading(fig_ccc, rec_periods or [], ccc_start)
+        fig_ccc.add_trace(go.Scatter(
+            x=ccc_data.index, y=ccc_data.values,
+            mode="lines", name="CCC OAS (bps)",
+            line=dict(color=_C["primary"], width=2),
+        ))
+        fig_ccc.add_hline(
+            y=ccc_median_bps,
+            line_dash="dash", line_color=_C["ref"], line_width=1,
+            annotation_text=f"Median {ccc_median_bps:.0f} bps",
+            annotation_position="right", annotation_font_size=10,
+        )
+        _add_current_annotation(
+            fig_ccc, current_ccc,
+            f"Current {current_ccc:.0f} bps ({_ordinal(ccc_pctile_w)} pct, {ccc_since}+)",
+        )
+        _apply_style(fig_ccc)
+        fig_ccc.update_yaxes(title_text="OAS (bps)")
+        _yr = _tight_yrange(ccc_data, [current_ccc, ccc_median_bps])
+        if _yr:
+            _yr[0] = max(0.0, _yr[0])
+            fig_ccc.update_yaxes(range=_yr)
+        st.plotly_chart(fig_ccc, width='stretch')
+        st.metric("CCC OAS", f"{current_ccc:.0f} bps")
+        st.caption(
+            f"{_ordinal(ccc_pctile_w)} percentile of available history (data from {ccc_since})"
+        )
+
+        if ccc_pctile_w < 25:
+            _ccc_interp = (
+                f"CCC OAS at {current_ccc:.0f} bps is historically tight — "
+                "broad risk-on appetite is reaching into distressed names. "
+                "Tight CCC alongside tight BB indicates few idiosyncratic stress situations."
+            )
+        elif ccc_pctile_w < 60:
+            _ccc_interp = (
+                f"CCC OAS at {current_ccc:.0f} bps is near the median for available history — "
+                "a moderate credit environment with a mix of distressed and recovering issuers."
+            )
+        else:
+            _ccc_interp = (
+                f"CCC OAS at {current_ccc:.0f} bps is elevated — "
+                "widening before broad HY is a leading indicator of credit stress "
+                "concentrating in tail names, historically a precursor of economic slowdown."
+            )
+        st.caption(
+            _ccc_interp
+            + " FRED BAMLH0A3HYC: ICE BofA US High Yield CCC and Lower OAS."
+        )
+        st.divider()
+    else:
+        _panel_error("CCC Credit Spreads (OAS)", _ccc_oas_err, "retry_ccc")
+        st.divider()
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # 6. VALUATION
     # ═══════════════════════════════════════════════════════════════════════════
 
     st.markdown("### Valuation")
 
-    # ── Panel 1: CAPE ────────────────────────────────────────────────────────
+    # ── CAPE ─────────────────────────────────────────────────────────────────
 
     st.markdown("#### CAPE / Shiller P/E")
 
@@ -417,7 +1294,7 @@ with col:
         with st.spinner("Loading CAPE data…"):
             cape_series = _load_cape_series()
         cape_val     = float(cape_series.dropna().iloc[-1])
-        cape_pctile  = macro.percentile(cape_series, cape_val)  # full history (used in summary)
+        cape_pctile  = macro.percentile(cape_series, cape_val)
         cape_implied = macro.compute_cape_implied_return(cape_val)
         cape_median  = float(cape_series.median())
         cape_std     = float(cape_series.std())
@@ -502,7 +1379,7 @@ with col:
 
     st.divider()
 
-    # ── Panel 2: Excess CAPE Yield ──────────────────────────────────────────
+    # ── Excess CAPE Yield ─────────────────────────────────────────────────────
 
     if cape_ok and (dgs10 is not None) and (t10yie is not None):
         st.markdown("#### Excess CAPE Yield (ECY)")
@@ -584,428 +1461,12 @@ with col:
         st.divider()
 
     # ═══════════════════════════════════════════════════════════════════════════
-    # CURVE & POLICY
+    # 7. CROSS-ASSET PERFORMANCE
     # ═══════════════════════════════════════════════════════════════════════════
 
-    st.markdown("### Curve & Policy")
+    st.markdown("### Cross-Asset Performance")
 
-    # ── Panel 3: Yield Curve ─────────────────────────────────────────────────
-
-    st.markdown("#### 2/10 Yield Curve Spread")
-    if t10y2y is not None:
-
-        t10y2y_clean       = t10y2y.dropna()
-        current_spread_bps = float(t10y2y_clean.iloc[-1]) * 100
-        curve_state        = _yield_curve_state(t10y2y_clean)
-        t10y2y_bps         = t10y2y_clean * 100
-
-        yc_window = st.radio(
-            "Window", ["5Y", "10Y", "20Y", "Max"],
-            index=1, key="yc_window", horizontal=True,
-        )
-        yc_start    = _window_start(yc_window)
-        yc_pctile_w = _window_pctile(t10y2y_bps, current_spread_bps, yc_start)
-        yc_data     = t10y2y_bps.loc[yc_start:]
-        sign = "+" if current_spread_bps >= 0 else ""
-        fig_yc = go.Figure()
-        _add_recession_shading(fig_yc, rec_periods or [], yc_start)
-        fig_yc.add_trace(go.Scatter(
-            x=yc_data.index, y=yc_data.values,
-            mode="lines", name="10Y−2Y (bps)",
-            line=dict(color=_C["primary"], width=2),
-        ))
-        fig_yc.add_hline(
-            y=0, line_dash="dash", line_color=_C["ref"], line_width=1,
-            annotation_text="0 = flat  |  above: normal  |  below: inverted",
-            annotation_position="top left", annotation_font_size=9,
-            annotation_font_color="#888",
-        )
-        _add_current_annotation(
-            fig_yc, current_spread_bps,
-            f"Current {current_spread_bps:+.0f} bps ({_ordinal(yc_pctile_w)} pct, {yc_window})",
-        )
-        _apply_style(fig_yc)
-        fig_yc.update_yaxes(title_text="Spread (bps)")
-        _yr = _tight_yrange(yc_data, [current_spread_bps, 0.0])
-        if _yr:
-            fig_yc.update_yaxes(range=_yr)
-        st.plotly_chart(fig_yc, width='stretch')
-        st.metric("10Y − 2Y Spread", f"{sign}{current_spread_bps:.0f} bps")
-        st.caption(
-            f"{curve_state} · "
-            f"{_ordinal(yc_pctile_w)} percentile of {yc_window} window"
-        )
-
-        st.caption(interpret_curve_spread(current_spread_bps))
-        st.caption(
-            "Gray shading marks NBER-dated recessions. "
-            "Percentile computed relative to the selected window."
-        )
-        st.divider()
-    else:
-        _panel_error("2/10 Yield Curve Spread", _t10y2y_err, "retry_yc")
-        st.divider()
-
-    # ── Panel 4: Fed Funds ───────────────────────────────────────────────────
-
-    st.markdown("#### Effective Federal Funds Rate")
-    if dff is not None:
-
-        dff_clean  = dff.dropna()
-        current_ff = float(dff_clean.iloc[-1])
-
-        dff_1y_data = dff_clean[dff_clean.index <= ONE_YR_AGO]
-        ff_1y_ago   = float(dff_1y_data.iloc[-1]) if not dff_1y_data.empty else current_ff
-        ff_1y_date  = dff_1y_data.index[-1].strftime("%b %Y") if not dff_1y_data.empty else ""
-        ff_chg_bps  = (current_ff - ff_1y_ago) * 100
-
-        ff_window = st.radio(
-            "Window", ["5Y", "10Y", "20Y", "Max"],
-            index=1, key="ff_window", horizontal=True,
-        )
-        ff_start    = _window_start(ff_window)
-        ff_pctile_w = _window_pctile(dff_clean, current_ff, ff_start)
-        ff_data     = dff_clean.loc[ff_start:]
-        chg_sign = "+" if ff_chg_bps >= 0 else ""
-        fig_ff = go.Figure()
-        _add_recession_shading(fig_ff, rec_periods or [], ff_start)
-        fig_ff.add_trace(go.Scatter(
-            x=ff_data.index, y=ff_data.values,
-            mode="lines", name="Fed Funds (%)",
-            line=dict(color=_C["primary"], width=2),
-        ))
-        _add_current_annotation(
-            fig_ff, current_ff,
-            f"Current {current_ff:.2f}% ({_ordinal(ff_pctile_w)} pct, {ff_window})",
-        )
-        _apply_style(fig_ff)
-        fig_ff.update_yaxes(title_text="Rate (%)")
-        _yr = _tight_yrange(ff_data, [current_ff])
-        if _yr:
-            _yr[0] = max(0.0, _yr[0])
-            fig_ff.update_yaxes(range=_yr)
-        st.plotly_chart(fig_ff, width='stretch')
-        st.metric("Fed Funds Rate", f"{current_ff:.2f}%")
-        st.caption(
-            f"{chg_sign}{ff_chg_bps:.0f} bps from {ff_1y_date} · "
-            f"{_ordinal(ff_pctile_w)} percentile of {ff_window} window"
-        )
-
-        st.caption(_ff_interpretation(current_ff, ff_chg_bps))
-        st.divider()
-    else:
-        _panel_error("Effective Federal Funds Rate", _dff_err, "retry_ff")
-        st.divider()
-
-    # ═══════════════════════════════════════════════════════════════════════════
-    # CREDIT
-    # ═══════════════════════════════════════════════════════════════════════════
-
-    st.markdown("### Credit")
-
-    # ── Panel 5: HY Credit Spreads ───────────────────────────────────────────
-
-    st.markdown("#### HY Credit Spreads (OAS)")
-    if hy_oas is not None:
-
-        hy_clean       = hy_oas.dropna()
-        hy_bps         = hy_clean * 100
-        current_hy     = float(hy_bps.iloc[-1])
-        hy_median_bps  = float(hy_bps.median())
-        hy_since       = hy_bps.index[0].strftime("%b %Y")
-        hy_data_start  = hy_bps.index[0]
-
-        hy_window = st.radio(
-            "Window", ["5Y", "10Y", "20Y", "Max"],
-            index=1, key="hy_window", horizontal=True,
-        )
-        hy_start    = _window_start(hy_window)
-        hy_pctile_w = _window_pctile(hy_bps, current_hy, hy_start)
-        hy_data     = hy_bps.loc[hy_start:]
-        # F.1 fix: warn when selected window predates available data
-        _hy_avail_start = hy_data_start.date()
-        _hy_window_start_date = date.fromisoformat(hy_start) if hy_start != "1800-01-01" else date(1800, 1, 1)
-        if _hy_window_start_date < _hy_avail_start:
-            st.info(
-                f"HY OAS data starts **{hy_since}** (FRED restricts BAMLH0A0HYM2 to this date). "
-                f"Selecting a {hy_window} window shows only ~{len(hy_clean)} trading days of data. "
-                "The percentile is computed over the available window, not the full requested window."
-            )
-        fig_hy = go.Figure()
-        _add_recession_shading(fig_hy, rec_periods or [], hy_start)
-        fig_hy.add_trace(go.Scatter(
-            x=hy_data.index, y=hy_data.values,
-            mode="lines", name="HY OAS (bps)",
-            line=dict(color=_C["primary"], width=2),
-        ))
-        fig_hy.add_hline(
-            y=hy_median_bps,
-            line_dash="dash", line_color=_C["ref"], line_width=1,
-            annotation_text=f"Median {hy_median_bps:.0f} bps",
-            annotation_position="right", annotation_font_size=10,
-        )
-        _add_current_annotation(
-            fig_hy, current_hy,
-            f"Current {current_hy:.0f} bps ({_ordinal(hy_pctile_w)} pct, {hy_since}+)",
-        )
-        _apply_style(fig_hy)
-        fig_hy.update_yaxes(title_text="OAS (bps)")
-        _yr = _tight_yrange(hy_data, [current_hy, hy_median_bps])
-        if _yr:
-            _yr[0] = max(0.0, _yr[0])
-            fig_hy.update_yaxes(range=_yr)
-        st.plotly_chart(fig_hy, width='stretch')
-        st.metric("HY OAS", f"{current_hy:.0f} bps")
-        st.caption(
-            f"{_ordinal(hy_pctile_w)} percentile of available history "
-            f"(data from {hy_since})"
-        )
-
-        st.caption(interpret_hy_spread(current_hy))
-        st.caption(
-            f"HY spreads at the {_ordinal(hy_pctile_w)} percentile of available history "
-            f"({hy_since}+). Gray shading marks NBER-dated recessions. "
-            f"*FRED restricts this ICE BofA series to {hy_since}+; full pre-2023 history "
-            "is unavailable from FRED's API.*"
-        )
-        st.divider()
-    else:
-        _panel_error("HY Credit Spreads (OAS)", _hy_oas_err, "retry_hy")
-        st.divider()
-
-    # ═══════════════════════════════════════════════════════════════════════════
-    # LABOR
-    # ═══════════════════════════════════════════════════════════════════════════
-
-    st.markdown("### Labor")
-
-    # ── Panel 6: Unemployment Rate ───────────────────────────────────────────
-
-    st.markdown("#### Unemployment Rate (UNRATE)")
-    if unrate is not None:
-
-        ur_clean      = unrate.dropna()
-        current_ur    = float(ur_clean.iloc[-1])
-        ur_since      = ur_clean.index[0].strftime("%b %Y")
-        ur_1y_data    = ur_clean[ur_clean.index <= ONE_YR_AGO]
-        ur_1y_ago     = float(ur_1y_data.iloc[-1]) if not ur_1y_data.empty else current_ur
-        ur_chg        = (current_ur - ur_1y_ago) * 100  # in basis points of percentage points
-
-        ur_window = st.radio(
-            "Window", ["5Y", "10Y", "20Y", "Max"],
-            index=1, key="ur_window", horizontal=True,
-        )
-        ur_yaxis = st.radio(
-            "Y-axis", ["Full series", "Excl. 2020 spike"],
-            index=0, key="ur_yaxis", horizontal=True,
-        )
-        ur_start    = _window_start(ur_window)
-        ur_pctile_w = _window_pctile(ur_clean, current_ur, ur_start)
-        ur_data     = ur_clean.loc[ur_start:]
-        fig_ur = go.Figure()
-        _add_recession_shading(fig_ur, rec_periods or [], ur_start)
-        fig_ur.add_trace(go.Scatter(
-            x=ur_data.index, y=ur_data.values,
-            mode="lines", name="Unemployment (%)",
-            line=dict(color=_C["primary"], width=2),
-        ))
-        _add_current_annotation(
-            fig_ur, current_ur,
-            f"Current {current_ur:.1f}% ({_ordinal(ur_pctile_w)} pct, {ur_window})",
-        )
-        _apply_style(fig_ur)
-        fig_ur.update_yaxes(title_text="Rate (%)")
-        _ur_base = ur_data[ur_data.index.year != 2020] if ur_yaxis == "Excl. 2020 spike" else ur_data
-        _yr = _tight_yrange(_ur_base, [current_ur])
-        if _yr:
-            _yr[0] = max(0.0, _yr[0])
-            fig_ur.update_yaxes(range=_yr)
-        st.plotly_chart(fig_ur, width='stretch')
-        st.metric("Unemployment Rate", f"{current_ur:.1f}%")
-        st.caption(
-            f"{format_ur_delta(ur_chg)} · "
-            f"{_ordinal(ur_pctile_w)} percentile of {ur_window} window"
-        )
-
-        if ur_pctile_w < 30:
-            _ur_interp = (
-                f"Unemployment at {current_ur:.1f}% is in the {_ordinal(ur_pctile_w)} percentile "
-                f"of the {ur_window} window — historically low, consistent with a tight labor market "
-                "and late-cycle conditions. Low unemployment has historically preceded cyclical peaks."
-            )
-        elif ur_pctile_w < 60:
-            _ur_interp = (
-                f"Unemployment at {current_ur:.1f}% is in the {_ordinal(ur_pctile_w)} percentile "
-                f"of the {ur_window} window — near the historical median for this window, "
-                "consistent with a mid-cycle labor market."
-            )
-        else:
-            _ur_interp = (
-                f"Unemployment at {current_ur:.1f}% is in the {_ordinal(ur_pctile_w)} percentile "
-                f"of the {ur_window} window — elevated relative to recent history, "
-                "potentially consistent with recessionary or early-recovery conditions."
-            )
-        st.caption(
-            _ur_interp + " "
-            "Rising unemployment from a cyclical low is a key recession coincident indicator. "
-            "Gray shading marks NBER-dated recessions."
-        )
-        st.divider()
-    else:
-        _panel_error("Unemployment Rate", _unrate_err, "retry_ur")
-        st.divider()
-
-    # ═══════════════════════════════════════════════════════════════════════════
-    # GROWTH
-    # ═══════════════════════════════════════════════════════════════════════════
-
-    st.markdown("### Growth")
-
-    # ── Panel 7: Real GDP Growth ──────────────────────────────────────────────
-
-    st.markdown("#### Real GDP Growth (QoQ Annualized)")
-    if gdp_gr is not None:
-
-        gdp_clean   = gdp_gr.dropna()
-        current_gdp = float(gdp_clean.iloc[-1])
-        gdp_as_of   = gdp_clean.index[-1].strftime("%b %Y")
-
-        gdp_window = st.radio(
-            "Window", ["10Y", "20Y", "Max"],
-            index=1, key="gdp_window", horizontal=True,
-        )
-        gdp_yaxis = st.radio(
-            "Y-axis", ["Full series", "Excl. 2020 outliers"],
-            index=1, key="gdp_yaxis", horizontal=True,
-        )
-        gdp_start    = _window_start(gdp_window)
-        gdp_pctile_w = _window_pctile(gdp_clean, current_gdp, gdp_start)
-        gdp_data     = gdp_clean.loc[gdp_start:]
-        _gdp_base = gdp_data[gdp_data.index.year != 2020] if gdp_yaxis == "Excl. 2020 outliers" else gdp_data
-        fig_gdp = go.Figure()
-        _add_recession_shading(fig_gdp, rec_periods or [], gdp_start)
-        fig_gdp.add_trace(go.Bar(
-            x=gdp_data.index, y=gdp_data.values,
-            name="Real GDP QoQ ann. (%)",
-            marker_color=[_C["primary"] if v >= 0 else "#C0392B" for v in gdp_data.values],
-        ))
-        fig_gdp.add_hline(
-            y=0, line_color=_C["ref"], line_width=1, line_dash="dash",
-        )
-        _apply_style(fig_gdp)
-        fig_gdp.update_yaxes(title_text="Growth (%)")
-        _yr = _tight_yrange(_gdp_base, [current_gdp, 0.0])
-        if _yr:
-            fig_gdp.update_yaxes(range=_yr)
-        st.plotly_chart(fig_gdp, width='stretch')
-        st.metric("Real GDP Growth (QoQ ann.)", f"{current_gdp:.1f}%")
-        st.caption(
-            f"As of {gdp_as_of} (quarterly release, 1-2 quarter lag) · "
-            f"{_ordinal(gdp_pctile_w)} percentile of {gdp_window} window"
-        )
-
-        st.caption(
-            interpret_gdp_growth(current_gdp) + " "
-            "FRED A191RL1Q225SBEA: real GDP percent change from preceding period, "
-            "seasonally adjusted annual rate. Gray shading = NBER recessions."
-        )
-        st.divider()
-    else:
-        _panel_error("Real GDP Growth", _gdp_err, "retry_gdp")
-        st.divider()
-
-    # ═══════════════════════════════════════════════════════════════════════════
-    # INFLATION
-    # ═══════════════════════════════════════════════════════════════════════════
-
-    st.markdown("### Inflation")
-
-    # ── Panel 8: Core CPI YoY ────────────────────────────────────────────────
-
-    st.markdown("#### Core CPI (ex Food & Energy) — Year-over-Year")
-    if core_cpi is not None:
-
-        cpi_clean    = core_cpi.dropna()
-        # Compute YoY % change
-        cpi_yoy      = cpi_clean.pct_change(12) * 100
-        cpi_yoy      = cpi_yoy.dropna()
-        current_cpi  = float(cpi_yoy.iloc[-1])
-        cpi_as_of    = cpi_yoy.index[-1].strftime("%b %Y")
-
-        cpi_window = st.radio(
-            "Window", ["5Y", "10Y", "20Y", "Max"],
-            index=1, key="cpi_window", horizontal=True,
-        )
-        cpi_start    = _window_start(cpi_window)
-        cpi_pctile_w = _window_pctile(cpi_yoy, current_cpi, cpi_start)
-        cpi_data     = cpi_yoy.loc[cpi_start:]
-        fig_cpi = go.Figure()
-        _add_recession_shading(fig_cpi, rec_periods or [], cpi_start)
-        fig_cpi.add_trace(go.Scatter(
-            x=cpi_data.index, y=cpi_data.values,
-            mode="lines", name="Core CPI YoY (%)",
-            line=dict(color=_C["primary"], width=2),
-        ))
-        fig_cpi.add_hline(
-            y=2.0, line_dash="dash", line_color=_C["ref"], line_width=1,
-            annotation_text="Fed target 2%",
-            annotation_position="right", annotation_font_size=10,
-        )
-        _add_current_annotation(
-            fig_cpi, current_cpi,
-            f"Current {current_cpi:.1f}% ({_ordinal(cpi_pctile_w)} pct, {cpi_window})",
-        )
-        _apply_style(fig_cpi)
-        fig_cpi.update_yaxes(title_text="YoY Change (%)")
-        _yr = _tight_yrange(cpi_data, [current_cpi, 2.0])
-        if _yr:
-            fig_cpi.update_yaxes(range=_yr)
-        st.plotly_chart(fig_cpi, width='stretch')
-        st.metric("Core CPI YoY", f"{current_cpi:.1f}%")
-        st.caption(
-            f"As of {cpi_as_of} · "
-            f"{_ordinal(cpi_pctile_w)} percentile of {cpi_window} window"
-        )
-
-        if current_cpi > 4.0:
-            _cpi_interp = (
-                f"Core CPI at {current_cpi:.1f}% is well above the Fed's 2% target — "
-                "an inflationary regime where TIPS and Real Assets provide direct portfolio hedging."
-            )
-        elif current_cpi > 2.5:
-            _cpi_interp = (
-                f"Core CPI at {current_cpi:.1f}% remains above target — "
-                "disinflation in progress but not yet complete. "
-                "TIPS sleeve remains a relevant inflation hedge."
-            )
-        elif current_cpi > 1.5:
-            _cpi_interp = (
-                f"Core CPI at {current_cpi:.1f}% is near or slightly above the Fed's 2% target — "
-                "a regime where nominal duration (Core Fixed Income) is reasonably priced."
-            )
-        else:
-            _cpi_interp = (
-                f"Core CPI at {current_cpi:.1f}% is below target — "
-                "disinflationary conditions that historically support nominal bond returns "
-                "and may reduce the immediate urgency of the TIPS inflation hedge."
-            )
-        st.caption(
-            _cpi_interp + " "
-            "FRED CPILFESL: CPI for All Urban Consumers, All Items Less Food and Energy, "
-            "12-month percent change. Gray shading = NBER recessions."
-        )
-        st.divider()
-    else:
-        _panel_error("Core CPI YoY", _cpi_err, "retry_cpi")
-        st.divider()
-
-    # ═══════════════════════════════════════════════════════════════════════════
-    # RELATIVE PERFORMANCE
-    # ═══════════════════════════════════════════════════════════════════════════
-
-    st.markdown("### Relative Performance")
-
-    # ── Panel 9: US vs. International ────────────────────────────────────────
+    # ── US vs. International Equity ───────────────────────────────────────────
 
     st.markdown("#### US vs. International Equity")
 
@@ -1018,14 +1479,12 @@ with col:
         aligned.columns = ["SPY", "EFA"]
         aligned.index   = pd.to_datetime(aligned.index)
 
-        # Rolling 12-month return spread: SPY 12M return minus EFA 12M return (in pp)
         spy_ret12 = aligned["SPY"].pct_change(252) * 100
         efa_ret12 = aligned["EFA"].pct_change(252) * 100
         spread12  = (spy_ret12 - efa_ret12).dropna()
 
         current_spread_pp = float(spread12.iloc[-1])
 
-        # 5-year rolling mean of the 12M spread (for mean-reversion context)
         rolling_mean_5y = spread12.rolling(252 * 5).mean()
         current_mean_5y = (
             float(rolling_mean_5y.dropna().iloc[-1])
@@ -1093,6 +1552,83 @@ with col:
 
     st.divider()
 
+    # ── Broad Trade-Weighted USD Index ────────────────────────────────────────
+
+    st.markdown("#### Broad Trade-Weighted USD Index (DTWEXBGS)")
+    if dtwexbgs is not None:
+
+        dtwex_clean    = dtwexbgs.dropna()
+        current_dtwex  = float(dtwex_clean.iloc[-1])
+        dtwex_as_of    = dtwex_clean.index[-1].strftime("%b %d, %Y")
+        dtwex_since    = dtwex_clean.index[0].strftime("%b %Y")
+
+        dtwex_1y_data  = dtwex_clean[dtwex_clean.index <= ONE_YR_AGO]
+        dtwex_1y_ago   = float(dtwex_1y_data.iloc[-1]) if not dtwex_1y_data.empty else current_dtwex
+        dtwex_1y_pct   = (current_dtwex / dtwex_1y_ago - 1) * 100 if dtwex_1y_ago != 0 else 0.0
+
+        dtwex_window = st.radio(
+            "Window", ["5Y", "10Y", "Max"],
+            index=1, key="dtwex_window", horizontal=True,
+        )
+        dtwex_start    = _window_start(dtwex_window)
+        dtwex_pctile_w = _window_pctile(dtwex_clean, current_dtwex, dtwex_start)
+        dtwex_data     = dtwex_clean.loc[dtwex_start:]
+
+        fig_dtwex = go.Figure()
+        _add_recession_shading(fig_dtwex, rec_periods or [], dtwex_start)
+        fig_dtwex.add_trace(go.Scatter(
+            x=dtwex_data.index, y=dtwex_data.values,
+            mode="lines", name="Broad USD Index",
+            line=dict(color=_C["primary"], width=2),
+        ))
+        _add_current_annotation(
+            fig_dtwex, current_dtwex,
+            f"Current {current_dtwex:.1f} ({_ordinal(dtwex_pctile_w)} pct, {dtwex_window})",
+        )
+        _apply_style(fig_dtwex)
+        fig_dtwex.update_yaxes(title_text="Index Level")
+        _yr = _tight_yrange(dtwex_data, [current_dtwex])
+        if _yr:
+            fig_dtwex.update_yaxes(range=_yr)
+        st.plotly_chart(fig_dtwex, width='stretch')
+        st.metric("Broad USD Index (DTWEXBGS)", f"{current_dtwex:.1f}")
+        chg_sign = "+" if dtwex_1y_pct >= 0 else ""
+        st.caption(
+            f"{chg_sign}{dtwex_1y_pct:.1f}% over 12 months · "
+            f"{_ordinal(dtwex_pctile_w)} percentile of {dtwex_window} window "
+            f"(data since {dtwex_since})"
+        )
+
+        if dtwex_pctile_w > 70:
+            _dtwex_strength = "historically strong"
+            _dtwex_impl = (
+                "A strong dollar is a headwind for unhedged international and EM equity holdings "
+                "through translation losses — meaningful for the 27% non-US equity allocation."
+            )
+        elif dtwex_pctile_w > 30:
+            _dtwex_strength = "near its historical median"
+            _dtwex_impl = (
+                "A dollar near its historical median exerts a neutral translation effect on "
+                "international equity sleeves — no significant currency tailwind or headwind."
+            )
+        else:
+            _dtwex_strength = "historically weak"
+            _dtwex_impl = (
+                "A weak dollar is a tailwind for unhedged international and EM equity holdings "
+                "through positive translation — supports the 19% International Developed and 8% EM sleeves."
+            )
+
+        st.caption(
+            f"Broad trade-weighted USD at {current_dtwex:.1f} ({_dtwex_strength} relative to {dtwex_window} window). "
+            + _dtwex_impl
+            + " FRED DTWEXBGS: Nominal Broad U.S. Dollar Index (goods and services). "
+            "Gray shading = NBER recessions."
+        )
+        st.divider()
+    else:
+        _panel_error("Broad USD Index (DTWEXBGS)", _dtwex_err, "retry_usd")
+        st.divider()
+
     # ── Sources ───────────────────────────────────────────────────────────────
 
     with st.expander("Data sources & freshness"):
@@ -1113,23 +1649,27 @@ with col:
             return f"**{label}**: unavailable"
 
         _src_lines += [
-            _fred_src("FRED DGS10 (10-Year Treasury Rate)",              dgs10)  + " · daily",
-            _fred_src("FRED T10YIE (10-Year Breakeven Inflation)",       t10yie) + " · daily · starts Jan 2003",
-            _fred_src("FRED T10Y2Y (10Y−2Y Treasury spread)",            t10y2y) + " · daily",
-            _fred_src("FRED DFF (Fed Funds Rate)",                       dff)    + " · daily",
-            _fred_src("FRED BAMLH0A0HYM2 (ICE BofA HY OAS, May 2023+)", hy_oas) + " · daily",
-            _fred_src("FRED UNRATE (Unemployment Rate)",                 unrate) + " · monthly",
-            _fred_src("FRED A191RL1Q225SBEA (Real GDP QoQ ann.)",        gdp_gr) + " · quarterly (1-2 quarter lag)",
-            _fred_src("FRED CPILFESL (Core CPI, level)",                 core_cpi) + " · monthly (YoY change computed)",
+            _fred_src("FRED DGS10 (10-Year Treasury Rate)",                    dgs10)      + " · daily",
+            _fred_src("FRED T10YIE (10-Year Breakeven Inflation)",             t10yie)     + " · daily · starts Jan 2003",
+            _fred_src("FRED DFII10 (10-Year TIPS Yield — Real Rate)",          dfii10)     + " · daily · starts Jan 2003",
+            _fred_src("FRED T10Y2Y (10Y−2Y Treasury spread)",                  t10y2y)     + " · daily",
+            _fred_src("FRED DFF (Fed Funds Rate)",                             dff)        + " · daily",
+            _fred_src("FRED BAMLC0A0CM (ICE BofA IG OAS)",                    ig_oas)     + " · daily",
+            _fred_src("FRED BAMLH0A0HYM2 (ICE BofA HY OAS, May 2023+)",       hy_oas)     + " · daily",
+            _fred_src("FRED BAMLH0A3HYC (ICE BofA CCC OAS)",                  ccc_oas)    + " · daily",
+            _fred_src("FRED UNRATE (Unemployment Rate)",                        unrate)     + " · monthly",
+            _fred_src("FRED A191RL1Q225SBEA (Real GDP QoQ ann.)",              gdp_gr)     + " · quarterly (1-2 quarter lag)",
+            _fred_src("FRED CPILFESL (Core CPI, level)",                       core_cpi)   + " · monthly (YoY change computed)",
+            _fred_src("FRED CFNAIDIFF (Chicago Fed Activity Diffusion Index)", cfnai_diff) + " · monthly · ISM PMI proxy (NAPM unavailable on FRED)",
+            _fred_src("FRED DTWEXBGS (Broad Trade-Weighted USD Index)",        dtwexbgs)   + " · daily",
             "**FRED USREC** (NBER recession indicator): monthly, lags recession end by ~12 months"
             + ("" if rec_periods is not None else " — unavailable"),
+            "**Rate Volatility**: 21-day rolling realized vol of DGS10 daily changes, annualized (×√252) — "
+            "MOVE Index proxy; VXTLT unavailable via Yahoo Finance (HTTP 404)",
         ]
         _src_lines.append(
             "**Yahoo Finance** (SPY, EFA): daily prices via local SQLite cache · "
             "used for the US vs. International rolling 12-month return spread panel"
-        )
-        _src_lines.append(
-            "**ISM Manufacturing PMI**: not available via FRED API — see post-launch backlog for status."
         )
         st.caption("  \n".join(_src_lines))
     render_footer()

@@ -98,3 +98,61 @@ def test_build_caption_suppressed_without_env(macro_app: AppTest) -> None:
     assert not any("Build" in c for c in captions), (
         f"Build caption should be suppressed but found: {[c for c in captions if 'Build' in c]}"
     )
+
+
+# ── Phase 33 — new indicator panels ─────────────────────────────────────────
+
+def test_ig_oas_panel_renders(macro_app: AppTest) -> None:
+    """IG credit spreads panel renders. Pinned: Phase 33."""
+    headings = [m.value for m in macro_app.markdown]
+    assert any("IG" in h and "OAS" in h for h in headings), (
+        "IG OAS panel heading not found — possible Phase 33 regression"
+    )
+
+
+def test_ccc_oas_panel_renders(macro_app: AppTest) -> None:
+    """CCC credit spreads panel renders. Pinned: Phase 33."""
+    headings = [m.value for m in macro_app.markdown]
+    assert any("CCC" in h for h in headings), (
+        "CCC OAS panel heading not found — possible Phase 33 regression"
+    )
+
+
+def test_breakeven_panel_renders(macro_app: AppTest) -> None:
+    """10-Year Breakeven Inflation (T10YIE) panel renders. Pinned: Phase 33."""
+    headings = [m.value for m in macro_app.markdown]
+    assert any("Breakeven" in h or "T10YIE" in h for h in headings), (
+        "Breakeven inflation panel heading not found — possible Phase 33 regression"
+    )
+
+
+def test_real_10y_panel_renders(macro_app: AppTest) -> None:
+    """Real 10-Year Treasury Yield (DFII10) panel renders. Pinned: Phase 33."""
+    headings = [m.value for m in macro_app.markdown]
+    assert any("DFII10" in h or "Real 10-Year" in h for h in headings), (
+        "Real 10Y yield panel heading not found — possible Phase 33 regression"
+    )
+
+
+def test_pmi_proxy_panel_renders(macro_app: AppTest) -> None:
+    """Manufacturing activity / PMI proxy (CFNAIDIFF) panel renders. Pinned: Phase 33."""
+    headings = [m.value for m in macro_app.markdown]
+    assert any("CFNAIDIFF" in h or "PMI" in h or "Manufacturing" in h for h in headings), (
+        "PMI proxy panel heading not found — possible Phase 33 regression"
+    )
+
+
+def test_rate_vol_panel_renders(macro_app: AppTest) -> None:
+    """Rate volatility panel (DGS10 rolling 21-day) renders. Pinned: Phase 33."""
+    headings = [m.value for m in macro_app.markdown]
+    assert any("Rate Volatility" in h or "DGS10" in h for h in headings), (
+        "Rate volatility panel heading not found — possible Phase 33 regression"
+    )
+
+
+def test_usd_index_panel_renders(macro_app: AppTest) -> None:
+    """Broad trade-weighted USD index (DTWEXBGS) panel renders. Pinned: Phase 33."""
+    headings = [m.value for m in macro_app.markdown]
+    assert any("DTWEXBGS" in h or "USD Index" in h or "Trade-Weighted" in h for h in headings), (
+        "USD index panel heading not found — possible Phase 33 regression"
+    )
