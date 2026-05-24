@@ -39,8 +39,8 @@ from src.factors import (
 from src.holdings import get_inception_date, get_portfolio_value_series, get_sleeve_weights_on_date
 from src.macro import compute_cape_implied_return, get_series, percentile
 from src.positioning import (
-    build_style_box_figure, get_active_tilts, get_effective_duration,
-    get_non_us_equity_data, get_scenario_triggers, get_style_box_data,
+    build_style_box_figure, get_effective_duration,
+    get_non_us_equity_data, get_style_box_data,
 )
 from src.style_box import STYLE_BOX_CAPTION
 from src.returns import period_return, twr_daily_linked
@@ -903,10 +903,8 @@ def _build_thesis_section(start_date: str, end_date: str) -> dict:
 
 
 def _build_positioning_section(end_date: str) -> dict:
-    """Build the Active Positioning section from live portfolio state."""
-    tilts      = get_active_tilts(end_date)
+    """Build the positioning section (duration + style box) from live portfolio state."""
     dur        = get_effective_duration(end_date)
-    scenarios  = get_scenario_triggers(end_date)
     style_data = get_style_box_data(end_date)
     non_us     = get_non_us_equity_data(end_date)
     fi_dur    = dur["fi_sleeve_duration"]
@@ -927,9 +925,7 @@ def _build_positioning_section(end_date: str) -> dict:
     )
     style_box_b64 = _chart_b64(build_style_box_figure(style_data), 520, 300) if style_data else None
     return {
-        "tilts":             tilts,
         "duration_line":     duration_line,
-        "scenarios":         scenarios,
         "style_box_b64":     style_box_b64,
         "style_box_caption": STYLE_BOX_CAPTION,
         "non_us":            non_us,
