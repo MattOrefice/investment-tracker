@@ -422,7 +422,7 @@ def test_prose_pdf_real_assets_benchmark_caption_matches_source():
     templates/quarterly_report.html renders {{ methodology_ra_bench }} derived
     from _SLEEVE_BENCHMARKS["Real Assets"] in src/benchmarks.py. This test
     verifies the benchmark uses VNQ + DBC (not DJP which was delisted 2020)
-    and that the 50/50 split is intact. Note: the portfolio holds PDBC (no-K-1);
+    and that the 60/40 split is intact. Note: the portfolio holds PDBC (no-K-1);
     DBC is deliberately used as the benchmark for long price history.
     """
     from src.benchmarks import _SLEEVE_BENCHMARKS
@@ -435,6 +435,7 @@ def test_prose_pdf_real_assets_benchmark_caption_matches_source():
 
     tickers = [t for t, _w in ra]
     weights = [w for _t, w in ra]
+    weight_map = dict(zip(tickers, weights))
 
     assert "VNQ" in tickers, f"VNQ not in Real Assets benchmark tickers: {tickers}"
     assert "DBC" in tickers, (
@@ -445,9 +446,9 @@ def test_prose_pdf_real_assets_benchmark_caption_matches_source():
     assert abs(sum(weights) - 1.0) < 1e-9, (
         f"Real Assets benchmark weights don't sum to 1.0: {weights}"
     )
-    assert all(abs(w - 0.5) < 1e-9 for w in weights), (
-        f"Expected 50/50 split; got {dict(zip(tickers, weights))}. "
-        "Update templates/quarterly_report.html Real Assets benchmark description."
+    assert abs(weight_map["VNQ"] - 0.6) < 1e-9 and abs(weight_map["DBC"] - 0.4) < 1e-9, (
+        f"Expected 60/40 VNQ/DBC split; got {weight_map}. "
+        "Update _SLEEVE_BENCHMARKS in src/benchmarks.py."
     )
 
 

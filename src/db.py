@@ -157,15 +157,15 @@ def _auto_migrate(conn: sqlite3.Connection) -> None:
         )
         conn.commit()
 
-    # Migration: surface VNQ/DBC split in Real Assets benchmark label.
+    # Migration: surface VNQ/DBC split in Real Assets benchmark label (60/40 policy).
     has_ac = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='asset_classes'"
     ).fetchone()
     if has_ac:
         conn.execute(
-            "UPDATE asset_classes SET benchmark_ticker = 'VNQ (50%) + DBC (50%)' "
+            "UPDATE asset_classes SET benchmark_ticker = 'VNQ (60%) + DBC (40%)' "
             "WHERE name = 'Real Assets' AND parent_id IS NOT NULL "
-            "AND benchmark_ticker IN ('VNQ+DBC', 'VNQ+DJP')"
+            "AND benchmark_ticker IN ('VNQ+DBC', 'VNQ+DJP', 'VNQ (50%) + DBC (50%)')"
         )
         conn.commit()
 

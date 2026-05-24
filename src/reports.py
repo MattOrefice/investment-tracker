@@ -82,7 +82,7 @@ SLEEVE_BENCH_TICKER: dict[str, str] = {
     "Emerging Markets":        "EEM",
     "Core Fixed Income":       "IEF",
     "TIPS":                    "TIP",
-    "Real Assets":             "VNQ (50%) + DBC (50%)",
+    "Real Assets":             "VNQ (60%) + DBC (40%)",
     "Cash / SPAXX":            "BIL",
 }
 
@@ -1235,7 +1235,7 @@ def _build_methodology_vars() -> dict:
         for r in parent_rows
     )
 
-    # "50% VNQ + 50% DBC" — derived from _SLEEVE_BENCHMARKS["Real Assets"]
+    # "60% VNQ + 40% DBC" — derived from _SLEEVE_BENCHMARKS["Real Assets"]
     ra_bench = _SLEEVE_BENCHMARKS.get("Real Assets", [])
     ra_bench_str = " + ".join(f"{round(w * 100):.0f}% {t}" for t, w in ra_bench)
 

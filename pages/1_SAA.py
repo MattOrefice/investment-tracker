@@ -208,6 +208,13 @@ with col:
             f'⚠ Allocated: <b>{total:.1f}%</b> — does not sum to 100%</span>',
             unsafe_allow_html=True,
         )
+    st.caption(
+        "**Implementation note:** This is a model strategic asset allocation used to exercise "
+        "the analytical framework (Brinson-Fachler attribution, factor regressions, macro regime "
+        "monitoring). The author's brokerage account holds a subset of these positions; full SAA "
+        "implementation is ongoing. Analytics treat the SAA as fully implemented at target weights "
+        "using the listed ETFs and blended benchmarks."
+    )
     st.divider()
 
 # ── Rationale expanders ────────────────────────────────────────────────────────

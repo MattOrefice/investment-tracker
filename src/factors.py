@@ -947,7 +947,7 @@ def build_factor_prose(
         "The Emerging Markets sleeve (IEMG) is excluded from regression analysis: "
         "Ken French does not publish daily EM factor data, and the current "
         "portfolio history is insufficient for a meaningful monthly-frequency regression. "
-        "Real assets (VNQ 50%, DBC 50%) are excluded — no liquid daily factor proxy set spans "
+        "Real assets (VNQ 60%, DBC 40%) are excluded — no liquid daily factor proxy set spans "
         "REIT and commodity exposure simultaneously."
     )
 
@@ -1051,7 +1051,7 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
             "Equity FF5 factors do not span fixed income; this dedicated two-factor model "
             "captures duration and credit risk explicitly. RF from Ken French US daily factors.",
 
-            "Real assets (VNQ 50%, DBC 50%) remain excluded: no liquid daily factor proxy set spans "
+            "Real assets (VNQ 60%, DBC 40%) remain excluded: no liquid daily factor proxy set spans "
             "REIT and commodity exposure simultaneously. Factor models for real assets are "
             "a future extension.",
         ]
@@ -1059,7 +1059,7 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
         notes.append(
             "Fixed income (VGIT, SCHP): TERM/CREDIT factor model (IEF−BIL duration premium, "
             "HYG−IEF credit spread premium) in scope — see FI Sleeve panel above. "
-            "Real assets (VNQ 50%, DBC 50%) remain excluded; no liquid daily factor proxy set "
+            "Real assets (VNQ 60%, DBC 40%) remain excluded; no liquid daily factor proxy set "
             "spans REIT and commodity exposure simultaneously."
         )
 
@@ -1290,7 +1290,7 @@ def build_benchmark_methodology(result: Optional[dict]) -> list[str]:
 
         "R_p: daily portfolio total return (adj_close basis, SPAXX proxied via BIL normalized "
         "to $1.00 at inception). R_b: daily custom blended SAA benchmark return (target-weight "
-        "basket: SPY, QUAL, IWD, IWM, EFA, EEM, IEF, TIP, 50% VNQ + 50% DBC, BIL). "
+        "basket: SPY, QUAL, IWD, IWM, EFA, EEM, IEF, TIP, 60% VNQ + 40% DBC, BIL). "
         "RF, HML, SMB, RMW: Ken French US daily factors (Dartmouth). "
         "All series aligned by inner join on trading dates.",
 

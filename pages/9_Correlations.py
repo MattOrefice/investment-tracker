@@ -27,7 +27,7 @@ _SLEEVES: dict[str, list[tuple[str, float]]] = {
     "Emerging Markets":       [("EEM",  1.0)],
     "Core Fixed Income":      [("IEF",  1.0)],
     "TIPS":                   [("TIP",  1.0)],
-    "Real Assets":            [("VNQ",  0.5), ("DBC", 0.5)],
+    "Real Assets":            [("VNQ",  0.6), ("DBC", 0.4)],
 }
 
 _COLORS = {
@@ -347,7 +347,7 @@ with col:
     with st.expander("Methodology", expanded=False):
         st.markdown(
             "**Tickers used:** Each sleeve's SAA benchmark ticker is used for the return "
-            "series (SPY, QUAL, IWD, IWM, EFA, EEM, IEF, TIP, and a 50% VNQ + 50% DBC blend "
+            "series (SPY, QUAL, IWD, IWM, EFA, EEM, IEF, TIP, and a 60% VNQ + 40% DBC blend "
             "for Real Assets). Cash / SPAXX is excluded — its near-zero daily variance "
             "makes correlation estimates unstable.  \n\n"
             "**Return computation:** Daily log-approximate returns via `adj_close.pct_change()`. "

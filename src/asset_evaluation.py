@@ -31,7 +31,7 @@ SLEEVE_BENCHMARKS: dict[str, list[tuple[str, float]]] = {
     "Emerging Markets":  [("EEM",  1.0)],
     "Core Fixed Income": [("IEF",  1.0)],
     "TIPS":              [("TIP",  1.0)],
-    "Real Assets":       [("VNQ",  0.5), ("DBC", 0.5)],
+    "Real Assets":       [("VNQ",  0.6), ("DBC", 0.4)],
 }
 
 # SAA target weights for the 9 non-cash sleeves.
@@ -179,7 +179,7 @@ def build_univariate_table(
 ) -> pd.DataFrame:
     """
     Univariate stats table for BTC plus comparison assets.
-    Rows: BTC, SPY, AGG, GLD, VOO, Real Assets (50% VNQ + 50% PDBC).
+    Rows: BTC, SPY, AGG, GLD, VOO, Real Assets (60% VNQ + 40% PDBC).
     Returns a DataFrame indexed by asset name.
     """
     end = end_date or date.today().isoformat()

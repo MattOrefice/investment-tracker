@@ -88,7 +88,9 @@ Three layers: (1) math identities that must hold by construction (BF effects sum
 | Robert Shiller / Yale | CAPE (monthly) | Local CSV, monthly refresh |
 | Ken French Data Library | FF5 factors (US, Developed ex-US), UMD momentum | Downloaded and cached per regression run |
 
-**Real Assets benchmark disclosure.** The portfolio holds PDBC (C-corp structure, no K-1 issued); the benchmark uses DBC (K-1-issuing). Selection effect in the Brinson-Fachler table captures the DBC–PDBC return spread. This asymmetry is documented rather than hidden.
+**Real Assets benchmark disclosure.** The portfolio holds PDBC (C-corp structure, no K-1 issued); the benchmark uses DBC (K-1-issuing). Selection effect in the Brinson-Fachler table captures the DBC–PDBC return spread. This asymmetry is documented rather than hidden. Real Assets sleeve is benchmarked as a 60% VNQ / 40% DBC blend; REITs are weighted higher than commodities because broad commodity futures carry negative roll yield in contango regimes that suppresses long-run total return.
+
+**Implementation note.** This dashboard is a model strategic asset allocation used to exercise the analytical framework. The author's brokerage account holds a subset of these positions; full SAA implementation is ongoing. Analytics treat the SAA as fully implemented at target weights for purposes of attribution and benchmarking.
 
 ---
 

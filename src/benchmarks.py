@@ -20,7 +20,7 @@ _SLEEVE_BENCHMARKS: dict[str, list[tuple[str, float]]] = {
     "Emerging Markets":       [("EEM",  1.0)],
     "Core Fixed Income":      [("IEF",  1.0)],
     "TIPS":                   [("TIP",  1.0)],
-    "Real Assets":            [("VNQ",  0.5), ("DBC", 0.5)],
+    "Real Assets":            [("VNQ",  0.6), ("DBC", 0.4)],
     "Cash / SPAXX":           [("BIL",  1.0)],
 }
 

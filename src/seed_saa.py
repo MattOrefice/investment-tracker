@@ -190,7 +190,7 @@ SUB_CLASSES = [
         "parent_name": "Real Assets",
         "target_weight": 0.10,
         "tolerance_band": 0.02,
-        "benchmark_ticker": "VNQ (50%) + DBC (50%)",
+        "benchmark_ticker": "VNQ (60%) + DBC (40%)",
         "rationale": (
             "Inflation-correlated diversifier with different risk drivers than equity or duration. Public REITs "
             "and commodities aren't perfect substitutes for the private real estate and natural resource exposure "
