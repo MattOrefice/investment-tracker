@@ -112,10 +112,11 @@ with col:
         f"long-run premia and reduced sensitivity to multiple compression — particularly relevant "
         f"given current US large-cap multiples. International Developed ({round(_intl_dev_wt * 100)}%) "
         f"and Emerging Markets ({round(_em_wt * 100)}%) provide valuation diversification at "
-        f"meaningfully lower CAPE levels. Real Assets ({round(_real_wt * 100)}%) and TIPS "
-        f"({round(_tips_wt * 100)}%) hedge the unhedged inflation tail in a portfolio dominated by "
-        f"nominal duration. Core Fixed Income ({round(_core_fi_wt * 100)}%) is sized for liquidity "
-        f"and rebalancing optionality, not yield."
+        f"meaningfully lower CAPE levels. Real Assets ({round(_real_wt * 100)}%) provides "
+        f"inflation-correlated diversification with different risk drivers than equity or duration. "
+        f"Core Fixed Income ({round(_core_fi_wt * 100)}%) provides duration as recession ballast "
+        f"and rebalancing optionality; TIPS ({round(_tips_wt * 100)}%) adds real-yield exposure "
+        f"to hedge the unhedged inflation tail."
     )
     st.divider()
 
@@ -209,11 +210,11 @@ with col:
             unsafe_allow_html=True,
         )
     st.caption(
-        "**Implementation note:** This is a model strategic asset allocation used to exercise "
-        "the analytical framework (Brinson-Fachler attribution, factor regressions, macro regime "
-        "monitoring). The author's brokerage account holds a subset of these positions; full SAA "
-        "implementation is ongoing. Analytics treat the SAA as fully implemented at target weights "
-        "using the listed ETFs and blended benchmarks."
+        "**Implementation note:** This SAA reflects the policy framework applied to a paper-trade "
+        "portfolio simulated from May 2025 inception. The author's brokerage account holds a partial "
+        "implementation; analytics on this site treat the SAA as fully implemented at target weights "
+        "using the listed ETFs and blended benchmarks. Methodology (Brinson-Fachler attribution, "
+        "factor regressions, macro regime monitoring) is real; the position sizing is paper-portfolio."
     )
     st.divider()
 
@@ -282,16 +283,14 @@ with col:
     st.plotly_chart(_fig_endo, width='stretch', config={"displayModeBar": False})
 
     st.markdown(
-        "Endowments achieving institutional-grade returns do so with heavy "
-        "allocations to private equity, venture capital, and hedge funds — "
-        "strategies inaccessible to retail investors at meaningful scale. "
-        "This portfolio substitutes factor ETFs to capture similar risk premia through "
-        "public markets: AVUV for small-cap value, SPHQ for quality/profitability, "
-        "VEA/IEMG for international diversification. "
-        "Yale and PRINCO employ institutional infrastructure — 25+ year manager "
-        "relationships, proprietary deal flow, and illiquidity budgets — that "
-        "cannot be replicated in a taxable brokerage account. "
-        "The comparison is contextual, not aspirational."
+        "Endowments achieve institutional-grade returns through heavy allocations to private equity, "
+        "venture capital, and hedge funds — strategies that depend on 25+ year manager relationships, "
+        "proprietary deal flow, and multi-year illiquidity tolerance. None are replicable in a retail "
+        "brokerage account. This portfolio substitutes liquid factor ETFs (AVUV for small-cap value, "
+        "SPHQ for quality, VEA/IEMG for international and EM) to capture related risk premia through "
+        "public markets — at the cost of forgoing the illiquidity premium. The comparison is contextual "
+        "— to demonstrate institutional analytical framing — not aspirational. Endowment-return "
+        "replication at retail scale is not the goal."
     )
     st.caption(
         "Sources: Yale Investments Office Annual Report FY2024 (yale.edu/investments); "
