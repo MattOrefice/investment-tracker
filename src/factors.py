@@ -981,7 +981,7 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
         except Exception:
             pass
 
-    return [
+    notes = [
         f"Samples: US equity sleeve {T_us} US trading days ({us_window}), L = {L_us}. "
         f"International Developed sleeve {T_dev} US trading days ({dev_window}), L = {L_dev}. "
         "Both sleeves are restricted to US equity market trading days (dates present "
@@ -1028,12 +1028,13 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
         "for tax-efficiency reasons (high turnover → short-term gains), so a near-zero "
         "Mom loading is expected and confirms the construction is tax-aware.",
 
-        "Global factor supplement (International Developed): Ken French Global FF5 "
-        "(Global_5_Factors_Daily_CSV.zip) provides a cross-check against the Developed-ex-US "
-        "regression. Global Mkt-RF includes US exposure, making it less clean for a "
-        "developed-ex-US ETF, but the comparison tests whether the Korea universe mismatch "
-        "artifact persists under a different factor set. Differences in alpha between the "
-        "two models are informative about the universe-mismatch contribution.",
+        "Global factor supplement (International Developed): Ken French ceased publication "
+        "of the daily Global 5-factor file in June 2019. This portfolio's inception "
+        "post-dates that cutoff; no daily-frequency Global FF5 regression can be produced. "
+        "The Developed ex-US factor set is the primary decomposition for the international "
+        "sleeve. Global Mkt-RF would include US exposure in any case, making it less precise "
+        "for a developed-ex-US ETF — the Korea universe mismatch is better bounded via the "
+        "Developed ex-US result alone.",
     ]
 
     if fi_result:

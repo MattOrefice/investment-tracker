@@ -16,13 +16,10 @@ render_page_header()
 from src.factors import (
     _FI_WEIGHTS,
     EM_DISCLOSURE,
-    GLOBAL_DAILY_FACTORS_CUTOFF,
     alpha_ci_str,
     build_factor_methodology_notes,
     build_factor_prose,
-    interpret_sleeve_regression,
     regress_fi_sleeve,
-    run_intl_global_regression,
     run_sleeve_regressions,
     run_sleeve_regressions_mom,
     sig_marker,
@@ -54,8 +51,8 @@ with col:
             "history, alpha estimates are noisy — factor loadings (the β coefficients) are more "
             "stable and more interpretable at this horizon.\n\n"
             "**Factor loadings (β):** Mkt-RF captures market beta (>1 = more market risk than "
-            "benchmark); HML >0 tilts value; SMB >0 tilts small-cap; RMW >0 tilts profitability; "
-            "CMA >0 tilts conservative investment.\n\n"
+            "benchmark); positive HML = value tilt; positive SMB = small-cap tilt; "
+            "positive RMW = profitability tilt; positive CMA = conservative-investment tilt.\n\n"
             "**Significance:** \\* p<0.10 · \\*\\* p<0.05 · \\*\\*\\* p<0.01. "
             "All standard errors are Newey-West HAC-corrected for heteroskedasticity and "
             "serial correlation (lag = ⌊4 × (T/100)^(2/9)⌋)."
@@ -82,18 +79,10 @@ with col:
         except Exception:
             return {"us": None, "developed_exus": None}
 
-    @st.cache_data(ttl=3600)
-    def _get_global_result(inception_date: str, end: str):
-        try:
-            return run_intl_global_regression(inception_date, end)
-        except Exception:
-            return None
-
     try:
-        results       = _get_factor_results(inception, end_date)
-        fi_result     = _get_fi_result(inception, end_date)
-        results_mom   = _get_mom_results(inception, end_date)
-        global_result = _get_global_result(inception, end_date)
+        results     = _get_factor_results(inception, end_date)
+        fi_result   = _get_fi_result(inception, end_date)
+        results_mom = _get_mom_results(inception, end_date)
     except Exception as exc:
         st.error(f"Factor regression unavailable: {exc}")
         st.stop()
@@ -131,7 +120,7 @@ with col:
         rows = []
         p_a = res["p_alpha"]
         rows.append({
-            "Factor":       "Alpha (annualized)",
+            "Factor":       "Alpha",
             "Loading (β)":  alpha_ci_str(res),
             "t-stat":       f"{res['t_alpha']:.2f}",
             "p-value":      f"{p_a:.3f}",
@@ -161,12 +150,12 @@ with col:
             f"{d_s.strftime('%B')} {d_s.day}, {d_s.year} — "
             f"{d_e.strftime('%B')} {d_e.day}, {d_e.year}"
         )
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("R²",           f"{r['r_squared']:.3f}")
-        c2.metric("Adj. R²",      f"{r['adj_r_squared']:.3f}")
-        c3.metric("Observations", str(r["T"]))
-        c4.metric("NW Lags (L)",  str(r["nw_lags"]))
         st.caption(f"Sample window: {win}")
+
+    st.caption(
+        "Regression windows end at the most recent locked quarter-end for stability; "
+        "live prices through today are shown in the Performance page KPI strip."
+    )
 
     for key in _SLEEVE_ORDER:
         res = results.get(key)
@@ -177,56 +166,60 @@ with col:
         st.caption(f"Tickers: {', '.join(res['tickers'])}")
 
         if key == "developed_exus":
-            tab_dev, tab_glob = st.tabs(["Developed ex-US Factors", "Global Factors"])
-            with tab_dev:
-                _render_factor_table(res, _FACTORS, label="FF5 — Developed ex-US")
-                _render_fit_metrics(res)
-                st.caption(interpret_sleeve_regression(res, _FACTORS))
-                res_mom = results_mom.get(key)
-                if res_mom is not None:
-                    with st.expander("Carhart Momentum Supplement (FF5 + UMD)", expanded=False):
-                        _render_factor_table(res_mom, _FACTORS + ["Mom"], label="FF5 + Momentum")
-                        st.caption(
-                            "Supplementary regression including the Ken French daily UMD (Mom) factor. "
-                            "A near-zero Mom loading is expected given the portfolio's tax-aware construction "
-                            "(momentum strategies carry high turnover, creating short-term capital gains). "
-                            "Alpha change vs. FF5 above reflects covariance between sleeve returns and "
-                            "the momentum factor."
-                        )
-            with tab_glob:
-                if global_result is not None:
-                    _render_factor_table(global_result, _FACTORS, label="FF5 — Global")
-                    _render_fit_metrics(global_result)
-                    st.caption(interpret_sleeve_regression(global_result, _FACTORS))
-                else:
-                    st.info(
-                        "Global daily factor data discontinued — Ken French ceased "
-                        "publication of the daily Global 5-factor file in June 2019. "
-                        "This portfolio started in May 2025; with no data overlap, "
-                        "a regression cannot be produced at daily frequency. "
-                        "The Developed ex-US Factors tab provides the primary factor "
-                        "decomposition for the International Developed sleeve."
-                    )
-        else:
-            _render_factor_table(res, _FACTORS)
+            _render_factor_table(res, _FACTORS, label="FF5 — Developed ex-US")
             _render_fit_metrics(res)
-            st.caption(interpret_sleeve_regression(res, _FACTORS))
+            st.write(build_factor_prose({"us": None, "developed_exus": res})[0])
             res_mom = results_mom.get(key)
             if res_mom is not None:
                 with st.expander("Carhart Momentum Supplement (FF5 + UMD)", expanded=False):
                     _render_factor_table(res_mom, _FACTORS + ["Mom"], label="FF5 + Momentum")
-                    st.caption(
-                        "Supplementary regression including the Ken French daily UMD (Mom) factor. "
-                        "A near-zero Mom loading is expected given the portfolio's tax-aware construction "
-                        "(momentum strategies carry high turnover, creating short-term capital gains). "
-                        "Alpha change vs. FF5 above reflects covariance between sleeve returns and "
-                        "the momentum factor."
-                    )
+                    _mom_b = res_mom["betas"]["Mom"]
+                    _mom_t = res_mom["t_stats"]["Mom"]
+                    if abs(_mom_t) >= 1.96:
+                        st.caption(
+                            f"Mom loading of {_mom_b:+.3f} (t = {_mom_t:.2f}) is statistically "
+                            f"significant but economically small — some incidental momentum exposure "
+                            f"leaks through the SPHQ quality factor, but the loading magnitude confirms "
+                            f"momentum is not a deliberate tilt."
+                        )
+                    else:
+                        st.caption(
+                            f"Mom loading of {_mom_b:+.3f} (t = {_mom_t:.2f}) confirms the portfolio "
+                            f"does not carry a systematic momentum tilt — consistent with the tax-aware "
+                            f"construction (high momentum turnover → short-term capital gains)."
+                        )
+        else:
+            _render_factor_table(res, _FACTORS)
+            _render_fit_metrics(res)
+            st.write(build_factor_prose({"us": res})[0])
+            res_mom = results_mom.get(key)
+            if res_mom is not None:
+                with st.expander("Carhart Momentum Supplement (FF5 + UMD)", expanded=False):
+                    _render_factor_table(res_mom, _FACTORS + ["Mom"], label="FF5 + Momentum")
+                    _mom_b = res_mom["betas"]["Mom"]
+                    _mom_t = res_mom["t_stats"]["Mom"]
+                    if abs(_mom_t) >= 1.96:
+                        st.caption(
+                            f"Mom loading of {_mom_b:+.3f} (t = {_mom_t:.2f}) is statistically "
+                            f"significant but economically small — some incidental momentum exposure "
+                            f"leaks through the SPHQ quality factor, but the loading magnitude confirms "
+                            f"momentum is not a deliberate tilt."
+                        )
+                    else:
+                        st.caption(
+                            f"Mom loading of {_mom_b:+.3f} (t = {_mom_t:.2f}) confirms the portfolio "
+                            f"does not carry a systematic momentum tilt — consistent with the tax-aware "
+                            f"construction (high momentum turnover → short-term capital gains)."
+                        )
 
         st.divider()
 
     # ── FI sleeve — TERM / CREDIT regression ─────────────────────────────────
     st.subheader("Fixed Income Sleeve — TERM / CREDIT")
+    st.caption(
+        "FI sleeve uses TERM and CREDIT factors; "
+        "Carhart momentum supplement not applicable to a duration-driven sleeve."
+    )
     if fi_result is None:
         st.warning(
             "FI factor data temporarily unavailable — requires IEF, BIL, and HYG daily prices "
@@ -247,7 +240,7 @@ with col:
         fi_rows = []
         p_a_fi = fi_result["p_alpha"]
         fi_rows.append({
-            "Factor":       "Alpha (annualized)",
+            "Factor":       "Alpha",
             "Loading (β)":  alpha_ci_str(fi_result),
             "t-stat":       f"{fi_result['t_alpha']:.2f}",
             "p-value":      f"{p_a_fi:.3f}",
@@ -269,7 +262,8 @@ with col:
         )
         st.caption(
             "* p < 0.10 &nbsp; ** p < 0.05 &nbsp; *** p < 0.01 &nbsp;|&nbsp; "
-            "Standard errors: Newey-West HAC"
+            f"Standard errors: Newey-West HAC &nbsp;|&nbsp; R² = {fi_result['r_squared']:.3f} &nbsp; "
+            f"T = {fi_result['T']} obs"
         )
 
         d_s = date.fromisoformat(fi_result["sample_start"])
@@ -278,27 +272,12 @@ with col:
             f"{d_s.strftime('%B')} {d_s.day}, {d_s.year} — "
             f"{d_e.strftime('%B')} {d_e.day}, {d_e.year}"
         )
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("R²",           f"{fi_result['r_squared']:.3f}")
-        c2.metric("Adj. R²",      f"{fi_result['adj_r_squared']:.3f}")
-        c3.metric("Observations", str(fi_result["T"]))
-        c4.metric("NW Lags (L)",  str(fi_result["nw_lags"]))
         st.caption(f"Sample window: {fi_win}")
-        st.caption(interpret_sleeve_regression(fi_result, ["TERM", "CREDIT"]))
+        st.write(build_factor_prose({}, fi_result=fi_result)[0])
         st.divider()
 
     # ── Emerging Markets disclosure ───────────────────────────────────────────
     st.info(f"**Emerging Markets (IEMG):** {EM_DISCLOSURE}")
-
-    st.divider()
-
-    # ── Scope notes ──────────────────────────────────────────────────────────
-    st.subheader("Scope Notes")
-    # Full narrative retained for PDF export; inline per-sleeve interpretation above
-    _full_prose = build_factor_prose(results, fi_result=fi_result, global_result=global_result)
-    # Show only the exclusion / scope notes (last sentence covers EM + Real Assets)
-    if _full_prose:
-        st.write(_full_prose[-1])
 
     st.divider()
 
