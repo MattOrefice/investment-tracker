@@ -76,12 +76,12 @@ def test_methodology_expander_present(ba_app: AppTest) -> None:
     )
 
 
-def test_factor_definitions_expander_present(ba_app: AppTest) -> None:
-    """Factor Definitions must be in a collapsed expander (moved from always-visible container). Pinned: Phase 40."""
+def test_factor_definitions_always_visible(ba_app: AppTest) -> None:
+    """Factor Definitions table must render in the always-visible bordered container. Pinned: Phase 40.1."""
     if not ba_app.metric:
         pytest.skip("No portfolio data — skipped in local/empty-DB mode")
-    expander_labels = [e.label for e in ba_app.expander]
-    assert any("factor definitions" in lbl.lower() or "factor def" in lbl.lower()
-               for lbl in expander_labels), (
-        f"Factor Definitions expander not found — Phase 40 regression (Item 5). Expanders: {expander_labels}"
+    all_markdown = [m.value for m in ba_app.markdown]
+    assert any("Factor Definitions" in m for m in all_markdown), (
+        "Factor Definitions heading not found in rendered markdown — "
+        "Phase 40.1 regression: bordered container must be always visible, not in an expander."
     )

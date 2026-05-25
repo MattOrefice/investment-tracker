@@ -72,7 +72,8 @@ with col:
         st.stop()
 
     # ── Factor definitions panel ─────────────────────────────────────────────
-    with st.expander("Factor Definitions", expanded=False):
+    with st.container(border=True):
+        st.markdown("**Factor Definitions**")
         st.markdown(
             "| Factor | Definition |\n"
             "|--------|------------|\n"
