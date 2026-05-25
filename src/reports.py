@@ -864,7 +864,7 @@ def _build_thesis_section(start_date: str, end_date: str) -> dict:
                ORDER BY conviction DESC""",
         ).fetchall()
         tr_rows = conn.execute(
-            """SELECT trade_date, ticker, action, shares, price
+            """SELECT trade_date, ticker, action, shares, price, lot_source
                FROM trades
                WHERE trade_date BETWEEN ? AND ?
                ORDER BY trade_date""",
@@ -887,8 +887,14 @@ def _build_thesis_section(start_date: str, end_date: str) -> dict:
         })
 
     trades = []
+    drip_count = 0
+    drip_total = 0.0
     for t in tr_rows:
         price = float(t["price"]) if t["price"] else 0.0
+        if t["lot_source"] == "drip":
+            drip_count += 1
+            drip_total += float(t["shares"]) * price
+            continue
         td = date.fromisoformat(t["trade_date"])
         trades.append({
             "date":   f"{td.strftime('%b')} {td.day}, {td.year}",
@@ -899,7 +905,11 @@ def _build_thesis_section(start_date: str, end_date: str) -> dict:
             "cost":   f"${float(t['shares']) * price:,.0f}",
         })
 
-    return {"theses": theses, "trades": trades}
+    drip_summary = (
+        {"count": drip_count, "total": f"${drip_total:,.2f}"}
+        if drip_count > 0 else None
+    )
+    return {"theses": theses, "trades": trades, "drip_summary": drip_summary}
 
 
 def _build_positioning_section(end_date: str) -> dict:

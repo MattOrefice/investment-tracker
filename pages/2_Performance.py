@@ -265,8 +265,9 @@ with col:
     # ── Summary banner ────────────────────────────────────────────────────
     st.markdown(
         f"**${current_val:,.0f}** current value &nbsp;·&nbsp; "
-        f"**{si_days}** day inception period &nbsp;·&nbsp; "
+        f"**{si_days}**-day inception period &nbsp;·&nbsp; "
         f"**{port_si*100:.1f}%** cumulative TWR &nbsp;·&nbsp; "
+        f"**{_bps(alpha_bl)}** vs blended &nbsp;·&nbsp; "
         f"**{_bps(alpha_sp)}** vs S&P 500",
         unsafe_allow_html=False,
     )
@@ -320,7 +321,7 @@ with col:
         f"{_non_eq_pct*100:.0f}% of the SAA is non-equity (Fixed Income + Real Assets + Cash), "
         f"{_non_us_eq*100:.0f}% is non-US equity. The Custom Blended benchmark — a target-weighted "
         "basket of cap-weighted indices in the same SAA — is the more meaningful "
-        "comparison for security selection alpha."
+        "to isolate implementation alpha from SAA-design effects."
     )
 
     # ── Reconciliation note ────────────────────────────────────────────────
@@ -336,15 +337,12 @@ with col:
         _twr_pct     = port_si * 100
         st.caption(
             f"Reconciliation: **\\${_cost_basis:,.0f} deployed at inception** → "
-            f"**\\${current_val:,.0f} current value** · "
-            f"**\\${_unrealized:+,.0f} gain on deployed capital**. "
-            f"Return calculations use the adj_close series, which starts at "
-            f"**\\${_series_start:,.2f}** — Yahoo Finance retroactively restates "
-            f"adj_close as dividends accrue, so the inception series value is lower "
-            f"than the original trade prices. Both absolute return "
-            f"(**{_abs_ret_pct:.1f}%**) and cumulative TWR (**{_twr_pct:.1f}%**) "
-            f"use the same adj_close series and are equivalent for this single "
-            f"lump-sum portfolio. TWR is the GIPS-correct measure for benchmark comparison."
+            f"**\\${current_val:,.0f} current value** "
+            f"(**\\${_unrealized:+,.0f}** unrealized gain). "
+            f"Absolute return ({_abs_ret_pct:.1f}%) and cumulative TWR ({_twr_pct:.1f}%) "
+            f"both use the adj_close series — restated retroactively as dividends accrue, "
+            f"so the inception series value is slightly below the original trade prices. "
+            f"TWR is the GIPS-correct measure for benchmark comparison."
         )
     # ── End reconciliation note ────────────────────────────────────────────
 
@@ -370,6 +368,10 @@ with col:
                 "For a portfolio with one large initial deposit and no subsequent flows "
                 "(this one currently), both methods produce nearly identical results."
             ),
+        )
+        st.caption(
+            "For this single-flow portfolio, Daily-linked and Modified Dietz "
+            "converge within 0 bps — both methods are shown for completeness."
         )
     method_key = "daily" if method == "Daily-linked" else "modified_dietz"
 
@@ -1020,14 +1022,6 @@ with col:
             )
             st.markdown("---")
 
-        conn2 = get_connection()
-        n_days = conn2.execute("SELECT COUNT(*) FROM prices").fetchone()[0]
-        last_refresh = conn2.execute(
-            "SELECT MAX(price_date) FROM prices"
-        ).fetchone()[0]
-        conn2.close()
-        st.markdown(f"**Price cache rows:** {n_days:,}")
-        st.markdown(f"**Last price date in cache:** {last_refresh}")
 
     st.divider()
 

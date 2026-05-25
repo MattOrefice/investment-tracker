@@ -173,6 +173,9 @@
       {% endfor %}
     </tbody>
   </table>
+  {% if thesis.drip_summary %}
+  <p class="muted">{{ thesis.drip_summary.count }} DRIP reinvestment{{ "s" if thesis.drip_summary.count > 1 else "" }} totaling {{ thesis.drip_summary.total }} excluded from trade detail.</p>
+  {% endif %}
   {% else %}
   <p class="muted">No trades recorded during {{ period_label }}.</p>
   {% endif %}
@@ -705,10 +708,10 @@
           Both thresholds must be satisfied for &ldquo;Within&rdquo; status.</dd>
 
           <dt>Price Data</dt>
-          <dd>Daily adjusted-close from Yahoo Finance, cached in SQLite. Adjusted close reflects
+          <dd>Daily adjusted-close from the price provider, cached in SQLite. Adjusted close reflects
           splits and dividends (total-return basis). Gaps forward-filled from last trading day.
           {% if snapshot_captured_at %}Quarter prices locked at {{ snapshot_captured_at }} to prevent
-          retroactive Yahoo Finance adj_close adjustments from shifting historical report numbers.{% endif %}</dd>
+          retroactive adj_close adjustments from the price feed from shifting historical report numbers.{% endif %}</dd>
 
           <dt>CAPE (Shiller P/E)</dt>
           <dd>Robert Shiller / Yale (econ.yale.edu). Monthly observations; most recent month shown.
