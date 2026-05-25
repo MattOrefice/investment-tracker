@@ -136,16 +136,17 @@ def _landing_page_render():
         then measures deviation, attribution, and factor exposure against that policy.
         Performance is tracked time-weighted against a SAA-target-weighted blended benchmark.
         Per-sleeve Fama-French 5-factor regressions with Newey-West HAC standard errors decompose
-        excess return into factor exposures and residual selection. A macro regime dashboard with
-        dynamic interpretations frames whether current conditions warrant any tactical tilt.</p>
+        excess return into factor exposures and residual selection. A macro regime dashboard provides
+        reference context across growth, inflation, monetary policy, credit, valuation, and cross-asset
+        performance — positioning remains policy-driven, not view-driven.</p>
         <hr class="endow-rule">
         """,
         unsafe_allow_html=True,
     )
 
-    c1, c2, c3, c4 = st.columns(4, vertical_alignment="top")
+    r1c1, r1c2, r1c3 = st.columns(3, vertical_alignment="top")
 
-    with c1:
+    with r1c1:
         st.markdown(
             """
             <div class="endow-card">
@@ -159,7 +160,7 @@ def _landing_page_render():
         )
         st.page_link("pages/1_SAA.py", label="Open")
 
-    with c2:
+    with r1c2:
         st.markdown(
             """
             <div class="endow-card">
@@ -173,7 +174,39 @@ def _landing_page_render():
         )
         st.page_link("pages/2_Performance.py", label="Open")
 
-    with c3:
+    with r1c3:
+        st.markdown(
+            """
+            <div class="endow-card">
+                <h3 class="endow-card-header">Benchmark Attribution</h3>
+                <p class="endow-card-body endow-card-body-clamp">Portfolio excess return decomposed via
+                OLS regression against the custom blended benchmark plus three style factors. Newey-West
+                HAC standard errors; alpha is the institutional definition — return after controlling for
+                benchmark beta and style tilts.</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.page_link("pages/6_Benchmark_Attribution.py", label="Open")
+
+    r2c1, r2c2, r2c3 = st.columns(3, vertical_alignment="top")
+
+    with r2c1:
+        st.markdown(
+            """
+            <div class="endow-card">
+                <h3 class="endow-card-header">Factor Profile</h3>
+                <p class="endow-card-body endow-card-body-clamp">Per-sleeve Fama-French 5-factor
+                regressions for US Equity and International Developed, TERM/CREDIT decomposition for
+                Fixed Income. Equity Style Profile and FI Duration as supporting risk-characteristic
+                views.</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.page_link("pages/4_Factor_Profile.py", label="Open")
+
+    with r2c2:
         st.markdown(
             """
             <div class="endow-card">
@@ -187,14 +220,14 @@ def _landing_page_render():
         )
         st.page_link("pages/3_Macro.py", label="Open")
 
-    with c4:
+    with r2c3:
         st.markdown(
             """
             <div class="endow-card">
                 <h3 class="endow-card-header">Asset Evaluation</h3>
-                <p class="endow-card-body endow-card-body-clamp">Candidate-asset evaluation with worked
-                Bitcoin case study. Univariate statistics, regime-conditional correlation,
-                mean-variance contribution, and allocator tradeoffs.</p>
+                <p class="endow-card-body endow-card-body-clamp">Candidate-asset evaluation framework
+                applied to Bitcoin: univariate statistics, regime-conditional correlation against SAA
+                sleeves, and mean-variance contribution analysis.</p>
             </div>
             """,
             unsafe_allow_html=True,
