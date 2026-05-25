@@ -31,8 +31,7 @@ with col:
     st.title("Benchmark Attribution")
     st.caption(
         "Portfolio vs Custom Blended SAA Benchmark · "
-        "R_p − RF ~ (R_b − RF) + HML + SMB + RMW · "
-        "Daily excess returns since inception · Newey-West HAC standard errors"
+        "Newey-West HAC standard errors, daily excess returns since inception."
     )
     st.caption(as_of_banner())
     st.divider()
@@ -49,9 +48,7 @@ with col:
             "return (not the S&P 500). **HML, SMB, RMW** are Fama-French style factors. "
             "**Alpha (α)** is the active return unexplained by benchmark beta or factor tilts — "
             "the institutional alpha definition used in endowment and IDD contexts.\n\n"
-            "CMA is excluded: for a passive/semi-passive ETF implementation, CMA captures "
-            "ETF-level capex differences rather than deliberate active tilts, so its inclusion "
-            "would misattribute passive implementation choices as active factor bets."
+            "CMA is excluded for this passive/semi-passive implementation — see Methodology for details."
         )
 
     end_date  = date.today().isoformat()
@@ -75,8 +72,7 @@ with col:
         st.stop()
 
     # ── Factor definitions panel ─────────────────────────────────────────────
-    with st.container(border=True):
-        st.markdown("**Factor Definitions**")
+    with st.expander("Factor Definitions", expanded=False):
         st.markdown(
             "| Factor | Definition |\n"
             "|--------|------------|\n"
@@ -136,6 +132,12 @@ with col:
     c3.metric("Observations", str(result["T"]))
     c4.metric("NW Lags (L)",  str(result["nw_lags"]))
     st.caption(f"Sample window: {window_str}")
+    st.caption(
+        f"Regression window ends at the most recent locked quarter-end "
+        f"({d_end.strftime('%B')} {d_end.day}, {d_end.year}) for stability; "
+        f"live prices through {date.today().strftime('%B')} {date.today().day}, "
+        f"{date.today().year} are shown on the Performance page."
+    )
     st.caption(interpret_benchmark_attribution(result))
 
     st.divider()
@@ -174,8 +176,10 @@ with col:
             "HAC SEs are authoritative (correct for daily return autocorrelation); "
             "CI applies to alpha only, not to factor betas. "
             "Wide CIs at this sample length reflect parameter uncertainty, "
-            "not a methodological failure — they correctly communicate that the "
-            "alpha estimate is not yet stable."
+            f"not a methodological failure — they correctly communicate sample-size limitations "
+            f"rather than model failure: the point estimate is unbiased; the confidence interval "
+            f"is wide because {result['T']} observations is a short window for risk-adjusted "
+            "return inference."
         )
         st.caption(
             "Portfolio returns: get_portfolio_value_series (adj_close basis). "

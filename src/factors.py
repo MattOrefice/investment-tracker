@@ -1221,10 +1221,23 @@ def build_benchmark_prose(
     sig_label      = significance_label(t_a)
     is_significant = abs(t_a) >= 1.65
 
+    # Compute 95% CI for alpha if HAC SE is available
+    _hac_bse  = result.get("_hac_bse", {})
+    _se_daily = _hac_bse.get("const", float("nan"))
+    if _se_daily == _se_daily:  # not NaN
+        _se_bps = _se_daily * 252 * 10_000
+        _ci_lo  = a_bps - 1.96 * _se_bps
+        _ci_hi  = a_bps + 1.96 * _se_bps
+        _lo_s   = f"−{abs(_ci_lo):.0f}" if _ci_lo < 0 else f"+{_ci_lo:.0f}"
+        _hi_s   = f"−{abs(_ci_hi):.0f}" if _ci_hi < 0 else f"+{_ci_hi:.0f}"
+        _ci_part = f" (95% CI: [{_lo_s}, {_hi_s}]; t = {t_a:.2f})"
+    else:
+        _ci_part = f" (t = {t_a:.2f})"
+
     # Second paragraph: intercept interpretation + optional BHB cross-reference
     second_para = (
         f"The intercept — active return after controlling for benchmark beta and style tilts — "
-        f"is {a_bps:+.0f} bps annualized (t = {t_a:.2f}), {sig_label}. "
+        f"is {a_bps:+.0f} bps/yr{_ci_part}, {sig_label}. "
     )
 
     if is_significant and bhb_top_selection:
@@ -1263,6 +1276,12 @@ def build_benchmark_prose(
         f"and persistence of the active return cannot be established without a longer history."
     )
 
+    cross_page_note = (
+        "Note: this regression covers the since-inception window; the Brinson-Fachler "
+        "attribution on the Performance page reports Q1 2026. The top selection drivers "
+        "differ by design, reflecting the longer window captured here."
+    )
+
     return [
         f"Portfolio benchmark-relative regression ({T} trading days, {s_start} to {s_end}): "
         f"the portfolio loads on the custom blended benchmark at β = {b_bench:.3f} "
@@ -1273,6 +1292,8 @@ def build_benchmark_prose(
         f"R² = {r2:.3f}.",
 
         second_para,
+
+        cross_page_note,
     ]
 
 
@@ -1285,9 +1306,6 @@ def build_benchmark_methodology(result: Optional[dict]) -> list[str]:
         if result else "N/A"
     )
     return [
-        f"Regression: (R_p − RF) ~ (R_b − RF) + HML + SMB + RMW. "
-        f"{T} observations ({window}), Newey-West HAC SEs, L = {L}.",
-
         "R_p: daily portfolio total return (adj_close basis, SPAXX proxied via BIL normalized "
         "to $1.00 at inception). R_b: daily custom blended SAA benchmark return (target-weight "
         "basket: SPY, QUAL, IWD, IWM, EFA, EEM, IEF, TIP, 60% VNQ + 40% DBC, BIL). "
@@ -1426,21 +1444,19 @@ def interpret_benchmark_attribution(result: dict) -> str:
     t_alpha = result["t_alpha"]
     r2      = result["r_squared"]
 
-    # Benchmark beta sentence
+    # Benchmark beta sentence — meaning only, no specific coefficient values
     if abs(b_bench - 1.0) < 0.10:
         bench_sentence = (
-            f"The portfolio's benchmark beta of {b_bench:.3f} (t = {t_bench:.2f}) "
-            "indicates it tracks its SAA policy benchmark closely, as expected for a "
+            "The portfolio tracks its SAA policy benchmark closely — consistent with a "
             "fully-invested passive/semi-passive implementation."
         )
     else:
         bench_sentence = (
-            f"The portfolio's benchmark beta of {b_bench:.3f} (t = {t_bench:.2f}) "
-            "departs from the expected 1.0, reflecting cross-sleeve return dispersion "
-            "or cash drag."
+            "The portfolio's benchmark beta departs from the expected 1.0, reflecting "
+            "cross-sleeve return dispersion or cash drag."
         )
 
-    # Style tilt sentences — only report significant ones
+    # Style tilt sentences — meaning only, no specific β or t-stat values
     style_parts = []
     for fname, beta, tstat, context in [
         ("HML", b_hml, t_hml, "value tilt (VTV, AVUV)"),
@@ -1449,16 +1465,13 @@ def interpret_benchmark_attribution(result: dict) -> str:
     ]:
         if abs(tstat) >= _T_SIG:
             direction = "positive" if beta > 0 else "negative"
-            style_parts.append(
-                f"{fname} β = {beta:+.3f} (t = {tstat:.2f}, {direction} — {context})"
-            )
+            style_parts.append(f"{fname}: {direction} {context}")
 
     if style_parts:
         style_sentence = (
             "Residual style tilts beyond the SAA benchmark: "
             + "; ".join(style_parts) + ". "
-            "These represent the portfolio's active factor exposures relative to "
-            "the SAA policy benchmark, not explained by the target weights."
+            "See the regression table above for loadings and significance."
         )
     else:
         style_sentence = (
@@ -1466,22 +1479,21 @@ def interpret_benchmark_attribution(result: dict) -> str:
             "are detected at the current sample length. "
         )
 
-    # Alpha sentence
+    # Alpha sentence — significance and direction only, numbers live in the table
     alpha_sig = abs(t_alpha) >= _T_SIG
     if alpha_sig:
         alpha_dir = "positive" if a_bps > 0 else "negative"
         alpha_sentence = (
-            f"The active return intercept is {a_bps:+.0f} bps (t = {t_alpha:.2f}), "
-            f"statistically significant — a {alpha_dir} return after accounting for "
-            "both the SAA benchmark and residual style exposures. "
-            "The Brinson-Fachler attribution on the Performance page decomposes this "
-            "into allocation and selection effects at the sleeve level."
+            f"The active return intercept is statistically significant — a {alpha_dir} return "
+            "after accounting for both the SAA benchmark and residual style exposures. "
+            "See the regression table and the Interpretation section below for the full "
+            "alpha estimate with confidence interval."
         )
     else:
         alpha_sentence = (
-            f"The active return intercept of {a_bps:+.0f} bps (t = {t_alpha:.2f}) is not "
-            "statistically significant at the current sample length — the portfolio's return "
-            "is consistent with its SAA benchmark exposure and residual style tilts alone."
+            "The active return intercept is not statistically significant at the current "
+            "sample length — the portfolio's return is consistent with its SAA benchmark "
+            "exposure and residual style tilts alone."
         )
 
     return bench_sentence + " " + style_sentence + " " + alpha_sentence
