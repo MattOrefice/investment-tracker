@@ -70,19 +70,12 @@ def load_saa_data():
 
 parents, sub_classes = load_saa_data()
 
-n_sleeves    = len(sub_classes)
-n_parents    = len(parents)
-total_alloc  = round(sum(sc["target_weight"] for sc in sub_classes) * 100, 1)
-
 # ── Header ─────────────────────────────────────────────────────────────────────
 _, col, _ = st.columns([1, 8, 1])
 with col:
     st.title("Strategic Asset Allocation")
     st.caption("Target weights, tolerance bands, and rationale")
     st.caption(as_of_banner())
-    st.caption(f"{n_sleeves} sleeves  ·  {total_alloc:.1f}% allocated  ·  {n_parents} parent categories")
-    parts = [f"{round(p['target_weight'] * 100)}% {_dn(p['name'])}" for p in parents]
-    st.markdown("&nbsp;&nbsp;·&nbsp;&nbsp;".join(f"**{p}**" for p in parts))
     st.divider()
 
 # ── Investment thesis ──────────────────────────────────────────────────────────
@@ -103,20 +96,24 @@ with col:
         f"Strategic asset allocation reflects a US equity environment with extreme valuations "
         f"(CAPE {_cape_lbl} — comparable only to the 1929 and 1999 peaks) balanced against a "
         f"normalized 2/10 yield curve and HY credit spreads that do not yet signal stress. "
-        f"The {round(_equity_wt * 100)}% equity weight is preserved at this level not because "
-        f"valuation is unimportant — historical CAPE readings above 40 have been associated with "
-        f"low or negative forward 10-year real returns — but because timing valuation alone has "
-        f"historically been a poor strategy, and the SAA framework is designed to deliver returns "
-        f"through factor and geographic diversification rather than market-timing calls. Style tilts "
-        f"(quality via SPHQ, value via VTV, small-cap value via AVUV) target factors with positive "
-        f"long-run premia and reduced sensitivity to multiple compression — particularly relevant "
-        f"given current US large-cap multiples. International Developed ({round(_intl_dev_wt * 100)}%) "
-        f"and Emerging Markets ({round(_em_wt * 100)}%) provide valuation diversification at "
-        f"meaningfully lower CAPE levels. Real Assets ({round(_real_wt * 100)}%) provides "
-        f"inflation-correlated diversification with different risk drivers than equity or duration. "
-        f"Core Fixed Income ({round(_core_fi_wt * 100)}%) provides duration as recession ballast "
-        f"and rebalancing optionality; TIPS ({round(_tips_wt * 100)}%) adds real-yield exposure "
-        f"to hedge the unhedged inflation tail."
+        f"The portfolio sustains {round(_equity_wt * 100)}% equity weight rather than timing "
+        f"valuation — historical CAPE readings above 40 are associated with low or negative forward "
+        f"10-year real returns, but valuation alone has historically been a poor market-timing signal."
+    )
+    st.markdown(
+        "The framework is designed to deliver returns through factor and geographic diversification "
+        "rather than market-timing calls. Style tilts (quality via SPHQ, value via VTV, small-cap "
+        "value via AVUV) target factors with positive long-run premia and reduced sensitivity to "
+        "multiple compression — particularly relevant given current US large-cap multiples."
+    )
+    st.markdown(
+        f"International Developed ({round(_intl_dev_wt * 100)}%) and Emerging Markets "
+        f"({round(_em_wt * 100)}%) provide valuation diversification at meaningfully lower CAPE "
+        f"levels. Real Assets ({round(_real_wt * 100)}%) provides inflation-correlated "
+        f"diversification with different risk drivers than equity or duration. Core Fixed Income "
+        f"({round(_core_fi_wt * 100)}%) provides duration as recession ballast and rebalancing "
+        f"optionality; TIPS ({round(_tips_wt * 100)}%) adds real-yield exposure to hedge the "
+        f"unhedged inflation tail."
     )
     st.divider()
 
@@ -125,7 +122,7 @@ _, col, _ = st.columns([1, 8, 1])
 with col:
     fig = go.Figure()
     for p in parents:
-        pct   = round(p["target_weight"] * 100, 1)
+        pct   = round(p["target_weight"] * 100)
         dname = _dn(p["name"])
         color = PARENT_COLORS.get(dname, "#888888")
         # Abbreviated labels for segments too narrow to hold full text
@@ -177,6 +174,9 @@ with col:
 _, col, _ = st.columns([1, 8, 1])
 with col:
     st.subheader("Sleeve Allocation")
+    st.caption(
+        "Targets shown. Current drift relative to targets and band-breach status are on the Performance page."
+    )
     rows = [
         {
             "Sleeve":      sc["name"],
@@ -209,13 +209,14 @@ with col:
             f'⚠ Allocated: <b>{total:.1f}%</b> — does not sum to 100%</span>',
             unsafe_allow_html=True,
         )
-    st.caption(
-        "**Implementation note:** This SAA reflects the policy framework applied to a paper-trade "
-        "portfolio simulated from May 2025 inception. The author's brokerage account holds a partial "
-        "implementation; analytics on this site treat the SAA as fully implemented at target weights "
-        "using the listed ETFs and blended benchmarks. Methodology (Brinson-Fachler attribution, "
-        "factor regressions, macro regime monitoring) is real; the position sizing is paper-portfolio."
-    )
+    with st.expander("Implementation note", expanded=False):
+        st.caption(
+            "This SAA reflects the policy framework applied to a paper-trade portfolio simulated "
+            "from May 2025 inception. The author's brokerage account holds a partial implementation; "
+            "analytics on this site treat the SAA as fully implemented at target weights using the "
+            "listed ETFs and blended benchmarks. Methodology (Brinson-Fachler attribution, factor "
+            "regressions, macro regime monitoring) is real; the position sizing is paper-portfolio."
+        )
     st.divider()
 
 # ── Rationale expanders ────────────────────────────────────────────────────────
@@ -264,6 +265,10 @@ with col:
             textfont=dict(color="white", size=11),
         ))
 
+    st.write(
+        "This portfolio's public-markets-only implementation versus institutional endowments' "
+        "alternatives-heavy allocations:"
+    )
     _fig_endo.update_layout(
         barmode="stack",
         height=180,
@@ -289,8 +294,8 @@ with col:
         "brokerage account. This portfolio substitutes liquid factor ETFs (AVUV for small-cap value, "
         "SPHQ for quality, VEA/IEMG for international and EM) to capture related risk premia through "
         "public markets — at the cost of forgoing the illiquidity premium. The comparison is contextual "
-        "— to demonstrate institutional analytical framing — not aspirational. Endowment-return "
-        "replication at retail scale is not the goal."
+        "— to demonstrate institutional analytical framing — not aspirational. The goal is "
+        "institutional analytical framing applied at retail scale — not return replication."
     )
     st.caption(
         "Sources: Yale Investments Office Annual Report FY2024 (yale.edu/investments); "
