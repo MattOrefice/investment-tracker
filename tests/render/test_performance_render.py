@@ -296,3 +296,60 @@ def test_two_stage_attribution_section_renders(performance_app: AppTest) -> None
         f"Stage 1 value unchanged after switching 3M → SI: both = {stage1_3m!r}. "
         "Window filtering may have collapsed — check _load_attribution or _benchmark_period_return."
     )
+
+
+# ── Phase 39 — polish regression pins ────────────────────────────────────────
+
+def test_kpi_banner_shows_vs_blended(performance_app: AppTest) -> None:
+    """Summary banner must show vs-blended comparison first. Pinned: Phase 39."""
+    if not performance_app.metric:
+        pytest.skip("No portfolio data — skipped in local/empty-DB mode")
+    banner_texts = [m.value for m in performance_app.markdown]
+    assert any("vs blended" in t for t in banner_texts), (
+        "KPI banner missing 'vs blended' — possible Phase 39 regression (Item 5)"
+    )
+
+
+def test_kpi_banner_hyphenated_day(performance_app: AppTest) -> None:
+    """Summary banner must use hyphenated '-day inception period'. Pinned: Phase 39."""
+    if not performance_app.metric:
+        pytest.skip("No portfolio data — skipped in local/empty-DB mode")
+    banner_texts = [m.value for m in performance_app.markdown]
+    assert any("-day inception period" in t for t in banner_texts), (
+        "KPI banner missing hyphenated '-day inception period' — possible Phase 39 regression (Item 9)"
+    )
+
+
+def test_reconciliation_no_yahoo_finance(performance_app: AppTest) -> None:
+    """Reconciliation caption must not mention Yahoo Finance. Pinned: Phase 39."""
+    if not performance_app.metric:
+        pytest.skip("No portfolio data — skipped in local/empty-DB mode")
+    captions = [c.value for c in performance_app.caption]
+    recon = next((c for c in captions if "Reconciliation" in c), None)
+    if recon is None:
+        pytest.skip("Reconciliation caption not found — skipped in empty-DB mode")
+    assert "Yahoo Finance" not in recon, (
+        f"Reconciliation caption still mentions Yahoo Finance — Phase 39 regression (Item 3). "
+        f"Caption starts: {recon[:120]}"
+    )
+
+
+def test_implementation_alpha_wording(performance_app: AppTest) -> None:
+    """Since-inception caption must use 'isolates implementation alpha'. Pinned: Phase 39."""
+    if not performance_app.metric:
+        pytest.skip("No portfolio data — skipped in local/empty-DB mode")
+    captions = [c.value for c in performance_app.caption]
+    assert any("isolates implementation alpha" in c for c in captions), (
+        "Since-inception caption missing 'isolates implementation alpha' — "
+        "possible Phase 39 regression (Item 8)"
+    )
+
+
+def test_cache_rows_not_in_validation_expander(performance_app: AppTest) -> None:
+    """Operational cache metadata must be absent from the page. Pinned: Phase 39."""
+    if not performance_app.metric:
+        pytest.skip("No portfolio data — skipped in local/empty-DB mode")
+    all_markdown = [m.value for m in performance_app.markdown]
+    assert not any("Price cache rows" in m for m in all_markdown), (
+        "Operational 'Price cache rows' metadata still visible — Phase 39 regression (Item 10)"
+    )
