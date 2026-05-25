@@ -353,10 +353,12 @@ def _make_bench_res(
 
 class TestInterpretBenchmarkAttribution:
     def test_benchmark_beta_close_to_1_says_tracks(self):
+        """Gray-box conveys tracking qualitatively; specific β values live in the table. Phase 40."""
         res = _make_bench_res(b_bench=1.02, t_bench=50.0)
         text = interpret_benchmark_attribution(res)
+        assert "tracks" in text.lower()
         assert "benchmark" in text.lower()
-        assert "1.020" in text
+        assert "1.020" not in text  # numbers cut from gray-box (Phase 40 Item 2)
 
     def test_significant_rmw_appears(self):
         res = _make_bench_res(b_rmw=0.20, t_rmw=3.0)
@@ -369,10 +371,11 @@ class TestInterpretBenchmarkAttribution:
         assert "no statistically significant" in text.lower() or "statistically" in text.lower()
 
     def test_significant_alpha_flagged(self):
+        """Gray-box flags alpha significance; bps value lives in regression table. Phase 40."""
         res = _make_bench_res(alpha_bps=250.0, t_alpha=2.5)
         text = interpret_benchmark_attribution(res)
-        assert "250" in text or "+250" in text
         assert "significant" in text.lower()
+        assert "250" not in text  # numbers cut from gray-box (Phase 40 Item 2)
 
     def test_none_returns_unavailable(self):
         text = interpret_benchmark_attribution(None)

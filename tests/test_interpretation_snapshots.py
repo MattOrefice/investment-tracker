@@ -375,14 +375,13 @@ class TestBenchmarkAttributionSnapshot:
         )
         result = interpret_benchmark_attribution(res)
         expected = (
-            "The portfolio's benchmark beta of 1.010 (t = 55.00) indicates it tracks "
-            "its SAA policy benchmark closely, as expected for a fully-invested "
-            "passive/semi-passive implementation. "
+            "The portfolio tracks its SAA policy benchmark closely — consistent with a "
+            "fully-invested passive/semi-passive implementation. "
             "No statistically significant residual style tilts beyond the SAA benchmark "
-            "are detected at the current sample length. "
-            " The active return intercept of +35 bps (t = 0.60) is not statistically "
-            "significant at the current sample length — the portfolio's return is "
-            "consistent with its SAA benchmark exposure and residual style tilts alone."
+            "are detected at the current sample length.  "
+            "The active return intercept is not statistically significant at the current "
+            "sample length — the portfolio's return is consistent with its SAA benchmark "
+            "exposure and residual style tilts alone."
         )
         assert result == expected
 
@@ -396,16 +395,14 @@ class TestBenchmarkAttributionSnapshot:
         )
         result = interpret_benchmark_attribution(res)
         expected = (
-            "The portfolio's benchmark beta of 1.000 (t = 52.00) indicates it tracks "
-            "its SAA policy benchmark closely, as expected for a fully-invested "
-            "passive/semi-passive implementation. "
+            "The portfolio tracks its SAA policy benchmark closely — consistent with a "
+            "fully-invested passive/semi-passive implementation. "
             "Residual style tilts beyond the SAA benchmark: "
-            "RMW β = +0.180 (t = 2.80, positive — profitability tilt (SPHQ, AVUV)). "
-            "These represent the portfolio's active factor exposures relative to "
-            "the SAA policy benchmark, not explained by the target weights. "
-            "The active return intercept of +80 bps (t = 1.20) is not statistically "
-            "significant at the current sample length — the portfolio's return is "
-            "consistent with its SAA benchmark exposure and residual style tilts alone."
+            "RMW: positive profitability tilt (SPHQ, AVUV). "
+            "See the regression table above for loadings and significance. "
+            "The active return intercept is not statistically significant at the current "
+            "sample length — the portfolio's return is consistent with its SAA benchmark "
+            "exposure and residual style tilts alone."
         )
         assert result == expected
 
@@ -418,15 +415,14 @@ class TestBenchmarkAttributionSnapshot:
         )
         result = interpret_benchmark_attribution(res)
         expected = (
-            "The portfolio's benchmark beta of 0.850 (t = 40.00) departs from the "
-            "expected 1.0, reflecting cross-sleeve return dispersion or cash drag. "
+            "The portfolio's benchmark beta departs from the expected 1.0, reflecting "
+            "cross-sleeve return dispersion or cash drag. "
             "No statistically significant residual style tilts beyond the SAA benchmark "
-            "are detected at the current sample length. "
-            " The active return intercept is +350 bps (t = 2.20), statistically "
-            "significant — a positive return after accounting for both the SAA "
-            "benchmark and residual style exposures. The Brinson-Fachler attribution "
-            "on the Performance page decomposes this into allocation and selection "
-            "effects at the sleeve level."
+            "are detected at the current sample length.  "
+            "The active return intercept is statistically significant — a positive return "
+            "after accounting for both the SAA benchmark and residual style exposures. "
+            "See the regression table and the Interpretation section below for the full "
+            "alpha estimate with confidence interval."
         )
         assert result == expected
 
