@@ -1836,11 +1836,17 @@ with col:
             "**FRED USREC** (NBER recession indicator): monthly, lags recession end by ~12 months"
             + ("" if rec_periods is not None else " — unavailable"),
             "**Rate Volatility**: 21-day rolling realized vol of DGS10 daily changes, annualized (×√252) — "
-            "MOVE Index proxy; VXTLT unavailable via Yahoo Finance (HTTP 404)",
+            "MOVE Index proxy; VXTLT ETF vol series unavailable via public price feeds (HTTP 404)",
         ]
         _src_lines.append(
-            "**Yahoo Finance** (SPY, EFA): daily prices via local SQLite cache · "
+            "**ETF price series** (SPY, EFA): daily adjusted-close, locally cached in SQLite · "
             "used for the US vs. International rolling 12-month return spread panel"
+        )
+        _src_lines.append(
+            "**ICE Data Indices licensing:** The ICE BofA credit spread series "
+            "(BAMLH0A0HYM2, BAMLC0A0CM, BAMLH0A3HYC) are licensed by ICE Data Indices, LLC "
+            "to the Federal Reserve Bank of St. Louis (FRED) for non-commercial personal, "
+            "educational, or scholarly use. Display on this site is consistent with that use case."
         )
         st.caption("  \n".join(_src_lines))
     render_footer()

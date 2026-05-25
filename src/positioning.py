@@ -22,10 +22,10 @@ from src.style_box import (
 # ── Static reference dicts ─────────────────────────────────────────────────
 
 # Bloomberg US Aggregate Bond Index effective duration — used as the FI benchmark.
-# TODO: source this live from Bloomberg/FRED each quarter instead of hardcoding.
+# Quarterly maintenance: update from Bloomberg Index Services fact sheet or FRED BFI series.
 BLOOMBERG_AGG_DURATION_YEARS: float = 6.0
 
-# TODO: source these from ETF fact sheets each quarter instead of hardcoding
+# Quarterly maintenance: update from ETF provider fact sheets (iShares, Vanguard, Schwab).
 ETF_DURATION: dict[str, float] = {
     "VGIT":  5.5,   # Vanguard Intermediate-Term Treasury (Core FI holding)
     "SCHP":  6.8,   # Schwab TIPS (TIPS holding) — verify from fact sheet

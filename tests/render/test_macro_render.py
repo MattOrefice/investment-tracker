@@ -158,6 +158,17 @@ def test_usd_index_panel_renders(macro_app: AppTest) -> None:
     )
 
 
+# ── Phase 38 — licensing and hygiene pins ────────────────────────────────────
+
+def test_ice_data_indices_disclosure_present(macro_app: AppTest) -> None:
+    """Data-sources expander must contain the ICE Data Indices licensing disclosure. Pinned: Phase 38."""
+    captions = [c.value for c in macro_app.caption]
+    assert any("ICE Data Indices" in c for c in captions), (
+        "ICE Data Indices licensing disclosure not found in macro page captions — "
+        "possible Phase 38 regression"
+    )
+
+
 # ── Phase 35 — polish additions ──────────────────────────────────────────────
 
 def test_treasury_yield_curve_panel_renders(macro_app: AppTest) -> None:

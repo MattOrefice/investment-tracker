@@ -354,4 +354,10 @@ with col:
             "Each refreshed when the cache is older than 7 days or the most recent "
             "factor date exceeds 35 days lag."
         )
+        st.caption(
+            "The equity style profile uses a 3×3 size-by-style grid format. "
+            "This implementation is independent of Morningstar, Inc. The 3×3 "
+            "size-by-style grid is a generic equity portfolio analysis convention "
+            "and is not produced by, affiliated with, or endorsed by Morningstar."
+        )
     render_footer()

@@ -6,6 +6,8 @@
 
 # Secrets — never commit
 .env
+.env.local
+.env.*.local
 .streamlit/secrets.toml
 
 # Local databases

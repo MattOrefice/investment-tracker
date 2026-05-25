@@ -82,3 +82,12 @@ def test_build_caption_suppressed_without_env(factor_profile_app: AppTest) -> No
     assert not any("Build" in c for c in captions), (
         f"Build caption should be suppressed but found: {[c for c in captions if 'Build' in c]}"
     )
+
+
+def test_morningstar_independence_statement_present(factor_profile_app: AppTest) -> None:
+    """Methodology expander must contain the Morningstar independence statement. Pinned: Phase 38."""
+    captions = [c.value for c in factor_profile_app.caption]
+    assert any("independent of Morningstar" in c for c in captions), (
+        "Morningstar independence statement not found in Factor Profile methodology captions — "
+        "possible Phase 38 regression"
+    )

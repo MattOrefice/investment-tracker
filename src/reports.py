@@ -101,10 +101,10 @@ REPORT_DISCLAIMER = (
     "results, and all return figures are time-weighted historical "
     "calculations subject to data and methodology limitations. No "
     "fiduciary, advisory, or client relationship is created by accessing "
-    "this report or the underlying analytics system. Data sourced from "
-    "Yahoo Finance, FRED, and Robert Shiller’s public datasets; "
-    "calculations are best-effort and may contain methodological "
-    "simplifications."
+    "this report or the underlying analytics system. Price data sourced "
+    "from public market data feeds; macro data from FRED; valuation data "
+    "from Robert Shiller’s public datasets. Calculations are best-effort "
+    "and may contain methodological simplifications."
 )
 
 
