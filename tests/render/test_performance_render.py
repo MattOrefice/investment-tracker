@@ -335,13 +335,16 @@ def test_reconciliation_no_yahoo_finance(performance_app: AppTest) -> None:
 
 
 def test_implementation_alpha_wording(performance_app: AppTest) -> None:
-    """Since-inception caption must use 'isolates implementation alpha'. Pinned: Phase 39."""
+    """Since-inception caption must use 'isolate implementation alpha from SAA-design effects'.
+    Pinned: Phase 39 (pin corrected Phase 48.1 — page always had 'to isolate', test was
+    pinned against commit message wording 'isolates' which was never in the page code)."""
     if not performance_app.metric:
         pytest.skip("No portfolio data — skipped in local/empty-DB mode")
     captions = [c.value for c in performance_app.caption]
-    assert any("isolates implementation alpha" in c for c in captions), (
-        "Since-inception caption missing 'isolates implementation alpha' — "
-        "possible Phase 39 regression (Item 8)"
+    assert any("isolate implementation alpha from SAA-design effects" in c for c in captions), (
+        "Since-inception caption missing 'isolate implementation alpha from SAA-design effects' — "
+        "Phase 48.1 corrected pin (Phase 39 Item 8). "
+        "Caption must read: '...is the more meaningful to isolate implementation alpha from SAA-design effects.'"
     )
 
 

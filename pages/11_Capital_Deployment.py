@@ -102,6 +102,28 @@ st.caption(
     "Correct band-breach drift · Execute via your broker"
 )
 
+with st.expander("How to read this page", expanded=False):
+    st.markdown(
+        "- **Deploy New Cash** — enter a contribution amount and see how it should be "
+        "allocated across sleeves to close drift first, then distribute the remainder "
+        "by SAA target weight. The Suggested \\$ column is editable — adjust amounts to "
+        "match actual broker fills before clicking Execute and Log. Suggested Shares "
+        "recompute automatically from the edited dollar amounts.\n"
+        "- **Rebalancing Check** — detects when any sleeve has drifted outside its "
+        "tolerance band (±3% for major equity sleeves, ±2% for smaller sleeves) and "
+        "surfaces corrective buy suggestions. The table is read-only; execute the "
+        "suggested trades directly via your broker.\n"
+        "- **Rationale tags** — 'close drift' means the sleeve is below target and "
+        "gets priority allocation; 'above target' means the sleeve has drifted high "
+        "and receives no new cash; 'mixed' means the sleeve is below target and also "
+        "receives a proportional residual share; 'maintain target' means no drift and "
+        "the sleeve receives proportional contribution only.\n"
+        "- **Execute and Log workflow** — edit the Suggested \\$ column to match actual "
+        "broker fills, then click Execute and Log. A confirmation modal shows the final "
+        "trade preview before writing to the Trade Log. In demo mode, Execute and Log "
+        "is illustrative only and no writes occur."
+    )
+
 today = date.today().isoformat()
 data = _load_data(today)
 sleeve_df = data["sleeve_df"]
@@ -298,6 +320,11 @@ if contrib_cash > 0:
                 "Edit amounts above to match your actual broker fills first."
             )
 
+        st.caption(
+            "Edit the Suggested \\$ column to match actual broker fills before "
+            "executing. Suggested Shares recompute automatically from the edited amounts."
+        )
+
         if st.button(
             "Execute and Log",
             disabled=btn_disabled,
@@ -472,5 +499,30 @@ if rebal_cash > 0:
         )
 else:
     st.info("Enter a cash amount above to see band-breach buy suggestions.")
+
+with st.expander("Methodology", expanded=False):
+    st.markdown(
+        "**Tiered SAA bands** — ±3% for the four largest equity sleeves (US Large Core, "
+        "US Large Quality, US Large Value, International Developed); ±2% for all others. "
+        "Tighter bands on smaller sleeves prevent small absolute drift from compounding "
+        "into meaningful tracking error against the SAA.\n\n"
+        "**Contribution priority** — cash flows to below-band sleeves first (close drift), "
+        "then to in-band sleeves by SAA target weight (maintain allocation). Above-band "
+        "sleeves receive no new cash until they return to band naturally or are "
+        "rebalanced.\n\n"
+        "**Band-breach detection** — a sleeve is in breach if |actual weight − target "
+        "weight| > tolerance band. Rebalancing buy suggestions in the Rebalancing Check "
+        "section are sized to return the sleeve to its target weight, not to its band "
+        "edge. The Rebalancing Check table is read-only; execute suggested trades via "
+        "your broker.\n\n"
+        "**Editable suggestions** — the Suggested \\$ column in Deploy New Cash is "
+        "editable. After editing, the Total allocated / Difference reconciliation panel "
+        "updates immediately to flag any mismatch against the entered cash amount. "
+        "Suggested Shares recompute from the edited dollar amounts using current prices.\n\n"
+        "**Execute and Log mechanics** — clicking Execute and Log writes the "
+        "suggested (or edited) trades to the Trade Log via the same lot-tracking system "
+        "used for direct trade entry, with lot_source='Manual' to distinguish from DRIP "
+        "reinvestments (lot_source='drip') and inception buys (lot_source='inception')."
+    )
 
 render_footer()

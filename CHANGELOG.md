@@ -8,6 +8,43 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Phase 48.1 — CI cleanup and deployment convention
+*May 25, 2026*
+
+Fixed three failing tests that had kept CI red since Phase 45A. Captured the
+three-proof deployment convention that all subsequent phases must satisfy.
+
+- **48.1** — Repaired `AppTest.write` API breakage in Benchmark Attribution render tests
+  (Streamlit 1.57.0 removed `.write`; `st.write(str)` now appears in `.markdown`);
+  corrected Performance page pin from "isolates implementation alpha" to
+  "isolate implementation alpha from SAA-design effects" (pin was written against
+  commit-message wording, page code always had the 'to isolate' form) (cc3c580..HEAD)
+
+### Render test convention (effective Phase 48.3)
+
+Render tests that pin conditional content must exercise the conditional
+branch where the content renders, not skip when the content is absent.
+A skip guard that fires when the asserted text is missing is the test
+disarming its own assertion. Either set up the fixture to enter the
+conditional branch, or delete the test with explanation. Do not leave
+skipping ghosts.
+
+### Deployment convention (effective Phase 48.1)
+
+Every phase closeout requires all three proofs before declaring done:
+
+1. **Push verification** — `git log origin/main..HEAD` is empty (local commits landed)
+2. **Cloud deployment** — incognito screenshot confirms the live demo renders correctly
+3. **CI green** — GitHub Actions run on the latest commit shows all checks passing
+
+These three checks are non-overlapping. Phases 45A–48 shipped with proofs 1 and 2
+green but proof 3 red. The CI failures were not surfaced for multiple phases because
+test-skip guards masked them locally (data-dependent tests skip when no portfolio data
+is present, but fail in CI against demo.db). Going forward, explicitly open the
+GitHub Actions run after every push and confirm the green checkmark before closing.
+
+---
+
 ## Phase 24 — Landing page treatment and consolidation
 *May 13, 2026*
 

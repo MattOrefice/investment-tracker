@@ -36,7 +36,7 @@ def test_cross_page_window_disclosure_present(ba_app: AppTest) -> None:
     """Interpretation section must include the since-inception vs Q1 window disclosure. Pinned: Phase 40."""
     if not ba_app.metric:
         pytest.skip("No portfolio data — skipped in local/empty-DB mode")
-    all_text = " ".join(str(w.value) for w in ba_app.markdown) + " ".join(str(w.value) for w in ba_app.write)
+    all_text = " ".join(str(w.value) for w in ba_app.markdown)
     assert "since-inception window" in all_text.lower() or "since inception" in all_text.lower(), (
         "Cross-page window disclosure not found — Phase 40 regression (Item 3). "
         "The Interpretation section must note that BF on Performance page uses a different window."
@@ -47,7 +47,7 @@ def test_alpha_ci_in_interpretation_prose(ba_app: AppTest) -> None:
     """Interpretation prose must include '95% CI' for the alpha estimate. Pinned: Phase 40."""
     if not ba_app.metric:
         pytest.skip("No portfolio data — skipped in local/empty-DB mode")
-    all_text = " ".join(str(w.value) for w in ba_app.markdown) + " ".join(str(w.value) for w in ba_app.write)
+    all_text = " ".join(str(w.value) for w in ba_app.markdown)
     assert "95% CI" in all_text, (
         "Alpha 95% confidence interval not found in Interpretation prose — "
         "Phase 40 regression (Item 4)."
