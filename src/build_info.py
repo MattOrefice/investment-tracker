@@ -30,7 +30,9 @@ def get_build_sha() -> str:
 
 
 def render_build_caption() -> str:
-    """Return the caption string rendered in page footers."""
+    """Return the caption string rendered in page footers, or '' if SHOW_BUILD_HASH is unset."""
+    if not os.environ.get("SHOW_BUILD_HASH"):
+        return ""
     sha = get_build_sha()
     if sha == "unknown":
         return "Build identifier unavailable"

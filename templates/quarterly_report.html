@@ -173,8 +173,16 @@
       {% endfor %}
     </tbody>
   </table>
+  {% if thesis.drip_summary %}
+  <p class="muted">{{ thesis.drip_summary.count }} DRIP reinvestment{{ "s" if thesis.drip_summary.count > 1 else "" }} totaling {{ thesis.drip_summary.total }} excluded from trade detail.</p>
+  {% endif %}
   {% else %}
   <p class="muted">No trades recorded during {{ period_label }}.</p>
+  {% endif %}
+
+  {% if pos and pos.duration_line %}
+  <h3>Fixed Income Effective Duration</h3>
+  <p>{{ pos.duration_line }}</p>
   {% endif %}
 </section>
 
@@ -251,71 +259,7 @@
   {% endif %}
 </section>
 
-{# ── Page 5: Active Positioning ────────────────────────────────────────────── #}
-<section>
-  <h2>Active Positioning</h2>
-
-  {% if has_trades and pos %}
-
-  <h3>Active Tilts</h3>
-  {% if pos.tilts %}
-  <div class="bf-commentary">
-    <p class="bf-comm-title">Sleeves with drift &ge;50 bps or &ge;10% of target weight</p>
-    <ul class="bf-comm-list">
-      {% for t in pos.tilts %}
-      <li>{{ t.line }}</li>
-      {% endfor %}
-    </ul>
-  </div>
-  {% else %}
-  <p class="muted">All sleeves within tolerance — no meaningful active tilts.</p>
-  {% endif %}
-
-  <h3>Portfolio Effective Duration</h3>
-  <p>{{ pos.duration_line }}</p>
-
-  <h3>Scenarios That Benefit This Positioning</h3>
-  {% if pos.scenarios %}
-  <div class="bf-commentary">
-    <ul class="bf-comm-list">
-      {% for s in pos.scenarios %}
-      <li><strong>{{ s.name }}:</strong> {{ s.text }}</li>
-      {% endfor %}
-    </ul>
-  </div>
-  {% else %}
-  <p class="muted">No scenario triggers based on current positioning.</p>
-  {% endif %}
-
-  {% if pos.style_box_b64 %}
-  <h3>Equity Style Profile</h3>
-  <div style="text-align: center; margin: 8px 0 4px;">
-    <img src="data:image/png;base64,{{ pos.style_box_b64 }}" style="max-width: 360px;" alt="Equity Style Profile" />
-    <p style="font-size: 0.85em; color: #666; margin: 2px 0 0;">{{ pos.style_box_caption }}</p>
-  </div>
-
-  {% if pos.non_us %}
-  <div style="margin: 8px 0 0; padding: 8px 12px; background: #F7F7F7; border-left: 3px solid #CCCCCC; font-size: 0.85em; page-break-inside: avoid; break-inside: avoid;">
-    <strong>Non-US Equity Sleeve</strong>
-    <ul style="margin: 4px 0 4px 16px; padding: 0;">
-    {% for item in pos.non_us %}
-      <li><strong>{{ item.ticker }}</strong> ({{ item.region_label }}) &mdash; {{ "%.1f"|format(item.weight_pct) }}% of portfolio</li>
-    {% endfor %}
-    </ul>
-    <p style="margin: 4px 0 0; color: #666;">
-      Non-US holdings are not directly comparable to US value/growth and market-cap distributions.
-      See Morningstar regional style boxes for international placement methodology.
-    </p>
-  </div>
-  {% endif %}
-  {% endif %}
-
-  {% else %}
-  <div class="empty-banner">No positioning data available for this period.</div>
-  {% endif %}
-</section>
-
-{# ── Page 6: Factor Profile ─────────────────────────────────────────────────── #}
+{# ── Page 5: Factor Profile ─────────────────────────────────────────────────── #}
 <section>
   <h2>Factor Profile</h2>
   <h3>Fama-French 5-Factor Regression &mdash; Per-Sleeve Decomposition</h3>
@@ -401,9 +345,31 @@
     and a successful Ken French data fetch.
   </div>
   {% endif %}
+
+  {% if has_trades and pos and pos.style_box_b64 %}
+  <h3>Equity Style Profile</h3>
+  <div style="text-align: center; margin: 8px 0 4px;">
+    <img src="data:image/png;base64,{{ pos.style_box_b64 }}" style="max-width: 360px;" alt="Equity Style Profile" />
+    <p style="font-size: 0.85em; color: #666; margin: 2px 0 0;">{{ pos.style_box_caption }}</p>
+  </div>
+  {% if pos.non_us %}
+  <div style="margin: 8px 0 0; padding: 8px 12px; background: #F7F7F7; border-left: 3px solid #CCCCCC; font-size: 0.85em; page-break-inside: avoid; break-inside: avoid;">
+    <strong>Non-US Equity Sleeve</strong>
+    <ul style="margin: 4px 0 4px 16px; padding: 0;">
+    {% for item in pos.non_us %}
+      <li><strong>{{ item.ticker }}</strong> ({{ item.region_label }}) &mdash; {{ "%.1f"|format(item.weight_pct) }}% of portfolio</li>
+    {% endfor %}
+    </ul>
+    <p style="margin: 4px 0 0; color: #666;">
+      Non-US holdings are not directly comparable to US value/growth and market-cap distributions.
+      See Morningstar regional style boxes for international placement methodology.
+    </p>
+  </div>
+  {% endif %}
+  {% endif %}
 </section>
 
-{# ── Page 7: Benchmark Attribution ─────────────────────────────────────────── #}
+{# ── Page 6: Benchmark Attribution ─────────────────────────────────────────── #}
 <section>
   <h2>Benchmark Attribution</h2>
   <h3>Portfolio vs Custom Blended SAA &mdash; R<sub>p</sub> &minus; RF ~ (R<sub>b</sub> &minus; RF) + HML + SMB + RMW</h3>
@@ -474,7 +440,7 @@
   {% endif %}
 </section>
 
-{# ── Page 8: Macro Context — no forced break, continues after Benchmark Attr ── #}
+{# ── Page 7: Macro Context — no forced break, continues after Benchmark Attr ── #}
 <section class="no-break">
   <h2 style="margin-top: 20pt;">Macro Context</h2>
 
@@ -521,7 +487,7 @@
   data window. HY spread data available from May 2023 only due to FRED licensing restrictions.</p>
 </section>
 
-{# ── Page 9: Asset Evaluation ─────────────────────────────────────────────── #}
+{# ── Page 8: Asset Evaluation ─────────────────────────────────────────────── #}
 <section>
   <h2>Asset Evaluation &mdash; Case Study: Bitcoin</h2>
 
@@ -673,7 +639,7 @@
   {% endif %}
 </section>
 
-{# ── Page 10: Methodology ────────────────────────────────────────────────────── #}
+{# ── Page 9: Methodology ────────────────────────────────────────────────────── #}
 <section>
   <h2>Methodology &amp; Data Sources</h2>
 
@@ -742,10 +708,10 @@
           Both thresholds must be satisfied for &ldquo;Within&rdquo; status.</dd>
 
           <dt>Price Data</dt>
-          <dd>Daily adjusted-close from Yahoo Finance, cached in SQLite. Adjusted close reflects
+          <dd>Daily adjusted-close from the price provider, cached in SQLite. Adjusted close reflects
           splits and dividends (total-return basis). Gaps forward-filled from last trading day.
           {% if snapshot_captured_at %}Quarter prices locked at {{ snapshot_captured_at }} to prevent
-          retroactive Yahoo Finance adj_close adjustments from shifting historical report numbers.{% endif %}</dd>
+          retroactive adj_close adjustments from the price feed from shifting historical report numbers.{% endif %}</dd>
 
           <dt>CAPE (Shiller P/E)</dt>
           <dd>Robert Shiller / Yale (econ.yale.edu). Monthly observations; most recent month shown.

@@ -324,7 +324,7 @@ def test_identity_rf_default_matches_caption_disclosure():
     )
 
     # Also confirm the caption string contains the matching text
-    page_path = pathlib.Path(__file__).resolve().parent.parent / "pages" / "4_Performance.py"
+    page_path = pathlib.Path(__file__).resolve().parent.parent / "pages" / "2_Performance.py"
     source = page_path.read_text(encoding="utf-8")
     rf_pct_str = f"{rf_default * 100:.1f}%"  # "4.5%"
     assert f"RF = {rf_pct_str}" in source, (
@@ -362,32 +362,71 @@ def test_identity_rf_daily_conversion_from_annual():
 # ── 1.6  Demo-mode write guards ──────────────────────────────────────────────
 
 def test_identity_trade_form_has_demo_guard():
-    """render_trade_form() in pages/3_Trade_Log.py must open with an IS_DEMO guard
-    that returns early before any write path is reached.
+    """render_trade_form() in pages/3_Trade_Log.py must open with an is_write_enabled()
+    guard that returns early before any write path is reached.
 
     This is a source-code structural invariant: if the guard is accidentally removed
     in a future edit, this test fails before the omission reaches production, where
     it would allow any public visitor to insert trades into the demo database.
+
+    Phase 22 upgraded the guard from `if IS_DEMO:` to `if not is_write_enabled():`.
+    Both patterns are accepted here so the test does not hard-code the idiom.
     """
-    page_path = pathlib.Path(__file__).resolve().parent.parent / "pages" / "3_Trade_Log.py"
+    page_path = pathlib.Path(__file__).resolve().parent.parent / "pages" / "10_Trade_Log.py"
     source = page_path.read_text(encoding="utf-8")
 
     # Locate the function definition
     func_start = source.find("def render_trade_form():")
     assert func_start != -1, "render_trade_form() not found in pages/3_Trade_Log.py — was it renamed?"
 
-    # The IS_DEMO early-return guard must appear before the first INSERT in the function body
     func_body = source[func_start:]
-    guard_pos  = func_body.find("if IS_DEMO:")
     insert_pos = func_body.find("INSERT INTO")
 
+    # Accept either guard idiom: old IS_DEMO or new is_write_enabled()
+    guard_pos_demo  = func_body.find("if IS_DEMO:")
+    guard_pos_write = func_body.find("if not is_write_enabled():")
+    guard_pos = max(p for p in (guard_pos_demo, guard_pos_write) if p != -1) \
+        if any(p != -1 for p in (guard_pos_demo, guard_pos_write)) else -1
+
     assert guard_pos != -1, (
-        "IS_DEMO guard missing from render_trade_form() in pages/3_Trade_Log.py. "
-        "Demo visitors can write trades to demo.db. Add: if IS_DEMO: st.info(...); return"
+        "Write guard missing from render_trade_form() in pages/3_Trade_Log.py. "
+        "Demo visitors can write trades to demo.db. "
+        "Add: if not is_write_enabled(): write_guard_toast(); return"
     )
     assert guard_pos < insert_pos, (
-        f"IS_DEMO guard (pos {guard_pos}) appears after first INSERT (pos {insert_pos}) "
+        f"Write guard (pos {guard_pos}) appears after first INSERT (pos {insert_pos}) "
         "in render_trade_form(). The guard must come first — writes are reachable before the check."
+    )
+
+
+def test_trade_form_no_early_return_in_demo_guard():
+    """render_trade_form() must NOT early-return when write is disabled.
+
+    Phase 22.1 changed the pattern: the guard block now shows an info banner
+    and continues into the form, rather than returning early. The write is
+    blocked at submit time via write_guard_toast(). Pinning the absence of an
+    early return ensures demo visitors can see and interact with the form.
+    """
+    page_path = pathlib.Path(__file__).resolve().parent.parent / "pages" / "10_Trade_Log.py"
+    source = page_path.read_text(encoding="utf-8")
+
+    func_start = source.find("def render_trade_form():")
+    assert func_start != -1, "render_trade_form() not found"
+
+    func_body = source[func_start:]
+    guard_start = func_body.find("if not is_write_enabled():")
+    assert guard_start != -1, "is_write_enabled guard not found in render_trade_form()"
+
+    # The form body begins at the first assignment to `securities`
+    form_body_start = func_body.find("securities    = data")
+    assert form_body_start != -1, "'securities    = data' marker not found in render_trade_form()"
+
+    # No bare `return` should appear between the guard and the form body
+    guard_region = func_body[guard_start:form_body_start]
+    assert "\n        return" not in guard_region, (
+        "render_trade_form() early-returns inside the is_write_enabled guard. "
+        "Demo visitors cannot see the trade form. Remove the early return; "
+        "the write should be blocked at submit time via write_guard_toast()."
     )
 
 
@@ -398,7 +437,7 @@ def test_identity_macro_force_refresh_has_demo_guard():
     triggering FRED API calls (quota waste) and cache deletion (macro_cache DELETE).
     Pins the guard so it cannot be accidentally removed.
     """
-    page_path = pathlib.Path(__file__).resolve().parent.parent / "pages" / "5_Macro.py"
+    page_path = pathlib.Path(__file__).resolve().parent.parent / "pages" / "3_Macro.py"
     source = page_path.read_text(encoding="utf-8")
 
     # Find the Force Refresh button definition

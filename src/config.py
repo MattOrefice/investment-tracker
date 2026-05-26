@@ -59,6 +59,11 @@ def is_demo() -> bool:
     return get_mode() == "demo"
 
 
+def is_write_enabled() -> bool:
+    """Return True when running locally (personal mode); False on the public demo."""
+    return not is_demo()
+
+
 IS_DEMO = is_demo()
 
 

@@ -4,7 +4,7 @@ from datetime import date, timedelta
 import pandas as pd
 
 from src.db import get_connection
-from src.prices import get_prices, get_dividends
+from src.prices import get_prices
 from src.benchmarks import get_sleeve_benchmark_returns, _SLEEVE_BENCHMARKS
 
 
@@ -148,43 +148,19 @@ def _last_adj_price(ticker: str, up_to_date: str, window_days: int = 5) -> float
 
 def _drip_shares(
     ticker: str,
-    original_shares: float,
+    original_shares: float,  # kept for call-site compatibility, no longer used
     start_date: str,
     end_date: str,
 ) -> float:
-    """Compound DRIP reinvestment: return extra shares earned between start and end.
-
-    Mirrors get_portfolio_value_series() dividend reinvestment so that
-    brinson_fachler_period() sleeve returns capture total return, not
-    price-only return.
-
-    Skips dividends on the start_date itself: get_portfolio_value_series()
-    builds a holdings_matrix starting at start_date with no "previous day",
-    so any ex_date == start_date has empty prev_dates and is skipped.
-    """
-    try:
-        divs = get_dividends(ticker, start_date, end_date)
-    except Exception:
-        return 0.0
-    if divs is None or divs.empty:
-        return 0.0
-
-    from datetime import date as _date
-    start_dt = _date.fromisoformat(start_date)
-
-    current_shares = original_shares
-    extra = 0.0
-    for ex_date, div_amount in sorted(divs.items()):
-        if ex_date <= start_dt:
-            continue
-        ex_iso = str(ex_date.date()) if hasattr(ex_date, "date") else str(ex_date)
-        price = _last_adj_price(ticker, ex_iso)
-        if price <= 0:
-            continue
-        reinvested = div_amount * current_shares / price
-        extra += reinvested
-        current_shares += reinvested
-    return extra
+    """Return persisted DRIP shares for ticker earned after start_date through end_date."""
+    with get_connection() as conn:
+        row = conn.execute(
+            """SELECT COALESCE(SUM(shares), 0.0) FROM trades
+               WHERE ticker = ? AND lot_source = 'drip'
+               AND trade_date > ? AND trade_date <= ?""",
+            (ticker, start_date, end_date),
+        ).fetchone()
+    return float(row[0])
 
 
 def brinson_fachler_period(
@@ -269,13 +245,10 @@ def brinson_fachler_period(
         else:
             p_start = _last_adj_price(ticker, start_date)  # backward-fill matches pv ffill
             p_end   = _last_adj_price(ticker, end)
-            # Historical DRIP accumulated from inception to window start (0 for SI).
-            hist_drip  = _drip_shares(ticker, shares, portfolio_inception, start_date)
-            eff_shares = shares + hist_drip
-            # Period DRIP is earned on the historically-adjusted share count.
-            period_drip = _drip_shares(ticker, eff_shares, start_date, end)
-            start_values[sleeve] = start_values.get(sleeve, 0.0) + eff_shares * p_start
-            end_values[sleeve]   = end_values.get(sleeve, 0.0)   + (eff_shares + period_drip) * p_end
+            # shares from hold_rows already includes all persisted DRIP lots up to start_date.
+            period_drip = _drip_shares(ticker, shares, start_date, end)
+            start_values[sleeve] = start_values.get(sleeve, 0.0) + shares * p_start
+            end_values[sleeve]   = end_values.get(sleeve, 0.0)   + (shares + period_drip) * p_end
 
     total_start = sum(start_values.values())
     if total_start == 0:

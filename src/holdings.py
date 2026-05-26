@@ -5,7 +5,7 @@ from typing import Optional
 import pandas as pd
 
 from src.db import get_connection
-from src.prices import get_prices, get_dividends, _to_iso
+from src.prices import get_prices, _to_iso
 
 
 def get_holdings_on_date(date_str: str) -> pd.DataFrame:
@@ -118,51 +118,9 @@ def get_portfolio_value_series(
 
     common = [t for t in tickers if t in prices_matrix.columns]
 
-    # Apply DRIP: reinvest dividends into additional shares.
-    # Dividend income is already captured in adj_close RATIOS (TWR is unaffected),
-    # but adding reinvested shares makes the absolute portfolio value reconcile to
-    # $inception × (1 + TWR) by offsetting the adj_close backward-adjustment gap.
-    start_iso = str(date_range[0].date())
-    for ticker in [t for t in common if t != "SPAXX"]:
-        try:
-            divs = get_dividends(ticker, start_iso, end)
-        except Exception:
-            continue
-        if divs.empty:
-            continue
-
-        for ex_date, div_amount in divs.items():
-            ex_ts = pd.Timestamp(ex_date)
-
-            # Shares held just BEFORE this dividend (previous calendar day)
-            prev_dates = holdings_matrix.index[holdings_matrix.index < ex_ts]
-            if prev_dates.empty:
-                continue
-            if ticker not in holdings_matrix.columns:
-                continue
-            shares_before = float(holdings_matrix.loc[prev_dates[-1], ticker])
-            if shares_before <= 0:
-                continue
-
-            # Price on or before ex_date (adj_close, forward-filled)
-            if ticker not in prices_matrix.columns:
-                continue
-            avail = prices_matrix[ticker].loc[
-                prices_matrix[ticker].index <= ex_ts
-            ].dropna()
-            if avail.empty:
-                continue
-            price = float(avail.iloc[-1])
-            if price <= 0:
-                continue
-
-            reinvested = div_amount * shares_before / price
-
-            # Add reinvested shares to all dates from ex_date onward
-            on_or_after = holdings_matrix.index >= ex_ts
-            holdings_matrix.loc[on_or_after, ticker] = (
-                holdings_matrix.loc[on_or_after, ticker] + reinvested
-            )
+    # DRIP reinvestment shares are now persisted as trades with lot_source='drip'.
+    # They are picked up by the SQL query above and included in the holdings_matrix
+    # automatically. No in-memory DRIP adjustment is required.
 
     return (holdings_matrix[common] * prices_matrix[common]).sum(axis=1)
 

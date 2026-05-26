@@ -1,0 +1,54 @@
+name: Keepalive ping
+
+on:
+  schedule:
+    # Every 5 minutes
+    - cron: '*/5 * * * *'
+  workflow_dispatch:  # allow manual trigger
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Ping Streamlit app
+        run: |
+          URL="https://mattorefice-investment.streamlit.app/"
+          UA="Mozilla/5.0 (compatible; GitHubActions-Keepalive/1.0; +https://github.com/MattOrefice/investment-tracker)"
+
+          # Capture curl exit code separately so || echo "000" can't concatenate with -w output.
+          # Use response_code (final hop only) instead of http_code (concatenated chain).
+          set +e
+          HTTP_CODE=$(curl -sL \
+            --max-time 90 \
+            --max-redirs 10 \
+            --retry 3 \
+            --retry-delay 5 \
+            --retry-connrefused \
+            -A "$UA" \
+            -o /dev/null \
+            -w "%{response_code}" \
+            "$URL")
+          CURL_EXIT=$?
+          set -e
+
+          # If curl wrote nothing (total failure), treat as 000.
+          if [ -z "$HTTP_CODE" ]; then
+            HTTP_CODE="000"
+          fi
+
+          echo "Pinged $URL at $(date -u +%FT%TZ) — HTTP $HTTP_CODE (curl exit $CURL_EXIT)"
+
+          # Accept 200 (live), 3xx (redirect chain hit Streamlit), 503 (cold-start/waking),
+          # and 000 (Streamlit sleeping, GET landed but no body). All indicate the request
+          # reached Streamlit Cloud, which is the activity signal that resets the idle timer.
+          case "$HTTP_CODE" in
+            200|301|302|303|304|307|308|503|000)
+              echo "Keepalive ping accepted"
+              exit 0
+              ;;
+            *)
+              echo "Unexpected HTTP code $HTTP_CODE — failing the run for visibility"
+              exit 1
+              ;;
+          esac

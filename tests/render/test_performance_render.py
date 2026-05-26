@@ -13,7 +13,7 @@ from streamlit.testing.v1 import AppTest
 @pytest.fixture(scope="module")
 def performance_app() -> AppTest:
     """Run the Performance page once and return the rendered AppTest object."""
-    at = AppTest.from_file("pages/4_Performance.py", default_timeout=120)
+    at = AppTest.from_file("pages/2_Performance.py", default_timeout=120)
     at.run()
     return at
 
@@ -85,13 +85,16 @@ def test_methodology_expander_present(performance_app: AppTest) -> None:
     )
 
 
-def test_build_caption_renders(performance_app: AppTest) -> None:
-    """Footer must include deployed build SHA. Pinned: Phase 8o."""
+def test_build_caption_suppressed_without_env(performance_app: AppTest) -> None:
+    """Build caption must be absent when SHOW_BUILD_HASH env var is not set (Phase 15.1)."""
+    import os
     if not performance_app.metric:
         pytest.skip("No portfolio data — skipped in local/empty-DB mode")
+    if os.environ.get("SHOW_BUILD_HASH"):
+        pytest.skip("SHOW_BUILD_HASH is set — caption gating not active in this environment")
     captions = [c.value for c in performance_app.caption]
-    assert any("Build" in c for c in captions), (
-        f"Deployed SHA caption not rendered — captions found: {captions[:5]}"
+    assert not any("Build" in c for c in captions), (
+        f"Build caption should be suppressed but found: {[c for c in captions if 'Build' in c]}"
     )
 
 
@@ -119,7 +122,7 @@ def test_risk_metrics_1m_window_no_nan() -> None:
     shared widget state. Sets the risk_metrics_window radio to '1 Month' and
     re-runs the page, then asserts all rendered metric values are finite.
     """
-    at = AppTest.from_file("pages/4_Performance.py", default_timeout=120)
+    at = AppTest.from_file("pages/2_Performance.py", default_timeout=120)
     at.run()
     if not at.metric:
         pytest.skip("No portfolio data — skipped in local/empty-DB mode")
@@ -144,7 +147,7 @@ def test_risk_metrics_1m_sharpe_differs_from_si() -> None:
 
     Fix if failing: restore .copy() after each cutoff slice in compute_risk_metrics.
     """
-    at = AppTest.from_file("pages/4_Performance.py", default_timeout=120)
+    at = AppTest.from_file("pages/2_Performance.py", default_timeout=120)
     at.run()
     if not at.metric:
         pytest.skip("No portfolio data — skipped in local/empty-DB mode")
@@ -266,7 +269,7 @@ def test_two_stage_attribution_section_renders(performance_app: AppTest) -> None
     )
 
     # Switching the BF period radio must change Stage 1 value (window-sensitivity check)
-    at = AppTest.from_file("pages/4_Performance.py", default_timeout=120)
+    at = AppTest.from_file("pages/2_Performance.py", default_timeout=120)
     at.run()
     if not at.metric:
         pytest.skip("No portfolio data in fresh AppTest instance")
@@ -292,4 +295,64 @@ def test_two_stage_attribution_section_renders(performance_app: AppTest) -> None
     assert stage1_3m != stage1_si, (
         f"Stage 1 value unchanged after switching 3M → SI: both = {stage1_3m!r}. "
         "Window filtering may have collapsed — check _load_attribution or _benchmark_period_return."
+    )
+
+
+# ── Phase 39 — polish regression pins ────────────────────────────────────────
+
+def test_kpi_banner_shows_vs_blended(performance_app: AppTest) -> None:
+    """Summary banner must show vs-blended comparison first. Pinned: Phase 39."""
+    if not performance_app.metric:
+        pytest.skip("No portfolio data — skipped in local/empty-DB mode")
+    banner_texts = [m.value for m in performance_app.markdown]
+    assert any("vs blended" in t for t in banner_texts), (
+        "KPI banner missing 'vs blended' — possible Phase 39 regression (Item 5)"
+    )
+
+
+def test_kpi_banner_hyphenated_day(performance_app: AppTest) -> None:
+    """Summary banner must use hyphenated '-day inception period'. Pinned: Phase 39."""
+    if not performance_app.metric:
+        pytest.skip("No portfolio data — skipped in local/empty-DB mode")
+    banner_texts = [m.value for m in performance_app.markdown]
+    assert any("-day inception period" in t for t in banner_texts), (
+        "KPI banner missing hyphenated '-day inception period' — possible Phase 39 regression (Item 9)"
+    )
+
+
+def test_reconciliation_no_yahoo_finance(performance_app: AppTest) -> None:
+    """Reconciliation caption must not mention Yahoo Finance. Pinned: Phase 39."""
+    if not performance_app.metric:
+        pytest.skip("No portfolio data — skipped in local/empty-DB mode")
+    captions = [c.value for c in performance_app.caption]
+    recon = next((c for c in captions if "Reconciliation" in c), None)
+    if recon is None:
+        pytest.skip("Reconciliation caption not found — skipped in empty-DB mode")
+    assert "Yahoo Finance" not in recon, (
+        f"Reconciliation caption still mentions Yahoo Finance — Phase 39 regression (Item 3). "
+        f"Caption starts: {recon[:120]}"
+    )
+
+
+def test_implementation_alpha_wording(performance_app: AppTest) -> None:
+    """Since-inception caption must use 'isolate implementation alpha from SAA-design effects'.
+    Pinned: Phase 39 (pin corrected Phase 48.1 — page always had 'to isolate', test was
+    pinned against commit message wording 'isolates' which was never in the page code)."""
+    if not performance_app.metric:
+        pytest.skip("No portfolio data — skipped in local/empty-DB mode")
+    captions = [c.value for c in performance_app.caption]
+    assert any("isolate implementation alpha from SAA-design effects" in c for c in captions), (
+        "Since-inception caption missing 'isolate implementation alpha from SAA-design effects' — "
+        "Phase 48.1 corrected pin (Phase 39 Item 8). "
+        "Caption must read: '...is the more meaningful to isolate implementation alpha from SAA-design effects.'"
+    )
+
+
+def test_cache_rows_not_in_validation_expander(performance_app: AppTest) -> None:
+    """Operational cache metadata must be absent from the page. Pinned: Phase 39."""
+    if not performance_app.metric:
+        pytest.skip("No portfolio data — skipped in local/empty-DB mode")
+    all_markdown = [m.value for m in performance_app.markdown]
+    assert not any("Price cache rows" in m for m in all_markdown), (
+        "Operational 'Price cache rows' metadata still visible — Phase 39 regression (Item 10)"
     )

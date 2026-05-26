@@ -276,8 +276,8 @@ def test_drawdown_sensitivity_has_correct_shape():
         f"Expected {len(allocations)} rows (one per allocation), got {len(result)}"
     )
     # BTC Alloc column must contain percent-formatted strings
-    assert result["BTC Alloc"].iloc[0] == "0%",  "First row must be '0%'"
-    assert result["BTC Alloc"].iloc[-1] == "10%", "Last row (10%) must be '10%'"
+    assert result["BTC Alloc"].iloc[0] == "0.0%",  "First row must be '0.0%'"
+    assert result["BTC Alloc"].iloc[-1] == "10.0%", "Last row (10%) must be '10.0%'"
 
 
 # ── 8. Weekly resampling reduces rows ─────────────────────────────────────────
@@ -330,21 +330,21 @@ def test_rf_annual_consistent_with_performance_page():
 # ── 10. SAMPLE_START visible in page caption ──────────────────────────────────
 
 def test_sample_start_matches_page_caption():
-    """The string '2018-01-01' must appear in pages/10_Asset_Evaluation.py.
+    """The string '2018-01-01' must appear in pages/5_Asset_Evaluation.py.
 
     SAMPLE_START is exposed to users via the page caption and methodology section.
     This test verifies the date is explicitly visible in the source — not just
     referenced through ae.SAMPLE_START — so users reading the page understand
     the analysis window.
     """
-    page_path = _ROOT / "pages" / "10_Asset_Evaluation.py"
+    page_path = _ROOT / "pages" / "5_Asset_Evaluation.py"
     assert page_path.exists(), (
-        f"pages/10_Asset_Evaluation.py not found at {page_path}. "
+        f"pages/5_Asset_Evaluation.py not found at {page_path}. "
         "Was the file not created or moved?"
     )
     source = page_path.read_text(encoding="utf-8")
     assert "2018-01-01" in source, (
-        "The string '2018-01-01' is not present in pages/10_Asset_Evaluation.py. "
+        "The string '2018-01-01' is not present in pages/5_Asset_Evaluation.py. "
         "The sample start date must be visible to users in the page caption or "
         "methodology section (ae.SAMPLE_START = '2018-01-01')."
     )

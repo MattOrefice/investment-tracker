@@ -18,7 +18,10 @@ from src.holdings import get_inception_date, get_portfolio_value_series, get_sle
 from src.performance import compute_risk_metrics
 from src.reports import generate_quarterly_report
 from src.returns import annualize, period_return, twr_daily_linked
-from src.ui_helpers import render_footer
+from src.positioning import get_effective_duration
+from src.ui_helpers import render_footer, render_page_header
+render_page_header()
+
 
 _REPORTS_DIR = Path(__file__).parent.parent / "data" / "reports"
 
@@ -262,8 +265,9 @@ with col:
     # ── Summary banner ────────────────────────────────────────────────────
     st.markdown(
         f"**${current_val:,.0f}** current value &nbsp;·&nbsp; "
-        f"**{si_days}** day inception period &nbsp;·&nbsp; "
+        f"**{si_days}**-day inception period &nbsp;·&nbsp; "
         f"**{port_si*100:.1f}%** cumulative TWR &nbsp;·&nbsp; "
+        f"**{_bps(alpha_bl)}** vs blended &nbsp;·&nbsp; "
         f"**{_bps(alpha_sp)}** vs S&P 500",
         unsafe_allow_html=False,
     )
@@ -317,7 +321,7 @@ with col:
         f"{_non_eq_pct*100:.0f}% of the SAA is non-equity (Fixed Income + Real Assets + Cash), "
         f"{_non_us_eq*100:.0f}% is non-US equity. The Custom Blended benchmark — a target-weighted "
         "basket of cap-weighted indices in the same SAA — is the more meaningful "
-        "comparison for security selection alpha."
+        "to isolate implementation alpha from SAA-design effects."
     )
 
     # ── Reconciliation note ────────────────────────────────────────────────
@@ -333,15 +337,12 @@ with col:
         _twr_pct     = port_si * 100
         st.caption(
             f"Reconciliation: **\\${_cost_basis:,.0f} deployed at inception** → "
-            f"**\\${current_val:,.0f} current value** · "
-            f"**\\${_unrealized:+,.0f} gain on deployed capital**. "
-            f"Return calculations use the adj_close series, which starts at "
-            f"**\\${_series_start:,.2f}** — Yahoo Finance retroactively restates "
-            f"adj_close as dividends accrue, so the inception series value is lower "
-            f"than the original trade prices. Both absolute return "
-            f"(**{_abs_ret_pct:.1f}%**) and cumulative TWR (**{_twr_pct:.1f}%**) "
-            f"use the same adj_close series and are equivalent for this single "
-            f"lump-sum portfolio. TWR is the GIPS-correct measure for benchmark comparison."
+            f"**\\${current_val:,.0f} current value** "
+            f"(**\\${_unrealized:+,.0f}** unrealized gain). "
+            f"Absolute return ({_abs_ret_pct:.1f}%) and cumulative TWR ({_twr_pct:.1f}%) "
+            f"both use the adj_close series — restated retroactively as dividends accrue, "
+            f"so the inception series value is slightly below the original trade prices. "
+            f"TWR is the GIPS-correct measure for benchmark comparison."
         )
     # ── End reconciliation note ────────────────────────────────────────────
 
@@ -367,6 +368,10 @@ with col:
                 "For a portfolio with one large initial deposit and no subsequent flows "
                 "(this one currently), both methods produce nearly identical results."
             ),
+        )
+        st.caption(
+            "For this single-flow portfolio, Daily-linked and Modified Dietz "
+            "converge within 0 bps — both methods are shown for completeness."
         )
     method_key = "daily" if method == "Daily-linked" else "modified_dietz"
 
@@ -448,13 +453,18 @@ with col:
         key="risk_bm_sel",
         help=(
             "Tracking error, information ratio, beta, and active return recompute "
-            "against the selected benchmark. Portfolio std dev, Sharpe, Sortino, "
-            "Max DD, VaR, and CVaR are independent of benchmark selection."
+            "against the selected benchmark. Risk metrics (Std Dev, Sharpe, Sortino, "
+            "Max DD, VaR, CVaR) are shown for both portfolio and benchmark."
         ),
     )
     _risk_bm_kind = _RISK_BM_OPTIONS[_risk_bm_sel]
 
     # Load the selected benchmark series (normalized to 1.0 for risk metric computation)
+    _BM_ROW_LABELS = {
+        "blended": "Custom Blended SAA",
+        "spy":     "S&P 500 (SPY)",
+        "60_40":   "60/40",
+    }
     if _risk_bm_kind == "blended":
         _bl_for_metrics = bl / float(bl.iloc[0])
         _risk_bm_label  = "Custom Blended SAA"
@@ -465,6 +475,7 @@ with col:
         _naive_60_40 = _load_naive_benchmark(start_val, "60_40")
         _bl_for_metrics = _naive_60_40 / float(_naive_60_40.iloc[0])
         _risk_bm_label  = "60/40 (60% SPY / 40% AGG)"
+    _bm_row_label = _BM_ROW_LABELS[_risk_bm_kind]
 
     _m_si  = compute_risk_metrics(pv, _bl_for_metrics, window="SI")
     _m_1y  = compute_risk_metrics(pv, _bl_for_metrics, window="1Y")
@@ -502,8 +513,8 @@ with col:
                 f"Insufficient data for {_window_label} window — requires ≥ 20 trading days."
             )
         else:
-            # Row 1 — portfolio-level metrics (benchmark-independent)
-            st.caption("Portfolio metrics (independent of benchmark selection)")
+            # Row 1 — portfolio metrics
+            st.caption("Portfolio")
             _c1, _c2, _c3, _c4, _c5, _c6 = st.columns(6)
             _c1.metric("Std Dev (ann.)", _fmt_pct(_m["annualized_vol_pct"]))
             _c2.metric("Sharpe",         _fmt_ratio(_m["sharpe"]))
@@ -512,9 +523,19 @@ with col:
             _c5.metric("VaR (95%)",      _fmt_pct(_m["var_95_pct"]))
             _c6.metric("CVaR (95%)",     _fmt_pct(_m["cvar_95_pct"]))
 
+            # Row 2 — benchmark metrics (same window and trading-day filter)
+            st.caption(_bm_row_label)
+            _b1, _b2, _b3, _b4, _b5, _b6 = st.columns(6)
+            _b1.metric("Std Dev (ann.)", _fmt_pct(_m["bench_annualized_vol_pct"]))
+            _b2.metric("Sharpe",         _fmt_ratio(_m["bench_sharpe"]))
+            _b3.metric("Sortino",        _fmt_ratio(_m["bench_sortino"]))
+            _b4.metric("Max DD",         _fmt_pct(_m["bench_max_drawdown_pct"]))
+            _b5.metric("VaR (95%)",      _fmt_pct(_m["bench_var_95_pct"]))
+            _b6.metric("CVaR (95%)",     _fmt_pct(_m["bench_cvar_95_pct"]))
+
             st.markdown("---")
 
-            # Row 2 — benchmark-relative metrics
+            # Row 3 — benchmark-relative metrics
             st.caption(f"vs {_risk_bm_label}")
             _r1, _r2, _r3, _r4 = st.columns(4)
             _r1.metric("Track. Err",      _fmt_pct(_m["tracking_error_pct"]))
@@ -523,10 +544,12 @@ with col:
             _r4.metric("Active Ret (ann.)", _fmt_pct(_m["active_return_pct"]))
 
         st.caption(
-            "Std Dev: annualized portfolio return volatility (trading days only, ddof=1). "
+            "Std Dev: annualized return volatility (trading days only, ddof=1). "
             "Sharpe and Sortino use RF = 4.5% (current cash yield). "
+            "Benchmark metrics computed from the same return series used in the vs-benchmark "
+            "statistics below, over the selected window. "
             f"Tracking error, information ratio, beta, and active return vs. {_risk_bm_label}. "
-            "Max drawdown = peak-to-trough decline in portfolio value within the selected window. "
+            "Max drawdown = peak-to-trough decline within the selected window. "
             "VaR(95%) = daily loss exceeded only 5% of trading days (historical simulation). "
             "CVaR(95%) = average daily loss on the worst 5% of trading days (Expected Shortfall). "
             "IR formula: (geometric annualized active return) / tracking error. "
@@ -999,12 +1022,37 @@ with col:
             )
             st.markdown("---")
 
-        conn2 = get_connection()
-        n_days = conn2.execute("SELECT COUNT(*) FROM prices").fetchone()[0]
-        last_refresh = conn2.execute(
-            "SELECT MAX(price_date) FROM prices"
-        ).fetchone()[0]
-        conn2.close()
-        st.markdown(f"**Price cache rows:** {n_days:,}")
-        st.markdown(f"**Last price date in cache:** {last_refresh}")
+
+    st.divider()
+
+    # ── Fixed Income Effective Duration ───────────────────────────────────────
+    st.subheader("Fixed Income Effective Duration")
+    dur      = get_effective_duration(TODAY)
+    fi_dur   = dur["fi_sleeve_duration"]
+    agg_dur  = dur["agg_benchmark"]
+    fi_wt    = dur["fi_weight_pct"]
+    cash_wt  = dur["cash_weight_pct"]
+    delta_yr  = round(fi_dur - agg_dur, 1)
+    dur_diff  = abs(fi_dur - agg_dur)
+    if dur_diff < 0.05:
+        dur_vs_caption = "in line with the Bloomberg US Agg benchmark"
+    else:
+        vs_agg = "below" if delta_yr < 0 else "above"
+        dur_vs_caption = f"{abs(delta_yr):.1f} yrs {vs_agg} the Bloomberg US Agg benchmark"
+    st.metric(
+        label="FI Sleeve Duration (Core FI + TIPS)",
+        value=f"{fi_dur} yrs",
+        delta=f"{delta_yr:+.1f} yrs vs Bloomberg US Agg ({agg_dur} yrs)",
+        help=(
+            "Weighted average duration of Core Fixed Income (VGIT) and TIPS (SCHP) only. "
+            "Cash/SPAXX is excluded — it carries zero duration and is not in the Bloomberg Agg."
+        ),
+    )
+    st.caption(
+        f"FI weight (Core FI + TIPS): {fi_wt}% of portfolio. "
+        f"Cash/SPAXX: {cash_wt}% (excluded from duration calculation and from Bloomberg Agg). "
+        f"FI sleeve duration is {dur_vs_caption}. "
+        "Duration also flows through equity via discount-rate effects — it's a whole-portfolio consideration. "
+        "Duration sourced from ETF fact-sheet values (VGIT: 5.5 yrs, SCHP: 6.8 yrs per Vanguard/Schwab Q1 2026)."
+    )
     render_footer()

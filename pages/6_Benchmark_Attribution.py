@@ -14,11 +14,14 @@ from src.factors import (
     alpha_ci_str,
     build_benchmark_methodology,
     build_benchmark_prose,
+    interpret_benchmark_attribution,
     run_benchmark_attribution_regression,
     sig_marker,
 )
 from src.reports import SLEEVE_HOLDING_TICKER as _SLEEVE_HOLDING, SLEEVE_BENCH_TICKER as _SLEEVE_BENCH
-from src.ui_helpers import render_footer
+from src.ui_helpers import render_footer, render_page_header
+render_page_header()
+
 
 if IS_DEMO:
     st.info(get_demo_banner_text())
@@ -28,11 +31,25 @@ with col:
     st.title("Benchmark Attribution")
     st.caption(
         "Portfolio vs Custom Blended SAA Benchmark · "
-        "R_p − RF ~ (R_b − RF) + HML + SMB + RMW · "
-        "Daily excess returns since inception · Newey-West HAC standard errors"
+        "Newey-West HAC standard errors, daily excess returns since inception."
     )
     st.caption(as_of_banner())
     st.divider()
+
+    with st.expander("How to read this page", expanded=False):
+        st.markdown(
+            "This page is **distinct from the Brinson-Fachler attribution** on the Performance "
+            "page. BF decomposes active return into allocation and selection effects per sleeve — "
+            "*what weights did we hold, and did our ETF choices beat their sleeve benchmarks?*\n\n"
+            "This page asks a different question: *what factor tilts explain portfolio performance "
+            "relative to the SAA policy benchmark?* The model is:\n\n"
+            "> **R_portfolio − RF = α + β₁·(R_benchmark − RF) + β₂·HML + β₃·SMB + β₄·RMW + ε**\n\n"
+            "**R_benchmark − RF** is the custom SAA-target-weighted blended benchmark excess "
+            "return (not the S&P 500). **HML, SMB, RMW** are Fama-French style factors. "
+            "**Alpha (α)** is the active return unexplained by benchmark beta or factor tilts — "
+            "the institutional alpha definition used in endowment and IDD contexts.\n\n"
+            "CMA is excluded for this passive/semi-passive implementation — see Methodology for details."
+        )
 
     end_date  = date.today().isoformat()
     inception = get_inception_date()
@@ -53,6 +70,24 @@ with col:
             "Section will populate as portfolio history grows."
         )
         st.stop()
+
+    # ── Factor definitions panel ─────────────────────────────────────────────
+    with st.container(border=True):
+        st.markdown("**Factor Definitions**")
+        st.markdown(
+            "| Factor | Definition |\n"
+            "|--------|------------|\n"
+            "| **Bench-RF** | Custom SAA-target-weighted blended benchmark excess return (vs risk-free) |\n"
+            "| **HML** | High Minus Low — value minus growth (Fama-French) |\n"
+            "| **SMB** | Small Minus Big — small-cap minus large-cap returns |\n"
+            "| **RMW** | Robust Minus Weak — high-profitability minus low-profitability |"
+        )
+        st.caption(
+            "This regression isolates *residual style tilts beyond the SAA policy benchmark*. "
+            "It is a selection-and-intra-sleeve-tilt model, not a Brinson-Fachler "
+            "allocation/selection decomposition — that lives on the Performance page."
+        )
+    st.divider()
 
     _BENCH_FACTORS = ["Bench-RF", "HML", "SMB", "RMW"]
 
@@ -98,6 +133,13 @@ with col:
     c3.metric("Observations", str(result["T"]))
     c4.metric("NW Lags (L)",  str(result["nw_lags"]))
     st.caption(f"Sample window: {window_str}")
+    st.caption(
+        f"Regression window ends at the most recent locked quarter-end "
+        f"({d_end.strftime('%B')} {d_end.day}, {d_end.year}) for stability; "
+        f"live prices through {date.today().strftime('%B')} {date.today().day}, "
+        f"{date.today().year} are shown on the Performance page."
+    )
+    st.caption(interpret_benchmark_attribution(result))
 
     st.divider()
 
@@ -135,8 +177,10 @@ with col:
             "HAC SEs are authoritative (correct for daily return autocorrelation); "
             "CI applies to alpha only, not to factor betas. "
             "Wide CIs at this sample length reflect parameter uncertainty, "
-            "not a methodological failure — they correctly communicate that the "
-            "alpha estimate is not yet stable."
+            f"not a methodological failure — they correctly communicate sample-size limitations "
+            f"rather than model failure: the point estimate is unbiased; the confidence interval "
+            f"is wide because {result['T']} observations is a short window for risk-adjusted "
+            "return inference."
         )
         st.caption(
             "Portfolio returns: get_portfolio_value_series (adj_close basis). "

@@ -58,13 +58,13 @@ SUB_CLASSES = [
         "tolerance_band": 0.03,
         "benchmark_ticker": "SPY",
         "rationale": (
-            "Anchor exposure to US large-cap equity. Cap-weighted S&P 500 representing the most efficient, "
-            "best-governed, highest-quality earnings stream in global markets. The 16% weight is deliberately "
-            "not the largest US sleeve — Quality at 14% comes close — because most US large exposure should "
-            "express a factor view rather than passive cap-weight. Core's job is to be the un-opinionated "
-            "anchor: when factor tilts go through inevitable multi-year underperformance windows, Core ensures "
-            "presence in the broad equity rally. Would increase if factor premia compress further or if "
-            "conviction in active factor tilts erodes."
+            "Core's job is to be the un-opinionated anchor: when factor tilts go through inevitable "
+            "multi-year underperformance windows, Core ensures presence in the broad equity rally. "
+            "Anchor exposure to the cap-weighted S&P 500 — the most efficient, best-governed, "
+            "highest-quality earnings stream in global markets. The 16% weight is deliberately not the "
+            "largest US sleeve — Quality at 14% comes close — because most US large exposure should "
+            "express a factor view rather than passive cap-weight.\n\n"
+            "**Would increase if** factor premia compress further or if conviction in active factor tilts erodes."
         ),
     },
     {
@@ -80,8 +80,8 @@ SUB_CLASSES = [
             "arbitraged away. Empirically, quality has delivered equity-like returns with materially lower "
             "drawdowns, which matters in a 30+ year compounding window where avoiding deep drawdowns dominates "
             "terminal wealth. 14% reflects high conviction without being so concentrated that a factor regime "
-            "change would severely damage the portfolio. Would reduce if quality screens become dominated by a "
-            "single sector to the point of losing diversification."
+            "change would severely damage the portfolio.\n\n"
+            "**Would reduce if** quality screens become dominated by a single sector to the point of losing diversification."
         ),
     },
     {
@@ -96,9 +96,9 @@ SUB_CLASSES = [
             "historical base rate over 10-year windows favors value at these spreads. But value has had "
             "multiple \"this time it'll work\" moments since 2010 that didn't deliver, so the position is "
             "sized to express the view without betting the portfolio on it. 8% out of 38% total US Large "
-            "equals 21% of US large-cap exposure — a tilt, not a thesis. Would increase if the spread widens "
-            "further or if real rates normalize; would reduce if growth's earnings advantage compounds another "
-            "5+ years."
+            "equals 21% of US large-cap exposure — a tilt, not a thesis.\n\n"
+            "**Would increase if** the spread widens further or if real rates normalize.\n"
+            "**Would reduce if** growth's earnings advantage compounds another 5+ years."
         ),
     },
     {
@@ -114,8 +114,12 @@ SUB_CLASSES = [
             "leveraged, more interest-rate-sensitive, and less correlated with mega-cap tech concentration. "
             "7% is enough to matter if the size premium reasserts (especially with valuation discounts vs. "
             "large-cap at multi-decade lows) without anchoring the portfolio to a factor with shaky empirical "
-            "support. Would increase if real rates normalize and small-cap quality screens produce attractive "
-            "opportunities."
+            "support.\n\n"
+            "**Would increase if** the rolling 5-year small-cap-vs-large-cap return spread turns positive on a "
+            "sustained basis — historically the clearest signal of size-premium reassertion.\n"
+            "**Would reduce if** the valuation discount vs. large-cap closes to historical mean or if "
+            "small-cap credit quality deteriorates (rising default rates signaling the quality screen "
+            "is insufficient protection)."
         ),
     },
     {
@@ -130,9 +134,9 @@ SUB_CLASSES = [
             "over 10+ year windows. Second, regime diversification: the dollar has been a 15-year tailwind for "
             "US-domiciled investors, and historical mean reversion suggests that tailwind isn't permanent. 19% "
             "is meaningfully overweight typical US-investor home bias (10-15%) but underweight global market "
-            "cap (~40%); it expresses a real view without being a contrarian moonshot. Would increase if the "
-            "valuation gap widens or the dollar weakens materially; would reduce if European or Japanese "
-            "structural reform stalls further."
+            "cap (~40%); it expresses a real view without being a contrarian moonshot.\n\n"
+            "**Would increase if** the valuation gap widens or the dollar weakens materially.\n"
+            "**Would reduce if** European or Japanese structural reform stalls further."
         ),
     },
     {
@@ -146,9 +150,9 @@ SUB_CLASSES = [
             "cheaper valuations, and exposure to growth profiles that don't exist in developed markets. The 8% "
             "weight reflects respect for the asymmetric risk — EM has had 50%+ drawdowns multiple times and "
             "includes meaningful country-specific governance risk (China especially). Modestly long EM at "
-            "attractive valuations is preferable to chasing it after a rally. Would increase if EM ex-China "
-            "valuations become exceptionally cheap; would reduce if China governance risk materially worsens "
-            "or if EM index construction concentrates further into a single country."
+            "attractive valuations is preferable to chasing it after a rally.\n\n"
+            "**Would increase if** EM ex-China valuations become exceptionally cheap.\n"
+            "**Would reduce if** China governance risk materially worsens or if EM index construction concentrates further into a single country."
         ),
     },
     {
@@ -163,9 +167,9 @@ SUB_CLASSES = [
             "But in deflationary or recessionary drawdowns — which remain the more common equity tail risk — "
             "intermediate Treasuries still work. 9% in a 72% growth portfolio is intentionally thin: not relying "
             "on FI for return, relying on it for drawdown buffering and rebalancing-into-equity-weakness "
-            "optionality. Would increase if real yields exceed 3% (making FI competitive on a return basis) or "
-            "if horizon shortens. Would reduce if inflation regime persists and nominal duration stops hedging "
-            "anything."
+            "optionality.\n\n"
+            "**Would increase if** real yields exceed 3% (making FI competitive on a return basis) or if horizon shortens.\n"
+            "**Would reduce if** inflation regime persists and nominal duration stops hedging anything."
         ),
     },
     {
@@ -175,14 +179,15 @@ SUB_CLASSES = [
         "tolerance_band": 0.02,
         "benchmark_ticker": "TIP",
         "rationale": (
-            "Inflation-hedged real-yield exposure, sized for a young investor's actual risk. The biggest FI risk "
-            "at 27 isn't a market crash — it's having returns silently destroyed by an inflationary decade. TIPS "
+            "Inflation-hedged real-yield exposure, sized for a long-horizon investor's actual risk. The biggest "
+            "FI risk over a multi-decade horizon isn't a market crash — it's having returns silently destroyed "
+            "by an inflationary decade. TIPS "
             "hedge that risk directly via CPI linkage. 6% is 40% of the FI sleeve, heavier than typical "
             "institutional allocations (usually 20-30%), reflecting that the horizon is long enough that "
             "real-return preservation dominates nominal. Post-2022 also reinforced that nominal Treasuries don't "
-            "always hedge stocks the way 60/40 doctrine claimed — TIPS at least hedge inflation reliably. Would "
-            "increase if real yields rise above 2.5%; would reduce if horizon shortens or if confidence in "
-            "disinflation persisting grows."
+            "always hedge stocks the way 60/40 doctrine claimed — TIPS at least hedge inflation reliably.\n\n"
+            "**Would increase if** real yields rise above 2.5%.\n"
+            "**Would reduce if** horizon shortens or if confidence in disinflation persisting grows."
         ),
     },
     {
@@ -190,16 +195,15 @@ SUB_CLASSES = [
         "parent_name": "Real Assets",
         "target_weight": 0.10,
         "tolerance_band": 0.02,
-        "benchmark_ticker": "VNQ+DJP",
+        "benchmark_ticker": "VNQ (60%) + DBC (40%)",
         "rationale": (
             "Inflation-correlated diversifier with different risk drivers than equity or duration. Public REITs "
             "and commodities aren't perfect substitutes for the private real estate and natural resource exposure "
             "endowments hold, but at retail account sizes they're the only honest implementation. 10% is large enough to actually "
             "move the portfolio's behavior in inflationary regimes (which 2-3% wouldn't) without being so large "
-            "that REIT/commodity volatility — both can have 30%+ drawdowns — overwhelms the equity sleeves. "
-            "Would increase if I gain access to private real estate or if commodities enter sustained "
-            "backwardation; would reduce in deflationary regimes where these assets stop earning their "
-            "diversification benefit."
+            "that REIT/commodity volatility — both can have 30%+ drawdowns — overwhelms the equity sleeves.\n\n"
+            "**Would increase if** access to private real estate opens or if commodities enter sustained backwardation.\n"
+            "**Would reduce if** deflationary regime persists and these assets stop earning their diversification benefit."
         ),
     },
     {
@@ -210,12 +214,12 @@ SUB_CLASSES = [
         "benchmark_ticker": "BIL",
         "rationale": (
             "Operational liquidity, not strategic dry powder. At 27 with a 30+ year horizon, holding meaningful "
-            "cash is performance drag — every 1% of cash at long-run equity returns of ~7% real costs ~$2.4k in "
-            "terminal wealth per $10k of base capital over 30 years. 3% handles rebalancing friction (funding "
+            "cash is performance drag — 1% of cash held over 30 years costs roughly $2.4k of terminal wealth "
+            "per $10k of base capital at 7% real equity returns. 3% handles rebalancing friction (funding "
             "tax-inefficient sleeves without forced sales), small drawdowns without selling at the bottom, and "
-            "occasional opportunistic deployment. SPAXX yields ~4-5% currently, so the drag is muted. Would "
-            "increase closer to retirement or with shorter-duration liabilities; would reduce toward 1-2% if "
-            "cash yields collapse below 2%."
+            "occasional opportunistic deployment. SPAXX yields ~4-5% currently, so the drag is muted.\n\n"
+            "**Would increase** closer to retirement or with shorter-duration liabilities.\n"
+            "**Would reduce** toward 1-2% if cash yields collapse below 2%."
         ),
     },
 ]

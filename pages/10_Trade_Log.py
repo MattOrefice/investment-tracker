@@ -9,9 +9,11 @@ import streamlit as st
 st.set_page_config(page_title="Trade Log", layout="wide")
 
 from src.asof import as_of_banner
-from src.config import get_demo_banner_text, IS_DEMO
+from src.config import get_demo_banner_text, IS_DEMO, is_write_enabled
 from src.db import get_connection
-from src.ui_helpers import render_footer
+from src.ui_helpers import render_footer, render_page_header, write_guard_toast
+render_page_header()
+
 
 STATUS_COLOR = {
     "active":      "#2d6a4f",
@@ -63,6 +65,7 @@ def load_all():
         trades = [dict(r) for r in conn.execute("""
             SELECT tr.trade_id, tr.trade_date, tr.action, tr.ticker,
                    tr.shares, tr.price, tr.fees, tr.notes,
+                   COALESCE(tr.lot_source, 'initial') AS lot_source,
                    pt.title  AS position_thesis,
                    it.title  AS investment_thesis
             FROM trades tr
@@ -153,10 +156,11 @@ def load_all():
 
         counts = dict(conn.execute("""
             SELECT
-                (SELECT COUNT(*) FROM trades)                                              AS n_trades,
-                (SELECT COUNT(*) FROM theses WHERE level='investment' AND status='active') AS n_inv,
-                (SELECT COUNT(*) FROM theses WHERE level='position'   AND status='active') AS n_pos,
-                (SELECT COUNT(*) FROM themes)                                              AS n_themes
+                (SELECT COUNT(*) FROM trades WHERE COALESCE(lot_source,'initial') != 'drip') AS n_disc_trades,
+                (SELECT COUNT(*) FROM trades WHERE lot_source = 'drip')                      AS n_drip,
+                (SELECT COUNT(*) FROM theses WHERE level='investment' AND status='active')    AS n_inv,
+                (SELECT COUNT(*) FROM theses WHERE level='position'   AND status='active')    AS n_pos,
+                (SELECT COUNT(*) FROM themes)                                                 AS n_themes
         """).fetchone())
 
     return dict(
@@ -176,6 +180,10 @@ def load_all():
 data = load_all()
 c    = data["counts"]
 
+# Initialise toggle state before the header renders so the banner is correct
+# on the first load (before the toggle widget inside the tab fires a rerun).
+if "tl_show_drip" not in st.session_state:
+    st.session_state["tl_show_drip"] = False
 
 if IS_DEMO:
     st.info(get_demo_banner_text())
@@ -189,12 +197,43 @@ with col:
         "an investment view, which carries theme tags."
     )
     st.caption(as_of_banner())
+
+    _show_drip = st.session_state.get("tl_show_drip", False)
+    _drip_part = (
+        f"{c['n_drip']} DRIP reinvestments"
+        if _show_drip
+        else f"{c['n_drip']} DRIP reinvestments hidden"
+    )
     st.caption(
-        f"{c['n_trades']} trades  ·  "
+        f"{c['n_disc_trades']} discretionary trades  ·  {_drip_part}  ·  "
         f"{c['n_inv']} active investment theses  ·  "
         f"{c['n_pos']} active position theses  ·  "
         f"{c['n_themes']} themes"
     )
+
+    with st.expander("How to read this page", expanded=False):
+        st.markdown(
+            "- **Hierarchy** — every trade is linked to a Position Thesis (the vehicle-level "
+            "rationale: why this ETF, not just this exposure), which links to an Investment "
+            "Thesis (the sleeve-level view: why hold this asset class at this weight), which "
+            "carries Theme tags (the strategic category the view belongs to). The summary line "
+            "counts all three levels independently.\n"
+            "- **Conviction stars (1–5)** — 1 = exploratory, 3 = standard position, "
+            "4 = high-weight or cross-cycle view, 5 = highest conviction. The scale is used "
+            "conservatively: a 5-star thesis requires an airtight structural case. Cash/SPAXX "
+            "is the only 5-star — not because it's the best return idea, but because zero-cash "
+            "is never the right answer in a taxable rebalancing portfolio.\n"
+            "- **Active / Closed / Invalidated** — these are distinct outcomes. Closed = thesis "
+            "completed as expected and position was unwound. Invalidated = the original "
+            "analytical case was wrong. Exit conditions are expected unwind triggers; "
+            "invalidation conditions are the scenarios that prove the original case analytically "
+            "wrong. A position can reach its exit without being invalidated, and vice versa. "
+            "Most thesis documentation systems collapse these; keeping them separate is intentional.\n"
+            "- **Themes** — allocator categories, not factor exposures. A position can express "
+            "multiple thematic rationales simultaneously (e.g., REITs are both Drawdown "
+            "protection and Regime change)."
+        )
+
     st.divider()
 
 
@@ -209,13 +248,11 @@ tab_trades, tab_theses, tab_themes = st.tabs(["Trades", "Theses", "Themes"])
 # ────────────────────────────────────────────────────────────────────────────
 
 def render_trade_form():
-    if IS_DEMO:
+    if not is_write_enabled():
         st.info(
-            "Trade entry is disabled in demo mode. The deployed demo shows the analytical "
-            "framework against the seeded paper-trade portfolio. Personal mode "
-            "(TRACKER_MODE=personal) enables trade entry locally."
+            "Public demo: trade entries are illustrative; "
+            "submissions are not written to the store."
         )
-        return
 
     securities    = data["securities"]
     accounts      = data["accounts"]
@@ -314,6 +351,8 @@ def render_trade_form():
             if errors:
                 for e in errors:
                     st.error(e)
+            elif not is_write_enabled():
+                write_guard_toast()
             else:
                 with get_connection() as conn:
                     acct = next(
@@ -363,29 +402,71 @@ def render_trade_form():
 # Tab 1: Trades
 # ────────────────────────────────────────────────────────────────────────────
 
+_DRIP_TOGGLE_HELP = (
+    "DRIP reinvestments are mechanical reinvestments of distributions, not "
+    "discretionary trades. They inherit the position thesis of the parent holding."
+)
+
 with tab_trades:
     _, col, _ = st.columns([1, 8, 1])
     with col:
-        trades = data["trades"]
+        show_drip = st.toggle(
+            "Show DRIP reinvestments",
+            value=False,
+            key="tl_show_drip",
+            help=_DRIP_TOGGLE_HELP,
+        )
+
+        trades_all = data["trades"]
+        trades = (
+            trades_all
+            if show_drip
+            else [t for t in trades_all if t.get("lot_source") != "drip"]
+        )
+
+        # Build ticker → (pos_thesis_title, inv_thesis_title) from active
+        # position theses so DRIP rows can inherit the same thesis display
+        # as their discretionary counterpart for the same ticker.
+        _ticker_thesis: dict[str, tuple[str, str]] = {}
+        for _pt in data["pos_theses"]:
+            if _pt.get("status") != "active":
+                continue
+            _parts = (_pt.get("title") or "").rsplit(" — ", 1)
+            if len(_parts) == 2:
+                _sym = _parts[-1].strip()
+                _ticker_thesis[_sym] = (
+                    _pt["title"],
+                    _pt.get("parent_title") or "—",
+                )
+
         if not trades:
-            st.info(
-                "No trades logged yet. The portfolio is currently 100% cash. "
-                "When you make your first trade, log it here with the thesis it expresses."
-            )
-            st.markdown("#### Log a trade")
-            render_trade_form()
+            if is_write_enabled():
+                st.info(
+                    "No trades logged yet. The portfolio is currently 100% cash. "
+                    "When you make your first trade, log it here with the thesis it expresses."
+                )
+                st.markdown("#### Log a trade")
+                render_trade_form()
+            else:
+                st.caption("No discretionary trades have been logged yet.")
         else:
             rows = []
             for t in trades:
+                pos_t = t["position_thesis"]
+                inv_t = t["investment_thesis"]
+                if t.get("lot_source") == "drip" and not pos_t:
+                    _inherited = _ticker_thesis.get(t["ticker"])
+                    if _inherited:
+                        pos_t, inv_t = _inherited
                 rows.append({
                     "Date":              t["trade_date"],
-                    "Action":            t["action"],
+                    "Action":            t["action"].title(),
                     "Ticker":            t["ticker"],
                     "Shares":            t["shares"],
                     "Price":             t["price"],
                     "Total Value":       round(t["shares"] * t["price"], 2),
-                    "Position Thesis":   t["position_thesis"] or "—",
-                    "Investment Thesis": t["investment_thesis"] or "—",
+                    "Position Thesis":   pos_t or "—",
+                    "Investment Thesis": inv_t or "—",
                 })
             df = pd.DataFrame(rows)
             st.dataframe(
@@ -398,8 +479,9 @@ with tab_trades:
                     "Shares":      st.column_config.NumberColumn(format="%.3f"),
                 },
             )
-            with st.expander("Log a new trade"):
-                render_trade_form()
+            if is_write_enabled():
+                with st.expander("Log a new trade"):
+                    render_trade_form()
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -505,7 +587,7 @@ with tab_theses:
                 pos_rows.append({
                     "Sleeve":            sleeve_part,
                     "Ticker":            ticker_part,
-                    "Vehicle Rationale": (rat[:88] + "…") if len(rat) > 88 else rat,
+                    "Vehicle Rationale": (rat[:120] + "…") if len(rat) > 120 else rat,
                     "Conviction":        _stars(pt["conviction"]),
                     "Investment Thesis": pt.get("parent_title") or "—",
                 })
@@ -513,6 +595,24 @@ with tab_theses:
                 pd.DataFrame(pos_rows),
                 width='stretch',
                 hide_index=True,
+            )
+
+        with st.expander("Methodology", expanded=False):
+            st.markdown(
+                "**Thesis taxonomy** — three levels stored separately. Position theses "
+                "document why a specific vehicle (e.g., VGIT) is the right implementation "
+                "of an exposure. Investment theses document why a sleeve (e.g., Core Fixed "
+                "Income) is held at a given weight. Themes group investment theses by "
+                "strategic function.\n\n"
+                "**Days held** — computed from the position creation date. All current "
+                "theses dated 2025-05-01 inception.\n\n"
+                "**Horizon** — stated holding horizon in months, set at thesis creation. "
+                "Standard portfolio positions use 60 months reflecting the strategic "
+                "allocation horizon; tactical positions would use shorter horizons.\n\n"
+                "**Theme assignments** — a single thesis can carry multiple theme tags "
+                "when a position serves multiple strategic functions. The distribution of "
+                "tags across the portfolio (active counts per theme on the Themes tab) is "
+                "a diagnostic of how the SAA earns its risk budget."
             )
 
 
@@ -529,6 +629,15 @@ with tab_themes:
         if not themes:
             st.info("No themes defined yet.")
         else:
+            st.markdown(
+                "Themes are allocator categories, not return drivers. Each theme represents "
+                "a class of strategy rationale that a portfolio might want explicit exposure "
+                "to or explicit absence of — the same framework institutional investors use "
+                "to classify manager mandates. A single position can express multiple "
+                "thematic rationales simultaneously: REITs provide both inflation-correlated "
+                "returns (Regime change) and equity-like diversification drag in a portfolio "
+                "with a dominant 72% equity allocation (Drawdown protection)."
+            )
             for theme in themes:
                 _t_active = theme.get("active_count") or 0
                 _t_badge  = (

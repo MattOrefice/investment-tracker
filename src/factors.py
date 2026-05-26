@@ -947,7 +947,7 @@ def build_factor_prose(
         "The Emerging Markets sleeve (IEMG) is excluded from regression analysis: "
         "Ken French does not publish daily EM factor data, and the current "
         "portfolio history is insufficient for a meaningful monthly-frequency regression. "
-        "Real assets (VNQ, PDBC) are excluded — no liquid daily factor proxy set spans "
+        "Real assets (VNQ 60%, DBC 40%) are excluded — no liquid daily factor proxy set spans "
         "REIT and commodity exposure simultaneously."
     )
 
@@ -981,7 +981,7 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
         except Exception:
             pass
 
-    return [
+    notes = [
         f"Samples: US equity sleeve {T_us} US trading days ({us_window}), L = {L_us}. "
         f"International Developed sleeve {T_dev} US trading days ({dev_window}), L = {L_dev}. "
         "Both sleeves are restricted to US equity market trading days (dates present "
@@ -1028,12 +1028,13 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
         "for tax-efficiency reasons (high turnover → short-term gains), so a near-zero "
         "Mom loading is expected and confirms the construction is tax-aware.",
 
-        "Global factor supplement (International Developed): Ken French Global FF5 "
-        "(Global_5_Factors_Daily_CSV.zip) provides a cross-check against the Developed-ex-US "
-        "regression. Global Mkt-RF includes US exposure, making it less clean for a "
-        "developed-ex-US ETF, but the comparison tests whether the Korea universe mismatch "
-        "artifact persists under a different factor set. Differences in alpha between the "
-        "two models are informative about the universe-mismatch contribution.",
+        "Global factor supplement (International Developed): Ken French ceased publication "
+        "of the daily Global 5-factor file in June 2019. This portfolio's inception "
+        "post-dates that cutoff; no daily-frequency Global FF5 regression can be produced. "
+        "The Developed ex-US factor set is the primary decomposition for the international "
+        "sleeve. Global Mkt-RF would include US exposure in any case, making it less precise "
+        "for a developed-ex-US ETF — the Korea universe mismatch is better bounded via the "
+        "Developed ex-US result alone.",
     ]
 
     if fi_result:
@@ -1051,7 +1052,7 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
             "Equity FF5 factors do not span fixed income; this dedicated two-factor model "
             "captures duration and credit risk explicitly. RF from Ken French US daily factors.",
 
-            "Real assets (VNQ, PDBC) remain excluded: no liquid daily factor proxy set spans "
+            "Real assets (VNQ 60%, DBC 40%) remain excluded: no liquid daily factor proxy set spans "
             "REIT and commodity exposure simultaneously. Factor models for real assets are "
             "a future extension.",
         ]
@@ -1059,7 +1060,7 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
         notes.append(
             "Fixed income (VGIT, SCHP): TERM/CREDIT factor model (IEF−BIL duration premium, "
             "HYG−IEF credit spread premium) in scope — see FI Sleeve panel above. "
-            "Real assets (VNQ, PDBC) remain excluded; no liquid daily factor proxy set "
+            "Real assets (VNQ 60%, DBC 40%) remain excluded; no liquid daily factor proxy set "
             "spans REIT and commodity exposure simultaneously."
         )
 
@@ -1221,10 +1222,23 @@ def build_benchmark_prose(
     sig_label      = significance_label(t_a)
     is_significant = abs(t_a) >= 1.65
 
+    # Compute 95% CI for alpha if HAC SE is available
+    _hac_bse  = result.get("_hac_bse", {})
+    _se_daily = _hac_bse.get("const", float("nan"))
+    if _se_daily == _se_daily:  # not NaN
+        _se_bps = _se_daily * 252 * 10_000
+        _ci_lo  = a_bps - 1.96 * _se_bps
+        _ci_hi  = a_bps + 1.96 * _se_bps
+        _lo_s   = f"−{abs(_ci_lo):.0f}" if _ci_lo < 0 else f"+{_ci_lo:.0f}"
+        _hi_s   = f"−{abs(_ci_hi):.0f}" if _ci_hi < 0 else f"+{_ci_hi:.0f}"
+        _ci_part = f" (95% CI: [{_lo_s}, {_hi_s}]; t = {t_a:.2f})"
+    else:
+        _ci_part = f" (t = {t_a:.2f})"
+
     # Second paragraph: intercept interpretation + optional BHB cross-reference
     second_para = (
         f"The intercept — active return after controlling for benchmark beta and style tilts — "
-        f"is {a_bps:+.0f} bps annualized (t = {t_a:.2f}), {sig_label}. "
+        f"is {a_bps:+.0f} bps/yr{_ci_part}, {sig_label}. "
     )
 
     if is_significant and bhb_top_selection:
@@ -1263,6 +1277,12 @@ def build_benchmark_prose(
         f"and persistence of the active return cannot be established without a longer history."
     )
 
+    cross_page_note = (
+        "Note: this regression covers the since-inception window; the Brinson-Fachler "
+        "attribution on the Performance page reports Q1 2026. The top selection drivers "
+        "differ by design, reflecting the longer window captured here."
+    )
+
     return [
         f"Portfolio benchmark-relative regression ({T} trading days, {s_start} to {s_end}): "
         f"the portfolio loads on the custom blended benchmark at β = {b_bench:.3f} "
@@ -1273,6 +1293,8 @@ def build_benchmark_prose(
         f"R² = {r2:.3f}.",
 
         second_para,
+
+        cross_page_note,
     ]
 
 
@@ -1285,12 +1307,9 @@ def build_benchmark_methodology(result: Optional[dict]) -> list[str]:
         if result else "N/A"
     )
     return [
-        f"Regression: (R_p − RF) ~ (R_b − RF) + HML + SMB + RMW. "
-        f"{T} observations ({window}), Newey-West HAC SEs, L = {L}.",
-
         "R_p: daily portfolio total return (adj_close basis, SPAXX proxied via BIL normalized "
         "to $1.00 at inception). R_b: daily custom blended SAA benchmark return (target-weight "
-        "basket: SPY, QUAL, IWD, IWM, EFA, EEM, IEF, TIP, 50% VNQ + 50% DBC, BIL). "
+        "basket: SPY, QUAL, IWD, IWM, EFA, EEM, IEF, TIP, 60% VNQ + 40% DBC, BIL). "
         "RF, HML, SMB, RMW: Ken French US daily factors (Dartmouth). "
         "All series aligned by inner join on trading dates.",
 
@@ -1309,3 +1328,224 @@ def build_benchmark_methodology(result: Optional[dict]) -> list[str]:
         "the style factors most informative for this portfolio's deliberate tilts "
         "(value via VTV, size via AVUV, quality/profitability via SPHQ).",
     ]
+
+
+# ── Per-sleeve and per-regression dynamic interpretation ──────────────────────
+
+_T_SIG = 2.0   # |t| threshold for "statistically significant"
+_R2_LOW = 0.70  # R² below this flags a weak model fit
+
+
+def interpret_sleeve_regression(res: dict, factor_names: list | None = None) -> str:
+    """
+    Generate 2–4 sentences interpreting a single sleeve's factor regression.
+
+    Works for both FF5 equity regressions and TERM/CREDIT FI regressions.
+    Identifies statistically significant factor loadings, flags alpha significance,
+    and notes low R² when present.
+
+    Args:
+        res:          Result dict from run_sleeve_regressions / regress_fi_sleeve.
+        factor_names: Factor names to inspect (defaults to all in res["betas"]).
+    """
+    if res is None:
+        return "Regression result unavailable."
+
+    betas    = res.get("betas", {})
+    t_stats  = res.get("t_stats", {})
+    a_bps    = res.get("alpha_annual_bps", 0.0)
+    t_alpha  = res.get("t_alpha", 0.0)
+    r2       = res.get("r_squared", 0.0)
+    T        = res.get("T", 0)
+    label    = res.get("sleeve_label", "This sleeve")
+    factors  = factor_names or list(betas.keys())
+
+    parts: list[str] = []
+
+    # Significant factor loadings
+    sig_factors = [f for f in factors if abs(t_stats.get(f, 0.0)) >= _T_SIG]
+    for f in sig_factors:
+        b = betas[f]
+        t = t_stats[f]
+        direction = "positive" if b > 0 else "negative"
+        parts.append(
+            f"{f} loading: {b:+.3f} (t = {t:.2f}, {direction}, significant)"
+        )
+
+    factor_sentence = ""
+    if sig_factors:
+        factor_sentence = (
+            f"{label} shows significant loadings on: "
+            + "; ".join(parts) + ". "
+        )
+    else:
+        factor_sentence = (
+            f"{label} has no statistically significant factor loadings "
+            f"at the |t| > {_T_SIG:.0f} threshold across the {T} observed trading days. "
+            "This may reflect a short sample period, not an absence of factor exposure. "
+        )
+
+    # Alpha interpretation
+    alpha_sig = abs(t_alpha) >= _T_SIG
+    if alpha_sig:
+        alpha_dir = "positive" if a_bps > 0 else "negative"
+        alpha_sentence = (
+            f"Annualized alpha is {a_bps:+.0f} bps (t = {t_alpha:.2f}), "
+            f"statistically significant — a {alpha_dir} active return not explained by "
+            "the factor model. Given the short sample, this estimate carries wide uncertainty "
+            "and should not be read as evidence of persistent skill."
+        )
+    else:
+        alpha_sentence = (
+            f"Annualized alpha of {a_bps:+.0f} bps (t = {t_alpha:.2f}) is not statistically "
+            "significant — the sleeve's returns are consistent with factor exposures alone."
+        )
+
+    # R² note
+    r2_sentence = ""
+    if r2 < _R2_LOW:
+        r2_sentence = (
+            f" R² = {r2:.3f} is below {_R2_LOW:.0f}, indicating the factor model explains "
+            "only a portion of this sleeve's variance — either a universe mismatch "
+            "or factors outside the standard FF5 set are at play."
+        )
+
+    return factor_sentence + alpha_sentence + r2_sentence
+
+
+def interpret_benchmark_attribution(result: dict) -> str:
+    """
+    Generate a focused interpretation of the benchmark attribution regression.
+
+    This regression is a SELECTION-and-INTRA-SLEEVE-TILT model:
+      (R_p − RF) ~ β_bench(R_b − RF) + β_HML·HML + β_SMB·SMB + β_RMW·RMW + α
+
+    The blended benchmark (R_b) captures the SAA policy allocation.
+    Style factor loadings ABOVE the benchmark capture residual tilts not
+    explained by the SAA's target weights. Alpha is the active return
+    after controlling for both the benchmark and those residual style tilts.
+    This is NOT a Brinson-Fachler decomposition; that lives on the
+    Performance page.
+
+    Args:
+        result: result dict from run_benchmark_attribution_regression.
+    """
+    if result is None:
+        return "Benchmark attribution regression unavailable."
+
+    b_bench = result["betas"]["Bench-RF"]
+    t_bench = result["t_stats"]["Bench-RF"]
+    b_hml   = result["betas"]["HML"]
+    t_hml   = result["t_stats"]["HML"]
+    b_smb   = result["betas"]["SMB"]
+    t_smb   = result["t_stats"]["SMB"]
+    b_rmw   = result["betas"]["RMW"]
+    t_rmw   = result["t_stats"]["RMW"]
+    a_bps   = result["alpha_annual_bps"]
+    t_alpha = result["t_alpha"]
+    r2      = result["r_squared"]
+
+    # Benchmark beta sentence — meaning only, no specific coefficient values
+    if abs(b_bench - 1.0) < 0.10:
+        bench_sentence = (
+            "The portfolio tracks its SAA policy benchmark closely — consistent with a "
+            "fully-invested passive/semi-passive implementation."
+        )
+    else:
+        bench_sentence = (
+            "The portfolio's benchmark beta departs from the expected 1.0, reflecting "
+            "cross-sleeve return dispersion or cash drag."
+        )
+
+    # Style tilt sentences — meaning only, no specific β or t-stat values
+    style_parts = []
+    for fname, beta, tstat, context in [
+        ("HML", b_hml, t_hml, "value tilt (VTV, AVUV)"),
+        ("SMB", b_smb, t_smb, "small-cap tilt (AVUV)"),
+        ("RMW", b_rmw, t_rmw, "profitability tilt (SPHQ, AVUV)"),
+    ]:
+        if abs(tstat) >= _T_SIG:
+            direction = "positive" if beta > 0 else "negative"
+            style_parts.append(f"{fname}: {direction} {context}")
+
+    if style_parts:
+        style_sentence = (
+            "Residual style tilts beyond the SAA benchmark: "
+            + "; ".join(style_parts) + ". "
+            "See the regression table above for loadings and significance."
+        )
+    else:
+        style_sentence = (
+            "No statistically significant residual style tilts beyond the SAA benchmark "
+            "are detected at the current sample length. "
+        )
+
+    # Alpha sentence — significance and direction only, numbers live in the table
+    alpha_sig = abs(t_alpha) >= _T_SIG
+    if alpha_sig:
+        alpha_dir = "positive" if a_bps > 0 else "negative"
+        alpha_sentence = (
+            f"The active return intercept is statistically significant — a {alpha_dir} return "
+            "after accounting for both the SAA benchmark and residual style exposures. "
+            "See the regression table and the Interpretation section below for the full "
+            "alpha estimate with confidence interval."
+        )
+    else:
+        alpha_sentence = (
+            "The active return intercept is not statistically significant at the current "
+            "sample length — the portfolio's return is consistent with its SAA benchmark "
+            "exposure and residual style tilts alone."
+        )
+
+    return bench_sentence + " " + style_sentence + " " + alpha_sentence
+
+
+def interpret_correlations(corr: pd.DataFrame) -> str:
+    """
+    Generate 2–3 sentences interpreting a correlation matrix of sleeve returns.
+
+    Identifies highest and lowest off-diagonal pairs, cross-asset patterns,
+    and flags any unexpected correlations. Returns an empty string if the
+    matrix has fewer than 3 sleeves.
+
+    Args:
+        corr: square correlation DataFrame (sleeves as both index and columns).
+    """
+    if corr.empty or len(corr) < 3:
+        return ""
+
+    # Build sorted list of off-diagonal pairs
+    pairs: list[tuple[str, str, float]] = []
+    cols = list(corr.columns)
+    for i in range(len(cols)):
+        for j in range(i + 1, len(cols)):
+            pairs.append((cols[i], cols[j], float(corr.iloc[i, j])))
+
+    if not pairs:
+        return ""
+
+    pairs_sorted = sorted(pairs, key=lambda x: x[2])
+    lowest  = pairs_sorted[:2]
+    highest = pairs_sorted[-3:][::-1]   # top 3, highest first
+
+    # Highest correlations sentence — lead with allocator conclusion, pairs as evidence
+    high_parts = [
+        f"{a} × {b} (ρ = {r:.2f})" for a, b, r in highest if r < 0.999
+    ]
+    high_sentence = (
+        f"High intra-equity co-movement — {', '.join(high_parts)} — "
+        "means the equity sleeves largely share a single global market beta."
+    ) if high_parts else ""
+
+    # Lowest correlations sentence — frame as cross-asset structural difference
+    low_parts = [
+        f"{a} × {b} (ρ = {r:.2f})" for a, b, r in lowest
+    ]
+    low_sentence = (
+        f"The most meaningful return offsets are {' and '.join(low_parts)}: "
+        "the only pairs where structural differences in risk exposure, "
+        "not just style tilts, drive genuine diversification."
+    ) if low_parts else ""
+
+    sentences = [s for s in [high_sentence, low_sentence] if s]
+    return "  \n".join(sentences)

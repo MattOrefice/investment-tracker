@@ -92,6 +92,7 @@ CREATE TABLE IF NOT EXISTS trades (
     price         REAL NOT NULL,
     fees          REAL DEFAULT 0,
     notes         TEXT,
+    lot_source    TEXT DEFAULT 'initial',
     created_at    TEXT DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (account_id) REFERENCES accounts(account_id),
     FOREIGN KEY (ticker)     REFERENCES securities(ticker),
@@ -144,6 +145,29 @@ def _auto_migrate(conn: sqlite3.Connection) -> None:
             "    ON prices(ticker, price_date);"
             "PRAGMA foreign_keys = ON;"
         )
+
+    # Migration: add lot_source column to trades for per-lot tax tracking.
+    trade_cols = [
+        row[1] for row in conn.execute("PRAGMA table_info(trades)").fetchall()
+    ]
+    if "lot_source" not in trade_cols:
+        conn.execute("ALTER TABLE trades ADD COLUMN lot_source TEXT DEFAULT 'initial'")
+        conn.execute(
+            "UPDATE trades SET lot_source = 'initial' WHERE lot_source IS NULL"
+        )
+        conn.commit()
+
+    # Migration: surface VNQ/DBC split in Real Assets benchmark label (60/40 policy).
+    has_ac = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='asset_classes'"
+    ).fetchone()
+    if has_ac:
+        conn.execute(
+            "UPDATE asset_classes SET benchmark_ticker = 'VNQ (50%) + DBC (50%)' "
+            "WHERE name = 'Real Assets' AND parent_id IS NOT NULL "
+            "AND benchmark_ticker IN ('VNQ+DBC', 'VNQ+DJP', 'VNQ (60%) + DBC (40%)')"
+        )
+        conn.commit()
 
 
 def get_connection():

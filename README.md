@@ -1,10 +1,17 @@
 # Investment Analytics Tracker
 
-Personal portfolio analytics system tracking a thesis-driven multi-asset strategic asset allocation across ten sleeves, built to institutional-allocator standards. Deploys daily-linked TWR, Brinson-Fachler attribution, per-sleeve Fama-French factor regressions, and a locked-quarter PDF report. Intended as a working artifact for buy-side allocator and investment due diligence roles.
+Multi-asset portfolio analytics with institutional-grade performance attribution, factor regression, and macro regime monitoring.
 
-[Live Demo](https://mattorefice-investment.streamlit.app/) &nbsp;·&nbsp; [LinkedIn](https://www.linkedin.com/in/matthew-orefice-cfa-83536b190/) &nbsp;·&nbsp; [GitHub](https://github.com/MattOrefice/investment-tracker)
+**Live demo:** [mattorefice-investment.streamlit.app](https://mattorefice-investment.streamlit.app/) &nbsp;·&nbsp; ![CI](https://github.com/MattOrefice/investment-tracker/actions/workflows/ci.yml/badge.svg)
 
-![CI](https://github.com/MattOrefice/investment-tracker/actions/workflows/ci.yml/badge.svg)
+Built by [Matt Orefice, CFA](https://www.linkedin.com/in/matthew-orefice-cfa-83536b190/).
+Available for buy-side allocator and investment due diligence roles.
+
+---
+
+![Macro Dashboard showing current regime classification — Mid-cycle — with NBER recession indicator, 10Y-2Y yield curve spread, and unemployment rate as KPIs, alongside the long-run Shiller CAPE chart](docs/images/hero_macro.png)
+
+*Macro Dashboard — regime classification with dynamic interpretations of CAPE, ECY, yield curve, credit spreads, labor, and growth indicators against historical percentile bands.*
 
 ---
 
@@ -27,6 +34,18 @@ The primary benchmark is the custom SAA-blended basket, not the S&P 500. A near-
 ---
 
 ## Methodology
+
+- **SAA as policy.** 10-sleeve strategic asset allocation serves as the policy benchmark; deviations are measured as drift and corrected via the Capital Deployment workflow.
+
+- **Performance attribution.** Brinson-Hood-Beebower decomposition partitioning excess return into allocation and selection effects against a SAA-target-weighted blended benchmark.
+
+- **Factor regressions.** Per-sleeve Fama-French 5-factor regressions with Newey-West HAC standard errors. Regional sleeves use region-appropriate factor universes (Ken French Developed ex-US for international developed).
+
+- **Macro regime classification.** Rules-based classifier using NBER USREC, 10Y-2Y curve, and unemployment rate. Dynamic interpretations derive from live FRED data rather than static commentary.
+
+- **Tax-aware accounting.** Lot-level inventory with DRIP inheritance, harvest candidate identification, and trade log normalization.
+
+- **Candidate asset evaluation.** Univariate statistics (annualized return, vol, Sharpe, drawdown, skew, kurtosis), full-sample and rolling correlations against SAA sleeves, regime-conditional correlation by NBER cycle phase, mean-variance contribution (unconstrained and constrained), and a decision framework that surfaces allocator-side considerations (liquidity, tax treatment, operational complexity, mandate fit) rather than reducing the decision to a single Sharpe-improvement number.
 
 ### Returns
 
@@ -69,15 +88,31 @@ Three layers: (1) math identities that must hold by construction (BF effects sum
 | Robert Shiller / Yale | CAPE (monthly) | Local CSV, monthly refresh |
 | Ken French Data Library | FF5 factors (US, Developed ex-US), UMD momentum | Downloaded and cached per regression run |
 
-**Real Assets benchmark disclosure.** The portfolio holds PDBC (C-corp structure, no K-1 issued); the benchmark uses DBC (K-1-issuing). Selection effect in the Brinson-Fachler table captures the DBC–PDBC return spread. This asymmetry is documented rather than hidden.
+**Real Assets benchmark disclosure.** The portfolio holds PDBC (C-corp structure, no K-1 issued); the benchmark uses DBC (K-1-issuing). Selection effect in the Brinson-Fachler table captures the DBC–PDBC return spread. This asymmetry is documented rather than hidden. Real Assets sleeve is benchmarked as a 60% VNQ / 40% DBC blend; REITs are weighted higher than commodities because broad commodity futures carry negative roll yield in contango regimes that suppresses long-run total return.
+
+**Implementation note.** This dashboard is a model strategic asset allocation used to exercise the analytical framework. The author's brokerage account holds a subset of these positions; full SAA implementation is ongoing. Analytics treat the SAA as fully implemented at target weights for purposes of attribution and benchmarking.
 
 ---
 
-## Architecture
+## Implementation
 
-Python 3.11 · Streamlit · SQLite · pandas · NumPy · statsmodels (OLS, NW-HAC) · Plotly + kaleido · WeasyPrint (PDF on Linux/Cloud) · xhtml2pdf (Windows fallback) · fredapi · Jinja2 · pytest · GitHub Actions
+- **Stack:** Python 3.11, Streamlit, pandas, NumPy, statsmodels, plotly, SQLite
+- **Data sources:** FRED API (macro), Ken French Data Library (factors), Shiller / Yale (CAPE), yfinance (prices)
+- **Test coverage:** 590+ unit and integration tests covering return calculation, attribution math, factor regression plumbing, and dynamic-interpretation guards
+- **Deployment:** Streamlit Community Cloud, redeploy on push to main
 
-Core logic resides in `src/` with no Streamlit imports, making it fully unit-testable. Streamlit pages in `pages/` are auto-discovered by `app.py`. Price data is cached in SQLite to avoid repeated Yahoo Finance API calls. PDF reports are assembled via Jinja2 templates and rendered through WeasyPrint on Linux/Cloud. The single canonical import pattern throughout is `from src.X import Y`.
+Technical architecture documented in [docs/architecture.md](docs/architecture.md).
+
+Core logic resides in `src/` with no Streamlit imports, making it fully unit-testable. Streamlit pages in `pages/` are auto-discovered by `app.py`. Price data is cached in SQLite to avoid repeated Yahoo Finance API calls. PDF reports are assembled via Jinja2 templates and rendered through WeasyPrint on Linux/Cloud.
+
+## Repository structure
+
+- `app.py` — landing page and entry point
+- `pages/` — 12 analytical pages (SAA, Performance, Macro, Factor Profile, Benchmark Attribution, Correlations, Tax Lots, Capital Deployment, and others)
+- `src/` — analytical modules (attribution, regression, macro, drip, rebalance, interpretations)
+- `tests/` — pytest suite
+- `templates/` — Jinja2 HTML and CSS for quarterly PDF report
+- `docs/` — methodology documentation, phase notes, operational runbooks
 
 ```
 src/
@@ -93,18 +128,19 @@ src/
 
 pages/
   1_SAA.py              SAA allocation chart, per-sleeve rationale
-  2_Research.py         ETF selection: benchmark vs. holding, ER breakdown
-  3_Trade_Log.py        Trade entry, investment/position thesis browser, themes
-  4_Performance.py      TWR, BF attribution, cumulative chart, drift, PDF export
-  5_Macro.py            CAPE, yield curve, Fed Funds, HY OAS, regime classifier
-  6_Reports.py          Quarterly report archive and download
-  7_Factor_Profile.py   Per-sleeve FF5 regressions, benchmark-relative alpha, style box
-  8_Benchmark_Attribution.py  Custom-benchmark regression
+  2_Performance.py      TWR, BF attribution, cumulative chart, drift, FI duration, PDF export
+  3_Macro.py            CAPE, yield curve, Fed Funds, HY OAS, regime classifier
+  4_Factor_Profile.py   Per-sleeve FF5 regressions, benchmark-relative alpha, equity style box
+  5_Asset_Evaluation.py  Bitcoin case study: marginal Sharpe, drawdown, decision framework
+  6_Benchmark_Attribution.py  Custom-benchmark regression
+  8_Research.py         ETF selection: benchmark vs. holding, ER breakdown
   9_Correlations.py     Rolling sleeve correlation matrix
-  10_Asset_Evaluation.py  Bitcoin case study: marginal Sharpe, drawdown, decision framework
+  10_Trade_Log.py       Trade entry, investment/position thesis browser, themes
+  11_Capital_Deployment.py  Contribution allocation and band-breach rebalancing
+  12_Tax_Lots.py        Lot-level cost basis, holding period, harvest candidates
 
 templates/              PDF report (Jinja2 HTML + CSS)
-tests/                  408 tests across three integrity layers
+tests/                  590+ tests across three integrity layers
 docs/                   Methodology diagnostics, phase notes, operational runbooks
 ```
 

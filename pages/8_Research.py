@@ -8,7 +8,9 @@ from collections import defaultdict
 from src.asof import as_of_banner
 from src.config import get_demo_banner_text, IS_DEMO
 from src.db import get_connection
-from src.ui_helpers import render_footer
+from src.ui_helpers import render_footer, render_page_header
+render_page_header()
+
 
 SPAXX_RATIONALE = (
     "SPAXX is Fidelity's default money market fund and the natural cash vehicle — no transaction "
@@ -172,11 +174,30 @@ with col:
     )
     st.divider()
 
+    with st.expander("How to read this page", expanded=False):
+        st.markdown(
+            "- **Benchmarks** — each sleeve benchmark is the SAA rationale's "
+            "attribution target, not always the cheapest passive option. SPY is the "
+            "US Large Core benchmark because it's the institutional standard for US "
+            "equity, even though VOO is the actual holding at one-third the fee.\n"
+            "- **ER savings** — calculated as "
+            "`Σ(sleeve_weight × (benchmark_ER − holding_ER)) × portfolio_size`, "
+            "sleeve-weighted to reflect actual portfolio allocations. "
+            "The \\$436/yr figure at \\$250k uses full float precision; "
+            "the 17 bps display is rounded.\n"
+            "- **Featured Selections** — three holdings selected for analytical "
+            "differentiation, not performance. SPHQ represents a deliberate "
+            "methodology bet (accruals screen); IEMG is a pure cost choice "
+            "(0.09% vs 0.70% for identical EM exposure); PDBC is a tax-structure "
+            "decision (C-corp to avoid K-1 filing).\n"
+            "- **Comparison tables** — ticker, name, and expense ratio only. "
+            "Tracking difference, index methodology differences, and manager "
+            "rationale are in the rationale expanders below each holding."
+        )
+
     # ── Featured Selections ──────────────────────────────────────────────────────
     st.subheader("Featured Selections")
-    st.caption(
-        "Three holdings where the case for diverging from the benchmark is most compelling."
-    )
+    st.caption("How and why this portfolio differs from low-cost index defaults")
 
     _featured_meta = {
         "SPHQ": {
@@ -261,4 +282,20 @@ with col:
         st.markdown("")
 
     st.divider()
+    with st.expander("Methodology", expanded=False):
+        st.markdown(
+            "**Data sources** — expense ratios from fund issuer prospectuses "
+            "(Vanguard, iShares, Avantis, Invesco, Schwab, Fidelity); "
+            "AUM from Morningstar. Sleeve target weights locked at portfolio "
+            "inception (May 2025).\n\n"
+            "**ER savings** — calculated as "
+            "`Σ(sleeve_weight × (benchmark_ER − holding_ER)) × portfolio_size`, "
+            "sleeve-weighted to reflect actual portfolio exposure. "
+            "The \\$436/yr figure at \\$250k uses full float precision; "
+            "the 17 bps summary is rounded.\n\n"
+            "**Benchmark selection** — each sleeve benchmark is the SAA "
+            "rationale's attribution target, not the cheapest passive option "
+            "available. SPY benchmarks US Large Core because it's the institutional "
+            "standard for that exposure, not because it's the optimal ETF."
+        )
     render_footer()

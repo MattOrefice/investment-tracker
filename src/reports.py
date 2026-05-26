@@ -39,8 +39,8 @@ from src.factors import (
 from src.holdings import get_inception_date, get_portfolio_value_series, get_sleeve_weights_on_date
 from src.macro import compute_cape_implied_return, get_series, percentile
 from src.positioning import (
-    build_style_box_figure, get_active_tilts, get_effective_duration,
-    get_non_us_equity_data, get_scenario_triggers, get_style_box_data,
+    build_style_box_figure, get_effective_duration,
+    get_non_us_equity_data, get_style_box_data,
 )
 from src.style_box import STYLE_BOX_CAPTION
 from src.returns import period_return, twr_daily_linked
@@ -82,7 +82,7 @@ SLEEVE_BENCH_TICKER: dict[str, str] = {
     "Emerging Markets":        "EEM",
     "Core Fixed Income":       "IEF",
     "TIPS":                    "TIP",
-    "Real Assets":             "VNQ / DBC",
+    "Real Assets":             "VNQ (60%) + DBC (40%)",
     "Cash / SPAXX":            "BIL",
 }
 
@@ -101,10 +101,10 @@ REPORT_DISCLAIMER = (
     "results, and all return figures are time-weighted historical "
     "calculations subject to data and methodology limitations. No "
     "fiduciary, advisory, or client relationship is created by accessing "
-    "this report or the underlying analytics system. Data sourced from "
-    "Yahoo Finance, FRED, and Robert Shiller’s public datasets; "
-    "calculations are best-effort and may contain methodological "
-    "simplifications."
+    "this report or the underlying analytics system. Price data sourced "
+    "from public market data feeds; macro data from FRED; valuation data "
+    "from Robert Shiller’s public datasets. Calculations are best-effort "
+    "and may contain methodological simplifications."
 )
 
 
@@ -864,7 +864,7 @@ def _build_thesis_section(start_date: str, end_date: str) -> dict:
                ORDER BY conviction DESC""",
         ).fetchall()
         tr_rows = conn.execute(
-            """SELECT trade_date, ticker, action, shares, price
+            """SELECT trade_date, ticker, action, shares, price, lot_source
                FROM trades
                WHERE trade_date BETWEEN ? AND ?
                ORDER BY trade_date""",
@@ -887,8 +887,14 @@ def _build_thesis_section(start_date: str, end_date: str) -> dict:
         })
 
     trades = []
+    drip_count = 0
+    drip_total = 0.0
     for t in tr_rows:
         price = float(t["price"]) if t["price"] else 0.0
+        if t["lot_source"] == "drip":
+            drip_count += 1
+            drip_total += float(t["shares"]) * price
+            continue
         td = date.fromisoformat(t["trade_date"])
         trades.append({
             "date":   f"{td.strftime('%b')} {td.day}, {td.year}",
@@ -899,14 +905,16 @@ def _build_thesis_section(start_date: str, end_date: str) -> dict:
             "cost":   f"${float(t['shares']) * price:,.0f}",
         })
 
-    return {"theses": theses, "trades": trades}
+    drip_summary = (
+        {"count": drip_count, "total": f"${drip_total:,.2f}"}
+        if drip_count > 0 else None
+    )
+    return {"theses": theses, "trades": trades, "drip_summary": drip_summary}
 
 
 def _build_positioning_section(end_date: str) -> dict:
-    """Build the Active Positioning section from live portfolio state."""
-    tilts      = get_active_tilts(end_date)
+    """Build the positioning section (duration + style box) from live portfolio state."""
     dur        = get_effective_duration(end_date)
-    scenarios  = get_scenario_triggers(end_date)
     style_data = get_style_box_data(end_date)
     non_us     = get_non_us_equity_data(end_date)
     fi_dur    = dur["fi_sleeve_duration"]
@@ -927,9 +935,7 @@ def _build_positioning_section(end_date: str) -> dict:
     )
     style_box_b64 = _chart_b64(build_style_box_figure(style_data), 520, 300) if style_data else None
     return {
-        "tilts":             tilts,
         "duration_line":     duration_line,
-        "scenarios":         scenarios,
         "style_box_b64":     style_box_b64,
         "style_box_caption": STYLE_BOX_CAPTION,
         "non_us":            non_us,
@@ -1235,7 +1241,7 @@ def _build_methodology_vars() -> dict:
         for r in parent_rows
     )
 
-    # "50% VNQ + 50% DBC" — derived from _SLEEVE_BENCHMARKS["Real Assets"]
+    # "60% VNQ + 40% DBC" — derived from _SLEEVE_BENCHMARKS["Real Assets"]
     ra_bench = _SLEEVE_BENCHMARKS.get("Real Assets", [])
     ra_bench_str = " + ".join(f"{round(w * 100):.0f}% {t}" for t, w in ra_bench)
 
@@ -1278,7 +1284,7 @@ def generate_quarterly_report(
     period_label = _format_period_label(start_date, end_date)
 
     # Quarter-locking: use immutable snapshot prices for standard completed quarters so
-    # that Yahoo Finance retroactive adj_close updates cannot shift historical report numbers.
+    # that retroactive adj_close updates cannot shift historical report numbers.
     quarter_id = label_to_quarter_id(period_label)
     snap_df: Optional[pd.DataFrame] = None
     snapshot_captured_at: Optional[str] = None
