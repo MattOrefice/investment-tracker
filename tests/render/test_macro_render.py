@@ -197,16 +197,18 @@ def test_oas_methodology_expander_renders(macro_app: AppTest) -> None:
 
 
 def test_regime_transition_paragraph_renders(macro_app: AppTest) -> None:
-    """Regime section 'How regimes transition' paragraph renders. Pinned: Phase 35."""
-    headings = [m.value for m in macro_app.markdown]
-    assert any("How regimes transition" in h for h in headings), (
-        "Regime transition paragraph heading not found — possible Phase 35 regression"
+    """Regime 'How regimes transition' is a collapsed expander. Pinned: Phase 35; updated Phase 43."""
+    expander_labels = [e.label for e in macro_app.expander]
+    assert any("How regimes transition" in l for l in expander_labels), (
+        "Regime transition expander not found — Phase 43 moved this from inline markdown "
+        "to a collapsed expander; if the label changed this test needs updating"
     )
 
 
 def test_regime_methodology_paragraph_renders(macro_app: AppTest) -> None:
-    """Regime section expanded Methodology block renders. Pinned: Phase 35."""
-    headings = [m.value for m in macro_app.markdown]
-    assert any(h == "**Methodology**" for h in headings), (
-        "Regime Methodology block not found — possible Phase 35 regression"
+    """Regime Methodology is a collapsed expander. Pinned: Phase 35; updated Phase 43."""
+    expander_labels = [e.label for e in macro_app.expander]
+    assert any(l == "Methodology" for l in expander_labels), (
+        "Regime Methodology expander not found — Phase 43 moved this from inline markdown "
+        "to a collapsed expander; if the label changed this test needs updating"
     )

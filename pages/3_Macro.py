@@ -259,6 +259,11 @@ with col:
         dgs10,       _dgs10_err  = _try_fred("DGS10",             "1990-01-01")
         dgs3mo,      _dgs3mo_err = _try_fred("DGS3MO",            "1990-01-01")
         dgs2,        _dgs2_err   = _try_fred("DGS2",              "1990-01-01")
+        dgs1,        _dgs1_err   = _try_fred("DGS1",              "1990-01-01")
+        dgs5,        _dgs5_err   = _try_fred("DGS5",              "1990-01-01")
+        dgs7,        _dgs7_err   = _try_fred("DGS7",              "1990-01-01")
+        dgs20,       _dgs20_err  = _try_fred("DGS20",             "1990-01-01")
+        dgs30,       _dgs30_err  = _try_fred("DGS30",             "1990-01-01")
         t10yie,      _t10yie_err = _try_fred("T10YIE",            "2003-01-01")
         dfii10,      _dfii10_err = _try_fred("DFII10",            "2003-01-01")
         unrate,      _unrate_err = _try_fred("UNRATE",            "1948-01-01")
@@ -289,6 +294,8 @@ with col:
     if hy_oas is not None and not hy_oas.dropna().empty:
         _shared_hy_bps = float(hy_oas.dropna().iloc[-1]) * 100
 
+    st.caption("Gray shading on time-series charts marks NBER-dated recession periods.")
+
     # ═══════════════════════════════════════════════════════════════════════════
     # 1. REGIME CLASSIFIER
     # ═══════════════════════════════════════════════════════════════════════════
@@ -313,11 +320,9 @@ with col:
         ),
         "Mid-cycle":   (
             "Growth is moderate, the yield curve is positively sloped, and labor markets "
-            "are neither too tight nor too loose. The SAA is calibrated for diversification "
-            "across regimes — explicit factor tilts toward value and quality, intermediate-duration "
-            "Treasury exposure for recession hedging, inflation-protected securities, and broad "
-            "geographic diversification — rather than for adjustment based on regime classification. "
-            "The regime indicators on this page inform context, not positioning."
+            "are neither too tight nor too loose. "
+            "The regime indicators on this page inform context; the SAA itself is policy-driven "
+            "and not adjusted in response to regime classification."
         ),
         "Late-cycle":  (
             "The yield curve is inverted or labor markets are historically tight — both "
@@ -357,18 +362,18 @@ with col:
                       f"{_cur_unrate:.1f}%" if _cur_unrate is not None else "—",
                       help="> 5.5% = Early-cycle; < 4.2% = Late-cycle trigger")
 
-        st.markdown("**How regimes transition**")
-        st.caption(
-            "Cycle regimes shift gradually as the three input variables evolve. Mid-cycle becomes "
-            "late-cycle as the yield curve flattens or inverts (Fed tightening to slow growth), "
-            "unemployment troughs and begins rising from cycle lows, and credit spreads compress "
-            "before widening on rising defaults. Late-cycle becomes recession when NBER officially "
-            "declares it (with a 6–18 month lag) and unemployment rises sharply. Recession becomes "
-            "early-cycle as the curve re-steepens (Fed easing), unemployment peaks and begins "
-            "falling, and credit spreads peak and start tightening. The transitions are not "
-            "discrete — they reflect gradual shifts in the underlying variables, which is why the "
-            "regime classifier captures direction-of-travel rather than predicting turning points."
-        )
+        with st.expander("How regimes transition", expanded=False):
+            st.caption(
+                "Cycle regimes shift gradually as the three input variables evolve. Mid-cycle becomes "
+                "late-cycle as the yield curve flattens or inverts (Fed tightening to slow growth), "
+                "unemployment troughs and begins rising from cycle lows, and credit spreads compress "
+                "before widening on rising defaults. Late-cycle becomes recession when NBER officially "
+                "declares it (with a 6–18 month lag) and unemployment rises sharply. Recession becomes "
+                "early-cycle as the curve re-steepens (Fed easing), unemployment peaks and begins "
+                "falling, and credit spreads peak and start tightening. The transitions are not "
+                "discrete — they reflect gradual shifts in the underlying variables, which is why the "
+                "regime classifier captures direction-of-travel rather than predicting turning points."
+            )
 
         try:
             if usrec is not None and t10y2y is not None and unrate is not None:
@@ -427,19 +432,19 @@ with col:
         except Exception:
             pass
 
-        st.markdown("**Methodology**")
-        st.caption(
-            "The regime classifier maps three FRED variables — USREC (NBER recession indicator), "
-            "T10Y2Y (10Y minus 2Y Treasury spread), and UNRATE (unemployment rate) — to one of "
-            "four labels: Recession, Late-cycle, Mid-cycle, or Early-cycle. Rules are applied in "
-            "priority order: (1) Recession when USREC = 1; (2) Early-cycle when UNRATE > 5.5% "
-            "and T10Y2Y > −0.25 (labor still healing, curve not inverted); (3) Late-cycle when "
-            "T10Y2Y < −0.25 or UNRATE < 4.2% (inverted curve or historically tight labor); "
-            "(4) Mid-cycle as the default. Full rules and threshold rationale in "
-            "docs/regime_classifier.md. This is a rules-based heuristic, not a forecast or "
-            "trading signal — USREC is declared retroactively by the NBER and may lag actual "
-            "recession onset by 6–18 months."
-        )
+        with st.expander("Methodology", expanded=False):
+            st.caption(
+                "The regime classifier maps three FRED variables — USREC (NBER recession indicator), "
+                "T10Y2Y (10Y minus 2Y Treasury spread), and UNRATE (unemployment rate) — to one of "
+                "four labels: Recession, Late-cycle, Mid-cycle, or Early-cycle. Rules are applied in "
+                "priority order: (1) Recession when USREC = 1; (2) Early-cycle when UNRATE > 5.5% "
+                "and T10Y2Y > −0.25 (labor still healing, curve not inverted); (3) Late-cycle when "
+                "T10Y2Y < −0.25 or UNRATE < 4.2% (inverted curve or historically tight labor); "
+                "(4) Mid-cycle as the default. Full rules and threshold rationale in "
+                "docs/regime_classifier.md. This is a rules-based heuristic, not a forecast or "
+                "trading signal — USREC is declared retroactively by the NBER and may lag actual "
+                "recession onset by 6–18 months."
+            )
 
     st.divider()
 
@@ -495,7 +500,7 @@ with col:
         st.caption(
             interpret_gdp_growth(current_gdp) + " "
             "FRED A191RL1Q225SBEA: real GDP percent change from preceding period, "
-            "seasonally adjusted annual rate. Gray shading = NBER recessions."
+            "seasonally adjusted annual rate."
         )
         st.divider()
     else:
@@ -570,8 +575,7 @@ with col:
             )
         st.caption(
             _ur_interp + " "
-            "Rising unemployment from a cyclical low is a key recession coincident indicator. "
-            "Gray shading marks NBER-dated recessions."
+            "Rising unemployment from a cyclical low is a key recession coincident indicator."
         )
         st.divider()
     else:
@@ -639,7 +643,7 @@ with col:
             f"economic indicators above vs. below trend — zero is the neutral line, positive is expansionary. "
             f"At {sign_cfnai}{current_cfnai:.2f}, the index is {_cfnai_direction}. "
             + _cfnai_cycle
-            + " FRED CFNAIDIFF. Gray shading = NBER recessions."
+            + " FRED CFNAIDIFF."
         )
         st.divider()
     else:
@@ -712,8 +716,10 @@ with col:
         elif current_cpi > 2.5:
             _cpi_interp = (
                 f"Core CPI at {current_cpi:.1f}% remains above target — "
-                "disinflation in progress but not yet complete. "
-                "TIPS sleeve remains a relevant inflation hedge."
+                "disinflation in progress but not complete. "
+                "Whether this reflects stalled disinflation or sticky services inflation "
+                "matters for the TIPS sleeve: a persistent plateau near 3% is more bearish for "
+                "nominal bonds than a CPI still trending gradually toward 2%."
             )
         elif current_cpi > 1.5:
             _cpi_interp = (
@@ -729,7 +735,7 @@ with col:
         st.caption(
             _cpi_interp + " "
             "FRED CPILFESL: CPI for All Urban Consumers, All Items Less Food and Energy, "
-            "12-month percent change. Gray shading = NBER recessions."
+            "12-month percent change."
         )
         st.divider()
     else:
@@ -870,8 +876,7 @@ with col:
             )
         st.caption(
             _real10y_interp + " "
-            "FRED DFII10: 10-Year Treasury Inflation-Indexed Security Yield (TIPS). "
-            "Gray shading = NBER recessions."
+            "FRED DFII10: 10-Year Treasury Inflation-Indexed Security Yield (TIPS)."
         )
         st.divider()
     else:
@@ -932,10 +937,7 @@ with col:
         )
 
         st.caption(interpret_curve_spread(current_spread_bps))
-        st.caption(
-            "Gray shading marks NBER-dated recessions. "
-            "Percentile computed relative to the selected window."
-        )
+        st.caption("Percentile computed relative to the selected window.")
         st.divider()
     else:
         _panel_error("2/10 Yield Curve Spread", _t10y2y_err, "retry_yc")
@@ -944,15 +946,36 @@ with col:
     # ── Treasury Yield Curve (spot) ───────────────────────────────────────────
 
     st.markdown("#### Treasury Yield Curve")
-    _yc_3m  = float(dgs3mo.dropna().iloc[-1]) if dgs3mo is not None and not dgs3mo.dropna().empty else None
-    _yc_2y  = float(dgs2.dropna().iloc[-1])   if dgs2  is not None and not dgs2.dropna().empty  else None
-    _yc_10y = float(dgs10.dropna().iloc[-1])  if dgs10 is not None and not dgs10.dropna().empty else None
+
+    def _last(s) -> float | None:
+        return float(s.dropna().iloc[-1]) if s is not None and not s.dropna().empty else None
+
+    _yc_3m  = _last(dgs3mo)
+    _yc_1y  = _last(dgs1)
+    _yc_2y  = _last(dgs2)
+    _yc_5y  = _last(dgs5)
+    _yc_7y  = _last(dgs7)
+    _yc_10y = _last(dgs10)
+    _yc_20y = _last(dgs20)
+    _yc_30y = _last(dgs30)
+
+    _yc_maturities = [
+        ("3M",  _yc_3m),
+        ("1Y",  _yc_1y),
+        ("2Y",  _yc_2y),
+        ("5Y",  _yc_5y),
+        ("7Y",  _yc_7y),
+        ("10Y", _yc_10y),
+        ("20Y", _yc_20y),
+        ("30Y", _yc_30y),
+    ]
+    _yc_pts = [(m, v) for m, v in _yc_maturities if v is not None]
 
     if _yc_3m is not None and _yc_2y is not None and _yc_10y is not None:
         fig_yc_spot = go.Figure()
         fig_yc_spot.add_trace(go.Scatter(
-            x=["3M", "2Y", "10Y"],
-            y=[_yc_3m, _yc_2y, _yc_10y],
+            x=[m for m, _ in _yc_pts],
+            y=[v for _, v in _yc_pts],
             mode="lines+markers",
             line=dict(color=_C["primary"], width=2),
             marker=dict(size=8, color=_C["primary"]),
@@ -964,18 +987,16 @@ with col:
             xaxis=dict(title="Maturity"),
             yaxis=dict(title="Yield (%)"),
         )
-        _yr_spot = _tight_yrange(pd.Series([_yc_3m, _yc_2y, _yc_10y]), [])
+        _yr_spot = _tight_yrange(pd.Series([v for _, v in _yc_pts]), [])
         if _yr_spot:
             fig_yc_spot.update_yaxes(range=_yr_spot)
         st.plotly_chart(fig_yc_spot, width="stretch")
 
-        m1, m2, m3 = st.columns(3)
-        with m1:
-            st.metric("3M Yield", f"{_yc_3m:.2f}%")
-        with m2:
-            st.metric("2Y Yield", f"{_yc_2y:.2f}%")
-        with m3:
-            st.metric("10Y Yield", f"{_yc_10y:.2f}%")
+        _metric_pts = [(m, v) for m, v in [("3M", _yc_3m), ("2Y", _yc_2y), ("10Y", _yc_10y)] if v is not None]
+        _mcols = st.columns(len(_metric_pts))
+        for _ci, (m, v) in enumerate(_metric_pts):
+            with _mcols[_ci]:
+                st.metric(f"{m} Yield", f"{v:.2f}%")
 
         if _yc_10y > _yc_2y > _yc_3m:
             _yc_shape = "normally upward-sloping across all maturities"
@@ -988,6 +1009,7 @@ with col:
         else:
             _yc_shape = "flat to mildly upward-sloping"
 
+        _series_list = ", ".join(f"DGS{m.replace('M','MO')}" for m, _ in _yc_pts)
         st.caption(
             f"The Treasury yield curve is the term structure of risk-free nominal yields across "
             f"maturities. Shape conveys market expectations of future short rates plus a term "
@@ -995,7 +1017,7 @@ with col:
             f"and/or demand compensation for duration risk; an inverted curve (short above long) "
             f"has historically preceded recessions. Current shape at 3M {_yc_3m:.2f}%, "
             f"2Y {_yc_2y:.2f}%, 10Y {_yc_10y:.2f}% is {_yc_shape}, reflecting current Fed policy "
-            f"and market rate expectations. FRED DGS3MO, DGS2, DGS10."
+            f"and market rate expectations. FRED {_series_list}."
         )
         st.divider()
     else:
@@ -1089,7 +1111,8 @@ with col:
         "SEP releases (Summary of Economic Projections, including the dot plot of FOMC members' "
         "rate projections) occur four times per year at March, June, September, and December "
         "meetings. For real-time market-implied probabilities of rate changes at each meeting, "
-        "see the CME FedWatch Tool, which derives probabilities from Fed Funds futures pricing."
+        "see the CME FedWatch Tool, which derives probabilities from Fed Funds futures pricing. "
+        "Source: Federal Reserve Board (federalreserve.gov)."
     )
     st.divider()
 
@@ -1159,8 +1182,7 @@ with col:
             )
         st.caption(
             _rv_interp + " "
-            "Relevant for evaluating active FI manager performance environments. "
-            "Gray shading = NBER recessions."
+            "Relevant for evaluating active FI manager performance environments."
         )
         st.divider()
     else:
@@ -1209,24 +1231,12 @@ with col:
         ig_since      = ig_bps.index[0].strftime("%b %Y")
         ig_data_start = ig_bps.index[0]
 
-        ig_window = st.radio(
-            "Window", ["5Y", "10Y", "Max"],
-            index=0, key="ig_window", horizontal=True,
-        )
-        ig_start    = _window_start(ig_window)
+        ig_start    = "1800-01-01"
         ig_pctile_w = _window_pctile(ig_bps, current_ig, ig_start)
-        ig_data     = ig_bps.loc[ig_start:]
-
-        _ig_avail_start      = ig_data_start.date()
-        _ig_window_start_dt  = date.fromisoformat(ig_start) if ig_start != "1800-01-01" else date(1800, 1, 1)
-        if _ig_window_start_dt < _ig_avail_start:
-            st.info(
-                f"IG OAS data starts **{ig_since}** (FRED restricts BAMLC0A0CM to this date). "
-                "Percentile computed over available window."
-            )
+        ig_data     = ig_bps
 
         fig_ig = go.Figure()
-        _add_recession_shading(fig_ig, rec_periods or [], ig_start)
+        _add_recession_shading(fig_ig, rec_periods or [], ig_data_start.isoformat())
         fig_ig.add_trace(go.Scatter(
             x=ig_data.index, y=ig_data.values,
             mode="lines", name="IG OAS (bps)",
@@ -1243,6 +1253,7 @@ with col:
             f"Current {current_ig:.0f} bps ({_ordinal(ig_pctile_w)} pct, {ig_since}+)",
         )
         _apply_style(fig_ig)
+        fig_ig.update_xaxes(range=[ig_data_start.isoformat(), TODAY])
         fig_ig.update_yaxes(title_text="OAS (bps)")
         _yr = _tight_yrange(ig_data, [current_ig, ig_median_bps])
         if _yr:
@@ -1294,23 +1305,11 @@ with col:
         hy_since       = hy_bps.index[0].strftime("%b %Y")
         hy_data_start  = hy_bps.index[0]
 
-        hy_window = st.radio(
-            "Window", ["5Y", "10Y", "20Y", "Max"],
-            index=1, key="hy_window", horizontal=True,
-        )
-        hy_start    = _window_start(hy_window)
+        hy_start    = "1800-01-01"
         hy_pctile_w = _window_pctile(hy_bps, current_hy, hy_start)
-        hy_data     = hy_bps.loc[hy_start:]
-        _hy_avail_start = hy_data_start.date()
-        _hy_window_start_date = date.fromisoformat(hy_start) if hy_start != "1800-01-01" else date(1800, 1, 1)
-        if _hy_window_start_date < _hy_avail_start:
-            st.info(
-                f"HY OAS data starts **{hy_since}** (FRED restricts BAMLH0A0HYM2 to this date). "
-                f"Selecting a {hy_window} window shows only ~{len(hy_clean)} trading days of data. "
-                "The percentile is computed over the available window, not the full requested window."
-            )
+        hy_data     = hy_bps
         fig_hy = go.Figure()
-        _add_recession_shading(fig_hy, rec_periods or [], hy_start)
+        _add_recession_shading(fig_hy, rec_periods or [], hy_data_start.isoformat())
         fig_hy.add_trace(go.Scatter(
             x=hy_data.index, y=hy_data.values,
             mode="lines", name="HY OAS (bps)",
@@ -1327,6 +1326,7 @@ with col:
             f"Current {current_hy:.0f} bps ({_ordinal(hy_pctile_w)} pct, {hy_since}+)",
         )
         _apply_style(fig_hy)
+        fig_hy.update_xaxes(range=[hy_data_start.isoformat(), TODAY])
         fig_hy.update_yaxes(title_text="OAS (bps)")
         _yr = _tight_yrange(hy_data, [current_hy, hy_median_bps])
         if _yr:
@@ -1342,7 +1342,7 @@ with col:
         st.caption(interpret_hy_spread(current_hy))
         st.caption(
             f"HY spreads at the {_ordinal(hy_pctile_w)} percentile of available history "
-            f"({hy_since}+). Gray shading marks NBER-dated recessions. "
+            f"({hy_since}+). "
             f"*FRED restricts this ICE BofA series to {hy_since}+; full pre-2023 history "
             "is unavailable from FRED's API.*"
         )
@@ -1363,24 +1363,12 @@ with col:
         ccc_since      = ccc_bps.index[0].strftime("%b %Y")
         ccc_data_start = ccc_bps.index[0]
 
-        ccc_window = st.radio(
-            "Window", ["5Y", "10Y", "Max"],
-            index=0, key="ccc_window", horizontal=True,
-        )
-        ccc_start    = _window_start(ccc_window)
+        ccc_start    = "1800-01-01"
         ccc_pctile_w = _window_pctile(ccc_bps, current_ccc, ccc_start)
-        ccc_data     = ccc_bps.loc[ccc_start:]
-
-        _ccc_avail_start     = ccc_data_start.date()
-        _ccc_window_start_dt = date.fromisoformat(ccc_start) if ccc_start != "1800-01-01" else date(1800, 1, 1)
-        if _ccc_window_start_dt < _ccc_avail_start:
-            st.info(
-                f"CCC OAS data starts **{ccc_since}** (FRED restricts BAMLH0A3HYC to this date). "
-                "Percentile computed over available window."
-            )
+        ccc_data     = ccc_bps
 
         fig_ccc = go.Figure()
-        _add_recession_shading(fig_ccc, rec_periods or [], ccc_start)
+        _add_recession_shading(fig_ccc, rec_periods or [], ccc_data_start.isoformat())
         fig_ccc.add_trace(go.Scatter(
             x=ccc_data.index, y=ccc_data.values,
             mode="lines", name="CCC OAS (bps)",
@@ -1397,6 +1385,7 @@ with col:
             f"Current {current_ccc:.0f} bps ({_ordinal(ccc_pctile_w)} pct, {ccc_since}+)",
         )
         _apply_style(fig_ccc)
+        fig_ccc.update_xaxes(range=[ccc_data_start.isoformat(), TODAY])
         fig_ccc.update_yaxes(title_text="OAS (bps)")
         _yr = _tight_yrange(ccc_data, [current_ccc, ccc_median_bps])
         if _yr:
@@ -1421,9 +1410,13 @@ with col:
             )
         else:
             _ccc_interp = (
-                f"CCC OAS at {current_ccc:.0f} bps is elevated — "
-                "widening before broad HY is a leading indicator of credit stress "
-                "concentrating in tail names, historically a precursor of economic slowdown."
+                f"CCC OAS at {current_ccc:.0f} bps is elevated. "
+                + (
+                    f"The CCC/HY spread differential is {current_ccc - _shared_hy_bps:.0f} bps — "
+                    if _shared_hy_bps is not None else ""
+                )
+                + "CCC widening ahead of broad HY is a leading indicator of credit stress "
+                "concentrating in tail names; see the full spread stack in the Credit section above."
             )
         st.caption(
             _ccc_interp
@@ -1516,8 +1509,10 @@ with col:
             f"{_ordinal(cape_pctile_w)} percentile of {cape_window} window "
             f"· full history: {_ordinal(cape_pctile)} pct since 1881 "
             f"· data as of {cape_as_of}  \n"
-            f"**Implied forward 10Y real return:** {cape_implied:+.2%} "
-            "*(historical relationship, not a forecast)*"
+            f"Implied 10Y real return at this CAPE is approximately {cape_implied:+.2%} "
+            "based on the long-run historical relationship between starting CAPE and forward "
+            "10-year returns. The relationship is empirically robust over the full 145-year "
+            "Shiller record but not a forecast for any single 10-year window."
         )
 
         pctile_label_cape = percentile_label(cape_pctile)
@@ -1602,12 +1597,7 @@ with col:
             f"({current_dgs10:.2f}% − {current_t10yie:.2f}%)"
         )
 
-        st.caption(
-            interpret_excess_cape(current_ecy, ecy_pctile / 100) + " "
-            f"Current reading at the {_ordinal(ecy_pctile_w)} percentile of its "
-            f"{ecy_window} window ({ecy_since}–present for full history; "
-            "T10YIE breakeven data starts Jan 2003)."
-        )
+        st.caption(interpret_excess_cape(current_ecy, ecy_pctile / 100))
         st.divider()
 
     elif cape_ok:
@@ -1619,6 +1609,10 @@ with col:
     # ═══════════════════════════════════════════════════════════════════════════
 
     st.markdown("### Cross-Asset Performance")
+    st.caption(
+        "Relative performance trends across equity geographies and currency — "
+        "context for the SAA's 19% International Developed and 8% Emerging Markets overweights."
+    )
 
     # ── US vs. International Equity ───────────────────────────────────────────
 
@@ -1784,14 +1778,8 @@ with col:
             f"Current value of {current_dtwex:.1f} is at the {_ordinal(dtwex_pctile_w)} percentile "
             f"of the {dtwex_window} window ({_dtwex_strength}). "
             + _dtwex_impl + " "
-            "Dollar strength affects multiple portfolio dimensions: a stronger dollar reduces USD "
-            "returns on unhedged international equity sleeves (translation effect), pressures "
-            "emerging-market sovereign and corporate debt (since EM borrowers' USD-denominated "
-            "liabilities become harder to service), and generally accompanies tighter global "
-            "financial conditions. The portfolio holds 27% non-US equity (VEA + IEMG), so USD "
-            "direction is a meaningful translation factor on roughly a quarter of the book. "
-            "FRED DTWEXBGS: Nominal Broad U.S. Dollar Index (goods and services). "
-            "Gray shading = NBER recessions."
+            "Dollar direction is a meaningful translation factor on the 27% non-US equity allocation "
+            "(VEA + IEMG). FRED DTWEXBGS: Nominal Broad U.S. Dollar Index (goods and services)."
         )
         st.divider()
     else:
@@ -1801,52 +1789,59 @@ with col:
     # ── Sources ───────────────────────────────────────────────────────────────
 
     with st.expander("Data sources & freshness"):
-        _src_lines = []
-        if cape_ok:
-            _cape_last = cape_series.dropna().index[-1].strftime("%b %Y")
-            _src_lines.append(
-                f"**Shiller CAPE** (multpl.com, sourced from Robert Shiller's dataset): "
-                f"last observation **{_cape_last}** · monthly cadence"
-            )
-        else:
-            _src_lines.append("**Shiller CAPE**: unavailable")
-
         def _fred_src(label: str, series: "pd.Series | None") -> str:
             if series is not None:
                 last = series.dropna().index[-1].strftime("%b %d, %Y")
                 return f"**{label}**: last observation **{last}**"
             return f"**{label}**: unavailable"
 
-        _src_lines += [
-            _fred_src("FRED DGS3MO (3-Month Treasury Rate)",                   dgs3mo)     + " · daily",
-            _fred_src("FRED DGS2 (2-Year Treasury Rate)",                      dgs2)       + " · daily",
-            _fred_src("FRED DGS10 (10-Year Treasury Rate)",                    dgs10)      + " · daily",
-            _fred_src("FRED T10YIE (10-Year Breakeven Inflation)",             t10yie)     + " · daily · starts Jan 2003",
-            _fred_src("FRED DFII10 (10-Year TIPS Yield — Real Rate)",          dfii10)     + " · daily · starts Jan 2003",
-            _fred_src("FRED T10Y2Y (10Y−2Y Treasury spread)",                  t10y2y)     + " · daily",
-            _fred_src("FRED DFF (Fed Funds Rate)",                             dff)        + " · daily",
-            _fred_src("FRED BAMLC0A0CM (ICE BofA IG OAS)",                    ig_oas)     + " · daily",
-            _fred_src("FRED BAMLH0A0HYM2 (ICE BofA HY OAS, May 2023+)",       hy_oas)     + " · daily",
-            _fred_src("FRED BAMLH0A3HYC (ICE BofA CCC OAS)",                  ccc_oas)    + " · daily",
-            _fred_src("FRED UNRATE (Unemployment Rate)",                        unrate)     + " · monthly",
-            _fred_src("FRED A191RL1Q225SBEA (Real GDP QoQ ann.)",              gdp_gr)     + " · quarterly (1-2 quarter lag)",
-            _fred_src("FRED CPILFESL (Core CPI, level)",                       core_cpi)   + " · monthly (YoY change computed)",
-            _fred_src("FRED CFNAIDIFF (Chicago Fed Activity Diffusion Index)", cfnai_diff) + " · monthly · ISM PMI proxy (NAPM unavailable on FRED)",
-            _fred_src("FRED DTWEXBGS (Broad Trade-Weighted USD Index)",        dtwexbgs)   + " · daily",
-            "**FRED USREC** (NBER recession indicator): monthly, lags recession end by ~12 months"
-            + ("" if rec_periods is not None else " — unavailable"),
+        _daily = [
+            _fred_src("FRED DGS3MO (3-Month Treasury Rate)",                   dgs3mo),
+            _fred_src("FRED DGS1 (1-Year Treasury Rate)",                      dgs1),
+            _fred_src("FRED DGS2 (2-Year Treasury Rate)",                      dgs2),
+            _fred_src("FRED DGS5 (5-Year Treasury Rate)",                      dgs5),
+            _fred_src("FRED DGS7 (7-Year Treasury Rate)",                      dgs7),
+            _fred_src("FRED DGS10 (10-Year Treasury Rate)",                    dgs10),
+            _fred_src("FRED DGS20 (20-Year Treasury Rate)",                    dgs20),
+            _fred_src("FRED DGS30 (30-Year Treasury Rate)",                    dgs30),
+            _fred_src("FRED T10YIE (10-Year Breakeven Inflation)",             t10yie)   + " · starts Jan 2003",
+            _fred_src("FRED DFII10 (10-Year TIPS Yield — Real Rate)",          dfii10)   + " · starts Jan 2003",
+            _fred_src("FRED T10Y2Y (10Y−2Y Treasury spread)",                  t10y2y),
+            _fred_src("FRED DFF (Fed Funds Rate)",                             dff),
+            _fred_src("FRED BAMLC0A0CM (ICE BofA IG OAS)",                    ig_oas),
+            _fred_src("FRED BAMLH0A0HYM2 (ICE BofA HY OAS)",                  hy_oas)   + " · starts May 2023 (FRED restriction)",
+            _fred_src("FRED BAMLH0A3HYC (ICE BofA CCC OAS)",                  ccc_oas)  + " · starts May 2023 (FRED restriction)",
+            _fred_src("FRED DTWEXBGS (Broad Trade-Weighted USD Index)",        dtwexbgs),
+            "**ETF price series** (SPY, EFA): daily adjusted-close, locally cached in SQLite",
             "**Rate Volatility**: 21-day rolling realized vol of DGS10 daily changes, annualized (×√252) — "
-            "MOVE Index proxy; VXTLT ETF vol series unavailable via public price feeds (HTTP 404)",
+            "MOVE Index proxy; VXTLT unavailable via public price feeds",
         ]
-        _src_lines.append(
-            "**ETF price series** (SPY, EFA): daily adjusted-close, locally cached in SQLite · "
-            "used for the US vs. International rolling 12-month return spread panel"
-        )
-        _src_lines.append(
+        _monthly = [
+            _fred_src("FRED UNRATE (Unemployment Rate)",                        unrate),
+            _fred_src("FRED CPILFESL (Core CPI, level)",                       core_cpi) + " · YoY change computed",
+            _fred_src("FRED CFNAIDIFF (Chicago Fed Activity Diffusion Index)", cfnai_diff) + " · ISM PMI proxy",
+            "**FRED USREC** (NBER recession indicator): lags recession end by ~12 months"
+            + ("" if rec_periods is not None else " — unavailable"),
+            (
+                f"**Shiller CAPE** (multpl.com / Robert Shiller): "
+                f"last observation **{cape_series.dropna().index[-1].strftime('%b %Y')}**"
+                if cape_ok else "**Shiller CAPE**: unavailable"
+            ),
+        ]
+        _quarterly = [
+            _fred_src("FRED A191RL1Q225SBEA (Real GDP QoQ ann.)",              gdp_gr)   + " · 1-2 quarter lag",
+        ]
+
+        st.markdown("**Daily**")
+        st.caption("  \n".join(_daily))
+        st.markdown("**Monthly**")
+        st.caption("  \n".join(_monthly))
+        st.markdown("**Quarterly**")
+        st.caption("  \n".join(_quarterly))
+        st.caption(
             "**ICE Data Indices licensing:** The ICE BofA credit spread series "
             "(BAMLH0A0HYM2, BAMLC0A0CM, BAMLH0A3HYC) are licensed by ICE Data Indices, LLC "
             "to the Federal Reserve Bank of St. Louis (FRED) for non-commercial personal, "
             "educational, or scholarly use. Display on this site is consistent with that use case."
         )
-        st.caption("  \n".join(_src_lines))
     render_footer()
