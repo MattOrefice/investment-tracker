@@ -2,6 +2,8 @@
 
 Pinned at Phase 37 — verifies Implementation Note, Endowment Context, and
 per-sleeve rationale formatting introduced in the Phase 37 polish pass.
+Phase 42 adds prose regression pins for Investment Thesis, Endowment closing,
+and US Large Core restructure.
 """
 from __future__ import annotations
 
@@ -60,4 +62,111 @@ def test_all_sleeve_rationales_have_bold_would_conditions() -> None:
     assert not missing, (
         f"Sleeves missing bold Would conditions in DB rationale: {missing} — "
         "Phase 37 restructuring may not have been applied to the database"
+    )
+
+
+def test_thesis_three_paragraphs(saa_app: AppTest) -> None:
+    """Investment Thesis must render as three separate markdown blocks. Pinned: Phase 42 Item 1.
+
+    Regression: if the three paragraphs are collapsed back into one, the thesis becomes
+    a five-sentence wall that an allocator cannot extract the core thesis from in one read.
+    """
+    all_md = [m.value for m in saa_app.markdown]
+    para1_found = any("sustains" in m and "market-timing signal" in m for m in all_md)
+    para2_found = any("factor and geographic diversification" in m and "market-timing calls" in m for m in all_md)
+    para3_found = any("unhedged inflation tail" in m for m in all_md)
+    assert para1_found, (
+        "Thesis paragraph 1 (equity weight / market-timing signal) not found as distinct markdown block — "
+        "Phase 42 Item 1 regression: thesis may have been collapsed back into one paragraph."
+    )
+    assert para2_found, (
+        "Thesis paragraph 2 (factor/geographic diversification) not found as distinct markdown block — "
+        "Phase 42 Item 1 regression."
+    )
+    assert para3_found, (
+        "Thesis paragraph 3 (Intl/EM/Real Assets/FI) not found — Phase 42 Item 1 regression."
+    )
+
+
+def test_endowment_closing_asserted_not_defensive(saa_app: AppTest) -> None:
+    """Endowment closing must use asserted framing, not defensive disclaimer. Pinned: Phase 42 Item 2."""
+    all_md = " ".join(m.value for m in saa_app.markdown)
+    assert "Endowment-return replication at retail scale is not the goal" not in all_md, (
+        "Old defensive disclaimer restored — Phase 42 Item 2: closing should be 'The goal is "
+        "institutional analytical framing applied at retail scale — not return replication.'"
+    )
+    assert "institutional analytical framing applied at retail scale" in all_md, (
+        "Asserted framing not found — Phase 42 Item 2 regression."
+    )
+
+
+def test_us_large_core_anchor_sentence_leads() -> None:
+    """US Large Core rationale must lead with the 'un-opinionated anchor' sentence. Pinned: Phase 42 Item 8.
+
+    AppTest does not render collapsed expander content, so this checks the DB directly.
+    """
+    import os, sys, pathlib
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent.parent))
+    os.environ.setdefault("DB_PATH", "data/demo.db")
+    from src.db import get_connection
+
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT rationale FROM asset_classes WHERE name = 'US Large Core'"
+        ).fetchone()
+
+    rationale = row["rationale"] or ""
+    first_sentence_end = rationale.find(".")
+    first_sentence = rationale[:first_sentence_end + 1] if first_sentence_end >= 0 else rationale
+    assert "un-opinionated anchor" in first_sentence, (
+        f"US Large Core rationale does not lead with 'un-opinionated anchor' sentence. "
+        f"First sentence found: {first_sentence!r} — Phase 42 Item 8 regression."
+    )
+
+
+def test_us_small_cap_has_both_triggers() -> None:
+    """US Small Cap must have both Would increase and Would reduce triggers. Pinned: Phase 42 Item 7."""
+    import os, sys, pathlib
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent.parent))
+    os.environ.setdefault("DB_PATH", "data/demo.db")
+    from src.db import get_connection
+
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT rationale FROM asset_classes WHERE name = 'US Small Cap'"
+        ).fetchone()
+
+    rationale = row["rationale"] or ""
+    assert "**Would increase if**" in rationale, (
+        "US Small Cap missing 'Would increase if' trigger — Phase 42 Item 7 regression."
+    )
+    assert "**Would reduce if**" in rationale, (
+        "US Small Cap missing 'Would reduce if' trigger — Phase 42 Item 7 regression: "
+        "trigger was added in Phase 42 as part of tightening the observable signal set."
+    )
+    assert "rolling 5-year" in rationale.lower() or "5-year" in rationale, (
+        "US Small Cap 'Would increase' trigger should reference observable rolling 5-year spread — "
+        "Phase 42 Item 7 regression."
+    )
+
+
+def test_tips_no_personal_age_reference() -> None:
+    """TIPS rationale must not reference personal age ('at 27'). Pinned: Phase 42 Item 9."""
+    import os, sys, pathlib
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent.parent))
+    os.environ.setdefault("DB_PATH", "data/demo.db")
+    from src.db import get_connection
+
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT rationale FROM asset_classes WHERE name = 'TIPS'"
+        ).fetchone()
+
+    rationale = row["rationale"] or ""
+    assert "young investor" not in rationale, (
+        "TIPS rationale still uses 'young investor' phrasing — Phase 42 Item 9 regression. "
+        "Should use 'long-horizon investor'."
+    )
+    assert "long-horizon investor" in rationale, (
+        "TIPS rationale missing 'long-horizon investor' — Phase 42 Item 9 regression."
     )
