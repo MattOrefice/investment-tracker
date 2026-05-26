@@ -74,8 +74,35 @@ def _fmt_signed_pct(v: float) -> str:
 # ── Page ──────────────────────────────────────────────────────────────────────
 
 st.title("Tax Lot Inventory")
+st.caption(
+    "Per-lot cost basis and unrealized gains, with tax-loss harvest "
+    "candidate detection and short-term vs long-term gain composition by sleeve."
+)
 st.caption(as_of_live_line())
 st.caption(as_of_report_line())
+
+with st.expander("How to read this page", expanded=False):
+    st.markdown(
+        "- **Top metrics**: total cost basis (sum of acquisition prices), total market "
+        "value (current), and unrealized G/L split into short-term (held ≤365 days, taxed "
+        "at ordinary income rates) and long-term (held >365 days, taxed at LTCG rates).\n"
+        "- **Harvest Candidate Pool**: dollar value of lots that would qualify for "
+        "tax-loss harvesting at the action threshold ($100 minimum loss, 5% minimum loss "
+        "percentage). $0.00 means no lots are currently underwater enough to make "
+        "harvesting worthwhile after transaction costs and wash-sale considerations.\n"
+        "- **DRIP reinvestments**: dividend reinvestments are persisted as separate lot "
+        "rows with lot_source='drip', using the payment-date closing price as cost basis "
+        "to match Fidelity DRIP execution. Toggle the filter at top to include or exclude "
+        "DRIP lots from the detail table.\n"
+        "- **Days to LT filter**: surfaces ST lots approaching the 365-day LT conversion "
+        "threshold. Useful for tax-aware harvesting and rebalancing — selling an ST lot "
+        "two days before LT conversion has very different tax treatment than waiting "
+        "three days.\n"
+        "- **Sleeve Summary**: aggregates lot-level detail to sleeve level, showing how "
+        "many lots compose each sleeve and the unrealized gain composition. Helps identify "
+        "which sleeves have accumulated the largest unrealized gain exposure "
+        "(highest rebalancing-cost friction)."
+    )
 
 lots = _load_lots(TODAY)
 
@@ -289,20 +316,7 @@ st.divider()
 _candidates = compute_harvest_candidates(display_lots)
 _has_candidates = len(_candidates) > 0
 
-_ASSUMPTION_TEXT = (
-    "Tax-loss harvesting estimates assume a 22% federal marginal rate on short-term "
-    "gains and 15% on long-term gains. Capital losses offset capital gains first "
-    "(ST losses against ST gains, LT against LT, then cross-character), then up to "
-    "$3,000 of ordinary income per year, with excess carried forward indefinitely. "
-    "State taxes not modeled. Replacement security suggestions are educational — "
-    "consult a tax advisor before executing trades. Wash sale rule (IRC § 1091) "
-    "prohibits repurchase of the security or substantially identical securities "
-    "within 30 days before or after the loss sale."
-)
-
 with st.expander("Tax-Loss Harvest Candidates", expanded=_has_candidates):
-    st.caption(_ASSUMPTION_TEXT)
-
     if not _has_candidates:
         st.info(
             f"No material harvest candidates at the action threshold "
@@ -314,9 +328,9 @@ with st.expander("Tax-Loss Harvest Candidates", expanded=_has_candidates):
         plural  = "s" if n_cands != 1 else ""
         st.markdown(
             f"**{n_cands} material harvest candidate{plural} identified** "
-            f"(≥ ${HARVEST_ACTION_THRESHOLD:.0f} loss and "
-            f"≥ {HARVEST_PCT_THRESHOLD * 100:.0f}% loss percentage, "
-            f"federal rate assumed 22% ST / 15% LT)."
+            f"(≥ ${HARVEST_ACTION_THRESHOLD:.0f} loss and "
+            f"≥ {HARVEST_PCT_THRESHOLD * 100:.0f}% loss percentage, "
+            f"federal rate assumed 22% ST / 15% LT)."
         )
 
         # Candidate summary table
@@ -405,6 +419,10 @@ st.divider()
 # ── Sleeve summary roll-up ────────────────────────────────────────────────────
 
 st.subheader("Sleeve Summary")
+st.caption(
+    "Tax-lot exposure aggregated by SAA sleeve, showing lot count, "
+    "cost basis vs market value, and ST vs LT gain composition."
+)
 
 rollup = get_sleeve_rollup(filtered)
 
@@ -444,12 +462,22 @@ else:
             "Check for data integrity issues."
         )
 
-st.caption(
-    "Note: DRIP reinvestments are persisted as separate lot rows with "
-    "lot_source = 'drip'. Cost basis uses payment-date closing price "
-    "(matches Fidelity DRIP execution); holding period begins on the "
-    "payment date. Long-term qualification: held more than 365 calendar "
-    "days (day 366+)."
-)
+with st.expander("Methodology", expanded=False):
+    st.markdown(
+        "**Marginal tax rate assumptions** — estimates assume a 22% federal marginal "
+        "rate on short-term gains and 15% on long-term gains.\n\n"
+        "**Capital loss offset hierarchy** — capital losses offset capital gains first "
+        "(ST losses against ST gains, LT against LT, then cross-character), then up to "
+        "$3,000 of ordinary income per year, with excess carried forward indefinitely.\n\n"
+        "**Wash sale rule** — IRC § 1091 prohibits repurchase of the security or "
+        "substantially identical securities within 30 days before or after the loss sale.\n\n"
+        "**Cost basis convention for DRIP lots** — DRIP reinvestments are persisted as "
+        "separate lot rows using the payment-date closing price as cost basis, matching "
+        "Fidelity DRIP execution. Holding period begins on the payment date; long-term "
+        "qualification requires holding more than 365 calendar days (day 366+).\n\n"
+        "**What is not modeled** — state taxes; NIIT 3.8% surcharge (applicable above "
+        "relevant income thresholds); replacement security suggestions are educational "
+        "only — consult a tax advisor before executing trades."
+    )
 
 render_footer()
