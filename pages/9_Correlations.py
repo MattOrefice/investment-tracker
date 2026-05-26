@@ -137,8 +137,8 @@ def _corr_heatmap(corr: pd.DataFrame, title: str) -> go.Figure:
             [1.0,  "#1A3A5C"],   # strong positive → dark blue
         ],
         zmid=0,
-        zmin=-1,
-        zmax=1,
+        zmin=-0.3,
+        zmax=1.0,
         colorbar=dict(title="ρ", thickness=14),
         hovertemplate="<b>%{y}</b> × <b>%{x}</b><br>ρ = %{z:.3f}<extra></extra>",
     ))
@@ -154,12 +154,6 @@ def _corr_heatmap(corr: pd.DataFrame, title: str) -> go.Figure:
     return fig
 
 
-def _pair_corr_series(returns: pd.DataFrame, sleeve_a: str, sleeve_b: str,
-                      window: int) -> pd.Series:
-    """Rolling pairwise correlation between two sleeves."""
-    return returns[sleeve_a].rolling(window).corr(returns[sleeve_b]).dropna()
-
-
 # ── page ──────────────────────────────────────────────────────────────────────
 
 _, col, _ = st.columns([1, 8, 1])
@@ -171,6 +165,22 @@ with col:
         "Window selector controls the lookback for both the heatmap and pair time-series."
     )
     st.caption(as_of_banner())
+
+    with st.expander("How to read this page", expanded=False):
+        st.markdown(
+            "**Heatmap:** Each cell is the Pearson correlation between two sleeve "
+            "benchmarks over the rolling window. Values near +1 mean co-movement; "
+            "near 0 means genuine diversification; below 0 means return offsets.\n\n"
+            "**Window selector:** 60-day default balances responsiveness against noise. "
+            "At 30 days, a single volatile week can dominate; at 252 days, the estimate "
+            "lags regime changes by up to a year.\n\n"
+            "**Pair time-series:** Select any two sleeves to see how their rolling "
+            "correlation has evolved over time.\n\n"
+            "**Key caveat:** Correlations are not stationary. During equity drawdowns — "
+            "2008, 2020, 2022 — they tend to spike toward +1 across asset classes "
+            "simultaneously, meaning the diversification shown in the heatmap can "
+            "evaporate precisely when it is most needed."
+        )
 
     st.divider()
 
@@ -228,6 +238,11 @@ with col:
                 "values near 0 indicate diversification; values near ±1 indicate "
                 "high co-movement."
             )
+            st.caption(
+                "Rolling correlations are not stationary: during equity drawdowns, "
+                "pairs that appear uncorrelated in calm periods tend to converge toward +1, "
+                "reducing diversification benefit precisely when it matters most."
+            )
 
             # Highlight notable pairs
             st.markdown("**Notable pairs (trailing window)**")
@@ -244,17 +259,73 @@ with col:
             lowest  = pairs_df.head(3)
             highest = pairs_df.tail(3).iloc[::-1]
 
+            _corr_col_cfg = {
+                "Correlation": st.column_config.NumberColumn(format="%.3f")
+            }
             notable_l, notable_r = st.columns(2)
             with notable_l:
                 st.caption("Most diversifying (lowest ρ)")
-                st.dataframe(lowest, hide_index=True, width="stretch")
+                st.dataframe(lowest, hide_index=True, width="stretch",
+                             column_config=_corr_col_cfg)
             with notable_r:
                 st.caption("Most correlated (highest ρ)")
-                st.dataframe(highest, hide_index=True, width="stretch")
+                st.dataframe(highest, hide_index=True, width="stretch",
+                             column_config=_corr_col_cfg)
 
             _corr_interp = interpret_correlations(corr)
             if _corr_interp:
-                st.caption(_corr_interp)
+                st.markdown(_corr_interp)
+
+            # ── Bond-equity correlation regime block ──────────────────────────
+            _CORE_FI  = "Core Fixed Income"
+            _EQ_NAMES = [
+                "US Large Core", "US Large Quality", "US Large Value",
+                "US Small Cap", "Intl Developed", "Emerging Markets",
+            ]
+            if _CORE_FI in corr.columns:
+                _be_curr_pairs = [
+                    float(corr.loc[_CORE_FI, eq])
+                    for eq in _EQ_NAMES if eq in corr.columns
+                ]
+                avg_be = sum(_be_curr_pairs) / len(_be_curr_pairs) if _be_curr_pairs else None
+
+                # Pre-2020 baseline: per-pair max histories via _load_sleeve_returns
+                # so IEF × SPY extends to ~2002 rather than being capped at QUAL's 2013
+                # inception (the heatmap common-intersection constraint).
+                _fi_ret = _load_sleeve_returns(_CORE_FI)
+                _fi_pre = _fi_ret[_fi_ret.index < pd.Timestamp("2020-01-01")]
+                _be_pre_pairs: list[float] = []
+                for _eq in _EQ_NAMES:
+                    _eq_ret = _load_sleeve_returns(_eq)
+                    _eq_pre = _eq_ret[_eq_ret.index < pd.Timestamp("2020-01-01")]
+                    _pair_pre = pd.concat([_fi_pre, _eq_pre], axis=1).dropna()
+                    _pair_pre = _pair_pre[_pair_pre.abs().sum(axis=1) > 0]
+                    if len(_pair_pre) >= 30:
+                        _be_pre_pairs.append(float(_pair_pre.iloc[:, 0].corr(_pair_pre.iloc[:, 1])))
+                pre2020_be = (
+                    sum(_be_pre_pairs) / len(_be_pre_pairs)
+                    if _be_pre_pairs else None
+                )
+
+                if avg_be is not None and pre2020_be is not None:
+                    st.markdown(
+                        f"Bond–equity correlations have shifted materially since 2020. "
+                        f"Core Fixed Income's average pairwise correlation with the equity "
+                        f"sleeves was ρ ≈ {pre2020_be:.2f} prior to 2020 — consistent with "
+                        f"the negative-correlation assumption that underpins most 60/40 "
+                        f"frameworks. "
+                        f"The trailing {window}-day estimate is now ρ ≈ {avg_be:.2f}. "
+                        f"This is a regime, not a permanent structural change: when "
+                        f"inflation is the dominant macro risk, rising rates move bonds and "
+                        f"equities in the same direction, and the 2022 joint drawdown — "
+                        f"when Core Fixed Income declined alongside equities — is the "
+                        f"relevant stress test for this allocation."
+                    )
+                    st.caption(
+                        "The same rolling-window methodology underlies the correlation "
+                        "analysis in the Asset Evaluation page, where the post-2020 "
+                        "correlation shift is the central analytical finding."
+                    )
 
     # ── Pair time-series view ─────────────────────────────────────────────────
 
@@ -334,12 +405,32 @@ with col:
 
                 wlabel = {30: "30-day", 60: "60-day", 120: "120-day",
                           252: "252-day"}[window]
+
+                # Pre-2020 context: rolling average prior to 2020-01-01
+                _pre2020_roll = roll_corr[roll_corr.index < pd.Timestamp("2020-01-01")]
+                if len(_pre2020_roll) >= 5:
+                    _pre2020_rho = float(_pre2020_roll.mean())
+                    _diff = current_rho - _pre2020_rho
+                    _be_label = (
+                        "elevated relative to" if _diff > 0.10
+                        else "below" if _diff < -0.10
+                        else "near"
+                    )
+                    _context = (
+                        f" The pre-2020 average for this pair was ρ ≈ {_pre2020_rho:.2f}; "
+                        f"the current reading of {current_rho:+.2f} is {_be_label} "
+                        f"the pre-2020 baseline."
+                    )
+                else:
+                    _context = ""
+
                 st.caption(
                     f"Rolling {wlabel} correlation between **{sleeve_a}** and "
-                    f"**{sleeve_b}** benchmarks. Current ρ = **{current_rho:+.2f}**. "
-                    "Dashed line at ρ = 0 marks the diversification threshold. "
-                    "A correlation persistently near +1 implies the sleeves move "
-                    "together and provide little diversification benefit."
+                    f"**{sleeve_b}** benchmarks · {x_min} to {x_max}. "
+                    f"Current ρ = **{current_rho:+.2f}**."
+                    + _context
+                    + " Dashed line at ρ = 0 is a reference; "
+                    "values above zero co-move, values below offset."
                 )
 
     st.divider()

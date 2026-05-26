@@ -436,17 +436,15 @@ class TestCorrelationsSnapshot:
         """Pins the exact 3-sentence output for the canonical sleeve correlation matrix."""
         result = interpret_correlations(_make_corr())
         expected = (
-            "The strongest cross-sleeve correlations are "
+            "High intra-equity co-movement — "
             "US Large Core × US Large Quality (ρ = 0.92), "
             "US Large Core × US Small Cap (ρ = 0.85), "
-            "US Large Quality × US Small Cap (ρ = 0.80), "
-            "all within the broad equity bucket — expected co-movement driven "
-            "by common global market risk.  \n"
-            "The most diversifying pairs are "
+            "US Large Quality × US Small Cap (ρ = 0.80) — "
+            "means the equity sleeves largely share a single global market beta.  \n"
+            "The most meaningful return offsets are "
             "US Small Cap × Core Fixed Income (ρ = 0.05) and "
-            "US Large Quality × Core Fixed Income (ρ = 0.08), "
-            "providing meaningful return offsets in normal market conditions.  \n"
-            "Bond sleeves are weakly correlated with equities on average "
-            "(ρ ≈ 0.10), consistent with their role as portfolio ballast."
+            "US Large Quality × Core Fixed Income (ρ = 0.08): "
+            "the only pairs where structural differences in risk exposure, "
+            "not just style tilts, drive genuine diversification."
         )
         assert result == expected

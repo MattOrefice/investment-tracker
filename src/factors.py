@@ -1528,56 +1528,24 @@ def interpret_correlations(corr: pd.DataFrame) -> str:
     lowest  = pairs_sorted[:2]
     highest = pairs_sorted[-3:][::-1]   # top 3, highest first
 
-    # Cross-asset classification: equity vs bond/non-equity
-    _BOND_SLEEVES = {"Core Fixed Income", "TIPS"}
-    _EQUITY_SLEEVES = {
-        "US Large Core", "US Large Quality", "US Large Value",
-        "US Small Cap", "Intl Developed", "Emerging Markets",
-    }
-
-    # Highest correlations sentence
+    # Highest correlations sentence — lead with allocator conclusion, pairs as evidence
     high_parts = [
         f"{a} × {b} (ρ = {r:.2f})" for a, b, r in highest if r < 0.999
     ]
     high_sentence = (
-        f"The strongest cross-sleeve correlations are {', '.join(high_parts)}, "
-        "all within the broad equity bucket — expected co-movement driven by common "
-        "global market risk."
+        f"High intra-equity co-movement — {', '.join(high_parts)} — "
+        "means the equity sleeves largely share a single global market beta."
     ) if high_parts else ""
 
-    # Lowest correlations sentence
+    # Lowest correlations sentence — frame as cross-asset structural difference
     low_parts = [
         f"{a} × {b} (ρ = {r:.2f})" for a, b, r in lowest
     ]
     low_sentence = (
-        f"The most diversifying pairs are {' and '.join(low_parts)}, "
-        "providing meaningful return offsets in normal market conditions."
+        f"The most meaningful return offsets are {' and '.join(low_parts)}: "
+        "the only pairs where structural differences in risk exposure, "
+        "not just style tilts, drive genuine diversification."
     ) if low_parts else ""
 
-    # Cross-asset bond-equity average correlation
-    bond_equity_corrs = [
-        r for a, b, r in pairs
-        if (a in _BOND_SLEEVES) != (b in _BOND_SLEEVES)   # one bond, one equity
-    ]
-    if bond_equity_corrs:
-        avg_be = sum(bond_equity_corrs) / len(bond_equity_corrs)
-        if avg_be < 0.2:
-            cross_asset = (
-                f"Bond sleeves are weakly correlated with equities on average (ρ ≈ {avg_be:.2f}), "
-                "consistent with their role as portfolio ballast."
-            )
-        elif avg_be > 0.5:
-            cross_asset = (
-                f"Bond sleeves show unexpectedly high correlation with equities (ρ ≈ {avg_be:.2f}); "
-                "this may reflect an inflationary regime where bonds and equities declined together."
-            )
-        else:
-            cross_asset = (
-                f"Bond–equity correlations average ρ ≈ {avg_be:.2f}, "
-                "a modest positive relationship within the selected window."
-            )
-    else:
-        cross_asset = ""
-
-    sentences = [s for s in [high_sentence, low_sentence, cross_asset] if s]
+    sentences = [s for s in [high_sentence, low_sentence] if s]
     return "  \n".join(sentences)
