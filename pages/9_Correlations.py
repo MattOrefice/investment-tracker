@@ -298,7 +298,7 @@ with col:
                 for _eq in _EQ_NAMES:
                     _eq_ret = _load_sleeve_returns(_eq)
                     _eq_pre = _eq_ret[_eq_ret.index < pd.Timestamp("2020-01-01")]
-                    _pair_pre = pd.concat([_fi_pre, _eq_pre], axis=1).dropna()
+                    _pair_pre = pd.concat([_fi_pre, _eq_pre], axis=1, sort=False).dropna()
                     _pair_pre = _pair_pre[_pair_pre.abs().sum(axis=1) > 0]
                     if len(_pair_pre) >= 30:
                         _be_pre_pairs.append(float(_pair_pre.iloc[:, 0].corr(_pair_pre.iloc[:, 1])))

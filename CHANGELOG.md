@@ -8,6 +8,27 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Phase 50 — Closeout
+*May 26, 2026*
+
+Final loose-end cleanup after the Phase 44-49 analytical-page polish wave closed.
+
+- **50A** — app.py landing page verified against current sidebar hierarchy and
+  analytical structure. Six cards across two rows confirmed correct (SAA,
+  Performance, Benchmark Attribution, Factor Profile, Macro, Asset Evaluation);
+  context paragraph references 10-sleeve SAA accurately; recency signal uses
+  `as_of_banner()` dynamic source. No changes required.
+- **50B** — Correlations page Pandas4Warning silenced by adding explicit
+  `sort=False` to the single `pd.concat` call at line 301 that previously
+  relied on deprecated implicit default sorting behavior.
+- **50C** — CHANGELOG entry documenting Phase 50 closeout.
+
+Status of deferred items after Phase 50:
+- Commit history reorganization remains backburner (force-push incompatible
+  with active phase work — active phase work is now genuinely settled).
+
+---
+
 ## Phase 48.1 — CI cleanup and deployment convention
 *May 25, 2026*
 
