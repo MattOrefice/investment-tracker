@@ -38,7 +38,10 @@ HOLDINGS = [
             "this: accruals manipulation is real and persistent, and a quality screen that ignores it is "
             "incomplete. The tradeoff is smaller AUM ($6B vs QUAL's $40B), acceptable given SPHQ isn't at "
             "closure-risk scale. Benchmarking against QUAL creates a natural attribution question over time: "
-            "did the accruals screen add or cost value?"
+            "did the accruals screen add or cost value? Would revisit if SPHQ's accruals screen "
+            "fails to demonstrate additive return versus QUAL over a full market cycle (5+ years), "
+            "directly testing whether the Sloan (1996) accounting quality premium persists in a "
+            "live portfolio."
         ),
     },
     {
@@ -70,7 +73,9 @@ HOLDINGS = [
             "years. The 0.25% ER is the highest in the portfolio but buys genuine factor exposure. Current "
             "large-cap valuations structurally improve the relative opportunity in cheap, profitable small "
             "companies. Attribution is tracked against IWM to test whether the factor tilt earns its fee "
-            "over time."
+            "over time. Would revisit if size + value + profitability factor returns underperform "
+            "large-cap blend on a rolling 5-year basis, suggesting factor premium decay rather "
+            "than temporary cyclical lag."
         ),
     },
     {
@@ -114,7 +119,10 @@ HOLDINGS = [
         "holding_rationale": (
             "VGIT delivers intermediate-term US Treasury exposure at 0.04% versus IEF's 0.15%. Duration is "
             "modestly shorter (~5.5 years vs IEF's ~7.5 years), appropriate for a 9% sleeve inside a 72% "
-            "growth portfolio. Critically, Treasury interest income is exempt from state and local taxes — a "
+            "growth portfolio. The shorter duration means VGIT underperforms longer-dated Treasuries in a "
+            "flight-to-quality rally but limits drawdown in a rate-selloff — appropriate given the "
+            "portfolio's 72% growth allocation. Critically, Treasury interest income is exempt from state "
+            "and local taxes — a "
             "real after-tax advantage in a high-income-tax jurisdiction like DC over investment-grade corporate "
             "bond funds with similar yield. Cost minimization is the dominant selection criterion for a sleeve "
             "that exists for drawdown buffering and rebalancing optionality, not return."
@@ -132,7 +140,9 @@ HOLDINGS = [
             "inflation thesis: at 27, the risk being hedged is not near-term inflation volatility but a "
             "decade of sustained real return erosion. Short-term TIPS protect against current inflation but "
             "have less sensitivity to unexpected long-run inflation regimes. Broad TIPS held for decades are "
-            "the more appropriate vehicle. SCHP at 0.03% makes this hedge essentially free to carry."
+            "the more appropriate vehicle. SCHP at 0.03% makes this hedge essentially free to carry. "
+            "Would revisit if 5-year TIPS breakeven inflation falls persistently below 1.5%, indicating "
+            "a deflationary regime shift that reduces the case for holding real return protection."
         ),
     },
     {

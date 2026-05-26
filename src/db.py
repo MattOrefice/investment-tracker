@@ -163,9 +163,9 @@ def _auto_migrate(conn: sqlite3.Connection) -> None:
     ).fetchone()
     if has_ac:
         conn.execute(
-            "UPDATE asset_classes SET benchmark_ticker = 'VNQ (60%) + DBC (40%)' "
+            "UPDATE asset_classes SET benchmark_ticker = 'VNQ (50%) + DBC (50%)' "
             "WHERE name = 'Real Assets' AND parent_id IS NOT NULL "
-            "AND benchmark_ticker IN ('VNQ+DBC', 'VNQ+DJP', 'VNQ (50%) + DBC (50%)')"
+            "AND benchmark_ticker IN ('VNQ+DBC', 'VNQ+DJP', 'VNQ (60%) + DBC (40%)')"
         )
         conn.commit()
 
