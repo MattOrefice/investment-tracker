@@ -210,6 +210,30 @@ with col:
         f"{c['n_pos']} active position theses  ·  "
         f"{c['n_themes']} themes"
     )
+
+    with st.expander("How to read this page", expanded=False):
+        st.markdown(
+            "- **Hierarchy** — every trade is linked to a Position Thesis (the vehicle-level "
+            "rationale: why this ETF, not just this exposure), which links to an Investment "
+            "Thesis (the sleeve-level view: why hold this asset class at this weight), which "
+            "carries Theme tags (the strategic category the view belongs to). The summary line "
+            "counts all three levels independently.\n"
+            "- **Conviction stars (1–5)** — 1 = exploratory, 3 = standard position, "
+            "4 = high-weight or cross-cycle view, 5 = highest conviction. The scale is used "
+            "conservatively: a 5-star thesis requires an airtight structural case. Cash/SPAXX "
+            "is the only 5-star — not because it's the best return idea, but because zero-cash "
+            "is never the right answer in a taxable rebalancing portfolio.\n"
+            "- **Active / Closed / Invalidated** — these are distinct outcomes. Closed = thesis "
+            "completed as expected and position was unwound. Invalidated = the original "
+            "analytical case was wrong. Exit conditions are expected unwind triggers; "
+            "invalidation conditions are the scenarios that prove the original case analytically "
+            "wrong. A position can reach its exit without being invalidated, and vice versa. "
+            "Most thesis documentation systems collapse these; keeping them separate is intentional.\n"
+            "- **Themes** — allocator categories, not factor exposures. A position can express "
+            "multiple thematic rationales simultaneously (e.g., REITs are both Drawdown "
+            "protection and Regime change)."
+        )
+
     st.divider()
 
 
@@ -416,12 +440,15 @@ with tab_trades:
                 )
 
         if not trades:
-            st.info(
-                "No trades logged yet. The portfolio is currently 100% cash. "
-                "When you make your first trade, log it here with the thesis it expresses."
-            )
-            st.markdown("#### Log a trade")
-            render_trade_form()
+            if is_write_enabled():
+                st.info(
+                    "No trades logged yet. The portfolio is currently 100% cash. "
+                    "When you make your first trade, log it here with the thesis it expresses."
+                )
+                st.markdown("#### Log a trade")
+                render_trade_form()
+            else:
+                st.caption("No discretionary trades have been logged yet.")
         else:
             rows = []
             for t in trades:
@@ -452,8 +479,9 @@ with tab_trades:
                     "Shares":      st.column_config.NumberColumn(format="%.3f"),
                 },
             )
-            with st.expander("Log a new trade"):
-                render_trade_form()
+            if is_write_enabled():
+                with st.expander("Log a new trade"):
+                    render_trade_form()
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -559,7 +587,7 @@ with tab_theses:
                 pos_rows.append({
                     "Sleeve":            sleeve_part,
                     "Ticker":            ticker_part,
-                    "Vehicle Rationale": (rat[:88] + "…") if len(rat) > 88 else rat,
+                    "Vehicle Rationale": (rat[:120] + "…") if len(rat) > 120 else rat,
                     "Conviction":        _stars(pt["conviction"]),
                     "Investment Thesis": pt.get("parent_title") or "—",
                 })
@@ -567,6 +595,24 @@ with tab_theses:
                 pd.DataFrame(pos_rows),
                 width='stretch',
                 hide_index=True,
+            )
+
+        with st.expander("Methodology", expanded=False):
+            st.markdown(
+                "**Thesis taxonomy** — three levels stored separately. Position theses "
+                "document why a specific vehicle (e.g., VGIT) is the right implementation "
+                "of an exposure. Investment theses document why a sleeve (e.g., Core Fixed "
+                "Income) is held at a given weight. Themes group investment theses by "
+                "strategic function.\n\n"
+                "**Days held** — computed from the position creation date. All current "
+                "theses dated 2025-05-01 inception.\n\n"
+                "**Horizon** — stated holding horizon in months, set at thesis creation. "
+                "Standard portfolio positions use 60 months reflecting the strategic "
+                "allocation horizon; tactical positions would use shorter horizons.\n\n"
+                "**Theme assignments** — a single thesis can carry multiple theme tags "
+                "when a position serves multiple strategic functions. The distribution of "
+                "tags across the portfolio (active counts per theme on the Themes tab) is "
+                "a diagnostic of how the SAA earns its risk budget."
             )
 
 
@@ -583,6 +629,15 @@ with tab_themes:
         if not themes:
             st.info("No themes defined yet.")
         else:
+            st.markdown(
+                "Themes are allocator categories, not return drivers. Each theme represents "
+                "a class of strategy rationale that a portfolio might want explicit exposure "
+                "to or explicit absence of — the same framework institutional investors use "
+                "to classify manager mandates. A single position can express multiple "
+                "thematic rationales simultaneously: REITs provide both inflation-correlated "
+                "returns (Regime change) and equity-like diversification drag in a portfolio "
+                "with a dominant 72% equity allocation (Drawdown protection)."
+            )
             for theme in themes:
                 _t_active = theme.get("active_count") or 0
                 _t_badge  = (
