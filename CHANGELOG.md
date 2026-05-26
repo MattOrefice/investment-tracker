@@ -10,6 +10,22 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ## Repository Maintenance
 
+### Commit attribution cleanup — Phase 52
+*May 26, 2026*
+
+Co-Authored-By trailers stripped from all commits reachable from main.
+Project convention: AI-assisted implementation does not warrant co-author
+attribution; the repo is single-author (Matt Orefice). One commit on main
+carried the trailer (Phase 51 CHANGELOG commit); rewritten via
+`git commit-tree` with identical tree. v1.0 tag recreated at the new HEAD.
+Pre-strip state preserved on `origin/main-pre-attribution-strip-backup`
+for 30 days.
+
+Note: `origin/main-pre-rewrite-backup` (Phase 51 backup) still contains 7
+commits with Co-Authored-By trailers. These are not reachable from main
+but GitHub may still parse them. Delete that branch after June 25, 2026 to
+fully resolve the Contributors count.
+
 ### Commit history reorganization — Phase 51
 *May 26, 2026*
 
