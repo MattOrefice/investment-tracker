@@ -276,8 +276,8 @@ def test_drawdown_sensitivity_has_correct_shape():
         f"Expected {len(allocations)} rows (one per allocation), got {len(result)}"
     )
     # BTC Alloc column must contain percent-formatted strings
-    assert result["BTC Alloc"].iloc[0] == "0%",  "First row must be '0%'"
-    assert result["BTC Alloc"].iloc[-1] == "10%", "Last row (10%) must be '10%'"
+    assert result["BTC Alloc"].iloc[0] == "0.0%",  "First row must be '0.0%'"
+    assert result["BTC Alloc"].iloc[-1] == "10.0%", "Last row (10%) must be '10.0%'"
 
 
 # ── 8. Weekly resampling reduces rows ─────────────────────────────────────────

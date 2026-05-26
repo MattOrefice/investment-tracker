@@ -154,7 +154,7 @@ def _load_recession_periods() -> list:
 _, col, _ = st.columns([1, 8, 1])
 with col:
     st.title("Asset Evaluation Framework")
-    st.caption("Structured analysis for evaluating candidate assets for SAA inclusion")
+    st.caption("Worked five-step framework applied to Bitcoin as a candidate for SAA inclusion.")
     st.caption(as_of_banner())
     st.divider()
 
@@ -307,8 +307,8 @@ with col:
             y=["BTC"],
             colorscale="RdYlGn",
             zmid=0,
-            zmin=-1,
-            zmax=1,
+            zmin=-0.5,
+            zmax=0.5,
             text=[[f"{corr[s]:.2f}" for s in ae.SLEEVES]],
             texttemplate="%{text}",
             showscale=True,
@@ -333,14 +333,21 @@ with col:
 
         if not np.isnan(btc_spy_corr) and btc_spy_corr > 0.3:
             spy_note = (
-                f"BTC's full-sample correlation with US Large Core is {btc_spy_corr:.2f}, "
-                "suggesting equity-like co-movement since 2018 — meaningfully above zero and "
-                "inconsistent with the uncorrelated-alternative characterization that dominated "
-                "pre-2020 narratives. "
+                "The full-sample correlation analysis contradicts the uncorrelated-alternative "
+                "narrative that dominated pre-2020 institutional thinking on Bitcoin. "
+                f"BTC's correlation with US Large Core is {btc_spy_corr:+.2f} since 2018 — "
+                "meaningfully above zero. "
+                f"The highest sleeve correlation is {highest_sleeve} ({highest_val:+.2f}); "
+                f"the lowest is {lowest_sleeve} ({lowest_val:+.2f}). "
             )
+            hi_lo_note = ""
         else:
             spy_note = (
                 f"BTC's full-sample correlation with US Large Core is {btc_spy_corr:.2f}. "
+            )
+            hi_lo_note = (
+                f"The highest sleeve correlation is {highest_sleeve} ({highest_val:.2f}) "
+                f"and the lowest is {lowest_sleeve} ({lowest_val:.2f}). "
             )
 
         fi_note = ""
@@ -359,13 +366,7 @@ with col:
                 "one would expect higher co-movement with this sleeve. "
             )
 
-        st.markdown(
-            spy_note
-            + f"The highest sleeve correlation is {highest_sleeve} ({highest_val:.2f}) "
-            f"and the lowest is {lowest_sleeve} ({lowest_val:.2f}). "
-            + fi_note
-            + ra_note
-        )
+        st.markdown(spy_note + hi_lo_note + fi_note + ra_note)
 
     st.divider()
 
@@ -432,11 +433,11 @@ with col:
             post_note = (
                 f"Post-COVID, the correlation has remained persistently elevated at "
                 f"{post_2020_avg:.2f} on average, undermining the diversification claim. "
-                "The elevated post-2020 correlation likely reflects the institutionalization "
-                "of crypto markets: as Bitcoin entered professional portfolios, it began trading "
-                "with the risk-on/risk-off dynamics that characterize equity markets, "
-                "reducing its value as a genuine diversifier precisely when correlations "
-                "are most costly."
+                "One plausible mechanism: as Bitcoin entered professional portfolios post-2020, "
+                "it began trading with the risk-on/risk-off dynamics that characterize equity "
+                "markets, reducing its value as a genuine diversifier precisely when correlations "
+                "are most costly. The data supports the correlation shift; the institutional-flows "
+                "hypothesis is consistent with the timing but not the only possible explanation."
             )
 
         st.markdown(pre_note + post_note)
@@ -481,6 +482,17 @@ with col:
             "the daily figure is materially distorted by settlement lags or thin-market days."
         )
 
+        tips_diff = float(diff_corr.get("TIPS", float("nan"))) if "TIPS" in diff_corr.index else float("nan")
+        if not np.isnan(tips_diff) and tips_diff > 0:
+            st.markdown(
+                f"TIPS shows the only positive daily-to-weekly difference ({tips_diff:+.2f}); "
+                "the magnitude is small but inconsistent with the broader pattern. "
+                "The likely explanation: TIPS trades less actively than equity ETFs, so daily "
+                "readings may understate true co-movement while weekly aggregation captures it. "
+                "This does not change the overall robustness conclusion — the daily-frequency "
+                "correlations across equity sleeves are not microstructure artifacts."
+            )
+
     st.divider()
 
 # ── 5e. MV optimization — unconstrained ───────────────────────────────────────
@@ -498,13 +510,16 @@ with col:
         sharpe_unc_no   = mv["sharpe_unc_no"]
         sharpe_unc_with = mv["sharpe_unc_with"]
 
+        st.markdown(
+            "The unconstrained tangency portfolio below assigns extreme long/short positions "
+            "because small estimation errors in expected returns are magnified through matrix "
+            "inversion. Read the table as: which assets dominate the tangency frontier in "
+            "mean-variance space, not as actionable allocations."
+        )
+
         left_col, right_col = st.columns([1, 1])
 
         with left_col:
-            st.caption(
-                "Unconstrained optimization produces extreme / short positions — "
-                "presented for completeness only."
-            )
             unc_tbl = pd.DataFrame({
                 "Sleeve":        sleeves_list + ["BTC"],
                 "w/o BTC":       list(w_unc_no) + [float("nan")],
@@ -536,13 +551,8 @@ with col:
                 "Normalized weights are directionally interpretable only."
             )
 
-        st.markdown(
-            "Unconstrained MV optimization is a mathematical exercise, not a portfolio "
-            "construction tool. With 9–10 assets, the optimizer frequently assigns extreme "
-            "long and short positions because small estimation errors in expected returns "
-            "or covariances are magnified through matrix inversion. The unconstrained weights "
-            "above should be read as showing which assets dominate the tangency frontier "
-            "in mean-variance space, not as actionable allocations. "
+        st.caption(
+            "Unconstrained optimization is presented for completeness. "
             "The constrained result in the next section is the operationally relevant case."
         )
 
@@ -606,6 +616,12 @@ with col:
             "See section 5g for the SAA-anchored marginal contribution analysis, "
             "which is the primary analytical frame."
         )
+        st.caption(
+            f"The {btc_wt_con:.1%} allocation is the sample-period mean-variance optimum. "
+            "It does not account for tax treatment, operational complexity, liquidity "
+            "constraints, or out-of-sample expected-return shrinkage — all of which "
+            "the decision framework in Section 5j addresses explicitly."
+        )
 
     st.divider()
 
@@ -642,6 +658,12 @@ with col:
             ),
             hovermode="x unified",
         )
+        st.markdown(
+            "This curve is mechanical, not predictive. Any asset with exceptional realized "
+            "returns over a sample period will produce a monotonically increasing Sharpe "
+            "contribution curve at low allocations — the shape itself is not evidence of "
+            "an attractive forward-looking opportunity."
+        )
         st.plotly_chart(fig_msc, width="stretch", config={"displayModeBar": False})
 
         sharpe_0   = float(msc.loc[msc["btc_alloc"] == msc["btc_alloc"].min(), "sharpe"].iloc[0])
@@ -655,7 +677,7 @@ with col:
         if monotone:
             curve_desc = (
                 f"The Sharpe curve is monotonically increasing across the BTC allocation range, "
-                f"rising from {sharpe_0:.3f} at 0% BTC to {sharpe_max:.3f} at {btc_at_max:.0f}% BTC. "
+                f"rising from {sharpe_0:.3f} at 0.0% BTC to {sharpe_max:.3f} at {btc_at_max:.1f}% BTC. "
                 "This means each incremental unit of BTC improves the risk-adjusted portfolio "
                 "return within this allocation range, driven primarily by BTC's high realized "
                 "return over the sample period."
@@ -685,20 +707,26 @@ with col:
     if dd_sens.empty:
         st.info("Drawdown sensitivity data unavailable.")
     else:
+        def _tint_mdd_col(df: pd.DataFrame) -> pd.DataFrame:
+            style = pd.DataFrame("", index=df.index, columns=df.columns)
+            if "2022 MDD" in style.columns:
+                style["2022 MDD"] = "background-color: #fff3cd"
+            return style
+
         st.dataframe(
             dd_sens.style.format({
                 "CAGR":     "{:.1%}",
                 "Max DD":   "{:.1%}",
                 "Sharpe":   "{:.2f}",
                 "2022 MDD": "{:.1%}",
-            }),
+            }).apply(_tint_mdd_col, axis=None),
             hide_index=True,
             use_container_width=True,
         )
 
         # Compute incremental max DD at 10% BTC vs 0%
-        dd_0_row  = dd_sens[dd_sens["BTC Alloc"] == "0%"]
-        dd_10_row = dd_sens[dd_sens["BTC Alloc"] == "10%"]
+        dd_0_row  = dd_sens[dd_sens["BTC Alloc"] == "0.0%"]
+        dd_10_row = dd_sens[dd_sens["BTC Alloc"] == "10.0%"]
         dd_note = ""
         if not dd_0_row.empty and not dd_10_row.empty:
             dd_0   = float(dd_0_row["Max DD"].iloc[0])
@@ -866,7 +894,8 @@ with col:
         "or an overweight to Real Assets with a sub-allocation"
     )
 
-    st.markdown(f"**Conclusion:** {ae.CONCLUSION} This page will update automatically as new data arrives.")
+    st.markdown(f"**Conclusion:**\n\n{ae.CONCLUSION}")
+    st.caption("This page will update automatically as new data arrives.")
 
     st.divider()
 
@@ -876,7 +905,7 @@ _, col, _ = st.columns([1, 8, 1])
 with col:
     with st.expander("Methodology", expanded=False):
         st.markdown(
-            "**Data source:** Yahoo Finance BTC-USD daily prices retrieved via "
+            "**Data source:** Daily adjusted-close prices retrieved via "
             "`src/prices.py` (SQLite-cached; refreshes on cache miss). "
             "Sleeve benchmark prices use the same fetcher and the tickers defined "
             "in `src/asset_evaluation.SLEEVE_BENCHMARKS`.\n\n"
@@ -907,7 +936,7 @@ with col:
             "the information-ratio formula is used for the headline metric instead. "
             "Constrained tangency uses scipy.optimize.minimize (SLSQP) with bounds "
             "0 ≤ w_i ≤ 25% and Σw = 1, maximizing annualized Sharpe.\n\n"
-            f"**Risk-free rate:** {ae.RF_ANNUAL:.2%} annual ({ae.RF_ANNUAL * 100:.2f} bps), "
+            f"**Risk-free rate:** {ae.RF_ANNUAL:.2%} annual ({ae.RF_ANNUAL * 10_000:.0f} bps), "
             "consistent with the Performance page Sharpe disclosure. "
             "Converted to daily as rf_annual / 252 for MV optimization internals.\n\n"
             "**Regime classification:** FRED USREC (NBER monthly indicator), T10Y2Y "

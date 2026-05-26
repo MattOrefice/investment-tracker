@@ -2,7 +2,7 @@
 
 Stores a frozen copy of all portfolio and benchmark adj_close prices at
 quarter-end so that report regeneration always produces identical numbers
-regardless of Yahoo Finance retroactive adj_close adjustments.
+regardless of retroactive adj_close adjustments from the upstream data provider.
 """
 import io
 import json

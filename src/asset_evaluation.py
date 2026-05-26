@@ -56,19 +56,24 @@ SLEEVES       = list(SLEEVE_BENCHMARKS.keys())
 CONCLUSION = (
     "Bitcoin's sample-period Sharpe improvement is real but almost entirely "
     "attributable to its exceptional 2020–2021 bull market return. "
-    "The post-2020 correlation structure, the 2022 joint drawdown, and the "
-    "fundamental absence of cash flows make a strong case against inclusion "
-    "in a tax-aware taxable account with an institutional-style SAA. "
     "The 2024 spot ETF launches have already partially satisfied the "
-    "operational-risk concern that historically gated institutional "
-    "adoption — IBIT, FBTC, and similar wrappers remove the custody and "
-    "counterparty frictions that defined the pre-2024 implementation "
-    "landscape. The remaining barriers to inclusion under this framework "
-    "are analytical (the correlation regime and the 2022 joint stress) and "
-    "fundamental (no cash flow anchor for valuation), not operational. "
-    "The framework does not foreclose future re-evaluation if (1) the "
-    "correlation regime reverts toward zero or (2) the asset develops a "
-    "cleaner valuation framework."
+    "operational-risk concern that historically gated institutional adoption — "
+    "IBIT, FBTC, and similar wrappers remove the custody and counterparty "
+    "frictions that defined the pre-2024 implementation landscape. "
+    "The remaining barriers to inclusion are analytical (the post-2020 "
+    "correlation regime and the 2022 joint stress) and fundamental (no cash "
+    "flow anchor for valuation), not operational. "
+    "**Bitcoin does not currently belong in this portfolio's SAA.**\n\n"
+    "The framework would re-evaluate inclusion if any of the following "
+    "observable conditions are met:\n"
+    "- Rolling 5-year correlation with US Large Core falls below 0.20 "
+    "(the pre-2020 baseline established in Section 5c), indicating a return "
+    "to genuine diversification behavior.\n"
+    "- A 5–10% allocation produces a positive Sharpe contribution after "
+    "explicit tax-drag adjustment (the analytical gap in Section 5f).\n"
+    "- A negative-correlation episode is observed during a defined equity "
+    "stress period (the 2022 joint drawdown in Section 5h is the relevant "
+    "counter-example)."
 )
 
 
@@ -481,7 +486,7 @@ def compute_drawdown_sensitivity(
             mdd22 = float((cum22 / np.maximum.accumulate(cum22) - 1).min())
 
         rows.append({
-            "BTC Alloc": f"{alpha:.0%}",
+            "BTC Alloc": f"{alpha:.1%}",
             "CAGR":       cagr,
             "Max DD":     mdd,
             "Sharpe":     shr,

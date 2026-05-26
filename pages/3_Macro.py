@@ -272,7 +272,7 @@ with col:
         cfnai_diff,  _cfnai_err  = _try_fred("CFNAIDIFF",         "1967-01-01")
         dtwexbgs,    _dtwex_err  = _try_fred("DTWEXBGS",          "2006-01-01")
 
-    # ── Compute rate volatility from DGS10 (VXTLT unavailable on Yahoo Finance) ──
+    # ── Compute rate volatility from DGS10 (VXTLT not in the price cache) ──
     rate_vol_21 = None
     if dgs10 is not None:
         _dgs10_ch  = dgs10.dropna().diff().dropna()
@@ -1154,7 +1154,7 @@ with col:
         st.caption(
             f"As of {rv_as_of} · {_ordinal(rv_pctile_w)} percentile of {rv_window} window  \n"
             "Rolling 21-day stdev of daily DGS10 changes, annualized (×√252). "
-            "MOVE Index proxy — VXTLT (CBOE TLT vol) unavailable via Yahoo Finance."
+            "MOVE Index proxy — VXTLT (CBOE TLT vol) not available via the price cache."
         )
 
         if rv_pctile_w > 70:

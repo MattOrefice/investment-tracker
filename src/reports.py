@@ -1284,7 +1284,7 @@ def generate_quarterly_report(
     period_label = _format_period_label(start_date, end_date)
 
     # Quarter-locking: use immutable snapshot prices for standard completed quarters so
-    # that Yahoo Finance retroactive adj_close updates cannot shift historical report numbers.
+    # that retroactive adj_close updates cannot shift historical report numbers.
     quarter_id = label_to_quarter_id(period_label)
     snap_df: Optional[pd.DataFrame] = None
     snapshot_captured_at: Optional[str] = None

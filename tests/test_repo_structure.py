@@ -31,3 +31,32 @@ def test_hero_image_exists():
         f"Hero image is suspiciously small ({img.stat().st_size} bytes). "
         "Page may not have rendered — re-run the capture script."
     )
+
+
+def test_no_yahoo_finance_in_page_or_module_source():
+    """No page or module source file may contain 'yahoo' (case-insensitive).
+
+    src/prices.py is excluded — it holds the actual upstream URL and HTTP error
+    messages that must correctly identify the vendor. All other pages/*.py and
+    src/*.py are checked. Phase 44.1 guard.
+    """
+    pages_dir  = _REPO / "pages"
+    src_dir    = _REPO / "src"
+    skip_files = {"prices.py"}
+
+    hits = []
+    for py_file in sorted(pages_dir.glob("*.py")):
+        if "yahoo" in py_file.read_text(encoding="utf-8").lower():
+            hits.append(py_file)
+    for py_file in sorted(src_dir.glob("*.py")):
+        if py_file.name in skip_files:
+            continue
+        if "yahoo" in py_file.read_text(encoding="utf-8").lower():
+            hits.append(py_file)
+
+    assert not hits, (
+        f"'yahoo' found in {len(hits)} source file(s):\n"
+        + "\n".join(f"  {f.relative_to(_REPO)}" for f in hits)
+        + "\n\nRemove vendor references from user-facing pages and modules. "
+        "src/prices.py is excluded (upstream URL and error messages)."
+    )
