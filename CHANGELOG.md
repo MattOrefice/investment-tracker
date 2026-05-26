@@ -8,6 +8,22 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Repository Maintenance
+
+### Commit history reorganization — Phase 51
+*May 26, 2026*
+
+Commit history selectively rewritten for Phase 43–50 (33 sub-phase commits
+collapsed into 8 prose-style commits). The Phase 0–42 history is unchanged.
+Original history preserved on remote branch `main-pre-rewrite-backup` for 30
+days post-rewrite. Tagged v1.0 at completion.
+
+Rewrite strategy: `git commit-tree` used to build new commit objects from the
+existing tree snapshots (no interactive rebase, no working-tree conflict risk).
+Force-pushed to origin with `--force-with-lease`.
+
+---
+
 ## Phase 50 — Closeout
 *May 26, 2026*
 
