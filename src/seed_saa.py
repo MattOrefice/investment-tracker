@@ -58,12 +58,12 @@ SUB_CLASSES = [
         "tolerance_band": 0.03,
         "benchmark_ticker": "SPY",
         "rationale": (
-            "Anchor exposure to US large-cap equity. Cap-weighted S&P 500 representing the most efficient, "
-            "best-governed, highest-quality earnings stream in global markets. The 16% weight is deliberately "
-            "not the largest US sleeve — Quality at 14% comes close — because most US large exposure should "
-            "express a factor view rather than passive cap-weight. Core's job is to be the un-opinionated "
-            "anchor: when factor tilts go through inevitable multi-year underperformance windows, Core ensures "
-            "presence in the broad equity rally.\n\n"
+            "Core's job is to be the un-opinionated anchor: when factor tilts go through inevitable "
+            "multi-year underperformance windows, Core ensures presence in the broad equity rally. "
+            "Anchor exposure to the cap-weighted S&P 500 — the most efficient, best-governed, "
+            "highest-quality earnings stream in global markets. The 16% weight is deliberately not the "
+            "largest US sleeve — Quality at 14% comes close — because most US large exposure should "
+            "express a factor view rather than passive cap-weight.\n\n"
             "**Would increase if** factor premia compress further or if conviction in active factor tilts erodes."
         ),
     },
@@ -115,7 +115,11 @@ SUB_CLASSES = [
             "7% is enough to matter if the size premium reasserts (especially with valuation discounts vs. "
             "large-cap at multi-decade lows) without anchoring the portfolio to a factor with shaky empirical "
             "support.\n\n"
-            "**Would increase if** real rates normalize and small-cap quality screens produce attractive opportunities."
+            "**Would increase if** the rolling 5-year small-cap-vs-large-cap return spread turns positive on a "
+            "sustained basis — historically the clearest signal of size-premium reassertion.\n"
+            "**Would reduce if** the valuation discount vs. large-cap closes to historical mean or if "
+            "small-cap credit quality deteriorates (rising default rates signaling the quality screen "
+            "is insufficient protection)."
         ),
     },
     {
@@ -175,8 +179,9 @@ SUB_CLASSES = [
         "tolerance_band": 0.02,
         "benchmark_ticker": "TIP",
         "rationale": (
-            "Inflation-hedged real-yield exposure, sized for a young investor's actual risk. The biggest FI risk "
-            "at 27 isn't a market crash — it's having returns silently destroyed by an inflationary decade. TIPS "
+            "Inflation-hedged real-yield exposure, sized for a long-horizon investor's actual risk. The biggest "
+            "FI risk over a multi-decade horizon isn't a market crash — it's having returns silently destroyed "
+            "by an inflationary decade. TIPS "
             "hedge that risk directly via CPI linkage. 6% is 40% of the FI sleeve, heavier than typical "
             "institutional allocations (usually 20-30%), reflecting that the horizon is long enough that "
             "real-return preservation dominates nominal. Post-2022 also reinforced that nominal Treasuries don't "
@@ -209,8 +214,8 @@ SUB_CLASSES = [
         "benchmark_ticker": "BIL",
         "rationale": (
             "Operational liquidity, not strategic dry powder. At 27 with a 30+ year horizon, holding meaningful "
-            "cash is performance drag — every 1% of cash at long-run equity returns of ~7% real costs ~$2.4k in "
-            "terminal wealth per $10k of base capital over 30 years. 3% handles rebalancing friction (funding "
+            "cash is performance drag — 1% of cash held over 30 years costs roughly $2.4k of terminal wealth "
+            "per $10k of base capital at 7% real equity returns. 3% handles rebalancing friction (funding "
             "tax-inefficient sleeves without forced sales), small drawdowns without selling at the bottom, and "
             "occasional opportunistic deployment. SPAXX yields ~4-5% currently, so the drag is muted.\n\n"
             "**Would increase** closer to retirement or with shorter-duration liabilities.\n"
