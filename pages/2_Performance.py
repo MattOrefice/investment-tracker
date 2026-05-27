@@ -866,17 +866,29 @@ with col:
             tbl_data = []
             for _, row in bf_df.sort_values("total_effect", ascending=False).iterrows():
                 tbl_data.append({
-                    "Sleeve":        row["sleeve"],
-                    "Port Wt":       f"{row['w_p']*100:.1f}%",
-                    "Bench Wt":      f"{row['w_b']*100:.1f}%",
-                    "Port Ret":      _pct(row["r_p"]),
-                    "Bench Ret":     _pct(row["r_b"]),
-                    "Alloc (bps)":   f"{row['allocation_effect']*10000:+.1f}",
-                    "Sel (bps)":     f"{row['selection_effect']*10000:+.1f}",
-                    "Total (bps)":   f"{row['total_effect']*10000:+.1f}",
+                    "Sleeve":       row["sleeve"],
+                    "Port Wt":      row["w_p"] * 100,
+                    "Bench Wt":     row["w_b"] * 100,
+                    "Port Ret":     row["r_p"] * 100,
+                    "Bench Ret":    row["r_b"] * 100,
+                    "Alloc (bps)":  row["allocation_effect"] * 10_000,
+                    "Sel (bps)":    row["selection_effect"] * 10_000,
+                    "Total (bps)":  row["total_effect"] * 10_000,
                 })
-            st.dataframe(pd.DataFrame(tbl_data), hide_index=True,
-                         width='stretch')
+            st.dataframe(
+                pd.DataFrame(tbl_data),
+                hide_index=True,
+                width='stretch',
+                column_config={
+                    "Port Wt":     st.column_config.NumberColumn("Port Wt",     format="%.1f%%"),
+                    "Bench Wt":    st.column_config.NumberColumn("Bench Wt",    format="%.1f%%"),
+                    "Port Ret":    st.column_config.NumberColumn("Port Ret",    format="%.2f%%"),
+                    "Bench Ret":   st.column_config.NumberColumn("Bench Ret",   format="%.2f%%"),
+                    "Alloc (bps)": st.column_config.NumberColumn("Alloc (bps)", format="%+.1f"),
+                    "Sel (bps)":   st.column_config.NumberColumn("Sel (bps)",   format="%+.1f"),
+                    "Total (bps)": st.column_config.NumberColumn("Total (bps)", format="%+.1f"),
+                },
+            )
 
         # — Algebra summary —
         sum_effects   = bf_df["total_effect"].sum() * 10_000
