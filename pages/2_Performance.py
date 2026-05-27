@@ -977,16 +977,25 @@ with col:
                 outside_band_count += 1
             drift_rows.append({
                 "Sleeve":        sleeve,
-                "Target":        f"{target*100:.1f}%",
-                "Actual":        f"{actual*100:.1f}%",
-                "Drift (bps)":   f"{drift*10000:+.0f}",
+                "Target":        target * 100,
+                "Actual":        actual * 100,
+                "Drift (bps)":   drift * 10_000,
                 "Band (±bps)":   f"±{band*10000:.0f}",
                 "Status":        "⚠ Outside" if outside else "✓ Within",
             })
 
         # Sort by absolute drift descending
-        drift_rows.sort(key=lambda r: abs(int(r["Drift (bps)"].replace("+", ""))), reverse=True)
-        st.dataframe(pd.DataFrame(drift_rows), hide_index=True, width='stretch')
+        drift_rows.sort(key=lambda r: abs(r["Drift (bps)"]), reverse=True)
+        st.dataframe(
+            pd.DataFrame(drift_rows),
+            hide_index=True,
+            width='stretch',
+            column_config={
+                "Target":      st.column_config.NumberColumn("Target",      format="%.1f%%"),
+                "Actual":      st.column_config.NumberColumn("Actual",      format="%.1f%%"),
+                "Drift (bps)": st.column_config.NumberColumn("Drift (bps)", format="%+.0f"),
+            },
+        )
         st.caption(
             f"Rebalance candidates: **{outside_band_count}** sleeve"
             f"{'s' if outside_band_count != 1 else ''} outside tolerance band"

@@ -363,10 +363,16 @@ if contrib_cash > 0:
         # ── Updated shares display ───────────────────────────────────────────
         with st.expander("Suggested Shares (recomputed from edited amounts)", expanded=True):
             shares_display = edited_df[["Ticker", "Sleeve", "Suggested $", "Suggested Shares", "Price"]].copy()
-            shares_display["Suggested $"] = shares_display["Suggested $"].map("${:,.2f}".format)
-            shares_display["Price"]       = shares_display["Price"].map("${:,.2f}".format)
-            shares_display["Suggested Shares"] = shares_display["Suggested Shares"].map("{:.4f}".format)
-            st.dataframe(shares_display, use_container_width=True, hide_index=True)
+            st.dataframe(
+                shares_display,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Suggested $":      st.column_config.NumberColumn("Suggested $",      format="$%.2f"),
+                    "Price":            st.column_config.NumberColumn("Price",            format="$%.2f"),
+                    "Suggested Shares": st.column_config.NumberColumn("Suggested Shares", format="%.4f"),
+                },
+            )
 
         # ── Post-deployment drift preview ────────────────────────────────────
         with st.expander("Post-deployment drift preview", expanded=False):
@@ -387,12 +393,22 @@ if contrib_cash > 0:
                 target = saa_targets[sleeve]
                 proj_rows.append({
                     "Sleeve":    sleeve,
-                    "Current":   f"{sleeve_weights.get(sleeve, 0.0):.1%}",
-                    "Projected": f"{projected_weight:.1%}",
-                    "Target":    f"{target:.1%}",
-                    "Change":    f"{projected_weight - sleeve_weights.get(sleeve, 0.0):+.1%}",
+                    "Current":   sleeve_weights.get(sleeve, 0.0) * 100,
+                    "Projected": projected_weight * 100,
+                    "Target":    target * 100,
+                    "Change":    (projected_weight - sleeve_weights.get(sleeve, 0.0)) * 100,
                 })
-            st.dataframe(pd.DataFrame(proj_rows), use_container_width=True, hide_index=True)
+            st.dataframe(
+                pd.DataFrame(proj_rows),
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Current":   st.column_config.NumberColumn("Current",   format="%.1f%%"),
+                    "Projected": st.column_config.NumberColumn("Projected", format="%.1f%%"),
+                    "Target":    st.column_config.NumberColumn("Target",    format="%.1f%%"),
+                    "Change":    st.column_config.NumberColumn("Change",    format="%+.1f%%"),
+                },
+            )
 
         st.caption(
             "To overweight a sleeve persistently, revise SAA targets on the SAA page. "
@@ -426,13 +442,22 @@ def _status(row: pd.Series) -> str:
 
 display = drift_df.reset_index().copy()
 display["Status"]        = drift_df.reset_index().apply(_status, axis=1)
-display["Actual Weight"] = display["Actual Weight"].map("{:.1%}".format)
-display["Target Weight"] = display["Target Weight"].map("{:.1%}".format)
 display["Band"]          = display["Band"].map("±{:.0%}".format)
-display["Drift"]         = display["Drift"].map("{:+.1%}".format)
+display["Actual Weight"] = display["Actual Weight"] * 100
+display["Target Weight"] = display["Target Weight"] * 100
+display["Drift"]         = display["Drift"] * 100
 display = display[["Sleeve", "Actual Weight", "Target Weight", "Band", "Drift", "Status"]]
 
-st.dataframe(display, use_container_width=True, hide_index=True)
+st.dataframe(
+    display,
+    use_container_width=True,
+    hide_index=True,
+    column_config={
+        "Actual Weight": st.column_config.NumberColumn("Actual Weight", format="%.1f%%"),
+        "Target Weight": st.column_config.NumberColumn("Target Weight", format="%.1f%%"),
+        "Drift":         st.column_config.NumberColumn("Drift",         format="%+.1f%%"),
+    },
+)
 
 n_outside = int((~drift_df["In Band"]).sum())
 n_under   = int((drift_df["Drift"] < 0).sum())
@@ -475,12 +500,16 @@ if rebal_cash > 0:
         total_suggested = float(buy_df["Suggested $"].sum())
         leftover        = float(rebal_cash) - total_suggested
 
-        fmt = buy_df.copy()
-        fmt["Price"]            = fmt["Price"].map("${:,.2f}".format)
-        fmt["Suggested $"]      = fmt["Suggested $"].map("${:,.2f}".format)
-        fmt["Suggested Shares"] = fmt["Suggested Shares"].map("{:.4f}".format)
-
-        st.dataframe(fmt, use_container_width=True, hide_index=True)
+        st.dataframe(
+            buy_df,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Price":            st.column_config.NumberColumn("Price",            format="$%.2f"),
+                "Suggested $":      st.column_config.NumberColumn("Suggested $",      format="$%.2f"),
+                "Suggested Shares": st.column_config.NumberColumn("Suggested Shares", format="%.4f"),
+            },
+        )
 
         c1, c2, c3 = st.columns(3)
         c1.metric("Total suggested", f"${total_suggested:,.2f}")
