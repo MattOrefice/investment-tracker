@@ -8,6 +8,32 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Post-v1.0 patches
+
+### Table sort fix
+*May 27, 2026*
+
+Six tables across Performance and Capital Deployment pages now sort
+numerically when column headers are clicked. Previous behavior: values
+stored as pre-formatted strings produced lexical sort
+(e.g., "+10.5" sorted after "+9.5"). Fix: raw floats with column_config
+NumberColumn format strings preserving visual display.
+
+Tables fixed:
+  - Performance: Drift table (Target, Actual, Drift bps)
+  - Capital Deployment: Deploy New Cash suggestions table
+  - Capital Deployment: Projected weights table after cash deployment
+  - Capital Deployment: Rebalancing Check drift table
+  - Capital Deployment: Band-breach rebalancing buy suggestions
+
+Tables kept STATIC by design (row order is structurally meaningful):
+  - Performance: Period Returns (1M/3M/YTD/1Y/SI horizon sequence)
+  - Factor Profile: Portfolio and Fixed Income regression tables
+    (Alpha/Mkt-RF/SMB/HML/RMW factor-identity order)
+  - Benchmark Attribution: Benchmark regression table (same)
+
+---
+
 ## Repository Maintenance
 
 ### Commit attribution cleanup — Phase 52
