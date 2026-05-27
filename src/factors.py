@@ -88,8 +88,8 @@ _FF5_MOM_FACTORS = ["Mkt-RF", "SMB", "HML", "RMW", "CMA", "Mom"]
 _BENCH_FACTORS   = ["Bench-RF", "HML", "SMB", "RMW"]
 _FI_FACTORS      = ["TERM", "CREDIT"]
 
-# FI sleeve weights proportional to SAA targets (VGIT 9%, SCHP 6%)
-_FI_WEIGHTS = {"VGIT": 9.0 / 15.0, "SCHP": 6.0 / 15.0}
+# FI sleeve weights proportional to SAA targets (VGIT 6%, SCHP 4%)
+_FI_WEIGHTS = {"VGIT": 6.0 / 10.0, "SCHP": 4.0 / 10.0}
 
 # ── Equity sleeve definitions ──────────────────────────────────────────────────
 
@@ -98,8 +98,8 @@ _FI_WEIGHTS = {"VGIT": 9.0 / 15.0, "SCHP": 6.0 / 15.0}
 # a DB call — eliminates the `get_holdings_on_date` dependency in environments
 # where the portfolio database is empty or unavailable (e.g., Streamlit Cloud
 # in personal mode, fresh deployments, or test environments).
-_SAA_US = {"VOO": 16, "SPHQ": 14, "VTV": 8, "AVUV": 7}
-_SAA_US_TOTAL = sum(_SAA_US.values())  # 45
+_SAA_US = {"VOO": 17, "SPHQ": 15, "VTV": 9, "AVUV": 8}
+_SAA_US_TOTAL = sum(_SAA_US.values())  # 49
 
 _SLEEVES = {
     "us": {

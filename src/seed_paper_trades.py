@@ -172,7 +172,7 @@ def seed(force: bool = False):
         )
     print("-" * 62)
     spaxx_pct = residual_cash / grand_total * 100 if grand_total else 0
-    target_spaxx = weight_map.get("SPAXX", 0.03)
+    target_spaxx = weight_map.get("SPAXX", 0.02)
     print(
         f"{'SPAXX':<8} {residual_cash:>8.2f}  "
         f"${'1.00':>7}  "

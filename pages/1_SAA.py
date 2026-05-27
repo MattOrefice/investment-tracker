@@ -82,12 +82,12 @@ with col:
 _, col, _ = st.columns([1, 8, 1])
 with col:
     st.subheader("Investment Thesis")
-    _equity_wt   = next((p["target_weight"] for p in parents if p["name"] == "Equity"), 0.72)
-    _intl_dev_wt = next((s["target_weight"] for s in sub_classes if s["name"] == "International Developed"), 0.19)
-    _em_wt       = next((s["target_weight"] for s in sub_classes if s["name"] == "Emerging Markets"), 0.08)
+    _equity_wt   = next((p["target_weight"] for p in parents if p["name"] == "Equity"), 0.78)
+    _intl_dev_wt = next((s["target_weight"] for s in sub_classes if s["name"] == "International Developed"), 0.20)
+    _em_wt       = next((s["target_weight"] for s in sub_classes if s["name"] == "Emerging Markets"), 0.09)
     _real_wt     = next((s["target_weight"] for s in sub_classes if s["name"] == "Real Assets"), 0.10)
-    _tips_wt     = next((s["target_weight"] for s in sub_classes if s["name"] == "TIPS"), 0.06)
-    _core_fi_wt  = next((s["target_weight"] for s in sub_classes if s["name"] == "Core Fixed Income"), 0.09)
+    _tips_wt     = next((s["target_weight"] for s in sub_classes if s["name"] == "TIPS"), 0.04)
+    _core_fi_wt  = next((s["target_weight"] for s in sub_classes if s["name"] == "Core Fixed Income"), 0.06)
     _cape_lbl    = _load_cape_label()
     # TODO: Static refs "comparable only to the 1929 and 1999 peaks" and "CAPE readings
     # above 40" should be reviewed if CAPE falls materially below 40 and _cape_lbl no

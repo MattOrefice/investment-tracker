@@ -10,6 +10,22 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ## Post-v1.0 patches
 
+### Phase 25.0: SAA revision — 15% FI to 10% FI (retroactive)
+*May 27, 2026*
+
+Revised the Strategic Asset Allocation to reduce Fixed Income from 15% to 10%,
+redistributing that 5% to Equity (72% → 78%). Parent split is now 78/10/10/2
+(Equity / Income / Real Assets / Cash). All ten sub-class weights updated
+(Core FI 9%→6%, TIPS 6%→4%, Equity sleeves each +1%).
+
+Migration script (`tools/migrate_saa_phase25.py`) patches `asset_classes`,
+`theses`, `securities` rationale, and rationale text in both `data/tracker.db`
+and `data/demo.db`. Demo paper trades wiped and re-seeded at new SAA weights.
+Affected source files: `src/seed_saa.py`, `src/asset_evaluation.py`,
+`src/factors.py` (`_FI_WEIGHTS`, `_SAA_US`), `src/endowment_benchmarks.py`,
+`src/seed_securities.py` (VGIT rationale), `src/reports.py`, pages fallback
+defaults, `README.md`, and all relevant test fixtures.
+
 ### Table sort fix
 *May 27, 2026*
 

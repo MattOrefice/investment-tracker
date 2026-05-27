@@ -118,10 +118,10 @@ HOLDINGS = [
         "expense_ratio": 0.0004,
         "holding_rationale": (
             "VGIT delivers intermediate-term US Treasury exposure at 0.04% versus IEF's 0.15%. Duration is "
-            "modestly shorter (~5.5 years vs IEF's ~7.5 years), appropriate for a 9% sleeve inside a 72% "
+            "modestly shorter (~5.5 years vs IEF's ~7.5 years), appropriate for a 6% sleeve inside a 78% "
             "growth portfolio. The shorter duration means VGIT underperforms longer-dated Treasuries in a "
             "flight-to-quality rally but limits drawdown in a rate-selloff — appropriate given the "
-            "portfolio's 72% growth allocation. Critically, Treasury interest income is exempt from state "
+            "portfolio's 78% growth allocation. Critically, Treasury interest income is exempt from state "
             "and local taxes — a "
             "real after-tax advantage in a high-income-tax jurisdiction like DC over investment-grade corporate "
             "bond funds with similar yield. Cost minimization is the dominant selection criterion for a sleeve "

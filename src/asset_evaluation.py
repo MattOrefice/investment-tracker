@@ -35,16 +35,16 @@ SLEEVE_BENCHMARKS: dict[str, list[tuple[str, float]]] = {
 }
 
 # SAA target weights for the 9 non-cash sleeves.
-# Scaled to sum to 1.0 for MV analysis (cash is excluded and its 3% distributed pro-rata).
+# Scaled to sum to 1.0 for MV analysis (cash is excluded and its 2% distributed pro-rata).
 _RAW_WEIGHTS: dict[str, float] = {
-    "US Large Core":     0.16,
-    "US Large Quality":  0.14,
-    "US Large Value":    0.08,
-    "US Small Cap":      0.07,
-    "Intl Developed":    0.19,
-    "Emerging Markets":  0.08,
-    "Core Fixed Income": 0.09,
-    "TIPS":              0.06,
+    "US Large Core":     0.17,
+    "US Large Quality":  0.15,
+    "US Large Value":    0.09,
+    "US Small Cap":      0.08,
+    "Intl Developed":    0.20,
+    "Emerging Markets":  0.09,
+    "Core Fixed Income": 0.06,
+    "TIPS":              0.04,
     "Real Assets":       0.10,
 }
 _raw_total    = sum(_RAW_WEIGHTS.values())

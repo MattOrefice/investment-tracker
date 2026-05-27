@@ -366,16 +366,16 @@ def test_suggest_contributions_assertion_fires_on_missing_ticker_coverage():
 
 # Full SAA targets mirroring the DB
 _PROD_TARGETS = {
-    "US Large Core":           0.16,
-    "US Large Quality":        0.14,
-    "US Large Value":          0.08,
-    "US Small Cap":            0.07,
-    "International Developed": 0.19,
-    "Emerging Markets":        0.08,
-    "Core Fixed Income":       0.09,
-    "TIPS":                    0.06,
+    "US Large Core":           0.17,
+    "US Large Quality":        0.15,
+    "US Large Value":          0.09,
+    "US Small Cap":            0.08,
+    "International Developed": 0.20,
+    "Emerging Markets":        0.09,
+    "Core Fixed Income":       0.06,
+    "TIPS":                    0.04,
     "Real Assets":             0.10,
-    "Cash / SPAXX":            0.03,
+    "Cash / SPAXX":            0.02,
 }
 
 # Full ticker_to_sleeve including benchmarks — exactly as the securities table
@@ -413,17 +413,16 @@ _PROD_PRICES = {
     "VNQ": 90.0, "PDBC": 15.0,
 }
 
-# Weights reflecting observed production state: 6 sleeves overweight,
-# 4 below target (SPHQ, VTV, VGIT, SCHP)
+# Weights reflecting observed production state vs new SAA targets
 _PROD_WEIGHTS = {
-    "US Large Core":           0.170,   # above 0.16
-    "US Large Quality":        0.120,   # below 0.14
-    "US Large Value":          0.070,   # below 0.08
-    "US Small Cap":            0.080,   # above 0.07
-    "International Developed": 0.210,   # above 0.19
-    "Emerging Markets":        0.090,   # above 0.08
-    "Core Fixed Income":       0.080,   # below 0.09
-    "TIPS":                    0.050,   # below 0.06
+    "US Large Core":           0.170,   # at 0.17
+    "US Large Quality":        0.120,   # below 0.15
+    "US Large Value":          0.070,   # below 0.09
+    "US Small Cap":            0.080,   # at 0.08
+    "International Developed": 0.210,   # above 0.20
+    "Emerging Markets":        0.090,   # at 0.09
+    "Core Fixed Income":       0.080,   # above 0.06
+    "TIPS":                    0.050,   # above 0.04
     "Real Assets":             0.120,   # above 0.10
     "Cash / SPAXX":            0.010,
 }

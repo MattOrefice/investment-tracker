@@ -1235,7 +1235,7 @@ def _build_methodology_vars() -> dict:
             "FROM asset_classes WHERE parent_id IS NOT NULL ORDER BY band_bps"
         ).fetchall()
 
-    # "Equity 72% / Income 15% / Real Assets 10% / Cash 3%"
+    # "Equity 78% / Income 10% / Real Assets 10% / Cash 2%"
     parent_weight_str = " / ".join(
         f"{r['name']} {round(r['target_weight'] * 100):.0f}%"
         for r in parent_rows

@@ -9,14 +9,14 @@ from src.db import get_connection, initialize_db
 PARENTS = [
     {
         "name": "Equity",
-        "target_weight": 0.72,
+        "target_weight": 0.78,
         "tolerance_band": 0.03,
         "rationale": "Core equity engine of the portfolio; primary driver of long-run real returns across US, international, and emerging market sleeves.",
         "benchmark_ticker": None,
     },
     {
         "name": "Income",
-        "target_weight": 0.15,
+        "target_weight": 0.10,
         "tolerance_band": 0.02,
         "rationale": "Duration and inflation protection; ballast against equity drawdowns and silent real-return destruction.",
         "benchmark_ticker": None,
@@ -30,7 +30,7 @@ PARENTS = [
     },
     {
         "name": "Cash",
-        "target_weight": 0.03,
+        "target_weight": 0.02,
         "tolerance_band": 0.02,
         "rationale": "Operational liquidity for rebalancing friction and opportunistic deployment; not strategic dry powder.",
         "benchmark_ticker": None,
@@ -54,7 +54,7 @@ SUB_CLASSES = [
     {
         "name": "US Large Core",
         "parent_name": "Equity",
-        "target_weight": 0.16,
+        "target_weight": 0.17,
         "tolerance_band": 0.03,
         "benchmark_ticker": "SPY",
         "rationale": (
@@ -70,7 +70,7 @@ SUB_CLASSES = [
     {
         "name": "US Large Quality",
         "parent_name": "Equity",
-        "target_weight": 0.14,
+        "target_weight": 0.15,
         "tolerance_band": 0.03,
         "benchmark_ticker": "QUAL",
         "rationale": (
@@ -87,7 +87,7 @@ SUB_CLASSES = [
     {
         "name": "US Large Value",
         "parent_name": "Equity",
-        "target_weight": 0.08,
+        "target_weight": 0.09,
         "tolerance_band": 0.02,
         "benchmark_ticker": "IWD",
         "rationale": (
@@ -104,7 +104,7 @@ SUB_CLASSES = [
     {
         "name": "US Small Cap",
         "parent_name": "Equity",
-        "target_weight": 0.07,
+        "target_weight": 0.08,
         "tolerance_band": 0.02,
         "benchmark_ticker": "IWM",
         "rationale": (
@@ -125,7 +125,7 @@ SUB_CLASSES = [
     {
         "name": "International Developed",
         "parent_name": "Equity",
-        "target_weight": 0.19,
+        "target_weight": 0.20,
         "tolerance_band": 0.03,
         "benchmark_ticker": "EFA",
         "rationale": (
@@ -142,7 +142,7 @@ SUB_CLASSES = [
     {
         "name": "Emerging Markets",
         "parent_name": "Equity",
-        "target_weight": 0.08,
+        "target_weight": 0.09,
         "tolerance_band": 0.02,
         "benchmark_ticker": "EEM",
         "rationale": (
@@ -158,14 +158,14 @@ SUB_CLASSES = [
     {
         "name": "Core Fixed Income",
         "parent_name": "Income",
-        "target_weight": 0.09,
+        "target_weight": 0.06,
         "tolerance_band": 0.02,
         "benchmark_ticker": "IEF",
         "rationale": (
             "Duration as recession ballast, sized for an aggressive growth portfolio. Classical 60/40 doctrine "
             "assumed Treasuries reliably hedged equity drawdowns; 2022 disproved that under inflationary regimes. "
             "But in deflationary or recessionary drawdowns — which remain the more common equity tail risk — "
-            "intermediate Treasuries still work. 9% in a 72% growth portfolio is intentionally thin: not relying "
+            "intermediate Treasuries still work. 6% in a 78% growth portfolio is intentionally thin: not relying "
             "on FI for return, relying on it for drawdown buffering and rebalancing-into-equity-weakness "
             "optionality.\n\n"
             "**Would increase if** real yields exceed 3% (making FI competitive on a return basis) or if horizon shortens.\n"
@@ -175,14 +175,14 @@ SUB_CLASSES = [
     {
         "name": "TIPS",
         "parent_name": "Income",
-        "target_weight": 0.06,
+        "target_weight": 0.04,
         "tolerance_band": 0.02,
         "benchmark_ticker": "TIP",
         "rationale": (
             "Inflation-hedged real-yield exposure, sized for a long-horizon investor's actual risk. The biggest "
             "FI risk over a multi-decade horizon isn't a market crash — it's having returns silently destroyed "
             "by an inflationary decade. TIPS "
-            "hedge that risk directly via CPI linkage. 6% is 40% of the FI sleeve, heavier than typical "
+            "hedge that risk directly via CPI linkage. 4% is 40% of the FI sleeve, heavier than typical "
             "institutional allocations (usually 20-30%), reflecting that the horizon is long enough that "
             "real-return preservation dominates nominal. Post-2022 also reinforced that nominal Treasuries don't "
             "always hedge stocks the way 60/40 doctrine claimed — TIPS at least hedge inflation reliably.\n\n"
@@ -209,13 +209,13 @@ SUB_CLASSES = [
     {
         "name": "Cash / SPAXX",
         "parent_name": "Cash",
-        "target_weight": 0.03,
+        "target_weight": 0.02,
         "tolerance_band": 0.02,
         "benchmark_ticker": "BIL",
         "rationale": (
             "Operational liquidity, not strategic dry powder. At 27 with a 30+ year horizon, holding meaningful "
             "cash is performance drag — 1% of cash held over 30 years costs roughly $2.4k of terminal wealth "
-            "per $10k of base capital at 7% real equity returns. 3% handles rebalancing friction (funding "
+            "per $10k of base capital at 7% real equity returns. 2% handles rebalancing friction (funding "
             "tax-inefficient sleeves without forced sales), small drawdowns without selling at the bottom, and "
             "occasional opportunistic deployment. SPAXX yields ~4-5% currently, so the drag is muted.\n\n"
             "**Would increase** closer to retirement or with shorter-duration liabilities.\n"

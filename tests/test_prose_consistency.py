@@ -325,13 +325,13 @@ def test_prose_methodology_weight_defaults_match_db():
     from src.db import get_connection
 
     EXPECTED_FALLBACKS = {
-        "US Large Value":  0.08,
-        "US Small Cap":    0.07,
-        "Emerging Markets": 0.08,
+        "US Large Value":  0.09,
+        "US Small Cap":    0.08,
+        "Emerging Markets": 0.09,
         "Real Assets":     0.10,
-        "TIPS":            0.06,
+        "TIPS":            0.04,
     }
-    EXPECTED_EQUITY_PARENT = 0.72
+    EXPECTED_EQUITY_PARENT = 0.78
 
     with get_connection() as conn:
         sleeve_rows = conn.execute(
@@ -518,12 +518,12 @@ def test_saa_thesis_sleeve_weights_match_db():
     from src.db import get_connection
 
     THESIS_WEIGHTS = {
-        "Equity":                  0.72,   # parent category
-        "International Developed": 0.19,
-        "Emerging Markets":        0.08,
+        "Equity":                  0.78,   # parent category
+        "International Developed": 0.20,
+        "Emerging Markets":        0.09,
         "Real Assets":             0.10,
-        "TIPS":                    0.06,
-        "Core Fixed Income":       0.09,
+        "TIPS":                    0.04,
+        "Core Fixed Income":       0.06,
     }
 
     with get_connection() as conn:
