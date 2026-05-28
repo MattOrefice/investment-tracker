@@ -45,6 +45,11 @@ def _sec_rows(db_path):
     return [dict(r) for r in rows]
 
 
+def _skip_if_no_tracker_db():
+    if not TRACKER_DB.exists() or TRACKER_DB.stat().st_size == 0:
+        pytest.skip("data/tracker.db not present or empty (personal-mode only)")
+
+
 def _holding_symbols():
     """Distinct symbols from the May-27 holdings CSV via the Phase 25.1 parser."""
     from src.ingestion.fidelity import parse_fidelity_csv
@@ -257,6 +262,7 @@ def test_no_unmapped_sleeve_category_value():
 
 def test_exactly_11_saa_tickers():
     """Exactly the 11 SAA tickers must have is_in_saa=1."""
+    _skip_if_no_tracker_db()
     conn = sqlite3.connect(str(TRACKER_DB))
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
@@ -298,6 +304,7 @@ def test_tax_efficiency_no_nulls_and_valid_values():
 
 def test_tracker_voo_columns_not_overwritten():
     """Loading must not overwrite VOO's existing name or holding_rationale."""
+    _skip_if_no_tracker_db()
     conn = sqlite3.connect(str(TRACKER_DB))
     conn.row_factory = sqlite3.Row
     row = conn.execute(
@@ -315,6 +322,7 @@ def test_tracker_voo_columns_not_overwritten():
 
 def test_tracker_cusip_target_date():
     """CUSIP symbol '31564E540' must load with sleeve_category='target_date'."""
+    _skip_if_no_tracker_db()
     conn = sqlite3.connect(str(TRACKER_DB))
     conn.row_factory = sqlite3.Row
     row = conn.execute(
