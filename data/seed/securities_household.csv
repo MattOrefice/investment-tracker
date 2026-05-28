@@ -1,0 +1,60 @@
+symbol,description,sleeve_category,tax_efficiency,is_in_saa,notes
+VOO,Vanguard S&P 500 ETF,us_large_core,high,true,SAA target ticker
+SPHQ,Invesco S&P 500 Quality ETF,us_large_quality,high,true,SAA target ticker
+VTV,Vanguard Value ETF,us_large_value,high,true,SAA target ticker
+AVUV,Avantis US Small Cap Value ETF,us_small_value,high,true,SAA target ticker
+VEA,Vanguard FTSE Developed Markets ETF,intl_developed,high,true,SAA target ticker
+IEMG,iShares Core MSCI Emerging Markets ETF,emerging_markets,high,true,SAA target ticker
+VGIT,Vanguard Intermediate-Term Treasury ETF,core_fi_treasury,low,true,SAA target ticker — Treasury coupons taxed as ordinary income
+SCHP,Schwab US TIPS ETF,tips,low,true,SAA target ticker — phantom income on inflation accruals
+PDBC,Invesco Optimum Yield Diversified Commodity Strategy No K-1,real_assets_commodities,low,true,SAA target ticker — 1099 reporting (no K-1)
+VNQ,Vanguard Real Estate ETF,real_assets_reit,low,true,SAA target ticker — non-qualified REIT distributions
+SPAXX,Fidelity Government Money Market Fund,cash,low,true,SAA cash sleeve
+FDRXX,Fidelity Government Cash Reserves,cash,low,false,Money market sweep
+IWB,iShares Russell 1000 ETF,us_large_core,high,false,Broad US large cap — overlaps VOO
+ITOT,iShares Core S&P Total US Stock Market ETF,us_large_core,high,false,Total US market — overlaps VOO
+VONE,Vanguard Russell 1000 ETF,us_large_core,high,false,Russell 1000 — overlaps VOO
+QUAL,iShares MSCI USA Quality Factor ETF,us_large_quality,high,false,Alternative quality factor — overlaps SPHQ
+HDV,iShares Core High Dividend ETF,us_large_value,high,false,Dividend value tilt
+QQQ,Invesco QQQ Trust,us_large_growth,high,false,Nasdaq-100 — concentrated growth
+XLK,Technology Select Sector SPDR Fund,us_sector_tech,high,false,Tech sector
+JTEK,JPMorgan US Tech Leaders ETF,us_large_growth,high,false,Active tech growth
+QQQJ,Invesco NASDAQ Next Gen 100 ETF,us_large_growth,high,false,Nasdaq mid-cap growth
+IJH,iShares Core S&P Mid-Cap ETF,us_mid_cap,high,false,Mid-cap core
+IJR,iShares Core S&P Small-Cap ETF,us_small_core,high,false,Small-cap core (not factor-tilted)
+IWC,iShares Micro-Cap ETF,us_small_core,high,false,Micro-cap
+IEFA,iShares Core MSCI EAFE ETF,intl_developed,high,false,EAFE developed — overlaps VEA
+IXUS,iShares Core MSCI Total International Stock ETF,intl_all_exus,high,false,Total ex-US — overlaps VEA + IEMG
+VXUS,Vanguard Total International Stock ETF,intl_all_exus,high,false,Total ex-US — overlaps VEA + IEMG
+XSOE,WisdomTree Emerging Markets ex-State-Owned Enterprises ETF,emerging_markets,high,false,EM ex-SOE — overlaps IEMG
+DFAE,Dimensional Emerging Core Equity Market ETF,emerging_markets,high,false,EM factor tilt — overlaps IEMG
+EMQQ,EMQQ Emerging Markets Internet & Ecommerce ETF,thematic,high,false,Thematic EM tech
+USRT,iShares Core US REIT ETF,real_assets_reit,low,false,REIT — overlaps VNQ
+IAU,iShares Gold Trust,real_assets_gold,low,false,Gold — collectibles tax treatment in taxable
+HLIPX,JPMorgan Core Plus Bond Fund I,core_fi_credit,low,false,Core plus credit
+BFRIX,Blackstone Floating Rate Income Fund I,floating_rate,low,false,Floating rate loan fund
+FAGIX,Fidelity Capital & Income Fund,high_yield_fi,low,false,High yield credit
+FIWDX,Fidelity Total Bond Fund,multi_sector_fi,low,false,Multi-sector bond
+GBOSX,Goldman Sachs Strategic Income Fund I,multi_sector_fi,low,false,Multi-sector bond
+GHYIX,Goldman Sachs High Yield Muni Bond Fund I,high_yield_muni,medium,false,HY muni — tax-advantaged for HY exposure
+JHEQX,JPMorgan Hedged Equity Fund I,hedged_equity,medium,false,Equity with options collar
+JEPQ,JPMorgan Nasdaq Equity Premium Income ETF,hedged_equity,medium,false,Nasdaq covered call — option premium taxed as ordinary income
+JEPI,JPMorgan Equity Premium Income ETF,hedged_equity,medium,false,S&P covered call — option premium taxed as ordinary income
+HELO,JPMorgan Hedged Equity Laddered Overlay ETF,hedged_equity,medium,false,Laddered hedged equity
+BILPX,BlackRock Liquid Federal Trust,liquid_alt,low,false,Short-term Treasury liquidity
+GAOSX,JPMorgan Global Allocation Fund I,multi_asset,medium,false,Look-through to underlying sleeves
+RFUTX,American Funds 2060 Target Date R6,target_date,medium,false,Look-through to glide path
+31564E540,Fidelity Freedom Index 2065 Fund Class T,target_date,medium,false,Look-through to glide path — CUSIP-as-symbol
+FRNW,Fidelity Clean Energy ETF,thematic,high,false,Clean energy thematic
+ICLN,iShares Global Clean Energy ETF,thematic,high,false,Clean energy thematic
+IDGT,iShares US Digital Infrastructure and Real Estate ETF,thematic,medium,false,Digital infrastructure thematic
+ROBO,Robo Global Robotics & Automation Index ETF,thematic,high,false,Robotics thematic
+PAVE,Global X US Infrastructure Development ETF,thematic,high,false,Infrastructure thematic
+ARKK,ARK Innovation ETF,thematic,high,false,Disruptive innovation thematic
+BOTZ,Global X Robotics & Artificial Intelligence ETF,thematic,high,false,AI/robotics thematic
+CIBR,First Trust NASDAQ Cybersecurity ETF,thematic,high,false,Cybersecurity thematic
+IBB,iShares Biotechnology ETF,thematic,high,false,Biotech thematic
+XLV,Health Care Select Sector SPDR Fund,us_sector_healthcare,high,false,Healthcare sector
+FINX,Global X FinTech ETF,thematic,high,false,Fintech thematic
+IBIT,iShares Bitcoin Trust,crypto,low,false,Spot Bitcoin ETF — not in SAA (per Phase 10 Asset Evaluation framework)
+MCO,Moody's Corporation,single_stock,high,false,Single stock position

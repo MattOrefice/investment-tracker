@@ -636,7 +636,7 @@ with tab_themes:
                 "to classify manager mandates. A single position can express multiple "
                 "thematic rationales simultaneously: REITs provide both inflation-correlated "
                 "returns (Regime change) and equity-like diversification drag in a portfolio "
-                "with a dominant 72% equity allocation (Drawdown protection)."
+                "with a dominant 78% equity allocation (Drawdown protection)."
             )
             for theme in themes:
                 _t_active = theme.get("active_count") or 0

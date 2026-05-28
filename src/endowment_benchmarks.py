@@ -55,15 +55,15 @@ PRINCO_FY2024: dict[str, float] = {
 }
 
 # ── This portfolio SAA (Phase 1 locked) ──────────────────────────────────────
-# All six equity sleeves sum to 72%. No private equity or hedge fund access.
-# Real Assets: 10% (VNQ + PDBC). Income: 15% (VGIT + SCHP). Cash: 3%.
+# All six equity sleeves sum to 78%. No private equity or hedge fund access.
+# Real Assets: 10% (VNQ + PDBC). Income: 10% (VGIT + SCHP). Cash: 2%.
 THIS_PORTFOLIO: dict[str, float] = {
-    "Public Equity":          72.0,
+    "Public Equity":          78.0,
     "Private Equity / VC":     0.0,
     "Absolute Return / HF":    0.0,
     "Real Assets":            10.0,
-    "Fixed Income":           15.0,
-    "Cash":                    3.0,
+    "Fixed Income":           10.0,
+    "Cash":                    2.0,
 }
 
 # ── Named entity list ─────────────────────────────────────────────────────────

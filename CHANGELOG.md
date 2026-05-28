@@ -8,7 +8,65 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Post-v1.0 patches
+
+### Phase 25.0: SAA revision — 15% FI to 10% FI (retroactive)
+*May 27, 2026*
+
+Revised the Strategic Asset Allocation to reduce Fixed Income from 15% to 10%,
+redistributing that 5% to Equity (72% → 78%). Parent split is now 78/10/10/2
+(Equity / Income / Real Assets / Cash). All ten sub-class weights updated
+(Core FI 9%→6%, TIPS 6%→4%, Equity sleeves each +1%).
+
+Migration script (`tools/migrate_saa_phase25.py`) patches `asset_classes`,
+`theses`, `securities` rationale, and rationale text in both `data/tracker.db`
+and `data/demo.db`. Demo paper trades wiped and re-seeded at new SAA weights.
+Affected source files: `src/seed_saa.py`, `src/asset_evaluation.py`,
+`src/factors.py` (`_FI_WEIGHTS`, `_SAA_US`), `src/endowment_benchmarks.py`,
+`src/seed_securities.py` (VGIT rationale), `src/reports.py`, pages fallback
+defaults, `README.md`, and all relevant test fixtures.
+
+### Table sort fix
+*May 27, 2026*
+
+Six tables across Performance and Capital Deployment pages now sort
+numerically when column headers are clicked. Previous behavior: values
+stored as pre-formatted strings produced lexical sort
+(e.g., "+10.5" sorted after "+9.5"). Fix: raw floats with column_config
+NumberColumn format strings preserving visual display.
+
+Tables fixed:
+  - Performance: Drift table (Target, Actual, Drift bps)
+  - Capital Deployment: Deploy New Cash suggestions table
+  - Capital Deployment: Projected weights table after cash deployment
+  - Capital Deployment: Rebalancing Check drift table
+  - Capital Deployment: Band-breach rebalancing buy suggestions
+
+Tables kept STATIC by design (row order is structurally meaningful):
+  - Performance: Period Returns (1M/3M/YTD/1Y/SI horizon sequence)
+  - Factor Profile: Portfolio and Fixed Income regression tables
+    (Alpha/Mkt-RF/SMB/HML/RMW factor-identity order)
+  - Benchmark Attribution: Benchmark regression table (same)
+
+---
+
 ## Repository Maintenance
+
+### Commit attribution cleanup — Phase 52
+*May 26, 2026*
+
+Co-Authored-By trailers stripped from all commits reachable from main.
+Project convention: AI-assisted implementation does not warrant co-author
+attribution; the repo is single-author (Matt Orefice). One commit on main
+carried the trailer (Phase 51 CHANGELOG commit); rewritten via
+`git commit-tree` with identical tree. v1.0 tag recreated at the new HEAD.
+Pre-strip state preserved on `origin/main-pre-attribution-strip-backup`
+for 30 days.
+
+Note: `origin/main-pre-rewrite-backup` (Phase 51 backup) still contains 7
+commits with Co-Authored-By trailers. These are not reachable from main
+but GitHub may still parse them. Delete that branch after June 25, 2026 to
+fully resolve the Contributors count.
 
 ### Commit history reorganization — Phase 51
 *May 26, 2026*
@@ -79,6 +137,26 @@ green but proof 3 red. The CI failures were not surfaced for multiple phases bec
 test-skip guards masked them locally (data-dependent tests skip when no portfolio data
 is present, but fail in CI against demo.db). Going forward, explicitly open the
 GitHub Actions run after every push and confirm the green checkmark before closing.
+
+---
+
+## Phase 25 — Personal-mode household aggregation layer
+*May 27–28, 2026*
+
+Adds a personal-mode household aggregation layer; demo mode unchanged. Ingests a
+multi-account Fidelity CSV export, looks through target-date and allocation funds into
+underlying sleeves, and aggregates across all accounts against the SAA with drift
+reporting.
+
+- **25.1** — Fidelity CSV ingestion module (`src/ingestion/fidelity.py`) (607effb)
+- **25.2** — Accounts metadata table; pseudonymization and `managed_by` flags (431fc8f)
+- **25.3** — Household securities sleeve mapping and loader (c4fe5cc)
+- **25.4** — Fund composition look-through for target-date and allocation funds (75980dd)
+- **25.5** — Household allocation aggregation with look-through, scope filtering, and
+  SAA drift (a8073bc)
+- **25.6** — Household View page: scope/look-through toggles, off-SAA reporting, and
+  tax-location flags; page registered in `st.navigation` only when
+  `TRACKER_MODE=personal` (2628775, 3778fde)
 
 ---
 

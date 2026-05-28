@@ -33,16 +33,16 @@ def _make_sw(rows: dict) -> pd.DataFrame:
 
 
 _BASELINE_ROWS = {
-    "US Large Core":         (0.16, 0.16),
-    "US Large Quality":      (0.14, 0.14),
-    "US Large Value":        (0.08, 0.08),
-    "US Small Cap":          (0.07, 0.07),
-    "International Developed":(0.19, 0.19),
-    "Emerging Markets":      (0.08, 0.08),
-    "Core Fixed Income":     (0.09, 0.09),
-    "TIPS":                  (0.06, 0.06),
+    "US Large Core":         (0.17, 0.17),
+    "US Large Quality":      (0.15, 0.15),
+    "US Large Value":        (0.09, 0.09),
+    "US Small Cap":          (0.08, 0.08),
+    "International Developed":(0.20, 0.20),
+    "Emerging Markets":      (0.09, 0.09),
+    "Core Fixed Income":     (0.06, 0.06),
+    "TIPS":                  (0.04, 0.04),
     "Real Assets":           (0.10, 0.10),
-    "Cash / SPAXX":          (0.03, 0.03),
+    "Cash / SPAXX":          (0.02, 0.02),
 }
 
 
@@ -59,7 +59,7 @@ def test_effective_duration_known_weights():
     schp_dur = ETF_DURATION[_FI_SLEEVE_HOLDING["TIPS"]]
 
     # Cash/SPAXX is excluded from duration; portfolio-level duration = weighted FI only
-    expected_dur = (0.09 * vgit_dur + 0.06 * schp_dur) / 1.0
+    expected_dur = (0.06 * vgit_dur + 0.04 * schp_dur) / 1.0
     assert abs(result["duration"] - round(expected_dur, 1)) <= 0.05
 
 
@@ -69,10 +69,10 @@ def test_effective_duration_fi_weight():
     sw = _make_sw(rows)
     with patch("src.positioning.get_sleeve_weights_on_date", return_value=sw):
         result = get_effective_duration("2026-03-31")
-    # Core FI (9%) + TIPS (6%) = 15%; Cash/SPAXX (3%) is excluded from fi_weight_pct
-    assert abs(result["fi_weight_pct"] - 15.0) < 0.1
-    assert abs(result["cash_weight_pct"] - 3.0) < 0.1
-    assert abs(result["fi_weight_incl_cash_pct"] - 18.0) < 0.1
+    # Core FI (6%) + TIPS (4%) = 10%; Cash/SPAXX (2%) is excluded from fi_weight_pct
+    assert abs(result["fi_weight_pct"] - 10.0) < 0.1
+    assert abs(result["cash_weight_pct"] - 2.0) < 0.1
+    assert abs(result["fi_weight_incl_cash_pct"] - 12.0) < 0.1
 
 
 def test_effective_duration_empty_portfolio():

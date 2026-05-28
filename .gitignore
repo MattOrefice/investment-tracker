@@ -15,6 +15,10 @@
 data/tracker.db
 # demo.db is committed intentionally (paper trades for Streamlit Cloud)
 
+# Fidelity exports — personal portfolio data, never committed
+data/uploads/*
+!data/uploads/.gitkeep
+
 # Generated reports — local artifacts, not committed
 data/reports/
 

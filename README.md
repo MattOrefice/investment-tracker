@@ -29,7 +29,7 @@ Available for buy-side allocator and investment due diligence roles.
 | Information Ratio | 3.63 | Since Inception, vs. Custom Blended |
 | Q1 2026 Active Return | +189 bps vs. blended; +735 bps vs. S&P 500 | Q1 2026 (locked) |
 
-The primary benchmark is the custom SAA-blended basket, not the S&P 500. A near-zero SI spread against the S&P 500 is an expected outcome for a portfolio whose 72% equity sleeve closely mirrors broad market beta with modest factor tilts. See [Methodology](#methodology) for return computation and benchmarking details.
+The primary benchmark is the custom SAA-blended basket, not the S&P 500. A near-zero SI spread against the S&P 500 is an expected outcome for a portfolio whose 78% equity sleeve closely mirrors broad market beta with modest factor tilts. See [Methodology](#methodology) for return computation and benchmarking details.
 
 ---
 

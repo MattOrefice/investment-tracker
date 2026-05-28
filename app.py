@@ -8,6 +8,7 @@ st.set_page_config(
 )
 
 from src.asof import as_of_banner
+from src.config import IS_DEMO
 from src.db import initialize_db
 from src.ui_helpers import render_footer, render_sidebar_footer
 
@@ -237,29 +238,35 @@ def _landing_page_render():
     render_footer()
 
 
-nav = st.navigation(
-    {
-        "Portfolio": [
-            st.Page(_landing_page_render, title="Home", default=True, url_path="", visibility="hidden"),
-            st.Page("pages/1_SAA.py", title="SAA"),
-            st.Page("pages/2_Performance.py", title="Performance"),
-            st.Page("pages/6_Benchmark_Attribution.py", title="Benchmark Attribution"),
-            st.Page("pages/4_Factor_Profile.py", title="Factor Profile"),
-        ],
-        "Markets & Macro": [
-            st.Page("pages/3_Macro.py", title="Macro"),
-            st.Page("pages/9_Correlations.py", title="Correlations"),
-            st.Page("pages/8_Research.py", title="Research"),
-            st.Page("pages/5_Asset_Evaluation.py", title="Asset Evaluation"),
-        ],
-        "Operations": [
-            st.Page("pages/10_Trade_Log.py", title="Trade Log"),
-            st.Page("pages/11_Capital_Deployment.py", title="Capital Deployment"),
-            st.Page("pages/12_Tax_Lots.py", title="Tax Lots"),
-        ],
-    },
-    expanded=True,
-)
+_page_groups = {
+    "Portfolio": [
+        st.Page(_landing_page_render, title="Home", default=True, url_path="", visibility="hidden"),
+        st.Page("pages/1_SAA.py", title="SAA"),
+        st.Page("pages/2_Performance.py", title="Performance"),
+        st.Page("pages/6_Benchmark_Attribution.py", title="Benchmark Attribution"),
+        st.Page("pages/4_Factor_Profile.py", title="Factor Profile"),
+    ],
+    "Markets & Macro": [
+        st.Page("pages/3_Macro.py", title="Macro"),
+        st.Page("pages/9_Correlations.py", title="Correlations"),
+        st.Page("pages/8_Research.py", title="Research"),
+        st.Page("pages/5_Asset_Evaluation.py", title="Asset Evaluation"),
+    ],
+    "Operations": [
+        st.Page("pages/10_Trade_Log.py", title="Trade Log"),
+        st.Page("pages/11_Capital_Deployment.py", title="Capital Deployment"),
+        st.Page("pages/12_Tax_Lots.py", title="Tax Lots"),
+    ],
+}
+
+# Household View is personal-mode only; st.navigation() suppresses it
+# from the sidebar entirely in demo mode (no stub needed in the nav).
+if not IS_DEMO:
+    _page_groups["Household"] = [
+        st.Page("pages/13_Household_View.py", title="Household View"),
+    ]
+
+nav = st.navigation(_page_groups, expanded=True)
 
 nav.run()
 render_sidebar_footer()

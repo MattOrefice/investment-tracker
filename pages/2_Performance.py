@@ -248,9 +248,9 @@ with col:
         sp, bl    = _load_benchmarks(start_val)
 
     _saa_parents, _saa_sleeves = _load_sleeve_targets()
-    _non_eq_pct = 1.0 - _saa_parents.get("Equity", 0.72)
-    _non_us_eq  = (_saa_sleeves.get("International Developed", 0.19)
-                   + _saa_sleeves.get("Emerging Markets", 0.08))
+    _non_eq_pct = 1.0 - _saa_parents.get("Equity", 0.78)
+    _non_us_eq  = (_saa_sleeves.get("International Developed", 0.20)
+                   + _saa_sleeves.get("Emerging Markets", 0.09))
 
     # Key scalars (Since Inception)
     si_days     = (pd.Timestamp(TODAY) - pd.Timestamp(INCEPTION)).days
@@ -668,10 +668,10 @@ with col:
 
     st.caption(
         "**What the two stages measure.** Stage 1 (SAA design) captures the strategic-tilt "
-        f"contribution of the SAA itself — the value allocation (VTV at {_saa_sleeves.get('US Large Value', 0.08)*100:.0f}%), small-cap value "
-        f"(AVUV at {_saa_sleeves.get('US Small Cap', 0.07)*100:.0f}%), emerging markets ({_saa_sleeves.get('Emerging Markets', 0.08)*100:.0f}%), "
-        f"real assets ({_saa_sleeves.get('Real Assets', 0.10)*100:.0f}%), TIPS ({_saa_sleeves.get('TIPS', 0.06)*100:.0f}%), and the overall "
-        f"~{_saa_parents.get('Equity', 0.72)*100:.0f}/{_non_eq_pct*100:.0f} equity-vs-other-assets risk posture — measured as the SAA-blended benchmark's "
+        f"contribution of the SAA itself — the value allocation (VTV at {_saa_sleeves.get('US Large Value', 0.09)*100:.0f}%), small-cap value "
+        f"(AVUV at {_saa_sleeves.get('US Small Cap', 0.08)*100:.0f}%), emerging markets ({_saa_sleeves.get('Emerging Markets', 0.09)*100:.0f}%), "
+        f"real assets ({_saa_sleeves.get('Real Assets', 0.10)*100:.0f}%), TIPS ({_saa_sleeves.get('TIPS', 0.04)*100:.0f}%), and the overall "
+        f"~{_saa_parents.get('Equity', 0.78)*100:.0f}/{_non_eq_pct*100:.0f} equity-vs-other-assets risk posture — measured as the SAA-blended benchmark's "
         f"return spread over a {_naive_label}. This isolates what the "
         "allocation thesis itself contributed, separate from execution. Stage 2 (Implementation, "
         "decomposed via Brinson-Fachler below) captures two effects relative to the SAA's sleeve "
@@ -866,17 +866,29 @@ with col:
             tbl_data = []
             for _, row in bf_df.sort_values("total_effect", ascending=False).iterrows():
                 tbl_data.append({
-                    "Sleeve":        row["sleeve"],
-                    "Port Wt":       f"{row['w_p']*100:.1f}%",
-                    "Bench Wt":      f"{row['w_b']*100:.1f}%",
-                    "Port Ret":      _pct(row["r_p"]),
-                    "Bench Ret":     _pct(row["r_b"]),
-                    "Alloc (bps)":   f"{row['allocation_effect']*10000:+.1f}",
-                    "Sel (bps)":     f"{row['selection_effect']*10000:+.1f}",
-                    "Total (bps)":   f"{row['total_effect']*10000:+.1f}",
+                    "Sleeve":       row["sleeve"],
+                    "Port Wt":      row["w_p"] * 100,
+                    "Bench Wt":     row["w_b"] * 100,
+                    "Port Ret":     row["r_p"] * 100,
+                    "Bench Ret":    row["r_b"] * 100,
+                    "Alloc (bps)":  row["allocation_effect"] * 10_000,
+                    "Sel (bps)":    row["selection_effect"] * 10_000,
+                    "Total (bps)":  row["total_effect"] * 10_000,
                 })
-            st.dataframe(pd.DataFrame(tbl_data), hide_index=True,
-                         width='stretch')
+            st.dataframe(
+                pd.DataFrame(tbl_data),
+                hide_index=True,
+                width='stretch',
+                column_config={
+                    "Port Wt":     st.column_config.NumberColumn("Port Wt",     format="%.1f%%"),
+                    "Bench Wt":    st.column_config.NumberColumn("Bench Wt",    format="%.1f%%"),
+                    "Port Ret":    st.column_config.NumberColumn("Port Ret",    format="%.2f%%"),
+                    "Bench Ret":   st.column_config.NumberColumn("Bench Ret",   format="%.2f%%"),
+                    "Alloc (bps)": st.column_config.NumberColumn("Alloc (bps)", format="%+.1f"),
+                    "Sel (bps)":   st.column_config.NumberColumn("Sel (bps)",   format="%+.1f"),
+                    "Total (bps)": st.column_config.NumberColumn("Total (bps)", format="%+.1f"),
+                },
+            )
 
         # — Algebra summary —
         sum_effects   = bf_df["total_effect"].sum() * 10_000
@@ -965,16 +977,25 @@ with col:
                 outside_band_count += 1
             drift_rows.append({
                 "Sleeve":        sleeve,
-                "Target":        f"{target*100:.1f}%",
-                "Actual":        f"{actual*100:.1f}%",
-                "Drift (bps)":   f"{drift*10000:+.0f}",
+                "Target":        target * 100,
+                "Actual":        actual * 100,
+                "Drift (bps)":   drift * 10_000,
                 "Band (±bps)":   f"±{band*10000:.0f}",
                 "Status":        "⚠ Outside" if outside else "✓ Within",
             })
 
         # Sort by absolute drift descending
-        drift_rows.sort(key=lambda r: abs(int(r["Drift (bps)"].replace("+", ""))), reverse=True)
-        st.dataframe(pd.DataFrame(drift_rows), hide_index=True, width='stretch')
+        drift_rows.sort(key=lambda r: abs(r["Drift (bps)"]), reverse=True)
+        st.dataframe(
+            pd.DataFrame(drift_rows),
+            hide_index=True,
+            width='stretch',
+            column_config={
+                "Target":      st.column_config.NumberColumn("Target",      format="%.1f%%"),
+                "Actual":      st.column_config.NumberColumn("Actual",      format="%.1f%%"),
+                "Drift (bps)": st.column_config.NumberColumn("Drift (bps)", format="%+.0f"),
+            },
+        )
         st.caption(
             f"Rebalance candidates: **{outside_band_count}** sleeve"
             f"{'s' if outside_band_count != 1 else ''} outside tolerance band"

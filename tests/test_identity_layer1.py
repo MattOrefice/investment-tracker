@@ -81,8 +81,8 @@ def test_identity_saa_parent_weights_sum_to_one():
 def test_identity_saa_parent_equals_sum_of_children():
     """Each parent's target_weight must equal the sum of its children's target_weights.
 
-    This tests the hierarchy: Equity (0.72) = US Large Core (0.16) + US Large Quality (0.14)
-    + US Large Value (0.08) + US Small Cap (0.07) + Intl Developed (0.19) + EM (0.08).
+    This tests the hierarchy: Equity (0.78) = US Large Core (0.17) + US Large Quality (0.15)
+    + US Large Value (0.09) + US Small Cap (0.08) + Intl Developed (0.20) + EM (0.09).
     If a sleeve is reclassified or a child weight is adjusted without updating the parent,
     this test fails.
     """
