@@ -406,6 +406,25 @@ def build_location_flags(
     return pd.DataFrame(flags, columns=cols) if flags else pd.DataFrame(columns=cols)
 
 
+def build_strategic_comparison() -> pd.DataFrame:
+    """Return the SAA-vs-advisor-book comparison table.
+
+    Static editorial content — not derived from holdings.
+    """
+    rows = [
+        ("Equity tilts",          "Factor (Quality, Value, Small Value)",       "Market-cap broad"),
+        ("Equity risk mgmt",      "Diversification",                            "Active hedging overlays"),
+        ("Fixed income role",     "Duration ballast (Treasury + TIPS)",         "Yield generation (credit, floating, HY)"),
+        ("Fixed income duration", "Intermediate Treasury + TIPS",               "Mixed; mostly credit-spread risk"),
+        ("Real assets",           "Strategic 10% (commodities + REIT)",         "Token gestures (gold + REIT, ~1.5%)"),
+        ("Thematic",              "None (Phase 10 Asset Eval declined Bitcoin)", "$9.7k across ~12 themes"),
+        ("Single stocks",         "None",                                       "One position (MCO)"),
+        ("Active management",     "None",                                       "~$25k (hedged equity + multi-sector FI + GAOSX)"),
+        ("Tax-location",          "Designed-in",                                "Not the priority"),
+    ]
+    return pd.DataFrame(rows, columns=["Dimension", "SAA Framework", "Advisor Book"])
+
+
 def should_render_household() -> bool:
     """Return True when running in personal mode (household data is available)."""
     from src.config import is_demo

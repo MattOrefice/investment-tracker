@@ -34,6 +34,7 @@ from src.household import (
     build_drift_table,
     build_account_breakdown,
     build_location_flags,
+    build_strategic_comparison,
 )
 
 # ── Load data ──────────────────────────────────────────────────────────────────
@@ -106,6 +107,51 @@ with col:
     k3.metric("As of",             summary["as_of_date"])
     k4.metric("Self-Directed",    f"${summary['self_aum']:,.0f}")
     k5.metric("Ext. Managed",     f"${summary['external_aum']:,.0f}")
+    st.divider()
+
+# ── Strategic Comparison ───────────────────────────────────────────────────────
+_, col, _ = st.columns([1, 8, 1])
+with col:
+    st.subheader("Strategic Comparison — SAA vs Advisor Book")
+    st.caption(
+        "Side-by-side framing of the SAA framework against the positioning of the "
+        "advisor-managed accounts (six of seven accounts, ~$201k of household). "
+        "The advisor book runs a coherent strategy; it is not random — it just differs "
+        "from the SAA philosophy. This comparison is editorial context; computed drift "
+        "and exposure data follows below."
+    )
+
+    with st.expander("Advisor portfolio — strategic synthesis", expanded=True):
+        st.markdown(
+            "The advisor-managed portion of the household reads as a risk-aware, "
+            "income-focused, diversified portfolio with an explicit downside-protection "
+            "philosophy and a credit-tilted fixed income book. The structure is "
+            "recognizable: a broad-market equity core (ITOT, VONE, IXUS, VXUS, IEFA, "
+            "IJH, IJR) overlaid with active hedged-equity strategies (JHEQX, JEPI, "
+            "JEPQ, HELO) that participate in upside while explicitly pricing left-tail "
+            "risk; a multi-sector fixed income book (FIWDX, HLIPX, GBOSX, FAGIX, "
+            "BFRIX, GHYIX) built around yield generation through credit and "
+            "floating-rate exposure rather than duration ballast; a series of small "
+            "thematic and sector satellite positions; token-sized real-asset "
+            "diversifiers; one actively-managed multi-asset allocation fund (GAOSX); "
+            "and a workplace-default target-date fund (RFUTX) that drives a large "
+            "share of the equity exposure on auto-pilot."
+        )
+        st.markdown(
+            "This is a thoughtful diversifier — the kind of book a CFA managing a "
+            "young family member's money at no fee would build when optimizing for "
+            "'won't blow up, won't underperform by much, generates income, sleeps well "
+            "at night.' The SAA framework is a different philosophy: factor tilts "
+            "(Quality, Value, Small Value) rather than market-cap broad exposure; "
+            "Treasury and TIPS for duration ballast rather than credit risk for yield; "
+            "commodities and REITs at a strategic 10% rather than token positions; no "
+            "active hedging overlay; no thematic satellites. Neither approach is wrong; "
+            "they are different philosophies for different reasons. Understanding the "
+            "gap is more useful than trying to eliminate it."
+        )
+
+    st.caption("Strategic positioning by dimension.")
+    st.dataframe(build_strategic_comparison(), use_container_width=True, hide_index=True)
     st.divider()
 
 # ── Toggles ────────────────────────────────────────────────────────────────────

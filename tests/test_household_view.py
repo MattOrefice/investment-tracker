@@ -229,6 +229,39 @@ def test_should_render_household_demo_mode(monkeypatch):
     assert should_render_household() is False
 
 
+# ── build_strategic_comparison ────────────────────────────────────────────────
+
+def test_strategic_comparison_shape():
+    from src.household import build_strategic_comparison
+    df = build_strategic_comparison()
+    assert df.shape == (9, 3), f"Expected (9, 3), got {df.shape}"
+    assert list(df.columns) == ["Dimension", "SAA Framework", "Advisor Book"]
+
+
+def test_strategic_comparison_dimension_labels():
+    from src.household import build_strategic_comparison
+    expected = [
+        "Equity tilts",
+        "Equity risk mgmt",
+        "Fixed income role",
+        "Fixed income duration",
+        "Real assets",
+        "Thematic",
+        "Single stocks",
+        "Active management",
+        "Tax-location",
+    ]
+    assert list(build_strategic_comparison()["Dimension"]) == expected
+
+
+def test_strategic_comparison_key_cells():
+    from src.household import build_strategic_comparison
+    df = build_strategic_comparison()
+    assert df.iloc[0]["SAA Framework"] == "Factor (Quality, Value, Small Value)"
+    assert df.iloc[2]["SAA Framework"] == "Duration ballast (Treasury + TIPS)"
+    assert df.iloc[4]["SAA Framework"] == "Strategic 10% (commodities + REIT)"
+
+
 # ── CI grep: page file has no raw account numbers ────────────────────────────
 
 def test_household_view_page_has_no_raw_account_numbers():
