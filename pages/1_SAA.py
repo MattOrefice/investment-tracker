@@ -52,7 +52,7 @@ def load_saa_data():
             dict(r) for r in conn.execute("""
                 SELECT name, target_weight, rationale, benchmark_ticker
                 FROM asset_classes
-                WHERE parent_id IS NULL
+                WHERE parent_id IS NULL AND target_weight > 0
                 ORDER BY target_weight DESC
             """).fetchall()
         ]
