@@ -116,3 +116,13 @@ Each metric panel on the Macro and Factor Profile pages ends with a prose senten
 
 **Demo-mode write protection.**
 `IS_DEMO` from `src/config.py` is checked before any SQLite write in the application layer. The demo deployment on Streamlit Community Cloud serves `data/demo.db` as a read-only artifact. This lets the same codebase serve both a live personal tracker and a public resume artifact without conditional logic scattered across pages.
+
+---
+
+## Personal-mode household aggregation (Phase 25)
+
+The application's dual-mode design separates two distinct use cases. The demo deployment runs on Streamlit Community Cloud, served from `data/demo.db` — a committed SQLite file containing paper trades representing the public artifact. Personal mode runs locally against `data/tracker.db`, which holds real account data and is gitignored. Both modes execute the same codebase; `TRACKER_MODE` selects which database and which pages are active.
+
+Phase 25 added an ingestion and aggregation layer that lives entirely inside personal mode: a Fidelity CSV ingestion module (`src/ingestion/`), an accounts metadata table with pseudonymization and `managed_by` flags, a household securities sleeve mapping loader, fund composition look-through for target-date and allocation funds, and a Household View page aggregating all accounts against the SAA with scope and fund-treatment toggles, off-SAA exposure reporting, and asset-location observations. The corresponding schema migrations applied to `demo.db` were strictly additive — new columns default to null or zero, new tables are empty — so the demo artifact is structurally extended but behaviorally unchanged. The Household View page (`pages/13_Household_View.py`) is registered in `st.navigation` only when `TRACKER_MODE=personal`; direct URL access on Cloud returns "Page not found."
+
+This establishes the pattern for future personal-mode extensions: schema changes to `demo.db` must be additive and inert, and page registration must be mode-gated. Personal-mode features can therefore extend both the schema and the page set without affecting the public artifact, provided these two constraints are observed.

@@ -140,6 +140,26 @@ GitHub Actions run after every push and confirm the green checkmark before closi
 
 ---
 
+## Phase 25 — Personal-mode household aggregation layer
+*May 27–28, 2026*
+
+Adds a personal-mode household aggregation layer; demo mode unchanged. Ingests a
+multi-account Fidelity CSV export, looks through target-date and allocation funds into
+underlying sleeves, and aggregates across all accounts against the SAA with drift
+reporting.
+
+- **25.1** — Fidelity CSV ingestion module (`src/ingestion/fidelity.py`) (607effb)
+- **25.2** — Accounts metadata table; pseudonymization and `managed_by` flags (431fc8f)
+- **25.3** — Household securities sleeve mapping and loader (c4fe5cc)
+- **25.4** — Fund composition look-through for target-date and allocation funds (75980dd)
+- **25.5** — Household allocation aggregation with look-through, scope filtering, and
+  SAA drift (a8073bc)
+- **25.6** — Household View page: scope/look-through toggles, off-SAA reporting, and
+  tax-location flags; page registered in `st.navigation` only when
+  `TRACKER_MODE=personal` (2628775, 3778fde)
+
+---
+
 ## Phase 24 — Landing page treatment and consolidation
 *May 13, 2026*
 
