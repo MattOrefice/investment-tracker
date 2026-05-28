@@ -1,4 +1,4 @@
-"""Household account display and look-through helpers.
+"""Household account display, look-through, and aggregation helpers.
 
 UI code must call get_account_display() rather than reading
 account_number directly — raw account numbers must never appear in pages/.
@@ -263,3 +263,150 @@ def household_summary(
         "self_aum":      round(self_aum, 2),
         "external_aum":  round(external_aum, 2),
     }
+
+
+# ── Presentation helpers (used by Household View page) ────────────────────────
+
+def build_drift_table(
+    alloc_df: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Split allocation DataFrame into presentation-ready SAA and off-SAA tables.
+
+    Returns (saa_table, off_saa_table):
+      saa_table    — SAA sleeves sorted by abs(drift_pp) descending, with Drift column
+      off_saa_table — Off-SAA sleeves sorted by dollar_value descending, no Drift column
+    """
+    saa = alloc_df[~alloc_df["is_off_saa"]].copy()
+    off = alloc_df[alloc_df["is_off_saa"]].copy()
+
+    saa = saa.sort_values("drift_pp", key=lambda s: s.abs(), ascending=False).reset_index(drop=True)
+    off = off.sort_values("dollar_value", ascending=False).reset_index(drop=True)
+
+    saa_tbl = pd.DataFrame({
+        "Sleeve":      saa["sleeve"],
+        "Actual (%)":  saa["percent_weight"].round(1),
+        "Actual ($)":  saa["dollar_value"].round(0).astype(int),
+        "Target (%)":  (saa["target_weight"] * 100).round(1),
+        "Drift (pp)":  saa["drift_pp"].round(1),
+        "Rationale":   saa["rationale"],
+    })
+    off_tbl = pd.DataFrame({
+        "Sleeve":     off["sleeve"],
+        "Actual (%)": off["percent_weight"].round(1),
+        "Actual ($)": off["dollar_value"].round(0).astype(int),
+    })
+    return saa_tbl, off_tbl
+
+
+def build_account_breakdown(
+    positions_df: pd.DataFrame,
+    accounts_df: pd.DataFrame,
+    securities_df: pd.DataFrame,
+) -> pd.DataFrame:
+    """Per-account exposure summary using display_name only.
+
+    Raw account_number never appears in the output DataFrame.
+    Columns: Account, Managed By, Tax Treatment, Dominant Sleeve, Total AUM ($).
+    """
+    sec = securities_df[["ticker", "sleeve_category"]].copy()
+    acct = (
+        accounts_df[["account_number", "display_name", "managed_by", "tax_treatment"]]
+        .dropna(subset=["account_number"])
+        .copy()
+    )
+
+    joined = positions_df.merge(sec, left_on="symbol", right_on="ticker", how="left")
+    joined["sleeve_category"] = joined["sleeve_category"].fillna("unknown")
+
+    totals = positions_df.groupby("account_number")["current_value"].sum().reset_index()
+
+    sleeve_by_acct = (
+        joined.groupby(["account_number", "sleeve_category"])["current_value"]
+        .sum()
+        .reset_index()
+    )
+    dom_idx = sleeve_by_acct.groupby("account_number")["current_value"].idxmax()
+    dominant = (
+        sleeve_by_acct.loc[dom_idx, ["account_number", "sleeve_category"]]
+        .rename(columns={"sleeve_category": "dominant_sleeve"})
+    )
+
+    result = (
+        totals
+        .merge(dominant, on="account_number", how="left")
+        .merge(acct, on="account_number", how="left")
+        .drop(columns=["account_number"])
+        .rename(columns={
+            "current_value":  "Total AUM ($)",
+            "display_name":   "Account",
+            "managed_by":     "Managed By",
+            "tax_treatment":  "Tax Treatment",
+            "dominant_sleeve": "Dominant Sleeve",
+        })
+        .sort_values("Total AUM ($)", ascending=False)
+        .reset_index(drop=True)
+    )
+    return result[["Account", "Managed By", "Tax Treatment", "Dominant Sleeve", "Total AUM ($)"]]
+
+
+def build_location_flags(
+    positions_df: pd.DataFrame,
+    accounts_df: pd.DataFrame,
+    securities_df: pd.DataFrame,
+) -> pd.DataFrame:
+    """Flag holdings with suboptimal tax location.
+
+    Flags:
+      - tax_efficiency='low'  AND tax_treatment='taxable'
+        (tax-inefficient asset held in a taxable account)
+      - tax_efficiency='high' AND tax_treatment in ('traditional_ira', 'roth_ira')
+        (tax-efficient asset occupying scarce tax-advantaged space)
+
+    Returns a DataFrame with columns:
+        Holding, Symbol, Account, Tax Efficiency, Account Type, Note
+    Account column uses display_name — never raw account_number.
+    """
+    sec = securities_df[["ticker", "name", "tax_efficiency"]].copy()
+    acct = (
+        accounts_df[["account_number", "display_name", "tax_treatment"]]
+        .dropna(subset=["account_number"])
+        .copy()
+    )
+
+    joined = (
+        positions_df
+        .merge(sec, left_on="symbol", right_on="ticker", how="left")
+        .merge(acct, on="account_number", how="left")
+    )
+
+    flags: list[dict] = []
+    for _, row in joined.iterrows():
+        te = row.get("tax_efficiency")
+        tt = row.get("tax_treatment")
+        if not te or not tt:
+            continue
+
+        note = None
+        if te == "low" and tt == "taxable":
+            note = "Tax-inefficient asset in taxable account"
+        elif te == "high" and tt in ("traditional_ira", "roth_ira"):
+            note = "Tax-efficient asset in tax-advantaged account"
+
+        if note:
+            flags.append({
+                "Holding":        str(row.get("name") or row.get("description") or row["symbol"]),
+                "Symbol":         row["symbol"],
+                "Account":        str(row.get("display_name") or ""),
+                "Tax Efficiency": te,
+                "Account Type":   tt,
+                "Note":           note,
+            })
+
+    cols = ["Holding", "Symbol", "Account", "Tax Efficiency", "Account Type", "Note"]
+    return pd.DataFrame(flags, columns=cols) if flags else pd.DataFrame(columns=cols)
+
+
+def should_render_household() -> bool:
+    """Return True when running in personal mode (household data is available)."""
+    from src.config import is_demo
+    return not is_demo()
