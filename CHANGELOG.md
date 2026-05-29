@@ -140,6 +140,21 @@ GitHub Actions run after every push and confirm the green checkmark before closi
 
 ---
 
+## Phase 26 — Household View improvements
+_2026-05-28_
+
+Builds on Phase 25 with editorial framing and analytical depth on the
+personal-mode Household View page. Demo mode unchanged.
+
+- **26.0** — Advisor vs SAA strategic comparison section
+- **26.1** — Footer deduplication, sleeve display names, drift sort,
+  actionable/observed reframing, top-N tax-drag ranking, sleeve
+  substitution mapping, concentration panel
+- Marked 22 live-data macro render tests with `@pytest.mark.live_data`
+  and excluded from default suite
+
+---
+
 ## Phase 25 — Personal-mode household aggregation layer
 *May 27–28, 2026*
 
