@@ -274,7 +274,7 @@ def build_drift_table(
 
     Returns (saa_table, off_saa_table):
       saa_table    — SAA sleeves sorted by abs(drift_pp) descending, with Drift column
-      off_saa_table — Off-SAA sleeves sorted by dollar_value descending, no Drift column
+      off_saa_table — Off-SAA sleeves sorted by dollar_value descending, with Substitutes For
     """
     saa = alloc_df[~alloc_df["is_off_saa"]].copy()
     off = alloc_df[alloc_df["is_off_saa"]].copy()
@@ -291,9 +291,10 @@ def build_drift_table(
         "Rationale":   saa["rationale"],
     })
     off_tbl = pd.DataFrame({
-        "Sleeve":     off["sleeve"],
-        "Actual (%)": off["percent_weight"].round(1),
-        "Actual ($)": off["dollar_value"].round(0).astype(int),
+        "Sleeve":          off["sleeve"].map(sleeve_display_name),
+        "Actual (%)":      off["percent_weight"].round(1),
+        "Actual ($)":      off["dollar_value"].round(0).astype(int),
+        "Substitutes For": off["sleeve"].map(get_substitution_note),
     })
     return saa_tbl, off_tbl
 
@@ -346,6 +347,7 @@ def build_account_breakdown(
         .sort_values("Total AUM ($)", ascending=False)
         .reset_index(drop=True)
     )
+    result["Dominant Sleeve"] = result["Dominant Sleeve"].map(sleeve_display_name)
     return result[["Account", "Managed By", "Tax Treatment", "Dominant Sleeve", "Total AUM ($)"]]
 
 
@@ -429,3 +431,317 @@ def should_render_household() -> bool:
     """Return True when running in personal mode (household data is available)."""
     from src.config import is_demo
     return not is_demo()
+
+
+# ── Sleeve display names ───────────────────────────────────────────────────────
+
+_SLEEVE_DISPLAY_NAMES: dict[str, str] = {
+    "us_large_core":           "US Large Core",
+    "us_large_quality":        "US Large Quality",
+    "us_large_value":          "US Large Value",
+    "us_large_growth":         "US Large Growth",
+    "us_small_core":           "US Small Core",
+    "us_small_value":          "US Small Value",
+    "us_mid_cap":              "US Mid Cap",
+    "us_sector_tech":          "US Sector — Tech",
+    "us_sector_healthcare":    "US Sector — Healthcare",
+    "intl_developed":          "International Developed",
+    "intl_all_exus":           "International (All ex-US)",
+    "emerging_markets":        "Emerging Markets",
+    "core_fi_treasury":        "Core FI — Treasury",
+    "core_fi_credit":          "Core FI — Credit",
+    "high_yield_fi":           "High Yield FI",
+    "high_yield_muni":         "High Yield Muni",
+    "floating_rate":           "Floating Rate",
+    "multi_sector_fi":         "Multi-Sector FI",
+    "tips":                    "TIPS",
+    "real_assets_commodities": "Real Assets — Commodities",
+    "real_assets_reit":        "Real Assets — REIT",
+    "real_assets_gold":        "Real Assets — Gold",
+    "hedged_equity":           "Hedged Equity",
+    "liquid_alt":              "Liquid Alternatives",
+    "thematic":                "Thematic",
+    "multi_asset":             "Multi-Asset",
+    "target_date":             "Target Date",
+    "cash":                    "Cash",
+    "single_stock":            "Single Stock",
+    "crypto":                  "Crypto",
+}
+
+
+def sleeve_display_name(sleeve_key: str) -> str:
+    """Map a snake_case sleeve key to a UI display label.
+
+    Falls back to title-cased, space-separated form for unknown keys.
+    """
+    return _SLEEVE_DISPLAY_NAMES.get(sleeve_key, sleeve_key.replace("_", " ").title())
+
+
+# ── Off-SAA substitution mapping ──────────────────────────────────────────────
+
+_OFF_SAA_SUBSTITUTIONS: dict[str, tuple[str, str]] = {
+    "intl_all_exus":        ("Intl Dev + EM", "high"),
+    "us_small_core":        ("US Small Value", "medium"),
+    "us_mid_cap":           ("US Large Core", "low"),
+    "us_large_growth":      ("US Large Core", "medium"),
+    "us_sector_tech":       ("US Large Core", "low"),
+    "us_sector_healthcare": ("US Large Core", "low"),
+    "core_fi_credit":       ("Core FI — Treasury", "low"),
+    "high_yield_fi":        ("—", "none"),
+    "high_yield_muni":      ("—", "none"),
+    "floating_rate":        ("—", "none"),
+    "multi_sector_fi":      ("Core FI — Treasury", "low"),
+    "hedged_equity":        ("US Large Core", "medium"),
+    "liquid_alt":           ("Cash", "medium"),
+    "real_assets_gold":     ("Real Assets — Commodities", "medium"),
+    "thematic":             ("—", "none"),
+    "multi_asset":          ("—", "none"),
+    "target_date":          ("—", "none"),
+    "single_stock":         ("—", "none"),
+    "crypto":               ("—", "none"),
+}
+
+
+def get_substitution_note(sleeve_key: str) -> str:
+    """Return a formatted substitution note for an off-SAA sleeve key.
+
+    Returns a string like "Intl Dev + EM (high)" or "—" if no substitute.
+    """
+    entry = _OFF_SAA_SUBSTITUTIONS.get(sleeve_key)
+    if entry is None or entry[1] == "none":
+        return "—"
+    saa_equiv, equiv_level = entry
+    return f"{saa_equiv} ({equiv_level})"
+
+
+# ── Tax drag ranking ───────────────────────────────────────────────────────────
+
+_SLEEVE_ASSUMED_YIELD: dict[str, float] = {
+    "real_assets_reit":        0.040,
+    "real_assets_commodities": 0.015,
+    "real_assets_gold":        0.000,
+    "high_yield_fi":           0.060,
+    "high_yield_muni":         0.045,
+    "floating_rate":           0.055,
+    "multi_sector_fi":         0.040,
+    "core_fi_credit":          0.035,
+    "core_fi_treasury":        0.040,
+    "tips":                    0.025,
+    "cash":                    0.045,
+    "hedged_equity":           0.060,
+    "single_stock":            0.020,
+    "crypto":                  0.000,
+    "liquid_alt":              0.020,
+}
+_EQUITY_DEFAULT_YIELD = 0.018
+_MARGINAL_RATE = 0.41
+
+
+def _assumed_yield(sleeve_key: str) -> float:
+    return _SLEEVE_ASSUMED_YIELD.get(sleeve_key, _EQUITY_DEFAULT_YIELD)
+
+
+def build_tax_drag_ranking(
+    positions_df: pd.DataFrame,
+    accounts_df: pd.DataFrame,
+    securities_df: pd.DataFrame,
+    top_n: int = 10,
+) -> pd.DataFrame:
+    """Rank suboptimally-located holdings by estimated annual tax drag.
+
+    Columns: Holding, Symbol, Account, Current Issue, Suggested Move, Est. Annual Drag ($)
+    Sorted by Est. Annual Drag descending, capped at top_n.
+
+    Drag formula: dollar_value * assumed_yield * abs(marginal_rate - alt_rate)
+      low-efficiency in taxable:           alt_rate = 0.20 (LTCG + state)
+      high-efficiency in tax-advantaged:   alt_rate = 0.41 (marginal; drag = 0 by formula)
+    Rows with zero estimated drag are excluded.
+    """
+    sec = securities_df[["ticker", "name", "tax_efficiency", "sleeve_category"]].copy()
+    acct = (
+        accounts_df[["account_number", "display_name", "tax_treatment"]]
+        .dropna(subset=["account_number"])
+        .copy()
+    )
+    joined = (
+        positions_df
+        .merge(sec, left_on="symbol", right_on="ticker", how="left")
+        .merge(acct, on="account_number", how="left")
+    )
+
+    rows: list[dict] = []
+    for _, row in joined.iterrows():
+        te = str(row.get("tax_efficiency") or "")
+        tt = str(row.get("tax_treatment") or "")
+        dollar = float(row.get("current_value", 0) or 0)
+        sleeve = str(row.get("sleeve_category") or "")
+        if not te or not tt:
+            continue
+
+        issue = None
+        suggested = None
+        alt_rate = 0.0
+
+        if te == "low" and tt == "taxable":
+            issue = "Low-efficiency in taxable"
+            suggested = "Move to Traditional IRA or Roth IRA"
+            alt_rate = 0.20
+        elif te == "high" and tt in ("traditional_ira", "roth_ira"):
+            issue = "High-efficiency in tax-advantaged"
+            suggested = "Move to Taxable"
+            alt_rate = _MARGINAL_RATE
+
+        if issue is None:
+            continue
+
+        drag = dollar * _assumed_yield(sleeve) * abs(_MARGINAL_RATE - alt_rate)
+        if drag <= 0:
+            continue
+
+        rows.append({
+            "Holding":              str(row.get("name") or row.get("description") or row["symbol"]),
+            "Symbol":               row["symbol"],
+            "Account":              str(row.get("display_name") or ""),
+            "Current Issue":        issue,
+            "Suggested Move":       suggested,
+            "Est. Annual Drag ($)": round(drag, 0),
+        })
+
+    cols = ["Holding", "Symbol", "Account", "Current Issue", "Suggested Move", "Est. Annual Drag ($)"]
+    if not rows:
+        return pd.DataFrame(columns=cols)
+
+    return (
+        pd.DataFrame(rows, columns=cols)
+        .sort_values("Est. Annual Drag ($)", ascending=False)
+        .head(top_n)
+        .reset_index(drop=True)
+    )
+
+
+# ── Concentration panel ────────────────────────────────────────────────────────
+
+def _infer_issuer(description: str, symbol: str) -> str:
+    """Infer fund family / issuer from holding description or symbol."""
+    desc = str(description).upper()
+    if "VANGUARD" in desc:
+        return "Vanguard"
+    if "ISHARES" in desc or "BLACKROCK" in desc:
+        return "iShares / BlackRock"
+    if "JPMORGAN" in desc or "JP MORGAN" in desc or "J.P. MORGAN" in desc:
+        return "JPMorgan"
+    if "FIDELITY" in desc:
+        return "Fidelity"
+    if "AVANTIS" in desc:
+        return "Avantis"
+    if "SCHWAB" in desc:
+        return "Schwab"
+    if "INVESCO" in desc:
+        return "Invesco"
+    if "SPDR" in desc or "STATE STREET" in desc:
+        return "State Street / SPDR"
+    if "INNOVATOR" in desc:
+        return "Innovator"
+    return "Other"
+
+
+def build_top_holdings(
+    positions_df: pd.DataFrame,
+    accounts_df: pd.DataFrame,
+    securities_df: pd.DataFrame,
+    n: int = 5,
+) -> pd.DataFrame:
+    """Return top-N holdings by dollar value.
+
+    Columns: Holding, Symbol, Account, $ Value, % of Household
+    """
+    total_aum = float(positions_df["current_value"].sum())
+    sec = securities_df[["ticker", "name"]].copy()
+    acct = accounts_df[["account_number", "display_name"]].copy()
+
+    df = (
+        positions_df
+        .merge(sec, left_on="symbol", right_on="ticker", how="left")
+        .merge(acct, on="account_number", how="left")
+        .sort_values("current_value", ascending=False)
+        .head(n)
+        .reset_index(drop=True)
+    )
+
+    desc_col = df.get("description", pd.Series("", index=df.index)).fillna("")
+    holding_names = df["name"].fillna(desc_col).fillna(df["symbol"])
+
+    return pd.DataFrame({
+        "Holding":         holding_names,
+        "Symbol":          df["symbol"],
+        "Account":         df["display_name"].fillna(""),
+        "$ Value":         df["current_value"].round(0).astype(int),
+        "% of Household":  (df["current_value"] / total_aum * 100).round(1),
+    })
+
+
+def build_issuer_concentration(
+    positions_df: pd.DataFrame,
+    n: int = 3,
+) -> pd.DataFrame:
+    """Return top-N issuers by dollar value.
+
+    Columns: Issuer, $ Total, % of Household
+    """
+    total_aum = float(positions_df["current_value"].sum())
+    desc_col = (
+        positions_df["description"]
+        if "description" in positions_df.columns
+        else pd.Series("", index=positions_df.index)
+    )
+    issuers = [
+        _infer_issuer(str(desc), str(sym))
+        for desc, sym in zip(desc_col.fillna(""), positions_df["symbol"])
+    ]
+    df = positions_df.copy()
+    df["issuer"] = issuers
+
+    grouped = (
+        df.groupby("issuer")["current_value"]
+        .sum()
+        .reset_index()
+        .sort_values("current_value", ascending=False)
+        .head(n)
+        .reset_index(drop=True)
+    )
+    return pd.DataFrame({
+        "Issuer":          grouped["issuer"],
+        "$ Total":         grouped["current_value"].round(0).astype(int),
+        "% of Household":  (grouped["current_value"] / total_aum * 100).round(1),
+    })
+
+
+def build_single_stock_summary(
+    positions_df: pd.DataFrame,
+    securities_df: pd.DataFrame,
+) -> str:
+    """Return a one-line single-stock exposure summary.
+
+    Example: "Single-stock exposure: $5,000 (2.5%) — Moody's (MCO)."
+    """
+    sec = securities_df[["ticker", "name", "sleeve_category"]].copy()
+    single_stocks = (
+        positions_df
+        .merge(sec, left_on="symbol", right_on="ticker", how="left")
+        .query("sleeve_category == 'single_stock'")
+    )
+
+    if single_stocks.empty:
+        return "Single-stock exposure: none."
+
+    total_aum = float(positions_df["current_value"].sum())
+    ss_total = float(single_stocks["current_value"].sum())
+    pct = ss_total / total_aum * 100
+
+    names = []
+    for _, row in single_stocks.iterrows():
+        holding_name = str(row.get("name") or row["symbol"])
+        sym = str(row["symbol"])
+        names.append(f"{holding_name} ({sym})")
+
+    return f"Single-stock exposure: ${ss_total:,.0f} ({pct:.1f}%) — {', '.join(names)}."
