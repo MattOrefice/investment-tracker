@@ -229,6 +229,150 @@ def test_should_render_household_demo_mode(monkeypatch):
     assert should_render_household() is False
 
 
+# ── build_strategic_comparison ────────────────────────────────────────────────
+
+def test_strategic_comparison_shape():
+    from src.household import build_strategic_comparison
+    df = build_strategic_comparison()
+    assert df.shape == (9, 3), f"Expected (9, 3), got {df.shape}"
+    assert list(df.columns) == ["Dimension", "SAA Framework", "Advisor Book"]
+
+
+def test_strategic_comparison_dimension_labels():
+    from src.household import build_strategic_comparison
+    expected = [
+        "Equity tilts",
+        "Equity risk mgmt",
+        "Fixed income role",
+        "Fixed income duration",
+        "Real assets",
+        "Thematic",
+        "Single stocks",
+        "Active management",
+        "Tax-location",
+    ]
+    assert list(build_strategic_comparison()["Dimension"]) == expected
+
+
+def test_strategic_comparison_key_cells():
+    from src.household import build_strategic_comparison
+    df = build_strategic_comparison()
+    assert df.iloc[0]["SAA Framework"] == "Factor (Quality, Value, Small Value)"
+    assert df.iloc[2]["SAA Framework"] == "Duration ballast (Treasury + TIPS)"
+    assert df.iloc[4]["SAA Framework"] == "Strategic 10% (commodities + REIT)"
+
+
+# ── sleeve_display_name ───────────────────────────────────────────────────────
+
+def test_sleeve_display_name_known_key():
+    from src.household import sleeve_display_name
+    assert sleeve_display_name("intl_all_exus") == "International (All ex-US)"
+    assert sleeve_display_name("us_large_core") == "US Large Core"
+
+
+def test_sleeve_display_name_fallback_title_case():
+    from src.household import sleeve_display_name
+    result = sleeve_display_name("something_unknown")
+    assert result == "Something Unknown", f"Expected title-case fallback, got {result!r}"
+
+
+# ── get_substitution_note ─────────────────────────────────────────────────────
+
+def test_substitution_note_known():
+    from src.household import get_substitution_note
+    note = get_substitution_note("intl_all_exus")
+    assert "Intl Dev + EM" in note
+    assert "high" in note
+
+
+def test_substitution_note_none():
+    from src.household import get_substitution_note
+    assert get_substitution_note("crypto") == "—"
+    assert get_substitution_note("thematic") == "—"
+
+
+# ── build_tax_drag_ranking ────────────────────────────────────────────────────
+
+def test_tax_drag_reit_in_taxable_nonzero():
+    from src.household import build_tax_drag_ranking
+    pos = pd.DataFrame([{
+        "account_number": "MOCK",
+        "symbol": "VNQ",
+        "description": "Vanguard REIT ETF",
+        "current_value": 10000.0,
+    }])
+    acct = pd.DataFrame([{
+        "account_number": "MOCK",
+        "display_name":   "Mock Taxable",
+        "tax_treatment":  "taxable",
+        "managed_by":     "external",
+    }])
+    sec = pd.DataFrame([{
+        "ticker":          "VNQ",
+        "name":            "Vanguard Real Estate ETF",
+        "tax_efficiency":  "low",
+        "sleeve_category": "real_assets_reit",
+    }])
+    result = build_tax_drag_ranking(pos, acct, sec, top_n=10)
+    assert len(result) == 1, "REIT in taxable should produce one flagged row"
+    assert result.iloc[0]["Est. Annual Drag ($)"] > 0, "Estimated drag should be positive"
+
+
+def test_tax_drag_equity_in_taxable_not_flagged():
+    from src.household import build_tax_drag_ranking
+    pos = pd.DataFrame([{
+        "account_number": "MOCK",
+        "symbol": "VOO",
+        "description": "Vanguard S&P 500",
+        "current_value": 10000.0,
+    }])
+    acct = pd.DataFrame([{
+        "account_number": "MOCK",
+        "display_name":   "Mock Taxable",
+        "tax_treatment":  "taxable",
+        "managed_by":     "self",
+    }])
+    sec = pd.DataFrame([{
+        "ticker":          "VOO",
+        "name":            "Vanguard S&P 500 ETF",
+        "tax_efficiency":  "high",
+        "sleeve_category": "us_large_core",
+    }])
+    result = build_tax_drag_ranking(pos, acct, sec, top_n=10)
+    assert len(result) == 0, "High-efficiency in taxable should not be flagged"
+
+
+# ── build_top_holdings ────────────────────────────────────────────────────────
+
+def test_top_holdings_returns_five_rows():
+    _skip_if_no_holdings()
+    from src.household import build_top_holdings
+    pos, acct, sec = _load_fixtures()
+    result = build_top_holdings(pos, acct, sec, n=5)
+    assert len(result) == 5, f"Expected 5 rows, got {len(result)}"
+    assert list(result.columns) == ["Holding", "Symbol", "Account", "$ Value", "% of Household"]
+
+
+def test_top_holdings_sorted_descending():
+    _skip_if_no_holdings()
+    from src.household import build_top_holdings
+    pos, acct, sec = _load_fixtures()
+    result = build_top_holdings(pos, acct, sec, n=5)
+    values = result["$ Value"].tolist()
+    assert values == sorted(values, reverse=True), "Holdings should be sorted by $ value descending"
+
+
+# ── build_single_stock_summary ────────────────────────────────────────────────
+
+def test_single_stock_summary_contains_mco():
+    _skip_if_no_holdings()
+    from src.household import build_single_stock_summary
+    pos, _, sec = _load_fixtures()
+    result = build_single_stock_summary(pos, sec)
+    assert "MCO" in result, f"Expected MCO in summary, got: {result!r}"
+    assert result.startswith("Single-stock exposure:")
+
+
 # ── CI grep: page file has no raw account numbers ────────────────────────────
 
 def test_household_view_page_has_no_raw_account_numbers():

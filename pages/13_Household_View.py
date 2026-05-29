@@ -12,7 +12,7 @@ import pandas as pd
 import plotly.graph_objects as go
 
 from src.config import IS_DEMO
-from src.ui_helpers import render_page_header, render_sidebar_footer
+from src.ui_helpers import render_page_header
 
 render_page_header()
 
@@ -33,7 +33,12 @@ from src.household import (
     household_summary,
     build_drift_table,
     build_account_breakdown,
-    build_location_flags,
+    build_strategic_comparison,
+    sleeve_display_name,
+    build_tax_drag_ranking,
+    build_top_holdings,
+    build_issuer_concentration,
+    build_single_stock_summary,
 )
 
 # ── Load data ──────────────────────────────────────────────────────────────────
@@ -106,6 +111,51 @@ with col:
     k3.metric("As of",             summary["as_of_date"])
     k4.metric("Self-Directed",    f"${summary['self_aum']:,.0f}")
     k5.metric("Ext. Managed",     f"${summary['external_aum']:,.0f}")
+    st.divider()
+
+# ── Strategic Comparison ───────────────────────────────────────────────────────
+_, col, _ = st.columns([1, 8, 1])
+with col:
+    st.subheader("Strategic Comparison — SAA vs Advisor Book")
+    st.caption(
+        "Side-by-side framing of the SAA framework against the positioning of the "
+        "advisor-managed accounts (six of seven accounts, ~$201k of household). "
+        "The advisor book runs a coherent strategy; it is not random — it just differs "
+        "from the SAA philosophy. This comparison is editorial context; computed drift "
+        "and exposure data follows below."
+    )
+
+    with st.expander("Advisor portfolio — strategic synthesis", expanded=True):
+        st.markdown(
+            "The advisor-managed portion of the household reads as a risk-aware, "
+            "income-focused, diversified portfolio with an explicit downside-protection "
+            "philosophy and a credit-tilted fixed income book. The structure is "
+            "recognizable: a broad-market equity core (ITOT, VONE, IXUS, VXUS, IEFA, "
+            "IJH, IJR) overlaid with active hedged-equity strategies (JHEQX, JEPI, "
+            "JEPQ, HELO) that participate in upside while explicitly pricing left-tail "
+            "risk; a multi-sector fixed income book (FIWDX, HLIPX, GBOSX, FAGIX, "
+            "BFRIX, GHYIX) built around yield generation through credit and "
+            "floating-rate exposure rather than duration ballast; a series of small "
+            "thematic and sector satellite positions; token-sized real-asset "
+            "diversifiers; one actively-managed multi-asset allocation fund (GAOSX); "
+            "and a workplace-default target-date fund (RFUTX) that drives a large "
+            "share of the equity exposure on auto-pilot."
+        )
+        st.markdown(
+            "This is a thoughtful diversifier — the kind of book a CFA managing a "
+            "young family member's money at no fee would build when optimizing for "
+            "'won't blow up, won't underperform by much, generates income, sleeps well "
+            "at night.' The SAA framework is a different philosophy: factor tilts "
+            "(Quality, Value, Small Value) rather than market-cap broad exposure; "
+            "Treasury and TIPS for duration ballast rather than credit risk for yield; "
+            "commodities and REITs at a strategic 10% rather than token positions; no "
+            "active hedging overlay; no thematic satellites. Neither approach is wrong; "
+            "they are different philosophies for different reasons. Understanding the "
+            "gap is more useful than trying to eliminate it."
+        )
+
+    st.caption("Strategic positioning by dimension.")
+    st.dataframe(build_strategic_comparison(), use_container_width=True, hide_index=True)
     st.divider()
 
 # ── Toggles ────────────────────────────────────────────────────────────────────
@@ -202,7 +252,7 @@ with col:
         fig_off = go.Figure()
         fig_off.add_trace(go.Bar(
             name="Off-SAA Actual",
-            y=off_chart["sleeve"],
+            y=off_chart["sleeve"].map(sleeve_display_name),
             x=off_chart["percent_weight"].round(1),
             orientation="h",
             marker_color=_GRAY,
@@ -231,6 +281,29 @@ with col:
 _, col, _ = st.columns([1, 8, 1])
 with col:
     st.subheader("Drift Detail")
+
+    # Actionable vs observed framing (Item D)
+    if scope == "total":
+        pct_self = summary["self_aum"] / summary["total_aum"] * 100 if summary["total_aum"] else 0
+        pct_ext  = summary["external_aum"] / summary["total_aum"] * 100 if summary["total_aum"] else 0
+        st.info(
+            f"Drift is computed against the full household aggregate. "
+            f"Of the ${summary['total_aum']:,.0f} household, "
+            f"${summary['self_aum']:,.0f} ({pct_self:.1f}%) is self-directed and actionable; "
+            f"${summary['external_aum']:,.0f} ({pct_ext:.1f}%) is externally-managed and observed. "
+            "Aligning to SAA targets primarily requires manager coordination, not unilateral trades."
+        )
+    elif scope == "self_only":
+        st.info(
+            "Showing self-directed account only. Drift here is directly actionable "
+            "via the Capital Deployment page."
+        )
+    else:
+        st.info(
+            "Showing externally-managed accounts only. Drift is observed context, "
+            "not actionable without manager coordination."
+        )
+
     saa_tbl, off_tbl = build_drift_table(alloc_df)
 
     def _drift_color(val: float) -> str:
@@ -288,31 +361,80 @@ with col:
     )
     st.divider()
 
-# ── Tax-Location Flags ─────────────────────────────────────────────────────────
+# ── Concentration ──────────────────────────────────────────────────────────────
+_, col, _ = st.columns([1, 8, 1])
+with col:
+    st.subheader("Concentration")
+
+    st.markdown("**Top 5 Holdings by Value**")
+    top5_df = build_top_holdings(positions_df, accounts_df, securities_df, n=5)
+    st.dataframe(
+        top5_df,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "$ Value":         st.column_config.NumberColumn(format="$%d"),
+            "% of Household":  st.column_config.NumberColumn(format="%.1f"),
+        },
+    )
+
+    st.markdown("**Top 3 Issuers**")
+    issuers_df = build_issuer_concentration(positions_df, n=3)
+    st.dataframe(
+        issuers_df,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "$ Total":         st.column_config.NumberColumn(format="$%d"),
+            "% of Household":  st.column_config.NumberColumn(format="%.1f"),
+        },
+    )
+
+    st.markdown("**Single-Stock Exposure**")
+    st.markdown(build_single_stock_summary(positions_df, securities_df))
+    st.divider()
+
+# ── Asset-Location Observations (tax drag ranking) ─────────────────────────────
 _, col, _ = st.columns([1, 8, 1])
 with col:
     st.subheader("Asset-Location Observations")
     st.caption(
-        "Flags holdings where tax location appears suboptimal. "
-        "This is observational only — no trade recommendations. "
-        "Six of seven accounts are externally managed; changes require manager coordination."
+        "Ranked by estimated annual tax drag. "
+        "Six of seven accounts are externally managed; addressing this would require "
+        "coordination with the account manager."
     )
 
-    flags_df = build_location_flags(positions_df, accounts_df, securities_df)
+    with st.expander("Assumptions (annual tax drag is a rough estimate)", expanded=False):
+        st.markdown(
+            "- **Marginal rate:** 32% federal + 9% DC = 41% combined\n"
+            "- **Alt rate (low-efficiency in taxable):** 20% (LTCG + state) if moved "
+            "to tax-advantaged\n"
+            "- **Yields:** per-sleeve assumed annual distribution yields (not per-ticker)\n"
+            "- **Formula:** `drag = value × assumed_yield × (marginal_rate − alt_rate)`\n"
+            "- Holdings with zero estimated drag (e.g. equity ETFs in Roth) are excluded."
+        )
 
-    if flags_df.empty:
-        st.success("No suboptimal tax-location patterns detected.")
+    top_n = st.slider(
+        "Showing top N suboptimal holdings", min_value=5, max_value=25, value=10, step=5
+    )
+    drag_df = build_tax_drag_ranking(positions_df, accounts_df, securities_df, top_n=top_n)
+
+    if drag_df.empty:
+        st.success("No suboptimal tax-location patterns with estimated drag detected.")
     else:
         st.dataframe(
-            flags_df,
+            drag_df,
             use_container_width=True,
             hide_index=True,
+            column_config={
+                "Est. Annual Drag ($)": st.column_config.NumberColumn(format="$%.0f"),
+            },
         )
+        total_drag = drag_df["Est. Annual Drag ($)"].sum()
         st.caption(
-            "Low-efficiency assets (FI, REITs, commodities) ideally held in tax-advantaged accounts. "
-            "High-efficiency assets (equity ETFs) ideally held in taxable accounts to preserve "
-            "tax-advantaged space for less-efficient assets."
+            f"Estimated total annual tax drag from top {len(drag_df)} flagged holdings: "
+            f"**${total_drag:,.0f}**. "
+            "Six of seven accounts are externally managed; addressing this would require "
+            "coordination with the account manager."
         )
     st.divider()
-
-render_sidebar_footer()
