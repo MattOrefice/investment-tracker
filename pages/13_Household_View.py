@@ -40,10 +40,16 @@ from src.household import (
     build_issuer_concentration,
     build_single_stock_summary,
     methodology_note_markdown,
+    load_household_performance,
+    build_performance_table,
+    load_household_benchmarks,
+    build_benchmark_table,
 )
 
 # ── Load data ──────────────────────────────────────────────────────────────────
-_CSV = Path(__file__).resolve().parent.parent / "data" / "uploads" / "Portfolio_Positions_May-27-2026.csv"
+_CSV      = Path(__file__).resolve().parent.parent / "data" / "uploads" / "Portfolio_Positions_May-27-2026.csv"
+_PERF_CSV  = Path(__file__).resolve().parent.parent / "data" / "seed" / "household_performance.csv"
+_BENCH_CSV = Path(__file__).resolve().parent.parent / "data" / "seed" / "household_benchmarks.csv"
 
 try:
     positions_df = parse_fidelity_csv(_CSV)
@@ -106,12 +112,12 @@ with col:
 # ── KPI header ─────────────────────────────────────────────────────────────────
 _, col, _ = st.columns([1, 8, 1])
 with col:
-    k1, k2, k3, k4, k5 = st.columns(5)
-    k1.metric("Total AUM",        f"${summary['total_aum']:,.0f}")
-    k2.metric("Accounts",          summary["account_count"])
-    k3.metric("As of",             summary["as_of_date"])
-    k4.metric("Self-Directed",    f"${summary['self_aum']:,.0f}")
-    k5.metric("Ext. Managed",     f"${summary['external_aum']:,.0f}")
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("Total AUM",     f"${summary['total_aum']:,.0f}")
+    k2.metric("Accounts",       summary["account_count"])
+    k3.metric("Self-Directed", f"${summary['self_aum']:,.0f}")
+    k4.metric("Ext. Managed",  f"${summary['external_aum']:,.0f}")
+    st.caption(f"As of {summary['as_of_date']}")
     st.divider()
 
 # ── Strategic Comparison ───────────────────────────────────────────────────────
@@ -238,44 +244,6 @@ with col:
     )
     st.plotly_chart(fig_saa, width="stretch", config={"displayModeBar": False})
 
-    st.subheader("Off-SAA Exposure")
-    st.caption(
-        "Held exposure that maps to no SAA target — not counted as drift. "
-        "Reported as observed context."
-    )
-
-    off_chart = (
-        alloc_df[alloc_df["is_off_saa"] & (alloc_df["dollar_value"] > 0)]
-        .sort_values("percent_weight", ascending=True)
-    )
-
-    if not off_chart.empty:
-        fig_off = go.Figure()
-        fig_off.add_trace(go.Bar(
-            name="Off-SAA Actual",
-            y=off_chart["sleeve"].map(sleeve_display_name),
-            x=off_chart["percent_weight"].round(1),
-            orientation="h",
-            marker_color=_GRAY,
-            text=[f"{v:.1f}%" for v in off_chart["percent_weight"]],
-            textposition="outside",
-            textfont=dict(size=11),
-        ))
-        fig_off.update_layout(
-            height=max(200, len(off_chart) * 30),
-            paper_bgcolor="white",
-            plot_bgcolor="white",
-            showlegend=False,
-            margin=dict(l=0, r=80, t=4, b=4),
-            xaxis=dict(
-                ticksuffix="%",
-                gridcolor="#EBEBEB",
-                showgrid=True,
-                zeroline=False,
-            ),
-            yaxis=dict(showgrid=False),
-        )
-        st.plotly_chart(fig_off, width="stretch", config={"displayModeBar": False})
     st.divider()
 
 # ── Drift Table ────────────────────────────────────────────────────────────────
@@ -359,6 +327,59 @@ with col:
         column_config={
             "Total AUM ($)": st.column_config.NumberColumn(format="$%.0f"),
         },
+    )
+    st.divider()
+
+# ── Account Performance ────────────────────────────────────────────────────────
+_, col, _ = st.columns([1, 8, 1])
+with col:
+    st.subheader("Account Performance")
+
+    _return_type_label = st.radio(
+        "Return type",
+        ["Time-Weighted (TWR)", "Money-Weighted (MWR)"],
+        horizontal=True,
+    )
+    _return_type = "TWR" if "TWR" in _return_type_label else "MWR"
+    st.caption(
+        "Time-weighted strips out the effect of deposit/withdrawal timing "
+        "(the standard for comparing managers); money-weighted reflects the "
+        "actual dollar experience including cash-flow timing."
+    )
+
+    _perf_df = load_household_performance(_PERF_CSV)
+    # Filter accounts_df to the 7 active accounts (those with positions in the CSV)
+    _active_accounts = accounts_df[
+        accounts_df["account_number"].isin(positions_df["account_number"])
+    ]
+    _perf_tbl = build_performance_table(_perf_df, _active_accounts, return_type=_return_type)
+    st.dataframe(_perf_tbl, use_container_width=True, hide_index=True)
+    st.caption(
+        "Returns as reported by Fidelity, not computed by this tool. "
+        "Three accounts (Traditional IRA, HSA, secondary workplace plan) are not "
+        "included in Fidelity's performance export and show as not reported."
+    )
+
+    if _return_type == "MWR":
+        st.caption(
+            "Fidelity does not report money-weighted returns for the workplace plan "
+            "or the household total; those show as not reported under MWR."
+        )
+
+    st.markdown("**Household vs Benchmarks — 1Y (Jun 2025 – May 2026)**")
+    _bench_df = load_household_benchmarks(_BENCH_CSV)
+    _bench_tbl = build_benchmark_table(_bench_df)
+    if not _bench_tbl.empty:
+        st.dataframe(_bench_tbl, use_container_width=True, hide_index=True)
+    st.markdown(
+        "The household's +24.52% one-year return trailed US equity benchmarks "
+        "(S&P 500 +29.78%, Dow US Total Market +29.84%) and the international index "
+        "(MSCI ACWI ex USA +32.99%), while exceeding both bond benchmarks "
+        "(US Aggregate +5.13%, Municipal +6.67%). The shortfall versus pure equity "
+        "indices reflects the book's diversification — international, fixed income, "
+        "hedged equity, and real assets — not underperformance against its own mandate. "
+        "A diversified multi-asset household is expected to land between equity and bond "
+        "benchmarks in a strong equity year, and it does."
     )
     st.divider()
 
