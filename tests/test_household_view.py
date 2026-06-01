@@ -373,6 +373,35 @@ def test_single_stock_summary_contains_mco():
     assert result.startswith("Single-stock exposure:")
 
 
+# ── methodology_note_markdown ─────────────────────────────────────────────────
+
+def test_methodology_note_returns_nonempty_string():
+    from src.household import methodology_note_markdown
+    note = methodology_note_markdown()
+    assert isinstance(note, str) and len(note) > 0
+
+
+def test_methodology_note_contains_heading():
+    from src.household import methodology_note_markdown
+    note = methodology_note_markdown()
+    assert "Methodology Note — Household-Level Asset Location" in note
+
+
+def test_methodology_note_contains_load_bearing_phrases():
+    from src.household import methodology_note_markdown
+    note = methodology_note_markdown()
+    assert "99.5% is externally managed" in note
+    assert "look-through over as-held" in note
+    assert "off-SAA" in note
+    assert "two-philosophy finding" in note
+
+
+def test_methodology_note_contains_real_ticker():
+    from src.household import methodology_note_markdown
+    note = methodology_note_markdown()
+    assert "RFUTX" in note, "Expected RFUTX ticker in methodology note"
+
+
 # ── CI grep: page file has no raw account numbers ────────────────────────────
 
 def test_household_view_page_has_no_raw_account_numbers():
