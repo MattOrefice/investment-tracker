@@ -7,7 +7,9 @@ from pathlib import Path
 
 import pandas as pd
 
-_PERF_COLS = ["account_pseudonym", "period", "return_pct", "as_of_date", "source"]
+_PERF_COLS  = ["account_pseudonym", "return_type", "period", "return_pct", "si_start_date", "source"]
+_BENCH_COLS = ["benchmark_name", "period", "return_pct", "as_of_range", "source"]
+_PERF_PERIODS = ("1M", "3M", "YTD", "1Y", "3Y", "5Y", "SI")
 
 
 def get_account_display(account_number: str, accounts_df: pd.DataFrame) -> dict:
@@ -780,10 +782,10 @@ def load_household_performance(csv_path) -> pd.DataFrame:
     """Load manually-entered Fidelity performance figures from seed CSV.
 
     Returns a tidy DataFrame with columns:
-        account_pseudonym, period, return_pct, as_of_date, source
+        account_pseudonym, return_type, period, return_pct, si_start_date, source
 
-    Tolerates missing file — returns an empty DataFrame with the correct
-    columns so callers degrade gracefully.
+    Empty return_pct cells remain NaN — they are not-reported, not zero.
+    Tolerates missing file — returns an empty DataFrame with correct columns.
     """
     p = Path(csv_path)
     if not p.exists():
@@ -798,46 +800,59 @@ def load_household_performance(csv_path) -> pd.DataFrame:
 def build_performance_table(
     performance_df: pd.DataFrame,
     accounts_df: pd.DataFrame,
+    return_type: str = "TWR",
 ) -> pd.DataFrame:
-    """Pivot performance data to one row per account with period columns.
+    """Pivot performance data for the given return_type to one row per account.
 
     Returns:
-        Account | Managed By | YTD | 1Y | Since Inception | As Of | Source
+        Account | Managed By | 1M | 3M | YTD | 1Y | 3Y | 5Y | Since Inception | SI Start
 
-    Self-directed account sorts first; externally-managed accounts follow
-    alphabetically by display name. Return columns contain formatted strings
-    ("14.2%") or "—" for zero/missing values.
+    All accounts in accounts_df appear; those with no data show "—".
+    Self-directed account sorts first, then alphabetically.
+    Return columns use "+N.NN%" format; missing values show "—".
     """
-    if performance_df.empty:
-        return pd.DataFrame()
-
     accts = accounts_df[["pseudonym", "display_name", "managed_by"]].copy()
-    merged = performance_df.merge(
-        accts, left_on="account_pseudonym", right_on="pseudonym", how="left"
-    )
 
-    # One row per account: pivot return_pct by period
-    pivot = merged.pivot_table(
-        index="display_name",
-        columns="period",
-        values="return_pct",
-        aggfunc="first",
-    ).reset_index()
+    if not performance_df.empty:
+        filtered = performance_df[performance_df["return_type"] == return_type].copy()
+    else:
+        filtered = pd.DataFrame(columns=_PERF_COLS)
 
-    # Attach per-account meta (as_of_date, source, managed_by)
-    meta = (
-        merged.groupby("display_name")[["as_of_date", "source", "managed_by"]]
-        .first()
-        .reset_index()
-    )
-    result = meta.merge(pivot, on="display_name")
+    # Collect SI start dates per account
+    si_map: dict = {}
+    if not filtered.empty:
+        si_rows = filtered[filtered["period"] == "SI"][["account_pseudonym", "si_start_date"]]
+        si_map = (
+            si_rows.dropna(subset=["si_start_date"])
+            .drop_duplicates("account_pseudonym")
+            .set_index("account_pseudonym")["si_start_date"]
+            .to_dict()
+        )
 
-    # Rename columns
+    # Pivot return_pct by period, indexed by account_pseudonym
+    if not filtered.empty:
+        pivot = filtered.pivot_table(
+            index="account_pseudonym",
+            columns="period",
+            values="return_pct",
+            aggfunc="first",
+        )
+        period_lookup = {p: pivot[p].to_dict() for p in pivot.columns}
+    else:
+        period_lookup = {}
+
+    # Build result — left-join from accounts so all appear
+    result = accts.copy()
+    for period in _PERF_PERIODS:
+        lookup = period_lookup.get(period, {})
+        result[period] = result["pseudonym"].map(lookup)
+
+    result["SI Start"] = result["pseudonym"].map(si_map)
+
+    # Rename display columns
     result = result.rename(columns={
         "display_name": "Account",
         "managed_by":   "Managed By",
-        "as_of_date":   "As Of",
-        "source":       "Source",
         "SI":           "Since Inception",
     })
     result["Managed By"] = (
@@ -846,23 +861,55 @@ def build_performance_table(
         .fillna(result["Managed By"])
     )
 
-    # Ensure all three period columns exist
-    for col in ("YTD", "1Y", "Since Inception"):
-        if col not in result.columns:
-            result[col] = None
-
     # Sort: self-directed first, then alphabetical
     result["_sort"] = result["Managed By"].map({"Self": 0}).fillna(1)
     result = (
         result.sort_values(["_sort", "Account"])
-        .drop(columns=["_sort"])
+        .drop(columns=["_sort", "pseudonym"])
         .reset_index(drop=True)
     )
 
-    # Format return columns as "14.2%" or "—"
-    for col in ("YTD", "1Y", "Since Inception"):
+    # Format return columns: "+N.NN%" or "—" for NaN
+    for col in ("1M", "3M", "YTD", "1Y", "3Y", "5Y", "Since Inception"):
         result[col] = result[col].apply(
-            lambda x: "—" if (x is None or pd.isna(x) or x == 0.0) else f"{x:.1f}%"
+            lambda x: "—" if (x is None or (isinstance(x, float) and pd.isna(x))) else f"+{x:.2f}%"
         )
+    result["SI Start"] = result["SI Start"].apply(
+        lambda x: "—" if (x is None or (isinstance(x, float) and pd.isna(x))) else str(x)
+    )
 
-    return result[["Account", "Managed By", "YTD", "1Y", "Since Inception", "As Of", "Source"]]
+    return result[["Account", "Managed By", "1M", "3M", "YTD", "1Y", "3Y", "5Y", "Since Inception", "SI Start"]]
+
+
+def load_household_benchmarks(csv_path) -> pd.DataFrame:
+    """Load household-vs-benchmark comparison data from seed CSV.
+
+    Returns a DataFrame with columns:
+        benchmark_name, period, return_pct, as_of_range, source
+
+    Tolerates missing file — returns empty DataFrame with correct columns.
+    """
+    p = Path(csv_path)
+    if not p.exists():
+        return pd.DataFrame(columns=_BENCH_COLS)
+    try:
+        df = pd.read_csv(p, comment="#")
+        return df[_BENCH_COLS].copy()
+    except Exception:
+        return pd.DataFrame(columns=_BENCH_COLS)
+
+
+def build_benchmark_table(benchmarks_df: pd.DataFrame) -> pd.DataFrame:
+    """Build a display-ready benchmark comparison table.
+
+    Returns: Benchmark | 1Y Return
+    Row order is preserved from the CSV (Household first, then equity, then bonds).
+    """
+    if benchmarks_df.empty:
+        return pd.DataFrame()
+    result = benchmarks_df[["benchmark_name", "return_pct"]].copy()
+    result = result.rename(columns={"benchmark_name": "Benchmark"})
+    result["1Y Return"] = result["return_pct"].apply(
+        lambda x: "—" if pd.isna(x) else f"+{x:.2f}%"
+    )
+    return result[["Benchmark", "1Y Return"]].reset_index(drop=True)

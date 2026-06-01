@@ -404,68 +404,145 @@ def test_methodology_note_contains_real_ticker():
 
 # ── load_household_performance / build_performance_table ─────────────────────
 
-_PERF_CSV = ROOT / "data" / "seed" / "household_performance.csv"
+_PERF_CSV  = ROOT / "data" / "seed" / "household_performance.csv"
+_BENCH_CSV = ROOT / "data" / "seed" / "household_benchmarks.csv"
 
 
 def test_load_performance_missing_file_returns_empty_df(tmp_path):
     from src.household import load_household_performance
     df = load_household_performance(tmp_path / "nonexistent.csv")
     assert df.empty
-    assert list(df.columns) == ["account_pseudonym", "period", "return_pct", "as_of_date", "source"]
+    assert list(df.columns) == [
+        "account_pseudonym", "return_type", "period", "return_pct", "si_start_date", "source"
+    ]
 
 
 def test_load_performance_seed_file_row_count():
     from src.household import load_household_performance
     df = load_household_performance(_PERF_CSV)
-    assert len(df) == 21, f"Expected 21 seed rows (7 accounts × 3 periods), got {len(df)}"
+    assert len(df) == 49, f"Expected 49 seed rows (28 TWR + 21 MWR), got {len(df)}"
 
 
-def _make_accounts_df():
+def test_load_performance_empty_return_is_nan_not_zero():
+    from src.household import load_household_performance
+    df = load_household_performance(_PERF_CSV)
+    # acct_taxable_01 TWR 3M is empty in the seed file — must be NaN, not 0.0
+    row = df[
+        (df["account_pseudonym"] == "acct_taxable_01")
+        & (df["return_type"] == "TWR")
+        & (df["period"] == "3M")
+    ]
+    assert not row.empty, "Expected acct_taxable_01 TWR 3M row to exist"
+    assert pd.isna(row.iloc[0]["return_pct"]), "Empty return_pct must be NaN, not 0.0"
+
+
+def _make_accounts_df_7():
     return pd.DataFrame({
-        "pseudonym":    ["acct_taxable_01", "acct_roth_01", "acct_trad_ira_01"],
-        "display_name": ["Individual Taxable (Self-Directed)", "Roth IRA", "Traditional IRA"],
-        "managed_by":   ["self", "external", "external"],
+        "pseudonym": [
+            "acct_taxable_01", "acct_taxable_02", "acct_roth_01", "acct_wkpl_01",
+            "acct_trad_ira_01", "acct_hsa_01", "acct_wkpl_02",
+        ],
+        "display_name": [
+            "Individual Taxable (Self-Directed)", "Individual Taxable (TOD)", "Roth IRA",
+            "Moody's PPP", "Traditional IRA", "HSA", "Workplace Plan",
+        ],
+        "managed_by": [
+            "self", "external", "external", "external",
+            "external", "external", "external",
+        ],
     })
 
 
-def _make_perf_df():
+def _make_perf_df_twr():
+    """4 accounts with TWR data; 3 absent accounts should show '—'."""
     rows = []
-    for pseudo in ["acct_taxable_01", "acct_roth_01", "acct_trad_ira_01"]:
-        for period, ret in [("YTD", 5.1), ("1Y", 12.3), ("SI", 9.8)]:
+    for pseudo in ["acct_taxable_01", "acct_taxable_02", "acct_roth_01", "acct_wkpl_01"]:
+        for period in ["1M", "3M", "YTD", "1Y", "3Y", "5Y", "SI"]:
             rows.append({
                 "account_pseudonym": pseudo,
+                "return_type": "TWR",
                 "period": period,
-                "return_pct": ret,
-                "as_of_date": "2026-05-27",
-                "source": "Fidelity",
+                "return_pct": 5.0,
+                "si_start_date": "2020-01-01" if period == "SI" else float("nan"),
+                "source": "Fidelity (time-weighted, pre-tax)",
             })
     return pd.DataFrame(rows)
 
 
+def _make_perf_df_mwr():
+    """3 accounts with MWR data; 4 absent accounts should show '—'."""
+    rows = []
+    for pseudo in ["acct_taxable_01", "acct_taxable_02", "acct_roth_01"]:
+        for period in ["1M", "3M", "YTD", "1Y", "3Y", "5Y", "SI"]:
+            rows.append({
+                "account_pseudonym": pseudo,
+                "return_type": "MWR",
+                "period": period,
+                "return_pct": 8.0,
+                "si_start_date": "2020-01-01" if period == "SI" else float("nan"),
+                "source": "Fidelity (money-weighted, pre-tax)",
+            })
+    return pd.DataFrame(rows)
+
+
+def test_build_performance_table_twr_returns_all_7_accounts():
+    from src.household import build_performance_table
+    tbl = build_performance_table(_make_perf_df_twr(), _make_accounts_df_7(), return_type="TWR")
+    assert len(tbl) == 7, f"Expected 7 rows (all accounts), got {len(tbl)}"
+    # The 3 absent accounts should have "—" for all period columns
+    absent = tbl[tbl["Account"].isin(["Traditional IRA", "HSA", "Workplace Plan"])]
+    assert len(absent) == 3
+    for col in ("1M", "3M", "YTD", "1Y", "3Y", "5Y", "Since Inception"):
+        assert (absent[col] == "—").all(), f"Absent account has non-dash in {col}"
+
+
+def test_build_performance_table_mwr_returns_all_7_accounts():
+    from src.household import build_performance_table
+    tbl = build_performance_table(_make_perf_df_mwr(), _make_accounts_df_7(), return_type="MWR")
+    assert len(tbl) == 7, f"Expected 7 rows, got {len(tbl)}"
+    # Moody's PPP (acct_wkpl_01) and 3 absent accounts should be all "—"
+    no_data = tbl[tbl["Account"].isin(["Moody's PPP", "Traditional IRA", "HSA", "Workplace Plan"])]
+    assert len(no_data) == 4
+    for col in ("1M", "3M", "YTD", "1Y", "3Y", "5Y", "Since Inception"):
+        assert (no_data[col] == "—").all(), f"MWR-absent account has non-dash in {col}"
+
+
 def test_build_performance_table_no_raw_account_numbers():
     from src.household import build_performance_table
-    tbl = build_performance_table(_make_perf_df(), _make_accounts_df())
+    tbl = build_performance_table(_make_perf_df_twr(), _make_accounts_df_7(), return_type="TWR")
+    tbl_str = tbl.to_string()
     for raw in RAW_ACCOUNT_NUMBERS:
-        assert raw not in tbl.to_string(), f"Raw account number {raw!r} leaked into performance table"
-    assert "acct_taxable_01" not in tbl.to_string(), "Pseudonym leaked into performance table"
+        assert raw not in tbl_str, f"Raw account number {raw!r} leaked into performance table"
+    assert "acct_taxable_01" not in tbl_str, "Pseudonym leaked into performance table"
 
 
-def test_build_performance_table_one_row_per_account_with_period_columns():
+def test_build_performance_table_self_directed_sorts_first():
     from src.household import build_performance_table
-    tbl = build_performance_table(_make_perf_df(), _make_accounts_df())
-    assert len(tbl) == 3, f"Expected 1 row per account (3), got {len(tbl)}"
-    for col in ("YTD", "1Y", "Since Inception"):
-        assert col in tbl.columns, f"Missing period column {col!r}"
-    # Self-directed should sort first
+    tbl = build_performance_table(_make_perf_df_twr(), _make_accounts_df_7(), return_type="TWR")
     assert tbl.iloc[0]["Account"] == "Individual Taxable (Self-Directed)"
+    assert tbl.iloc[0]["Managed By"] == "Self"
 
 
-def test_all_placeholder_condition_detectable():
-    from src.household import load_household_performance
-    df = load_household_performance(_PERF_CSV)
-    assert not df.empty
-    all_zero = (df["return_pct"] == 0.0).all()
-    assert all_zero, "Seed file should be all-placeholder (0.0) until real figures are entered"
+def test_load_benchmarks_missing_file_returns_empty_df(tmp_path):
+    from src.household import load_household_benchmarks
+    df = load_household_benchmarks(tmp_path / "nonexistent.csv")
+    assert df.empty
+    assert list(df.columns) == ["benchmark_name", "period", "return_pct", "as_of_range", "source"]
+
+
+def test_load_benchmarks_seed_file_row_count():
+    from src.household import load_household_benchmarks
+    df = load_household_benchmarks(_BENCH_CSV)
+    assert len(df) == 6, f"Expected 6 benchmark rows, got {len(df)}"
+
+
+def test_build_benchmark_table_household_row_first():
+    from src.household import load_household_benchmarks, build_benchmark_table
+    df = load_household_benchmarks(_BENCH_CSV)
+    tbl = build_benchmark_table(df)
+    assert len(tbl) == 6
+    assert tbl.iloc[0]["Benchmark"] == "Household (time-weighted)"
+    assert "+24.52%" in tbl.iloc[0]["1Y Return"]
 
 
 # ── CI grep: page file has no raw account numbers ────────────────────────────

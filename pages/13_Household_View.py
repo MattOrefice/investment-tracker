@@ -42,11 +42,14 @@ from src.household import (
     methodology_note_markdown,
     load_household_performance,
     build_performance_table,
+    load_household_benchmarks,
+    build_benchmark_table,
 )
 
 # ── Load data ──────────────────────────────────────────────────────────────────
 _CSV      = Path(__file__).resolve().parent.parent / "data" / "uploads" / "Portfolio_Positions_May-27-2026.csv"
-_PERF_CSV = Path(__file__).resolve().parent.parent / "data" / "seed" / "household_performance.csv"
+_PERF_CSV  = Path(__file__).resolve().parent.parent / "data" / "seed" / "household_performance.csv"
+_BENCH_CSV = Path(__file__).resolve().parent.parent / "data" / "seed" / "household_benchmarks.csv"
 
 try:
     positions_df = parse_fidelity_csv(_CSV)
@@ -331,23 +334,53 @@ with col:
 _, col, _ = st.columns([1, 8, 1])
 with col:
     st.subheader("Account Performance")
+
+    _return_type_label = st.radio(
+        "Return type",
+        ["Time-Weighted (TWR)", "Money-Weighted (MWR)"],
+        horizontal=True,
+    )
+    _return_type = "TWR" if "TWR" in _return_type_label else "MWR"
     st.caption(
-        "Returns as reported by Fidelity, entered manually. "
-        "These are Fidelity's own time-weighted figures, not computed by this tool — "
-        "Fidelity has the complete daily-value and cash-flow history required for an "
-        "accurate return; periodic snapshots do not. "
-        "Displayed as observed context; six of seven accounts are externally managed."
+        "Time-weighted strips out the effect of deposit/withdrawal timing "
+        "(the standard for comparing managers); money-weighted reflects the "
+        "actual dollar experience including cash-flow timing."
     )
 
     _perf_df = load_household_performance(_PERF_CSV)
-    if _perf_df.empty or (_perf_df["return_pct"] == 0.0).all():
-        st.info(
-            "Performance figures not yet entered. "
-            "Populate data/seed/household_performance.csv from Fidelity's Performance tab."
+    # Filter accounts_df to the 7 active accounts (those with positions in the CSV)
+    _active_accounts = accounts_df[
+        accounts_df["account_number"].isin(positions_df["account_number"])
+    ]
+    _perf_tbl = build_performance_table(_perf_df, _active_accounts, return_type=_return_type)
+    st.dataframe(_perf_tbl, use_container_width=True, hide_index=True)
+    st.caption(
+        "Returns as reported by Fidelity, not computed by this tool. "
+        "Three accounts (Traditional IRA, HSA, secondary workplace plan) are not "
+        "included in Fidelity's performance export and show as not reported."
+    )
+
+    if _return_type == "MWR":
+        st.caption(
+            "Fidelity does not report money-weighted returns for the workplace plan "
+            "or the household total; those show as not reported under MWR."
         )
-    else:
-        _perf_tbl = build_performance_table(_perf_df, accounts_df)
-        st.dataframe(_perf_tbl, use_container_width=True, hide_index=True)
+
+    st.markdown("**Household vs Benchmarks — 1Y (Jun 2025 – May 2026)**")
+    _bench_df = load_household_benchmarks(_BENCH_CSV)
+    _bench_tbl = build_benchmark_table(_bench_df)
+    if not _bench_tbl.empty:
+        st.dataframe(_bench_tbl, use_container_width=True, hide_index=True)
+    st.markdown(
+        "The household's +24.52% one-year return trailed US equity benchmarks "
+        "(S&P 500 +29.78%, Dow US Total Market +29.84%) and the international index "
+        "(MSCI ACWI ex USA +32.99%), while exceeding both bond benchmarks "
+        "(US Aggregate +5.13%, Municipal +6.67%). The shortfall versus pure equity "
+        "indices reflects the book's diversification — international, fixed income, "
+        "hedged equity, and real assets — not underperformance against its own mandate. "
+        "A diversified multi-asset household is expected to land between equity and bond "
+        "benchmarks in a strong equity year, and it does."
+    )
     st.divider()
 
 # ── Concentration ──────────────────────────────────────────────────────────────

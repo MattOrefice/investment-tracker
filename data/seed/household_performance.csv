@@ -1,25 +1,56 @@
-# Manually entered from Fidelity's Performance tab. Display-only — not computed by this app.
-# Fidelity has the complete daily-value and cash-flow history required for accurate returns;
-# periodic snapshots in tracker.db do not. Replace return_pct values from Fidelity's tab.
-account_pseudonym,period,return_pct,as_of_date,source
-acct_taxable_01,YTD,0.0,2026-05-27,Fidelity
-acct_taxable_01,1Y,0.0,2026-05-27,Fidelity
-acct_taxable_01,SI,0.0,2026-05-27,Fidelity
-acct_taxable_02,YTD,0.0,2026-05-27,Fidelity
-acct_taxable_02,1Y,0.0,2026-05-27,Fidelity
-acct_taxable_02,SI,0.0,2026-05-27,Fidelity
-acct_trad_ira_01,YTD,0.0,2026-05-27,Fidelity
-acct_trad_ira_01,1Y,0.0,2026-05-27,Fidelity
-acct_trad_ira_01,SI,0.0,2026-05-27,Fidelity
-acct_roth_01,YTD,0.0,2026-05-27,Fidelity
-acct_roth_01,1Y,0.0,2026-05-27,Fidelity
-acct_roth_01,SI,0.0,2026-05-27,Fidelity
-acct_wkpl_01,YTD,0.0,2026-05-27,Fidelity
-acct_wkpl_01,1Y,0.0,2026-05-27,Fidelity
-acct_wkpl_01,SI,0.0,2026-05-27,Fidelity
-acct_wkpl_02,YTD,0.0,2026-05-27,Fidelity
-acct_wkpl_02,1Y,0.0,2026-05-27,Fidelity
-acct_wkpl_02,SI,0.0,2026-05-27,Fidelity
-acct_hsa_01,YTD,0.0,2026-05-27,Fidelity
-acct_hsa_01,1Y,0.0,2026-05-27,Fidelity
-acct_hsa_01,SI,0.0,2026-05-27,Fidelity
+# Fidelity periodic-return figures, entered manually from the Performance tab.
+# Display-only -- not computed by this app. Fidelity has the complete daily-value
+# and cash-flow history required for accurate returns; periodic snapshots do not.
+# return_type: TWR = time-weighted, MWR = money-weighted.
+# Empty return_pct = not reported by Fidelity for that account/period combination.
+# si_start_date populated only on SI rows.
+account_pseudonym,return_type,period,return_pct,si_start_date,source
+acct_taxable_01,TWR,1M,0.28,,"Fidelity (time-weighted, pre-tax)"
+acct_taxable_01,TWR,3M,,,"Fidelity (time-weighted, pre-tax)"
+acct_taxable_01,TWR,YTD,,,"Fidelity (time-weighted, pre-tax)"
+acct_taxable_01,TWR,1Y,,,"Fidelity (time-weighted, pre-tax)"
+acct_taxable_01,TWR,3Y,,,"Fidelity (time-weighted, pre-tax)"
+acct_taxable_01,TWR,5Y,,,"Fidelity (time-weighted, pre-tax)"
+acct_taxable_01,TWR,SI,0.31,2026-04-24,"Fidelity (time-weighted, pre-tax)"
+acct_taxable_02,TWR,1M,3.17,,"Fidelity (time-weighted, pre-tax)"
+acct_taxable_02,TWR,3M,4.28,,"Fidelity (time-weighted, pre-tax)"
+acct_taxable_02,TWR,YTD,9.13,,"Fidelity (time-weighted, pre-tax)"
+acct_taxable_02,TWR,1Y,22.93,,"Fidelity (time-weighted, pre-tax)"
+acct_taxable_02,TWR,3Y,15.64,,"Fidelity (time-weighted, pre-tax)"
+acct_taxable_02,TWR,5Y,,,"Fidelity (time-weighted, pre-tax)"
+acct_taxable_02,TWR,SI,7.31,2021-07-07,"Fidelity (time-weighted, pre-tax)"
+acct_roth_01,TWR,1M,4.20,,"Fidelity (time-weighted, pre-tax)"
+acct_roth_01,TWR,3M,7.06,,"Fidelity (time-weighted, pre-tax)"
+acct_roth_01,TWR,YTD,12.35,,"Fidelity (time-weighted, pre-tax)"
+acct_roth_01,TWR,1Y,29.30,,"Fidelity (time-weighted, pre-tax)"
+acct_roth_01,TWR,3Y,19.46,,"Fidelity (time-weighted, pre-tax)"
+acct_roth_01,TWR,5Y,9.01,,"Fidelity (time-weighted, pre-tax)"
+acct_roth_01,TWR,SI,11.80,2020-07-14,"Fidelity (time-weighted, pre-tax)"
+acct_wkpl_01,TWR,1M,4.42,,"Fidelity (time-weighted, pre-tax)"
+acct_wkpl_01,TWR,3M,6.62,,"Fidelity (time-weighted, pre-tax)"
+acct_wkpl_01,TWR,YTD,11.77,,"Fidelity (time-weighted, pre-tax)"
+acct_wkpl_01,TWR,1Y,28.68,,"Fidelity (time-weighted, pre-tax)"
+acct_wkpl_01,TWR,3Y,,,"Fidelity (time-weighted, pre-tax)"
+acct_wkpl_01,TWR,5Y,,,"Fidelity (time-weighted, pre-tax)"
+acct_wkpl_01,TWR,SI,,2023-07-01,"Fidelity (time-weighted, pre-tax)"
+acct_taxable_01,MWR,1M,0.28,,"Fidelity (money-weighted, pre-tax)"
+acct_taxable_01,MWR,3M,,,"Fidelity (money-weighted, pre-tax)"
+acct_taxable_01,MWR,YTD,,,"Fidelity (money-weighted, pre-tax)"
+acct_taxable_01,MWR,1Y,,,"Fidelity (money-weighted, pre-tax)"
+acct_taxable_01,MWR,3Y,,,"Fidelity (money-weighted, pre-tax)"
+acct_taxable_01,MWR,5Y,,,"Fidelity (money-weighted, pre-tax)"
+acct_taxable_01,MWR,SI,0.31,2026-04-24,"Fidelity (money-weighted, pre-tax)"
+acct_taxable_02,MWR,1M,3.17,,"Fidelity (money-weighted, pre-tax)"
+acct_taxable_02,MWR,3M,4.29,,"Fidelity (money-weighted, pre-tax)"
+acct_taxable_02,MWR,YTD,9.08,,"Fidelity (money-weighted, pre-tax)"
+acct_taxable_02,MWR,1Y,22.69,,"Fidelity (money-weighted, pre-tax)"
+acct_taxable_02,MWR,3Y,16.68,,"Fidelity (money-weighted, pre-tax)"
+acct_taxable_02,MWR,5Y,,,"Fidelity (money-weighted, pre-tax)"
+acct_taxable_02,MWR,SI,13.20,2021-07-07,"Fidelity (money-weighted, pre-tax)"
+acct_roth_01,MWR,1M,4.20,,"Fidelity (money-weighted, pre-tax)"
+acct_roth_01,MWR,3M,7.06,,"Fidelity (money-weighted, pre-tax)"
+acct_roth_01,MWR,YTD,12.35,,"Fidelity (money-weighted, pre-tax)"
+acct_roth_01,MWR,1Y,29.30,,"Fidelity (money-weighted, pre-tax)"
+acct_roth_01,MWR,3Y,21.94,,"Fidelity (money-weighted, pre-tax)"
+acct_roth_01,MWR,5Y,20.40,,"Fidelity (money-weighted, pre-tax)"
+acct_roth_01,MWR,SI,20.72,2020-07-14,"Fidelity (money-weighted, pre-tax)"
