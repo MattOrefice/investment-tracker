@@ -39,6 +39,7 @@ from src.household import (
     build_top_holdings,
     build_issuer_concentration,
     build_single_stock_summary,
+    methodology_note_markdown,
 )
 
 # ── Load data ──────────────────────────────────────────────────────────────────
@@ -438,3 +439,9 @@ with col:
             "coordination with the account manager."
         )
     st.divider()
+
+# ── Methodology Note ───────────────────────────────────────────────────────────
+_, col, _ = st.columns([1, 8, 1])
+with col:
+    with st.expander("Methodology note — household asset location", expanded=False):
+        st.markdown(methodology_note_markdown())
