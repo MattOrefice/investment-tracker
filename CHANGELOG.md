@@ -140,6 +140,17 @@ GitHub Actions run after every push and confirm the green checkmark before closi
 
 ---
 
+## Phase 27 — Methodology note
+_2026-05-29_
+
+Added a personal-mode methodology note to the Household View page
+documenting the household asset-location analysis. Demo mode unchanged.
+
+- Collapsed expander at the bottom of the Household View page
+- `methodology_note_markdown()` helper in `src/household.py`; 4 content-guard tests added
+
+---
+
 ## Phase 26 — Household View improvements
 _2026-05-28_
 
