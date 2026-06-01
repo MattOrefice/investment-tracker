@@ -3,7 +3,11 @@
 UI code must call get_account_display() rather than reading
 account_number directly — raw account numbers must never appear in pages/.
 """
+from pathlib import Path
+
 import pandas as pd
+
+_PERF_COLS = ["account_pseudonym", "period", "return_pct", "as_of_date", "source"]
 
 
 def get_account_display(account_number: str, accounts_df: pd.DataFrame) -> dict:
@@ -770,3 +774,95 @@ def methodology_note_markdown() -> str:
 
 **What this is and isn't.** This is a personal analytical tool, run on my own real positions, kept private. It's not investment advice, not a critique of a generous family arrangement, and not a coordination mandate — most of these accounts aren't mine to trade. It's an allocator's attempt to see his own total picture clearly, to articulate where his framework and his inherited reality diverge, and to be honest about which of those divergences are actionable and which are simply the shape of the household he has.
 """
+
+
+def load_household_performance(csv_path) -> pd.DataFrame:
+    """Load manually-entered Fidelity performance figures from seed CSV.
+
+    Returns a tidy DataFrame with columns:
+        account_pseudonym, period, return_pct, as_of_date, source
+
+    Tolerates missing file — returns an empty DataFrame with the correct
+    columns so callers degrade gracefully.
+    """
+    p = Path(csv_path)
+    if not p.exists():
+        return pd.DataFrame(columns=_PERF_COLS)
+    try:
+        df = pd.read_csv(p, comment="#")
+        return df[_PERF_COLS].copy()
+    except Exception:
+        return pd.DataFrame(columns=_PERF_COLS)
+
+
+def build_performance_table(
+    performance_df: pd.DataFrame,
+    accounts_df: pd.DataFrame,
+) -> pd.DataFrame:
+    """Pivot performance data to one row per account with period columns.
+
+    Returns:
+        Account | Managed By | YTD | 1Y | Since Inception | As Of | Source
+
+    Self-directed account sorts first; externally-managed accounts follow
+    alphabetically by display name. Return columns contain formatted strings
+    ("14.2%") or "—" for zero/missing values.
+    """
+    if performance_df.empty:
+        return pd.DataFrame()
+
+    accts = accounts_df[["pseudonym", "display_name", "managed_by"]].copy()
+    merged = performance_df.merge(
+        accts, left_on="account_pseudonym", right_on="pseudonym", how="left"
+    )
+
+    # One row per account: pivot return_pct by period
+    pivot = merged.pivot_table(
+        index="display_name",
+        columns="period",
+        values="return_pct",
+        aggfunc="first",
+    ).reset_index()
+
+    # Attach per-account meta (as_of_date, source, managed_by)
+    meta = (
+        merged.groupby("display_name")[["as_of_date", "source", "managed_by"]]
+        .first()
+        .reset_index()
+    )
+    result = meta.merge(pivot, on="display_name")
+
+    # Rename columns
+    result = result.rename(columns={
+        "display_name": "Account",
+        "managed_by":   "Managed By",
+        "as_of_date":   "As Of",
+        "source":       "Source",
+        "SI":           "Since Inception",
+    })
+    result["Managed By"] = (
+        result["Managed By"]
+        .map({"self": "Self", "external": "Advisor"})
+        .fillna(result["Managed By"])
+    )
+
+    # Ensure all three period columns exist
+    for col in ("YTD", "1Y", "Since Inception"):
+        if col not in result.columns:
+            result[col] = None
+
+    # Sort: self-directed first, then alphabetical
+    result["_sort"] = result["Managed By"].map({"Self": 0}).fillna(1)
+    result = (
+        result.sort_values(["_sort", "Account"])
+        .drop(columns=["_sort"])
+        .reset_index(drop=True)
+    )
+
+    # Format return columns as "14.2%" or "—"
+    for col in ("YTD", "1Y", "Since Inception"):
+        result[col] = result[col].apply(
+            lambda x: "—" if (x is None or pd.isna(x) or x == 0.0) else f"{x:.1f}%"
+        )
+
+    return result[["Account", "Managed By", "YTD", "1Y", "Since Inception", "As Of", "Source"]]

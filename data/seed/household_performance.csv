@@ -1,0 +1,25 @@
+# Manually entered from Fidelity's Performance tab. Display-only — not computed by this app.
+# Fidelity has the complete daily-value and cash-flow history required for accurate returns;
+# periodic snapshots in tracker.db do not. Replace return_pct values from Fidelity's tab.
+account_pseudonym,period,return_pct,as_of_date,source
+acct_taxable_01,YTD,0.0,2026-05-27,Fidelity
+acct_taxable_01,1Y,0.0,2026-05-27,Fidelity
+acct_taxable_01,SI,0.0,2026-05-27,Fidelity
+acct_taxable_02,YTD,0.0,2026-05-27,Fidelity
+acct_taxable_02,1Y,0.0,2026-05-27,Fidelity
+acct_taxable_02,SI,0.0,2026-05-27,Fidelity
+acct_trad_ira_01,YTD,0.0,2026-05-27,Fidelity
+acct_trad_ira_01,1Y,0.0,2026-05-27,Fidelity
+acct_trad_ira_01,SI,0.0,2026-05-27,Fidelity
+acct_roth_01,YTD,0.0,2026-05-27,Fidelity
+acct_roth_01,1Y,0.0,2026-05-27,Fidelity
+acct_roth_01,SI,0.0,2026-05-27,Fidelity
+acct_wkpl_01,YTD,0.0,2026-05-27,Fidelity
+acct_wkpl_01,1Y,0.0,2026-05-27,Fidelity
+acct_wkpl_01,SI,0.0,2026-05-27,Fidelity
+acct_wkpl_02,YTD,0.0,2026-05-27,Fidelity
+acct_wkpl_02,1Y,0.0,2026-05-27,Fidelity
+acct_wkpl_02,SI,0.0,2026-05-27,Fidelity
+acct_hsa_01,YTD,0.0,2026-05-27,Fidelity
+acct_hsa_01,1Y,0.0,2026-05-27,Fidelity
+acct_hsa_01,SI,0.0,2026-05-27,Fidelity

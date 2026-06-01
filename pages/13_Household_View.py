@@ -40,10 +40,13 @@ from src.household import (
     build_issuer_concentration,
     build_single_stock_summary,
     methodology_note_markdown,
+    load_household_performance,
+    build_performance_table,
 )
 
 # ── Load data ──────────────────────────────────────────────────────────────────
-_CSV = Path(__file__).resolve().parent.parent / "data" / "uploads" / "Portfolio_Positions_May-27-2026.csv"
+_CSV      = Path(__file__).resolve().parent.parent / "data" / "uploads" / "Portfolio_Positions_May-27-2026.csv"
+_PERF_CSV = Path(__file__).resolve().parent.parent / "data" / "seed" / "household_performance.csv"
 
 try:
     positions_df = parse_fidelity_csv(_CSV)
@@ -106,12 +109,12 @@ with col:
 # ── KPI header ─────────────────────────────────────────────────────────────────
 _, col, _ = st.columns([1, 8, 1])
 with col:
-    k1, k2, k3, k4, k5 = st.columns(5)
-    k1.metric("Total AUM",        f"${summary['total_aum']:,.0f}")
-    k2.metric("Accounts",          summary["account_count"])
-    k3.metric("As of",             summary["as_of_date"])
-    k4.metric("Self-Directed",    f"${summary['self_aum']:,.0f}")
-    k5.metric("Ext. Managed",     f"${summary['external_aum']:,.0f}")
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("Total AUM",     f"${summary['total_aum']:,.0f}")
+    k2.metric("Accounts",       summary["account_count"])
+    k3.metric("Self-Directed", f"${summary['self_aum']:,.0f}")
+    k4.metric("Ext. Managed",  f"${summary['external_aum']:,.0f}")
+    st.caption(f"As of {summary['as_of_date']}")
     st.divider()
 
 # ── Strategic Comparison ───────────────────────────────────────────────────────
@@ -238,44 +241,6 @@ with col:
     )
     st.plotly_chart(fig_saa, width="stretch", config={"displayModeBar": False})
 
-    st.subheader("Off-SAA Exposure")
-    st.caption(
-        "Held exposure that maps to no SAA target — not counted as drift. "
-        "Reported as observed context."
-    )
-
-    off_chart = (
-        alloc_df[alloc_df["is_off_saa"] & (alloc_df["dollar_value"] > 0)]
-        .sort_values("percent_weight", ascending=True)
-    )
-
-    if not off_chart.empty:
-        fig_off = go.Figure()
-        fig_off.add_trace(go.Bar(
-            name="Off-SAA Actual",
-            y=off_chart["sleeve"].map(sleeve_display_name),
-            x=off_chart["percent_weight"].round(1),
-            orientation="h",
-            marker_color=_GRAY,
-            text=[f"{v:.1f}%" for v in off_chart["percent_weight"]],
-            textposition="outside",
-            textfont=dict(size=11),
-        ))
-        fig_off.update_layout(
-            height=max(200, len(off_chart) * 30),
-            paper_bgcolor="white",
-            plot_bgcolor="white",
-            showlegend=False,
-            margin=dict(l=0, r=80, t=4, b=4),
-            xaxis=dict(
-                ticksuffix="%",
-                gridcolor="#EBEBEB",
-                showgrid=True,
-                zeroline=False,
-            ),
-            yaxis=dict(showgrid=False),
-        )
-        st.plotly_chart(fig_off, width="stretch", config={"displayModeBar": False})
     st.divider()
 
 # ── Drift Table ────────────────────────────────────────────────────────────────
@@ -360,6 +325,29 @@ with col:
             "Total AUM ($)": st.column_config.NumberColumn(format="$%.0f"),
         },
     )
+    st.divider()
+
+# ── Account Performance ────────────────────────────────────────────────────────
+_, col, _ = st.columns([1, 8, 1])
+with col:
+    st.subheader("Account Performance")
+    st.caption(
+        "Returns as reported by Fidelity, entered manually. "
+        "These are Fidelity's own time-weighted figures, not computed by this tool — "
+        "Fidelity has the complete daily-value and cash-flow history required for an "
+        "accurate return; periodic snapshots do not. "
+        "Displayed as observed context; six of seven accounts are externally managed."
+    )
+
+    _perf_df = load_household_performance(_PERF_CSV)
+    if _perf_df.empty or (_perf_df["return_pct"] == 0.0).all():
+        st.info(
+            "Performance figures not yet entered. "
+            "Populate data/seed/household_performance.csv from Fidelity's Performance tab."
+        )
+    else:
+        _perf_tbl = build_performance_table(_perf_df, accounts_df)
+        st.dataframe(_perf_tbl, use_container_width=True, hide_index=True)
     st.divider()
 
 # ── Concentration ──────────────────────────────────────────────────────────────

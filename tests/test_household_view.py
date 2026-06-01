@@ -402,6 +402,72 @@ def test_methodology_note_contains_real_ticker():
     assert "RFUTX" in note, "Expected RFUTX ticker in methodology note"
 
 
+# ── load_household_performance / build_performance_table ─────────────────────
+
+_PERF_CSV = ROOT / "data" / "seed" / "household_performance.csv"
+
+
+def test_load_performance_missing_file_returns_empty_df(tmp_path):
+    from src.household import load_household_performance
+    df = load_household_performance(tmp_path / "nonexistent.csv")
+    assert df.empty
+    assert list(df.columns) == ["account_pseudonym", "period", "return_pct", "as_of_date", "source"]
+
+
+def test_load_performance_seed_file_row_count():
+    from src.household import load_household_performance
+    df = load_household_performance(_PERF_CSV)
+    assert len(df) == 21, f"Expected 21 seed rows (7 accounts × 3 periods), got {len(df)}"
+
+
+def _make_accounts_df():
+    return pd.DataFrame({
+        "pseudonym":    ["acct_taxable_01", "acct_roth_01", "acct_trad_ira_01"],
+        "display_name": ["Individual Taxable (Self-Directed)", "Roth IRA", "Traditional IRA"],
+        "managed_by":   ["self", "external", "external"],
+    })
+
+
+def _make_perf_df():
+    rows = []
+    for pseudo in ["acct_taxable_01", "acct_roth_01", "acct_trad_ira_01"]:
+        for period, ret in [("YTD", 5.1), ("1Y", 12.3), ("SI", 9.8)]:
+            rows.append({
+                "account_pseudonym": pseudo,
+                "period": period,
+                "return_pct": ret,
+                "as_of_date": "2026-05-27",
+                "source": "Fidelity",
+            })
+    return pd.DataFrame(rows)
+
+
+def test_build_performance_table_no_raw_account_numbers():
+    from src.household import build_performance_table
+    tbl = build_performance_table(_make_perf_df(), _make_accounts_df())
+    for raw in RAW_ACCOUNT_NUMBERS:
+        assert raw not in tbl.to_string(), f"Raw account number {raw!r} leaked into performance table"
+    assert "acct_taxable_01" not in tbl.to_string(), "Pseudonym leaked into performance table"
+
+
+def test_build_performance_table_one_row_per_account_with_period_columns():
+    from src.household import build_performance_table
+    tbl = build_performance_table(_make_perf_df(), _make_accounts_df())
+    assert len(tbl) == 3, f"Expected 1 row per account (3), got {len(tbl)}"
+    for col in ("YTD", "1Y", "Since Inception"):
+        assert col in tbl.columns, f"Missing period column {col!r}"
+    # Self-directed should sort first
+    assert tbl.iloc[0]["Account"] == "Individual Taxable (Self-Directed)"
+
+
+def test_all_placeholder_condition_detectable():
+    from src.household import load_household_performance
+    df = load_household_performance(_PERF_CSV)
+    assert not df.empty
+    all_zero = (df["return_pct"] == 0.0).all()
+    assert all_zero, "Seed file should be all-placeholder (0.0) until real figures are entered"
+
+
 # ── CI grep: page file has no raw account numbers ────────────────────────────
 
 def test_household_view_page_has_no_raw_account_numbers():
