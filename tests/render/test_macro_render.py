@@ -21,11 +21,13 @@ def macro_app() -> AppTest:
     return at
 
 
+@pytest.mark.live_data
 def test_macro_runs_without_exception(macro_app: AppTest) -> None:
     """Page must complete render without raising an unhandled exception."""
     assert not macro_app.exception, f"Macro page raised: {macro_app.exception}"
 
 
+@pytest.mark.live_data
 def test_cape_panel_renders(macro_app: AppTest) -> None:
     """CAPE panel renders with heading. Pinned: always present."""
     headings = [m.value for m in macro_app.markdown]
@@ -34,6 +36,7 @@ def test_cape_panel_renders(macro_app: AppTest) -> None:
     )
 
 
+@pytest.mark.live_data
 def test_ecy_panel_renders(macro_app: AppTest) -> None:
     """ECY panel renders between CAPE and yield curve. Pinned: Phase 8k."""
     headings = [m.value for m in macro_app.markdown]
@@ -42,6 +45,7 @@ def test_ecy_panel_renders(macro_app: AppTest) -> None:
     )
 
 
+@pytest.mark.live_data
 def test_yield_curve_panel_renders(macro_app: AppTest) -> None:
     """2/10 yield curve spread panel renders. Pinned: Phase 5."""
     headings = [m.value for m in macro_app.markdown]
@@ -50,6 +54,7 @@ def test_yield_curve_panel_renders(macro_app: AppTest) -> None:
     )
 
 
+@pytest.mark.live_data
 def test_fed_funds_panel_renders(macro_app: AppTest) -> None:
     """Federal Funds Rate panel renders. Pinned: Phase 5."""
     headings = [m.value for m in macro_app.markdown]
@@ -58,6 +63,7 @@ def test_fed_funds_panel_renders(macro_app: AppTest) -> None:
     )
 
 
+@pytest.mark.live_data
 def test_hy_oas_panel_renders(macro_app: AppTest) -> None:
     """HY credit spreads panel renders. Pinned: Phase 5."""
     headings = [m.value for m in macro_app.markdown]
@@ -66,6 +72,7 @@ def test_hy_oas_panel_renders(macro_app: AppTest) -> None:
     )
 
 
+@pytest.mark.live_data
 def test_force_refresh_button_present(macro_app: AppTest) -> None:
     """Force refresh button renders in personal mode; hidden in demo mode (write guard)."""
     from src.config import IS_DEMO
@@ -80,6 +87,7 @@ def test_force_refresh_button_present(macro_app: AppTest) -> None:
         )
 
 
+@pytest.mark.live_data
 def test_data_freshness_disclosure_present(macro_app: AppTest) -> None:
     """Data-source freshness expander must render. Pinned: Phase 5."""
     expander_labels = [e.label for e in macro_app.expander]
@@ -89,6 +97,7 @@ def test_data_freshness_disclosure_present(macro_app: AppTest) -> None:
     )
 
 
+@pytest.mark.live_data
 def test_build_caption_suppressed_without_env(macro_app: AppTest) -> None:
     """Build caption must be absent when SHOW_BUILD_HASH env var is not set (Phase 15.1)."""
     import os
@@ -102,6 +111,7 @@ def test_build_caption_suppressed_without_env(macro_app: AppTest) -> None:
 
 # ── Phase 33 — new indicator panels ─────────────────────────────────────────
 
+@pytest.mark.live_data
 def test_ig_oas_panel_renders(macro_app: AppTest) -> None:
     """IG credit spreads panel renders. Pinned: Phase 33."""
     headings = [m.value for m in macro_app.markdown]
@@ -110,6 +120,7 @@ def test_ig_oas_panel_renders(macro_app: AppTest) -> None:
     )
 
 
+@pytest.mark.live_data
 def test_ccc_oas_panel_renders(macro_app: AppTest) -> None:
     """CCC credit spreads panel renders. Pinned: Phase 33."""
     headings = [m.value for m in macro_app.markdown]
@@ -118,6 +129,7 @@ def test_ccc_oas_panel_renders(macro_app: AppTest) -> None:
     )
 
 
+@pytest.mark.live_data
 def test_breakeven_panel_renders(macro_app: AppTest) -> None:
     """10-Year Breakeven Inflation (T10YIE) panel renders. Pinned: Phase 33."""
     headings = [m.value for m in macro_app.markdown]
@@ -126,6 +138,7 @@ def test_breakeven_panel_renders(macro_app: AppTest) -> None:
     )
 
 
+@pytest.mark.live_data
 def test_real_10y_panel_renders(macro_app: AppTest) -> None:
     """Real 10-Year Treasury Yield (DFII10) panel renders. Pinned: Phase 33."""
     headings = [m.value for m in macro_app.markdown]
@@ -134,6 +147,7 @@ def test_real_10y_panel_renders(macro_app: AppTest) -> None:
     )
 
 
+@pytest.mark.live_data
 def test_pmi_proxy_panel_renders(macro_app: AppTest) -> None:
     """Manufacturing activity / PMI proxy (CFNAIDIFF) panel renders. Pinned: Phase 33."""
     headings = [m.value for m in macro_app.markdown]
@@ -142,6 +156,7 @@ def test_pmi_proxy_panel_renders(macro_app: AppTest) -> None:
     )
 
 
+@pytest.mark.live_data
 def test_rate_vol_panel_renders(macro_app: AppTest) -> None:
     """Rate volatility panel (DGS10 rolling 21-day) renders. Pinned: Phase 33."""
     headings = [m.value for m in macro_app.markdown]
@@ -150,6 +165,7 @@ def test_rate_vol_panel_renders(macro_app: AppTest) -> None:
     )
 
 
+@pytest.mark.live_data
 def test_usd_index_panel_renders(macro_app: AppTest) -> None:
     """Broad trade-weighted USD index (DTWEXBGS) panel renders. Pinned: Phase 33."""
     headings = [m.value for m in macro_app.markdown]
@@ -160,6 +176,7 @@ def test_usd_index_panel_renders(macro_app: AppTest) -> None:
 
 # ── Phase 38 — licensing and hygiene pins ────────────────────────────────────
 
+@pytest.mark.live_data
 def test_ice_data_indices_disclosure_present(macro_app: AppTest) -> None:
     """Data-sources expander must contain the ICE Data Indices licensing disclosure. Pinned: Phase 38."""
     captions = [c.value for c in macro_app.caption]
@@ -171,6 +188,7 @@ def test_ice_data_indices_disclosure_present(macro_app: AppTest) -> None:
 
 # ── Phase 35 — polish additions ──────────────────────────────────────────────
 
+@pytest.mark.live_data
 def test_treasury_yield_curve_panel_renders(macro_app: AppTest) -> None:
     """Treasury Yield Curve spot chart panel renders. Pinned: Phase 35."""
     headings = [m.value for m in macro_app.markdown]
@@ -179,6 +197,7 @@ def test_treasury_yield_curve_panel_renders(macro_app: AppTest) -> None:
     )
 
 
+@pytest.mark.live_data
 def test_fomc_calendar_renders(macro_app: AppTest) -> None:
     """2026 FOMC Meeting Calendar section renders. Pinned: Phase 35."""
     headings = [m.value for m in macro_app.markdown]
@@ -187,6 +206,7 @@ def test_fomc_calendar_renders(macro_app: AppTest) -> None:
     )
 
 
+@pytest.mark.live_data
 def test_oas_methodology_expander_renders(macro_app: AppTest) -> None:
     """Credit section OAS methodology expander renders. Pinned: Phase 35."""
     expander_labels = [e.label for e in macro_app.expander]
@@ -196,6 +216,7 @@ def test_oas_methodology_expander_renders(macro_app: AppTest) -> None:
     )
 
 
+@pytest.mark.live_data
 def test_regime_transition_paragraph_renders(macro_app: AppTest) -> None:
     """Regime 'How regimes transition' is a collapsed expander. Pinned: Phase 35; updated Phase 43."""
     expander_labels = [e.label for e in macro_app.expander]
@@ -205,6 +226,7 @@ def test_regime_transition_paragraph_renders(macro_app: AppTest) -> None:
     )
 
 
+@pytest.mark.live_data
 def test_regime_methodology_paragraph_renders(macro_app: AppTest) -> None:
     """Regime Methodology is a collapsed expander. Pinned: Phase 35; updated Phase 43."""
     expander_labels = [e.label for e in macro_app.expander]

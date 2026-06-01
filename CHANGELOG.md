@@ -140,6 +140,49 @@ GitHub Actions run after every push and confirm the green checkmark before closi
 
 ---
 
+## Phase 28 — Household performance and benchmarks
+_2026-05-29_
+
+Added account-level performance display to the personal-mode Household View:
+Fidelity's time-weighted and money-weighted returns per account (toggle),
+a household-vs-benchmark 1Y comparison, and polish (full as-of date, removed
+redundant off-SAA chart). Returns are recorded from Fidelity, displayed not
+computed. Demo mode unchanged.
+
+- **28.0** — Account Performance section: per-account TWR/MWR table (7 accounts;
+  3 not in Fidelity's export show as not reported), as-of date caption fix,
+  redundant off-SAA chart removed
+- **28.1** — TWR/MWR radio toggle with real Fidelity figures, household-vs-benchmark
+  1Y block (6 benchmarks), diversification framing observation
+
+---
+
+## Phase 27 — Methodology note
+_2026-05-29_
+
+Added a personal-mode methodology note to the Household View page
+documenting the household asset-location analysis. Demo mode unchanged.
+
+- Collapsed expander at the bottom of the Household View page
+- `methodology_note_markdown()` helper in `src/household.py`; 4 content-guard tests added
+
+---
+
+## Phase 26 — Household View improvements
+_2026-05-28_
+
+Builds on Phase 25 with editorial framing and analytical depth on the
+personal-mode Household View page. Demo mode unchanged.
+
+- **26.0** — Advisor vs SAA strategic comparison section
+- **26.1** — Footer deduplication, sleeve display names, drift sort,
+  actionable/observed reframing, top-N tax-drag ranking, sleeve
+  substitution mapping, concentration panel
+- Marked 22 live-data macro render tests with `@pytest.mark.live_data`
+  and excluded from default suite
+
+---
+
 ## Phase 25 — Personal-mode household aggregation layer
 *May 27–28, 2026*
 
