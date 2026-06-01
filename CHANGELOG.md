@@ -140,6 +140,23 @@ GitHub Actions run after every push and confirm the green checkmark before closi
 
 ---
 
+## Phase 28 — Household performance and benchmarks
+_2026-05-29_
+
+Added account-level performance display to the personal-mode Household View:
+Fidelity's time-weighted and money-weighted returns per account (toggle),
+a household-vs-benchmark 1Y comparison, and polish (full as-of date, removed
+redundant off-SAA chart). Returns are recorded from Fidelity, displayed not
+computed. Demo mode unchanged.
+
+- **28.0** — Account Performance section: per-account TWR/MWR table (7 accounts;
+  3 not in Fidelity's export show as not reported), as-of date caption fix,
+  redundant off-SAA chart removed
+- **28.1** — TWR/MWR radio toggle with real Fidelity figures, household-vs-benchmark
+  1Y block (6 benchmarks), diversification framing observation
+
+---
+
 ## Phase 27 — Methodology note
 _2026-05-29_
 
