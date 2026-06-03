@@ -1,0 +1,40 @@
+# Keeps the public Streamlit Cloud demo awake with a real headless browser.
+#
+# Streamlit Community Cloud's free tier sleeps an app after ~12h of
+# inactivity, and a plain HTTP ping does NOT wake it (it gets a 200 static
+# shell while the Python backend stays asleep). This workflow opens the app
+# in real headless Chromium (Playwright), which runs the page JS / opens the
+# WebSocket and clicks the wake button if the app has gone to sleep.
+#
+# NOTE: GitHub scheduled workflows are best-effort and can be delayed under
+# load, but a 3-hour cadence against a ~12-hour sleep timer leaves ample
+# margin even if a run or two slips.
+
+name: Keep Streamlit demo awake
+
+on:
+  schedule:
+    # Every 3 hours.
+    - cron: "0 */3 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  wake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Playwright + Chromium
+        run: |
+          pip install playwright
+          playwright install --with-deps chromium
+
+      - name: Visit demo (wake if asleep)
+        run: python scripts/keep_awake.py
