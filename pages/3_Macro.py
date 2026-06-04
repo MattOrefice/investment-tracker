@@ -1811,6 +1811,16 @@ with col:
         "it is lagging. Crossings mark regime shifts."
     )
 
+    fr_window = st.radio(
+        "Lookback (chart view)", ["1Y", "3Y", "5Y", "10Y", "Max"],
+        index=3, key="factor_regime_window", horizontal=True,
+    )
+    st.caption(
+        "The lookback rescales the displayed date range of both charts together. "
+        "It does not change the rolling-12M computation (still trailing 252 trading "
+        "days) or the percentile base (always the full available history)."
+    )
+
     def _factor_regime_chart(
         frame: pd.DataFrame, ff_col: str, etf_col: str,
         ff_label: str, etf_label: str,
@@ -1853,41 +1863,69 @@ with col:
         s = frame[col].dropna()
         return (float(s.iloc[-1]), s.index[-1]) if not s.empty else (None, None)
 
+    def _render_factor_block(
+        full_frame: pd.DataFrame, window: str,
+        ff_col: str, etf_col: str, ff_label: str, etf_label: str,
+        ff_metric: str, etf_metric: str, factor_name: str,
+    ) -> None:
+        # Display is windowed; current values and percentiles use the FULL frame.
+        disp = factor_regime.filter_window(full_frame, window, TODAY)
+        fig = _factor_regime_chart(disp, ff_col, etf_col, ff_label, etf_label)
+        if fig is None:
+            st.info("Factor data unavailable — no overlapping history in this window.")
+            return
+        st.plotly_chart(fig, width="stretch")
+
+        ff_val,  ff_dt  = _last_valid(full_frame, ff_col)
+        etf_val, etf_dt = _last_valid(full_frame, etf_col)
+        ff_pct = (
+            factor_regime.factor_percentile(full_frame[ff_col].dropna(), ff_val)
+            if ff_val is not None else None
+        )
+        etf_pct = (
+            factor_regime.factor_percentile(full_frame[etf_col].dropna(), etf_val)
+            if etf_val is not None else None
+        )
+
+        _mc1, _mc2 = st.columns(2)
+        with _mc1:
+            st.metric(ff_metric, f"{ff_val:+.1f}%" if ff_val is not None else "—",
+                      help="Trailing-12M cumulative Fama-French premium (academic long-short).")
+            if ff_pct is not None:
+                st.caption(f"{_ordinal(ff_pct)} percentile of full history")
+        with _mc2:
+            st.metric(etf_metric, f"{etf_val:+.1f}%" if etf_val is not None else "—",
+                      help="Trailing-12M long-only ETF proxy relative return.")
+            if etf_pct is not None:
+                st.caption(f"{_ordinal(etf_pct)} percentile of full history")
+
+        _ff_as_of  = ff_dt.strftime("%b %d, %Y")  if ff_dt  is not None else "n/a"
+        _etf_as_of = etf_dt.strftime("%b %d, %Y") if etf_dt is not None else "n/a"
+        if not full_frame.empty:
+            _b0, _b1 = full_frame.index.min(), full_frame.index.max()
+            _base = f"{_b0.strftime('%Y')}–{_b1.strftime('%Y')}, ~{round((_b1 - _b0).days / 365)} years"
+        else:
+            _base = "full available history"
+        st.caption(
+            f"Fama-French as of {_ff_as_of} (~1-month publication lag); ETF proxy as of "
+            f"{_etf_as_of}. Percentiles are measured against the full available history "
+            f"({_base}) and do not move with the lookback selector."
+        )
+        if ff_val is not None and etf_val is not None:
+            st.caption(factor_regime.interpret_factor(
+                ff_val, ff_pct, etf_val, etf_pct, factor_name))
+
     # ── Chart 1 — Size: Small-cap vs Large-cap ────────────────────────────────
     st.markdown("#### Size: Small-cap vs Large-cap (trailing 12M)")
     try:
         with st.spinner("Loading size-factor data (Fama-French SMB, IWM/IWB)…"):
             size_frame = _load_size_factor_frame()
-
-        fig_size = _factor_regime_chart(
-            size_frame, "ff_smb_12m", "etf_iwm_iwb_12m",
+        _render_factor_block(
+            size_frame, fr_window,
+            "ff_smb_12m", "etf_iwm_iwb_12m",
             "Fama-French SMB", "IWM − IWB (proxy)",
+            "Fama-French SMB (12M)", "IWM − IWB proxy (12M)", "size",
         )
-        if fig_size is None:
-            st.info("Size-factor data unavailable — no overlapping history.")
-        else:
-            st.plotly_chart(fig_size, width="stretch")
-
-            _smb_val, _smb_dt = _last_valid(size_frame, "ff_smb_12m")
-            _szp_val, _szp_dt = _last_valid(size_frame, "etf_iwm_iwb_12m")
-            _mc1, _mc2 = st.columns(2)
-            with _mc1:
-                st.metric(
-                    "Fama-French SMB (12M)",
-                    f"{_smb_val:+.1f}%" if _smb_val is not None else "—",
-                )
-            with _mc2:
-                st.metric(
-                    "IWM − IWB proxy (12M)",
-                    f"{_szp_val:+.1f}%" if _szp_val is not None else "—",
-                )
-            _smb_as_of = _smb_dt.strftime("%b %d, %Y") if _smb_dt is not None else "n/a"
-            st.caption(
-                f"Fama-French SMB cumulative trailing-12M premium as of {_smb_as_of}; "
-                "IWM (Russell 2000) minus IWB (Russell 1000) trailing-12M total return "
-                "(dividend-adjusted). A positive reading means small-caps led large-caps "
-                "over the past year."
-            )
     except Exception as exc:
         st.error(f"Size-factor data unavailable: {exc}")
 
@@ -1898,36 +1936,12 @@ with col:
     try:
         with st.spinner("Loading style-factor data (Fama-French HML, IWD/IWF)…"):
             style_frame = _load_style_factor_frame()
-
-        fig_style = _factor_regime_chart(
-            style_frame, "ff_hml_12m", "etf_iwd_iwf_12m",
+        _render_factor_block(
+            style_frame, fr_window,
+            "ff_hml_12m", "etf_iwd_iwf_12m",
             "Fama-French HML", "IWD − IWF (proxy)",
+            "Fama-French HML (12M)", "IWD − IWF proxy (12M)", "style",
         )
-        if fig_style is None:
-            st.info("Style-factor data unavailable — no overlapping history.")
-        else:
-            st.plotly_chart(fig_style, width="stretch")
-
-            _hml_val, _hml_dt = _last_valid(style_frame, "ff_hml_12m")
-            _syp_val, _syp_dt = _last_valid(style_frame, "etf_iwd_iwf_12m")
-            _mc1, _mc2 = st.columns(2)
-            with _mc1:
-                st.metric(
-                    "Fama-French HML (12M)",
-                    f"{_hml_val:+.1f}%" if _hml_val is not None else "—",
-                )
-            with _mc2:
-                st.metric(
-                    "IWD − IWF proxy (12M)",
-                    f"{_syp_val:+.1f}%" if _syp_val is not None else "—",
-                )
-            _hml_as_of = _hml_dt.strftime("%b %d, %Y") if _hml_dt is not None else "n/a"
-            st.caption(
-                f"Fama-French HML cumulative trailing-12M premium as of {_hml_as_of}; "
-                "IWD (Russell 1000 Value) minus IWF (Russell 1000 Growth) trailing-12M "
-                "total return (dividend-adjusted). A positive reading means value led "
-                "growth over the past year."
-            )
     except Exception as exc:
         st.error(f"Style-factor data unavailable: {exc}")
 
@@ -1963,6 +1977,18 @@ with col:
             "each single factor — size and style separately — for clarity; neither line "
             "alone maps one-to-one onto AVUV. Source: Ken French Data Library (SMB, HML "
             "daily); ETF dividend-adjusted close, locally cached (IWM, IWB, IWD, IWF)."
+        )
+        st.caption(
+            "**Percentile and lookback.** Each current reading is ranked against the "
+            "full available history of that same series — the fraction of historical "
+            "observations at or below the current value, the same percentile method "
+            "used elsewhere on this page (e.g. CAPE, credit spreads). The lookback "
+            "selector rescales only the displayed date range; the percentile "
+            "denominator is fixed to the full history and does not move with it. The "
+            "percentile here measures *performance* (how strong the trailing-12M factor "
+            "return is versus its own past). A valuation-spread percentile — how cheap "
+            "or rich the small/value factors are on a fundamental basis — is a separate "
+            "read and is left as future work."
         )
 
     st.divider()
