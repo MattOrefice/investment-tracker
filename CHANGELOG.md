@@ -140,6 +140,19 @@ GitHub Actions run after every push and confirm the green checkmark before closi
 
 ---
 
+## Phase 29 — Factor Regime on Macro page
+_2026-06-04_
+
+Added a Factor Regime section to the Macro page: trailing-12-month size (small
+vs large) and style (value vs growth) factor performance, overlaying Fama-French
+long-short premia with long-only ETF proxies around a zero reference. Includes an
+adjustable lookback window, historical percentile per series (fixed full-history
+denominator), and dynamic interpretation prose conditioned on sign and
+percentile. Surfaces whether the SAA's small-cap and value tilts are currently
+rewarded.
+
+---
+
 ## Phase 28 — Household performance and benchmarks
 _2026-05-29_
 
