@@ -7,7 +7,7 @@ import streamlit as st
 
 st.set_page_config(page_title="Macro Dashboard", layout="wide")
 
-from src import macro, shiller
+from src import factor_regime, macro, shiller
 from src.asof import as_of_banner
 from src.config import IS_DEMO
 from src.macro import (
@@ -193,6 +193,16 @@ def _load_recession_periods() -> list:
 def _load_price_series(ticker: str, start_date: str) -> pd.Series:
     df = get_prices(ticker, start_date, TODAY)
     return df["adj_close"].ffill()
+
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def _load_size_factor_frame() -> pd.DataFrame:
+    return factor_regime.build_size_factor_frame(end=TODAY)
+
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def _load_style_factor_frame() -> pd.DataFrame:
+    return factor_regime.build_style_factor_frame(end=TODAY)
 
 
 # ── page ──────────────────────────────────────────────────────────────────────
@@ -1785,6 +1795,203 @@ with col:
     else:
         _panel_error("Broad USD Index (DTWEXBGS)", _dtwex_err, "retry_usd")
         st.divider()
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # 8. FACTOR REGIME
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    st.markdown("### Factor Regime")
+    st.caption(
+        "Trailing 12-month relative performance of the size and style factors. "
+        "The SAA tilts toward small-cap and value; these charts show whether those "
+        "tilts are currently being rewarded. Each chart overlays the academic "
+        "Fama-French factor premium (long-short, the textbook factor) with a "
+        "long-only ETF proxy (what a tradeable implementation captured). Above "
+        "zero = the factor is outperforming over the trailing year; below zero = "
+        "it is lagging. Crossings mark regime shifts."
+    )
+
+    fr_window = st.radio(
+        "Lookback (chart view)", ["1Y", "3Y", "5Y", "10Y", "Max"],
+        index=3, key="factor_regime_window", horizontal=True,
+    )
+    st.caption(
+        "The lookback rescales the displayed date range of both charts together. "
+        "It does not change the rolling-12M computation (still trailing 252 trading "
+        "days) or the percentile base (always the full available history)."
+    )
+
+    def _factor_regime_chart(
+        frame: pd.DataFrame, ff_col: str, etf_col: str,
+        ff_label: str, etf_label: str,
+    ) -> "go.Figure | None":
+        if frame is None or frame.empty:
+            return None
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=frame.index, y=frame[ff_col],
+            mode="lines", name=ff_label,
+            line=dict(color=_C["primary"], width=2),
+            connectgaps=True,
+        ))
+        fig.add_trace(go.Scatter(
+            x=frame.index, y=frame[etf_col],
+            mode="lines", name=etf_label,
+            line=dict(color=_C["current"], width=2),
+            connectgaps=True,
+        ))
+        fig.add_hline(
+            y=0, line_dash="dash", line_color=_C["ref"], line_width=1,
+            annotation_text="0 = factor flat over trailing year",
+            annotation_position="top left", annotation_font_size=9,
+            annotation_font_color="#888",
+        )
+        _apply_style(fig)
+        fig.update_layout(
+            showlegend=True,
+            legend=dict(orientation="h", yanchor="bottom", y=1.02,
+                        xanchor="left", x=0, font_size=11),
+        )
+        fig.update_yaxes(title_text="Trailing 12M relative return (%)")
+        _both = pd.concat([frame[ff_col], frame[etf_col]])
+        _yr = _tight_yrange(_both, [0.0])
+        if _yr:
+            fig.update_yaxes(range=_yr)
+        return fig
+
+    def _last_valid(frame: pd.DataFrame, col: str):
+        s = frame[col].dropna()
+        return (float(s.iloc[-1]), s.index[-1]) if not s.empty else (None, None)
+
+    def _render_factor_block(
+        full_frame: pd.DataFrame, window: str,
+        ff_col: str, etf_col: str, ff_label: str, etf_label: str,
+        ff_metric: str, etf_metric: str, factor_name: str,
+    ) -> None:
+        # Display is windowed; current values and percentiles use the FULL frame.
+        disp = factor_regime.filter_window(full_frame, window, TODAY)
+        fig = _factor_regime_chart(disp, ff_col, etf_col, ff_label, etf_label)
+        if fig is None:
+            st.info("Factor data unavailable — no overlapping history in this window.")
+            return
+        st.plotly_chart(fig, width="stretch")
+
+        ff_val,  ff_dt  = _last_valid(full_frame, ff_col)
+        etf_val, etf_dt = _last_valid(full_frame, etf_col)
+        ff_pct = (
+            factor_regime.factor_percentile(full_frame[ff_col].dropna(), ff_val)
+            if ff_val is not None else None
+        )
+        etf_pct = (
+            factor_regime.factor_percentile(full_frame[etf_col].dropna(), etf_val)
+            if etf_val is not None else None
+        )
+
+        _mc1, _mc2 = st.columns(2)
+        with _mc1:
+            st.metric(ff_metric, f"{ff_val:+.1f}%" if ff_val is not None else "—",
+                      help="Trailing-12M cumulative Fama-French premium (academic long-short).")
+            if ff_pct is not None:
+                st.caption(f"{_ordinal(ff_pct)} percentile of full history")
+        with _mc2:
+            st.metric(etf_metric, f"{etf_val:+.1f}%" if etf_val is not None else "—",
+                      help="Trailing-12M long-only ETF proxy relative return.")
+            if etf_pct is not None:
+                st.caption(f"{_ordinal(etf_pct)} percentile of full history")
+
+        _ff_as_of  = ff_dt.strftime("%b %d, %Y")  if ff_dt  is not None else "n/a"
+        _etf_as_of = etf_dt.strftime("%b %d, %Y") if etf_dt is not None else "n/a"
+        if not full_frame.empty:
+            _b0, _b1 = full_frame.index.min(), full_frame.index.max()
+            _base = f"{_b0.strftime('%Y')}–{_b1.strftime('%Y')}, ~{round((_b1 - _b0).days / 365)} years"
+        else:
+            _base = "full available history"
+        st.caption(
+            f"Fama-French as of {_ff_as_of} (~1-month publication lag); ETF proxy as of "
+            f"{_etf_as_of}. Percentiles are measured against the full available history "
+            f"({_base}) and do not move with the lookback selector."
+        )
+        if ff_val is not None and etf_val is not None:
+            st.caption(factor_regime.interpret_factor(
+                ff_val, ff_pct, etf_val, etf_pct, factor_name))
+
+    # ── Chart 1 — Size: Small-cap vs Large-cap ────────────────────────────────
+    st.markdown("#### Size: Small-cap vs Large-cap (trailing 12M)")
+    try:
+        with st.spinner("Loading size-factor data (Fama-French SMB, IWM/IWB)…"):
+            size_frame = _load_size_factor_frame()
+        _render_factor_block(
+            size_frame, fr_window,
+            "ff_smb_12m", "etf_iwm_iwb_12m",
+            "Fama-French SMB", "IWM − IWB (proxy)",
+            "Fama-French SMB (12M)", "IWM − IWB proxy (12M)", "size",
+        )
+    except Exception as exc:
+        st.error(f"Size-factor data unavailable: {exc}")
+
+    st.divider()
+
+    # ── Chart 2 — Style: Value vs Growth ──────────────────────────────────────
+    st.markdown("#### Style: Value vs Growth (trailing 12M)")
+    try:
+        with st.spinner("Loading style-factor data (Fama-French HML, IWD/IWF)…"):
+            style_frame = _load_style_factor_frame()
+        _render_factor_block(
+            style_frame, fr_window,
+            "ff_hml_12m", "etf_iwd_iwf_12m",
+            "Fama-French HML", "IWD − IWF (proxy)",
+            "Fama-French HML (12M)", "IWD − IWF proxy (12M)", "style",
+        )
+    except Exception as exc:
+        st.error(f"Style-factor data unavailable: {exc}")
+
+    with st.expander("Factor Regime methodology", expanded=False):
+        st.caption(
+            "**Fama-French legs (SMB, HML).** SMB (small-minus-big) and HML "
+            "(high-minus-low book-to-market, i.e. value-minus-growth) are long-short "
+            "academic factor returns from the Ken French Data Library (Dartmouth). "
+            "Because each is already a long-short spread, the trailing-12-month "
+            "*cumulative* return — compounding the daily factor returns over the most "
+            "recent ~252 trading days — is the realized factor premium an academic "
+            "long-short investor would have earned over the past year."
+        )
+        st.caption(
+            "**ETF proxy legs.** IWM/IWB (size) and IWD/IWF (style) are long-only "
+            "Russell index funds. The relative return — small minus large, value minus "
+            "growth — is each leg's trailing-12-month total return (dividend-adjusted "
+            "close) differenced. This approximates the factor as a tradeable investor "
+            "actually experiences it, net of the long-only constraint."
+        )
+        st.caption(
+            "**Why the two lines can diverge.** The long-short academic factor and the "
+            "long-only ETF spread capture the factor differently: the academic factor "
+            "can short the unattractive leg, weights by book-to-market or size across "
+            "the full cross-section, and ignores fees; the ETF spread is constrained to "
+            "long-only Russell construction with fund-level weighting and expense ratios. "
+            "Divergence between the lines reflects these implementation effects rather "
+            "than a data error."
+        )
+        st.caption(
+            "**Relation to the SAA.** The SAA's actual small-cap sleeve (AVUV) is "
+            "small-*value*, so it straddles both factors at once. These charts isolate "
+            "each single factor — size and style separately — for clarity; neither line "
+            "alone maps one-to-one onto AVUV. Source: Ken French Data Library (SMB, HML "
+            "daily); ETF dividend-adjusted close, locally cached (IWM, IWB, IWD, IWF)."
+        )
+        st.caption(
+            "**Percentile and lookback.** Each current reading is ranked against the "
+            "full available history of that same series — the fraction of historical "
+            "observations at or below the current value, the same percentile method "
+            "used elsewhere on this page (e.g. CAPE, credit spreads). The lookback "
+            "selector rescales only the displayed date range; the percentile "
+            "denominator is fixed to the full history and does not move with it. The "
+            "percentile here measures *performance* (how strong the trailing-12M factor "
+            "return is versus its own past). A valuation-spread percentile — how cheap "
+            "or rich the small/value factors are on a fundamental basis — is a separate "
+            "read and is left as future work."
+        )
+
+    st.divider()
 
     # ── Sources ───────────────────────────────────────────────────────────────
 
