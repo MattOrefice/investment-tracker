@@ -235,6 +235,22 @@ def _landing_page_render():
         )
         st.page_link("pages/5_Asset_Evaluation.py", label="Open")
 
+    r3c1, r3c2, r3c3 = st.columns(3, vertical_alignment="top")
+
+    with r3c1:
+        st.markdown(
+            """
+            <div class="endow-card">
+                <h3 class="endow-card-header">Market Snapshot</h3>
+                <p class="endow-card-body endow-card-body-clamp">Last-close-dated view of recent
+                market moves: trailing-window size-vs-value relative performance and SPDR sector
+                movers, with a mechanical, figures-derived market line. Daily close, not intraday.</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.page_link("pages/7_Market_Snapshot.py", label="Open")
+
     render_footer()
 
 
@@ -248,6 +264,7 @@ _page_groups = {
     ],
     "Markets & Macro": [
         st.Page("pages/3_Macro.py", title="Macro"),
+        st.Page("pages/7_Market_Snapshot.py", title="Market Snapshot"),
         st.Page("pages/9_Correlations.py", title="Correlations"),
         st.Page("pages/8_Research.py", title="Research"),
         st.Page("pages/5_Asset_Evaluation.py", title="Asset Evaluation"),
