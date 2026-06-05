@@ -140,6 +140,17 @@ GitHub Actions run after every push and confirm the green checkmark before closi
 
 ---
 
+## Phase 32 — Candidate correlation screen
+_2026-06-05_
+
+Generalized the Asset Evaluation page into a reusable candidate screen: enter any
+ticker to see per-sleeve correlation, average correlation to the SAA sleeves, a
+rolling candidate-to-sleeves line, and a diversifies-vs-doubles-down verdict. QQQ
+reads as a US large-growth double-down; GLD as a genuine diversifier. The Bitcoin
+case study is unchanged.
+
+---
+
 ## Phase 31 — Rolling sleeve correlations
 _2026-06-05_
 
