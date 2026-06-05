@@ -140,6 +140,18 @@ GitHub Actions run after every push and confirm the green checkmark before closi
 
 ---
 
+## Phase 30 — Factor valuation spread
+_2026-06-05_
+
+Added a value-vs-growth valuation spread to the Factor Regime section: log of
+the high/low NYSE book-to-market percentiles (Ken French BE/ME breakpoints), with
+a fixed full-history percentile and banded interpretation. Distinguishes whether
+value is cheap or expensive vs history — the mean-reversion signal, complementary
+to the existing trailing-performance read. Size valuation omitted with rationale.
+Existing 5-factor loader untouched.
+
+---
+
 ## Phase 29 — Factor Regime on Macro page
 _2026-06-04_
 
