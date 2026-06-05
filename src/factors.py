@@ -71,6 +71,14 @@ _FACTOR_CONFIG: dict[str, dict] = {
 _UMD_URL   = _BASE_URL + "F-F_Momentum_Factor_daily_CSV.zip"
 _UMD_CACHE = _CACHE_DIR / "ff_umd_us.csv"
 
+# Ken French NYSE book-to-market (BE/ME) breakpoints — annual, formed each June,
+# "every 5th percentile" (5, 10, …, 100). Used for the value-spread valuation
+# signal (Phase 30). Separate ingestion path from the 5-factor daily files.
+_BEME_URL          = _BASE_URL + "BE-ME_Breakpoints_CSV.zip"
+_BEME_CACHE        = _CACHE_DIR / "ff_beme_breakpoints.csv"
+_BEME_PCTILES      = list(range(5, 101, 5))  # 20 columns: p5, p10, …, p100
+_BEME_REFRESH_DAYS = 30  # annual data; refetch monthly at most
+
 _HYG_CACHE = _CACHE_DIR / "prices_hyg.parquet"
 
 _CACHE_PATH = _FACTOR_CONFIG["us"]["cache"]  # backward-compatible alias
@@ -408,6 +416,118 @@ def load_umd_factor(force_refresh: bool = False) -> pd.Series:
                 raise
 
     return pd.read_csv(_UMD_CACHE, index_col=0, parse_dates=True).squeeze("columns")
+
+
+# ── BE/ME breakpoints (value-spread valuation, Phase 30) ───────────────────────
+#
+# This is an ADDITIVE Ken French ingestion path. It reuses the shared download
+# constants (_BASE_URL, _CACHE_DIR, _FF_RETRY_DELAYS) and the same requests+zip
+# mechanism, but has its own parser — the 5-factor parser (_parse_ff_csv_text)
+# and loader (load_factors) are deliberately left untouched.
+
+def _parse_beme_breakpoints_text(text: str) -> pd.DataFrame:
+    """
+    Parse the raw text of the Ken French BE/ME breakpoints CSV.
+
+    File format (confirmed against the live file)::
+
+        This file was created using the … CRSP database.  It contains every 5th
+        NYSE BEME percentile.
+        <blank>
+          ,<= 0,>0                                   ← partial header (count cols)
+        1926,   3,  429,  0.296, 0.404, …, 31.324     ← year, n(BE<=0), n(BE>0),
+        …                                                then 20 breakpoints
+        Copyright …                                   ← footer
+
+    Each data row is a 4-digit formation year followed by two firm-count columns
+    (number of firms with BE <= 0 and BE > 0) and 20 book-to-market breakpoints
+    at the 5th, 10th, …, 100th NYSE percentiles. Breakpoints are formed each June;
+    rows are indexed at June 30 of the formation year.
+
+    Returns a DataFrame indexed by June-30 Timestamp with columns p5, p10, …, p100
+    (book-to-market ratio at each percentile). Low percentiles are growth/expensive
+    (low B/M); high percentiles are value/cheap (high B/M).
+    """
+    n_break = len(_BEME_PCTILES)
+    rows: list[tuple[int, list[float]]] = []
+    for line in text.splitlines():
+        parts = [p.strip() for p in line.split(",")]
+        first = parts[0] if parts else ""
+        # Data rows: 4-digit year + 2 count cols + the 20 breakpoint columns.
+        if len(first) == 4 and first.isdigit() and len(parts) >= 3 + n_break:
+            try:
+                year = int(first)
+                vals = [float(x) for x in parts[3:3 + n_break]]
+            except ValueError:
+                continue
+            rows.append((year, vals))
+
+    if not rows:
+        raise ValueError("No BE/ME breakpoint data rows found in Ken French CSV text")
+
+    idx = pd.DatetimeIndex([pd.Timestamp(year=y, month=6, day=30) for y, _ in rows])
+    data = {f"p{p}": [vals[i] for _, vals in rows] for i, p in enumerate(_BEME_PCTILES)}
+    return pd.DataFrame(data, index=idx).sort_index()
+
+
+def _fetch_beme_breakpoints() -> pd.DataFrame:
+    """Download and parse the Ken French BE/ME breakpoints ZIP, with retry."""
+    last_exc: Exception = RuntimeError("no attempts made")
+    delays = list(_FF_RETRY_DELAYS)
+    for attempt in range(len(delays) + 1):
+        try:
+            resp = requests.get(_BEME_URL, timeout=30)
+            resp.raise_for_status()
+            with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
+                csv_name = next(n for n in zf.namelist() if n.upper().endswith(".CSV"))
+                raw_text = zf.read(csv_name).decode("utf-8", errors="replace")
+            return _parse_beme_breakpoints_text(raw_text)
+        except Exception as exc:
+            last_exc = exc
+            print(
+                f"[INFO] Ken French BE/ME fetch attempt {attempt + 1}/{len(delays) + 1} "
+                f"failed: {exc}",
+                file=sys.stderr,
+            )
+            if attempt < len(delays):
+                time.sleep(delays[attempt])
+    raise RuntimeError(
+        f"Ken French BE/ME breakpoint download failed after {len(delays) + 1} attempts: "
+        f"{last_exc}"
+    )
+
+
+def load_beme_breakpoints(force_refresh: bool = False) -> pd.DataFrame:
+    """
+    Return Ken French NYSE BE/ME breakpoints (annual, June-formed).
+
+    DataFrame indexed by June-30 Timestamp with columns p5…p100 (book-to-market
+    ratio at each NYSE percentile). Refreshes the local cache when stale (file
+    absent or mtime older than _BEME_REFRESH_DAYS). On fetch failure a stale
+    cache is returned with a warning rather than crashing.
+    """
+    cache = _BEME_CACHE
+    stale = True
+    if cache.exists():
+        mtime = date.fromtimestamp(cache.stat().st_mtime)
+        stale = (date.today() - mtime).days > _BEME_REFRESH_DAYS
+
+    if force_refresh or stale:
+        try:
+            df = _fetch_beme_breakpoints()
+            cache.parent.mkdir(parents=True, exist_ok=True)
+            df.to_csv(cache)
+            return df
+        except Exception as exc:
+            if cache.exists():
+                warnings.warn(
+                    f"BE/ME breakpoint refresh failed ({exc}); using cached data.",
+                    stacklevel=2,
+                )
+            else:
+                raise
+
+    return pd.read_csv(cache, index_col=0, parse_dates=True)
 
 
 # ── Sleeve return series ───────────────────────────────────────────────────────

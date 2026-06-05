@@ -140,6 +140,54 @@ GitHub Actions run after every push and confirm the green checkmark before closi
 
 ---
 
+## Phase 32 — Candidate correlation screen
+_2026-06-05_
+
+Generalized the Asset Evaluation page into a reusable candidate screen: enter any
+ticker to see per-sleeve correlation, average correlation to the SAA sleeves, a
+rolling candidate-to-sleeves line, and a diversifies-vs-doubles-down verdict. QQQ
+reads as a US large-growth double-down; GLD as a genuine diversifier. The Bitcoin
+case study is unchanged.
+
+---
+
+## Phase 31 — Rolling sleeve correlations
+_2026-06-05_
+
+Added an average-pairwise-correlation-over-time view to the Correlations page:
+mean pairwise rolling correlation across the SAA sleeves with a dispersion band,
+an extended-history toggle (reaches 2008), and an equity-vs-bond-equity
+decomposition. Shows diversification compressing in stress — equity sleeves
+converge toward +1 while bonds decouple. Computation reusable
+(asset_evaluation.py) for the upcoming candidate-correlation work.
+
+---
+
+## Phase 30 — Factor valuation spread
+_2026-06-05_
+
+Added a value-vs-growth valuation spread to the Factor Regime section: log of
+the high/low NYSE book-to-market percentiles (Ken French BE/ME breakpoints), with
+a fixed full-history percentile and banded interpretation. Distinguishes whether
+value is cheap or expensive vs history — the mean-reversion signal, complementary
+to the existing trailing-performance read. Size valuation omitted with rationale.
+Existing 5-factor loader untouched.
+
+---
+
+## Phase 29 — Factor Regime on Macro page
+_2026-06-04_
+
+Added a Factor Regime section to the Macro page: trailing-12-month size (small
+vs large) and style (value vs growth) factor performance, overlaying Fama-French
+long-short premia with long-only ETF proxies around a zero reference. Includes an
+adjustable lookback window, historical percentile per series (fixed full-history
+denominator), and dynamic interpretation prose conditioned on sign and
+percentile. Surfaces whether the SAA's small-cap and value tilts are currently
+rewarded.
+
+---
+
 ## Phase 28 — Household performance and benchmarks
 _2026-05-29_
 

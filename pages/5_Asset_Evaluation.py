@@ -46,6 +46,15 @@ def _load_spy_returns() -> pd.Series:
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
+def _load_candidate_returns(ticker: str) -> pd.Series:
+    """Daily returns for an arbitrary candidate ticker (Candidate Screen)."""
+    try:
+        return ae.get_candidate_returns(ticker, ae.SAMPLE_START)
+    except Exception:
+        return pd.Series(dtype=float)
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
 def _load_univariate_table() -> pd.DataFrame:
     try:
         return ae.build_univariate_table()
@@ -219,6 +228,154 @@ with col:
         "for a taxable individual investor. A candidate asset that improves constrained portfolio "
         "Sharpe is a necessary but not sufficient condition for inclusion."
     )
+    st.divider()
+
+# 2.5 Candidate Correlation Screen (generic — any ticker)
+_, col, _ = st.columns([1, 8, 1])
+with col:
+    st.header("Candidate Correlation Screen")
+    st.caption(
+        "Screen any candidate ticker for its correlation to the existing SAA sleeves — "
+        "the quantitative \"does this diversify or just double down?\" check. This is a "
+        "lightweight, generic screen; the deep five-step framework below is the worked "
+        "Bitcoin case study."
+    )
+
+    cand_ticker = st.text_input("Candidate ticker", value="QQQ", key="cand_ticker").strip().upper()
+
+    _scr_sleeves = _load_sleeve_returns()
+    _scr_recessions = _load_recession_periods()
+
+    if not cand_ticker:
+        st.info("Enter a ticker to screen its correlation to the SAA sleeves.")
+    elif _scr_sleeves.empty:
+        st.warning("Sleeve benchmark prices unavailable — check connection or API limits.")
+    else:
+        with st.spinner(f"Screening {cand_ticker}…"):
+            cand_ret = _load_candidate_returns(cand_ticker)
+
+        if cand_ret.empty:
+            st.warning(
+                f"Couldn't fetch data for **{cand_ticker}** — check the symbol "
+                "(e.g. QQQ, TLT, GLD, VNQ). Use a valid exchange-listed ticker."
+            )
+        else:
+            per_sleeve = ae.compute_full_sample_correlations(cand_ret, _scr_sleeves)
+            per_sleeve = per_sleeve.reindex(ae.SLEEVES).dropna()
+
+            if per_sleeve.empty:
+                st.warning(f"Not enough overlapping history to correlate {cand_ticker}.")
+            else:
+                avg_corr = float(per_sleeve.mean())
+
+                # (a) Per-sleeve correlation — the headline (sorted, RdYlGn like 5b)
+                _ps_sorted = per_sleeve.sort_values()  # ascending → highest at top of h-bar
+                fig_scr = go.Figure(go.Bar(
+                    x=_ps_sorted.values,
+                    y=list(_ps_sorted.index),
+                    orientation="h",
+                    marker=dict(
+                        color=_ps_sorted.values, colorscale="RdYlGn",
+                        cmid=0, cmin=-0.5, cmax=1.0,
+                        colorbar=dict(title="ρ", thickness=12),
+                    ),
+                    text=[f"{v:+.2f}" for v in _ps_sorted.values],
+                    textposition="auto",
+                    hovertemplate="%{y}: ρ = %{x:.2f}<extra></extra>",
+                ))
+                fig_scr.add_vline(x=0, line_dash="dash", line_color="#9E9E9E", line_width=1)
+                fig_scr.update_layout(
+                    height=320,
+                    margin=dict(l=0, r=0, t=8, b=0),
+                    paper_bgcolor="white",
+                    plot_bgcolor="#FAFAFA",
+                    xaxis=dict(range=[-1.05, 1.05], gridcolor="#EBEBEB",
+                               title="Full-sample correlation (ρ)"),
+                    yaxis=dict(tickfont_size=11),
+                )
+                st.plotly_chart(fig_scr, width="stretch", config={"displayModeBar": False})
+
+                # (b) Average + verdict
+                st.metric("Avg correlation to SAA sleeves", f"{avg_corr:+.2f}")
+                st.markdown(
+                    ae.interpret_candidate_diversification(avg_corr, per_sleeve, cand_ticker)
+                )
+
+                # (c) Rolling candidate-to-sleeves average over time
+                roll_set = ae.rolling_correlation_to_set(cand_ret, _scr_sleeves, window=60)
+                if not roll_set.empty:
+                    fig_rs = go.Figure()
+                    for _rs, _re in _scr_recessions:
+                        fig_rs.add_vrect(
+                            x0=str(_rs), x1=str(_re),
+                            fillcolor="lightgray", opacity=0.35,
+                            line_width=0, layer="below",
+                        )
+                    fig_rs.add_hline(y=0, line_dash="dash", line_color="#9E9E9E", line_width=1)
+                    fig_rs.add_hline(
+                        y=avg_corr, line_dash="dot", line_color="#9E9E9E", line_width=1,
+                        annotation_text=f"Full-sample avg {avg_corr:+.2f}",
+                        annotation_position="top left", annotation_font_size=9,
+                        annotation_font_color="#888",
+                    )
+                    fig_rs.add_trace(go.Scatter(
+                        x=roll_set.index, y=roll_set.values, mode="lines",
+                        name=f"{cand_ticker} 60d avg corr to sleeves",
+                        line=dict(color="#2E4057", width=1.5),
+                    ))
+                    fig_rs.update_layout(
+                        height=280,
+                        margin=dict(l=0, r=0, t=8, b=0),
+                        paper_bgcolor="white",
+                        plot_bgcolor="#FAFAFA",
+                        showlegend=False,
+                        hovermode="x unified",
+                        yaxis=dict(range=[-1.05, 1.05], gridcolor="#EBEBEB",
+                                   title="Avg rolling corr to sleeves (ρ)"),
+                        xaxis=dict(gridcolor="#EBEBEB"),
+                    )
+                    st.plotly_chart(fig_rs, width="stretch", config={"displayModeBar": False})
+                    _rs_cur = float(roll_set.iloc[-1])
+                    st.caption(
+                        f"{cand_ticker}'s average rolling 60-day correlation to the nine SAA "
+                        f"sleeves (recession-shaded). Current ρ ≈ {_rs_cur:+.2f} vs the "
+                        f"full-sample average of {avg_corr:+.2f}. A line that rises in the "
+                        "shaded stress windows means the candidate's diversification weakens "
+                        "exactly when it is most needed."
+                    )
+
+                # (d) Stress-vs-normal: regime-conditional correlation vs SPY (reuses 5i helper)
+                _spy = _load_spy_returns()
+                if not _spy.empty:
+                    try:
+                        _reg = ae.compute_regime_conditional_correlation(
+                            cand_ret, _spy, ae.SAMPLE_START
+                        )
+                        if not _reg.empty and _reg["Correlation"].notna().any():
+                            with st.expander("Stress-vs-normal: correlation vs SPY by regime", expanded=False):
+                                st.dataframe(
+                                    _reg.style.format({
+                                        "Correlation": lambda v: f"{v:.2f}" if not np.isnan(v) else "—",
+                                        "N Obs": "{:.0f}",
+                                    }),
+                                    hide_index=True, use_container_width=True,
+                                )
+                                st.caption(
+                                    f"{cand_ticker} vs SPY Pearson correlation conditioned on the "
+                                    "NBER cycle phase (FRED USREC/T10Y2Y/UNRATE). A higher "
+                                    "recession/late-cycle reading than mid-cycle means the "
+                                    "candidate couples to equities precisely in stress."
+                                )
+                    except Exception:
+                        pass
+
+                st.caption(
+                    "Full-sample and rolling correlations are backward-looking and restricted "
+                    "to equity trading days since 2018. This screen measures *diversification "
+                    "overlap* with the existing SAA — not expected return, valuation, or fit. "
+                    "A low-correlation result is necessary but not sufficient for inclusion."
+                )
+
     st.divider()
 
 # 3. Case Study header

@@ -105,18 +105,28 @@ def get_candidate_returns(
 def get_sleeve_returns(
     start_date: str = SAMPLE_START,
     end_date: Optional[str] = None,
+    exclude: Optional[list[str]] = None,
 ) -> pd.DataFrame:
     """
-    Daily returns for all 9 non-cash SAA sleeves, trading-day intersection.
+    Daily returns for the non-cash SAA sleeves, trading-day intersection.
 
     Blended sleeves use weighted-average daily returns.
     Rows where any sleeve has a near-zero absolute return sum are dropped
     (Phase 11 zero-return rule: these are non-trading days for equity markets).
+
+    By default all 9 sleeves are included; the common-date intersection is then
+    bounded by the latest-starting sleeve (QUAL, ~2013). Pass ``exclude`` (a list
+    of sleeve names) to drop sleeves *before* the intersection — e.g.
+    ``exclude=["US Large Quality"]`` drops QUAL so the remaining 8-sleeve set
+    extends back to ~2007 (DBC inception), making the 2008 crisis visible.
     """
-    end = end_date or date.today().isoformat()
+    end  = end_date or date.today().isoformat()
+    skip = set(exclude or [])
     ret_dict: dict[str, pd.Series] = {}
 
     for sleeve_name, components in SLEEVE_BENCHMARKS.items():
+        if sleeve_name in skip:
+            continue
         blended: pd.Series | None = None
         for ticker, weight in components:
             p = _price_series(ticker, start_date, end)
@@ -564,3 +574,271 @@ def compute_regime_conditional_correlation(
         rows.append({"Regime": label, "Correlation": corr, "N Obs": n})
 
     return pd.DataFrame(rows)
+
+
+# ── Aggregate rolling correlation over time (Phase 31) ─────────────────────────
+#
+# These operate on any returns DataFrame, so Phase 32 can reuse rolling_pairwise_*
+# by passing a frame that includes a candidate column alongside the sleeves.
+
+# Sleeve-name groups for the equity-vs-bond-equity decomposition. Real Assets is
+# intentionally in neither group (a diversifier that is neither equity nor bond).
+EQUITY_SLEEVES = [
+    "US Large Core", "US Large Quality", "US Large Value",
+    "US Small Cap", "Intl Developed", "Emerging Markets",
+]
+BOND_SLEEVES = ["Core Fixed Income", "TIPS"]
+
+
+def _ordinal(n: float) -> str:
+    """Format a percentile as an ordinal, e.g. 58 -> '58th'."""
+    n = int(round(n))
+    if 11 <= (n % 100) <= 13:
+        return f"{n}th"
+    return f"{n}{['th', 'st', 'nd', 'rd', 'th'][min(n % 10, 4)]}"
+
+
+def _pairwise_rolling_frame(returns_df: pd.DataFrame, window: int) -> pd.DataFrame:
+    """
+    DataFrame of every off-diagonal pairwise rolling correlation, one column per
+    unordered pair ("A × B"), indexed like ``returns_df``. Generic over columns.
+    """
+    cols = list(returns_df.columns)
+    data: dict[str, pd.Series] = {}
+    for i in range(len(cols)):
+        for j in range(i + 1, len(cols)):
+            a, b = cols[i], cols[j]
+            data[f"{a} × {b}"] = returns_df[a].rolling(window).corr(returns_df[b])
+    return pd.DataFrame(data, index=returns_df.index)
+
+
+def rolling_pairwise_mean(returns_df: pd.DataFrame, window: int) -> pd.Series:
+    """
+    Per date, the mean of all off-diagonal pairwise rolling correlations across
+    the columns of ``returns_df`` over the trailing ``window``.
+
+    Generic — works for any number of columns (N >= 2). Phase 32 reuses this by
+    passing a returns frame that includes a candidate column to obtain the
+    candidate's average rolling correlation with the rest.
+    """
+    pf = _pairwise_rolling_frame(returns_df, window)
+    if pf.empty:
+        return pd.Series(dtype=float)
+    return pf.mean(axis=1, skipna=True).dropna().rename("avg_pairwise_corr")
+
+
+def rolling_pairwise_band(returns_df: pd.DataFrame, window: int) -> pd.DataFrame:
+    """
+    Per date, the min and max of the off-diagonal pairwise rolling correlations —
+    the dispersion the mean hides. Columns: ``min``, ``max``.
+    """
+    pf = _pairwise_rolling_frame(returns_df, window)
+    if pf.empty:
+        return pd.DataFrame(columns=["min", "max"])
+    out = pd.DataFrame({
+        "min": pf.min(axis=1, skipna=True),
+        "max": pf.max(axis=1, skipna=True),
+    })
+    return out.dropna(how="all")
+
+
+def average_pairwise_rolling_correlation(
+    window: int = 60,
+    start_date: str = "2007-01-01",
+    end_date: Optional[str] = None,
+    exclude: Optional[list[str]] = None,
+) -> pd.DataFrame:
+    """
+    Sleeve-level aggregate: the mean (and min/max band) of all pairwise rolling
+    correlations across the SAA sleeves over time.
+
+    ``exclude`` is forwarded to ``get_sleeve_returns`` — e.g. dropping
+    "US Large Quality" extends the common history back to ~2007. Returns a
+    DataFrame with columns ``mean``, ``min``, ``max`` (empty if data is
+    unavailable).
+    """
+    returns = get_sleeve_returns(start_date=start_date, end_date=end_date, exclude=exclude)
+    if returns.empty or returns.shape[1] < 2:
+        return pd.DataFrame(columns=["mean", "min", "max"])
+    mean = rolling_pairwise_mean(returns, window).rename("mean")
+    band = rolling_pairwise_band(returns, window)
+    out = pd.concat([mean, band], axis=1).dropna(subset=["mean"])
+    return out
+
+
+def rolling_equity_vs_bondequity(returns_df: pd.DataFrame, window: int) -> pd.DataFrame:
+    """
+    Two decomposed rolling-correlation lines over time:
+      - ``intra_equity``: mean pairwise correlation AMONG the equity sleeves.
+      - ``bond_equity``:  mean correlation BETWEEN the bond sleeves
+        (Core Fixed Income, TIPS) and the equity sleeves.
+
+    Sleeves are classified by name via EQUITY_SLEEVES / BOND_SLEEVES; Real Assets
+    is excluded from both groups. Columns absent from ``returns_df`` are skipped.
+    """
+    cols = list(returns_df.columns)
+    eq = [c for c in EQUITY_SLEEVES if c in cols]
+    bd = [c for c in BOND_SLEEVES if c in cols]
+
+    intra_eq = (
+        rolling_pairwise_mean(returns_df[eq], window)
+        if len(eq) >= 2 else pd.Series(dtype=float)
+    )
+
+    be_pairs: dict[str, pd.Series] = {}
+    for b in bd:
+        for e in eq:
+            be_pairs[f"{b} × {e}"] = returns_df[b].rolling(window).corr(returns_df[e])
+    bond_eq = (
+        pd.DataFrame(be_pairs, index=returns_df.index).mean(axis=1, skipna=True)
+        if be_pairs else pd.Series(dtype=float)
+    )
+
+    out = pd.DataFrame({"intra_equity": intra_eq, "bond_equity": bond_eq})
+    return out.dropna(how="all")
+
+
+def interpret_rolling_correlation(current_value: float, history_series: pd.Series) -> str:
+    """
+    Banded interpretation of the average pairwise sleeve correlation, in the
+    macro/Factor-Regime voice.
+
+    Reports the current average correlation, its percentile within its own
+    history (reusing ``macro.percentile``), and frames diversification as
+    strong / moderate / compressed by the absolute current level. Distinguishes
+    the equity sleeves' convergence toward +1 in stress from the bond-damped
+    blended average, and notes the non-stationary caveat.
+    """
+    from src.macro import percentile as _macro_percentile
+
+    hist = history_series.dropna()
+    pct  = _macro_percentile(hist, current_value) if not hist.empty else 50.0
+    start_year = hist.index.min().year if not hist.empty else "the sample start"
+
+    if current_value >= 0.65:
+        level = "compressed: the sleeves are moving largely together and offer little offset right now"
+    elif current_value >= 0.40:
+        level = "moderate: the sleeves share meaningful common market beta but retain some offset"
+    else:
+        level = "strong: average co-movement is low and the sleeves are genuinely diversifying"
+
+    return (
+        f"Average pairwise sleeve correlation is currently ρ ≈ {current_value:+.2f}, the "
+        f"{_ordinal(pct)} percentile of its history since {start_year} — cross-sleeve "
+        f"diversification is {level}. In stress episodes the equity sleeves converge toward "
+        "+1 (diversification among equity styles evaporates in a crash); the blended average "
+        "stays lower only because the bond sleeves decouple from equities, which is the "
+        "diversification the fixed-income allocation is there to provide. Correlations are "
+        "non-stationary and tend to rise precisely when diversification is most needed."
+    )
+
+
+# ── Candidate-to-sleeves correlation (Phase 32) ────────────────────────────────
+#
+# The right metric for "how correlated is a candidate to my sleeves" is the mean
+# of the candidate's correlation ROW — NOT rolling_pairwise_mean on an augmented
+# frame (which averages all pairs, in which the candidate is a small minority and
+# barely moves the result). Full-sample average is
+# compute_full_sample_correlations(candidate, sleeves).mean(); the rolling version
+# is rolling_correlation_to_set below.
+
+def rolling_correlation_to_set(
+    candidate_returns: pd.Series,
+    references_df: pd.DataFrame,
+    window: int = 60,
+) -> pd.Series:
+    """
+    Per date, the mean over the reference columns of the rolling correlation
+    between ``candidate_returns`` and each reference, over the trailing ``window``.
+
+    This is the candidate's average rolling correlation to the reference set — the
+    mean of its correlation row, computed on the candidate/reference common-date
+    intersection. Generic over the number of reference columns. NOT the same as
+    ``rolling_pairwise_mean`` (which averages all pairs, including reference-vs-
+    reference, and so does not isolate the candidate).
+    """
+    common = candidate_returns.index.intersection(references_df.index)
+    if len(common) < window or references_df.shape[1] == 0:
+        return pd.Series(dtype=float)
+    cand = candidate_returns.reindex(common)
+    refs = references_df.reindex(common)
+    per_ref = [cand.rolling(window).corr(refs[c]) for c in refs.columns]
+    mat = pd.concat(per_ref, axis=1)
+    return mat.mean(axis=1, skipna=True).dropna().rename("avg_corr_to_set")
+
+
+def interpret_candidate_diversification(
+    avg_corr: float,
+    per_sleeve: pd.Series,
+    ticker: str = "The candidate",
+) -> str:
+    """
+    "Diversifies vs doubles down" verdict for a candidate, in the page's 5j voice.
+
+    Classifies by BOTH the average correlation to the sleeves and the bond-sleeve
+    correlations (Core Fixed Income, TIPS): a high average with near-zero bond
+    correlation reads as an equity double-down with some duration offset; a high
+    average including the bonds reads as broadly redundant; a low average reads as
+    a genuine diversifier. Names the highest-correlation sleeves (what it doubles
+    down on) and any genuinely low/negative ones (the real offsets).
+
+    Thresholds: avg ≥ 0.60 → doubles down; avg < 0.30 → genuine diversifier;
+    in between → mixed. Bond split at 0.20.
+    """
+    ps = per_sleeve.dropna().sort_values(ascending=False)
+    top = ps.head(2)
+    top_str = " and ".join(f"ρ ≈ {v:+.2f} with {s}" for s, v in top.items())
+
+    offsets = ps[ps < 0.15].sort_values().head(3)
+    if not offsets.empty:
+        off_str = ", ".join(f"{s} ({v:+.2f})" for s, v in offsets.items())
+        if avg_corr < 0.30:
+            offset_clause = f"Its lowest-correlation sleeves are {off_str}. "
+        else:
+            offset_clause = f"Only {off_str} offer genuine offset. "
+    else:
+        offset_clause = "No sleeve offers a genuinely low or negative correlation. "
+
+    bond_vals = [
+        float(per_sleeve[b]) for b in BOND_SLEEVES
+        if b in per_sleeve.index and pd.notna(per_sleeve[b])
+    ]
+    avg_bond = float(np.mean(bond_vals)) if bond_vals else float("nan")
+
+    if avg_corr >= 0.60:
+        if not np.isnan(avg_bond) and avg_bond < 0.20:
+            verdict = (
+                "largely doubles down on the existing equity beta, with some duration "
+                "offset from the bond sleeves"
+            )
+            tail = (
+                "As a diversifier it adds little; as an expression of that exposure it is "
+                "largely redundant given the existing SAA equity sleeves."
+            )
+        else:
+            verdict = (
+                "is redundant across the board — it co-moves even with the bond sleeves and "
+                "adds little diversification"
+            )
+            tail = (
+                "It overlaps the existing SAA broadly rather than filling a correlation gap."
+            )
+    elif avg_corr < 0.30:
+        verdict = "is a genuine diversifier — its co-movement with the existing sleeves is low"
+        tail = (
+            "It is additive: it fills a correlation gap the current SAA sleeves do not cover."
+        )
+    else:
+        verdict = (
+            "is a mixed case — partial overlap with the equity sleeves but meaningful offset "
+            "elsewhere"
+        )
+        tail = (
+            "It is neither a pure double-down nor a clean diversifier; weigh the specific "
+            "sleeve overlaps against the offsets."
+        )
+
+    return (
+        f"{ticker}'s average correlation to the SAA sleeves is ρ ≈ {avg_corr:+.2f}, driven by "
+        f"{top_str} — it {verdict}. {offset_clause}{tail}"
+    )

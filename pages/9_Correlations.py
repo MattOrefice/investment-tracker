@@ -8,6 +8,7 @@ import streamlit as st
 
 st.set_page_config(page_title="Correlations", layout="wide")
 
+from src import asset_evaluation as ae
 from src.asof import as_of_banner
 from src.factors import interpret_correlations
 from src.prices import get_prices
@@ -17,18 +18,9 @@ render_page_header()
 
 TODAY = date.today().isoformat()
 
-# Benchmark tickers per sleeve (excluding Cash — near-zero variance distorts correlations)
-_SLEEVES: dict[str, list[tuple[str, float]]] = {
-    "US Large Core":          [("SPY",  1.0)],
-    "US Large Quality":       [("QUAL", 1.0)],
-    "US Large Value":         [("IWD",  1.0)],
-    "US Small Cap":           [("IWM",  1.0)],
-    "Intl Developed":         [("EFA",  1.0)],
-    "Emerging Markets":       [("EEM",  1.0)],
-    "Core Fixed Income":      [("IEF",  1.0)],
-    "TIPS":                   [("TIP",  1.0)],
-    "Real Assets":            [("VNQ",  0.6), ("DBC", 0.4)],
-}
+# Canonical sleeve→benchmark mapping (single source of truth in asset_evaluation;
+# excludes Cash — near-zero variance distorts correlations).
+_SLEEVES: dict[str, list[tuple[str, float]]] = ae.SLEEVE_BENCHMARKS
 
 _COLORS = {
     "primary": "#2E4057",
@@ -200,7 +192,7 @@ with col:
     with ctrl_r:
         view = st.radio(
             "View",
-            options=["Heatmap", "Pair time-series"],
+            options=["Heatmap", "Pair time-series", "Average over time"],
             horizontal=True,
             key="corr_view",
         )
@@ -329,7 +321,7 @@ with col:
 
     # ── Pair time-series view ─────────────────────────────────────────────────
 
-    else:
+    elif view == "Pair time-series":
         pair_l, pair_r = st.columns(2)
         with pair_l:
             sleeve_a = st.selectbox(
@@ -432,6 +424,134 @@ with col:
                     + " Dashed line at ρ = 0 is a reference; "
                     "values above zero co-move, values below offset."
                 )
+
+    # ── Average-over-time view ────────────────────────────────────────────────
+
+    else:
+        extended = st.checkbox(
+            "Extended history (8 sleeves, excludes Quality → reaches ~2007)",
+            value=False, key="corr_avg_extended",
+            help="Drops US Large Quality (QUAL, 2013 inception) so the common "
+                 "history extends back to ~2007 and the 2008 crisis becomes visible.",
+        )
+        _exclude   = ["US Large Quality"] if extended else None
+        _set_label = "8 sleeves (excludes Quality)" if extended else "9 sleeves"
+
+        with st.spinner("Computing average pairwise correlation…"):
+            avg_df = ae.average_pairwise_rolling_correlation(
+                window=window, start_date="2007-01-01", exclude=_exclude,
+            )
+            sleeve_ret = ae.get_sleeve_returns(start_date="2007-01-01", exclude=_exclude)
+            decomp     = ae.rolling_equity_vs_bondequity(sleeve_ret, window)
+
+        if avg_df.empty or "mean" not in avg_df.columns or avg_df["mean"].dropna().empty:
+            st.warning(
+                f"Insufficient data for a {window}-day window. Try a shorter window."
+            )
+        else:
+            mean_s      = avg_df["mean"].dropna()
+            current_avg = float(mean_s.iloc[-1])
+            x_min       = mean_s.index.min().isoformat()[:10]
+            x_max       = mean_s.index.max().isoformat()[:10]
+            wlabel      = {30: "30-day", 60: "60-day", 120: "120-day",
+                           252: "252-day"}[window]
+
+            fig_avg = go.Figure()
+            # min–max dispersion band (drawn first, behind the mean line)
+            if {"min", "max"}.issubset(avg_df.columns):
+                _band = avg_df.dropna(subset=["min", "max"])
+                fig_avg.add_trace(go.Scatter(
+                    x=_band.index, y=_band["max"], mode="lines",
+                    line=dict(width=0), hoverinfo="skip", showlegend=False,
+                ))
+                fig_avg.add_trace(go.Scatter(
+                    x=_band.index, y=_band["min"], mode="lines",
+                    line=dict(width=0), fill="tonexty",
+                    fillcolor="rgba(46,64,87,0.12)",
+                    name="Pairwise min–max range", hoverinfo="skip",
+                ))
+            fig_avg.add_trace(go.Scatter(
+                x=mean_s.index, y=mean_s.values, mode="lines",
+                name="Average pairwise ρ",
+                line=dict(color=_COLORS["primary"], width=2),
+            ))
+            fig_avg.add_hline(
+                y=0, line_dash="dash", line_color=_COLORS["ref"], line_width=1,
+            )
+            fig_avg.add_hline(
+                y=current_avg, line_dash="solid", line_color="#C0392B", line_width=1.5,
+                annotation_text=f"Current {current_avg:+.2f}",
+                annotation_position="right", annotation_font_color="#C0392B",
+                annotation_font_size=11,
+            )
+            fig_avg.update_layout(
+                height=360, margin=dict(l=0, r=80, t=24, b=0),
+                paper_bgcolor="white", plot_bgcolor="#FAFAFA",
+                font=dict(color="#333333", size=12),
+                yaxis=dict(range=[-1.05, 1.05], gridcolor="#EBEBEB",
+                           title="Avg pairwise correlation (ρ)"),
+                xaxis=dict(range=[x_min, x_max], gridcolor="#EBEBEB"),
+                hovermode="x unified",
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0, font_size=11),
+            )
+            st.plotly_chart(fig_avg, width="stretch")
+
+            st.caption(
+                f"Mean of all pairwise rolling {wlabel} correlations across the "
+                f"{_set_label} · {x_min} to {x_max}. Current average ρ = "
+                f"**{current_avg:+.2f}**. Shaded band = min–max of the pairwise "
+                "correlations at each date (the dispersion the average hides)."
+            )
+
+            st.markdown(ae.interpret_rolling_correlation(current_avg, mean_s))
+
+            # Equity vs bond-equity decomposition (separate chart for legibility)
+            if not decomp.empty:
+                st.markdown("**Equity vs bond–equity correlation**")
+                fig_dec = go.Figure()
+                if "intra_equity" in decomp.columns:
+                    _ie = decomp["intra_equity"].dropna()
+                    fig_dec.add_trace(go.Scatter(
+                        x=_ie.index, y=_ie.values, mode="lines",
+                        name="Avg intra-equity ρ",
+                        line=dict(color=_COLORS["primary"], width=2),
+                    ))
+                if "bond_equity" in decomp.columns:
+                    _be = decomp["bond_equity"].dropna()
+                    fig_dec.add_trace(go.Scatter(
+                        x=_be.index, y=_be.values, mode="lines",
+                        name="Avg bond–equity ρ",
+                        line=dict(color="#C0392B", width=2),
+                    ))
+                fig_dec.add_hline(
+                    y=0, line_dash="dash", line_color=_COLORS["ref"], line_width=1,
+                )
+                fig_dec.update_layout(
+                    height=300, margin=dict(l=0, r=80, t=24, b=0),
+                    paper_bgcolor="white", plot_bgcolor="#FAFAFA",
+                    font=dict(color="#333333", size=12),
+                    yaxis=dict(range=[-1.05, 1.05], gridcolor="#EBEBEB",
+                               title="Correlation (ρ)"),
+                    xaxis=dict(gridcolor="#EBEBEB"),
+                    hovermode="x unified",
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0, font_size=11),
+                )
+                st.plotly_chart(fig_dec, width="stretch")
+                st.caption(
+                    "Intra-equity ρ = average correlation among the six equity sleeves; "
+                    "bond–equity ρ = average correlation between the bond sleeves (Core "
+                    "Fixed Income, TIPS) and the equity sleeves. The post-2020 rise in "
+                    "bond–equity correlation — bonds no longer offsetting equity drawdowns — "
+                    "is the 60/40-relevant regime shift (the 2022 joint drawdown)."
+                )
+
+            st.caption(
+                "**History constraint:** the full 9-sleeve common window starts ~2013 "
+                "(QUAL inception), so the default view covers the 2020 and 2022 stress "
+                "episodes but not 2008. Enable *Extended history* to drop Quality and reach "
+                "~2007, making the 2008 crisis visible. Correlations are non-stationary — "
+                "the trailing window reflects only recent co-movement."
+            )
 
     st.divider()
 
