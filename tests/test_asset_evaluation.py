@@ -448,3 +448,76 @@ def test_extended_history_reaches_2008_live():
     # Default 9-sleeve set is QUAL-constrained (~2013); extended reaches ~2007.
     assert default.index.min().year >= 2013
     assert extended.index.min().year <= 2008
+
+
+# ── Phase 32: candidate-to-sleeves correlation ──────────────────────────────────
+
+def test_rolling_correlation_to_set_known_value():
+    idx = pd.date_range("2020-01-01", periods=80, freq="D")
+    a = pd.Series(np.linspace(0.0, 1.0, 80) + np.sin(np.arange(80)) * 0.01, index=idx)
+    refs = pd.DataFrame({"r1": a.copy(), "r2": -a, "r3": a.copy()})  # ρ = +1, -1, +1
+    s = ae.rolling_correlation_to_set(a, refs, window=80)
+    # Mean of [+1, -1, +1] = +1/3.
+    assert len(s) == 1
+    assert s.iloc[-1] == pytest.approx(1.0 / 3.0, abs=1e-6)
+
+
+def test_rolling_correlation_to_set_generic_over_n():
+    idx = pd.date_range("2020-01-01", periods=80, freq="D")
+    a = pd.Series(np.linspace(0.0, 1.0, 80) + np.sin(np.arange(80)) * 0.01, index=idx)
+    one = ae.rolling_correlation_to_set(a, pd.DataFrame({"r": a.copy()}), window=80)
+    assert one.iloc[-1] == pytest.approx(1.0, abs=1e-6)
+    five = pd.DataFrame({f"r{i}": a.copy() for i in range(5)})
+    assert not ae.rolling_correlation_to_set(a, five, window=80).empty
+
+
+def test_full_sample_average_is_mean_of_correlation_row():
+    idx = pd.date_range("2020-01-01", periods=80, freq="D")
+    a = pd.Series(np.linspace(0.0, 1.0, 80) + np.sin(np.arange(80)) * 0.01, index=idx)
+    sleeves = pd.DataFrame({"s1": a.copy(), "s2": -a})  # ρ = +1, -1 → mean 0
+    per = ae.compute_full_sample_correlations(a, sleeves)
+    assert float(per.mean()) == pytest.approx(0.0, abs=1e-6)
+
+
+def _per_sleeve(d):
+    return pd.Series(d)
+
+
+def test_interpret_candidate_doubles_down_with_offset():
+    per = _per_sleeve({
+        "US Large Core": 0.94, "US Large Quality": 0.92, "US Large Value": 0.76,
+        "US Small Cap": 0.77, "Intl Developed": 0.76, "Emerging Markets": 0.73,
+        "Core Fixed Income": -0.07, "TIPS": 0.08, "Real Assets": 0.59,
+    })
+    txt = ae.interpret_candidate_diversification(float(per.mean()), per, "QQQ")
+    assert "doubles down" in txt
+    assert "offset" in txt
+    assert "US Large Core" in txt   # names the top-correlation sleeve
+    assert txt.startswith("QQQ")
+
+
+def test_interpret_candidate_genuine_diversifier():
+    per = _per_sleeve({k: 0.10 for k in ae.SLEEVES})
+    txt = ae.interpret_candidate_diversification(float(per.mean()), per, "GLD")
+    assert "genuine diversifier" in txt
+
+
+def test_interpret_candidate_redundant_including_bonds():
+    per = _per_sleeve({k: 0.70 for k in ae.SLEEVES})
+    txt = ae.interpret_candidate_diversification(float(per.mean()), per, "XYZ")
+    assert "redundant" in txt
+
+
+# ── Phase 32: live-fetch (deselected by default) ────────────────────────────────
+
+@pytest.mark.live_data
+def test_candidate_screen_qqq_doubles_down_live():
+    cand = ae.get_candidate_returns("QQQ", ae.SAMPLE_START)
+    slv = ae.get_sleeve_returns(ae.SAMPLE_START)
+    per = ae.compute_full_sample_correlations(cand, slv)
+    # QQQ is US large-growth: very high to US large-cap sleeves, low/neg to bonds.
+    assert per["US Large Core"] > 0.8
+    assert per["Core Fixed Income"] < 0.2
+    assert float(per.mean()) > 0.4
+    roll = ae.rolling_correlation_to_set(cand, slv, window=60)
+    assert not roll.empty and -1.0 <= float(roll.iloc[-1]) <= 1.0
