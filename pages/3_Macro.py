@@ -7,7 +7,7 @@ import streamlit as st
 
 st.set_page_config(page_title="Macro Dashboard", layout="wide")
 
-from src import factor_regime, macro, shiller
+from src import factor_regime, factor_valuation, macro, shiller
 from src.asof import as_of_banner
 from src.config import IS_DEMO
 from src.macro import (
@@ -203,6 +203,11 @@ def _load_size_factor_frame() -> pd.DataFrame:
 @st.cache_data(ttl=86400, show_spinner=False)
 def _load_style_factor_frame() -> pd.DataFrame:
     return factor_regime.build_style_factor_frame(end=TODAY)
+
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def _load_value_spread_series() -> pd.Series:
+    return factor_valuation.build_value_spread_series()
 
 
 # ── page ──────────────────────────────────────────────────────────────────────
@@ -1945,6 +1950,76 @@ with col:
     except Exception as exc:
         st.error(f"Style-factor data unavailable: {exc}")
 
+    st.divider()
+
+    # ── Factor Valuation sub-block — Value vs Growth ──────────────────────────
+    st.markdown("#### Factor Valuation — Value vs Growth")
+    st.caption(
+        "Beyond performance: the *value spread* measures how cheap value is relative "
+        "to growth on book-to-market — a mean-reversion-relevant signal distinct from "
+        "the trailing-return charts above. It is the log ratio of book-to-market at the "
+        "70th vs 30th NYSE percentiles (the same breakpoints that define HML's value and "
+        "growth portfolios); wider = value unusually cheap relative to growth. Source: "
+        "Ken French BE/ME breakpoints, formed annually each June."
+    )
+    try:
+        with st.spinner("Loading value-spread data (Ken French BE/ME breakpoints)…"):
+            vspread = _load_value_spread_series()
+
+        if vspread is None or vspread.empty:
+            st.info("Value-spread data unavailable — no breakpoint history.")
+        else:
+            _vs_cur    = float(vspread.iloc[-1])
+            _vs_dt     = vspread.index[-1]
+            _vs_median = float(vspread.median())
+            _vs_pct    = factor_valuation.valuation_percentile(vspread, _vs_cur)
+
+            fig_vs = go.Figure()
+            fig_vs.add_trace(go.Scatter(
+                x=vspread.index, y=vspread.values,
+                mode="lines", name="Value spread",
+                line=dict(color=_C["primary"], width=2),
+            ))
+            fig_vs.add_hline(
+                y=_vs_median, line_dash="dash", line_color=_C["ref"], line_width=1,
+                annotation_text=f"Median {_vs_median:.2f}",
+                annotation_position="right", annotation_font_size=10,
+            )
+            _add_current_annotation(
+                fig_vs, _vs_cur,
+                f"Current {_vs_cur:.2f} ({_ordinal(_vs_pct)} pct)",
+            )
+            _apply_style(fig_vs)
+            fig_vs.update_yaxes(title_text="Value spread — log(B/M value ÷ growth)")
+            _yr = _tight_yrange(vspread, [_vs_cur, _vs_median])
+            if _yr:
+                fig_vs.update_yaxes(range=_yr)
+            st.plotly_chart(fig_vs, width="stretch")
+
+            st.metric("Value spread (B/M, value vs growth)", f"{_vs_cur:.2f}")
+            st.caption(
+                f"{_ordinal(_vs_pct)} percentile of full history "
+                f"({vspread.index.min():%Y}–{vspread.index.max():%Y}) — "
+                "higher = value cheaper relative to growth. Percentile is measured "
+                "against the full available history (fixed denominator), the same method "
+                "as CAPE and the performance percentiles above."
+            )
+            st.caption(factor_valuation.interpret_value_spread(_vs_cur, _vs_pct / 100.0))
+            st.caption(
+                "Annual cadence: breakpoints are formed each June from prior-fiscal-year "
+                "book equity (~1-year formation lag), so this series updates yearly — "
+                f"unlike the daily performance charts above. Latest formation: {_vs_dt:%Y}."
+            )
+            st.caption(
+                "**Size valuation is intentionally omitted.** No clean academic series "
+                "isolates size valuation, and constructing one from size-and-value-sorted "
+                "portfolios conflates the two factors. Small-caps structurally trade at "
+                "different multiples for reasons unrelated to mean reversion, so a size "
+                "\"valuation spread\" would be more misleading than informative."
+            )
+    except Exception as exc:
+        st.error(f"Value-spread data unavailable: {exc}")
+
     with st.expander("Factor Regime methodology", expanded=False):
         st.caption(
             "**Fama-French legs (SMB, HML).** SMB (small-minus-big) and HML "
@@ -1986,9 +2061,22 @@ with col:
             "selector rescales only the displayed date range; the percentile "
             "denominator is fixed to the full history and does not move with it. The "
             "percentile here measures *performance* (how strong the trailing-12M factor "
-            "return is versus its own past). A valuation-spread percentile — how cheap "
-            "or rich the small/value factors are on a fundamental basis — is a separate "
-            "read and is left as future work."
+            "return is versus its own past), distinct from the *valuation* read below."
+        )
+        st.caption(
+            "**Factor Valuation — value spread.** The valuation sub-block shows how cheap "
+            "value is relative to growth, independent of trailing performance. It is the "
+            "log ratio of book-to-market at the 70th vs 30th NYSE percentiles — the same "
+            "breakpoints HML uses to form its value and growth portfolios — from the Ken "
+            "French BE/ME breakpoints file (annual, formed each June, ~1-year formation "
+            "lag; history to 1926). Its percentile reuses the same full-history method as "
+            "the performance percentiles and CAPE. A wide spread (high percentile) means "
+            "value is historically cheap relative to growth, a mean-reversion tailwind "
+            "that can persist even when value has performed well recently. Size valuation "
+            "is deliberately omitted: no clean academic series isolates size valuation, "
+            "and deriving one from size-and-value-sorted portfolios conflates the two "
+            "factors — small-caps trade at structurally different multiples for reasons "
+            "unrelated to mean reversion."
         )
 
     st.divider()
