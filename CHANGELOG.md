@@ -140,6 +140,18 @@ GitHub Actions run after every push and confirm the green checkmark before closi
 
 ---
 
+## Phase 33 — Tax-aware rebalancing-band status
+_2026-06-05_
+
+Made SAA tolerance-band status explicit and surfaced the tax-aware rationale for
+the buy-only rebalancer: drift is corrected with new contributions, not by selling
+overweight sleeves (which would realize capital gains). Added a "why buy-only" note
+and per-sleeve corrective-action text on Capital Deployment, a band-status verdict
+naming the closest-to-breach sleeve by headroom, and an at-a-glance band-status
+line on the SAA page. No corrective sells; no manufactured demo drift.
+
+---
+
 ## Phase 32 — Candidate correlation screen
 _2026-06-05_
 
