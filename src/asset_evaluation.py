@@ -705,8 +705,9 @@ def interpret_rolling_correlation(current_value: float, history_series: pd.Serie
 
     Reports the current average correlation, its percentile within its own
     history (reusing ``macro.percentile``), and frames diversification as
-    strong / moderate / compressed by the absolute current level. References the
-    stress spikes where the average rose toward +1 and the non-stationary caveat.
+    strong / moderate / compressed by the absolute current level. Distinguishes
+    the equity sleeves' convergence toward +1 in stress from the bond-damped
+    blended average, and notes the non-stationary caveat.
     """
     from src.macro import percentile as _macro_percentile
 
@@ -724,7 +725,9 @@ def interpret_rolling_correlation(current_value: float, history_series: pd.Serie
     return (
         f"Average pairwise sleeve correlation is currently ρ ≈ {current_value:+.2f}, the "
         f"{_ordinal(pct)} percentile of its history since {start_year} — cross-sleeve "
-        f"diversification is {level}. Note the spikes toward +1 in 2020 and 2022, where "
-        "diversification temporarily collapsed under market-wide stress: correlations are "
+        f"diversification is {level}. In stress episodes the equity sleeves converge toward "
+        "+1 (diversification among equity styles evaporates in a crash); the blended average "
+        "stays lower only because the bond sleeves decouple from equities, which is the "
+        "diversification the fixed-income allocation is there to provide. Correlations are "
         "non-stationary and tend to rise precisely when diversification is most needed."
     )

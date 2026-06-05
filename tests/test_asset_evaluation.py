@@ -407,7 +407,11 @@ def test_interpret_rolling_correlation_branches():
     )
     high = ae.interpret_rolling_correlation(0.80, hist)
     assert "compressed" in high
-    assert "collapsed" in high           # stress-spike sentence
+    # Precise stress framing: equity sleeves converge to +1; bonds decouple.
+    assert "equity sleeves converge toward" in high
+    assert "bond sleeves decouple" in high
+    # The blended-average line itself must NOT be the thing claimed to hit +1.
+    assert "spikes toward +1" not in high
     assert "100th percentile" in high    # macro.percentile: all 5 obs <= 0.80
     assert _ord(macro_percentile(hist, 0.80)) + " percentile" in high
 
