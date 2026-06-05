@@ -140,6 +140,30 @@ GitHub Actions run after every push and confirm the green checkmark before closi
 
 ---
 
+## Phase 35 — Market Snapshot page
+_2026-06-05_
+
+Added a public Market Snapshot page dated to the last exchange close:
+trailing-window size-vs-large and value-vs-growth relative performance tied to the
+SAA tilts, SPDR sector movers ranked by a selectable window, and a deterministic
+figures-only market line (no narrative/LLM). As-of derived from the actual latest
+price date. Linked from the landing grid under Markets & Macro. First
+outward-looking market view; kept honest (last-close-dated, figures-only).
+
+---
+
+## Phase 33 — Tax-aware rebalancing-band status
+_2026-06-05_
+
+Made SAA tolerance-band status explicit and surfaced the tax-aware rationale for
+the buy-only rebalancer: drift is corrected with new contributions, not by selling
+overweight sleeves (which would realize capital gains). Added a "why buy-only" note
+and per-sleeve corrective-action text on Capital Deployment, a band-status verdict
+naming the closest-to-breach sleeve by headroom, and an at-a-glance band-status
+line on the SAA page. No corrective sells; no manufactured demo drift.
+
+---
+
 ## Phase 32 — Candidate correlation screen
 _2026-06-05_
 
