@@ -140,6 +140,18 @@ GitHub Actions run after every push and confirm the green checkmark before closi
 
 ---
 
+## Phase 31 — Rolling sleeve correlations
+_2026-06-05_
+
+Added an average-pairwise-correlation-over-time view to the Correlations page:
+mean pairwise rolling correlation across the SAA sleeves with a dispersion band,
+an extended-history toggle (reaches 2008), and an equity-vs-bond-equity
+decomposition. Shows diversification compressing in stress — equity sleeves
+converge toward +1 while bonds decouple. Computation reusable
+(asset_evaluation.py) for the upcoming candidate-correlation work.
+
+---
+
 ## Phase 30 — Factor valuation spread
 _2026-06-05_
 
