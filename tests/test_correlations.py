@@ -229,3 +229,25 @@ def test_pair_specific_xaxis_range_matches_data_bounds():
     )
     # Ensure x_max is the actual last data point, not today (which may be a weekend)
     assert pd.Timestamp(x_max) == roll.index.max()
+
+
+# ── Phase 31: sleeve mapping de-duplication ─────────────────────────────────────
+
+def test_correlations_page_imports_shared_sleeve_mapping():
+    """The page must source the sleeve mapping from asset_evaluation, not a local literal."""
+    import src.asset_evaluation as ae
+
+    expected = {
+        "US Large Core", "US Large Quality", "US Large Value", "US Small Cap",
+        "Intl Developed", "Emerging Markets", "Core Fixed Income", "TIPS",
+        "Real Assets",
+    }
+    assert set(ae.SLEEVE_BENCHMARKS) == expected
+    assert ae.SLEEVE_BENCHMARKS["US Large Quality"] == [("QUAL", 1.0)]
+    assert ae.SLEEVE_BENCHMARKS["Real Assets"] == [("VNQ", 0.6), ("DBC", 0.4)]
+
+    page = (pathlib.Path(__file__).resolve().parent.parent
+            / "pages" / "9_Correlations.py").read_text(encoding="utf-8")
+    # De-dup: page references the shared mapping and no longer hardcodes the dict.
+    assert "ae.SLEEVE_BENCHMARKS" in page
+    assert '"US Large Core":          [("SPY",  1.0)]' not in page
