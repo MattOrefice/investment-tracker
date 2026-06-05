@@ -140,6 +140,18 @@ GitHub Actions run after every push and confirm the green checkmark before closi
 
 ---
 
+## Phase 35 — Market Snapshot page
+_2026-06-05_
+
+Added a public Market Snapshot page dated to the last exchange close:
+trailing-window size-vs-large and value-vs-growth relative performance tied to the
+SAA tilts, SPDR sector movers ranked by a selectable window, and a deterministic
+figures-only market line (no narrative/LLM). As-of derived from the actual latest
+price date. Linked from the landing grid under Markets & Macro. First
+outward-looking market view; kept honest (last-close-dated, figures-only).
+
+---
+
 ## Phase 33 — Tax-aware rebalancing-band status
 _2026-06-05_
 
