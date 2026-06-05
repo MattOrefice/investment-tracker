@@ -731,3 +731,114 @@ def interpret_rolling_correlation(current_value: float, history_series: pd.Serie
         "diversification the fixed-income allocation is there to provide. Correlations are "
         "non-stationary and tend to rise precisely when diversification is most needed."
     )
+
+
+# ── Candidate-to-sleeves correlation (Phase 32) ────────────────────────────────
+#
+# The right metric for "how correlated is a candidate to my sleeves" is the mean
+# of the candidate's correlation ROW — NOT rolling_pairwise_mean on an augmented
+# frame (which averages all pairs, in which the candidate is a small minority and
+# barely moves the result). Full-sample average is
+# compute_full_sample_correlations(candidate, sleeves).mean(); the rolling version
+# is rolling_correlation_to_set below.
+
+def rolling_correlation_to_set(
+    candidate_returns: pd.Series,
+    references_df: pd.DataFrame,
+    window: int = 60,
+) -> pd.Series:
+    """
+    Per date, the mean over the reference columns of the rolling correlation
+    between ``candidate_returns`` and each reference, over the trailing ``window``.
+
+    This is the candidate's average rolling correlation to the reference set — the
+    mean of its correlation row, computed on the candidate/reference common-date
+    intersection. Generic over the number of reference columns. NOT the same as
+    ``rolling_pairwise_mean`` (which averages all pairs, including reference-vs-
+    reference, and so does not isolate the candidate).
+    """
+    common = candidate_returns.index.intersection(references_df.index)
+    if len(common) < window or references_df.shape[1] == 0:
+        return pd.Series(dtype=float)
+    cand = candidate_returns.reindex(common)
+    refs = references_df.reindex(common)
+    per_ref = [cand.rolling(window).corr(refs[c]) for c in refs.columns]
+    mat = pd.concat(per_ref, axis=1)
+    return mat.mean(axis=1, skipna=True).dropna().rename("avg_corr_to_set")
+
+
+def interpret_candidate_diversification(
+    avg_corr: float,
+    per_sleeve: pd.Series,
+    ticker: str = "The candidate",
+) -> str:
+    """
+    "Diversifies vs doubles down" verdict for a candidate, in the page's 5j voice.
+
+    Classifies by BOTH the average correlation to the sleeves and the bond-sleeve
+    correlations (Core Fixed Income, TIPS): a high average with near-zero bond
+    correlation reads as an equity double-down with some duration offset; a high
+    average including the bonds reads as broadly redundant; a low average reads as
+    a genuine diversifier. Names the highest-correlation sleeves (what it doubles
+    down on) and any genuinely low/negative ones (the real offsets).
+
+    Thresholds: avg ≥ 0.60 → doubles down; avg < 0.30 → genuine diversifier;
+    in between → mixed. Bond split at 0.20.
+    """
+    ps = per_sleeve.dropna().sort_values(ascending=False)
+    top = ps.head(2)
+    top_str = " and ".join(f"ρ ≈ {v:+.2f} with {s}" for s, v in top.items())
+
+    offsets = ps[ps < 0.15].sort_values().head(3)
+    if not offsets.empty:
+        off_str = ", ".join(f"{s} ({v:+.2f})" for s, v in offsets.items())
+        if avg_corr < 0.30:
+            offset_clause = f"Its lowest-correlation sleeves are {off_str}. "
+        else:
+            offset_clause = f"Only {off_str} offer genuine offset. "
+    else:
+        offset_clause = "No sleeve offers a genuinely low or negative correlation. "
+
+    bond_vals = [
+        float(per_sleeve[b]) for b in BOND_SLEEVES
+        if b in per_sleeve.index and pd.notna(per_sleeve[b])
+    ]
+    avg_bond = float(np.mean(bond_vals)) if bond_vals else float("nan")
+
+    if avg_corr >= 0.60:
+        if not np.isnan(avg_bond) and avg_bond < 0.20:
+            verdict = (
+                "largely doubles down on the existing equity beta, with some duration "
+                "offset from the bond sleeves"
+            )
+            tail = (
+                "As a diversifier it adds little; as an expression of that exposure it is "
+                "largely redundant given the existing SAA equity sleeves."
+            )
+        else:
+            verdict = (
+                "is redundant across the board — it co-moves even with the bond sleeves and "
+                "adds little diversification"
+            )
+            tail = (
+                "It overlaps the existing SAA broadly rather than filling a correlation gap."
+            )
+    elif avg_corr < 0.30:
+        verdict = "is a genuine diversifier — its co-movement with the existing sleeves is low"
+        tail = (
+            "It is additive: it fills a correlation gap the current SAA sleeves do not cover."
+        )
+    else:
+        verdict = (
+            "is a mixed case — partial overlap with the equity sleeves but meaningful offset "
+            "elsewhere"
+        )
+        tail = (
+            "It is neither a pure double-down nor a clean diversifier; weigh the specific "
+            "sleeve overlaps against the offsets."
+        )
+
+    return (
+        f"{ticker}'s average correlation to the SAA sleeves is ρ ≈ {avg_corr:+.2f}, driven by "
+        f"{top_str} — it {verdict}. {offset_clause}{tail}"
+    )
