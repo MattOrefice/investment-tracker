@@ -10,7 +10,14 @@ from src.config import is_write_enabled
 from src.db import get_connection
 from src.holdings import get_sleeve_weights_on_date, get_holdings_on_date
 from src.prices import get_prices
-from src.rebalance import compute_drift, suggest_buys, suggest_contributions, SUM_INVARIANT_TOLERANCE
+from src.rebalance import (
+    compute_drift,
+    interpret_rebalance_status,
+    rebalance_action_text,
+    suggest_buys,
+    suggest_contributions,
+    SUM_INVARIANT_TOLERANCE,
+)
 from src.trade_writer import build_thesis_lookup, write_trades_batch
 from src.ui_helpers import render_footer, render_page_header, write_guard_toast
 render_page_header()
@@ -427,9 +434,23 @@ st.divider()
 
 st.subheader("Rebalancing Check")
 st.caption(
-    "Identify and correct band-breach drift. "
+    "Identify band-breach drift and correct it with new contributions. "
     "Routine contributions go in the section above."
 )
+
+with st.expander("Why this rebalancer is buy-only (tax-aware)", expanded=False):
+    st.markdown(
+        "In a taxable account this tool rebalances with **new contributions** — buying "
+        "underweight sleeves — and deliberately does **not** suggest selling overweight "
+        "sleeves. Selling to correct a tolerance-band drift realizes capital gains, and "
+        "the tax cost of those gains typically exceeds the tracking error the trade would "
+        "fix. Overweight drift is instead closed over time by directing new cash and "
+        "dividends toward underweight sleeves; any active trimming is best done inside "
+        "tax-advantaged accounts (IRA/401k), where it triggers no current tax. The "
+        "buy-only design is a deliberate tax-aware choice, not a limitation — consistent "
+        "with the same tax-drag and realized-gains discipline applied elsewhere in this "
+        "tracker."
+    )
 
 drift_df = compute_drift(sleeve_weights, saa_targets, saa_bands)
 
@@ -459,16 +480,18 @@ st.dataframe(
     },
 )
 
-n_outside = int((~drift_df["In Band"]).sum())
-n_under   = int((drift_df["Drift"] < 0).sum())
+n_outside    = int((~drift_df["In Band"]).sum())
+_status_line = interpret_rebalance_status(drift_df)
 
 if n_outside == 0:
-    st.success("All sleeves within tolerance bands.")
+    # Calm state — interpret_rebalance_status names the closest-to-breach sleeve
+    # and its remaining headroom, so "all in band" is still informative.
+    st.success(_status_line)
 else:
-    msg = f"{n_outside} sleeve{'s' if n_outside != 1 else ''} outside tolerance band"
-    if n_under:
-        msg += f" · {n_under} underweight"
-    st.warning(msg)
+    st.warning(_status_line)
+    # Per-sleeve tax-aware corrective action for each out-of-band sleeve.
+    for _sleeve, _row in drift_df[~drift_df["In Band"]].iterrows():
+        st.caption(f"**{_sleeve}** · {rebalance_action_text(_row)}")
 
 # ── Band-breach buy suggestions ───────────────────────────────────────────────
 

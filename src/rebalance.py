@@ -269,3 +269,104 @@ def suggest_contributions(
             "check that all investable sleeves have at least one priced ticker"
         )
     return pd.DataFrame(rows) if rows else _EMPTY
+
+
+# ── Band-status surfacing (Phase 33) — tax-aware, buy-only philosophy ──────────
+#
+# These read compute_drift() output and produce status prose. They deliberately
+# do NOT suggest corrective sells: in a taxable account, selling an overweight
+# sleeve to fix tolerance-band drift realizes capital gains that typically cost
+# more than the tracking error they fix. Overweight drift is closed over time by
+# redirecting new contributions, not by selling.
+
+def closest_to_breach(drift_df: pd.DataFrame) -> dict | None:
+    """
+    The in-band SAA sleeve with the least headroom to its band edge.
+
+    Headroom = band − |drift|, so the closest-to-breach sleeve is the one with
+    the SMALLEST headroom — which is not necessarily the largest drift, because a
+    wider band absorbs more drift. Returns a dict with sleeve, drift, band, and
+    headroom (all fractions), or None if no SAA sleeve is in band.
+
+    Only band-managed SAA sleeves (Target Weight > 0) are considered: a 0%-target
+    residual bucket (e.g. "Other / Non-SAA" holdings) is not a tolerance-managed
+    sleeve, so it is never reported as the closest to breach.
+    """
+    in_band = drift_df[drift_df["In Band"] & (drift_df["Target Weight"] > 0)]
+    if in_band.empty:
+        return None
+    headroom = in_band["Band"] - in_band["Drift"].abs()
+    sleeve = headroom.idxmin()
+    return {
+        "sleeve":   str(sleeve),
+        "drift":    float(in_band.loc[sleeve, "Drift"]),
+        "band":     float(in_band.loc[sleeve, "Band"]),
+        "headroom": float(headroom.loc[sleeve]),
+    }
+
+
+def rebalance_action_text(row: pd.Series) -> str:
+    """
+    Tax-aware corrective-action text for a single drift row.
+
+    Overweight breaches are NOT sold (realizing gains is tax-inefficient);
+    they are closed by redirecting new contributions. Underweight breaches
+    receive priority contribution allocation.
+    """
+    if bool(row["In Band"]):
+        return "—"
+    if float(row["Drift"]) > 0:
+        return (
+            "Over band — direct new contributions away from this sleeve until the "
+            "drift closes; trim only within tax-advantaged accounts. Not sold here: "
+            "realizing capital gains to rebalance is tax-inefficient."
+        )
+    return (
+        "Under band — receives priority allocation from new contributions "
+        "(see the buy suggestions below)."
+    )
+
+
+def interpret_rebalance_status(drift_df: pd.DataFrame) -> str:
+    """
+    One-line band-status verdict from compute_drift() output, in the project's
+    tax-aware voice.
+
+    All in band → confirms tolerance and names the closest-to-breach sleeve with
+    its remaining headroom. Out of band → counts over/under, names them, and
+    states the buy-only, contributions-not-sells correction policy.
+    """
+    n = len(drift_df)
+    out = drift_df[~drift_df["In Band"]]
+
+    if out.empty:
+        c = closest_to_breach(drift_df)
+        base = f"All {n} sleeves are within their tolerance bands."
+        if c is None:
+            return base
+        return (
+            f"{base} {c['sleeve']} is closest to breach at {c['drift'] * 100:+.1f}% "
+            f"drift within its ±{c['band'] * 100:.1f}% band "
+            f"({c['headroom'] * 100:.1f}% of headroom remaining)."
+        )
+
+    over  = out[out["Drift"] > 0]
+    under = out[out["Drift"] < 0]
+    k, j, m = len(out), len(over), len(under)
+
+    parts = [f"{k} sleeve{'s' if k != 1 else ''} out of band: {j} over, {m} under."]
+    if m:
+        verb = "is" if m == 1 else "are"
+        obj  = "it" if m == 1 else "them"
+        parts.append(
+            f"Underweight ({', '.join(under.index)}) {verb} addressed by directing "
+            f"new contributions to {obj}."
+        )
+    if j:
+        verb = "is" if j == 1 else "are"
+        parts.append(
+            f"Overweight ({', '.join(over.index)}) {verb} left to close via future "
+            "contributions rather than sold, to avoid realizing capital gains in a "
+            "taxable account."
+        )
+    return " ".join(parts)

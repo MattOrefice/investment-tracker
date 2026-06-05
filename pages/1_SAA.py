@@ -3,13 +3,17 @@ import streamlit as st
 
 st.set_page_config(page_title="SAA", layout="wide")
 
+from datetime import date
+
 import pandas as pd
 import plotly.graph_objects as go
 from src.asof import as_of_banner
 from src.db import get_connection
 from src.endowment_benchmarks import CATEGORIES, ENTITIES, get_endowment_data
+from src.holdings import get_sleeve_weights_on_date
 from src.macro import percentile as macro_percentile
 from src.prose_helpers import percentile_label
+from src.rebalance import compute_drift, interpret_rebalance_status
 from src.shiller import get_cape_series
 from src.ui_helpers import render_footer, render_page_header
 render_page_header()
@@ -174,9 +178,29 @@ with col:
 _, col, _ = st.columns([1, 8, 1])
 with col:
     st.subheader("Sleeve Allocation")
-    st.caption(
-        "Targets shown. Current drift relative to targets and band-breach status are on the Performance page."
-    )
+
+    _band_line = ""
+    try:
+        _sw = get_sleeve_weights_on_date(date.today().isoformat())
+        if not _sw.empty:
+            _weights = dict(zip(_sw.index, _sw["Actual Weight"].values))
+            _targets = {sc["name"]: sc["target_weight"] for sc in sub_classes}
+            _bands   = {sc["name"]: sc["tolerance_band"] for sc in sub_classes}
+            _band_line = interpret_rebalance_status(compute_drift(_weights, _targets, _bands))
+    except Exception:
+        _band_line = ""
+
+    if _band_line:
+        _icon = "✓" if "within their tolerance" in _band_line else "⚠"
+        st.caption(
+            f"**Band status:** {_icon} {_band_line} "
+            "Full drift detail and corrective contributions are on the Capital Deployment page."
+        )
+    else:
+        st.caption(
+            "Targets shown. Current drift relative to targets and band-breach status "
+            "are on the Capital Deployment page."
+        )
     rows = [
         {
             "Sleeve":      sc["name"],

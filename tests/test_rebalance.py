@@ -464,3 +464,84 @@ def test_sum_invariant_tolerance_button_predicate_boundary():
         "$0.05 diff should be within tolerance → button enabled"
     assert abs(0.15) > SUM_INVARIANT_TOLERANCE, \
         "$0.15 diff should exceed tolerance → button disabled"
+
+
+# ── Phase 33: band-status surfacing (tax-aware, buy-only) ───────────────────────
+
+from src.rebalance import (
+    closest_to_breach,
+    interpret_rebalance_status,
+    rebalance_action_text,
+)
+
+
+def test_interpret_status_all_in_band_names_closest():
+    targets = {"A": 0.20, "B": 0.10, "C": 0.10}
+    bands   = {"A": 0.03, "B": 0.02, "C": 0.02}
+    # A: +1.5% drift, ±3% band → headroom 1.5%; B: +1.0%, ±2% → headroom 1.0% (closest);
+    # C: +0.5%, ±2% → headroom 1.5%. Closest is B (least headroom), not A (largest drift).
+    weights = {"A": 0.215, "B": 0.110, "C": 0.105}
+    d = compute_drift(weights, targets, bands)
+    txt = interpret_rebalance_status(d)
+    assert "within their tolerance bands" in txt
+    assert "B is closest to breach" in txt
+    assert "1.0% of headroom" in txt
+
+
+def test_closest_to_breach_uses_headroom_not_drift():
+    targets = {"A": 0.20, "B": 0.10, "C": 0.10}
+    bands   = {"A": 0.03, "B": 0.02, "C": 0.02}
+    weights = {"A": 0.215, "B": 0.110, "C": 0.105}  # A bigger drift, B less headroom
+    c = closest_to_breach(compute_drift(weights, targets, bands))
+    assert c["sleeve"] == "B"
+    assert c["headroom"] == pytest.approx(0.01, abs=1e-9)
+    # Guard: the largest-drift sleeve (A) is NOT the closest to breach.
+    assert c["sleeve"] != "A"
+
+
+def test_closest_to_breach_none_when_no_in_band():
+    targets = {"A": 0.20}
+    bands   = {"A": 0.02}
+    weights = {"A": 0.30}  # +10% drift, out of band → no in-band sleeves
+    assert closest_to_breach(compute_drift(weights, targets, bands)) is None
+
+
+def test_interpret_status_out_of_band_counts_and_tax_framing():
+    targets = {"A": 0.20, "B": 0.10, "C": 0.10}
+    bands   = {"A": 0.03, "B": 0.02, "C": 0.02}
+    # A: +4% (▲ Over, ±3% → out); B: −3% (▼ Under, ±2% → out); C: in band.
+    weights = {"A": 0.24, "B": 0.07, "C": 0.10}
+    d = compute_drift(weights, targets, bands)
+    txt = interpret_rebalance_status(d)
+    assert "2 sleeves out of band: 1 over, 1 under" in txt
+    assert "A" in txt and "B" in txt
+    # Tax-aware framing for the overweight: contributions, not sold, capital gains.
+    assert "rather than sold" in txt
+    assert "capital gains" in txt
+    assert "contributions" in txt
+
+
+def test_rebalance_action_text_overweight_is_not_a_sell():
+    over = rebalance_action_text(pd.Series({"In Band": False, "Drift": 0.04}))
+    assert "Not sold here" in over
+    assert "contributions" in over
+    assert "tax-inefficient" in over
+    # No sell-order language anywhere.
+    assert "sell" not in over.lower().replace("not sold", "")
+
+
+def test_rebalance_action_text_underweight_and_in_band():
+    under = rebalance_action_text(pd.Series({"In Band": False, "Drift": -0.03}))
+    assert "priority allocation" in under
+    assert rebalance_action_text(pd.Series({"In Band": True, "Drift": 0.005})) == "—"
+
+
+def test_closest_to_breach_excludes_zero_target_residual():
+    # "Other / Non-SAA" has target 0 and the least headroom, but is not a
+    # band-managed sleeve and must not be reported as closest to breach.
+    targets = {"US Small Cap": 0.08, "Other / Non-SAA": 0.0}
+    bands   = {"US Small Cap": 0.02, "Other / Non-SAA": 0.02}
+    weights = {"US Small Cap": 0.093, "Other / Non-SAA": 0.018}  # SC hr 0.7%, Other hr 0.2%
+    c = closest_to_breach(compute_drift(weights, targets, bands))
+    assert c is not None
+    assert c["sleeve"] == "US Small Cap"   # not "Other / Non-SAA"
