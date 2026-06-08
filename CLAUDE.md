@@ -27,3 +27,16 @@
 - Live-data tests (FRED etc.) are marked @pytest.mark.live_data
   and excluded from the default suite via pytest.ini. Do not
   un-exclude.
+
+## History baseline (post-2026-06-08 reorg)
+- History was reorganized 2026-06-08: 303 commits squashed into 15
+  coherent prose-style milestone commits via a commit-tree chain
+  (tree byte-identical, 4f3df44… preserved).
+- Current main baseline HEAD: bc82d88 (Maintenance: Actions bump +
+  Performance drift consolidation).
+- v1.0 tag re-pointed to b7fa2c3 (the v1.0-launch milestone commit);
+  original annotation preserved.
+- All pre-reorg commit SHAs in earlier notes/CHANGELOG history are
+  now unreachable on origin — do NOT reference them. The 15-commit
+  log is the canonical history.
+- origin has only: main + the v1.0 tag (nothing else).
