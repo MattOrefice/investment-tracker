@@ -14,10 +14,10 @@ from src.market_snapshot import (
     SECTOR_ETFS,
     WINDOWS,
     latest_common_date,
-    mechanical_market_line,
     rank_sectors,
     relative_trailing,
     trailing_returns,
+    trend_vs_moving_average,
 )
 
 
@@ -109,30 +109,36 @@ def test_relative_trailing_long_minus_short():
     assert rel["YTD"] == pytest.approx(0.07)
 
 
-# ── mechanical_market_line ──────────────────────────────────────────────────────
+# ── trend_vs_moving_average ───────────────────────────────────────────────────
 
-def test_market_line_mixed_with_flat_threshold():
-    line = mechanical_market_line(
-        {"equities": 0.005, "bonds": -0.003, "usd": 0.0002}
-    )
-    assert line == "Equities higher, bonds lower, USD flat (since prior close)."
-
-
-def test_market_line_all_flat():
-    line = mechanical_market_line({"equities": 0.0, "bonds": 0.0, "usd": 0.0})
-    assert line == "Equities flat, bonds flat, USD flat (since prior close)."
-
-
-def test_market_line_all_higher():
-    line = mechanical_market_line({"equities": 0.02, "bonds": 0.01, "usd": 0.015})
-    assert line == "Equities higher, bonds higher, USD higher (since prior close)."
+def test_trend_vs_ma_above_is_uptrend():
+    # 10 bars rising from 100 to 109; MA(5) of the last 5 (105..109) = 107.
+    s = _series([(f"2026-06-{d:02d}", 100.0 + i) for i, d in enumerate(range(1, 11))])
+    t = trend_vs_moving_average(s, window=5)
+    assert t.sufficient is True
+    assert t.price == pytest.approx(109.0)
+    assert t.moving_average == pytest.approx(107.0)          # mean(105,106,107,108,109)
+    assert t.pct_from_ma == pytest.approx(109.0 / 107.0 - 1)
+    assert t.direction == "uptrend"                          # price above MA
 
 
-def test_market_line_is_deterministic_no_narrative():
-    line = mechanical_market_line({"equities": 0.01, "bonds": -0.01, "usd": 0.0})
-    # No causal/narrative words — purely sign-based.
-    for banned in ("because", "amid", "as", "rally", "fears", "on hopes", "drove"):
-        assert banned not in line.lower().split()
+def test_trend_vs_ma_below_is_downtrend():
+    # Falling series; latest close sits below its trailing MA.
+    s = _series([(f"2026-06-{d:02d}", 110.0 - i) for i, d in enumerate(range(1, 11))])
+    t = trend_vs_moving_average(s, window=5)
+    assert t.sufficient is True
+    assert t.price == pytest.approx(101.0)
+    assert t.moving_average == pytest.approx(103.0)          # mean(105,104,103,102,101)
+    assert t.pct_from_ma < 0
+    assert t.direction == "downtrend"
+
+
+def test_trend_vs_ma_insufficient_history():
+    s = _series([("2026-06-01", 100.0), ("2026-06-02", 101.0)])
+    t = trend_vs_moving_average(s, window=200)
+    assert t.sufficient is False
+    assert t.direction == "insufficient data"
+    assert t.price != t.price   # NaN (NaN != NaN)
 
 
 # ── latest_common_date ──────────────────────────────────────────────────────────

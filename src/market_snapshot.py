@@ -9,7 +9,7 @@ since the prior close, which spans weekends (Fri → Mon).
 from __future__ import annotations
 
 from datetime import date, timedelta
-from typing import Optional
+from typing import NamedTuple, Optional
 
 import pandas as pd
 
@@ -132,37 +132,6 @@ def relative_trailing(
     return pd.Series(out)[windows]
 
 
-def _direction(x: float, flat_threshold: float) -> str:
-    if pd.isna(x):
-        return "unchanged"
-    if x > flat_threshold:
-        return "higher"
-    if x < -flat_threshold:
-        return "lower"
-    return "flat"
-
-
-def mechanical_market_line(
-    returns_by_asset: dict[str, float],
-    flat_threshold: float = 0.001,
-) -> str:
-    """
-    Deterministic, sign-based one-line readout of the 1D (since prior close)
-    returns of equities (SPY), bonds (AGG), and USD (UUP).
-
-    Each leg maps to higher / lower / flat (|return| < flat_threshold = flat).
-    Purely derived from the figures — no causal or narrative content.
-    """
-    eq  = returns_by_asset.get("equities")
-    bd  = returns_by_asset.get("bonds")
-    usd = returns_by_asset.get("usd")
-    return (
-        f"Equities {_direction(eq, flat_threshold)}, "
-        f"bonds {_direction(bd, flat_threshold)}, "
-        f"USD {_direction(usd, flat_threshold)} (since prior close)."
-    )
-
-
 def latest_common_date(price_map: dict[str, pd.Series]) -> Optional[pd.Timestamp]:
     """
     The latest date reached by ALL fetched series (min of per-ticker last dates),
@@ -174,3 +143,34 @@ def latest_common_date(price_map: dict[str, pd.Series]) -> Optional[pd.Timestamp
         if not s.dropna().empty
     ]
     return min(last_dates) if last_dates else None
+
+
+class MovingAverageTrend(NamedTuple):
+    """Broad-market trend read: latest price vs its moving average."""
+    price:          float
+    moving_average: float
+    pct_from_ma:    float   # price / ma − 1 (fraction); positive = above the MA
+    direction:      str     # "uptrend" | "downtrend" | "insufficient data"
+    sufficient:     bool    # True when ≥ window bars were available
+
+
+def trend_vs_moving_average(
+    price_series: pd.Series, window: int = 200
+) -> MovingAverageTrend:
+    """
+    Latest close vs its ``window``-day simple moving average — a standard trend
+    filter. Above the MA = uptrend, below = downtrend.
+
+    Uses the dividend-adjusted close passed in. Returns an "insufficient data"
+    state (NaNs, sufficient=False) if fewer than ``window`` bars are available.
+    """
+    s = price_series.dropna().sort_index()
+    if len(s) < window:
+        return MovingAverageTrend(
+            float("nan"), float("nan"), float("nan"), "insufficient data", False
+        )
+    price = float(s.iloc[-1])
+    ma    = float(s.rolling(window).mean().iloc[-1])
+    pct   = price / ma - 1 if ma else float("nan")
+    direction = "uptrend" if price >= ma else "downtrend"
+    return MovingAverageTrend(price, ma, pct, direction, True)

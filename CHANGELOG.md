@@ -140,6 +140,17 @@ GitHub Actions run after every push and confirm the green checkmark before closi
 
 ---
 
+## Phase 37 — Market Snapshot regime dashboard
+_2026-06-08_
+
+Refocused the Market Snapshot as a recent-moves equity-regime
+view: removed the one-day cross-asset tape and added regional
+leadership (US/Intl/EM), a stocks-vs-bonds risk-on/off trend,
+and a broad-market trend read (S&P vs 200-day MA). Size & Value
+and Sector Movers unchanged.
+
+---
+
 ## Phase 36 — Market Snapshot visual polish
 _2026-06-08_
 

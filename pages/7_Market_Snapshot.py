@@ -22,7 +22,7 @@ _REF     = "#9E9E9E"
 def _load_prices() -> pd.DataFrame:
     """Dividend-adjusted close for the snapshot tickers, ~14 months back (covers YTD)."""
     start   = (date.today() - timedelta(days=430)).isoformat()
-    tickers = ["IWM", "IWB", "IWD", "IWF", "SPY", "AGG", "UUP"] + list(ms.SECTOR_ETFS)
+    tickers = ["IWM", "IWB", "IWD", "IWF", "SPY", "AGG", "EFA", "EEM"] + list(ms.SECTOR_ETFS)
     cols: dict[str, pd.Series] = {}
     for t in tickers:
         try:
@@ -33,6 +33,26 @@ def _load_prices() -> pd.DataFrame:
         except Exception:
             pass
     return pd.concat(cols, axis=1) if cols else pd.DataFrame()
+
+
+def _hbar(labels: list[str], values: list[float], x_title: str, height: int = 180) -> go.Figure:
+    """Compact horizontal RdYlGn/cmid=0 bar in the house style (values already in %)."""
+    fig = go.Figure(go.Bar(
+        x=values, y=labels, orientation="h",
+        marker=dict(color=values, colorscale="RdYlGn", cmid=0),
+        text=[f"{v:+.2f}%" for v in values],
+        textposition="auto",
+        hovertemplate="%{y}: %{x:+.2f}%<extra></extra>",
+    ))
+    fig.add_vline(x=0, line_dash="dash", line_color=_REF, line_width=1)
+    fig.update_layout(
+        height=height, margin=dict(l=0, r=0, t=8, b=0),
+        paper_bgcolor="white", plot_bgcolor="#FAFAFA",
+        font=dict(color="#333333", size=12),
+        xaxis=dict(title=x_title, gridcolor="#EBEBEB", zeroline=False),
+        yaxis=dict(tickfont_size=11),
+    )
+    return fig
 
 
 _, col, _ = st.columns([1, 8, 1])
@@ -52,21 +72,10 @@ with col:
     asof_str  = asof.strftime("%b %d, %Y") if asof is not None else "n/a"
     rt        = ms.trailing_returns(price_map)
 
-    def _last_1d(ticker: str) -> float:
-        return float(rt.loc[ticker, "1D"]) if ticker in rt.index else float("nan")
-
     st.caption(
         f"Market data as of **{asof_str}** (last exchange close). Daily close only — "
         "not intraday; the as-of date is the latest close in the data, not the calendar date."
     )
-
-    # Cross-asset tape promoted to a top summary line — the one-glance readout.
-    _line = ms.mechanical_market_line({
-        "equities": _last_1d("SPY"),
-        "bonds":    _last_1d("AGG"),
-        "usd":      _last_1d("UUP"),
-    })
-    st.markdown(f"**Cross-asset tape:** {_line}")
     st.divider()
 
     # ── Section 1 — Size & Value ───────────────────────────────────────────────
@@ -122,7 +131,41 @@ with col:
     st.plotly_chart(_fig_sv, width="stretch", config={"displayModeBar": False})
     st.divider()
 
-    # ── Section 2 — Sector movers ──────────────────────────────────────────────
+    # ── Section 2 — Regional Leadership ────────────────────────────────────────
+    st.subheader("Regional Leadership")
+    st.caption(
+        "US vs Developed-International vs Emerging-Markets recent *relative* returns — "
+        "the third equity-regime axis alongside size and style. Ties to the SAA's "
+        "International Developed and Emerging Markets sleeves. Positive = US leading; "
+        "negative = the international / EM sleeve leading."
+    )
+    _us_intl = ms.relative_trailing(rt, "SPY", "EFA")
+    _us_em   = ms.relative_trailing(rt, "SPY", "EEM")
+    reg_tbl = pd.DataFrame(
+        {
+            "Pair": [
+                "US − Intl Developed (SPY − EFA)",
+                "US − Emerging Mkts (SPY − EEM)",
+            ],
+            **{w: [_us_intl[w] * 100, _us_em[w] * 100] for w in ms.WINDOWS},
+        }
+    )
+    st.dataframe(reg_tbl, hide_index=True, width="stretch", column_config=_sv_cfg)
+    st.plotly_chart(
+        _hbar(
+            ["US − Emerging Mkts (SPY − EEM)", "US − Intl Developed (SPY − EFA)"],
+            [_us_em["YTD"] * 100, _us_intl["YTD"] * 100],
+            "YTD relative return (%)",
+        ),
+        width="stretch", config={"displayModeBar": False},
+    )
+    st.caption(
+        "Recent moves, plus EM. For the multi-year structural US-vs-International trend "
+        "(rolling 12-month spread), see the Macro page's Cross-Asset Performance section."
+    )
+    st.divider()
+
+    # ── Section 3 — Sector movers ──────────────────────────────────────────────
     st.subheader("Sector Movers")
     st.caption("The 11 SPDR Select Sector ETFs ranked by trailing return.")
 
@@ -167,24 +210,53 @@ with col:
         w_col.metric(f"Worst ({_wlbl})", _worst["Sector"], f"{_worst[win] * 100:+.2f}%")
     st.divider()
 
-    # ── Section 3 — Cross-Asset Tape ────────────────────────────────────────────
-    st.subheader("Cross-Asset Tape")
+    # ── Section 4 — Stocks vs Bonds ────────────────────────────────────────────
+    st.subheader("Stocks vs Bonds")
     st.caption(
-        "1D moves (since prior close) of the three market-line proxies — the magnitudes "
-        "behind the summary at the top. SPY = equities, AGG = bonds, UUP = US dollar."
+        "SPY vs AGG trailing *relative* return — a risk-on / risk-off read over "
+        "meaningful windows (1M / 3M / YTD), not a one-day tape. Positive = stocks "
+        "leading bonds (risk-on); negative = bonds leading (risk-off)."
     )
-    _t1, _t2, _t3 = st.columns(3)
-    _t1.metric("S&P 500 · SPY (equities)", f"{_last_1d('SPY') * 100:+.2f}%")
-    _t2.metric("US Agg · AGG (bonds)",     f"{_last_1d('AGG') * 100:+.2f}%")
-    _t3.metric("US Dollar · UUP (USD)",    f"{_last_1d('UUP') * 100:+.2f}%")
+    _svb = ms.relative_trailing(rt, "SPY", "AGG")
+    _svb_wins = ["1M", "3M", "YTD"]   # ascending → YTD at the top of the horizontal bar
+    st.plotly_chart(
+        _hbar(
+            _svb_wins,
+            [_svb[w] * 100 for w in _svb_wins],
+            "SPY − AGG relative return (%)",
+        ),
+        width="stretch", config={"displayModeBar": False},
+    )
+    st.divider()
+
+    # ── Section 5 — Broad-Market Trend ─────────────────────────────────────────
+    st.subheader("Broad-Market Trend")
+    st.caption(
+        "The S&P 500 (SPY) versus its 200-day moving average — a standard trend filter. "
+        "Above the average = uptrend, below = downtrend. Daily close, dated to the latest bar."
+    )
+    _trend = ms.trend_vs_moving_average(
+        price_map.get("SPY", pd.Series(dtype=float)), window=200
+    )
+    if _trend.sufficient:
+        _side = "above" if _trend.pct_from_ma >= 0 else "below"
+        st.metric("S&P 500 vs 200-day MA", f"{_trend.pct_from_ma * 100:+.1f}%")
+        st.caption(
+            f"S&P 500 closed at {_trend.price:,.2f} versus a 200-day average of "
+            f"{_trend.moving_average:,.2f} — **{abs(_trend.pct_from_ma) * 100:.1f}% {_side}** "
+            f"its 200-day moving average (**{_trend.direction}**)."
+        )
+    else:
+        st.info("Insufficient price history for a 200-day moving average.")
 
     st.caption(
         "**Methodology.** Daily exchange close (not intraday). The as-of date is the latest "
         "close present in the data, never the calendar date. \"1D\" is the move since the prior "
         "close and spans weekends (Friday → Monday). Returns use dividend-adjusted close (total "
         "return), keyed off each series' own latest date. Tickers: IWM / IWB (size), IWD / IWF "
-        "(value), the 11 SPDR Select Sector ETFs, and SPY / AGG / UUP for the market line. "
-        "Prices are locally cached daily closes."
+        "(value), SPY / EFA / EEM (regional), the 11 SPDR Select Sector ETFs, SPY / AGG (stocks "
+        "vs bonds), and the SPY 200-day moving average (broad-market trend). Prices are locally "
+        "cached daily closes."
     )
 
     render_footer()
