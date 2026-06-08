@@ -19,6 +19,7 @@ from src.performance import compute_risk_metrics
 from src.reports import generate_quarterly_report
 from src.returns import annualize, period_return, twr_daily_linked
 from src.positioning import get_effective_duration
+from src.rebalance import compute_drift
 from src.ui_helpers import render_footer, render_page_header
 render_page_header()
 
@@ -965,23 +966,27 @@ with col:
         )
         st.plotly_chart(_fig_alloc, width='stretch')
 
+        # Source drift from the canonical compute_drift helper (shared with the
+        # Capital Deployment page) instead of recomputing inline. The display
+        # layer below — ✓/⚠ status, abs-drift sort, bps/%% formatting — is
+        # derived from its output and is unchanged.
+        drift_df = compute_drift(
+            sw["Actual Weight"].to_dict(),
+            sw["Target Weight"].to_dict(),
+            band_map,
+        )
+        outside_band_count = int((~drift_df["In Band"]).sum())
+
         drift_rows = []
-        outside_band_count = 0
-        for sleeve, row in sw.iterrows():
-            target  = row["Target Weight"]
-            actual  = row["Actual Weight"]
-            drift   = row["Drift"]
-            band    = band_map.get(sleeve, 0.03)
-            outside = abs(drift) > band
-            if outside:
-                outside_band_count += 1
+        for sleeve, row in drift_df.iterrows():
+            band = row["Band"]
             drift_rows.append({
                 "Sleeve":        sleeve,
-                "Target":        target * 100,
-                "Actual":        actual * 100,
-                "Drift (bps)":   drift * 10_000,
+                "Target":        row["Target Weight"] * 100,
+                "Actual":        row["Actual Weight"] * 100,
+                "Drift (bps)":   row["Drift"] * 10_000,
                 "Band (±bps)":   f"±{band*10000:.0f}",
-                "Status":        "⚠ Outside" if outside else "✓ Within",
+                "Status":        "✓ Within" if row["In Band"] else "⚠ Outside",
             })
 
         # Sort by absolute drift descending

@@ -140,6 +140,16 @@ GitHub Actions run after every push and confirm the green checkmark before closi
 
 ---
 
+## Maintenance — Performance drift table consolidation
+_2026-06-05_
+
+Sourced the Performance page drift table from the canonical compute_drift
+helper instead of an inline recomputation, removing duplication.
+Display-invariant; the table now agrees with the Capital Deployment
+Rebalancing Check sleeve-for-sleeve.
+
+---
+
 ## Phase 35 — Market Snapshot page
 _2026-06-05_
 
