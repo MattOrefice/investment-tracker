@@ -105,7 +105,14 @@ with col:
             "include broad-market and alternative sleeves that do not align to the "
             "factor-tilted SAA.\n\n"
             "**Drift** is meaningful only for SAA sleeves. Off-SAA entries show no drift "
-            "and no target."
+            "and no target.\n\n"
+            "**Basis.** Household weights are a share of the *entire* household — cash and "
+            "off-SAA holdings included — by design, because this view reports observed "
+            "whole-household allocation, where drift is informational rather than actionable. "
+            "The demo SAA page, by contrast, measures the invested portfolio *ex-cash* "
+            "(operational SPAXX float excluded), where cash is operational liquidity rather "
+            "than a strategic holding. Here, household cash is real and material, so it is "
+            "shown as an off-SAA line at its actual dollar value rather than stripped out."
         )
     st.divider()
 

@@ -140,6 +140,17 @@ GitHub Actions run after every push and confirm the green checkmark before closi
 
 ---
 
+## Phase 38b-1 — Household basis clarification
+_2026-06-08_
+
+Documented the Household View's deliberate whole-household basis
+(cash and off-SAA in the denominator, drift informational) vs the
+demo SAA pages' ex-cash basis, and guarded that household cash
+routes to the off-SAA bucket. No denominator or weight change;
+clarification and test only.
+
+---
+
 ## Phase 38a — Ex-cash SAA core
 _2026-06-08_
 

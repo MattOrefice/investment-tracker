@@ -28,7 +28,7 @@ ACTUAL_LT_WEIGHTS = {
     "Core Fixed Income":      3.81,
     "US Large Quality":       2.57,
     "Real Assets":            1.54,
-    "Cash / SPAXX":           1.42,
+    "cash":                   1.42,   # off-SAA post-38a (cash untargeted, routes to off-SAA bucket)
     "US Large Value":         1.03,
     "US Small Cap":           0.00,   # no AVUV held
     "TIPS":                   0.00,   # no SCHP held
@@ -227,3 +227,50 @@ def test_household_summary_keys_and_values():
     assert abs(summary["self_aum"] + summary["external_aum"] - summary["total_aum"]) <= 1.0
     assert summary["account_count"] == 7
     assert summary["as_of_date"] == "2026-05-27"
+
+
+# ── Phase 38b-1 — cash routes to off-SAA (synthetic; runs in CI, no CSV needed) ──
+
+def test_cash_routes_to_off_saa_synthetic():
+    """Post-38a, cash is untargeted → it must land in the off-SAA bucket with its
+    real dollar value, never as a 0-target SAA sleeve. Synthetic so it guards the
+    routing logic in CI regardless of the personal-mode holdings CSV.
+    """
+    from src.household import compute_household_allocation
+
+    positions_df = pd.DataFrame([
+        {"account_number": "A1", "symbol": "VOO",   "current_value": 8000.0},
+        {"account_number": "A1", "symbol": "SPAXX", "current_value": 2000.0},
+    ])
+    accounts_df = pd.DataFrame([
+        {"account_number": "A1", "managed_by": "self", "display_name": "Acct",
+         "pseudonym": "Acct", "tax_treatment": "taxable"},
+    ])
+    # SPAXX: in-SAA flag set, but its asset class (cash) is untargeted post-38a.
+    securities_df = pd.DataFrame([
+        {"ticker": "VOO",   "sleeve_category": "us_large_core", "is_in_saa": 1, "asset_class_id": 10},
+        {"ticker": "SPAXX", "sleeve_category": "cash",          "is_in_saa": 1, "asset_class_id": 100},
+    ])
+    compositions_df = pd.DataFrame(columns=["fund_symbol", "underlying_sleeve", "weight"])
+    # saa_targets_df mirrors the page query (target_weight > 0): cash (id 100) absent.
+    saa_targets_df = pd.DataFrame([
+        {"asset_class_id": 10, "name": "US Large Core", "target_weight": 0.1735},
+    ])
+
+    alloc = compute_household_allocation(
+        positions_df, accounts_df, securities_df, compositions_df, saa_targets_df,
+        mode="look_through", scope="total",
+    )
+
+    cash = alloc[alloc["sleeve"] == "cash"]
+    assert not cash.empty, "cash holding missing from allocation"
+    row = cash.iloc[0]
+    assert bool(row["is_off_saa"]) is True, "cash must route to the off-SAA bucket"
+    assert row["target_weight"] == 0.0, "off-SAA cash must have no target"
+    assert row["rationale"] == "off_saa_exposure"
+    assert abs(row["dollar_value"] - 2000.0) < 1e-6, "cash dollar value must be intact"
+    # Whole-household denominator (incl cash): cash = 2000 / 10000 = 20%.
+    assert abs(row["percent_weight"] - 20.0) < 1e-6, "cash weight is a share of the whole household"
+    # Cash is NOT a strategic SAA row.
+    saa_rows = alloc[~alloc["is_off_saa"]]
+    assert "cash" not in set(saa_rows["sleeve"]), "cash must not appear as a strategic SAA sleeve"
