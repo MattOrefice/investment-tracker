@@ -249,9 +249,9 @@ with col:
         sp, bl    = _load_benchmarks(start_val)
 
     _saa_parents, _saa_sleeves = _load_sleeve_targets()
-    _non_eq_pct = 1.0 - _saa_parents.get("Equity", 0.78)
-    _non_us_eq  = (_saa_sleeves.get("International Developed", 0.20)
-                   + _saa_sleeves.get("Emerging Markets", 0.09))
+    _non_eq_pct = 1.0 - _saa_parents.get("Equity", 0.78 / 0.98)
+    _non_us_eq  = (_saa_sleeves.get("International Developed", 0.20 / 0.98)
+                   + _saa_sleeves.get("Emerging Markets", 0.09 / 0.98))
 
     # Key scalars (Since Inception)
     si_days     = (pd.Timestamp(TODAY) - pd.Timestamp(INCEPTION)).days
@@ -669,10 +669,10 @@ with col:
 
     st.caption(
         "**What the two stages measure.** Stage 1 (SAA design) captures the strategic-tilt "
-        f"contribution of the SAA itself — the value allocation (VTV at {_saa_sleeves.get('US Large Value', 0.09)*100:.0f}%), small-cap value "
-        f"(AVUV at {_saa_sleeves.get('US Small Cap', 0.08)*100:.0f}%), emerging markets ({_saa_sleeves.get('Emerging Markets', 0.09)*100:.0f}%), "
-        f"real assets ({_saa_sleeves.get('Real Assets', 0.10)*100:.0f}%), TIPS ({_saa_sleeves.get('TIPS', 0.04)*100:.0f}%), and the overall "
-        f"~{_saa_parents.get('Equity', 0.78)*100:.0f}/{_non_eq_pct*100:.0f} equity-vs-other-assets risk posture — measured as the SAA-blended benchmark's "
+        f"contribution of the SAA itself — the value allocation (VTV at {_saa_sleeves.get('US Large Value', 0.09 / 0.98)*100:.0f}%), small-cap value "
+        f"(AVUV at {_saa_sleeves.get('US Small Cap', 0.08 / 0.98)*100:.0f}%), emerging markets ({_saa_sleeves.get('Emerging Markets', 0.09 / 0.98)*100:.0f}%), "
+        f"real assets ({_saa_sleeves.get('Real Assets', 0.10 / 0.98)*100:.0f}%), TIPS ({_saa_sleeves.get('TIPS', 0.04 / 0.98)*100:.0f}%), and the overall "
+        f"~{_saa_parents.get('Equity', 0.78 / 0.98)*100:.0f}/{_non_eq_pct*100:.0f} equity-vs-other-assets risk posture — measured as the SAA-blended benchmark's "
         f"return spread over a {_naive_label}. This isolates what the "
         "allocation thesis itself contributed, separate from execution. Stage 2 (Implementation, "
         "decomposed via Brinson-Fachler below) captures two effects relative to the SAA's sleeve "

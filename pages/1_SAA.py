@@ -66,6 +66,7 @@ def load_saa_data():
                        ac.rationale, ac.benchmark_ticker, p.name AS parent_name
                 FROM asset_classes ac
                 JOIN asset_classes p ON ac.parent_id = p.asset_class_id
+                WHERE ac.target_weight > 0
                 ORDER BY p.target_weight DESC, COALESCE(ac.sort_order, 999) ASC
             """).fetchall()
         ]
@@ -86,12 +87,12 @@ with col:
 _, col, _ = st.columns([1, 8, 1])
 with col:
     st.subheader("Investment Thesis")
-    _equity_wt   = next((p["target_weight"] for p in parents if p["name"] == "Equity"), 0.78)
-    _intl_dev_wt = next((s["target_weight"] for s in sub_classes if s["name"] == "International Developed"), 0.20)
-    _em_wt       = next((s["target_weight"] for s in sub_classes if s["name"] == "Emerging Markets"), 0.09)
-    _real_wt     = next((s["target_weight"] for s in sub_classes if s["name"] == "Real Assets"), 0.10)
-    _tips_wt     = next((s["target_weight"] for s in sub_classes if s["name"] == "TIPS"), 0.04)
-    _core_fi_wt  = next((s["target_weight"] for s in sub_classes if s["name"] == "Core Fixed Income"), 0.06)
+    _equity_wt   = next((p["target_weight"] for p in parents if p["name"] == "Equity"), 0.78 / 0.98)
+    _intl_dev_wt = next((s["target_weight"] for s in sub_classes if s["name"] == "International Developed"), 0.20 / 0.98)
+    _em_wt       = next((s["target_weight"] for s in sub_classes if s["name"] == "Emerging Markets"), 0.09 / 0.98)
+    _real_wt     = next((s["target_weight"] for s in sub_classes if s["name"] == "Real Assets"), 0.10 / 0.98)
+    _tips_wt     = next((s["target_weight"] for s in sub_classes if s["name"] == "TIPS"), 0.04 / 0.98)
+    _core_fi_wt  = next((s["target_weight"] for s in sub_classes if s["name"] == "Core Fixed Income"), 0.06 / 0.98)
     _cape_lbl    = _load_cape_label()
     # TODO: Static refs "comparable only to the 1929 and 1999 peaks" and "CAPE readings
     # above 40" should be reviewed if CAPE falls materially below 40 and _cape_lbl no
@@ -180,6 +181,7 @@ with col:
     st.subheader("Sleeve Allocation")
 
     _band_line = ""
+    _cash_note = ""
     try:
         _sw = get_sleeve_weights_on_date(date.today().isoformat())
         if not _sw.empty:
@@ -187,6 +189,14 @@ with col:
             _targets = {sc["name"]: sc["target_weight"] for sc in sub_classes}
             _bands   = {sc["name"]: sc["tolerance_band"] for sc in sub_classes}
             _band_line = interpret_rebalance_status(compute_drift(_weights, _targets, _bands))
+            _cash_mv  = _sw.attrs.get("cash_mv", 0.0)
+            _cash_pct = _sw.attrs.get("cash_weight_of_total", 0.0) * 100
+            if _cash_mv > 0:
+                _cash_note = (
+                    f"Operational cash: **${_cash_mv:,.0f}** · {_cash_pct:.1f}% of total — "
+                    "SPAXX float, untargeted and held outside the ex-cash SAA (the 9 strategic "
+                    "sleeves above are measured as a share of invested value)."
+                )
     except Exception:
         _band_line = ""
 
@@ -201,6 +211,8 @@ with col:
             "Targets shown. Current drift relative to targets and band-breach status "
             "are on the Capital Deployment page."
         )
+    if _cash_note:
+        st.caption(_cash_note)
     rows = [
         {
             "Sleeve":      sc["name"],

@@ -408,6 +408,20 @@ def _build_holdings_section(end_date: str) -> dict:
             "status_class":  "status-within" if status == "Within" else "status-drift",
         })
 
+    # Phase 38a — operational cash shown separately: untargeted SPAXX float,
+    # weighted as a share of TOTAL (the strategic sleeves above are ex-cash).
+    cash_mv = sw.attrs.get("cash_mv", 0.0)
+    if cash_mv > 0:
+        rows.append({
+            "sleeve":        "Cash / SPAXX (operational)",
+            "market_value":  f"${cash_mv:,.0f}",
+            "actual_weight": f"{sw.attrs.get('cash_weight_of_total', 0.0)*100:.1f}% of total",
+            "target_weight": "—",
+            "drift_bps":     "—",
+            "status":        "Operational",
+            "status_class":  "status-within",
+        })
+
     sleeves = sw.index.tolist()
     actuals = (sw["Actual Weight"] * 100).tolist()
     targets = (sw["Target Weight"] * 100).tolist()
@@ -1223,19 +1237,21 @@ def _build_methodology_vars() -> dict:
     from src.benchmarks import _SLEEVE_BENCHMARKS
 
     with get_connection() as conn:
+        # Phase 38a — strategic SAA only (target_weight > 0). Cash / SPAXX and
+        # any non-SAA residual are operational, excluded from the methodology.
         parent_rows = conn.execute(
             "SELECT name, target_weight FROM asset_classes "
-            "WHERE parent_id IS NULL ORDER BY asset_class_id"
+            "WHERE parent_id IS NULL AND target_weight > 0 ORDER BY asset_class_id"
         ).fetchall()
         sleeve_count = conn.execute(
-            "SELECT COUNT(*) FROM asset_classes WHERE parent_id IS NOT NULL"
+            "SELECT COUNT(*) FROM asset_classes WHERE parent_id IS NOT NULL AND target_weight > 0"
         ).fetchone()[0]
         band_rows = conn.execute(
             "SELECT DISTINCT CAST(ROUND(tolerance_band * 10000) AS INTEGER) AS band_bps "
-            "FROM asset_classes WHERE parent_id IS NOT NULL ORDER BY band_bps"
+            "FROM asset_classes WHERE parent_id IS NOT NULL AND target_weight > 0 ORDER BY band_bps"
         ).fetchall()
 
-    # "Equity 78% / Income 10% / Real Assets 10% / Cash 2%"
+    # "Equity 80% / Income 10% / Real Assets 10%" (ex-cash strategic parents)
     parent_weight_str = " / ".join(
         f"{r['name']} {round(r['target_weight'] * 100):.0f}%"
         for r in parent_rows

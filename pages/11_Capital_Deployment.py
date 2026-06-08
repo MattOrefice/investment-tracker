@@ -64,6 +64,7 @@ def _load_data(as_of: str) -> dict:
             "pos_theses": pos_theses,
             "prices": {},
             "portfolio_value": 0.0,
+            "invested_value": 0.0,
             "spaxx_value": 0.0,
         }
 
@@ -82,12 +83,12 @@ def _load_data(as_of: str) -> dict:
         except Exception:
             pass
 
-    portfolio_value = float(sleeve_df["Market Value"].sum())
-    spaxx_value = (
-        float(sleeve_df.loc["Cash / SPAXX", "Market Value"])
-        if "Cash / SPAXX" in sleeve_df.index
-        else 0.0
-    )
+    # Phase 38a — strategic weights are ex-cash; the operational-cash figures
+    # live on sleeve_df.attrs. invested_value (total − cash) is the base for all
+    # weight×value and deployment-dollar math; spaxx_value is the funding float.
+    portfolio_value = float(sleeve_df.attrs.get("total_value", sleeve_df["Market Value"].sum()))
+    invested_value  = float(sleeve_df.attrs.get("invested_value", portfolio_value))
+    spaxx_value     = float(sleeve_df.attrs.get("cash_mv", 0.0))
 
     return {
         "sleeve_df": sleeve_df,
@@ -97,6 +98,7 @@ def _load_data(as_of: str) -> dict:
         "pos_theses": pos_theses,
         "prices": prices,
         "portfolio_value": portfolio_value,
+        "invested_value": invested_value,
         "spaxx_value": spaxx_value,
     }
 
@@ -145,6 +147,7 @@ saa_targets      = data["saa_targets_full"]
 saa_bands        = data["saa_bands"]
 ticker_to_sleeve = data["ticker_to_sleeve"]
 portfolio_value  = data["portfolio_value"]
+invested_value   = data["invested_value"]
 spaxx_value      = data["spaxx_value"]
 prices           = data["prices"]
 pos_theses       = data["pos_theses"]
@@ -247,7 +250,7 @@ contrib_cash = st.number_input(
 
 if contrib_cash > 0:
     orig_suggestions = suggest_contributions(
-        portfolio_value=portfolio_value,
+        portfolio_value=invested_value,
         cash_to_deploy=float(contrib_cash),
         sleeve_weights=sleeve_weights,
         saa_targets=saa_targets,
@@ -389,12 +392,12 @@ if contrib_cash > 0:
                 sleeve = ticker_to_sleeve.get(row["Ticker"], "")
                 sleeve_alloc_edited[sleeve] = sleeve_alloc_edited.get(sleeve, 0.0) + float(row["Suggested $"])
 
-            new_total = portfolio_value + total_alloc
+            new_total = invested_value + total_alloc
             proj_rows = []
             for sleeve in sorted(saa_targets):
                 if saa_targets.get(sleeve, 0.0) == 0:
                     continue
-                current_mv = portfolio_value * sleeve_weights.get(sleeve, 0.0)
+                current_mv = invested_value * sleeve_weights.get(sleeve, 0.0)
                 added = sleeve_alloc_edited.get(sleeve, 0.0)
                 projected_weight = (current_mv + added) / new_total if new_total > 0 else 0.0
                 target = saa_targets[sleeve]
@@ -511,7 +514,7 @@ rebal_cash = st.number_input(
 if rebal_cash > 0:
     buy_df = suggest_buys(
         drift_df=drift_df,
-        portfolio_value=portfolio_value,
+        portfolio_value=invested_value,
         cash_to_deploy=float(rebal_cash),
         ticker_to_sleeve=ticker_to_sleeve,
         prices=prices,

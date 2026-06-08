@@ -140,6 +140,21 @@ GitHub Actions run after every push and confirm the green checkmark before closi
 
 ---
 
+## Phase 38a — Ex-cash SAA core
+_2026-06-08_
+
+Reclassified cash from a strategic sleeve to operational residual: the 9
+non-cash sleeves rescale to 100% and all strategic weights, drift, and
+deployment math are measured ex-cash (invested-value denominator), with
+operational SPAXX shown separately as an untargeted figure. Reconciled the
+two target sources behind an agreement test and closed the mixed-denominator
+hazard (deployment dollars and the three drift tables verified consistent).
+Retroactive policy revision, matching Phase 25; price/return history
+untouched. Household and Brinson-Fachler cash-asymmetry alignment deferred
+to 38b.
+
+---
+
 ## Phase 37 — Market Snapshot regime dashboard
 _2026-06-08_
 

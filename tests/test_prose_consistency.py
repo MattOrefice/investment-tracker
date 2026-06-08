@@ -324,14 +324,15 @@ def test_prose_methodology_weight_defaults_match_db():
     """
     from src.db import get_connection
 
+    # Phase 38a — ex-cash SAA: targets rescaled by ÷0.98 (cash is operational float).
     EXPECTED_FALLBACKS = {
-        "US Large Value":  0.09,
-        "US Small Cap":    0.08,
-        "Emerging Markets": 0.09,
-        "Real Assets":     0.10,
-        "TIPS":            0.04,
+        "US Large Value":   0.09 / 0.98,
+        "US Small Cap":     0.08 / 0.98,
+        "Emerging Markets": 0.09 / 0.98,
+        "Real Assets":      0.10 / 0.98,
+        "TIPS":             0.04 / 0.98,
     }
-    EXPECTED_EQUITY_PARENT = 0.78
+    EXPECTED_EQUITY_PARENT = 0.78 / 0.98
 
     with get_connection() as conn:
         sleeve_rows = conn.execute(
@@ -368,8 +369,9 @@ def test_prose_pdf_methodology_parent_weights_match_db():
     """PDF methodology section parent weight string is DB-derived, not hardcoded.
 
     templates/quarterly_report.html renders {{ methodology_parent_weights }} from
-    _build_methodology_vars(). This test verifies the DB produces a well-formed
-    four-category string whose weights sum to 100%.
+    _build_methodology_vars(), which lists STRATEGIC parents (target_weight > 0).
+    Phase 38a: cash is operational float (target 0), so the string is the three
+    strategic parents (Equity / Income / Real Assets) and they sum to 100%.
     """
     import re
     from src.db import get_connection
@@ -377,7 +379,7 @@ def test_prose_pdf_methodology_parent_weights_match_db():
     with get_connection() as conn:
         rows = conn.execute(
             "SELECT name, target_weight FROM asset_classes "
-            "WHERE parent_id IS NULL ORDER BY asset_class_id"
+            "WHERE parent_id IS NULL AND target_weight > 0 ORDER BY asset_class_id"
         ).fetchall()
 
     result = " / ".join(
@@ -385,10 +387,13 @@ def test_prose_pdf_methodology_parent_weights_match_db():
         for r in rows
     )
 
-    for cat in ("Equity", "Income", "Real Assets", "Cash"):
+    for cat in ("Equity", "Income", "Real Assets"):
         assert cat in result, (
             f"Parent category '{cat}' missing from methodology weight string: '{result}'"
         )
+    assert "Cash" not in result, (
+        f"Cash should be operational (untargeted), not in the strategic parent string: '{result}'"
+    )
 
     pcts = [int(m) for m in re.findall(r"(\d+)%", result)]
     assert sum(pcts) == 100, (
@@ -397,21 +402,22 @@ def test_prose_pdf_methodology_parent_weights_match_db():
 
 
 def test_prose_pdf_methodology_sleeve_count_matches_db():
-    """PDF methodology section sleeve count (10) is DB-derived, not hardcoded.
+    """PDF methodology section sleeve count (9) is DB-derived, not hardcoded.
 
     templates/quarterly_report.html renders {{ methodology_sleeve_count }} from
-    _build_methodology_vars(). This test pins the expected count so any SAA
-    taxonomy change triggers an intentional review of the methodology prose.
+    _build_methodology_vars(), which counts STRATEGIC sleeves (target_weight > 0).
+    Phase 38a: cash is operational float (target 0), so the strategic count is 9.
+    This test pins the expected count so any SAA taxonomy change triggers review.
     """
     from src.db import get_connection
 
     with get_connection() as conn:
         count = conn.execute(
-            "SELECT COUNT(*) FROM asset_classes WHERE parent_id IS NOT NULL"
+            "SELECT COUNT(*) FROM asset_classes WHERE parent_id IS NOT NULL AND target_weight > 0"
         ).fetchone()[0]
 
-    assert count == 10, (
-        f"Expected 10 SAA sleeves in asset_classes, got {count}. "
+    assert count == 9, (
+        f"Expected 9 strategic SAA sleeves in asset_classes, got {count}. "
         "If the SAA taxonomy changed, update the methodology template and this test."
     )
 
@@ -517,13 +523,14 @@ def test_saa_thesis_sleeve_weights_match_db():
     """
     from src.db import get_connection
 
+    # Phase 38a — ex-cash SAA: targets rescaled by ÷0.98 (cash is operational float).
     THESIS_WEIGHTS = {
-        "Equity":                  0.78,   # parent category
-        "International Developed": 0.20,
-        "Emerging Markets":        0.09,
-        "Real Assets":             0.10,
-        "TIPS":                    0.04,
-        "Core Fixed Income":       0.06,
+        "Equity":                  0.78 / 0.98,   # parent category
+        "International Developed": 0.20 / 0.98,
+        "Emerging Markets":        0.09 / 0.98,
+        "Real Assets":             0.10 / 0.98,
+        "TIPS":                    0.04 / 0.98,
+        "Core Fixed Income":       0.06 / 0.98,
     }
 
     with get_connection() as conn:
@@ -619,3 +626,72 @@ def test_saa_thesis_above_40_cape_reference_still_relevant():
             UserWarning,
             stacklevel=2,
         )
+
+
+# ── Phase 38a — ex-cash SAA guards ─────────────────────────────────────────────
+
+def test_sleeve_weights_match_db():
+    """The two SAA target sources must agree (Phase 38a risk #2).
+
+    src.asset_evaluation.SLEEVE_WEIGHTS (the ex-cash MV-analysis weights) must
+    equal the DB strategic targets sleeve-for-sleeve, so a change to one cannot
+    silently diverge from the other. The benchmark-proxy subsystem names the
+    developed-international sleeve 'Intl Developed' where the DB uses
+    'International Developed'.
+    """
+    from src.db import get_connection
+    from src.asset_evaluation import SLEEVE_WEIGHTS
+
+    _AE_TO_DB = {
+        "US Large Core":     "US Large Core",
+        "US Large Quality":  "US Large Quality",
+        "US Large Value":    "US Large Value",
+        "US Small Cap":      "US Small Cap",
+        "Intl Developed":    "International Developed",
+        "Emerging Markets":  "Emerging Markets",
+        "Core Fixed Income": "Core Fixed Income",
+        "TIPS":              "TIPS",
+        "Real Assets":       "Real Assets",
+    }
+
+    with get_connection() as conn:
+        db = {
+            r["name"]: r["target_weight"]
+            for r in conn.execute(
+                "SELECT name, target_weight FROM asset_classes "
+                "WHERE parent_id IS NOT NULL AND target_weight > 0"
+            ).fetchall()
+        }
+
+    assert len(SLEEVE_WEIGHTS) == 9, f"Expected 9 ex-cash sleeve weights, got {len(SLEEVE_WEIGHTS)}"
+    assert len(db) == 9, f"Expected 9 strategic DB sleeves, got {len(db)}"
+    for ae_name, db_name in _AE_TO_DB.items():
+        assert db_name in db, f"DB strategic sleeve '{db_name}' missing"
+        assert abs(SLEEVE_WEIGHTS[ae_name] - db[db_name]) < 1e-6, (
+            f"SLEEVE_WEIGHTS['{ae_name}']={SLEEVE_WEIGHTS[ae_name]:.6f} != "
+            f"DB '{db_name}'={db[db_name]:.6f}. The two SAA target sources diverged — "
+            "update src/asset_evaluation.py and/or the DB/seed together."
+        )
+
+
+def test_ex_cash_denominator_drops_cash_and_sums_to_one():
+    """get_sleeve_weights_on_date measures strategic weights ex-cash (Phase 38a).
+
+    Cash / SPAXX must NOT be a strategic row; the 9 strategic weights are a share
+    of invested value (sum ~1.0); operational cash is exposed on .attrs with
+    invested_value = total_value - cash_mv.
+    """
+    from datetime import date
+    from src.holdings import get_sleeve_weights_on_date
+
+    sw = get_sleeve_weights_on_date(date.today().isoformat())
+    if sw.empty:
+        return  # no holdings in this DB — nothing to assert
+
+    assert "Cash / SPAXX" not in sw.index, "cash must be excluded from strategic rows"
+    assert abs(sw["Actual Weight"].sum() - 1.0) < 0.01, (
+        f"ex-cash strategic weights should sum to ~1.0, got {sw['Actual Weight'].sum():.4f}"
+    )
+    for key in ("total_value", "cash_mv", "invested_value", "cash_weight_of_total"):
+        assert key in sw.attrs, f"operational-cash attr '{key}' missing from sleeve frame"
+    assert abs(sw.attrs["invested_value"] - (sw.attrs["total_value"] - sw.attrs["cash_mv"])) < 0.01

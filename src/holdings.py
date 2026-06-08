@@ -125,12 +125,22 @@ def get_portfolio_value_series(
     return (holdings_matrix[common] * prices_matrix[common]).sum(axis=1)
 
 
+_CASH_SLEEVE = "Cash / SPAXX"
+
+
 def get_sleeve_weights_on_date(date_str: str) -> pd.DataFrame:
     """
-    Return actual vs. target weight per sleeve as of date_str.
+    Return actual vs. target weight per STRATEGIC sleeve as of date_str.
     Columns: Market Value, Actual Weight, Target Weight, Drift (actual - target).
     Index: sleeve name.
     Uses close price (unadjusted) for current market value.
+
+    Phase 38a — cash is operational float, not a strategic allocation. The
+    Cash / SPAXX sleeve is excluded from the returned rows and weights are
+    measured ex-cash: Actual Weight = sleeve_mv / invested_value, where
+    invested_value = total_mv − cash_mv. Operational-cash figures are exposed
+    on the DataFrame's ``.attrs`` for callers that display them:
+        total_value, cash_mv, invested_value, cash_weight_of_total.
     """
     holdings = get_holdings_on_date(date_str)
     if holdings.empty:
@@ -185,10 +195,18 @@ def get_sleeve_weights_on_date(date_str: str) -> pd.DataFrame:
     if total == 0:
         return pd.DataFrame()
 
+    # Ex-cash denominator: strategic weights are a share of INVESTED value.
+    cash_mv  = values_by_sleeve.get(_CASH_SLEEVE, 0.0)
+    invested = total - cash_mv
+    if invested <= 0:
+        return pd.DataFrame()
+
     rows = []
     for sleeve, mv in sorted(values_by_sleeve.items(), key=lambda x: -x[1]):
+        if sleeve == _CASH_SLEEVE:
+            continue  # operational float — surfaced via .attrs, not a strategic row
         target = target_weights.get(sleeve, 0.0)
-        actual = mv / total
+        actual = mv / invested
         rows.append(
             {
                 "Sleeve":         sleeve,
@@ -199,7 +217,12 @@ def get_sleeve_weights_on_date(date_str: str) -> pd.DataFrame:
             }
         )
 
-    return pd.DataFrame(rows).set_index("Sleeve")
+    df = pd.DataFrame(rows).set_index("Sleeve")
+    df.attrs["total_value"]          = round(total, 2)
+    df.attrs["cash_mv"]              = round(cash_mv, 2)
+    df.attrs["invested_value"]       = round(invested, 2)
+    df.attrs["cash_weight_of_total"] = round(cash_mv / total, 6) if total else 0.0
+    return df
 
 
 def get_inception_date() -> str:

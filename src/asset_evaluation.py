@@ -34,8 +34,12 @@ SLEEVE_BENCHMARKS: dict[str, list[tuple[str, float]]] = {
     "Real Assets":       [("VNQ",  0.6), ("DBC", 0.4)],
 }
 
-# SAA target weights for the 9 non-cash sleeves.
-# Scaled to sum to 1.0 for MV analysis (cash is excluded and its 2% distributed pro-rata).
+# SAA target weights for the 9 non-cash sleeves (raw, pre-normalization).
+# SLEEVE_WEIGHTS below normalizes these to sum to 1.0 — the canonical ex-cash SAA
+# (Phase 38a): cash is operational float, excluded, and the 9 sleeves rescale to
+# 100%. These values MUST equal the DB asset_classes targets sleeve-for-sleeve
+# (the DB uses "International Developed" where this map uses "Intl Developed");
+# test_sleeve_weights_match_db guards that they never silently diverge.
 _RAW_WEIGHTS: dict[str, float] = {
     "US Large Core":     0.17,
     "US Large Quality":  0.15,

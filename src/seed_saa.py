@@ -6,33 +6,41 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.db import get_connection, initialize_db
 
+# Phase 38a — cash is operational float, not a strategic allocation. The 9
+# non-cash sleeves (and their 3 parents) are rescaled to sum to 1.0 (each prior
+# target ÷ 0.98, the prior non-cash total). The Cash parent and Cash / SPAXX
+# sub-class rows are RETAINED with target_weight = 0 (untargeted) so the SPAXX
+# security mapping and operational-cash plumbing keep working; everything
+# "strategic" filters on target_weight > 0.
+_EXCASH_NORM = 0.98  # prior non-cash target total
+
 PARENTS = [
     {
         "name": "Equity",
-        "target_weight": 0.78,
+        "target_weight": 0.78 / _EXCASH_NORM,
         "tolerance_band": 0.03,
         "rationale": "Core equity engine of the portfolio; primary driver of long-run real returns across US, international, and emerging market sleeves.",
         "benchmark_ticker": None,
     },
     {
         "name": "Income",
-        "target_weight": 0.10,
+        "target_weight": 0.10 / _EXCASH_NORM,
         "tolerance_band": 0.02,
         "rationale": "Duration and inflation protection; ballast against equity drawdowns and silent real-return destruction.",
         "benchmark_ticker": None,
     },
     {
         "name": "Real Assets",
-        "target_weight": 0.10,
+        "target_weight": 0.10 / _EXCASH_NORM,
         "tolerance_band": 0.02,
         "rationale": "Inflation-correlated diversifier with different risk drivers than equity or duration.",
         "benchmark_ticker": None,
     },
     {
         "name": "Cash",
-        "target_weight": 0.02,
+        "target_weight": 0.0,
         "tolerance_band": 0.02,
-        "rationale": "Operational liquidity for rebalancing friction and opportunistic deployment; not strategic dry powder.",
+        "rationale": "Operational liquidity for rebalancing friction and opportunistic deployment; not a strategic allocation — held as residual SPAXX float, measured outside the ex-cash SAA.",
         "benchmark_ticker": None,
     },
 ]
@@ -54,7 +62,7 @@ SUB_CLASSES = [
     {
         "name": "US Large Core",
         "parent_name": "Equity",
-        "target_weight": 0.17,
+        "target_weight": 0.17 / _EXCASH_NORM,
         "tolerance_band": 0.03,
         "benchmark_ticker": "SPY",
         "rationale": (
@@ -70,7 +78,7 @@ SUB_CLASSES = [
     {
         "name": "US Large Quality",
         "parent_name": "Equity",
-        "target_weight": 0.15,
+        "target_weight": 0.15 / _EXCASH_NORM,
         "tolerance_band": 0.03,
         "benchmark_ticker": "QUAL",
         "rationale": (
@@ -87,7 +95,7 @@ SUB_CLASSES = [
     {
         "name": "US Large Value",
         "parent_name": "Equity",
-        "target_weight": 0.09,
+        "target_weight": 0.09 / _EXCASH_NORM,
         "tolerance_band": 0.02,
         "benchmark_ticker": "IWD",
         "rationale": (
@@ -104,7 +112,7 @@ SUB_CLASSES = [
     {
         "name": "US Small Cap",
         "parent_name": "Equity",
-        "target_weight": 0.08,
+        "target_weight": 0.08 / _EXCASH_NORM,
         "tolerance_band": 0.02,
         "benchmark_ticker": "IWM",
         "rationale": (
@@ -125,7 +133,7 @@ SUB_CLASSES = [
     {
         "name": "International Developed",
         "parent_name": "Equity",
-        "target_weight": 0.20,
+        "target_weight": 0.20 / _EXCASH_NORM,
         "tolerance_band": 0.03,
         "benchmark_ticker": "EFA",
         "rationale": (
@@ -142,7 +150,7 @@ SUB_CLASSES = [
     {
         "name": "Emerging Markets",
         "parent_name": "Equity",
-        "target_weight": 0.09,
+        "target_weight": 0.09 / _EXCASH_NORM,
         "tolerance_band": 0.02,
         "benchmark_ticker": "EEM",
         "rationale": (
@@ -158,7 +166,7 @@ SUB_CLASSES = [
     {
         "name": "Core Fixed Income",
         "parent_name": "Income",
-        "target_weight": 0.06,
+        "target_weight": 0.06 / _EXCASH_NORM,
         "tolerance_band": 0.02,
         "benchmark_ticker": "IEF",
         "rationale": (
@@ -175,7 +183,7 @@ SUB_CLASSES = [
     {
         "name": "TIPS",
         "parent_name": "Income",
-        "target_weight": 0.04,
+        "target_weight": 0.04 / _EXCASH_NORM,
         "tolerance_band": 0.02,
         "benchmark_ticker": "TIP",
         "rationale": (
@@ -193,7 +201,7 @@ SUB_CLASSES = [
     {
         "name": "Real Assets",
         "parent_name": "Real Assets",
-        "target_weight": 0.10,
+        "target_weight": 0.10 / _EXCASH_NORM,
         "tolerance_band": 0.02,
         "benchmark_ticker": "VNQ (60%) + DBC (40%)",
         "rationale": (
@@ -209,7 +217,7 @@ SUB_CLASSES = [
     {
         "name": "Cash / SPAXX",
         "parent_name": "Cash",
-        "target_weight": 0.02,
+        "target_weight": 0.0,
         "tolerance_band": 0.02,
         "benchmark_ticker": "BIL",
         "rationale": (

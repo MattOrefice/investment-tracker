@@ -18,31 +18,42 @@ from src.positioning import (
 
 # ── Shared test fixtures ──────────────────────────────────────────────────────
 
-def _make_sw(rows: dict) -> pd.DataFrame:
+def _make_sw(rows: dict, cash_weight_of_total: float = 0.02) -> pd.DataFrame:
     """
     Build a sleeve-weights DataFrame matching get_sleeve_weights_on_date() output.
     rows: {sleeve_name: (actual_wt, target_wt)} — weights in decimal (not percent).
+
+    Phase 38a — rows are the ex-cash strategic sleeves (weights of INVESTED value,
+    summing to ~1.0); operational cash is carried on .attrs, never as a row.
     """
+    invested = sum(v[0] * 10_000 for v in rows.values())
+    total    = invested / (1.0 - cash_weight_of_total) if cash_weight_of_total < 1 else invested
+    cash_mv  = total - invested
     data = {
         "Market Value":  {k: v[0] * 10_000 for k, v in rows.items()},
         "Actual Weight": {k: v[0] for k, v in rows.items()},
         "Target Weight": {k: v[1] for k, v in rows.items()},
         "Drift":         {k: v[0] - v[1] for k, v in rows.items()},
     }
-    return pd.DataFrame(data)
+    df = pd.DataFrame(data)
+    df.attrs["total_value"]          = round(total, 2)
+    df.attrs["cash_mv"]              = round(cash_mv, 2)
+    df.attrs["invested_value"]       = round(invested, 2)
+    df.attrs["cash_weight_of_total"] = round(cash_weight_of_total, 6)
+    return df
 
 
+# Ex-cash strategic sleeves (sum to 1.0); Core FI 6% + TIPS 4% = 10% of invested.
 _BASELINE_ROWS = {
-    "US Large Core":         (0.17, 0.17),
-    "US Large Quality":      (0.15, 0.15),
+    "US Large Core":         (0.175, 0.175),
+    "US Large Quality":      (0.155, 0.155),
     "US Large Value":        (0.09, 0.09),
     "US Small Cap":          (0.08, 0.08),
-    "International Developed":(0.20, 0.20),
-    "Emerging Markets":      (0.09, 0.09),
+    "International Developed":(0.205, 0.205),
+    "Emerging Markets":      (0.095, 0.095),
     "Core Fixed Income":     (0.06, 0.06),
     "TIPS":                  (0.04, 0.04),
     "Real Assets":           (0.10, 0.10),
-    "Cash / SPAXX":          (0.02, 0.02),
 }
 
 

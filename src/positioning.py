@@ -309,10 +309,14 @@ def get_effective_duration(end_date: str) -> dict:
     Returns:
         duration               — portfolio-level duration contribution (Core FI + TIPS only)
         fi_sleeve_duration     — duration of Core FI + TIPS only (cash excluded)
-        fi_weight_pct          — Core FI + TIPS weight as % of portfolio (cash excluded)
-        cash_weight_pct        — Cash / SPAXX weight as % of portfolio
-        fi_weight_incl_cash_pct — Core FI + TIPS + Cash weight (for informational use)
+        fi_weight_pct          — Core FI + TIPS weight as % of invested (ex-cash) portfolio
+        cash_weight_pct        — operational SPAXX float as % of TOTAL portfolio
+        fi_weight_incl_cash_pct — Core FI + TIPS + operational cash (for informational use)
         agg_benchmark          — Bloomberg US Agg duration for comparison
+
+    Phase 38a — sleeve weights are ex-cash (sum to 1.0 over the 9 strategic
+    sleeves); operational cash is read from the sleeve frame's .attrs, not as a
+    sleeve row.
     """
     _empty = {
         "duration": 0.0, "fi_sleeve_duration": 0.0,
@@ -347,12 +351,16 @@ def get_effective_duration(end_date: str) -> dict:
     eff_duration  = weighted_dur / total_portfolio_wt
     fi_sleeve_dur = weighted_dur / fi_wt_excl_cash if fi_wt_excl_cash > 0 else 0.0
 
+    # Operational cash as a share of TOTAL portfolio, from the ex-cash frame's attrs.
+    cash_of_total_pct = round(float(sw.attrs.get("cash_weight_of_total", 0.0)) * 100, 1)
+    fi_excl_cash_pct  = round(fi_wt_excl_cash / total_portfolio_wt * 100, 1)
+
     return {
         "duration":                round(eff_duration, 1),
         "fi_sleeve_duration":      round(fi_sleeve_dur, 1),
-        "fi_weight_pct":           round(fi_wt_excl_cash / total_portfolio_wt * 100, 1),
-        "cash_weight_pct":         round(cash_wt / total_portfolio_wt * 100, 1),
-        "fi_weight_incl_cash_pct": round(fi_wt_incl_cash / total_portfolio_wt * 100, 1),
+        "fi_weight_pct":           fi_excl_cash_pct,
+        "cash_weight_pct":         cash_of_total_pct,
+        "fi_weight_incl_cash_pct": round(fi_excl_cash_pct + cash_of_total_pct, 1),
         "agg_benchmark":           BLOOMBERG_AGG_DURATION_YEARS,
     }
 

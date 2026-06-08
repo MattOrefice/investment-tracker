@@ -54,10 +54,11 @@ def test_all_sleeve_rationales_have_bold_would_conditions() -> None:
 
     with get_connection() as conn:
         rows = conn.execute(
-            "SELECT name, rationale FROM asset_classes WHERE parent_id IS NOT NULL"
+            "SELECT name, rationale FROM asset_classes "
+            "WHERE parent_id IS NOT NULL AND target_weight > 0"
         ).fetchall()
 
-    assert len(rows) == 10, f"Expected 10 sleeve rows, got {len(rows)}"
+    assert len(rows) == 9, f"Expected 9 strategic sleeve rows, got {len(rows)}"
     missing = [r["name"] for r in rows if "**Would" not in (r["rationale"] or "")]
     assert not missing, (
         f"Sleeves missing bold Would conditions in DB rationale: {missing} — "
