@@ -29,14 +29,16 @@
   un-exclude.
 
 ## History baseline (post-2026-06-08 reorg)
-- History was reorganized 2026-06-08: 303 commits squashed into 15
-  coherent prose-style milestone commits via a commit-tree chain
-  (tree byte-identical, 4f3df44… preserved).
-- Current main baseline HEAD: bc82d88 (Maintenance: Actions bump +
-  Performance drift consolidation).
-- v1.0 tag re-pointed to b7fa2c3 (the v1.0-launch milestone commit);
-  original annotation preserved.
+- History was reorganized twice on 2026-06-08, both as
+  tree-preserving commit-tree rebuilds (final tree byte-identical):
+  first the pre-v1.0 history into 15 prose milestone commits, then
+  the post-v1.0 phase work folded into prose product commits
+  (34 → 22 commits; tree f16d472… preserved).
+- Current main tip: 3d221fd (Polish the strategic allocation table
+  formatting).
+- v1.0 tag points to b7fa2c3 (the v1.0-launch milestone commit;
+  original annotation preserved) — unchanged through both reorgs.
 - All pre-reorg commit SHAs in earlier notes/CHANGELOG history are
-  now unreachable on origin — do NOT reference them. The 15-commit
+  now unreachable on origin — do NOT reference them. The 22-commit
   log is the canonical history.
 - origin has only: main + the v1.0 tag (nothing else).
