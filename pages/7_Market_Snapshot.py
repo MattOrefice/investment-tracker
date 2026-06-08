@@ -52,10 +52,21 @@ with col:
     asof_str  = asof.strftime("%b %d, %Y") if asof is not None else "n/a"
     rt        = ms.trailing_returns(price_map)
 
+    def _last_1d(ticker: str) -> float:
+        return float(rt.loc[ticker, "1D"]) if ticker in rt.index else float("nan")
+
     st.caption(
         f"Market data as of **{asof_str}** (last exchange close). Daily close only — "
         "not intraday; the as-of date is the latest close in the data, not the calendar date."
     )
+
+    # Cross-asset tape promoted to a top summary line — the one-glance readout.
+    _line = ms.mechanical_market_line({
+        "equities": _last_1d("SPY"),
+        "bonds":    _last_1d("AGG"),
+        "usd":      _last_1d("UUP"),
+    })
+    st.markdown(f"**Cross-asset tape:** {_line}")
     st.divider()
 
     # ── Section 1 — Size & Value ───────────────────────────────────────────────
@@ -83,11 +94,32 @@ with col:
         )
         for w in ms.WINDOWS
     }
-    st.dataframe(sv_tbl, hide_index=True, use_container_width=True, column_config=_sv_cfg)
-    st.caption(
-        "Positive size = small-caps led large; positive value = value led growth, over the "
-        "trailing window. A positive reading means the SAA's tilt was rewarded recently."
+    st.dataframe(sv_tbl, hide_index=True, width="stretch", column_config=_sv_cfg)
+
+    # Compact YTD visual of the two relative-return legs (house RdYlGn/cmid=0 style).
+    # A positive (green) bar means the SAA's tilt was rewarded YTD.
+    _sv_legs = ["Value: value − growth", "Size: small − large"]   # ascending → first at bottom
+    _sv_vals = [_style["YTD"] * 100, _size["YTD"] * 100]
+    _fig_sv = go.Figure(go.Bar(
+        x=_sv_vals,
+        y=_sv_legs,
+        orientation="h",
+        marker=dict(color=_sv_vals, colorscale="RdYlGn", cmid=0),
+        text=[f"{v:+.2f}%" for v in _sv_vals],
+        textposition="auto",
+        hovertemplate="%{y}: %{x:+.2f}%<extra></extra>",
+    ))
+    _fig_sv.add_vline(x=0, line_dash="dash", line_color=_REF, line_width=1)
+    _fig_sv.update_layout(
+        height=180,
+        margin=dict(l=0, r=0, t=8, b=0),
+        paper_bgcolor="white",
+        plot_bgcolor="#FAFAFA",
+        font=dict(color="#333333", size=12),
+        xaxis=dict(title="YTD relative return (%)", gridcolor="#EBEBEB", zeroline=False),
+        yaxis=dict(tickfont_size=11),
     )
+    st.plotly_chart(_fig_sv, width="stretch", config={"displayModeBar": False})
     st.divider()
 
     # ── Section 2 — Sector movers ──────────────────────────────────────────────
@@ -95,7 +127,7 @@ with col:
     st.caption("The 11 SPDR Select Sector ETFs ranked by trailing return.")
 
     win = st.radio(
-        "Window", ms.WINDOWS, index=2, horizontal=True, key="sector_window",
+        "Window", ms.WINDOWS, index=ms.WINDOWS.index("YTD"), horizontal=True, key="sector_window",
         format_func=lambda w: "1D (since prior close)" if w == "1D" else w,
     )
 
@@ -135,23 +167,16 @@ with col:
         w_col.metric(f"Worst ({_wlbl})", _worst["Sector"], f"{_worst[win] * 100:+.2f}%")
     st.divider()
 
-    # ── Section 3 — Market line ────────────────────────────────────────────────
-    st.subheader("Market Line")
-
-    def _last_1d(ticker: str) -> float:
-        return float(rt.loc[ticker, "1D"]) if ticker in rt.index else float("nan")
-
-    _line = ms.mechanical_market_line({
-        "equities": _last_1d("SPY"),
-        "bonds":    _last_1d("AGG"),
-        "usd":      _last_1d("UUP"),
-    })
-    st.markdown(f"**{_line}**")
+    # ── Section 3 — Cross-Asset Tape ────────────────────────────────────────────
+    st.subheader("Cross-Asset Tape")
     st.caption(
-        "A deterministic, sign-based readout of SPY (equities), AGG (bonds), and UUP "
-        "(US dollar) since the prior close — derived purely from the figures, not commentary."
+        "1D moves (since prior close) of the three market-line proxies — the magnitudes "
+        "behind the summary at the top. SPY = equities, AGG = bonds, UUP = US dollar."
     )
-    st.divider()
+    _t1, _t2, _t3 = st.columns(3)
+    _t1.metric("S&P 500 · SPY (equities)", f"{_last_1d('SPY') * 100:+.2f}%")
+    _t2.metric("US Agg · AGG (bonds)",     f"{_last_1d('AGG') * 100:+.2f}%")
+    _t3.metric("US Dollar · UUP (USD)",    f"{_last_1d('UUP') * 100:+.2f}%")
 
     st.caption(
         "**Methodology.** Daily exchange close (not intraday). The as-of date is the latest "

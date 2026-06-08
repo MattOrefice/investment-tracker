@@ -140,6 +140,17 @@ GitHub Actions run after every push and confirm the green checkmark before closi
 
 ---
 
+## Phase 36 — Market Snapshot visual polish
+_2026-06-08_
+
+Display-only polish of the Market Snapshot page: promoted the
+cross-asset tape to a top summary line, added SPY/AGG/UUP and
+size/value supporting visuals, defaulted the sector view to YTD,
+tightened layout, and cleared a deprecation warning. No computed
+numbers changed.
+
+---
+
 ## Maintenance — Performance drift table consolidation
 _2026-06-05_
 
