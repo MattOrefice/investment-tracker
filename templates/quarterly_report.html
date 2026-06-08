@@ -236,6 +236,11 @@
   <p class="muted">Allocation effect = (w<sub>p</sub> &minus; w<sub>b</sub>) &times; (r<sub>b</sub> &minus; r<sub>b,total</sub>).
   Selection effect = w<sub>p</sub> &times; (r<sub>p</sub> &minus; r<sub>b</sub>).
   Sum of effects reconciles to active return within 1 bp (Brinson-Fachler 1985).</p>
+  <p class="muted">Weights are measured ex-cash (operational SPAXX float excluded; the
+  nine strategic sleeves sum to 100% and match the benchmark). Operational cash drag this
+  period: <strong>{{ attr.cash_drag_bps }} bps</strong> &mdash; broken out separately so that
+  strategic active (ex-cash) + cash drag = total active vs the SAA blend. The reported total
+  return is unchanged; only the attribution is decomposed this way.</p>
 
   {% if attr.sel_commentary %}
   <div class="bf-commentary">

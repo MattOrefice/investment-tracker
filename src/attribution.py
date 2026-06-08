@@ -7,6 +7,8 @@ from src.db import get_connection
 from src.prices import get_prices
 from src.benchmarks import get_sleeve_benchmark_returns, _SLEEVE_BENCHMARKS
 
+_CASH_SLEEVE = "Cash / SPAXX"  # operational float — excluded from ex-cash BF weights
+
 
 def brinson_fachler(
     portfolio_weights: dict[str, float],
@@ -254,13 +256,36 @@ def brinson_fachler_period(
     if total_start == 0:
         return pd.DataFrame()
 
-    # ── Portfolio weights and returns per sleeve ──────────────────────────────
+    # ── Phase 38b-2 — ex-cash attribution + explicit operational cash drag ────
+    # The benchmark is already ex-cash (9 rescaled sleeves; cash untargeted), so
+    # the portfolio side is normalized to INVESTED value (operational SPAXX float
+    # excluded) — the 9 strategic weights then sum to 1.0 and match the benchmark.
+    # The float's effect on the actual portfolio return is NOT erased: it is broken
+    # out as a cash-drag term so the decomposition stays
+    #   strategic active (ex-cash) + cash drag = total active vs benchmark
+    # and the reported total active / TWR are unchanged.
+    cash_start = start_values.get(_CASH_SLEEVE, 0.0)
+    cash_end   = end_values.get(_CASH_SLEEVE, 0.0)
+    total_end  = sum(end_values.values())
+
+    total_start_excash = total_start - cash_start
+    total_end_excash   = total_end - cash_end
+    if total_start_excash <= 0:
+        return pd.DataFrame()
+
+    r_p_total_incl   = total_end / total_start - 1.0
+    r_p_total_excash = total_end_excash / total_start_excash - 1.0
+    cash_drag        = r_p_total_incl - r_p_total_excash   # negative when cash drags
+    cash_weight      = cash_start / total_start if total_start else 0.0
+
+    # ── Portfolio weights and returns per STRATEGIC sleeve (ex-cash) ──────────
+    strategic_values = {s: mv for s, mv in start_values.items() if s != _CASH_SLEEVE}
     portfolio_weights = {
-        sleeve: mv / total_start for sleeve, mv in start_values.items()
+        sleeve: mv / total_start_excash for sleeve, mv in strategic_values.items()
     }
     portfolio_sleeve_returns = {
         sleeve: (end_values.get(sleeve, 0.0) / mv - 1.0) if mv > 0 else 0.0
-        for sleeve, mv in start_values.items()
+        for sleeve, mv in strategic_values.items()
     }
 
     # ── Benchmark sleeve returns ──────────────────────────────────────────────
@@ -273,13 +298,20 @@ def brinson_fachler_period(
         s: bm_returns_raw.get(s, 0.0) for s in benchmark_weights
     }
 
-    # ── Align: only include sleeves present in portfolio weights ─────────────
+    # ── Align: strategic sleeves only (cash excluded from both sides) ─────────
     all_sleeves = sorted(
-        set(list(portfolio_weights) + list(benchmark_weights))
+        (set(portfolio_weights) | set(benchmark_weights)) - {_CASH_SLEEVE}
     )
     pw  = {s: portfolio_weights.get(s, 0.0)        for s in all_sleeves}
     bw  = {s: benchmark_weights.get(s, 0.0)        for s in all_sleeves}
     pr  = {s: portfolio_sleeve_returns.get(s, 0.0) for s in all_sleeves}
     br  = {s: bm_sleeve_returns.get(s, 0.0)        for s in all_sleeves}
 
-    return brinson_fachler(pw, bw, pr, br)
+    bf = brinson_fachler(pw, bw, pr, br)
+    # Operational-cash figures for the reconciliation bridge (read by the
+    # Performance page). .attrs survives pickling / st.cache_data.
+    bf.attrs["cash_drag"]        = cash_drag
+    bf.attrs["cash_weight"]      = cash_weight
+    bf.attrs["r_p_total_excash"] = r_p_total_excash
+    bf.attrs["r_p_total_incl"]   = r_p_total_incl
+    return bf

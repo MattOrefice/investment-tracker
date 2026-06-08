@@ -615,6 +615,9 @@ def _build_attribution_section(start_date: str, end_date: str) -> dict:
         "total_total":      f"{bf_df['total_effect'].sum()*10000:+.1f}",
         "sel_commentary":   sel_commentary,
         "alloc_commentary": alloc_commentary,
+        # Phase 38b-2 — operational cash drag, broken out so the ex-cash strategic
+        # attribution reconciles to the actual (incl-cash) total active return.
+        "cash_drag_bps":    f"{bf_df.attrs.get('cash_drag', 0.0)*10000:+.1f}",
     }
 
 

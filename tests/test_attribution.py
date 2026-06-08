@@ -523,18 +523,20 @@ def test_identity_ps_two_stage_si_spy():
 
 
 def test_identity_bf_sum_reconciles_to_stage2():
-    """BF active return (Σ effects) must reconcile with Stage 2 within 0.5 bps for all windows.
+    """Ex-cash BF portfolio return + cash drag must reconcile with the actual TWR
+    within 0.5 bps for all windows (Phase 38b-2 bridge).
 
-    Phase 10.2 regression pin. After (1) DRIP-aligning brinson_fachler_period() sleeve
-    returns and (2) fixing pages/4_Performance.py to use _r_b_bf (target-weighted BF
-    benchmark return) for Stage 2, the BF identity holds for all five windows:
-      BF active = bf_r_p - r_b_bf
-      Stage 2   = r_p_ps - r_b_bf   (Performance page definition, Phase 10.2)
-      Gap       = |bf_r_p - r_p_ps|
+    Phase 10.2 regression pin, updated for Phase 38b-2. BF weights are now ex-cash
+    (operational SPAXX float excluded), so the BF portfolio return is the INVESTED
+    (strategic) return. The operational cash drag is exposed on bf_df.attrs. The
+    bridge that keeps the Performance page reconciliation ✓:
+      bf_r_p_excash + cash_drag  ==  r_p_ps   (actual incl-cash portfolio return)
+    because cash_drag = r_p_total_incl − r_p_total_excash and bf_r_p_excash =
+    r_p_total_excash, so the sum is r_p_total_incl ≈ r_p_ps within the same tolerance
+    that held pre-38b-2.
 
     r_p_ps uses inception-based portfolio value series sliced to the period, matching
     the Performance page's _benchmark_period_return(pv, bf_period) call.
-    Benchmark side cancels: both Stage 2 and BF active use r_b_bf = Σ(w_b * r_b).
     """
     import datetime
     from src.attribution import brinson_fachler_period
@@ -569,16 +571,18 @@ def test_identity_bf_sum_reconciles_to_stage2():
         if bf_df.empty:
             pytest.skip(f"BF result empty for {label} — skipped in local/empty-DB mode")
 
-        r_p_ps = _bpr_helper(pv_full, label)
-        r_b_bf = float((bf_df["w_b"] * bf_df["r_b"]).sum())
-        bf_r_p = float((bf_df["w_p"] * bf_df["r_p"]).sum())
-        gap_bps = abs(bf_r_p - r_p_ps) * 10_000
+        r_p_ps        = _bpr_helper(pv_full, label)
+        bf_r_p_excash = float((bf_df["w_p"] * bf_df["r_p"]).sum())
+        cash_drag     = float(bf_df.attrs.get("cash_drag", 0.0))
+        bridged       = bf_r_p_excash + cash_drag
+        gap_bps = abs(bridged - r_p_ps) * 10_000
 
         assert gap_bps < 0.5, (
-            f"BF portfolio return ({bf_r_p*10000:.1f} bps) diverges from price series "
-            f"({r_p_ps*10000:.1f} bps) by {gap_bps:.2f} bps for {label} window. "
-            f"DRIP alignment in brinson_fachler_period() may have failed — check "
-            f"_drip_shares() and the end_values accumulation loop."
+            f"Ex-cash BF return + cash drag ({bridged*10000:.1f} bps = "
+            f"{bf_r_p_excash*10000:.1f} strategic {cash_drag*10000:+.1f} drag) diverges from "
+            f"price series ({r_p_ps*10000:.1f} bps) by {gap_bps:.2f} bps for {label} window. "
+            f"The cash-drag bridge in brinson_fachler_period() may have failed — check "
+            f"the cash_drag attr and the ex-cash weight normalization."
         )
 
 
@@ -627,4 +631,49 @@ def test_bf_per_sleeve_returns_are_total_return():
         f"Dividend premium: {dividend_premium_bps:.0f} bps (expected >= 100 bps for ~1yr). "
         f"DRIP alignment in brinson_fachler_period() may not be applied — check "
         f"_drip_shares() returns non-zero for VEA."
+    )
+
+
+def test_bf_ex_cash_weights_and_cash_drag_attr():
+    """Phase 38b-2: brinson_fachler_period returns ex-cash strategic weights (no cash
+    row, w_p sums to 1.0) and exposes the operational cash drag on .attrs, such that
+    ex-cash strategic active + cash drag = the incl-cash active (total unchanged).
+    """
+    import datetime
+    from src.attribution import brinson_fachler_period
+
+    INCEPTION = "2025-05-01"
+    TODAY = datetime.date.today().isoformat()
+
+    try:
+        bf_df = brinson_fachler_period(INCEPTION, TODAY)
+    except Exception as exc:
+        pytest.skip(f"Data unavailable: {exc}")
+    if bf_df.empty:
+        pytest.skip("No portfolio data — skipped in local/empty-DB mode")
+
+    # No cash row; the 9 strategic weights sum to 1.0 (match the ex-cash benchmark).
+    assert not bf_df["sleeve"].str.contains("Cash").any(), "cash must be excluded from BF rows"
+    assert abs(bf_df["w_p"].sum() - 1.0) < 1e-6, "ex-cash portfolio weights must sum to 1.0"
+    assert abs(bf_df["w_b"].sum() - 1.0) < 1e-6, "benchmark weights must sum to 1.0"
+
+    # Cash-drag plumbing present on .attrs.
+    for key in ("cash_drag", "cash_weight", "r_p_total_excash", "r_p_total_incl"):
+        assert key in bf_df.attrs, f"missing .attrs['{key}']"
+
+    cash_drag        = bf_df.attrs["cash_drag"]
+    r_p_total_excash = bf_df.attrs["r_p_total_excash"]
+    r_p_total_incl   = bf_df.attrs["r_p_total_incl"]
+
+    # cash_drag is defined as incl − ex-cash, and bf_r_p (ex-cash) == r_p_total_excash.
+    assert abs((r_p_total_incl - r_p_total_excash) - cash_drag) < 1e-9
+    assert abs(float((bf_df["w_p"] * bf_df["r_p"]).sum()) - r_p_total_excash) < 1e-9
+
+    # ex-cash strategic active + cash drag == incl-cash active (total unchanged).
+    r_b_total     = float((bf_df["w_b"] * bf_df["r_b"]).sum())
+    ex_cash_active = r_p_total_excash - r_b_total
+    incl_active    = r_p_total_incl  - r_b_total
+    assert abs((ex_cash_active + cash_drag) - incl_active) < 1e-9, (
+        "strategic active (ex-cash) + cash drag must equal the incl-cash active "
+        "(the total is unchanged; only the split is new)"
     )

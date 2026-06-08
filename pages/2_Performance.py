@@ -891,20 +891,28 @@ with col:
                 },
             )
 
-        # — Algebra summary —
-        sum_effects   = bf_df["total_effect"].sum() * 10_000
-        r_p_total     = (bf_df["w_p"] * bf_df["r_p"]).sum() * 100
-        r_b_total     = (bf_df["w_b"] * bf_df["r_b"]).sum() * 100
-        active        = r_p_total - r_b_total
-        reconciled    = abs(sum_effects - active * 100) < 1.0
+        # — Algebra summary (Phase 38b-2: ex-cash strategic active + operational cash drag) —
+        # BF weights are ex-cash (9 strategic sleeves sum to 1.0); the operational
+        # SPAXX float is broken out as an explicit drag term, NOT erased. The total
+        # active and reported TWR are unchanged — only the decomposition is new:
+        #   strategic active (ex-cash) + cash drag = total active vs the SAA blend.
+        sum_effects    = bf_df["total_effect"].sum() * 10_000
+        r_p_total      = (bf_df["w_p"] * bf_df["r_p"]).sum() * 100   # ex-cash strategic return
+        r_b_total      = (bf_df["w_b"] * bf_df["r_b"]).sum() * 100   # SAA blend
+        ex_cash_active = r_p_total - r_b_total                        # strategic active (ex-cash)
+        cash_drag_pct  = float(bf_df.attrs.get("cash_drag", 0.0)) * 100
+        total_active   = ex_cash_active + cash_drag_pct              # = actual active (incl cash)
+        reconciled     = abs(sum_effects - ex_cash_active * 100) < 1.0
 
-        _bf_s2_gap_bps = (active / 100 - (_r_p_ps - _r_b_ps)) * 10_000
+        # Bridge: strategic active (ex-cash) + cash drag must equal the actual
+        # portfolio active (Stage 2 basis) within 0.5 bps — keeps the reconciliation ✓.
+        _bf_s2_gap_bps = (total_active / 100 - (_r_p_ps - _r_b_ps)) * 10_000
         _bf_reconciled = abs(_bf_s2_gap_bps) < 0.5
         st.caption(
             f"**BF decomposition:**  "
-            f"Portfolio: {r_p_total:.2f}%  &nbsp;·&nbsp;  "
-            f"SAA blend: {r_b_total:.2f}%  &nbsp;·&nbsp;  "
-            f"BF active: {active:+.2f}%  &nbsp;·&nbsp;  "
+            f"Strategic active (ex-cash): {ex_cash_active:+.2f}%  &nbsp;·&nbsp;  "
+            f"Operational cash drag: {cash_drag_pct:+.2f}%  &nbsp;·&nbsp;  "
+            f"Total active vs SAA blend: {total_active:+.2f}%  &nbsp;·&nbsp;  "
             f"Sum of effects: {sum_effects:+.1f} bps  &nbsp;·&nbsp;  "
             f"Algebra check: {'✓' if reconciled else '⚠'}  &nbsp;·&nbsp;  "
             f"vs. Stage 2: {'✓' if _bf_reconciled else '⚠'} {_bf_s2_gap_bps:+.2f} bps"

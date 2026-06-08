@@ -140,6 +140,20 @@ GitHub Actions run after every push and confirm the green checkmark before closi
 
 ---
 
+## Phase 38b-2 — Brinson-Fachler ex-cash + operational cash-drag term
+_2026-06-08_
+
+Brinson-Fachler attribution now computes on an invested (ex-cash) basis
+matching the benchmark, with operational cash drag reported as an explicit
+term: strategic active (ex-cash) + cash drag = total active. The total active
+return and TWR are unchanged — only the decomposition is new; the strategic
+figure rises only because the operational float drag is now a separate line.
+The BF↔Stage-2 reconciliation is bridged by the drag term and holds. Two-stage
+unchanged (Stage 2 = strategic ex-cash + cash drag). Retroactive, matching
+Phase 25/38a. SI: total active +529.5 bps = strategic +595.7 + cash drag −66.2.
+
+---
+
 ## Phase 38b-1 — Household basis clarification
 _2026-06-08_
 
