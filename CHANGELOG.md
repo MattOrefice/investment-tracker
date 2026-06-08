@@ -140,6 +140,15 @@ GitHub Actions run after every push and confirm the green checkmark before closi
 
 ---
 
+## Phase 38c — SAA table display polish
+_2026-06-08_
+
+Display-only formatting of the Sleeve Allocation table: bands render as
+whole percents (3/2) and numeric columns are tightened. No change to
+target values, band values, or the 100.0% sum.
+
+---
+
 ## Phase 38b-2 — Brinson-Fachler ex-cash + operational cash-drag term
 _2026-06-08_
 

@@ -229,8 +229,12 @@ with col:
         width='stretch',
         hide_index=True,
         column_config={
-            "Target (%)": st.column_config.NumberColumn(format="%.1f"),
-            "Band (±%)":  st.column_config.NumberColumn(format="%.1f"),
+            # Numeric columns right-align by default; whole-percent bands drop the
+            # trailing ".0" and both columns are tightened so the figures line up
+            # cleanly. Display only — the underlying target and band values are
+            # unchanged (targets keep their ex-cash decimal; bands stay ±0.03/±0.02).
+            "Target (%)": st.column_config.NumberColumn(format="%.1f", width="small"),
+            "Band (±%)":  st.column_config.NumberColumn(format="%.0f", width="small"),
         },
     )
     total = df["Target (%)"].sum()
