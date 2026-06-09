@@ -234,3 +234,19 @@ def test_regime_methodology_paragraph_renders(macro_app: AppTest) -> None:
         "Regime Methodology expander not found — Phase 43 moved this from inline markdown "
         "to a collapsed expander; if the label changed this test needs updating"
     )
+
+
+# ── Sector Leadership — relocated from the former Market Snapshot page ────────
+
+@pytest.mark.live_data
+def test_sector_leadership_section_renders(macro_app: AppTest) -> None:
+    """Sector Leadership subsection renders with its window radio. Relocated from
+    the former Market Snapshot page (Sector Movers)."""
+    headings = [m.value for m in macro_app.markdown]
+    assert any("Sector Leadership" in h for h in headings), (
+        "Sector Leadership heading not found — relocation regression"
+    )
+    radio_labels = [r.label for r in macro_app.radio]
+    assert any(lbl == "Window" for lbl in radio_labels), (
+        "Sector Leadership window radio not found"
+    )
