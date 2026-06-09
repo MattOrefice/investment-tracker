@@ -1,5 +1,10 @@
-"""Fidelity portfolio positions CSV parser."""
+"""Fidelity portfolio positions CSV parser, and account-history (transaction) parser."""
 from __future__ import annotations
+
+import csv
+import io
+import os
+from datetime import datetime
 
 import pandas as pd
 
@@ -54,3 +59,130 @@ def parse_fidelity_csv(path: str) -> pd.DataFrame:
         df[col] = _clean_numeric(df[col])
 
     return df.reset_index(drop=True)
+
+
+# ── Account-history (transaction) export parser ───────────────────────────────
+#
+# A DIFFERENT format from the positions export above: a BOM + blank line(s) +
+# a "Brokerage…" line, then the header "Run Date,Action,Symbol,…", then
+# transaction rows, then a blank gap + a quoted legal-disclaimer block + a
+# "Date downloaded …" footer. We log each fill LOT separately (tax-lot
+# faithful) and classify non-trade rows (dividends/reinvestments) rather than
+# silently dropping them.
+
+_TXN_HEADER_PREFIX = "Run Date,Action"
+
+
+def _read_text(source) -> str:
+    """Accept a path str, raw bytes, or a file-like (e.g. st.file_uploader)."""
+    if hasattr(source, "read"):
+        data = source.read()
+        return data.decode("utf-8-sig") if isinstance(data, (bytes, bytearray)) else str(data)
+    if isinstance(source, (bytes, bytearray)):
+        return source.decode("utf-8-sig")
+    if isinstance(source, str):
+        if os.path.exists(source):
+            with open(source, encoding="utf-8-sig") as fh:
+                return fh.read()
+        return source  # already raw content
+    raise TypeError(f"unsupported source type for Fidelity transactions: {type(source)!r}")
+
+
+def _parse_run_date(s: str) -> str | None:
+    """MM/DD/YYYY (or 2-digit year) → ISO date string; None if not a date."""
+    s = (s or "").strip()
+    for fmt in ("%m/%d/%Y", "%m/%d/%y"):
+        try:
+            return datetime.strptime(s, fmt).date().isoformat()
+        except ValueError:
+            continue
+    return None
+
+
+def _num(s: str) -> float:
+    return float(str(s).replace(",", "").replace("$", "").strip())
+
+
+def parse_fidelity_transactions(source) -> dict:
+    """Parse a Fidelity account-history (transaction) CSV export.
+
+    ``source`` may be a path, raw bytes, or a file-like object.
+
+    Returns a dict:
+        {
+          "trades":  [ {trade_date, ticker, action, shares, price, amount,
+                        total_value, raw_action}, ... ]  # buys/sells, lot-level
+          "skipped": { "DIVIDEND RECEIVED": n, "REINVESTMENT": m, "unrecognized": k }
+          "errors":  [ str, ... ]
+        }
+
+    - BOM, leading blanks/"Brokerage" line, and the trailing disclaimer/footer
+      block are ignored (only rows with a parseable Run Date + Action are kept).
+    - Quoted Action/Description fields (commas, parens, "S&P500") are handled by
+      csv.DictReader — never split(',').
+    - Classification is by Action PREFIX, not row shape: REINVESTMENT carries a
+      price and quantity but is NOT a discretionary buy.
+    - MULTI-LOT: each CSV row is one trade dict — no aggregation/blending.
+    - Settlement Date is ignored entirely (so "Processing" never matters).
+    """
+    text = _read_text(source)
+    lines = text.splitlines()
+
+    hdr_idx = None
+    for i, ln in enumerate(lines):
+        if ln.lstrip("﻿").strip().startswith(_TXN_HEADER_PREFIX):
+            hdr_idx = i
+            break
+    if hdr_idx is None:
+        return {"trades": [], "skipped": {}, "errors": ["transaction header row not found"]}
+
+    body = "\n".join(ln.lstrip("﻿") for ln in lines[hdr_idx:])
+    reader = csv.DictReader(io.StringIO(body))
+
+    trades: list[dict] = []
+    skipped: dict[str, int] = {}
+    errors: list[str] = []
+
+    for row in reader:
+        iso = _parse_run_date(row.get("Run Date", ""))
+        action = (row.get("Action") or "").strip()
+        if iso is None or not action:
+            continue  # blank gap, disclaimer block, or "Date downloaded …" footer
+
+        act_u = action.upper()
+        if act_u.startswith("YOU BOUGHT") or act_u.startswith("YOU SOLD"):
+            side   = "Buy" if act_u.startswith("YOU BOUGHT") else "Sell"
+            ticker = (row.get("Symbol") or "").strip().upper()
+            try:
+                shares = abs(_num(row.get("Quantity", "")))   # sells carry negative qty
+                price  = _num(row.get("Price ($)", ""))
+            except (ValueError, AttributeError):
+                errors.append(f"unparseable {side} row on {iso} ({ticker or '?'})")
+                continue
+            try:
+                amount = _num(row.get("Amount ($)", ""))
+            except (ValueError, AttributeError):
+                amount = None
+            if not ticker or shares <= 0 or price <= 0:
+                errors.append(f"invalid {side} fields on {iso} ({ticker or '?'})")
+                continue
+            trades.append({
+                "trade_date":  iso,
+                "ticker":      ticker,
+                "action":      side,
+                "shares":      shares,
+                "price":       price,
+                "amount":      amount,
+                "total_value": round(shares * price, 2),
+                "raw_action":  action,
+            })
+        else:
+            if act_u.startswith("DIVIDEND RECEIVED"):
+                key = "DIVIDEND RECEIVED"
+            elif act_u.startswith("REINVESTMENT"):
+                key = "REINVESTMENT"
+            else:
+                key = "unrecognized"
+            skipped[key] = skipped.get(key, 0) + 1
+
+    return {"trades": trades, "skipped": skipped, "errors": errors}
