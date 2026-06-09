@@ -235,6 +235,53 @@ def get_sleeve_weights_on_date(date_str: str) -> pd.DataFrame:
     return df
 
 
+def get_current_market_value(date_str: Optional[str] = None) -> float:
+    """True current account market value for DISPLAY: every share actually held
+    (including DRIP lots) valued at the latest RAW close, plus cash.
+
+    This is DISTINCT from get_portfolio_value_series (adj_close × NON-DRIP shares),
+    which is the total-return series used for RETURNS. DRIP shares are real shares
+    with real market worth, so they belong in the dollar value — even though
+    adj_close already embeds their income for return purposes. The two answer
+    different questions (what is the account worth today vs. what was the
+    total return), so they use different share bases.
+
+    Display-only: this figure must not feed any return calculation. Mirrors the
+    valuation in get_sleeve_weights_on_date (raw close; SPAXX proxied via
+    BIL adj_close normalized to $1 at inception).
+    """
+    d = date_str or date.today().isoformat()
+    holdings = get_holdings_on_date(d)          # all shares, incl DRIP lots
+    if holdings.empty:
+        return 0.0
+
+    look_back = (date.fromisoformat(d) - timedelta(days=7)).isoformat()
+    total = 0.0
+    for ticker, row in holdings.iterrows():
+        shares = float(row["net_shares"])
+        if ticker == "SPAXX":
+            try:
+                p = get_prices("BIL", "2025-05-01", d)
+                if not p.empty:
+                    bil = p["adj_close"].fillna(p["close"])
+                    p0  = bil.first_valid_index()
+                    if p0 is not None and float(bil[p0]) > 0:
+                        bil = bil / float(bil[p0])
+                    price = float(bil.ffill().iloc[-1])
+                else:
+                    price = 1.0
+            except Exception:
+                price = 1.0
+        else:
+            try:
+                p = get_prices(ticker, look_back, d)
+                price = float(p["close"].iloc[-1]) if not p.empty else 0.0
+            except Exception:
+                price = 0.0
+        total += shares * price
+    return round(total, 2)
+
+
 def get_inception_date() -> str:
     """Return ISO date of the first recorded trade, falling back to '2025-05-01'."""
     try:
