@@ -140,6 +140,17 @@ GitHub Actions run after every push and confirm the green checkmark before closi
 
 ---
 
+## Fidelity transaction-CSV import
+_2026-06-09_
+
+Added a Fidelity transaction-CSV importer to the Trade Log: lot-level parsing
+(each fill logged separately for tax-lot fidelity), non-trade classification
+(dividends/reinvestments excluded with a summary), unknown-ticker pre-filter,
+and composite-key multiset dedup so re-importing a cumulative export never
+double-logs. Reuses the existing guarded write path; no schema change.
+
+---
+
 ## Macro percentile caption fix + NFCI financial-conditions panel
 _2026-06-08_
 
