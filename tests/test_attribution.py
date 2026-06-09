@@ -587,18 +587,21 @@ def test_identity_bf_sum_reconciles_to_stage2():
 
 
 def test_bf_per_sleeve_returns_are_total_return():
-    """BF chart International Developed Port Ret must exceed price-only by >= 100 bps.
+    """BF per-sleeve r_p IS the adj_close total return — dividends embedded once,
+    NOT double-counted by adding DRIP shares on top.
 
-    Phase 10.2 regression pin. Pre-fix: brinson_fachler_period() returned
-    price-only sleeve returns (stale inception adj_close, no dividends).
-    Post-fix: DRIP shares added in the holdings loop → r_p includes dividend
-    income. VEA pays ~3% annual yield, so SI total-return must exceed the
-    raw adj_close ratio by at least 100 bps.  If this test fails, check
-    _drip_shares() in src/attribution.py and confirm get_dividends() returns
-    non-empty for VEA over the SI window.
+    Income double-count fix (was Phase 10.2 pin, inverted): adj_close already
+    embeds dividend reinvestment, so brinson_fachler_period() values the actual
+    (non-DRIP) shares at adj_close and must NOT add DRIP-reinvested shares — doing
+    so double-counted income (overstating each sleeve by ~its distribution yield,
+    worst on the FI/high-yield sleeves). The single-ticker International Developed
+    sleeve (VEA) r_p must therefore EQUAL VEA's adj_close ratio over the window,
+    not exceed it by a dividend premium. _last_adj_price IS adjusted close (total
+    return), so the pre-fix "price-only" framing was wrong — that ratio already
+    includes dividends.
     """
     import datetime
-    from src.attribution import brinson_fachler_period, _first_adj_price, _last_adj_price
+    from src.attribution import brinson_fachler_period, _last_adj_price
 
     INCEPTION = "2025-05-01"
     TODAY = datetime.date.today().isoformat()
@@ -617,20 +620,22 @@ def test_bf_per_sleeve_returns_are_total_return():
 
     r_p_total_return = float(intl_rows["r_p"].iloc[0])
 
-    p_start = _first_adj_price("VEA", INCEPTION)
+    # BF values sleeves at adj_close (total return) using _last_adj_price on both
+    # ends. International Developed is held via VEA only, so its BF r_p must equal
+    # VEA's own adj_close ratio — no DRIP-share inflation layered on top.
+    p_start = _last_adj_price("VEA", INCEPTION)
     p_end   = _last_adj_price("VEA", TODAY)
     if p_start <= 0 or p_end <= 0:
         pytest.skip("VEA price data unavailable")
 
-    r_p_price_only = p_end / p_start - 1
-    dividend_premium_bps = (r_p_total_return - r_p_price_only) * 10_000
+    r_p_adj_close = p_end / p_start - 1
+    gap_bps = abs(r_p_total_return - r_p_adj_close) * 10_000
 
-    assert dividend_premium_bps >= 100, (
-        f"International Developed r_p ({r_p_total_return*100:.2f}%) not materially "
-        f"higher than price-only ({r_p_price_only*100:.2f}%). "
-        f"Dividend premium: {dividend_premium_bps:.0f} bps (expected >= 100 bps for ~1yr). "
-        f"DRIP alignment in brinson_fachler_period() may not be applied — check "
-        f"_drip_shares() returns non-zero for VEA."
+    assert gap_bps < 5.0, (
+        f"International Developed r_p ({r_p_total_return*100:.2f}%) must equal VEA's "
+        f"adj_close total return ({r_p_adj_close*100:.2f}%) within 5 bps — adj_close "
+        f"already embeds dividends. Gap {gap_bps:.1f} bps suggests DRIP shares are "
+        f"being double-counted on top of adj_close in brinson_fachler_period()."
     )
 
 

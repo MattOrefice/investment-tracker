@@ -163,19 +163,25 @@ def test_cover_twr_uses_inception_slice_not_period_scoped():
     )
 
 
-def test_cover_current_value_reflects_full_portfolio():
-    """current_value must equal the end-date portfolio value from the inception series."""
+def test_cover_current_value_is_true_mv_not_return_series_endpoint():
+    """current_value must be the TRUE current MV (all shares incl DRIP × raw close,
+    from get_current_market_value), NOT the total-return series endpoint (adj_close
+    × non-DRIP shares). The two differ by the DRIP shares' market worth: here the
+    return series ends at $1,200 but the true MV is $1,234, so the cover must show
+    $1,234 — the dollar value counts the real DRIP shares the return series omits.
+    """
     inception  = "2025-05-01"
     start_date = "2026-01-01"
     end_date   = "2026-03-31"
 
     idx     = pd.date_range(inception, end_date, freq="D")
-    pv_full = pd.Series(1200.0, index=idx)
+    pv_full = pd.Series(1200.0, index=idx)   # total-return series (adj_close × non-DRIP)
 
     sp_flat = _flat_series(inception, end_date)
     bl_flat = _flat_series(inception, end_date)
 
     with patch.object(rpt, "get_portfolio_value_series", return_value=pv_full), \
+         patch.object(rpt, "get_current_market_value", return_value=1234.0), \
          patch.object(rpt, "get_inception_date", return_value=inception), \
          patch.object(rpt, "get_sp500_series", return_value=sp_flat), \
          patch.object(rpt, "get_custom_blended_series", return_value=bl_flat), \
@@ -185,7 +191,7 @@ def test_cover_current_value_reflects_full_portfolio():
 
         result = rpt._build_executive_summary(start_date, end_date)
 
-    assert result["current_value"] == "$1,200"
+    assert result["current_value"] == "$1,234"   # true MV, not the $1,200 return endpoint
 
 
 # ── Benchmark reconciliation: cover card vs performance table ─────────────────

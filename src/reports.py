@@ -36,7 +36,12 @@ from src.factors import (
     regress_fi_sleeve, run_benchmark_attribution_regression,
     run_intl_global_regression, run_sleeve_regressions, sig_marker,
 )
-from src.holdings import get_inception_date, get_portfolio_value_series, get_sleeve_weights_on_date
+from src.holdings import (
+    get_current_market_value,
+    get_inception_date,
+    get_portfolio_value_series,
+    get_sleeve_weights_on_date,
+)
 from src.macro import compute_cape_implied_return, get_series, percentile
 from src.positioning import (
     build_style_box_figure, get_effective_duration,
@@ -274,7 +279,11 @@ def _build_executive_summary(start_date: str, end_date: str) -> dict:
     inception = get_inception_date()
 
     pv_since_inception = get_portfolio_value_series(inception, end_date)
-    current_val = float(pv_since_inception.iloc[-1]) if not pv_since_inception.empty else 0.0
+    # Displayed dollar value = true current MV (all shares incl DRIP × raw close).
+    # The total-return series (pv, adj_close × non-DRIP) is used only for the TWR
+    # below — the dollar figure must not come from the return series, which omits
+    # the real DRIP shares' market worth.
+    current_val = get_current_market_value(end_date)
 
     pv = pv_since_inception[pv_since_inception.index >= pd.Timestamp(start_date)]
     cf = pd.Series(0.0, index=pv.index)

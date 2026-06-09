@@ -14,7 +14,12 @@ from src.attribution import brinson_fachler_period, compute_two_stage_attributio
 from src.benchmarks import get_custom_blended_series, get_naive_60_40_series, get_naive_series, get_sp500_series
 from src.db import get_connection
 from src.factors import run_sleeve_regressions
-from src.holdings import get_inception_date, get_portfolio_value_series, get_sleeve_weights_on_date
+from src.holdings import (
+    get_current_market_value,
+    get_inception_date,
+    get_portfolio_value_series,
+    get_sleeve_weights_on_date,
+)
 from src.performance import compute_risk_metrics
 from src.reports import generate_quarterly_report
 from src.returns import annualize, period_return, twr_daily_linked
@@ -35,7 +40,7 @@ PERIOD_LABEL = {"1M": "1 Month", "3M": "3 Months", "YTD": "YTD",
 # Increment when a bug fix changes what get_portfolio_value_series returns so
 # that Streamlit's @st.cache_data (keyed on function args) invalidates the old
 # cached result automatically rather than serving the pre-fix stale value.
-_PORTFOLIO_CACHE_V = 2
+_PORTFOLIO_CACHE_V = 3
 
 _PALETTE = {
     "portfolio": "#2E4057",   # deep navy
@@ -261,11 +266,16 @@ with col:
     alpha_sp    = port_si - sp500_si
     alpha_bl    = port_si - blended_si
     ytd_return  = period_return("daily", pv, cf, "YTD")
+    # current_val: endpoint of the total-return series (adj_close × non-DRIP) —
+    # used ONLY for the adj_close-basis absolute-return reconciliation below.
     current_val = float(pv.iloc[-1])
+    # current_mv: true current account market value (ALL shares incl DRIP × raw
+    # close) — the dollar figure to DISPLAY. Display-only; never feeds a return.
+    current_mv  = get_current_market_value(TODAY)
 
     # ── Summary banner ────────────────────────────────────────────────────
     st.markdown(
-        f"**${current_val:,.0f}** current value &nbsp;·&nbsp; "
+        f"**${current_mv:,.0f}** current value &nbsp;·&nbsp; "
         f"**{si_days}**-day inception period &nbsp;·&nbsp; "
         f"**{port_si*100:.1f}%** cumulative TWR &nbsp;·&nbsp; "
         f"**{_bps(alpha_bl)}** vs blended &nbsp;·&nbsp; "
@@ -307,7 +317,7 @@ with col:
     m1, m2, m3, m4 = st.columns(4)
 
     inception_delta_pct = f"{port_si*100:+.1f}% since inception"
-    m1.metric("Portfolio value",              f"${current_val:,.0f}", inception_delta_pct)
+    m1.metric("Portfolio value",              f"${current_mv:,.0f}", inception_delta_pct)
     m2.metric("vs. S&P 500 (since inception)",    _bps(alpha_sp),
               f"S&P 500: {_pct(sp500_si)} SI",
               delta_color="off")
@@ -333,17 +343,19 @@ with col:
     _cost_basis    = float(_cost_row[0] or 0.0)
     _series_start  = float(pv.iloc[0])
     if _cost_basis > 0 and _series_start > 0:
-        _unrealized  = current_val - _cost_basis
+        _unrealized  = current_mv - _cost_basis
         _abs_ret_pct = (current_val / _series_start - 1) * 100
         _twr_pct     = port_si * 100
         st.caption(
-            f"Reconciliation: **\\${_cost_basis:,.0f} deployed at inception** → "
-            f"**\\${current_val:,.0f} current value** "
-            f"(**\\${_unrealized:+,.0f}** unrealized gain). "
-            f"Absolute return ({_abs_ret_pct:.1f}%) and cumulative TWR ({_twr_pct:.1f}%) "
-            f"both use the adj_close series — restated retroactively as dividends accrue, "
-            f"so the inception series value is slightly below the original trade prices. "
-            f"TWR is the GIPS-correct measure for benchmark comparison."
+            f"Reconciliation: **\\${_cost_basis:,.0f} cost basis** (all lots, incl "
+            f"reinvested DRIP) → **\\${current_mv:,.0f} current value** (every share held, "
+            f"incl DRIP, at market close; **\\${_unrealized:+,.0f}** unrealized gain). "
+            f"Returns — absolute ({_abs_ret_pct:.1f}%) and cumulative TWR ({_twr_pct:.1f}%) — "
+            f"use the dividend-adjusted total-return series (adj_close × actual non-DRIP "
+            f"shares), which counts dividend income once and is restated retroactively as "
+            f"dividends accrue. That return series is a different basis from the market-value "
+            f"dollar above (which counts the real DRIP shares), so the two are not expected to "
+            f"tie out dollar-for-dollar. TWR is the GIPS-correct measure for benchmark comparison."
         )
     # ── End reconciliation note ────────────────────────────────────────────
 
