@@ -140,6 +140,22 @@ GitHub Actions run after every push and confirm the green checkmark before closi
 
 ---
 
+## Fix demo income double-count; display true portfolio value
+_2026-06-09_
+
+Corrected a dividend-income double-count in the demo: the portfolio was valued
+at adjusted close (which already embeds reinvestment) while ALSO counting DRIP
+lots' added shares — counting income twice and overstating total returns, worst
+on the bond sleeves. Fixed across both identity-linked paths (the TWR value
+series and Brinson-Fachler), restoring the BF↔TWR reconciliation. Returns now
+count income once (adj_close × non-DRIP shares); DRIP lots retained for
+cost-basis/tax displays. Separately, the displayed Portfolio value now uses all
+shares (incl DRIP) × raw close for the true account MV, distinct from the
+total-return series. Demo SI active return corrected from +5.29% to +2.15%
+(vs blended); alpha 3.98% → 1.78%; portfolio value $1,299 → $1,329.
+
+---
+
 ## Fidelity transaction-CSV import
 _2026-06-09_
 

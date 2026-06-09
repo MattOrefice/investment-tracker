@@ -41,6 +41,15 @@ def get_portfolio_value_series(
     Uses adj_close for ETF prices (total-return basis).
     SPAXX is valued at $1/share.
     Weekends / holidays are forward-filled from the previous trading day.
+
+    DRIP lots (lot_source='drip') are EXCLUDED from the share count used here.
+    adj_close already embeds dividend reinvestment into the existing shares, so
+    counting the DRIP-reinvested shares on top of it would double-count income
+    and overstate the total-return TWR (worst on the high-yielding FI sleeves).
+    Valuing the actual (non-DRIP) shares at adj_close gives the correct total
+    return. DRIP lots remain in the trades table for cost-basis / tax-lot
+    displays (see src/tax_lots.py); only this value series excludes them.
+    Personal mode holds no DRIP lots (pay-to-cash), so it is unaffected.
     """
     end = end_date or date.today().isoformat()
     date_range = pd.date_range(start=start_date, end=end, freq="D")
@@ -50,6 +59,7 @@ def get_portfolio_value_series(
             """SELECT trade_date, ticker, action, shares
                FROM trades
                WHERE trade_date <= ?
+                 AND (lot_source IS NULL OR lot_source != 'drip')
                ORDER BY trade_date, trade_id""",
             (end,),
         ).fetchall()
@@ -118,9 +128,9 @@ def get_portfolio_value_series(
 
     common = [t for t in tickers if t in prices_matrix.columns]
 
-    # DRIP reinvestment shares are now persisted as trades with lot_source='drip'.
-    # They are picked up by the SQL query above and included in the holdings_matrix
-    # automatically. No in-memory DRIP adjustment is required.
+    # DRIP reinvestment shares (lot_source='drip') are deliberately EXCLUDED by
+    # the SQL query above: adj_close already embeds dividend reinvestment, so
+    # adding the DRIP shares would double-count income. See the docstring.
 
     return (holdings_matrix[common] * prices_matrix[common]).sum(axis=1)
 
@@ -223,6 +233,53 @@ def get_sleeve_weights_on_date(date_str: str) -> pd.DataFrame:
     df.attrs["invested_value"]       = round(invested, 2)
     df.attrs["cash_weight_of_total"] = round(cash_mv / total, 6) if total else 0.0
     return df
+
+
+def get_current_market_value(date_str: Optional[str] = None) -> float:
+    """True current account market value for DISPLAY: every share actually held
+    (including DRIP lots) valued at the latest RAW close, plus cash.
+
+    This is DISTINCT from get_portfolio_value_series (adj_close × NON-DRIP shares),
+    which is the total-return series used for RETURNS. DRIP shares are real shares
+    with real market worth, so they belong in the dollar value — even though
+    adj_close already embeds their income for return purposes. The two answer
+    different questions (what is the account worth today vs. what was the
+    total return), so they use different share bases.
+
+    Display-only: this figure must not feed any return calculation. Mirrors the
+    valuation in get_sleeve_weights_on_date (raw close; SPAXX proxied via
+    BIL adj_close normalized to $1 at inception).
+    """
+    d = date_str or date.today().isoformat()
+    holdings = get_holdings_on_date(d)          # all shares, incl DRIP lots
+    if holdings.empty:
+        return 0.0
+
+    look_back = (date.fromisoformat(d) - timedelta(days=7)).isoformat()
+    total = 0.0
+    for ticker, row in holdings.iterrows():
+        shares = float(row["net_shares"])
+        if ticker == "SPAXX":
+            try:
+                p = get_prices("BIL", "2025-05-01", d)
+                if not p.empty:
+                    bil = p["adj_close"].fillna(p["close"])
+                    p0  = bil.first_valid_index()
+                    if p0 is not None and float(bil[p0]) > 0:
+                        bil = bil / float(bil[p0])
+                    price = float(bil.ffill().iloc[-1])
+                else:
+                    price = 1.0
+            except Exception:
+                price = 1.0
+        else:
+            try:
+                p = get_prices(ticker, look_back, d)
+                price = float(p["close"].iloc[-1]) if not p.empty else 0.0
+            except Exception:
+                price = 0.0
+        total += shares * price
+    return round(total, 2)
 
 
 def get_inception_date() -> str:

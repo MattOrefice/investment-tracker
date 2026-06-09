@@ -148,23 +148,6 @@ def _last_adj_price(ticker: str, up_to_date: str, window_days: int = 5) -> float
     return 0.0
 
 
-def _drip_shares(
-    ticker: str,
-    original_shares: float,  # kept for call-site compatibility, no longer used
-    start_date: str,
-    end_date: str,
-) -> float:
-    """Return persisted DRIP shares for ticker earned after start_date through end_date."""
-    with get_connection() as conn:
-        row = conn.execute(
-            """SELECT COALESCE(SUM(shares), 0.0) FROM trades
-               WHERE ticker = ? AND lot_source = 'drip'
-               AND trade_date > ? AND trade_date <= ?""",
-            (ticker, start_date, end_date),
-        ).fetchone()
-    return float(row[0])
-
-
 def brinson_fachler_period(
     start_date: str,
     end_date: str | None = None,
@@ -194,12 +177,17 @@ def brinson_fachler_period(
         ).fetchall()
         benchmark_weights = {r["name"]: r["target_weight"] for r in wt_rows}
 
-        # Holdings at start of period
+        # Holdings at start of period. DRIP lots (lot_source='drip') are EXCLUDED:
+        # sleeves are valued at adj_close, which already embeds dividend
+        # reinvestment, so counting DRIP-reinvested shares on top would
+        # double-count income (matches get_portfolio_value_series; keeps the
+        # BF↔TWR reconciliation identity).
         hold_rows = conn.execute(
             """SELECT ticker,
                       SUM(CASE WHEN LOWER(action)='buy' THEN shares ELSE -shares END) AS net_shares
                FROM trades
                WHERE trade_date <= ?
+                 AND (lot_source IS NULL OR lot_source != 'drip')
                GROUP BY ticker
                HAVING net_shares > 0""",
             (start_date,),
@@ -247,10 +235,11 @@ def brinson_fachler_period(
         else:
             p_start = _last_adj_price(ticker, start_date)  # backward-fill matches pv ffill
             p_end   = _last_adj_price(ticker, end)
-            # shares from hold_rows already includes all persisted DRIP lots up to start_date.
-            period_drip = _drip_shares(ticker, shares, start_date, end)
+            # Actual (non-DRIP) shares valued at adj_close on both ends → the sleeve
+            # total return p_end/p_start − 1, with dividend income already embedded
+            # in adj_close. No DRIP-share addition (that would double-count income).
             start_values[sleeve] = start_values.get(sleeve, 0.0) + shares * p_start
-            end_values[sleeve]   = end_values.get(sleeve, 0.0)   + (shares + period_drip) * p_end
+            end_values[sleeve]   = end_values.get(sleeve, 0.0)   + shares * p_end
 
     total_start = sum(start_values.values())
     if total_start == 0:
