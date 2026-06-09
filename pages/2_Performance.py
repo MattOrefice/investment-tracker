@@ -35,7 +35,7 @@ PERIOD_LABEL = {"1M": "1 Month", "3M": "3 Months", "YTD": "YTD",
 # Increment when a bug fix changes what get_portfolio_value_series returns so
 # that Streamlit's @st.cache_data (keyed on function args) invalidates the old
 # cached result automatically rather than serving the pre-fix stale value.
-_PORTFOLIO_CACHE_V = 2
+_PORTFOLIO_CACHE_V = 3
 
 _PALETTE = {
     "portfolio": "#2E4057",   # deep navy

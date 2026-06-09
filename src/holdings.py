@@ -41,6 +41,15 @@ def get_portfolio_value_series(
     Uses adj_close for ETF prices (total-return basis).
     SPAXX is valued at $1/share.
     Weekends / holidays are forward-filled from the previous trading day.
+
+    DRIP lots (lot_source='drip') are EXCLUDED from the share count used here.
+    adj_close already embeds dividend reinvestment into the existing shares, so
+    counting the DRIP-reinvested shares on top of it would double-count income
+    and overstate the total-return TWR (worst on the high-yielding FI sleeves).
+    Valuing the actual (non-DRIP) shares at adj_close gives the correct total
+    return. DRIP lots remain in the trades table for cost-basis / tax-lot
+    displays (see src/tax_lots.py); only this value series excludes them.
+    Personal mode holds no DRIP lots (pay-to-cash), so it is unaffected.
     """
     end = end_date or date.today().isoformat()
     date_range = pd.date_range(start=start_date, end=end, freq="D")
@@ -50,6 +59,7 @@ def get_portfolio_value_series(
             """SELECT trade_date, ticker, action, shares
                FROM trades
                WHERE trade_date <= ?
+                 AND (lot_source IS NULL OR lot_source != 'drip')
                ORDER BY trade_date, trade_id""",
             (end,),
         ).fetchall()
@@ -118,9 +128,9 @@ def get_portfolio_value_series(
 
     common = [t for t in tickers if t in prices_matrix.columns]
 
-    # DRIP reinvestment shares are now persisted as trades with lot_source='drip'.
-    # They are picked up by the SQL query above and included in the holdings_matrix
-    # automatically. No in-memory DRIP adjustment is required.
+    # DRIP reinvestment shares (lot_source='drip') are deliberately EXCLUDED by
+    # the SQL query above: adj_close already embeds dividend reinvestment, so
+    # adding the DRIP shares would double-count income. See the docstring.
 
     return (holdings_matrix[common] * prices_matrix[common]).sum(axis=1)
 

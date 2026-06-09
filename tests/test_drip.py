@@ -263,56 +263,114 @@ def test_backfill_skips_spaxx(minimal_db):
     assert "SPAXX" not in results
 
 
+# ── Income double-count: DRIP excluded from value series, kept in holdings ───
+
+def test_drip_excluded_from_value_series_but_kept_in_holdings(minimal_db, monkeypatch):
+    """Worked-proof: a flat adj_close (price drop exactly offset by the dividend →
+    0% total return) plus a DRIP lot. With the income double-count fix, the value
+    series stays flat (0% TWR = adj_close on the actual shares); the pre-fix code
+    would jump when the DRIP shares were added on top of adj_close. The DRIP shares
+    must still be present in the holdings/position query for cost-basis/tax displays.
+    """
+    import src.holdings as H
+    from src.holdings import get_portfolio_value_series, get_holdings_on_date
+    from src.db import get_connection
+
+    # Fixture seeds 10 VOO @ 500 (initial). Add a DRIP lot on top.
+    with get_connection() as conn:
+        conn.execute(
+            "INSERT INTO trades (account_id, ticker, trade_date, action, shares, price, lot_source)"
+            " VALUES (1, 'VOO', '2025-06-15', 'buy', 0.5, 98.0, 'drip')"
+        )
+        conn.commit()
+
+    # Flat adj_close = 98 → total return 0% (the dividend is already embedded in
+    # adj_close; price-only decline is exactly offset). Deterministic, offline.
+    def _fake_prices(ticker, start, end=None):
+        rng = pd.date_range(start, end or date.today().isoformat(), freq="D")
+        return pd.DataFrame(
+            {"close": 98.0, "adj_close": 98.0}, index=[d.date() for d in rng]
+        )
+    monkeypatch.setattr(H, "get_prices", _fake_prices)
+
+    pv = get_portfolio_value_series("2025-05-01", "2025-07-01")
+
+    # Actual (non-DRIP) shares = 10 → flat 10 × 98 = 980 throughout. If the 0.5 DRIP
+    # shares leaked into the value series it would jump to 10.5 × 98 = 1029.
+    assert pv.nunique() == 1, (
+        f"value series not flat — DRIP shares double-counted in: {sorted(pv.unique())}"
+    )
+    assert pv.iloc[-1] == pytest.approx(980.0)            # 10 × 98, NOT 1029
+    assert (pv.iloc[-1] / pv.iloc[0] - 1) == pytest.approx(0.0, abs=1e-9)  # correct TR
+
+    # The DRIP shares ARE retained for position / cost-basis / tax-lot displays.
+    holdings = get_holdings_on_date("2025-07-01")
+    assert holdings.loc["VOO", "net_shares"] == pytest.approx(10.5)   # 10 + 0.5 DRIP
+
+
 # ── TWR reconciliation — integration ─────────────────────────────────────────
 
 @pytest.mark.slow
-def test_twr_reconciliation_within_5bps():
-    """
-    After backfill, TWR for all periods must match pre-backfill values
-    within 5 basis points (0.0005). Uses demo DB.
+def test_drip_lots_do_not_inflate_value_series_twr():
+    """Income double-count fix (replaces the old date-stale TWR-baseline pin).
 
-    Pre-backfill baseline (captured before Phase 17):
-      1M  +5.2050%    3M  +5.7566%    YTD +12.4148%
-      1Y  +31.7340%   SI  +33.5249%
+    Persisted DRIP lots must NOT change the value-series TWR: adj_close already
+    embeds dividend reinvestment, so valuing the actual (non-DRIP) shares at
+    adj_close is the correct total return. This reconstructs the pre-fix
+    DRIP-INCLUDED series (the bug: holdings × adj_close WITH the DRIP shares) and
+    asserts the production (DRIP-excluded) SI TWR is materially LOWER — the removed
+    double-count — by a margin consistent with the demo's cumulative distribution
+    yield. Date-independent: no frozen baselines (the old pin's 1M/3M/etc.
+    constants had drifted with the calendar regardless of this fix). Uses demo DB.
     """
     import os
     os.environ.setdefault("TRACKER_MODE", "demo")
 
     from src.holdings import get_portfolio_value_series
     from src.returns import period_return
+    from src.prices import get_prices
     from src.db import get_connection
 
     INCEPTION = "2025-05-01"
     TODAY     = date.today().isoformat()
 
-    BASELINE = {
-        "1M":  0.052050,
-        "3M":  0.057566,
-        "YTD": 0.124148,
-        "1Y":  0.317340,
-        "SI":  0.335249,
-    }
+    prod = get_portfolio_value_series(INCEPTION, TODAY)   # DRIP-excluded (fixed)
+    if prod.dropna().empty:
+        pytest.skip("Portfolio data empty — skipped in local/empty-DB mode")
 
     with get_connection() as conn:
-        row = conn.execute(
-            "SELECT SUM(shares * price) FROM trades WHERE trade_date=? AND LOWER(action)='buy' AND lot_source='initial'",
-            (INCEPTION,),
-        ).fetchone()
-    seed = float(row[0]) if row and row[0] else 0.0
+        drip_rows = conn.execute(
+            "SELECT trade_date, ticker, shares FROM trades "
+            "WHERE lot_source='drip' AND trade_date <= ? ORDER BY trade_date",
+            (TODAY,),
+        ).fetchall()
+    if not drip_rows:
+        pytest.skip("No DRIP lots in demo DB")
 
-    values = get_portfolio_value_series(INCEPTION, TODAY)
-    cf     = pd.Series(0.0, index=values.index)
-    cf.iloc[0] = seed
+    # Reconstruct the pre-fix DRIP-share contribution, valued at adj_close — the
+    # exact double-count the fix removes (adj_close + DRIP shares on top).
+    drip_df = pd.DataFrame([dict(r) for r in drip_rows])
+    drip_df["trade_date"] = pd.to_datetime(drip_df["trade_date"])
+    delta = pd.Series(0.0, index=prod.index)
+    for ticker, grp in drip_df.groupby("ticker"):
+        cum = (grp.groupby("trade_date")["shares"].sum().cumsum()
+               .reindex(prod.index).ffill().fillna(0.0))
+        p = get_prices(ticker, INCEPTION, TODAY)
+        p.index = pd.to_datetime(p.index)
+        px = p["adj_close"].fillna(p["close"]).reindex(prod.index).ffill()
+        delta = delta + cum * px
 
-    TOLERANCE = 0.0005  # 5 basis points
+    incl = prod + delta                       # pre-fix DRIP-included series
+    cf   = pd.Series(0.0, index=prod.index)
+    si_prod = period_return("daily", prod, cf, "SI")
+    si_incl = period_return("daily", incl, cf, "SI")
 
-    for period, baseline in BASELINE.items():
-        actual = period_return("daily", values, cf, period)
-        diff   = abs(actual - baseline)
-        assert diff <= TOLERANCE, (
-            f"{period} TWR diverged: baseline={baseline * 100:.4f}% "
-            f"actual={actual * 100:.4f}% diff={diff * 100:.4f}% > 5bps"
-        )
+    assert si_incl - si_prod > 0.005, (
+        f"DRIP-included SI TWR ({si_incl*100:.3f}%) should exceed the production "
+        f"DRIP-excluded SI TWR ({si_prod*100:.3f}%) by >50 bps (the removed income "
+        f"double-count). Got {(si_incl - si_prod)*100:.3f}%. If this is ~0, the DRIP "
+        f"exclusion in get_portfolio_value_series may have regressed."
+    )
 
 
 # ── derive_payment_date ───────────────────────────────────────────────────────
