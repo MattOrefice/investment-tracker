@@ -16,6 +16,7 @@ from src.macro import (
     interpret_excess_cape,
     interpret_gdp_growth,
     interpret_hy_spread,
+    interpret_nfci,
     interpret_us_vs_intl_spread,
 )
 from src.prices import get_prices
@@ -227,7 +228,11 @@ with col:
     with hdr_l:
         st.caption(
             f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M')}. "
-            "Data: FRED & Shiller. Percentiles are window-relative (toggle selector to recompute)."
+            "Data: FRED & Shiller. Percentile basis varies by panel and is labeled on each: the "
+            "macro-indicator percentiles (growth, inflation, rates, the dollar) are window-relative "
+            "— toggle a panel's selector to recompute against that window — while the valuation "
+            "(CAPE/ECY full leg), credit, factor-regime, value-spread, and financial-conditions "
+            "percentiles are measured against full history."
         )
     with hdr_r:
         if not IS_DEMO and st.button("Force refresh", type="secondary",
@@ -286,6 +291,7 @@ with col:
         core_cpi,    _cpi_err    = _try_fred("CPILFESL",          "1957-01-01")
         cfnai_diff,  _cfnai_err  = _try_fred("CFNAIDIFF",         "1967-01-01")
         dtwexbgs,    _dtwex_err  = _try_fred("DTWEXBGS",          "2006-01-01")
+        nfci,        _nfci_err   = _try_fred("NFCI",              "1971-01-01")
 
     # ── Compute rate volatility from DGS10 (VXTLT not in the price cache) ──
     rate_vol_21 = None
@@ -1440,6 +1446,67 @@ with col:
         st.divider()
     else:
         _panel_error("CCC Credit Spreads (OAS)", _ccc_oas_err, "retry_ccc")
+        st.divider()
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # 5b. FINANCIAL CONDITIONS (NFCI)
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    st.markdown("### Financial Conditions")
+
+    st.markdown("#### National Financial Conditions Index (NFCI)")
+    if nfci is not None and not nfci.dropna().empty:
+
+        nfci_clean   = nfci.dropna()
+        current_nfci = float(nfci_clean.iloc[-1])
+        nfci_as_of   = nfci_clean.index[-1].strftime("%b %d, %Y")
+        nfci_since   = nfci_clean.index[0].strftime("%b %Y")
+        # Full-history percentile (NOT windowed) — consistent with the valuation and
+        # factor-regime reads; a windowed percentile on financial conditions would rest
+        # on too few independent observations to be meaningful.
+        nfci_pctile  = macro.percentile(nfci_clean, current_nfci)
+
+        fig_nfci = go.Figure()
+        _add_recession_shading(fig_nfci, rec_periods or [], nfci_clean.index[0].isoformat())
+        fig_nfci.add_trace(go.Scatter(
+            x=nfci_clean.index, y=nfci_clean.values,
+            mode="lines", name="NFCI",
+            line=dict(color=_C["primary"], width=1.5),
+        ))
+        fig_nfci.add_hline(
+            y=0, line_dash="dash", line_color=_C["ref"], line_width=1,
+            annotation_text="0 = historical average  |  above: tighter  |  below: looser",
+            annotation_position="top left", annotation_font_size=9,
+            annotation_font_color="#888",
+        )
+        _add_current_annotation(
+            fig_nfci, current_nfci,
+            f"Current {current_nfci:+.2f} ({_ordinal(nfci_pctile)} pct, full history)",
+        )
+        _apply_style(fig_nfci)
+        fig_nfci.update_yaxes(title_text="NFCI (std. units)")
+        _yr = _tight_yrange(nfci_clean, [current_nfci, 0.0])
+        if _yr:
+            fig_nfci.update_yaxes(range=_yr)
+        st.plotly_chart(fig_nfci, width='stretch')
+        st.metric("NFCI", f"{current_nfci:+.2f}")
+        st.caption(
+            f"As of {nfci_as_of} (weekly) · {_ordinal(nfci_pctile)} percentile vs full history "
+            f"(data since {nfci_since})"
+        )
+        st.caption(interpret_nfci(current_nfci))
+        st.caption(
+            "The Chicago Fed's National Financial Conditions Index is a broad weekly composite of "
+            "over 100 measures of US financial activity across money markets, debt and equity "
+            "markets, and the traditional and shadow banking systems — a single summary of "
+            "system-wide financial conditions, distinct from the rate-volatility and credit-spread "
+            "components shown above. Positive values indicate conditions tighter than the historical "
+            "average; negative, looser. Percentile is measured against full history (since "
+            f"{nfci_since}), consistent with the valuation and factor-regime reads. FRED NFCI."
+        )
+        st.divider()
+    else:
+        _panel_error("National Financial Conditions Index (NFCI)", _nfci_err, "retry_nfci")
         st.divider()
 
     # ═══════════════════════════════════════════════════════════════════════════
