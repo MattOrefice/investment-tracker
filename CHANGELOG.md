@@ -140,6 +140,17 @@ GitHub Actions run after every push and confirm the green checkmark before closi
 
 ---
 
+## Remove Market Snapshot; relocate Sector Movers to Macro
+_2026-06-09_
+
+Removed the Market Snapshot page (its size/value and regional reads were
+recent-moves duplicates of Macro's structural, longer-horizon views). Relocated
+the one additive section, Sector Movers, to the Macro page as a Sector
+Leadership subsection near Factor Regime. src/market_snapshot.py trimmed to the
+sector helpers.
+
+---
+
 ## Fix demo income double-count; display true portfolio value
 _2026-06-09_
 
