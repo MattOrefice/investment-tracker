@@ -19,6 +19,7 @@ from src.macro import (
     interpret_nfci,
     interpret_us_vs_intl_spread,
 )
+from src.market_snapshot import SECTOR_ETFS, WINDOWS, rank_sectors, trailing_returns
 from src.prices import get_prices
 from src.prose_helpers import percentile_label
 from src.ui_helpers import render_footer, render_page_header
@@ -194,6 +195,23 @@ def _load_recession_periods() -> list:
 def _load_price_series(ticker: str, start_date: str) -> pd.Series:
     df = get_prices(ticker, start_date, TODAY)
     return df["adj_close"].ffill()
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _load_sector_prices(start_date: str) -> dict:
+    """Adjusted-close series for the 11 SPDR Select Sector ETFs, keyed by ticker."""
+    out = {}
+    for ticker in SECTOR_ETFS:
+        try:
+            df = get_prices(ticker, start_date, TODAY)
+        except Exception:
+            continue
+        if df is None or df.empty:
+            continue
+        s = df["adj_close"].ffill()
+        s.index = pd.to_datetime(s.index)   # get_prices yields a date-object index
+        out[ticker] = s.sort_index()
+    return out
 
 
 @st.cache_data(ttl=86400, show_spinner=False)
@@ -1869,7 +1887,68 @@ with col:
         st.divider()
 
     # ═══════════════════════════════════════════════════════════════════════════
-    # 8. FACTOR REGIME
+    # 8. SECTOR LEADERSHIP
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    st.markdown("### Sector Leadership")
+    st.caption(
+        "The 11 SPDR Select Sector ETFs ranked by trailing return — which slices "
+        "of the US equity market are leading and lagging. A recent-moves read that "
+        "complements the structural size and style factor charts below."
+    )
+
+    _sector_prices = _load_sector_prices(ONE_YR_AGO)
+    if not _sector_prices:
+        st.info("Sector data unavailable.")
+    else:
+        _sec_rt  = trailing_returns(_sector_prices)
+        _sec_win = st.radio(
+            "Window", WINDOWS, index=WINDOWS.index("YTD"), horizontal=True,
+            key="sector_leadership_window",
+            format_func=lambda w: "1D (since prior close)" if w == "1D" else w,
+        )
+        _ranked = rank_sectors(_sec_rt, _sec_win)
+        if _ranked.empty:
+            st.info("Sector data unavailable for this window.")
+        else:
+            _asc = _ranked.iloc[::-1]  # ascending → highest at top of horizontal bar
+            _sec_fig = go.Figure(go.Bar(
+                x=(_asc[_sec_win] * 100).values,
+                y=_asc["Sector"].values,
+                orientation="h",
+                marker=dict(
+                    color=(_asc[_sec_win] * 100).values, colorscale="RdYlGn",
+                    cmid=0, colorbar=dict(title="%", thickness=12),
+                ),
+                text=[f"{v * 100:+.1f}%" for v in _asc[_sec_win].values],
+                textposition="auto",
+                hovertemplate="%{y}: %{x:+.2f}%<extra></extra>",
+            ))
+            _sec_fig.add_vline(x=0, line_dash="dash", line_color=_C["ref"], line_width=1)
+            _sec_fig.update_layout(
+                height=380,
+                margin=dict(l=0, r=0, t=8, b=0),
+                paper_bgcolor="white",
+                plot_bgcolor="#FAFAFA",
+                font=dict(color="#333333", size=12),
+                xaxis=dict(title=f"{_sec_win} return (%)", gridcolor="#EBEBEB", zeroline=False),
+                yaxis=dict(tickfont_size=11),
+            )
+            st.plotly_chart(_sec_fig, width="stretch", config={"displayModeBar": False})
+
+            _best, _worst = _ranked.iloc[0], _ranked.iloc[-1]
+            _b_col, _w_col = st.columns(2)
+            _b_col.metric(f"Best ({_sec_win})",  _best["Sector"],  f"{_best[_sec_win] * 100:+.2f}%")
+            _w_col.metric(f"Worst ({_sec_win})", _worst["Sector"], f"{_worst[_sec_win] * 100:+.2f}%")
+            st.caption(
+                "Simple trailing total return on the dividend-adjusted close, keyed "
+                "off each ETF's latest close. 1D is the move since the prior close "
+                "(spans weekends: Fri → Mon)."
+            )
+    st.divider()
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # 9. FACTOR REGIME
     # ═══════════════════════════════════════════════════════════════════════════
 
     st.markdown("### Factor Regime")

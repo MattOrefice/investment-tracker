@@ -1,5 +1,6 @@
 """
-Market Snapshot — last-close-dated trailing-window returns and movers.
+Sector leadership — last-close-dated trailing-window returns for the SPDR
+sector ETFs (relocated from the former Market Snapshot page to the Macro page).
 
 Streamlit-free, testable. All returns are SIMPLE total returns on the
 dividend-adjusted close, keyed off each series' own latest date (or a passed
@@ -9,7 +10,7 @@ since the prior close, which spans weekends (Fri → Mon).
 from __future__ import annotations
 
 from datetime import date, timedelta
-from typing import NamedTuple, Optional
+from typing import Optional
 
 import pandas as pd
 
@@ -112,65 +113,3 @@ def rank_sectors(returns_df: pd.DataFrame, window: str) -> pd.DataFrame:
         "Sector": [SECTOR_ETFS[t] for t in col.index],
         window:   col.values,
     })
-
-
-def relative_trailing(
-    returns_df: pd.DataFrame,
-    long_t: str,
-    short_t: str,
-    windows: Optional[list[str]] = None,
-) -> pd.Series:
-    """
-    Per-window relative return ``long_t − short_t`` (e.g. IWM−IWB, IWD−IWF).
-    """
-    windows = list(windows) if windows is not None else list(WINDOWS)
-    out = {}
-    for w in windows:
-        lv = returns_df.loc[long_t, w]  if long_t  in returns_df.index else float("nan")
-        sv = returns_df.loc[short_t, w] if short_t in returns_df.index else float("nan")
-        out[w] = lv - sv
-    return pd.Series(out)[windows]
-
-
-def latest_common_date(price_map: dict[str, pd.Series]) -> Optional[pd.Timestamp]:
-    """
-    The latest date reached by ALL fetched series (min of per-ticker last dates),
-    so the page never dates itself to data a ticker lacks. None if no data.
-    """
-    last_dates = [
-        pd.Timestamp(s.dropna().index.max())
-        for s in price_map.values()
-        if not s.dropna().empty
-    ]
-    return min(last_dates) if last_dates else None
-
-
-class MovingAverageTrend(NamedTuple):
-    """Broad-market trend read: latest price vs its moving average."""
-    price:          float
-    moving_average: float
-    pct_from_ma:    float   # price / ma − 1 (fraction); positive = above the MA
-    direction:      str     # "uptrend" | "downtrend" | "insufficient data"
-    sufficient:     bool    # True when ≥ window bars were available
-
-
-def trend_vs_moving_average(
-    price_series: pd.Series, window: int = 200
-) -> MovingAverageTrend:
-    """
-    Latest close vs its ``window``-day simple moving average — a standard trend
-    filter. Above the MA = uptrend, below = downtrend.
-
-    Uses the dividend-adjusted close passed in. Returns an "insufficient data"
-    state (NaNs, sufficient=False) if fewer than ``window`` bars are available.
-    """
-    s = price_series.dropna().sort_index()
-    if len(s) < window:
-        return MovingAverageTrend(
-            float("nan"), float("nan"), float("nan"), "insufficient data", False
-        )
-    price = float(s.iloc[-1])
-    ma    = float(s.rolling(window).mean().iloc[-1])
-    pct   = price / ma - 1 if ma else float("nan")
-    direction = "uptrend" if price >= ma else "downtrend"
-    return MovingAverageTrend(price, ma, pct, direction, True)
