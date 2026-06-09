@@ -140,6 +140,20 @@ GitHub Actions run after every push and confirm the green checkmark before closi
 
 ---
 
+## Macro percentile caption fix + NFCI financial-conditions panel
+_2026-06-08_
+
+Corrected the global percentile caption to accurately describe the windowed
+(macro indicators) vs full-history (valuation, credit, factor-regime,
+value-spread) basis — the per-panel labels were already correct; only the
+global header over-claimed. Added an NFCI (Chicago Fed National Financial
+Conditions Index) panel: a composite financial-conditions read with a
+full-history percentile and sign-aware interpretation, the one genuine
+axis-gap beyond the existing rate-vol and credit components. No existing
+percentile logic changed.
+
+---
+
 ## Phase 38c — SAA table display polish
 _2026-06-08_
 
