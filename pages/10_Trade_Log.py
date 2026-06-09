@@ -399,6 +399,123 @@ def render_trade_form():
 
 
 # ────────────────────────────────────────────────────────────────────────────
+# Fidelity transaction-CSV import
+# Parses a Fidelity account-history export, logs each fill as its own tax lot,
+# classifies/excludes non-trade rows, pre-filters unknown tickers (FK-safe), and
+# dedups via a composite-key multiset so re-importing a cumulative export does
+# not double-log. Writes through the existing guarded write_trades_batch.
+# ────────────────────────────────────────────────────────────────────────────
+
+def render_fidelity_import():
+    from datetime import date as _imp_date
+
+    from src.ingestion.fidelity import parse_fidelity_transactions
+    from src.ingestion.trade_import import dedupe_against_existing, split_known_tickers
+    from src.trade_writer import build_thesis_lookup, write_trades_batch
+
+    if not is_write_enabled():
+        st.info(
+            "Public demo: CSV import is illustrative; nothing is written to the store."
+        )
+
+    up = st.file_uploader(
+        "Fidelity account-history CSV",
+        type="csv",
+        key="fidelity_txn_csv",
+        help="Export your Fidelity account Activity (Accounts & Trade → History → "
+             "Download) as CSV and upload it here.",
+    )
+    if up is None:
+        st.caption(
+            "Each fill is logged as a separate tax lot. Dividends and reinvestments are "
+            "classified and skipped; unknown tickers (not in the securities table) are "
+            "skipped; re-uploading a cumulative export will not double-log."
+        )
+        return
+
+    try:
+        parsed = parse_fidelity_transactions(up)
+    except Exception as exc:
+        st.error(f"Could not parse the CSV: {exc}")
+        return
+
+    known_set = {s["ticker"] for s in data["securities"]}
+    known_lots, unknown_lots = split_known_tickers(parsed["trades"], known_set)
+    to_import, already = dedupe_against_existing(known_lots, data["trades"])
+
+    sk      = parsed["skipped"]
+    n_div   = sk.get("DIVIDEND RECEIVED", 0)
+    n_reinv = sk.get("REINVESTMENT", 0)
+    n_other = sum(v for k, v in sk.items() if k not in ("DIVIDEND RECEIVED", "REINVESTMENT"))
+    unk_syms = sorted({l["ticker"] for l in unknown_lots})
+
+    summary = (
+        f"**{len(parsed['trades'])}** trade lots parsed · "
+        f"**{len(already)}** already logged (skipped) · "
+        f"non-trade rows skipped: {n_div} dividends, {n_reinv} reinvestments"
+    )
+    if n_other:
+        summary += f", {n_other} other"
+    if unknown_lots:
+        summary += f" · **{len(unknown_lots)}** unknown-ticker rows skipped ({', '.join(unk_syms)})"
+    if parsed["errors"]:
+        summary += f" · {len(parsed['errors'])} parse errors"
+    st.caption(summary)
+
+    if not to_import:
+        st.success("Nothing new to import — all trade lots in this file are already logged.")
+        return
+
+    preview = pd.DataFrame([{
+        "Date":   l["trade_date"],
+        "Ticker": l["ticker"],
+        "Action": l["action"],
+        "Shares": l["shares"],
+        "Price":  l["price"],
+        "Total":  l["total_value"],
+    } for l in to_import])
+    st.dataframe(
+        preview,
+        width="stretch",
+        hide_index=True,
+        column_config={
+            "Price":  st.column_config.NumberColumn(format="$%.2f"),
+            "Total":  st.column_config.NumberColumn(format="$%.2f"),
+            "Shares": st.column_config.NumberColumn(format="%.4f"),
+        },
+    )
+
+    if st.button(
+        f"Confirm import — {len(to_import)} lot{'s' if len(to_import) != 1 else ''}",
+        type="primary",
+        disabled=not is_write_enabled(),
+        key="fidelity_confirm",
+    ):
+        if not is_write_enabled():
+            write_guard_toast()
+            return
+        thesis_lookup = build_thesis_lookup(data["pos_theses"])
+        today = _imp_date.today().isoformat()
+        trades_list = [{
+            "ticker":      l["ticker"],
+            "trade_date":  l["trade_date"],
+            "shares":      l["shares"],
+            "price":       l["price"],
+            "total_value": l["total_value"],
+            "action":      l["action"],
+            "thesis_id":   thesis_lookup.get(l["ticker"]),
+            "lot_source":  "Fidelity CSV",
+            "notes":       f"Imported from Fidelity CSV {today} | fp: {l['fingerprint']}",
+        } for l in to_import]
+        expected = round(sum(l["total_value"] for l in to_import), 2)
+        if write_trades_batch(trades_list, expected):
+            st.session_state["trade_success"] = f"Imported {len(trades_list)} trade lots from Fidelity CSV."
+            st.rerun()
+        else:
+            st.error("Import failed — no trades were written (check the write guard).")
+
+
+# ────────────────────────────────────────────────────────────────────────────
 # Tab 1: Trades
 # ────────────────────────────────────────────────────────────────────────────
 
@@ -482,6 +599,9 @@ with tab_trades:
             if is_write_enabled():
                 with st.expander("Log a new trade"):
                     render_trade_form()
+
+        with st.expander("Import from Fidelity CSV"):
+            render_fidelity_import()
 
 
 # ────────────────────────────────────────────────────────────────────────────
