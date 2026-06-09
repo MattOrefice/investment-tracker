@@ -11,8 +11,9 @@
 .streamlit/secrets.toml
 
 # Local databases
-# tracker.db holds real holdings — never committed
+# tracker.db (real holdings) and any backup variants (.bak etc.) — never committed
 data/tracker.db
+data/tracker.db*
 # demo.db is committed intentionally (paper trades for Streamlit Cloud)
 
 # Fidelity exports — personal portfolio data, never committed
