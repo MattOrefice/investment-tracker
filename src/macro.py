@@ -483,6 +483,39 @@ def interpret_us_vs_intl_spread(spread_pp: float, rolling_mean_pp: float) -> str
     )
 
 
+def interpret_nfci(value: float) -> str:
+    """Banded interpretation of the Chicago Fed National Financial Conditions Index.
+
+    NFCI is standardized (mean 0, std 1): POSITIVE = financial conditions TIGHTER
+    than the historical average, NEGATIVE = LOOSER, near-zero = around average.
+    Crisis peaks run well above +1; sustained easy-money regimes sit below zero.
+    The sign convention is the opposite of a valuation percentile — high NFCI is
+    "tight/stressed," not "expensive."
+    """
+    if value >= 0.5:
+        return (
+            f"NFCI at {value:+.2f} signals financial conditions materially TIGHTER than the "
+            "historical average — elevated composite stress across money, debt, equity, and "
+            "shadow-banking markets. Tight conditions historically precede credit-spread widening "
+            "and pressure on risk assets, favoring a quality bias in the equity sleeves."
+        )
+    if value <= -0.5:
+        return (
+            f"NFCI at {value:+.2f} signals financial conditions materially LOOSER than the "
+            "historical average — accommodative composite conditions across money, debt, equity, "
+            "and shadow-banking markets, historically supportive of risk assets."
+        )
+    lean = (
+        "leaning slightly tighter than" if value > 0
+        else "leaning slightly looser than" if value < 0
+        else "right at"
+    )
+    return (
+        f"NFCI at {value:+.2f} is around the historical average ({lean} the long-run norm) — "
+        "financial conditions are neither notably tight nor notably loose."
+    )
+
+
 def format_ur_delta(delta_bps: float) -> str:
     """Format the unemployment rate year-over-year delta for display.
 

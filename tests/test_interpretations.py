@@ -30,6 +30,7 @@ from src.macro import (
     interpret_excess_cape,
     interpret_gdp_growth,
     interpret_hy_spread,
+    interpret_nfci,
     interpret_us_vs_intl_spread,
 )
 from src.factors import (
@@ -431,3 +432,59 @@ class TestInterpretCorrelations:
 
     def test_no_unrendered_placeholders(self):
         _assert_no_placeholders(interpret_correlations(_make_corr()))
+
+
+# ── interpret_nfci (NFCI financial-conditions panel, sign-aware) ──────────────
+
+class TestInterpretNFCI:
+    """NFCI is standardized (mean 0, std 1): positive = TIGHTER conditions,
+    negative = LOOSER, near-zero = around average. The banded interpretation
+    must respect that sign convention (the opposite of a valuation percentile).
+    """
+
+    def test_high_nfci_reads_tighter(self):
+        text = interpret_nfci(2.0)
+        assert "TIGHTER" in text and "LOOSER" not in text
+        assert "+2.00" in text
+
+    def test_modest_positive_still_tighter_band(self):
+        text = interpret_nfci(0.6)
+        assert "TIGHTER" in text
+
+    def test_low_nfci_reads_looser(self):
+        text = interpret_nfci(-1.0)
+        assert "LOOSER" in text and "TIGHTER" not in text
+        assert "-1.00" in text
+
+    def test_near_zero_reads_average(self):
+        text = interpret_nfci(0.1)
+        assert "around the historical average" in text
+        # near-zero must NOT be branded materially tight or loose
+        assert "materially" not in text
+
+    def test_exact_zero_is_average(self):
+        text = interpret_nfci(0.0)
+        assert "around the historical average" in text
+
+    def test_monotone_sign_bands(self):
+        # Strongly negative -> looser; strongly positive -> tighter; the two differ.
+        looser  = interpret_nfci(-2.0)
+        tighter = interpret_nfci(2.0)
+        assert "LOOSER" in looser
+        assert "TIGHTER" in tighter
+        assert looser != tighter
+
+
+def test_nfci_percentile_uses_full_history_method():
+    """The NFCI panel measures its percentile against full history via
+    macro.percentile (NOT macro.window_pctile) — consistent with the
+    factor/valuation reads. macro.percentile is the fraction of observations
+    <= the current value, against the WHOLE series (no window).
+    """
+    from src import macro
+    s = pd.Series(range(101))  # 0..100
+    # 91 of 101 observations are <= 90 → 90.099 percentile (full-series rank).
+    assert macro.percentile(s, 90.0) == pytest.approx((s <= 90).mean() * 100)
+    assert macro.percentile(s, 90.0) == pytest.approx(90.0990099, abs=1e-4)
+    # Monotone and full-history: a higher value ranks higher.
+    assert macro.percentile(s, 100.0) > macro.percentile(s, 50.0) > macro.percentile(s, 0.0)
