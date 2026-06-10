@@ -17,19 +17,19 @@ Available for buy-side allocator and investment due diligence roles.
 
 ## Current Snapshot
 
-*Prices update daily. Snapshot as of May 7, 2026 (371 calendar days since inception May 1, 2025).*
+*Prices update daily. Snapshot as of June 10, 2026 (405 calendar days since inception May 1, 2025).*
 
 | Metric | Value | Window |
 |--------|-------|--------|
-| Cumulative TWR | +32.9% | Since Inception |
-| vs. Custom Blended SAA Benchmark | +482 bps | Since Inception |
-| vs. S&P 500 | −18 bps | Since Inception |
-| YTD 2026 Return | +11.9% (S&P 500: +8.1%) | Jan 1 – May 7, 2026 |
-| Sharpe Ratio | 2.87 | Since Inception, annualized (RF: 4.32%) |
-| Information Ratio | 3.63 | Since Inception, vs. Custom Blended |
-| Q1 2026 Active Return | +189 bps vs. blended; +735 bps vs. S&P 500 | Q1 2026 (locked) |
+| Cumulative TWR | +31.9% | Since Inception |
+| vs. Custom Blended SAA Benchmark | +209 bps | Since Inception |
+| vs. S&P 500 | −67 bps | Since Inception |
+| YTD 2026 Return | +12.3% (S&P 500: +7.7%) | Jan 1 – Jun 10, 2026 |
+| Sharpe Ratio | 2.00 | Since Inception, annualized (RF: 4.5%) |
+| Information Ratio | 1.24 | Since Inception, vs. Custom Blended |
+| Q1 2026 Active Return | +188 bps vs. blended; +713 bps vs. S&P 500 | Q1 2026 (locked) |
 
-The primary benchmark is the custom SAA-blended basket, not the S&P 500. A near-zero SI spread against the S&P 500 is an expected outcome for a portfolio whose 78% equity sleeve closely mirrors broad market beta with modest factor tilts. See [Methodology](#methodology) for return computation and benchmarking details.
+The primary benchmark is the custom SAA-blended basket, not the S&P 500. A small SI shortfall against the S&P 500 is an expected outcome for a portfolio whose 78% equity sleeve closely mirrors broad market beta with modest factor tilts, while the diversifying non-equity sleeves dampen returns during a strong equity tape. See [Methodology](#methodology) for return computation and benchmarking details.
 
 ---
 
