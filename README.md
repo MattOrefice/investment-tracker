@@ -17,19 +17,19 @@ Available for buy-side allocator and investment due diligence roles.
 
 ## Current Snapshot
 
-*Prices update daily. Snapshot as of May 7, 2026 (371 calendar days since inception May 1, 2025).*
+*Prices update daily. Snapshot as of June 10, 2026 (405 calendar days since inception May 1, 2025).*
 
 | Metric | Value | Window |
 |--------|-------|--------|
-| Cumulative TWR | +32.9% | Since Inception |
-| vs. Custom Blended SAA Benchmark | +482 bps | Since Inception |
-| vs. S&P 500 | −18 bps | Since Inception |
-| YTD 2026 Return | +11.9% (S&P 500: +8.1%) | Jan 1 – May 7, 2026 |
-| Sharpe Ratio | 2.87 | Since Inception, annualized (RF: 4.32%) |
-| Information Ratio | 3.63 | Since Inception, vs. Custom Blended |
-| Q1 2026 Active Return | +189 bps vs. blended; +735 bps vs. S&P 500 | Q1 2026 (locked) |
+| Cumulative TWR | +31.9% | Since Inception |
+| vs. Custom Blended SAA Benchmark | +209 bps | Since Inception |
+| vs. S&P 500 | −67 bps | Since Inception |
+| YTD 2026 Return | +12.3% (S&P 500: +7.7%) | Jan 1 – Jun 10, 2026 |
+| Sharpe Ratio | 2.00 | Since Inception, annualized (RF: 4.5%) |
+| Information Ratio | 1.24 | Since Inception, vs. Custom Blended |
+| Q1 2026 Active Return | +188 bps vs. blended; +713 bps vs. S&P 500 | Q1 2026 (locked) |
 
-The primary benchmark is the custom SAA-blended basket, not the S&P 500. A near-zero SI spread against the S&P 500 is an expected outcome for a portfolio whose 78% equity sleeve closely mirrors broad market beta with modest factor tilts. See [Methodology](#methodology) for return computation and benchmarking details.
+The primary benchmark is the custom SAA-blended basket, not the S&P 500. A small SI shortfall against the S&P 500 is an expected outcome for a portfolio whose 78% equity sleeve closely mirrors broad market beta with modest factor tilts, while the diversifying non-equity sleeves dampen returns during a strong equity tape. See [Methodology](#methodology) for return computation and benchmarking details.
 
 ---
 
@@ -77,7 +77,7 @@ Tracks four indicators — Shiller CAPE (with implied 10-year real return r ≈ 
 
 ### Integrity Testing
 
-Three layers: (1) math identities that must hold by construction (BF effects sum to active return, sleeve weights sum to 100%, TWR equals absolute return for the lump-sum case); (2) reasonability bounds with tolerance (Sortino ≥ Sharpe, VaR/CVaR within expected range, IR × TE within Jensen's gap); (3) prose-vs-data guards asserting that every numerical citation in interpretive text derives from its source computation, not from a hardcoded constant. 408 tests across all three layers run on every push via GitHub Actions.
+Three layers: (1) math identities that must hold by construction (BF effects sum to active return, sleeve weights sum to 100%, TWR equals absolute return for the lump-sum case); (2) reasonability bounds with tolerance (Sortino ≥ Sharpe, VaR/CVaR within expected range, IR × TE within Jensen's gap); (3) prose-vs-data guards asserting that every numerical citation in interpretive text derives from its source computation, not from a hardcoded constant. 913 tests across all three layers run on every push via GitHub Actions.
 
 ### Data Sources
 
@@ -98,7 +98,7 @@ Three layers: (1) math identities that must hold by construction (BF effects sum
 
 - **Stack:** Python 3.11, Streamlit, pandas, NumPy, statsmodels, plotly, SQLite
 - **Data sources:** FRED API (macro), Ken French Data Library (factors), Shiller / Yale (CAPE), yfinance (prices)
-- **Test coverage:** 590+ unit and integration tests covering return calculation, attribution math, factor regression plumbing, and dynamic-interpretation guards
+- **Test coverage:** 913 unit and integration tests covering return calculation, attribution math, factor regression plumbing, and dynamic-interpretation guards
 - **Deployment:** Streamlit Community Cloud, redeploy on push to main
 
 Technical architecture documented in [docs/architecture.md](docs/architecture.md).
@@ -140,7 +140,7 @@ pages/
   12_Tax_Lots.py        Lot-level cost basis, holding period, harvest candidates
 
 templates/              PDF report (Jinja2 HTML + CSS)
-tests/                  590+ tests across three integrity layers
+tests/                  913 tests across three integrity layers
 docs/                   Methodology diagnostics, phase notes, operational runbooks
 ```
 
@@ -181,7 +181,7 @@ The personal portfolio (`TRACKER_MODE=personal`, `data/tracker.db`) is gitignore
 
 ## CI/CD
 
-GitHub Actions runs `pytest -m "not slow"` (408 tests, approximately 90 seconds) under `TRACKER_MODE=demo` on every push and pull request to `main`. See `docs/ci_setup.md` for branch protection and secrets configuration.
+GitHub Actions runs `pytest -m "not slow"` (913 tests, approximately 90 seconds) under `TRACKER_MODE=demo` on every push and pull request to `main`. See `docs/ci_setup.md` for branch protection and secrets configuration.
 
 ---
 
