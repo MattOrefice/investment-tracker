@@ -140,6 +140,23 @@ GitHub Actions run after every push and confirm the green checkmark before closi
 
 ---
 
+## Performance-page PDF tooltip: dynamic quarter label
+_2026-06-10_
+Follow-up to the pre-inception quarterly-report fix. The attribution-period
+radio's help text hardcoded "the most recent completed quarter (Q1 2026)" — a
+static literal that goes stale as quarters roll and, in personal mode, named a
+quarter predating inception. It now derives the label from a thin
+`reportable_quarter_phrase(inception, today)` helper over the same
+`most_recent_reportable_quarter` the report uses (single source of truth):
+"(Q1 2026)" when a quarter is reportable, "(no completed quarter yet)" when
+none is. Display-only help text; no logic change. Two same-family literals were
+left as-is and flagged: the duration caption's "per Vanguard/Schwab Q1 2026" (a
+data-provenance citation, not a current-quarter reference) and a Factor-page
+cross-page note (different semantics — the BF attribution period, not the
+quarterly-report quarter). Suite 921 → 923.
+
+---
+
 ## Personal-mode: suppress the pre-inception quarterly report
 _2026-06-10_
 In personal mode, when the most-recent completed quarter entirely
