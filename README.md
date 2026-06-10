@@ -77,7 +77,7 @@ Tracks four indicators — Shiller CAPE (with implied 10-year real return r ≈ 
 
 ### Integrity Testing
 
-Three layers: (1) math identities that must hold by construction (BF effects sum to active return, sleeve weights sum to 100%, TWR equals absolute return for the lump-sum case); (2) reasonability bounds with tolerance (Sortino ≥ Sharpe, VaR/CVaR within expected range, IR × TE within Jensen's gap); (3) prose-vs-data guards asserting that every numerical citation in interpretive text derives from its source computation, not from a hardcoded constant. 408 tests across all three layers run on every push via GitHub Actions.
+Three layers: (1) math identities that must hold by construction (BF effects sum to active return, sleeve weights sum to 100%, TWR equals absolute return for the lump-sum case); (2) reasonability bounds with tolerance (Sortino ≥ Sharpe, VaR/CVaR within expected range, IR × TE within Jensen's gap); (3) prose-vs-data guards asserting that every numerical citation in interpretive text derives from its source computation, not from a hardcoded constant. 913 tests across all three layers run on every push via GitHub Actions.
 
 ### Data Sources
 
@@ -98,7 +98,7 @@ Three layers: (1) math identities that must hold by construction (BF effects sum
 
 - **Stack:** Python 3.11, Streamlit, pandas, NumPy, statsmodels, plotly, SQLite
 - **Data sources:** FRED API (macro), Ken French Data Library (factors), Shiller / Yale (CAPE), yfinance (prices)
-- **Test coverage:** 590+ unit and integration tests covering return calculation, attribution math, factor regression plumbing, and dynamic-interpretation guards
+- **Test coverage:** 913 unit and integration tests covering return calculation, attribution math, factor regression plumbing, and dynamic-interpretation guards
 - **Deployment:** Streamlit Community Cloud, redeploy on push to main
 
 Technical architecture documented in [docs/architecture.md](docs/architecture.md).
@@ -140,7 +140,7 @@ pages/
   12_Tax_Lots.py        Lot-level cost basis, holding period, harvest candidates
 
 templates/              PDF report (Jinja2 HTML + CSS)
-tests/                  590+ tests across three integrity layers
+tests/                  913 tests across three integrity layers
 docs/                   Methodology diagnostics, phase notes, operational runbooks
 ```
 
@@ -181,7 +181,7 @@ The personal portfolio (`TRACKER_MODE=personal`, `data/tracker.db`) is gitignore
 
 ## CI/CD
 
-GitHub Actions runs `pytest -m "not slow"` (408 tests, approximately 90 seconds) under `TRACKER_MODE=demo` on every push and pull request to `main`. See `docs/ci_setup.md` for branch protection and secrets configuration.
+GitHub Actions runs `pytest -m "not slow"` (913 tests, approximately 90 seconds) under `TRACKER_MODE=demo` on every push and pull request to `main`. See `docs/ci_setup.md` for branch protection and secrets configuration.
 
 ---
 
