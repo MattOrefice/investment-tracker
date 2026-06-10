@@ -49,6 +49,13 @@ def _inject_global_styles():
             .endow-card-header { font-size: 1.25rem !important; }
             .endow-card { margin-bottom: 0.75rem; }
             .endow-intro { font-size: 0.95rem; }
+            /* cards STACK on mobile (no columns to equalize), so the desktop
+               3-line clamp just truncates body text mid-word — unclamp it */
+            .endow-card-body-clamp {
+                display: block;
+                -webkit-line-clamp: unset;
+                overflow: visible;
+            }
         }
         </style>
         """,
