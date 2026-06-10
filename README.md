@@ -77,7 +77,7 @@ Tracks four indicators — Shiller CAPE (with implied 10-year real return r ≈ 
 
 ### Integrity Testing
 
-Three layers: (1) math identities that must hold by construction (BF effects sum to active return, sleeve weights sum to 100%, TWR equals absolute return for the lump-sum case); (2) reasonability bounds with tolerance (Sortino ≥ Sharpe, VaR/CVaR within expected range, IR × TE within Jensen's gap); (3) prose-vs-data guards asserting that every numerical citation in interpretive text derives from its source computation, not from a hardcoded constant. 913 tests across all three layers run on every push via GitHub Actions.
+Three layers: (1) math identities that must hold by construction (BF effects sum to active return, sleeve weights sum to 100%, TWR equals absolute return for the lump-sum case); (2) reasonability bounds with tolerance (Sortino ≥ Sharpe, VaR/CVaR within expected range, IR × TE within Jensen's gap); (3) prose-vs-data guards asserting that every numerical citation in interpretive text derives from its source computation, not from a hardcoded constant. All three layers run on every push via GitHub Actions — the per-push run reports 865 passed / 48 skipped / 35 deselected on the Linux runner (the 48 skips are platform-gated render/PDF tests that pass locally on Windows; the full suite is 913).
 
 ### Data Sources
 
@@ -183,7 +183,7 @@ The personal portfolio (`TRACKER_MODE=personal`, `data/tracker.db`) is gitignore
 
 ## CI/CD
 
-GitHub Actions runs `python -m pytest` (913 tests, approximately 90 seconds) under `TRACKER_MODE=demo` on every push and pull request to `main`; slow and live-data tests are excluded via `pytest.ini`, so no external API calls run on PRs. A separate scheduled workflow (`.github/workflows/live-data.yml`, daily plus manual dispatch) runs only the live-data integration tests against the live Ken French and Yahoo endpoints, so ingestion-contract coverage stays decoupled from PR gating. See `docs/ci_setup.md` for branch protection and secrets configuration.
+GitHub Actions runs `python -m pytest` under `TRACKER_MODE=demo` on every push and pull request to `main`; the run reports 865 passed / 48 skipped / 35 deselected on the Linux runner in approximately 90 seconds (the 48 skips are platform-gated render/PDF tests that pass locally on Windows; the full suite is 913). Slow and live-data tests are excluded via `pytest.ini`, so no external API calls run on PRs. A separate scheduled workflow (`.github/workflows/live-data.yml`, daily plus manual dispatch) runs only the live-data integration tests against the live Ken French and Yahoo endpoints, so ingestion-contract coverage stays decoupled from PR gating. See `docs/ci_setup.md` for branch protection and secrets configuration.
 
 ---
 
