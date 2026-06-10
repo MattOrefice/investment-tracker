@@ -140,6 +140,25 @@ GitHub Actions run after every push and confirm the green checkmark before closi
 
 ---
 
+## Personal-mode: suppress the pre-inception quarterly report
+_2026-06-10_
+In personal mode, when the most-recent completed quarter entirely
+predates the portfolio's inception (`MIN(trade_date)`), the Performance
+page rendered an all-zero "Quarterly report — Q1 2026 (locked)"
+snapshot, the every-page as-of banner claimed a "Latest locked
+quarterly report" for that quarter, and the PDF export defaulted to
+generating it — all for a span before any position existed. A new
+inception-aware `most_recent_reportable_quarter(inception, today)` in
+`src/asof.py` returns the quarter only when `quarter_end >= inception`,
+else `None`; all three surfaces now render "No completed quarter yet."
+instead. Partial first quarters (`quarter_start < inception <=
+quarter_end`) still report. The duplicate quarter-selection helper that
+lived in both the page and `src/asof.py` is consolidated. Demo mode is
+unchanged (its older inception never trips the suppression). Suite
+913 → 921.
+
+---
+
 ## README CI test count corrected to the figure the CI run actually reports
 _2026-06-10_
 The README attributed "913 tests" to the GitHub Actions CI run, but 913
