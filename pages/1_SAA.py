@@ -130,13 +130,15 @@ with col:
         pct   = round(p["target_weight"] * 100)
         dname = _dn(p["name"])
         color = PARENT_COLORS.get(dname, "#888888")
-        # Abbreviated labels for segments too narrow to hold full text
-        if pct >= 14:
+        # Suppress in-bar text on segments under 12%: narrow slices render
+        # illegible (vertical letter-stacks on mobile, cramped on desktop). The
+        # legend directly below carries the exact value for every segment.
+        if pct < 12:
+            label = ""
+        elif pct >= 14:
             label = f"<b>{dname}</b>  {pct}%"
-        elif pct >= 7:
+        else:  # 12–13%
             label = f"<b>{dname}</b>"
-        else:
-            label = f"{pct:.0f}%"
         fig.add_trace(go.Bar(
             name=dname,
             x=[pct],

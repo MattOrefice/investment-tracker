@@ -1,4 +1,6 @@
-streamlit>=1.40.0
+# Pinned exactly: the mobile stylesheet targets data-testid internals, so an
+# unpinned Cloud rebuild onto a newer Streamlit could silently break styling.
+streamlit==1.57.0
 pandas>=2.2.0
 numpy>=2.1.0
 yfinance>=0.2.50
