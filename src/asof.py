@@ -53,6 +53,17 @@ def most_recent_reportable_quarter(
     return q_start, q_end, label
 
 
+def reportable_quarter_phrase(inception: "date | str", today: date | None = None) -> str:
+    """Parenthetical quarter label for help/tooltip copy.
+
+    '(Q1 2026)' when a completed quarter is reportable, else
+    '(no completed quarter yet)'. Sourced from most_recent_reportable_quarter
+    so help text never names a stale or pre-inception quarter.
+    """
+    q = most_recent_reportable_quarter(inception, today)
+    return f"({q[2]})" if q else "(no completed quarter yet)"
+
+
 def as_of_live_line() -> str:
     """Return the live-data line only. e.g. 'Live data as of May 10, 2026.'"""
     today = date.today()
