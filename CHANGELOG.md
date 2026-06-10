@@ -140,6 +140,17 @@ GitHub Actions run after every push and confirm the green checkmark before closi
 
 ---
 
+## README CI test count corrected to the figure the CI run actually reports
+_2026-06-10_
+The README attributed "913 tests" to the GitHub Actions CI run, but 913
+is the full local suite count; on the Linux runner 48 platform-gated
+render and PDF tests skip, so the per-push CI run reports 865 passed, 48
+skipped, 35 deselected. The CI-run references now state that figure (the
+full suite remains 913, noted as such), closing the last stale-number
+thread from the earlier README accuracy pass.
+
+---
+
 ## CI no longer depends on live external APIs; nightly live-data run added
 _2026-06-10_
 Per-push CI ran `pytest -m "not slow"`, whose CLI `-m` overrode
