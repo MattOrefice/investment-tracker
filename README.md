@@ -2,7 +2,7 @@
 
 Multi-asset portfolio analytics with institutional-grade performance attribution, factor regression, and macro regime monitoring.
 
-**Live demo:** [mattorefice-investment.streamlit.app](https://mattorefice-investment.streamlit.app/) &nbsp;·&nbsp; ![CI](https://github.com/MattOrefice/investment-tracker/actions/workflows/ci.yml/badge.svg)
+**Live demo:** [mattorefice-investment.streamlit.app](https://mattorefice-investment.streamlit.app/) &nbsp;·&nbsp; ![CI](https://github.com/MattOrefice/investment-tracker/actions/workflows/ci.yml/badge.svg) &nbsp;·&nbsp; [![Live Data Tests](https://github.com/MattOrefice/investment-tracker/actions/workflows/live-data.yml/badge.svg)](https://github.com/MattOrefice/investment-tracker/actions/workflows/live-data.yml)
 
 Built by [Matt Orefice, CFA](https://www.linkedin.com/in/matthew-orefice-cfa-83536b190/).
 Available for buy-side allocator and investment due diligence roles.
@@ -171,9 +171,11 @@ To generate a quarterly PDF: open the demo, navigate to **Performance**, and cli
 To run the test suite:
 
 ```bash
-TRACKER_MODE=demo python -m pytest -m "not slow"    # macOS / Linux
-$env:TRACKER_MODE="demo"; python -m pytest -m "not slow"  # Windows PowerShell
+TRACKER_MODE=demo python -m pytest    # macOS / Linux
+$env:TRACKER_MODE="demo"; python -m pytest  # Windows PowerShell
 ```
+
+Slow and live-data tests are excluded via `pytest.ini` (`addopts = -m "not slow and not live_data"`). Do not pass a CLI `-m` — it replaces that default and silently re-includes the live external-API tests. To run the live-data integration tests deliberately: `python -m pytest -m "live_data"`.
 
 The personal portfolio (`TRACKER_MODE=personal`, `data/tracker.db`) is gitignored and exists locally only. The demo portfolio (`data/demo.db`) is committed and is what the Streamlit Cloud deployment uses.
 
@@ -181,7 +183,7 @@ The personal portfolio (`TRACKER_MODE=personal`, `data/tracker.db`) is gitignore
 
 ## CI/CD
 
-GitHub Actions runs `pytest -m "not slow"` (913 tests, approximately 90 seconds) under `TRACKER_MODE=demo` on every push and pull request to `main`. See `docs/ci_setup.md` for branch protection and secrets configuration.
+GitHub Actions runs `python -m pytest` (913 tests, approximately 90 seconds) under `TRACKER_MODE=demo` on every push and pull request to `main`; slow and live-data tests are excluded via `pytest.ini`, so no external API calls run on PRs. A separate scheduled workflow (`.github/workflows/live-data.yml`, daily plus manual dispatch) runs only the live-data integration tests against the live Ken French and Yahoo endpoints, so ingestion-contract coverage stays decoupled from PR gating. See `docs/ci_setup.md` for branch protection and secrets configuration.
 
 ---
 
