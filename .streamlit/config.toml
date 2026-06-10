@@ -1,0 +1,16 @@
+[theme]
+# The visual identity (white-paper charts, light cards, navy
+# endowment palette, hardcoded text colors in the landing CSS) is
+# designed for a light background. Pin the theme so dark-mode
+# devices render the designed look instead of near-invisible
+# dark-on-dark landing text.
+base = "light"
+# House navy for widget accents (radio, tabs, focus) instead of
+# the Streamlit default red — matches the endow palette.
+primaryColor = "#1e3a5f"
+
+[client]
+# Viewer toolbar: hide Fork/GitHub chrome (the sidebar footer
+# already links GitHub and LinkedIn); keeps the top row clean,
+# especially on mobile.
+toolbarMode = "minimal"
