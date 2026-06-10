@@ -140,6 +140,18 @@ GitHub Actions run after every push and confirm the green checkmark before closi
 
 ---
 
+## Polish: pin light theme, house-navy accents, minimal viewer toolbar
+_2026-06-10_
+
+Pinned the light theme in `.streamlit/config.toml`: dark-mode devices were
+rendering the landing page's hardcoded light-design text nearly invisible, so
+the theme is now fixed regardless of device preference. House-navy widget
+accents and a minimal viewer toolbar for a cleaner presentation. Separately,
+the `factor_regime` concat now passes `sort=False` — result-identical today,
+future-proofing against the pandas 4 default change.
+
+---
+
 ## Mobile foundation
 _2026-06-09_
 
