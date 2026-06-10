@@ -140,6 +140,19 @@ GitHub Actions run after every push and confirm the green checkmark before closi
 
 ---
 
+## Mobile foundation
+_2026-06-09_
+
+Added the site's first small-viewport support: a global @media-scoped stylesheet
+injected at the router (type scale, padding, metric/dataframe sizing,
+landing-card overrides), the Plotly modebar hidden on touch viewports, landing
+card bodies unclamped when stacked, and in-bar labels suppressed on
+allocation-bar segments under 12% (legend carries small slices). Streamlit
+pinned exactly since the CSS targets data-testid internals. Desktop rendering
+unchanged.
+
+---
+
 ## Remove Market Snapshot; relocate Sector Movers to Macro
 _2026-06-09_
 
