@@ -74,6 +74,27 @@ def test_generate_report_expander_present(performance_app: AppTest) -> None:
     )
 
 
+def test_quarterly_snapshot_renders_when_quarter_reportable(performance_app: AppTest) -> None:
+    """Section 1a quarterly snapshot renders its '(locked)' header on the normal path.
+
+    Guards the inception-aware suppression (personal-mode pre-inception fix): demo.db's
+    inception predates the most-recent completed quarter, so the snapshot MUST still
+    report and MUST NOT show the 'No completed quarter yet.' empty state. The empty
+    state only fires when a portfolio's entire most-recent completed quarter predates
+    its inception (covered by the pure-function tests in test_asof_reportable_quarter).
+    """
+    if not performance_app.metric:
+        pytest.skip("No portfolio data — skipped in local/empty-DB mode")
+    markdowns = [m.value for m in performance_app.markdown]
+    assert any("Quarterly report —" in m and "(locked)" in m for m in markdowns), (
+        f"Section 1a '(locked)' quarterly header missing — demo path regressed. "
+        f"Markdown headers: {[m for m in markdowns if 'Quarterly' in m]}"
+    )
+    assert not any("No completed quarter yet." in m for m in markdowns), (
+        "Pre-inception empty state fired in demo mode — suppression mis-triggered."
+    )
+
+
 def test_methodology_expander_present(performance_app: AppTest) -> None:
     """Methodology validation expander must render. Pinned: Phase 4."""
     if not performance_app.metric:

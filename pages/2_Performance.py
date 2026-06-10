@@ -8,7 +8,7 @@ import streamlit as st
 
 st.set_page_config(page_title="Performance & Attribution", layout="wide")
 
-from src.asof import as_of_banner
+from src.asof import as_of_banner, most_recent_reportable_quarter, NO_COMPLETED_QUARTER
 from src.config import get_demo_banner_text, IS_DEMO
 from src.attribution import brinson_fachler_period, compute_two_stage_attribution
 from src.benchmarks import get_custom_blended_series, get_naive_60_40_series, get_naive_series, get_sp500_series
@@ -129,28 +129,6 @@ def _date_offset(iso: str, days: int) -> str:
     return (date.fromisoformat(iso) + timedelta(days=days)).isoformat()
 
 
-def _most_recent_completed_quarter():
-    """Return (start_iso, end_iso, label) for the most recently completed quarter.
-
-    Start = last trading day of the prior quarter (conventional quarterly return
-    definition: Q1 return = Mar-31 close / Dec-31 prior-year close − 1).
-    Using Jan-1 as Q1 start fails because Jan-1 is a US market holiday; the
-    benchmark pipeline would bfill from Jan-2, creating a spurious shift vs the
-    correct Dec-31 base price.
-    """
-    today = date.today()
-    quarters = [
-        (date(today.year - 1, 12, 31), date(today.year, 3, 31),  f"Q1 {today.year}"),
-        (date(today.year, 3, 31),       date(today.year, 6, 30),  f"Q2 {today.year}"),
-        (date(today.year, 6, 30),       date(today.year, 9, 30),  f"Q3 {today.year}"),
-        (date(today.year, 9, 30),       date(today.year, 12, 31), f"Q4 {today.year}"),
-    ]
-    for q_start, q_end, q_label in reversed(quarters):
-        if q_end < today:
-            return q_start.isoformat(), q_end.isoformat(), q_label
-    return f"{today.year-1}-09-30", f"{today.year-1}-12-31", f"Q4 {today.year-1}"
-
-
 def _pct(v: float, decimals: int = 2) -> str:
     return f"{v * 100:.{decimals}f}%"
 
@@ -205,13 +183,23 @@ with col:
                 "Recipient name", value="Matthew Orefice", key="report_recipient"
             )
 
+        _can_generate = True
         if _period_choice == "Most recent completed quarter":
-            _r_start, _r_end, _r_qlabel = _most_recent_completed_quarter()
-            st.caption(f"Period: **{_r_qlabel}** &nbsp;({_r_start} to {_r_end})")
-            _report_filename = (
-                f"Orefice_Portfolio_{_r_qlabel.replace(' ', '')[2:]}"
-                f"{_r_qlabel.split()[0]}.pdf"
-            )
+            _q_rep = most_recent_reportable_quarter(INCEPTION, date.fromisoformat(TODAY))
+            if _q_rep is None:
+                # Most-recent completed quarter entirely predates inception — no
+                # quarter to report yet; suppress generation rather than emit a
+                # zeros PDF for a span before the portfolio existed.
+                st.info(NO_COMPLETED_QUARTER)
+                _can_generate = False
+            else:
+                _r_start_d, _r_end_d, _r_qlabel = _q_rep
+                _r_start, _r_end = _r_start_d.isoformat(), _r_end_d.isoformat()
+                st.caption(f"Period: **{_r_qlabel}** &nbsp;({_r_start} to {_r_end})")
+                _report_filename = (
+                    f"Orefice_Portfolio_{_r_qlabel.replace(' ', '')[2:]}"
+                    f"{_r_qlabel.split()[0]}.pdf"
+                )
         else:
             _dc1, _dc2 = st.columns(2)
             with _dc1:
@@ -223,7 +211,7 @@ with col:
                 f"Orefice_Portfolio_{_r_start.replace('-','')}_{_r_end.replace('-','')}.pdf"
             )
 
-        if st.button("Generate Report", type="primary", key="gen_report_btn"):
+        if _can_generate and st.button("Generate Report", type="primary", key="gen_report_btn"):
             with st.spinner("Generating PDF — this takes ~30 seconds for chart rendering…"):
                 try:
                     _pdf_path = generate_quarterly_report(
@@ -288,25 +276,33 @@ with col:
     # ──────────────────────────────────────────────────────────────────────
     # Section 1a — Quarterly snapshot (most recently completed quarter)
     # ──────────────────────────────────────────────────────────────────────
-    _q_start, _q_end, _q_label = _most_recent_completed_quarter()
-    _q_ts_start = pd.Timestamp(_q_start)
-    _q_ts_end   = pd.Timestamp(_q_end)
+    _q_rep = most_recent_reportable_quarter(INCEPTION, date.fromisoformat(TODAY))
+    if _q_rep is None:
+        # The most-recent completed quarter entirely predates inception (the
+        # portfolio did not exist during it). Render the empty state instead of
+        # an all-zero "locked" report for a span that precedes the portfolio.
+        st.markdown("### Quarterly report")
+        st.info(NO_COMPLETED_QUARTER)
+    else:
+        _q_start, _q_end, _q_label = _q_rep
+        _q_ts_start = pd.Timestamp(_q_start)
+        _q_ts_end   = pd.Timestamp(_q_end)
 
-    def _q_ret(s: pd.Series) -> float:
-        sliced = s[(s.index >= _q_ts_start) & (s.index <= _q_ts_end)]
-        return float(sliced.iloc[-1] / sliced.iloc[0] - 1) if len(sliced) >= 2 else 0.0
+        def _q_ret(s: pd.Series) -> float:
+            sliced = s[(s.index >= _q_ts_start) & (s.index <= _q_ts_end)]
+            return float(sliced.iloc[-1] / sliced.iloc[0] - 1) if len(sliced) >= 2 else 0.0
 
-    _q_port     = _q_ret(pv)
-    _q_sp       = _q_ret(sp)
-    _q_bl       = _q_ret(bl)
-    _q_alpha_sp = _q_port - _q_sp
-    _q_alpha_bl = _q_port - _q_bl
+        _q_port     = _q_ret(pv)
+        _q_sp       = _q_ret(sp)
+        _q_bl       = _q_ret(bl)
+        _q_alpha_sp = _q_port - _q_sp
+        _q_alpha_bl = _q_port - _q_bl
 
-    st.markdown(f"### Quarterly report — {_q_label} (locked)")
-    q1, q2, q3 = st.columns(3)
-    q1.metric(f"{_q_label} return",             _pct(_q_port),     f"{_pct(_q_sp)} S&P 500")
-    q2.metric(f"vs. S&P 500 — {_q_label}",      _bps(_q_alpha_sp), f"S&P 500: {_pct(_q_sp)}",  delta_color="off")
-    q3.metric(f"vs. Custom Blended — {_q_label}", _bps(_q_alpha_bl), f"Blended: {_pct(_q_bl)}", delta_color="off")
+        st.markdown(f"### Quarterly report — {_q_label} (locked)")
+        q1, q2, q3 = st.columns(3)
+        q1.metric(f"{_q_label} return",             _pct(_q_port),     f"{_pct(_q_sp)} S&P 500")
+        q2.metric(f"vs. S&P 500 — {_q_label}",      _bps(_q_alpha_sp), f"S&P 500: {_pct(_q_sp)}",  delta_color="off")
+        q3.metric(f"vs. Custom Blended — {_q_label}", _bps(_q_alpha_bl), f"Blended: {_pct(_q_bl)}", delta_color="off")
 
     st.divider()
 
