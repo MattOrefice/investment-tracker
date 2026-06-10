@@ -140,6 +140,24 @@ GitHub Actions run after every push and confirm the green checkmark before closi
 
 ---
 
+## CI no longer depends on live external APIs; nightly live-data run added
+_2026-06-10_
+Per-push CI ran `pytest -m "not slow"`, whose CLI `-m` overrode
+`pytest.ini`'s addopts default (`not slow and not live_data`) — pytest
+takes the last `-m` — silently dropping the `not live_data` clause. With
+no skip guard on the 31 live_data tests, every push and PR made live Ken
+French and Yahoo calls, so CI green was gated on external API uptime
+rather than code. The per-push run is now a bare `python -m pytest`,
+making `pytest.ini` addopts the single exclusion authority (offline on
+every push), with an inline comment warning against re-adding a CLI
+`-m`. A separate scheduled workflow (`.github/workflows/live-data.yml`,
+daily 09:30 UTC plus manual dispatch) runs only `-m "live_data"` against
+main to preserve ingestion-contract coverage, decoupled from PR gating;
+a status badge surfaces its result. No secrets needed — the live
+fetchers use keyless Ken French and Yahoo endpoints.
+
+---
+
 ## README and docs refreshed to corrected numbers
 _2026-06-10_
 The README's Current Snapshot still showed pre-income-fix figures
