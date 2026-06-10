@@ -39,6 +39,7 @@ jobs:
         run: grep -rn "render_page_header" pages/
 
       - name: Run fast tests (slow/network tests excluded)
-        run: python -m pytest -m "not slow" --tb=long -q
+        # Exclusions live in pytest.ini addopts (not slow and not live_data). Do NOT add a CLI -m here — it overrides addopts and silently re-includes the live_data tests (live external API calls on every push).
+        run: python -m pytest --tb=long -q
         env:
           TRACKER_MODE: demo
