@@ -159,7 +159,7 @@ def _build_factor_frame(
     ff_leg  = rolling_12m_ff_premium(ff_df, ff_col, window=window).rename(ff_out)
     etf_leg = rolling_12m_etf_relative(small_prices, large_prices, window=window).rename(etf_out)
 
-    frame = pd.concat([ff_leg, etf_leg], axis=1).sort_index()
+    frame = pd.concat([ff_leg, etf_leg], axis=1, sort=False).sort_index()
     frame.index = pd.to_datetime(frame.index)
     if history_start is not None:
         frame = frame[frame.index >= pd.Timestamp(history_start)]
