@@ -140,6 +140,19 @@ GitHub Actions run after every push and confirm the green checkmark before closi
 
 ---
 
+## README and docs refreshed to corrected numbers
+_2026-06-10_
+The README's Current Snapshot still showed pre-income-fix figures
+(active +482 bps vs blended, Sharpe 2.87, IR 3.63 — computed off
+the double-counted return series) that contradicted the live app.
+Every figure now traces to the app's own functions (+209 bps,
+Sharpe 2.00, IR 1.24, as of June 10, 2026), the S&P-spread prose
+matches the corrected number, stale test counts are fixed, and
+any other current-claim doc figure corrected; historical records
+left as records.
+
+---
+
 ## Polish: pin light theme, house-navy accents, minimal viewer toolbar
 _2026-06-10_
 
