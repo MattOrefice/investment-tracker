@@ -15,6 +15,47 @@ from src.ui_helpers import render_footer, render_sidebar_footer
 initialize_db()
 
 
+def _inject_global_styles():
+    """Inject one site-wide mobile stylesheet, ONCE, at the router (runs before
+    every page via app.py's top-to-bottom rerun).
+
+    Mobile-only: every rule lives inside @media (max-width: 640px), so desktop
+    rendering is pixel-identical — these rules override the desktop CSS only at
+    small viewports. Selectors are STABLE (data-testid attributes, .block-container,
+    and the landing .endow-* classes) — never st-emotion-cache-* hashes, which
+    change every Streamlit release.
+    """
+    st.markdown(
+        """
+        <style>
+        @media (max-width: 640px) {
+            /* viewport breathing room — wide-layout padding eats a 390px screen */
+            .block-container {
+                padding-left: 1rem !important;
+                padding-right: 1rem !important;
+                padding-top: 3.5rem !important;
+            }
+            /* type scale — st.title h1 ~2.75rem is huge on a phone */
+            h1 { font-size: 1.65rem !important; }
+            h2 { font-size: 1.35rem !important; }
+            h3 { font-size: 1.15rem !important; }
+            /* metric rows stack natively; size the values for one column */
+            [data-testid="stMetricValue"] { font-size: 1.4rem !important; }
+            [data-testid="stMetricLabel"] { font-size: 0.8rem !important; }
+            /* dataframes: slightly denser so more columns fit before scroll */
+            [data-testid="stDataFrame"] { font-size: 0.85rem; }
+            /* landing endow classes (harmless globally — only exist on landing) */
+            .endow-title { font-size: 1.75rem !important; }
+            .endow-card-header { font-size: 1.25rem !important; }
+            .endow-card { margin-bottom: 0.75rem; }
+            .endow-intro { font-size: 0.95rem; }
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def _landing_page_render():
     st.markdown(
         """
@@ -265,6 +306,8 @@ if not IS_DEMO:
     _page_groups["Household"] = [
         st.Page("pages/13_Household_View.py", title="Household View"),
     ]
+
+_inject_global_styles()
 
 nav = st.navigation(_page_groups, expanded=True)
 
