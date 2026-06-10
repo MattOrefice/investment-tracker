@@ -8,7 +8,7 @@ import streamlit as st
 
 st.set_page_config(page_title="Performance & Attribution", layout="wide")
 
-from src.asof import as_of_banner, most_recent_reportable_quarter, NO_COMPLETED_QUARTER
+from src.asof import as_of_banner, most_recent_reportable_quarter, reportable_quarter_phrase, NO_COMPLETED_QUARTER
 from src.config import get_demo_banner_text, IS_DEMO
 from src.attribution import brinson_fachler_period, compute_two_stage_attribution
 from src.benchmarks import get_custom_blended_series, get_naive_60_40_series, get_naive_series, get_sp500_series
@@ -644,6 +644,11 @@ with col:
     # ──────────────────────────────────────────────────────────────────────
     st.markdown("### Two-Stage Attribution")
 
+    # Dynamic quarter label for the help text — sourced from the SAME
+    # most_recent_reportable_quarter the quarterly report uses (single source of
+    # truth), so it never goes stale and, in personal mode, never names a quarter
+    # that predates inception.
+    _rep_q_phrase = reportable_quarter_phrase(INCEPTION, date.fromisoformat(TODAY))
     bf_period = st.radio(
         "Attribution period",
         PERIODS,
@@ -651,7 +656,7 @@ with col:
         format_func=lambda p: PERIOD_LABEL[p],
         horizontal=True,
         key="bf_period",
-        help="PDF quarterly report uses the most recent completed quarter (Q1 2026). "
+        help=f"PDF quarterly report uses the most recent completed quarter {_rep_q_phrase}. "
              "Select SI to compare since-inception active return.",
     )
 

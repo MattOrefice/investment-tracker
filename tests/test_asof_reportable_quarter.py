@@ -17,6 +17,7 @@ from datetime import date
 
 from src.asof import (
     most_recent_reportable_quarter,
+    reportable_quarter_phrase,
     as_of_report_line,
     NO_COMPLETED_QUARTER,
 )
@@ -77,3 +78,15 @@ def test_as_of_report_line_renders_quarter_when_reportable():
     """When a quarter is reportable, the rendered banner line names it (demo shape)."""
     line = as_of_report_line(today=_TODAY, inception=date(2025, 5, 1))
     assert line == "Latest locked quarterly report: Q1 2026 (March 31, 2026)."
+
+
+# ── PDF help-tooltip phrase (Performance page bf_period radio) ─────────────────
+
+def test_reportable_quarter_phrase_names_quarter_when_reportable():
+    """Tooltip phrase is the dynamic quarter label, never a hardcoded literal (demo shape)."""
+    assert reportable_quarter_phrase(date(2025, 5, 1), _TODAY) == "(Q1 2026)"
+
+
+def test_reportable_quarter_phrase_empty_state_when_pre_inception():
+    """Tooltip phrase names no stale quarter when none is reportable (personal-mode shape)."""
+    assert reportable_quarter_phrase(date(2026, 6, 9), _TODAY) == "(no completed quarter yet)"
