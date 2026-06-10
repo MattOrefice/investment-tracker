@@ -56,6 +56,10 @@ def _inject_global_styles():
                 -webkit-line-clamp: unset;
                 overflow: visible;
             }
+            /* Plotly modebar: hover-only on desktop, but persistently visible on
+               touch viewports — hide on mobile (charts remain fully rendered;
+               zoom/pan chrome is unusable on a phone anyway) */
+            .modebar, .modebar-container { display: none !important; }
         }
         </style>
         """,
