@@ -140,6 +140,13 @@ GitHub Actions run after every push and confirm the green checkmark before closi
 
 ---
 
+## Reconciliation-test anchor hardened against local cache pollution
+_2026-06-11_
+
+The Brinson-Fachler reconciliation test anchors its window on the committed price cache's last date, captured at collection. On a fresh checkout this is the clean settled frontier and the test runs deterministically, which is why continuous integration has been consistently green. Locally, however, running a price-fetching test before the full suite could advance the cache to an incomplete same-day bar, and the test would then anchor on that partial bar and fail — the same partial-bar contamination the displayed period surfaces were already hardened against. The test now floors its anchor to a settled date strictly before today, so it resolves to the clean frontier regardless of any pre-collection cache state. Continuous-integration behaviour is unchanged, since the committed frontier already predates the current day.
+
+---
+
 ## Period-return rows with insufficient history are now suppressed rather than shown as full periods
 _2026-06-11_
 
