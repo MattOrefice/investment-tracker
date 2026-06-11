@@ -140,6 +140,26 @@ GitHub Actions run after every push and confirm the green checkmark before closi
 
 ---
 
+## BF reconciliation test made deterministic (no live-data dependency)
+_2026-06-11_
+The Brinson-Fachler reconciliation identity test gated per-push CI but
+depended on live-fetched prices: it anchored its windows on `date.today()`,
+and `get_prices` gap-fetches from yfinance whenever the requested end exceeds
+the cached max. Once the UTC date rolled past the committed demo.db's last
+price date, CI fetched partial intraday data for "today," the two
+reconciliation sides saw different values, and the 0.5-bps identity failed
+intermittently — main went red on the calendar rollover rather than on any
+code change (the same live-data-in-the-gate pathology as the nightly-workflow
+split, which this test had escaped). The test now anchors on the committed
+cache's last price date, captured once at import before any sibling test
+fetches into the shared cache, so it reads only frozen committed prices and
+reconciles deterministically regardless of the wall-clock date — verified on a
+clean checkout and a forced-future-date guard (frontier +0/+1/+3). Test-only
+change. Which calendar day is the correct display frontier for 1M/3M
+attribution remains a separate, still-open correctness question.
+
+---
+
 ## Attribution windows anchor on the last real price date
 _2026-06-11_
 The Performance page reconciles its Brinson-Fachler decomposition against the
