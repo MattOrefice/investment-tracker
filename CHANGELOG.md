@@ -140,6 +140,27 @@ GitHub Actions run after every push and confirm the green checkmark before closi
 
 ---
 
+## Attribution windows anchor on the last real price date
+_2026-06-11_
+The Performance page reconciles its Brinson-Fachler decomposition against the
+portfolio value series, which `get_portfolio_value_series` forward-fills across
+every calendar day to today — so its last index is the wall-clock date, not the
+last traded day. Both the BF window and the price-series window resolved there,
+so whenever the wall clock led the last real price (after the UTC rollover, on
+weekends/holidays, or on a sparse newly-funded portfolio) the two sides sliced
+across a forward-filled tail and diverged by 15-42 bps on the 1M window — an
+intermittent, calendar-driven failure of the 0.5-bps reconciliation identity. A
+new `holdings.last_real_price_date()` returns the true data frontier (the last
+non-ffilled price date across holdings); the attribution section now anchors the
+BF window on it and clips the value/naive series to it, so both reconciliation
+sides slice to the same real endpoint regardless of the wall-clock date. Window
+bounds come from one source (`returns.period_bounds`). A forced-future-date
+regression guard proves the reconciliation holds at frontier +0/+1/+3 (offline).
+The Period Returns table has the same ffill-to-today anchoring (a broader
+question, flagged separately and left unchanged here). Suite 923 → 929.
+
+---
+
 ## Performance-page PDF tooltip: dynamic quarter label
 _2026-06-10_
 Follow-up to the pre-inception quarterly-report fix. The attribution-period
