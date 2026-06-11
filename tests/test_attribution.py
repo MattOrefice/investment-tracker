@@ -380,6 +380,35 @@ def _bpr_helper(series: "pd.Series", period: str) -> float:
     return float(sliced.iloc[-1] / sliced.iloc[0] - 1)
 
 
+def _frozen_cache_end() -> str:
+    """Last price date actually present in the committed demo.db cache — read with
+    NO network fetch.
+
+    Reconciliation tests must anchor on this, not date.today(): get_prices fetches a
+    trailing gap from yfinance only when the requested end exceeds the cached max
+    (prices.py), so passing end == cached max means no live intraday fetch. That
+    removes the per-push live-data dependency that made test_identity_bf_sum_reconciles
+    non-deterministic — it failed or passed depending on what partial intraday data
+    yfinance happened to return at the moment CI ran. The reconciliation is an
+    algebraic identity that holds on any internally-consistent dataset, so the frozen
+    committed prices are the correct, deterministic basis. (Which calendar day is the
+    right *display* frontier is a separate, still-open question.)
+    """
+    import datetime
+    from src.db import get_connection
+    with get_connection() as conn:
+        row = conn.execute("SELECT MAX(price_date) FROM prices").fetchone()
+    return row[0] if row and row[0] else datetime.date.today().isoformat()
+
+
+# Captured ONCE at import (pytest collection), before any test executes and fetches
+# live prices into the shared demo.db cache. Reading it lazily inside a test instead
+# would pick up sibling tests' live-fetched (partial intraday) rows — the cache
+# pollution that made this non-deterministic. Captured here, it is the committed
+# frontier regardless of test execution order or wall-clock date.
+_FROZEN_CACHE_END = _frozen_cache_end()
+
+
 def test_identity_ps_two_stage_si_60_40():
     """Price-series Stage1+Stage2=Total within 0.05 bps for SI period vs 60/40 naive.
 
@@ -545,7 +574,12 @@ def test_identity_bf_sum_reconciles_to_stage2():
     from src.returns import period_bounds
 
     INCEPTION = "2025-05-01"
-    TODAY = datetime.date.today().isoformat()
+    # Anchor on the committed cache frontier captured at import (no live fetch),
+    # NOT date.today() — otherwise get_prices gap-fetches partial intraday data at
+    # CI run time and the reconciliation becomes non-deterministic (it failed
+    # intermittently on the calendar rollover). The identity holds on the frozen
+    # committed prices by construction.
+    TODAY = _FROZEN_CACHE_END
 
     try:
         pv_full = get_portfolio_value_series(INCEPTION, TODAY)
@@ -649,7 +683,8 @@ def test_bf_reconciles_when_wall_clock_past_price_frontier(days_past_frontier):
     from src.returns import period_bounds
 
     INCEPTION = "2025-05-01"
-    real_end = last_real_price_date(INCEPTION, datetime.date.today().isoformat())
+    # Frontier = committed cache frontier captured at import (no live fetch), not today.
+    real_end = _FROZEN_CACHE_END
     real_end_d = datetime.date.fromisoformat(real_end)
 
     # Cached through the frontier only — no future-date fetch, so this stays offline.
