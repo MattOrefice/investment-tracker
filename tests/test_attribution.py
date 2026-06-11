@@ -539,20 +539,13 @@ def test_identity_bf_sum_reconciles_to_stage2():
     the Performance page's _benchmark_period_return(pv, bf_period) call.
     """
     import datetime
+    import pandas as pd
     from src.attribution import brinson_fachler_period
-    from src.holdings import get_portfolio_value_series
+    from src.holdings import get_portfolio_value_series, last_real_price_date
+    from src.returns import period_bounds
 
     INCEPTION = "2025-05-01"
     TODAY = datetime.date.today().isoformat()
-    today = datetime.date.today()
-
-    windows = [
-        ("SI",  INCEPTION),
-        ("1Y",  (today - datetime.timedelta(days=365)).isoformat()),
-        ("YTD", f"{today.year}-01-01"),
-        ("3M",  (today - datetime.timedelta(days=90)).isoformat()),
-        ("1M",  (today - datetime.timedelta(days=30)).isoformat()),
-    ]
 
     try:
         pv_full = get_portfolio_value_series(INCEPTION, TODAY)
@@ -562,16 +555,28 @@ def test_identity_bf_sum_reconciles_to_stage2():
     if pv_full.dropna().empty:
         pytest.skip("Portfolio data empty — skipped in local/empty-DB mode")
 
-    for label, start in windows:
+    # Anchor every window on the LAST REAL price date — NOT pv_full.index[-1], which is
+    # forward-filled to today. Clip the value series to that frontier so both
+    # reconciliation sides slice to the same real endpoint. This makes the test
+    # date-independent: it previously failed whenever CI ran with today > the last
+    # traded day (after the UTC rollover, on weekends/holidays), because the value
+    # series ffilled to today while the BF side used real prices — a 15-42 bps gap on
+    # the short 1M window.
+    real_end = last_real_price_date(INCEPTION, TODAY)
+    real_end_d = datetime.date.fromisoformat(real_end)
+    pv_real = pv_full[pv_full.index <= pd.Timestamp(real_end)]
+
+    for label in ("SI", "1Y", "YTD", "3M", "1M"):
+        start, end = period_bounds(label, real_end_d, INCEPTION)
         try:
-            bf_df = brinson_fachler_period(start, TODAY)
+            bf_df = brinson_fachler_period(start, end)
         except Exception as exc:
             pytest.skip(f"BF data unavailable for {label}: {exc}")
 
         if bf_df.empty:
             pytest.skip(f"BF result empty for {label} — skipped in local/empty-DB mode")
 
-        r_p_ps        = _bpr_helper(pv_full, label)
+        r_p_ps        = _bpr_helper(pv_real, label)
         bf_r_p_excash = float((bf_df["w_p"] * bf_df["r_p"]).sum())
         cash_drag     = float(bf_df.attrs.get("cash_drag", 0.0))
         bridged       = bf_r_p_excash + cash_drag
@@ -583,6 +588,99 @@ def test_identity_bf_sum_reconciles_to_stage2():
             f"price series ({r_p_ps*10000:.1f} bps) by {gap_bps:.2f} bps for {label} window. "
             f"The cash-drag bridge in brinson_fachler_period() may have failed — check "
             f"the cash_drag attr and the ex-cash weight normalization."
+        )
+
+
+@pytest.mark.parametrize("sim_today_offset_days", [0, 1, 3])
+def test_period_bounds_window_is_anchor_only_not_wall_clock(sim_today_offset_days):
+    """Regression guard for the 1M-window anchor flake (date-driven CI failure).
+
+    period_bounds anchors the window on the data's last date, never date.today(),
+    so the attribution window is identical regardless of when CI runs. Pre-fix the
+    Performance page anchored the BF window on today-N, which diverged from the
+    last_date-N price-series window whenever today > last_date (CI after the UTC
+    rollover, on weekends/holidays, or a sparse personal-mode portfolio) — a 15-42
+    bps gap on the short 1M window that the 0.5-bps reconciliation tolerance caught.
+
+    sim_today_offset_days models the wall-clock date CI happens to run on; the
+    asserted window must NOT move with it, and must differ from the old today-N
+    anchor exactly when today has rolled past last_date.
+    """
+    import datetime
+    from src.returns import period_bounds
+
+    last_date = datetime.date(2026, 6, 10)
+    inception = "2025-05-01"
+    sim_today = last_date + datetime.timedelta(days=sim_today_offset_days)
+
+    start_1m, end_1m = period_bounds("1M", last_date, inception)
+    # Anchor-only: identical for every simulated wall-clock date.
+    assert (start_1m, end_1m) == ("2026-05-11", "2026-06-10")
+
+    # The pre-fix today-anchored start diverges precisely when today > last_date.
+    old_buggy_start_1m = (sim_today - datetime.timedelta(days=30)).isoformat()
+    if sim_today_offset_days > 0:
+        assert old_buggy_start_1m != start_1m, "today-anchored start should differ once rolled forward"
+    else:
+        assert old_buggy_start_1m == start_1m
+
+    # SI anchors on inception; the window end is always the data's last date.
+    assert period_bounds("SI", last_date, inception) == (inception, "2026-06-10")
+
+
+@pytest.mark.parametrize("days_past_frontier", [0, 1, 3])
+def test_bf_reconciles_when_wall_clock_past_price_frontier(days_past_frontier):
+    """End-to-end proof the anchor fix holds when the wall clock runs past the last
+    real price date — the exact CI-failure condition (today=Jun11, prices through Jun10),
+    plus weekends (+3).
+
+    Simulates today > frontier by forward-filling the value series past the real
+    frontier (what get_portfolio_value_series does with a future end date), WITHOUT
+    fetching future prices — deterministic and offline. With the window anchored on the
+    real frontier and the value series clipped to it (the fix), BF and the price series
+    reconcile within 0.5 bps; the pre-fix code anchored on the ffilled tail (== today)
+    and diverged 15-42 bps on the 1M window. Passing at +1/+3 (not just +0) proves the
+    flake is dead, not dormant.
+    """
+    import datetime
+    import pandas as pd
+    from src.attribution import brinson_fachler_period
+    from src.holdings import get_portfolio_value_series, last_real_price_date
+    from src.returns import period_bounds
+
+    INCEPTION = "2025-05-01"
+    real_end = last_real_price_date(INCEPTION, datetime.date.today().isoformat())
+    real_end_d = datetime.date.fromisoformat(real_end)
+
+    # Cached through the frontier only — no future-date fetch, so this stays offline.
+    pv_real = get_portfolio_value_series(INCEPTION, real_end)
+    if pv_real.dropna().empty:
+        pytest.skip("Portfolio data empty — skipped in local/empty-DB mode")
+
+    # Simulate the wall clock running past the frontier (pandas ffill only — no network).
+    sim_today = real_end_d + datetime.timedelta(days=days_past_frontier)
+    pv_ffilled = pv_real.reindex(
+        pd.date_range(INCEPTION, sim_today.isoformat(), freq="D")
+    ).ffill()
+    assert pv_ffilled.index[-1].date() == sim_today  # the trap: ffilled tail == wall clock
+
+    # The fix: anchor on the real frontier and clip the value series to it.
+    clipped = pv_ffilled[pv_ffilled.index <= pd.Timestamp(real_end)]
+    assert clipped.index[-1].date() == real_end_d
+
+    for label in ("1M", "3M"):
+        start, end = period_bounds(label, real_end_d, INCEPTION)
+        bf_df = brinson_fachler_period(start, end)
+        if bf_df.empty:
+            pytest.skip(f"BF result empty for {label}")
+        bf = float((bf_df["w_p"] * bf_df["r_p"]).sum()) + float(bf_df.attrs.get("cash_drag", 0.0))
+        sl = clipped[(clipped.index >= pd.Timestamp(start)) & (clipped.index <= pd.Timestamp(end))]
+        r_p_ps = float(sl.iloc[-1] / sl.iloc[0] - 1)
+        gap_bps = abs(bf - r_p_ps) * 10_000
+        assert gap_bps < 0.5, (
+            f"{label} @ wall-clock=frontier+{days_past_frontier}: BF {bf*10000:.1f} vs "
+            f"price {r_p_ps*10000:.1f} = {gap_bps:.2f} bps. Anchor fix regressed — the "
+            f"window must anchor on last_real_price_date, not the ffilled pv tail."
         )
 
 

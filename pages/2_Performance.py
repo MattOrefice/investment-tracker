@@ -19,10 +19,11 @@ from src.holdings import (
     get_inception_date,
     get_portfolio_value_series,
     get_sleeve_weights_on_date,
+    last_real_price_date,
 )
 from src.performance import compute_risk_metrics
 from src.reports import generate_quarterly_report
-from src.returns import annualize, period_return, twr_daily_linked
+from src.returns import annualize, period_bounds, period_return, twr_daily_linked
 from src.positioning import get_effective_duration
 from src.rebalance import compute_drift
 from src.ui_helpers import render_footer, render_page_header
@@ -74,19 +75,16 @@ def _load_naive_benchmark(start_val: float, kind: str = "60_40"):
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def _load_attribution(period_key: str):
-    if period_key == "SI":
-        start = INCEPTION
-    elif period_key == "1Y":
-        start = _date_offset(TODAY, days=-365)
-    elif period_key == "YTD":
-        import datetime
-        start = f"{TODAY[:4]}-01-01"
-    elif period_key == "3M":
-        start = _date_offset(TODAY, days=-90)
-    else:   # 1M
-        start = _date_offset(TODAY, days=-30)
-    return brinson_fachler_period(start, TODAY)
+def _load_attribution(period_key: str, anchor_end: str):
+    """Run BF attribution over a window anchored on ``anchor_end`` — the value
+    series' last data date — NOT date.today(). This must match the anchor
+    _benchmark_period_return uses (series.index[-1]); otherwise the BF window and
+    the price-series window it reconciles against diverge whenever the price
+    cache lags the calendar (today > last_date), skewing 1M/3M attribution by
+    15-42 bps. Single source of truth: src.returns.period_bounds.
+    """
+    start, end = period_bounds(period_key, anchor_end, INCEPTION)
+    return brinson_fachler_period(start, end)
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -122,11 +120,6 @@ def _load_sleeve_targets():
         {r["name"]: r["target_weight"] for r in parents},
         {r["name"]: r["target_weight"] for r in sleeves},
     )
-
-
-def _date_offset(iso: str, days: int) -> str:
-    from datetime import timedelta
-    return (date.fromisoformat(iso) + timedelta(days=days)).isoformat()
 
 
 def _pct(v: float, decimals: int = 2) -> str:
@@ -697,18 +690,28 @@ with col:
         "(HML, SMB, RMW, CMA loadings on the US sleeve regression)."
     )
 
+    # Anchor the attribution window on the last REAL price date — NOT pv.index[-1].
+    # get_portfolio_value_series forward-fills to today, so pv.index[-1] == today;
+    # anchoring there slices the price-series side across a forward-filled tail while
+    # the BF side uses real prices, diverging by 15-42 bps on the 1M window whenever
+    # today > the last traded day. Clipping both sides to this frontier makes the
+    # reconciliation hold regardless of the wall-clock date. (last_real_price_date.)
+    _real_end = last_real_price_date(INCEPTION, TODAY)
+    _pv_real  = pv[pv.index <= pd.Timestamp(_real_end)]
+    _naive_real = naive[naive.index <= pd.Timestamp(_real_end)]
     with st.spinner("Computing attribution…"):
-        bf_df = _load_attribution(bf_period)
+        bf_df = _load_attribution(bf_period, _real_end)
 
     # ── Stage 1 + Stage 2 tiles ─────────────────────────────────────────────────────
     if not bf_df.empty:
         # BF-internal returns (price-appreciation only; used for BF chart detail)
         _r_p_bf  = float((bf_df["w_p"] * bf_df["r_p"]).sum())
         _r_b_bf  = float((bf_df["w_b"] * bf_df["r_b"]).sum())
-        # Price-series returns (total return incl. dividends; drives Stage 1/2 tiles)
-        _r_p_ps  = _benchmark_period_return(pv, bf_period)
+        # Price-series returns (total return incl. dividends; drives Stage 1/2 tiles).
+        # Sliced to the real-price frontier so they reconcile with the BF window.
+        _r_p_ps  = _benchmark_period_return(_pv_real, bf_period)
         _r_b_ps  = _r_b_bf  # target weights x period returns; matches BF decomposition
-        _naive_r = _benchmark_period_return(naive, bf_period)
+        _naive_r = _benchmark_period_return(_naive_real, bf_period)
 
         _ts = compute_two_stage_attribution(
             port_return              = _r_p_ps,
