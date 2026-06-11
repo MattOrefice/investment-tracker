@@ -32,6 +32,36 @@ def get_holdings_on_date(date_str: str) -> pd.DataFrame:
     return df[df["net_shares"] > 0].copy()
 
 
+def last_real_price_date(start_date: str, end_date: Optional[str] = None) -> str:
+    """Last calendar date with a REAL (non-forward-filled) market price across the
+    portfolio's holdings — the true data frontier.
+
+    get_portfolio_value_series forward-fills prices across every calendar day up to
+    end_date (today), so its ``index[-1]`` is the wall-clock date, not the last
+    traded day. Return/attribution windows that must reconcile (the BF real-price
+    decomposition vs the value series) have to anchor here — the last date both
+    sides have REAL data — otherwise they slice across a forward-filled tail and
+    diverge whenever today > the last traded day (after the UTC rollover, on
+    weekends/holidays, or on a sparse newly-funded portfolio).
+
+    Returns an ISO date string; falls back to end_date when no holdings/prices exist.
+    """
+    end = end_date or date.today().isoformat()
+    holdings = get_holdings_on_date(end)
+    max_date = None
+    for ticker in holdings.index:
+        price_ticker = "BIL" if ticker == "SPAXX" else ticker  # SPAXX proxied via BIL
+        try:
+            idx = get_prices(price_ticker, start_date, end).index
+        except Exception:
+            continue
+        if len(idx) == 0:
+            continue
+        m = pd.to_datetime(idx).max().date()
+        max_date = m if max_date is None else max(max_date, m)
+    return max_date.isoformat() if max_date is not None else end
+
+
 def get_portfolio_value_series(
     start_date: str,
     end_date: Optional[str] = None,

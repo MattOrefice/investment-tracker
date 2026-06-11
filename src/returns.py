@@ -5,6 +5,37 @@ from typing import Literal
 import pandas as pd
 
 
+def period_bounds(
+    period: str, anchor_end: "date | str", inception: "date | str"
+) -> "tuple[str, str]":
+    """Return ``(start_iso, end_iso)`` for a return/attribution window.
+
+    Windows anchor on ``anchor_end`` — the last date for which prices exist (the
+    value series' last data point), NOT the wall-clock ``date.today()``. This is
+    what keeps an attribution window aligned with the price-series window it is
+    reconciled against: both sides must slice from the same calendar anchor, or
+    they diverge whenever the price cache lags the calendar (today > last_date),
+    which on a short (1M) window is a 15-42 bps reconciliation gap. Trailing
+    windows offset back from ``anchor_end``; SI uses ``inception``.
+    """
+    if isinstance(anchor_end, str):
+        anchor_end = date.fromisoformat(anchor_end)
+    end_iso = anchor_end.isoformat()
+    if period == "SI":
+        start_iso = inception if isinstance(inception, str) else inception.isoformat()
+    elif period == "1Y":
+        start_iso = (anchor_end - timedelta(days=365)).isoformat()
+    elif period == "YTD":
+        start_iso = f"{anchor_end.year}-01-01"
+    elif period == "3M":
+        start_iso = (anchor_end - timedelta(days=90)).isoformat()
+    elif period == "1M":
+        start_iso = (anchor_end - timedelta(days=30)).isoformat()
+    else:
+        raise ValueError(f"unknown period: {period!r}")
+    return start_iso, end_iso
+
+
 def twr_daily_linked(values: pd.Series, cashflows: pd.Series) -> float:
     """
     Chain-linked daily TWR (GIPS-compliant).
