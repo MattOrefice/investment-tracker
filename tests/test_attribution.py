@@ -393,12 +393,22 @@ def _frozen_cache_end() -> str:
     algebraic identity that holds on any internally-consistent dataset, so the frozen
     committed prices are the correct, deterministic basis. (Which calendar day is the
     right *display* frontier is a separate, still-open question.)
+
+    Floored to a settled date STRICTLY BEFORE today (WHERE price_date < today): on a
+    fresh checkout the committed frontier already predates today, so the anchor is
+    unchanged and CI behaviour is identical; but if a price-fetching test run before
+    the suite has polluted the shared cache with an incomplete same-day (today) bar,
+    the anchor still resolves to the clean settled frontier rather than that partial
+    bar. Direct DB read, no fetch.
     """
     import datetime
     from src.db import get_connection
+    today = datetime.date.today().isoformat()
     with get_connection() as conn:
-        row = conn.execute("SELECT MAX(price_date) FROM prices").fetchone()
-    return row[0] if row and row[0] else datetime.date.today().isoformat()
+        row = conn.execute(
+            "SELECT MAX(price_date) FROM prices WHERE price_date < ?", (today,)
+        ).fetchone()
+    return row[0] if row and row[0] else today
 
 
 # Captured ONCE at import (pytest collection), before any test executes and fetches
@@ -407,6 +417,16 @@ def _frozen_cache_end() -> str:
 # pollution that made this non-deterministic. Captured here, it is the committed
 # frontier regardless of test execution order or wall-clock date.
 _FROZEN_CACHE_END = _frozen_cache_end()
+
+
+def test_frozen_cache_end_floors_before_today():
+    """The reconciliation anchor is always a settled date strictly before today, so a
+    partial same-day bar (e.g. a price-fetching test run before the suite advances the
+    shared cache to an incomplete today bar) can never become the anchor. Guards the
+    pre-collection-pollution hardening; a regression to raw MAX(price_date) would fail
+    here whenever the cache holds a today bar."""
+    import datetime
+    assert _frozen_cache_end() < datetime.date.today().isoformat()
 
 
 def test_identity_ps_two_stage_si_60_40():
