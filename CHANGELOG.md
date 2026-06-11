@@ -140,6 +140,22 @@ GitHub Actions run after every push and confirm the green checkmark before closi
 
 ---
 
+## "Latest report" download link made inception-aware
+_2026-06-11_
+The Generate-Quarterly-Report expander surfaced a stale
+"Orefice_Portfolio_2026Q1.pdf" download link directly above the "No completed
+quarter yet." empty state — a self-contradiction. The link was a plain
+filesystem glob for the newest report PDF on disk by mtime, with no
+inception-awareness, so it surfaced a pre-fix artifact regardless of whether the
+page's own reportability rule denied that quarter. A new
+`latest_report_link(existing_reports, inception, today)` in `src/asof.py` gates
+the link through the same `most_recent_reportable_quarter` the report and
+tooltip use (single source of truth): no reportable quarter → no link; otherwise
+the newest report on disk. The stale local-only PDF (gitignored; never tracked
+or deployed) was deleted. Tests pin the suppression/newest/empty-dir branches.
+
+---
+
 ## BF reconciliation test made deterministic (no live-data dependency)
 _2026-06-11_
 The Brinson-Fachler reconciliation identity test gated per-push CI but
