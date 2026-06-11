@@ -19,7 +19,7 @@ from src.holdings import (
     get_inception_date,
     get_portfolio_value_series,
     get_sleeve_weights_on_date,
-    last_real_price_date,
+    last_settled_price_date,
 )
 from src.performance import compute_risk_metrics
 from src.reports import generate_quarterly_report
@@ -150,6 +150,20 @@ with col:
     with st.spinner("Loading performance data…"):
         pv, cf = _load_portfolio()
 
+    # Display anchor C — the last SETTLED trading day. get_portfolio_value_series
+    # forward-fills to today and a live mid-session fetch caches a PARTIAL intraday
+    # bar; using that as a period-window endpoint swings displayed 1M/3M returns by
+    # the half-day move (~1:1). Clip EVERY displayed period series (pv, cf, and the
+    # benchmark series below) to C so all shown returns share one stable, settled
+    # endpoint. current_mv (the live account value) intentionally stays on today.
+    # On frozen committed data C is the series end, so CI render checks see no change;
+    # the deterministic BF reconciliation test anchors on last_real (not C) and is
+    # unaffected.
+    _C    = last_settled_price_date(INCEPTION, TODAY)
+    _C_ts = pd.Timestamp(_C)
+    pv = pv[pv.index <= _C_ts]
+    cf = cf[cf.index <= _C_ts]
+
     # ── Generate Report expander ──────────────────────────────────────────
     with st.expander("Generate Quarterly Report", expanded=False):
         _existing_pdfs = sorted(_REPORTS_DIR.glob("*.pdf"), key=lambda p: p.stat().st_mtime, reverse=True)
@@ -237,14 +251,16 @@ with col:
     with st.spinner("Loading benchmark data…"):
         start_val = float(pv.iloc[0])
         sp, bl    = _load_benchmarks(start_val)
+        sp = sp[sp.index <= _C_ts]   # anchor benchmark series on the settled frontier (C)
+        bl = bl[bl.index <= _C_ts]
 
     _saa_parents, _saa_sleeves = _load_sleeve_targets()
     _non_eq_pct = 1.0 - _saa_parents.get("Equity", 0.78 / 0.98)
     _non_us_eq  = (_saa_sleeves.get("International Developed", 0.20 / 0.98)
                    + _saa_sleeves.get("Emerging Markets", 0.09 / 0.98))
 
-    # Key scalars (Since Inception)
-    si_days     = (pd.Timestamp(TODAY) - pd.Timestamp(INCEPTION)).days
+    # Key scalars (Since Inception). Period to the settled frontier C, not today.
+    si_days     = (_C_ts - pd.Timestamp(INCEPTION)).days
     port_si     = period_return("daily", pv, cf, "SI")
     sp500_si    = float(sp.iloc[-1] / sp.iloc[0] - 1)
     blended_si  = float(bl.iloc[-1] / bl.iloc[0] - 1)
@@ -479,6 +495,7 @@ with col:
         _risk_bm_label  = "S&P 500 (SPY)"
     else:
         _naive_60_40 = _load_naive_benchmark(start_val, "60_40")
+        _naive_60_40 = _naive_60_40[_naive_60_40.index <= _C_ts]
         _bl_for_metrics = _naive_60_40 / float(_naive_60_40.iloc[0])
         _risk_bm_label  = "60/40 (60% SPY / 40% AGG)"
     _bm_row_label = _BM_ROW_LABELS[_risk_bm_kind]
@@ -670,6 +687,7 @@ with col:
     )
     naive_kind   = _NAIVE_OPTIONS[_naive_sel]
     naive        = _load_naive_benchmark(start_val, naive_kind)
+    naive        = naive[naive.index <= _C_ts]   # settled frontier (C)
     _naive_label = (
         "60/40 naive baseline (60% SPY, 40% AGG)"
         if naive_kind == "60_40"
@@ -694,17 +712,13 @@ with col:
         "(HML, SMB, RMW, CMA loadings on the US sleeve regression)."
     )
 
-    # Anchor the attribution window on the last REAL price date — NOT pv.index[-1].
-    # get_portfolio_value_series forward-fills to today, so pv.index[-1] == today;
-    # anchoring there slices the price-series side across a forward-filled tail while
-    # the BF side uses real prices, diverging by 15-42 bps on the 1M window whenever
-    # today > the last traded day. Clipping both sides to this frontier makes the
-    # reconciliation hold regardless of the wall-clock date. (last_real_price_date.)
-    _real_end = last_real_price_date(INCEPTION, TODAY)
-    _pv_real  = pv[pv.index <= pd.Timestamp(_real_end)]
-    _naive_real = naive[naive.index <= pd.Timestamp(_real_end)]
+    # Attribution anchors on the same settled frontier C as the rest of the page;
+    # pv and naive are already clipped to C above, so the BF window (_load_attribution
+    # via period_bounds) and the price-series side both end at C. They reconcile, and
+    # the displayed active return matches the 1M/3M numbers shown elsewhere — no
+    # forward-filled / partial-intraday tail in any window endpoint.
     with st.spinner("Computing attribution…"):
-        bf_df = _load_attribution(bf_period, _real_end)
+        bf_df = _load_attribution(bf_period, _C)
 
     # ── Stage 1 + Stage 2 tiles ─────────────────────────────────────────────────────
     if not bf_df.empty:
@@ -712,10 +726,9 @@ with col:
         _r_p_bf  = float((bf_df["w_p"] * bf_df["r_p"]).sum())
         _r_b_bf  = float((bf_df["w_b"] * bf_df["r_b"]).sum())
         # Price-series returns (total return incl. dividends; drives Stage 1/2 tiles).
-        # Sliced to the real-price frontier so they reconcile with the BF window.
-        _r_p_ps  = _benchmark_period_return(_pv_real, bf_period)
+        _r_p_ps  = _benchmark_period_return(pv, bf_period)
         _r_b_ps  = _r_b_bf  # target weights x period returns; matches BF decomposition
-        _naive_r = _benchmark_period_return(_naive_real, bf_period)
+        _naive_r = _benchmark_period_return(naive, bf_period)
 
         _ts = compute_two_stage_attribution(
             port_return              = _r_p_ps,
