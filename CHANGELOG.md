@@ -140,6 +140,13 @@ GitHub Actions run after every push and confirm the green checkmark before closi
 
 ---
 
+## Risk-metric windows now anchor on the settled frontier, matching displayed returns
+_2026-06-11_
+
+The risk-adjusted metrics (Sharpe, Sortino, volatility, max drawdown, VaR/CVaR, tracking error, information ratio) derived their trailing-window START from the wall-clock date, while the period returns — after the prior settled-frontier change — anchored on the last settled trading day. On the short (1M) window this left the displayed 1M Sharpe covering a different span than the 1M return under the same label, and drifting day-to-day with the calendar. The window cutoff now anchors on the value series' last date (the settled frontier), so risk-metric windows align with the return windows of the same label and no longer depend on the wall clock; longer windows were already negligibly affected. This completes the settled-frontier alignment across all period surfaces on the Performance page.
+
+---
+
 ## Displayed period returns anchor on the last settled trading day
 _2026-06-11_
 Every displayed period-return surface on the Performance page (headline KPIs,
