@@ -36,6 +36,29 @@ def period_bounds(
     return start_iso, end_iso
 
 
+def period_window_predates_inception(
+    period: str, anchor_end: "date | str", inception: "date | str"
+) -> bool:
+    """True when a trailing period's window starts BEFORE inception.
+
+    Such a window cannot represent a true period of that length — the portfolio
+    did not exist for all of it, so the return would clip to the available history
+    and misrepresent (e.g.) a days-old portfolio as having a "1 Year" return.
+    Callers suppress these rows.
+
+    Always False for:
+      - "SI": by definition the portfolio's actual life (always legitimate).
+      - "YTD": "this year so far" is a real period even when the portfolio started
+        mid-year — it never claims a full year.
+    Uses period_bounds, so it shares the settled-frontier window logic.
+    """
+    if period in ("SI", "YTD"):
+        return False
+    start, _ = period_bounds(period, anchor_end, inception)
+    inc = inception if isinstance(inception, str) else inception.isoformat()
+    return start < inc  # ISO strings compare lexicographically
+
+
 def twr_daily_linked(values: pd.Series, cashflows: pd.Series) -> float:
     """
     Chain-linked daily TWR (GIPS-compliant).

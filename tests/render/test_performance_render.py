@@ -95,6 +95,20 @@ def test_quarterly_snapshot_renders_when_quarter_reportable(performance_app: App
     )
 
 
+def test_period_returns_no_suppression_on_full_history(performance_app: AppTest) -> None:
+    """Demo (full history): NO Period-Returns row is suppressed — every window start
+    is after inception, so the insufficient-history caption must be absent. Guards
+    that the short-history row suppression cannot over-fire on a portfolio with
+    adequate history (the demo-stays-unchanged invariant)."""
+    if not performance_app.metric:
+        pytest.skip("No portfolio data — skipped in local/empty-DB mode")
+    captions = [c.value for c in performance_app.caption]
+    assert not any("longer than the portfolio's history" in c for c in captions), (
+        "Insufficient-history suppression fired on the full-history demo portfolio — "
+        "over-firing; only short-history portfolios should suppress trailing-period rows."
+    )
+
+
 def test_methodology_expander_present(performance_app: AppTest) -> None:
     """Methodology validation expander must render. Pinned: Phase 4."""
     if not performance_app.metric:
