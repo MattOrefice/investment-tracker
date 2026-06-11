@@ -18,6 +18,7 @@ from datetime import date
 from src.asof import (
     most_recent_reportable_quarter,
     reportable_quarter_phrase,
+    latest_report_link,
     as_of_report_line,
     NO_COMPLETED_QUARTER,
 )
@@ -90,3 +91,23 @@ def test_reportable_quarter_phrase_names_quarter_when_reportable():
 def test_reportable_quarter_phrase_empty_state_when_pre_inception():
     """Tooltip phrase names no stale quarter when none is reportable (personal-mode shape)."""
     assert reportable_quarter_phrase(date(2026, 6, 9), _TODAY) == "(no completed quarter yet)"
+
+
+# ── "Latest report" download link (Generate-Quarterly-Report expander) ────────
+
+def test_latest_report_link_suppressed_when_pre_inception():
+    """Personal-mode pre-inception: no reportable quarter → no 'Latest report' link,
+    even though a stale PDF sits on disk. Pins the suppression branch (the bug)."""
+    on_disk = ["Orefice_Portfolio_2026Q1.pdf", "Orefice_Portfolio_20250501_to_20260501.pdf"]
+    assert latest_report_link(on_disk, date(2026, 6, 9), _TODAY) is None
+
+
+def test_latest_report_link_shows_newest_when_reportable():
+    """When a quarter is reportable (demo shape), the newest report on disk surfaces."""
+    on_disk = ["Orefice_Portfolio_2026Q1.pdf", "Orefice_Portfolio_20250501_to_20260501.pdf"]
+    assert latest_report_link(on_disk, date(2025, 5, 1), _TODAY) == "Orefice_Portfolio_2026Q1.pdf"
+
+
+def test_latest_report_link_none_when_no_reports_on_disk():
+    """Reportable quarter but empty output dir → still no link (nothing to surface)."""
+    assert latest_report_link([], date(2025, 5, 1), _TODAY) is None

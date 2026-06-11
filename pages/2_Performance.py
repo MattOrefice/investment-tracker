@@ -8,7 +8,7 @@ import streamlit as st
 
 st.set_page_config(page_title="Performance & Attribution", layout="wide")
 
-from src.asof import as_of_banner, most_recent_reportable_quarter, reportable_quarter_phrase, NO_COMPLETED_QUARTER
+from src.asof import as_of_banner, most_recent_reportable_quarter, reportable_quarter_phrase, latest_report_link, NO_COMPLETED_QUARTER
 from src.config import get_demo_banner_text, IS_DEMO
 from src.attribution import brinson_fachler_period, compute_two_stage_attribution
 from src.benchmarks import get_custom_blended_series, get_naive_60_40_series, get_naive_series, get_sp500_series
@@ -153,8 +153,12 @@ with col:
     # ── Generate Report expander ──────────────────────────────────────────
     with st.expander("Generate Quarterly Report", expanded=False):
         _existing_pdfs = sorted(_REPORTS_DIR.glob("*.pdf"), key=lambda p: p.stat().st_mtime, reverse=True)
-        if _existing_pdfs:
-            _latest = _existing_pdfs[0]
+        # Inception-gate the "Latest report" link through the same reportability
+        # helper the report itself uses: when no completed quarter is reportable
+        # (pre-inception), surface no link — otherwise a stale pre-fix PDF on disk
+        # would sit above the "No completed quarter yet." empty state.
+        _latest = latest_report_link(_existing_pdfs, INCEPTION, date.fromisoformat(TODAY))
+        if _latest is not None:
             st.download_button(
                 f"⬇ Latest report: {_latest.name}",
                 _latest.read_bytes(),

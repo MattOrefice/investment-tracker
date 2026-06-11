@@ -53,6 +53,23 @@ def most_recent_reportable_quarter(
     return q_start, q_end, label
 
 
+def latest_report_link(existing_reports, inception: "date | str", today: date | None = None):
+    """The report to surface as 'Latest report', or None to suppress the link.
+
+    ``existing_reports`` is a newest-first sequence of report paths/names. Returns
+    the newest one only when a completed quarter is currently reportable
+    (``most_recent_reportable_quarter`` is not None); when none is reportable —
+    the pre-inception case — returns None so a stale pre-inception report is not
+    surfaced above the "No completed quarter yet." empty state. Inception-gated
+    through the same helper the report and tooltip use (single source of truth);
+    report *generation* is already inception-gated, so a reportable-quarter state
+    only ever has reportable or custom reports on disk to link.
+    """
+    if most_recent_reportable_quarter(inception, today) is None:
+        return None
+    return existing_reports[0] if existing_reports else None
+
+
 def reportable_quarter_phrase(inception: "date | str", today: date | None = None) -> str:
     """Parenthetical quarter label for help/tooltip copy.
 
