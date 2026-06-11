@@ -67,3 +67,41 @@ def test_risk_window_aligns_with_return_window():
     # the window only by the series-end delta — never by date.today().
     other = pd.Timestamp("2026-03-31")
     assert _window_cutoff("1M", other) == other - pd.Timedelta(days=30)
+
+
+# ── Period Returns insufficient-history row suppression ───────────────────────
+
+def test_period_suppression_short_history():
+    """Short history (2-day portfolio): trailing windows (1M/3M/1Y) begin before
+    inception → suppressed; YTD ('this year so far') and SI (actual life) always
+    legitimate → shown. Data-shape-driven (history length vs window), not mode."""
+    from src.returns import period_window_predates_inception
+    C, inception = "2026-06-08", "2026-06-06"  # 2 days of history
+    assert period_window_predates_inception("1M", C, inception) is True
+    assert period_window_predates_inception("3M", C, inception) is True
+    assert period_window_predates_inception("1Y", C, inception) is True
+    assert period_window_predates_inception("YTD", C, inception) is False  # always show
+    assert period_window_predates_inception("SI", C, inception) is False   # never suppress
+
+
+def test_period_suppression_long_history_unaffected():
+    """Full history (demo shape): every window start is after inception → nothing
+    suppressed. Pins the demo-stays-unchanged invariant (suppression can't over-fire)."""
+    from src.returns import period_window_predates_inception
+    C, inception = "2026-06-08", "2025-05-01"
+    for p in ("1M", "3M", "YTD", "1Y", "SI"):
+        assert period_window_predates_inception(p, C, inception) is False
+
+
+def test_period_suppression_boundary_per_row():
+    """45-day history: 1M (start C−30, after inception) shows; 3M/1Y (start before
+    inception) suppress — proves the predicate fires per-row, not all-or-nothing."""
+    import datetime
+    from src.returns import period_window_predates_inception
+    C = datetime.date(2026, 6, 8)
+    inception = (C - datetime.timedelta(days=45)).isoformat()
+    Cs = C.isoformat()
+    assert period_window_predates_inception("1M", Cs, inception) is False  # 30 < 45 → after inception
+    assert period_window_predates_inception("3M", Cs, inception) is True   # 90 > 45 → before inception
+    assert period_window_predates_inception("1Y", Cs, inception) is True
+    assert period_window_predates_inception("SI", Cs, inception) is False

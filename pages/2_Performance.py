@@ -23,7 +23,7 @@ from src.holdings import (
 )
 from src.performance import compute_risk_metrics
 from src.reports import generate_quarterly_report
-from src.returns import annualize, period_bounds, period_return, twr_daily_linked
+from src.returns import annualize, period_bounds, period_return, period_window_predates_inception, twr_daily_linked
 from src.positioning import get_effective_duration
 from src.rebalance import compute_drift
 from src.ui_helpers import render_footer, render_page_header
@@ -433,9 +433,25 @@ with col:
             "_raw_bl":         br,
         })
 
-    # Build display dataframe
+    # Build display dataframe. Suppress trailing-window rows (1M/3M/1Y) whose window
+    # begins before inception: on a short-history portfolio they would otherwise clip
+    # to the same handful of days as SI and render identical numbers, misrepresenting
+    # (e.g.) a days-old portfolio as having a "1 Year" return. YTD ("this year so far")
+    # and SI (the portfolio's actual life) are always legitimate and always shown.
+    # Mirrors the #31 quarterly empty-state. Demo (full history) suppresses nothing —
+    # every window start is after inception. Same period_bounds / settled-frontier (C)
+    # logic and canonical INCEPTION (MIN trade_date) the returns themselves use.
+    _EM = "—"
+    _any_suppressed = False
     display = {}
     for p in PERIODS:
+        if period_window_predates_inception(p, _C, INCEPTION):
+            _any_suppressed = True
+            display[PERIOD_LABEL[p]] = {
+                "Portfolio": _EM, "S&P 500": _EM, "Custom Blended": _EM,
+                "vs S&P 500": _EM, "vs Blended": _EM,
+            }
+            continue
         pr = period_return(method_key, pv, cf, p)
         sr = _benchmark_period_return(sp, p)
         br = _benchmark_period_return(bl, p)
@@ -454,6 +470,12 @@ with col:
         **{"font-weight": "bold"},
     )
     st.dataframe(styled, width='stretch')
+    if _any_suppressed:
+        st.caption(
+            f"— indicates a period longer than the portfolio's history "
+            f"({si_days} day{'s' if si_days != 1 else ''} since inception); only periods the "
+            f"portfolio fully spans are shown. Since Inception always reflects the actual history."
+        )
 
     st.divider()
 
