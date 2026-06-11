@@ -62,6 +62,28 @@ def last_real_price_date(start_date: str, end_date: Optional[str] = None) -> str
     return max_date.isoformat() if max_date is not None else end
 
 
+def last_settled_price_date(start_date: str, end_date: Optional[str] = None) -> str:
+    """Last COMPLETE settled trading day — the anchor for DISPLAYED period returns.
+
+    Unlike last_real_price_date (which can return *today* when a live mid-session
+    fetch has cached a partial intraday bar), this excludes the current day so an
+    in-progress bar is never used as a period-window endpoint — which would swing
+    displayed 1M/3M returns by the intraday move (~1:1). Simple, robust proxy: the
+    last real price date strictly before today (always settled). Trade-off: on a
+    fully-settled today (post-close) the display is one day stale rather than
+    risking a timezone-fragile post-close check — robustness over cleverness.
+
+    On frozen/committed data (frontier < today) this EQUALS last_real_price_date,
+    so the deterministic BF reconciliation test (which anchors on last_real) is
+    unaffected.
+    """
+    today = date.today()
+    end = end_date or today.isoformat()
+    yesterday = (today - timedelta(days=1)).isoformat()
+    cap = min(end, yesterday)  # ISO strings compare lexicographically
+    return last_real_price_date(start_date, cap)
+
+
 def get_portfolio_value_series(
     start_date: str,
     end_date: Optional[str] = None,
