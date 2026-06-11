@@ -140,6 +140,13 @@ GitHub Actions run after every push and confirm the green checkmark before closi
 
 ---
 
+## Period-return rows with insufficient history are now suppressed rather than shown as full periods
+_2026-06-11_
+
+On a short-history portfolio the Period Returns table rendered every window — 1 Month, 3 Months, YTD, 1 Year, Since Inception — with the same number, because each window clipped to the same handful of days of actual data, presenting (for example) a "1 Year" return for a portfolio days old. Trailing-window rows whose window begins before the portfolio's inception are now suppressed, since they cannot represent a true period of that length; the Since-Inception row, which by definition covers the portfolio's actual life, always shows. A portfolio with a full history is unaffected — every window begins after inception, so all rows display as before. This mirrors the existing treatment of the quarterly report, which shows an explicit empty state until a complete quarter exists.
+
+---
+
 ## Risk-metric windows now anchor on the settled frontier, matching displayed returns
 _2026-06-11_
 
