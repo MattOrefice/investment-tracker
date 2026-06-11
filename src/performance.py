@@ -1,22 +1,28 @@
 """Risk-adjusted performance metrics."""
 import math
-from datetime import date, timedelta
 
 import numpy as np
 import pandas as pd
 
 
-def _window_cutoff(window: str) -> "pd.Timestamp | None":
-    """Return the start-of-window cutoff for the given window key, or None for SI."""
-    today = date.today()
+def _window_cutoff(window: str, anchor_end: "pd.Timestamp") -> "pd.Timestamp | None":
+    """Return the start-of-window cutoff for the given window, or None for SI.
+
+    Anchored on ``anchor_end`` — the value series' last date (the settled frontier
+    after the page's display-anchor clip), NOT date.today(). This keeps the
+    risk-metric windows aligned with the period-RETURN windows of the same label
+    (both offset back from the series' last date) and makes the cutoff
+    wall-clock-independent, so a short (1M) risk stat no longer drifts day-to-day
+    with the calendar.
+    """
     if window == "1Y":
-        return pd.Timestamp(today - timedelta(days=365))
+        return anchor_end - pd.Timedelta(days=365)
     if window == "3M":
-        return pd.Timestamp(today - timedelta(days=90))
+        return anchor_end - pd.Timedelta(days=90)
     if window == "1M":
-        return pd.Timestamp(today - timedelta(days=30))
+        return anchor_end - pd.Timedelta(days=30)
     if window == "YTD":
-        return pd.Timestamp(date(today.year, 1, 1))
+        return pd.Timestamp(anchor_end.year, 1, 1)
     return None  # "SI" = full inception series
 
 
@@ -41,7 +47,12 @@ def compute_risk_metrics(
         n_days, ann_port_return_pct, ann_bench_return_pct.
     Returns {} if fewer than 20 observations.
     """
-    cutoff = _window_cutoff(window)
+    if pv.empty:
+        return {}
+    # Anchor trailing windows on the series' last date (the settled frontier), not
+    # the wall clock — see _window_cutoff. pv.index[-1] is C when the page passes a
+    # display-clipped series; for synthetic test series it is the series' own end.
+    cutoff = _window_cutoff(window, pv.index[-1])
     if cutoff is not None:
         # .copy() breaks any view relationship with the @st.cache_data-frozen
         # Series; without it, pandas may reference the original full-length
