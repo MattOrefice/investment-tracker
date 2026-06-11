@@ -140,6 +140,32 @@ GitHub Actions run after every push and confirm the green checkmark before closi
 
 ---
 
+## Displayed period returns anchor on the last settled trading day
+_2026-06-11_
+Every displayed period-return surface on the Performance page (headline KPIs,
+the Period Returns table, Brinson-Fachler attribution, the cumulative chart, and
+the risk-metric benchmark inputs) anchored its window endpoint on the
+forward-filled "today" — `get_portfolio_value_series` fills prices across every
+calendar day to today, and a live mid-session fetch caches a partial intraday
+bar. Used as a window endpoint, that partial bar swung the displayed 1M/3M
+returns by the half-day move (empirically ±50–150 bps, ~1:1) and represented a
+half-day as a full period; on the public demo the numbers would jitter with the
+live tape mid-session. A new `holdings.last_settled_price_date()` returns the
+last complete settled session (the last real price date strictly before today —
+a simple, robust proxy that accepts ≤1 day of post-close staleness rather than a
+timezone-fragile post-close check), and the page derives it once and clips every
+displayed period series to it, so all shown returns share one stable, settled
+endpoint and stay mutually consistent. The live account value (`current_mv`) and
+point-in-time snapshots (weights, duration) intentionally stay on today. The
+empirical pass that determined this anchor proved the reconciliation identity
+holds equally on each candidate against frozen data; the deterministic BF
+reconciliation test is unchanged (it anchors on `last_real_price_date`, which
+equals the settled frontier on committed data). `compute_risk_metrics` still
+derives its window cutoff from the wall clock internally (shared module) — a
+pre-existing second-order item, flagged, not changed here. Suite 932 → 935.
+
+---
+
 ## "Latest report" download link made inception-aware
 _2026-06-11_
 The Generate-Quarterly-Report expander surfaced a stale
