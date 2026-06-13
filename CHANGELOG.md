@@ -8,6 +8,13 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Risk page registered in navigation; nav test now derives its expectations from disk
+_2026-06-13_
+
+The Risk page was added and tested but not registered in the application's navigation router, which uses an explicit page list rather than directory auto-discovery — so the page existed, imported cleanly, and passed its render test while remaining invisible in the sidebar. The page is now registered in the Portfolio group beside Benchmark Attribution and Factor Profile. The navigation test, which previously compared the router against a hardcoded list of expected pages and so could not detect a newly added unregistered page, now derives its expected set from the page files on disk and asserts every one is registered — a page that is built but not wired into navigation will now fail continuous integration.
+
+---
+
 ## New Risk page: portfolio factor-risk decomposition
 _2026-06-11_
 
