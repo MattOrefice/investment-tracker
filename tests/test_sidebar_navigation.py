@@ -2,7 +2,8 @@
 
 Verifies:
 - app.py uses st.navigation() with expanded=True and a hidden landing page
-- All 12 page paths present and three section headers declared
+- Every page file on disk is registered in the navigation (derived from the
+  pages/ directory, not a hardcoded list) and three section headers declared
 - render_page_header callable and called by every inner page
 - Landing page does not call render_page_header (would be self-referential)
 - No page still references the removed render_sidebar_header helper
@@ -16,20 +17,6 @@ from unittest.mock import MagicMock, patch
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 PAGES_DIR = REPO_ROOT / "pages"
 APP_PY    = REPO_ROOT / "app.py"
-
-_EXPECTED_PAGES = [
-    "pages/1_SAA.py",
-    "pages/2_Performance.py",
-    "pages/3_Macro.py",
-    "pages/4_Factor_Profile.py",
-    "pages/5_Asset_Evaluation.py",
-    "pages/6_Benchmark_Attribution.py",
-    "pages/8_Research.py",
-    "pages/9_Correlations.py",
-    "pages/10_Trade_Log.py",
-    "pages/11_Capital_Deployment.py",
-    "pages/12_Tax_Lots.py",
-]
 
 _EXPECTED_SECTIONS = ["Portfolio", "Markets & Macro", "Operations"]
 
@@ -60,13 +47,34 @@ def test_landing_page_is_hidden():
     )
 
 
-# ── Test 4: all 12 page paths present ────────────────────────────────────────
+# ── Test 4: every page file on disk is registered in the navigation ──────────
+# Derived from the pages/ directory, NOT a hardcoded list, so a page that is
+# built and import-clean but never wired into st.navigation (the failure mode
+# that left the Risk page invisible behind a passing render test) fails CI.
+# app.py passes an explicit page list to st.navigation(), which disables
+# Streamlit's pages/ folder auto-discovery — registration is manual and must be
+# asserted here.
+#
+# Special cases handled without an exclusion list:
+#   - The hidden Home/landing page is _landing_page_render (not a pages/ file),
+#     so the [0-9]*.py glob never enumerates it.
+#   - pages/13_Household_View.py is registered conditionally (personal mode only,
+#     inside `if not IS_DEMO:`), but its path literal is always present in app.py
+#     source, so this source-text check covers it in both modes.
 
-def test_navigation_includes_all_12_pages():
+def test_every_page_file_is_registered_in_navigation():
     src = APP_PY.read_text(encoding="utf-8")
-    missing = [p for p in _EXPECTED_PAGES if p not in src]
+    page_files = sorted(PAGES_DIR.glob("[0-9]*.py"))
+    assert page_files, "No page files found under pages/ — glob pattern wrong?"
+    missing = [
+        f"pages/{p.name}" for p in page_files
+        if f"pages/{p.name}" not in src
+    ]
     assert not missing, (
-        f"Page paths missing from app.py navigation: {', '.join(missing)}"
+        "Page file(s) exist on disk but are NOT registered in app.py's "
+        f"st.navigation list: {', '.join(missing)}. A page can import cleanly "
+        "and pass its render test yet be invisible in the sidebar if it is never "
+        "added to _page_groups — register it in app.py."
     )
 
 
