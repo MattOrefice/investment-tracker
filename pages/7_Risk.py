@@ -15,7 +15,7 @@ st.set_page_config(page_title="Risk", layout="wide")
 from src.asof import as_of_banner
 from src.config import get_demo_banner_text, IS_DEMO
 from src.factors import sig_marker
-from src.holdings import get_inception_date
+from src.holdings import get_current_market_value, get_inception_date
 from src.risk import (
     CREDIT_PROXY_DISCLOSURE,
     FACTORS,
@@ -24,6 +24,9 @@ from src.risk import (
     low_confidence_caveat,
     methodology_notes,
     run_portfolio_factor_regression,
+    run_scenarios,
+    scenario_insufficient_history_message,
+    scenario_methodology_notes,
 )
 from src.ui_helpers import render_footer, render_page_header
 
@@ -90,6 +93,8 @@ with col:
         st.stop()
 
     # ── Insufficient-history empty state (the #38-analog) ─────────────────────
+    # Phase 2 (scenarios) is GATED on Phase 1: with no betas there is nothing to
+    # shock, so BOTH sections show the empty state — never garbage P&L.
     if result["status"] == "insufficient_history":
         st.info(insufficient_history_message(result["n"], result["min_obs"]))
         st.caption(
@@ -97,6 +102,10 @@ with col:
             "explicit empty state rather than unstable coefficients, consistent "
             "with the rest of the app's treatment of short histories."
         )
+        st.divider()
+        st.subheader("Scenario stress test")
+        _scn_empty = run_scenarios(result)  # inherits the insufficient-history state
+        st.info(scenario_insufficient_history_message(_scn_empty["n"], _scn_empty["min_obs"]))
         render_footer()
         st.stop()
 
@@ -163,6 +172,68 @@ with col:
     # ── Methodology ───────────────────────────────────────────────────────────
     with st.expander("Methodology & Disclosure", expanded=False):
         for note in methodology_notes():
+            st.markdown(f"- {note}")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    #  Section 2 — Scenario stress test (consumes the Phase 1 betas above)
+    # ══════════════════════════════════════════════════════════════════════════
+    st.divider()
+    st.subheader("Scenario stress test")
+    st.caption(
+        "Estimated instantaneous portfolio impact under five factor shocks, "
+        "applying the betas above to duration-translated factor moves."
+    )
+
+    with st.expander("How to read this section", expanded=False):
+        st.markdown(
+            "Each scenario applies the **same factor betas** from the decomposition "
+            "above to a set of factor shocks: **estimated P&L = Σ (β × factor "
+            "move)**. Yield and spread shocks are **translated to factor returns "
+            "through duration** before the beta is applied — a rate move is a "
+            "duration-implied price return, not a raw basis-point number — and "
+            "the translation chain is shown on every line so the units are "
+            "transparent.\n\n"
+            "These are **instantaneous sensitivities, not forecasts**: what the "
+            "book would gain or lose if the move happened at once. They are "
+            "**linear first-order** estimates and do not capture convexity or beta "
+            "instability in large moves. Magnitudes are illustrative stress "
+            "sizes, not predictions."
+        )
+
+    current_mv = get_current_market_value()
+    scen = run_scenarios(result, current_mv if current_mv and current_mv > 0 else None)
+
+    if scen.get("low_confidence"):
+        st.warning(low_confidence_caveat(scen.get("n", result["n"])))
+
+    # Per-scenario cards: factor moves, the translation chain, and total P&L.
+    for s in scen["scenarios"]:
+        with st.container(border=True):
+            usd = f" &nbsp;·&nbsp; **${s['total_usd']:+,.0f}**" if s["total_usd"] is not None else ""
+            st.markdown(f"**{s['name']}** — estimated impact **{s['total_pct'] * 100:+.2f}%**{usd}")
+            st.caption(s["summary"])
+            for leg in s["legs"]:
+                st.markdown(f"- {leg['chain']}")
+
+    # Summary comparison of the five scenarios.
+    st.markdown("**Scenario comparison**")
+    summary_rows = []
+    for s in scen["scenarios"]:
+        summary_rows.append({
+            "Scenario":            s["name"],
+            "Estimated impact":    f"{s['total_pct'] * 100:+.2f}%",
+            "Estimated $ impact":  (f"${s['total_usd']:+,.0f}" if s["total_usd"] is not None else "—"),
+        })
+    st.dataframe(pd.DataFrame(summary_rows).set_index("Scenario"), width="stretch")
+    st.caption(
+        "Risk-off shows the diversification-works case — a flight-to-quality rate "
+        "rally offsets part of the equity loss; the 2022-style regime shows the "
+        "diversification-fails case — rates and equity fall together and the "
+        "losses compound."
+    )
+
+    with st.expander("Scenario methodology & disclosure", expanded=False):
+        for note in scenario_methodology_notes(scen.get("durations")):
             st.markdown(f"- {note}")
 
     render_footer()
