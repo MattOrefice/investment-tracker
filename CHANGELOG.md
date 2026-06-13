@@ -8,6 +8,13 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Risk page: per-sleeve risk contribution decomposition
+_2026-06-13_
+
+The Risk page now decomposes total portfolio volatility into each sleeve's risk contribution, using the Euler decomposition (marginal contribution to risk weighted by allocation), so the contributions sum exactly to total portfolio volatility. Each sleeve's share of risk is shown beside its share of capital, making visible where the two diverge: a high-volatility or highly-correlated sleeve contributes more risk than its weight, while a diversifying low-correlation sleeve contributes less — a ten-percent allocation is not ten percent of the risk. The decomposition uses realized sample covariance over the available window, disclosed as such with the window and annualization shown; when history is too short to estimate a stable covariance matrix, or the matrix is degenerate, the section shows an insufficient-history state rather than unstable contributions, consistent with the rest of the app. This completes the Risk page's three sections: factor decomposition, scenario stress-testing, and risk contribution.
+
+---
+
 ## Risk page: scenario stress-testing built on the factor decomposition
 _2026-06-13_
 
