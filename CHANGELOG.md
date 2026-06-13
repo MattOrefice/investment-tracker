@@ -8,6 +8,13 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Risk page: risk-contribution section now charts weight versus risk
+_2026-06-13_
+
+The risk-contribution section previously presented each sleeve's share of capital and share of risk as a table only. It now also plots the two side by side, so the divergence is visible at a glance: sleeves that contribute more risk than their weight stand apart from those that contribute less, making the point that an allocation's share of capital is not its share of risk immediately legible rather than a mental comparison of two columns. The chart is display-only — it reuses the same computed contributions as the table, which is retained as the precise reference — and is suppressed in the same insufficient-history state as the rest of the section.
+
+---
+
 ## Risk page: per-sleeve risk contribution decomposition
 _2026-06-13_
 
