@@ -8,6 +8,13 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## New Risk page: portfolio factor-risk decomposition
+_2026-06-11_
+
+A new Risk page decomposes the portfolio's systematic risk by regressing its excess return on five factors simultaneously — market, size, and value (Fama-French), plus a rates factor (proxied by intermediate-Treasury excess return) and a credit factor (proxied by high-yield over duration-matched Treasury). The decomposition reports each factor's beta, statistical significance, the share of variance the factors explain, and the residual idiosyncratic portion, alongside the sample size and window so the estimates can be judged in context. The rates and credit factors are disclosed as ETF-based proxies. When the available history is too short to estimate a stable regression, the page shows an explicit insufficient-history state rather than unstable coefficients, consistent with the rest of the app's treatment of thin samples. Returns are anchored on the settled trading frontier, matching the displayed performance series. This is the first section of the Risk page; scenario stress-testing and risk-contribution views follow.
+
+---
+
 ## Post-v1.0 patches
 
 ### Phase 25.0: SAA revision — 15% FI to 10% FI (retroactive)
