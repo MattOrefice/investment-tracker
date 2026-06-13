@@ -59,6 +59,7 @@ from src.holdings import (
     get_portfolio_value_series,
     last_settled_price_date,
 )
+from src.positioning import ETF_DURATION
 from src.prices import get_prices
 
 # ── Model configuration ────────────────────────────────────────────────────────
@@ -325,4 +326,245 @@ def methodology_notes() -> list[str]:
         "entirely (an explicit empty state, not unstable coefficients); between "
         f"{MIN_OBS_FOR_REGRESSION} and {LOW_CONFIDENCE_OBS} the betas are shown "
         "with a small-sample caveat.",
+    ]
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  Phase 2 — Scenario / stress engine
+#
+#  Computes the portfolio's estimated INSTANTANEOUS P&L under defined factor
+#  shocks: P&L = Σ_i (β_i × factor_move_i). It CONSUMES the Phase 1 betas
+#  (the `run_portfolio_factor_regression` result dict) — it never re-runs the
+#  regression — so the decomposition is the single source of truth. When Phase 1
+#  returned the insufficient-history sentinel, the engine inherits that state and
+#  produces no scenarios (it never shocks non-existent betas).
+#
+#  Scenarios are defined in native YIELD / SPREAD / EQUITY terms and TRANSLATED
+#  to factor returns so the units are dimensionally correct (a rate move is not
+#  "bps × beta" — it is a duration-implied price return × beta):
+#    equity  — direct Mkt-RF realization (−20% → Mkt-RF factor = −0.20).
+#    rates   — IEF price return ≈ −modified_duration × Δyield; the RATES factor
+#              (IEF excess) realizes that return.
+#    credit  — HY excess-over-duration-matched-Treasury return ≈ −spread_duration
+#              × Δspread; the CREDIT factor (HYG − IEF) realizes that return.
+#  The translation chain is carried on each leg so the page can SHOW it.
+# ════════════════════════════════════════════════════════════════════════════
+
+# Duration assumptions (years). IEF modified duration is REUSED from the
+# maintained ETF duration table in src.positioning (single source of truth;
+# 7.5y, refreshed quarterly from the iShares fact sheet). HY spread duration is
+# a distinct concept from the rate-duration entries in that table (sensitivity
+# to credit-SPREAD moves, not yield moves), so it is a documented assumption
+# here — ~3.5y, consistent with the HYG fact sheet (~3–4y). Both are stated on
+# the page as assumptions, in the same spirit as the Phase 1 proxy disclosure.
+IEF_MODIFIED_DURATION = float(ETF_DURATION["IEF"])  # 7.5y, from src.positioning
+HY_SPREAD_DURATION    = 3.5                          # years (assumption)
+
+_DEFAULT_DURATIONS = {"rates": IEF_MODIFIED_DURATION, "credit": HY_SPREAD_DURATION}
+
+# The five stress scenarios. Declarative: each leg names the factor it shocks,
+# the shock TYPE (which translation path applies), and the native-unit magnitude
+# (equity in decimal return; rates/credit in basis points of yield/spread).
+# Magnitudes are illustrative stress sizes, NOT forecasts.
+STRESS_SCENARIOS = [
+    {
+        "name": "Rate shock: +100bps parallel",
+        "summary": "A parallel upward shift in the Treasury curve.",
+        "legs": [{"factor": "RATES", "type": "rates", "delta_bps": 100}],
+    },
+    {
+        "name": "Equity drawdown: −20%",
+        "summary": "A broad equity-market sell-off.",
+        "legs": [{"factor": "Mkt-RF", "type": "equity", "pct": -0.20}],
+    },
+    {
+        "name": "Credit widening: +150bps HY spread",
+        "summary": "High-yield credit spreads widen.",
+        "legs": [{"factor": "CREDIT", "type": "credit", "delta_bps": 150}],
+    },
+    {
+        "name": "Risk-off (flight to quality)",
+        "summary": (
+            "Equity −15% and HY spreads +200bps, but a −50bps rate RALLY "
+            "cushions the FI sleeve — the diversification-works case."
+        ),
+        "legs": [
+            {"factor": "Mkt-RF", "type": "equity", "pct": -0.15},
+            {"factor": "CREDIT", "type": "credit", "delta_bps": 200},
+            {"factor": "RATES",  "type": "rates",  "delta_bps": -50},
+        ],
+    },
+    {
+        "name": "2022-style regime (hedge inverts)",
+        "summary": (
+            "Rates +200bps AND equity −20% together — the stock-bond hedge "
+            "fails and the losses compound; the diversification-fails case."
+        ),
+        "legs": [
+            {"factor": "RATES",  "type": "rates",  "delta_bps": 200},
+            {"factor": "Mkt-RF", "type": "equity", "pct": -0.20},
+        ],
+    },
+]
+
+# Disclosures (single source for the page).
+INSTANTANEOUS_FRAMING = (
+    "These are estimated portfolio impacts under an INSTANTANEOUS factor shock — "
+    "not forecasts, not simulated paths, and not probability-weighted. Each "
+    "number is a point sensitivity: what the book would lose or gain if the "
+    "stated move happened at once, holding the estimated betas fixed."
+)
+LINEARITY_CAVEAT = (
+    "Linear first-order sensitivity (P&L = β × shock): it assumes the betas are "
+    "stable and the response is linear across the shock size. Large moves "
+    "(e.g. −20% equity) involve real non-linearity — convexity and beta "
+    "instability in the tails — that this model does NOT capture. Read the "
+    "magnitudes as first-order estimates, not precise tail outcomes."
+)
+
+
+def _translate_leg(leg: dict, durations: dict) -> tuple[float, str, str]:
+    """Translate one native-unit shock to a factor return.
+
+    Returns (factor_return, native_label, chain_middle). The factor_return is the
+    realized return of the named factor under the shock; native_label and
+    chain_middle build the displayed translation chain. Signs flow naturally:
+    a rate RALLY (negative Δyield) yields a POSITIVE rates-factor return.
+    """
+    t = leg["type"]
+    if t == "equity":
+        fr = float(leg["pct"])
+        return fr, f"Equity {fr:+.0%}", f"Mkt-RF {fr:+.1%}"
+    if t == "rates":
+        dy  = leg["delta_bps"] / 10_000.0          # bps → decimal yield change
+        dur = durations["rates"]
+        fr  = -dur * dy                             # price return ≈ −D × Δy
+        return fr, f"Rates {leg['delta_bps']:+d}bps", (
+            f"IEF duration {dur:g}y → {fr:+.1%} rates factor"
+        )
+    if t == "credit":
+        ds  = leg["delta_bps"] / 10_000.0          # bps → decimal spread change
+        dur = durations["credit"]
+        fr  = -dur * ds                            # excess return ≈ −SD × Δspread
+        return fr, f"Credit {leg['delta_bps']:+d}bps", (
+            f"HY spread duration {dur:g}y → {fr:+.1%} credit factor"
+        )
+    raise ValueError(f"Unknown shock type: {t!r}")
+
+
+def run_scenarios(
+    regression_result: dict,
+    current_mv: Optional[float] = None,
+    *,
+    scenarios: Optional[list] = None,
+    durations: Optional[dict] = None,
+) -> dict:
+    """Estimate instantaneous portfolio P&L under factor-shock scenarios.
+
+    CONSUMES the Phase 1 ``run_portfolio_factor_regression`` result dict — it does
+    NOT re-run the regression. Gated on Phase 1: if the input is not an ``ok``
+    result (insufficient history), returns the inherited insufficient-history
+    sentinel and computes no scenarios. ``low_confidence`` is carried through.
+
+    Returns:
+      {"status": "insufficient_history", "n": <int>, "min_obs": <int>}
+        when Phase 1 betas are unavailable.
+
+      {"status": "ok", "low_confidence": <bool>, "current_mv": <float|None>,
+       "durations": {...}, "scenarios": [
+          {"name", "summary", "total_pct", "total_usd"|None, "legs": [
+              {"factor", "native", "factor_return", "beta", "contribution",
+               "chain"} ...]} ...]}
+
+    All inputs (regression_result, current_mv, scenarios, durations) are
+    injectable for deterministic tests — no live fetch.
+    """
+    if not regression_result or regression_result.get("status") != "ok":
+        src = regression_result or {}
+        return {
+            "status":  "insufficient_history",
+            "n":       int(src.get("n", 0)),
+            "min_obs": int(src.get("min_obs", MIN_OBS_FOR_REGRESSION)),
+        }
+
+    betas     = regression_result["betas"]
+    durations = durations or _DEFAULT_DURATIONS
+    scenarios = scenarios or STRESS_SCENARIOS
+    has_mv    = current_mv is not None and current_mv > 0
+
+    out = []
+    for sc in scenarios:
+        legs_out = []
+        total = 0.0
+        for leg in sc["legs"]:
+            fr, native, chain_mid = _translate_leg(leg, durations)
+            beta    = float(betas[leg["factor"]])
+            contrib = beta * fr
+            total  += contrib
+            legs_out.append({
+                "factor":        leg["factor"],
+                "native":        native,
+                "factor_return": fr,
+                "beta":          beta,
+                "contribution":  contrib,
+                "chain": f"{native} → {chain_mid} → × β {beta:+.2f} → {contrib:+.1%}",
+            })
+        out.append({
+            "name":      sc["name"],
+            "summary":   sc["summary"],
+            "legs":      legs_out,
+            "total_pct": total,
+            "total_usd": (total * current_mv) if has_mv else None,
+        })
+
+    return {
+        "status":         "ok",
+        "low_confidence": bool(regression_result.get("low_confidence", False)),
+        "current_mv":     current_mv if has_mv else None,
+        "durations":      dict(durations),
+        "scenarios":      out,
+    }
+
+
+def scenario_insufficient_history_message(
+    n: int, min_obs: int = MIN_OBS_FOR_REGRESSION
+) -> str:
+    """Empty-state copy for the scenario section, inherited from Phase 1."""
+    return (
+        "Insufficient history — factor betas unavailable for stress testing "
+        f"({n} trading day{'s' if n != 1 else ''} available, ~{min_obs} minimum). "
+        "Scenarios are suppressed until the factor decomposition above can be "
+        "estimated; this section populates together with it."
+    )
+
+
+def scenario_methodology_notes(durations: Optional[dict] = None) -> list[str]:
+    """Methodology / disclosure bullets for the scenario section."""
+    durations = durations or _DEFAULT_DURATIONS
+    return [
+        f"Mechanic: estimated P&L = Σ (factor beta × translated factor move), "
+        "reusing the SAME betas as the decomposition above — the scenario engine "
+        "does not re-estimate anything.",
+
+        "Translation: equity shocks hit Mkt-RF directly; a yield move is "
+        "translated to the intermediate-Treasury proxy's duration-implied price "
+        "return (≈ −duration × Δyield); a credit-spread move is translated to the "
+        "high-yield proxy's spread-duration-implied return (≈ −spread duration × "
+        "Δspread). The translation chain is shown on every result so the units "
+        "are transparent — not a raw basis-points-times-beta product.",
+
+        f"Duration assumptions: IEF modified duration ≈ {durations['rates']:g}y "
+        "(from the maintained ETF duration table) and HY spread duration ≈ "
+        f"{durations['credit']:g}y (HYG fact sheet, ~3–4y). Both are stated "
+        "assumptions, disclosed like the Phase 1 ETF-proxy disclosure.",
+
+        INSTANTANEOUS_FRAMING,
+
+        LINEARITY_CAVEAT,
+
+        "Scenario magnitudes are illustrative stress sizes chosen to probe "
+        "distinct regimes — including a risk-off case where a flight-to-quality "
+        "rate rally offsets part of the equity loss, and a 2022-style case where "
+        "rates and equity fall together and the usual hedge inverts — not "
+        "forecasts or probability-weighted outcomes.",
     ]

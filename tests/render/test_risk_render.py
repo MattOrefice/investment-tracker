@@ -61,3 +61,43 @@ def test_proxy_disclosure_present(risk_app: AppTest) -> None:
     assert "IEF" in all_md and "HYG" in all_md, (
         "Proxy disclosure (IEF rates / HYG−IEF credit) not found on the page."
     )
+
+
+def test_scenario_section_present(risk_app: AppTest) -> None:
+    """The Phase 2 scenario stress-test section header must render below the
+    decomposition (in BOTH the decomposition and empty-state branches)."""
+    subheaders = " ".join(s.value for s in risk_app.subheader)
+    assert "Scenario stress test" in subheaders, (
+        f"Scenario stress-test section header missing. Subheaders: {subheaders}"
+    )
+
+
+def _all_text(app: AppTest) -> str:
+    """Concatenate text across element types (markdown, captions, and the
+    info/warning alerts that carry the empty-state copy) so assertions work in
+    both the decomposition and empty-state branches."""
+    chunks = []
+    for attr in ("markdown", "caption", "info", "warning", "success", "error"):
+        for el in getattr(app, attr, []):
+            val = getattr(el, "value", None)
+            if val:
+                chunks.append(str(val))
+    return " ".join(chunks).lower()
+
+
+def test_scenario_section_behaves_per_band(risk_app: AppTest) -> None:
+    """The scenario section must render correctly in BOTH branches:
+      - decomposition present (demo) → the honesty-discipline framing
+        (instantaneous, not forecasts) guards against implying prediction;
+      - insufficient-history (personal) → the inherited empty-state, NOT garbage
+        P&L (betas unavailable for stress testing).
+    Exactly one branch is active; assert the active one is correct."""
+    all_text = _all_text(risk_app)
+    if "unavailable for stress testing" in all_text:
+        # Phase-2 inherits Phase-1's empty state — no scenario P&L rendered.
+        assert "factor betas unavailable for stress testing" in all_text
+    else:
+        assert "instantaneous" in all_text and "not forecasts" in all_text, (
+            "Scenario instantaneous/not-forecasts framing missing in the "
+            "decomposition branch."
+        )
