@@ -8,6 +8,13 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Risk page: scenario stress-testing built on the factor decomposition
+_2026-06-13_
+
+The Risk page now stress-tests the portfolio under five factor scenarios, computing the estimated instantaneous impact of each by applying the portfolio's factor betas to translated factor moves. Yield and spread shocks are translated to factor returns through duration — a +100bps rate move becomes the intermediate-Treasury proxy's duration-implied return, a credit-spread widening becomes the high-yield proxy's spread-duration-implied return — and the translation is shown alongside each result so the units are transparent rather than a raw basis-point-times-beta product. The scenarios include a combined risk-off case where a flight-to-quality rate rally offsets part of the equity loss, and a 2022-style case where rates and equity fall together and the usual stock-bond hedge inverts, compounding the loss. The estimates are disclosed as linear first-order sensitivities that do not capture convexity or beta instability in large moves, with the duration assumptions stated, and they reuse the same factor betas as the decomposition above — when history is too short to estimate those betas, the scenario section shows the same insufficient-history state rather than unstable impacts.
+
+---
+
 ## Risk page registered in navigation; nav test now derives its expectations from disk
 _2026-06-13_
 
