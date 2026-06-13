@@ -85,6 +85,36 @@ def _all_text(app: AppTest) -> str:
     return " ".join(chunks).lower()
 
 
+def test_risk_contribution_section_present(risk_app: AppTest) -> None:
+    """The Phase 3 risk-contribution section header must render (both branches)."""
+    subheaders = " ".join(s.value for s in risk_app.subheader)
+    assert "Risk contribution" in subheaders, (
+        f"Risk-contribution section header missing. Subheaders: {subheaders}"
+    )
+
+
+def test_all_three_sections_present(risk_app: AppTest) -> None:
+    """All THREE Risk page sections must render in order without exception."""
+    subheaders = [s.value for s in risk_app.subheader]
+    for needed in ("Factor decomposition", "Scenario stress test", "Risk contribution"):
+        assert needed in subheaders, f"Section '{needed}' missing. Got: {subheaders}"
+
+
+def test_risk_contribution_behaves_per_band(risk_app: AppTest) -> None:
+    """Risk-contribution renders correctly in BOTH branches:
+      - decomposition present (demo) → the Euler/weight≠risk framing;
+      - insufficient-history (personal) → the inherited empty-state, NOT a
+        garbage/singular-matrix result."""
+    all_text = _all_text(risk_app)
+    if "insufficient history for risk decomposition" in all_text:
+        assert "stable sleeve covariance matrix" in all_text
+    else:
+        assert "euler" in all_text and "10% of the risk" in all_text, (
+            "Risk-contribution Euler / weight≠risk framing missing in the "
+            "decomposition branch."
+        )
+
+
 def test_scenario_section_behaves_per_band(risk_app: AppTest) -> None:
     """The scenario section must render correctly in BOTH branches:
       - decomposition present (demo) → the honesty-discipline framing

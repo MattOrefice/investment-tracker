@@ -23,7 +23,10 @@ from src.risk import (
     insufficient_history_message,
     low_confidence_caveat,
     methodology_notes,
+    risk_contribution_insufficient_history_message,
+    risk_contribution_methodology_notes,
     run_portfolio_factor_regression,
+    run_risk_contribution,
     run_scenarios,
     scenario_insufficient_history_message,
     scenario_methodology_notes,
@@ -106,6 +109,11 @@ with col:
         st.subheader("Scenario stress test")
         _scn_empty = run_scenarios(result)  # inherits the insufficient-history state
         st.info(scenario_insufficient_history_message(_scn_empty["n"], _scn_empty["min_obs"]))
+        st.divider()
+        st.subheader("Risk contribution")
+        _rc_empty = run_risk_contribution()  # covariance needs even more history
+        st.info(risk_contribution_insufficient_history_message(
+            _rc_empty["n"], _rc_empty["min_obs"]))
         render_footer()
         st.stop()
 
@@ -234,6 +242,71 @@ with col:
 
     with st.expander("Scenario methodology & disclosure", expanded=False):
         for note in scenario_methodology_notes(scen.get("durations")):
+            st.markdown(f"- {note}")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    #  Section 3 — Risk contribution (Euler / marginal-contribution-to-risk)
+    # ══════════════════════════════════════════════════════════════════════════
+    st.divider()
+    st.subheader("Risk contribution")
+    st.caption(
+        "Total portfolio volatility decomposed into each sleeve's contribution — "
+        "risk share beside capital share, because correlation makes them differ."
+    )
+
+    with st.expander("How to read this section", expanded=False):
+        st.markdown(
+            "Portfolio volatility is split into per-sleeve **risk contributions** "
+            "via the **Euler decomposition** — each sleeve's marginal contribution "
+            "to risk weighted by its allocation. The contributions **sum exactly "
+            "to total portfolio volatility** (and the percentages to 100%); that "
+            "summation is the correctness check.\n\n"
+            "The point is the gap between **risk share and weight share**: a "
+            "high-volatility or highly-correlated sleeve contributes **more** risk "
+            "than its weight, while a diversifying (low/negative-correlation) "
+            "sleeve contributes **less** — *a 10% allocation is not 10% of the "
+            "risk*. This is a decomposition of **total volatility**, not VaR or "
+            "downside risk, using realized **sample covariance** over the window."
+        )
+
+    rc = run_risk_contribution()
+
+    if rc["status"] == "insufficient_history":
+        st.info(risk_contribution_insufficient_history_message(rc["n"], rc["min_obs"]))
+    else:
+        st.metric("Portfolio volatility (annualized)", f"{rc['portfolio_vol'] * 100:.1f}%")
+
+        rc_rows = []
+        for s in rc["sleeves"]:
+            divergence = (s["risk_pct"] - s["weight"]) * 100
+            rc_rows.append({
+                "Sleeve":      s["sleeve"],
+                "Weight %":    f"{s['weight'] * 100:.1f}%",
+                "Risk %":      f"{s['risk_pct'] * 100:.1f}%",
+                "Risk − Weight": f"{divergence:+.1f} pp",
+                "Sleeve vol":  f"{s['vol'] * 100:.1f}%",
+            })
+        st.dataframe(pd.DataFrame(rc_rows).set_index("Sleeve"), width="stretch")
+
+        # The Euler summation, surfaced as the correctness proof.
+        _rc_sum_pct = sum(s["risk_pct"] for s in rc["sleeves"]) * 100
+        st.caption(
+            f"Euler check: the sleeve risk contributions sum to total portfolio "
+            f"volatility — Σ RC = {rc['rc_sum_check'] * 100:.2f}% = "
+            f"σ_p ({rc['portfolio_vol'] * 100:.2f}%); risk shares sum to "
+            f"{_rc_sum_pct:.1f}%. The **Risk − Weight** column is the point: where "
+            "it is positive the sleeve carries more risk than capital, where "
+            "negative it diversifies."
+        )
+        st.caption(
+            f"Sample covariance over {rc['n']} trading days since inception, "
+            "annualized (√252). Sample (realized) covariance is an estimate — "
+            "off-diagonal correlation terms especially — so read the shares in "
+            "the context of the window length."
+        )
+
+    with st.expander("Risk-contribution methodology & disclosure", expanded=False):
+        for note in risk_contribution_methodology_notes():
             st.markdown(f"- {note}")
 
     render_footer()
