@@ -115,6 +115,25 @@ def test_risk_contribution_behaves_per_band(risk_app: AppTest) -> None:
         )
 
 
+def test_risk_contribution_chart_gated_with_table(risk_app: AppTest) -> None:
+    """The weight-vs-risk bar chart is additive and gated identically to the table:
+      - decomposition present (demo) → the chart's caption renders (proxy for the
+        chart, which AppTest does not expose as a typed element);
+      - insufficient-history (personal) → NO chart caption, only the empty-state.
+    AppTest renders st.plotly_chart without raising (covered by the no-exception
+    test); the chart caption is a deterministic present/absent marker."""
+    all_text = _all_text(risk_app)
+    chart_marker = "share of risk (navy) beside its share of capital"
+    if "insufficient history for risk decomposition" in all_text:
+        assert chart_marker not in all_text, (
+            "Chart must be suppressed in the risk empty-state, like the table."
+        )
+    else:
+        assert chart_marker in all_text, (
+            "Weight-vs-risk chart caption missing in the decomposition branch."
+        )
+
+
 def test_scenario_section_behaves_per_band(risk_app: AppTest) -> None:
     """The scenario section must render correctly in BOTH branches:
       - decomposition present (demo) → the honesty-discipline framing

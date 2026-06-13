@@ -9,6 +9,7 @@ import streamlit as st
 from datetime import date
 
 import pandas as pd
+import plotly.graph_objects as go
 
 st.set_page_config(page_title="Risk", layout="wide")
 
@@ -275,6 +276,48 @@ with col:
         st.info(risk_contribution_insufficient_history_message(rc["n"], rc["min_obs"]))
     else:
         st.metric("Portfolio volatility (annualized)", f"{rc['portfolio_vol'] * 100:.1f}%")
+
+        # Grouped horizontal bars: each sleeve's risk share beside its capital
+        # share, sorted by risk share (rc["sleeves"] is already risk_pct-desc).
+        # Where the navy (risk) bar exceeds the grey (weight) bar the sleeve is a
+        # risk concentrator; where it falls short it diversifies — the
+        # "10% allocation ≠ 10% of risk" point at a glance. Display-only: consumes
+        # the SAME computed values as the table below, no recomputation.
+        _RC_RISK_COLOR   = "#2E4057"   # navy — risk share (emphasis)
+        _RC_WEIGHT_COLOR = "#9E9E9E"   # slate — weight share (reference)
+        _rc_names   = [s["sleeve"] for s in rc["sleeves"]]
+        _rc_weights = [s["weight"] * 100 for s in rc["sleeves"]]
+        _rc_risks   = [s["risk_pct"] * 100 for s in rc["sleeves"]]
+        _fig_rc = go.Figure()
+        _fig_rc.add_trace(go.Bar(
+            y=_rc_names, x=_rc_weights, name="Weight % (capital share)",
+            orientation="h", marker_color=_RC_WEIGHT_COLOR,
+            hovertemplate="<b>%{y}</b><br>Weight: %{x:.1f}%<extra></extra>",
+        ))
+        _fig_rc.add_trace(go.Bar(
+            y=_rc_names, x=_rc_risks, name="Risk % (volatility share)",
+            orientation="h", marker_color=_RC_RISK_COLOR,
+            hovertemplate="<b>%{y}</b><br>Risk: %{x:.1f}%<extra></extra>",
+        ))
+        _fig_rc.update_layout(
+            barmode="group",
+            height=440,
+            margin=dict(l=0, r=10, t=10, b=0),
+            paper_bgcolor="white", plot_bgcolor="white",
+            font=dict(color="#333333", size=12),
+            xaxis=dict(title="Share of total (%)", gridcolor="#EBEBEB", ticksuffix="%"),
+            yaxis=dict(autorange="reversed"),   # highest risk share at top
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0, font_size=11),
+            bargap=0.28, bargroupgap=0.12,
+        )
+        st.plotly_chart(_fig_rc, width="stretch")
+        st.caption(
+            "Each sleeve's share of risk (navy) beside its share of capital (grey), "
+            "sorted by risk share. Where the navy bar exceeds the grey, the sleeve "
+            "contributes more risk than its weight (a risk concentrator); where it "
+            "falls short, the sleeve diversifies — a sleeve's share of capital is "
+            "not its share of risk. The table below is the precise reference."
+        )
 
         rc_rows = []
         for s in rc["sleeves"]:
