@@ -49,6 +49,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Optional
 
+import numpy as np
 import pandas as pd
 from statsmodels.regression.linear_model import OLS
 from statsmodels.tools import add_constant
@@ -567,4 +568,201 @@ def scenario_methodology_notes(durations: Optional[dict] = None) -> list[str]:
         "rate rally offsets part of the equity loss, and a 2022-style case where "
         "rates and equity fall together and the usual hedge inverts — not "
         "forecasts or probability-weighted outcomes.",
+    ]
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  Phase 3 — Risk contribution (Euler / marginal-contribution-to-risk)
+#
+#  Decomposes TOTAL portfolio volatility into per-sleeve risk contributions that
+#  sum EXACTLY to total vol (the Euler property), so a sleeve's share of risk can
+#  be read beside its share of capital. The two diverge because correlation
+#  matters: a high-vol or highly-correlated sleeve contributes more risk than its
+#  weight; a diversifying sleeve contributes less.
+#
+#    σ²_p = wᵀ Σ w                          (portfolio variance)
+#    MCR_i = (Σw)_i / σ_p                   (marginal contribution to risk)
+#    RC_i  = w_i × MCR_i                    (risk contribution)
+#    Σ_i RC_i = σ_p  (EXACT — Euler);  RC%_i = RC_i / σ_p  (sums to 100%)
+#
+#  Single source of truth: sleeve returns come from the SAME sleeve-benchmark
+#  return source the Correlations / Asset Evaluation pages use
+#  (asset_evaluation.get_sleeve_returns), anchored on the settled frontier; the
+#  weight vector is the canonical normalized ex-cash SAA weight map
+#  (asset_evaluation.SLEEVE_WEIGHTS), whose keys match the return columns. The
+#  covariance is the sample covariance of those returns over the since-inception
+#  window — the Correlations page computes a rolling CORRELATION on a long
+#  history, a different statistic over a different window, so only the return
+#  SOURCE is reused, not that helper.
+# ════════════════════════════════════════════════════════════════════════════
+
+# Covariance is more data-hungry than a single regression: a k-sleeve matrix has
+# k(k+1)/2 free parameters (≈45 for the 9 SAA sleeves) and is singular whenever
+# n ≤ k. A 60-observation floor (vs Phase 1's 30) keeps the estimate away from
+# that degenerate edge before it is shown; below it, the section shows the
+# insufficient-history empty state.
+MIN_OBS_FOR_COVARIANCE = 60
+_MAX_COND_NUMBER = 1.0e10  # condition number above which Σ is treated as singular
+
+
+def _insufficient_rc(n: int, reason: Optional[str] = None) -> dict:
+    out = {"status": "insufficient_history", "n": int(n), "min_obs": MIN_OBS_FOR_COVARIANCE}
+    if reason:
+        out["reason"] = reason
+    return out
+
+
+def run_risk_contribution(
+    inception: Optional[str] = None,
+    end_date: Optional[str] = None,
+    *,
+    sleeve_returns: Optional[pd.DataFrame] = None,
+    weights: Optional[dict] = None,
+    annualize: bool = True,
+) -> dict:
+    """Euler decomposition of portfolio volatility into per-sleeve contributions.
+
+    Returns a status dict (never None):
+
+      {"status": "insufficient_history", "n": <int>, "min_obs": 60[, "reason"]}
+        when too few aligned observations OR the covariance is singular/degenerate
+        (more sleeves than obs, or perfectly collinear sleeves) — NO contributions.
+
+      {"status": "ok", "portfolio_vol": <σ_p>, "n", "k", "annualized",
+       "rc_sum_check": <Σ RC == σ_p>, "sleeves": [
+          {"sleeve", "weight", "vol", "mcr", "risk_contribution", "risk_pct"} ...]}
+        sorted by risk_pct descending.
+
+    Inputs are injectable for deterministic tests (no live fetch): ``sleeve_returns``
+    a DataFrame of daily sleeve returns (columns = sleeve names), ``weights`` a
+    {sleeve: weight} map. In production both default to the reused sleeve-return
+    source and SAA weight map, over the settled-frontier since-inception window.
+    """
+    if weights is None:
+        from src import asset_evaluation as ae
+        weights = dict(ae.SLEEVE_WEIGHTS)
+
+    if sleeve_returns is None:
+        from src import asset_evaluation as ae
+        inception   = inception or get_inception_date()
+        end_settled = last_settled_price_date(inception, end_date or date.today().isoformat())
+        sleeve_returns = ae.get_sleeve_returns(inception, end_settled)
+
+    R = sleeve_returns.dropna()
+    # Align on sleeves present in BOTH returns and weights (clean in production —
+    # SLEEVE_WEIGHTS keys equal the return columns).
+    sleeves = [s for s in R.columns if s in weights]
+    R = R[sleeves]
+    n, k = len(R), len(sleeves)
+
+    if n < MIN_OBS_FOR_COVARIANCE or k < 2:
+        return _insufficient_rc(n)
+
+    w_raw = np.array([float(weights[s]) for s in sleeves], dtype=float)
+    if w_raw.sum() <= 0:
+        return _insufficient_rc(n)
+    w = w_raw / w_raw.sum()  # renormalize over the available sleeves
+
+    cov = R.cov().values
+    if annualize:
+        cov = cov * 252.0
+
+    # Degenerate / singular covariance guard: NaNs, non-finite condition number,
+    # near-singular (cond too large), or non-positive variance → empty state, not
+    # a NaN/garbage decomposition.
+    if not np.all(np.isfinite(cov)):
+        return _insufficient_rc(n, reason="degenerate_covariance")
+    try:
+        cond = np.linalg.cond(cov)
+    except np.linalg.LinAlgError:
+        cond = np.inf
+    var_p = float(w @ cov @ w)
+    if (not np.isfinite(cond)) or cond > _MAX_COND_NUMBER or var_p <= 0:
+        return _insufficient_rc(n, reason="degenerate_covariance")
+
+    sigma_p = float(np.sqrt(var_p))
+    mcr     = (cov @ w) / sigma_p          # marginal contribution to risk
+    rc      = w * mcr                       # risk contribution
+    rc_pct  = rc / sigma_p                  # share of total risk (sums to 1)
+
+    # Euler property is a mathematical identity here; assert it as the in-code
+    # correctness proof (the summation a risk reviewer checks first).
+    assert abs(float(rc.sum()) - sigma_p) <= 1.0e-6 * max(1.0, sigma_p), (
+        "Euler decomposition failed: risk contributions do not sum to portfolio vol"
+    )
+
+    sleeves_out = [
+        {
+            "sleeve":            s,
+            "weight":            float(w[i]),
+            "vol":               float(np.sqrt(cov[i, i])),
+            "mcr":               float(mcr[i]),
+            "risk_contribution": float(rc[i]),
+            "risk_pct":          float(rc_pct[i]),
+        }
+        for i, s in enumerate(sleeves)
+    ]
+    sleeves_out.sort(key=lambda d: d["risk_pct"], reverse=True)
+
+    return {
+        "status":        "ok",
+        "portfolio_vol": sigma_p,
+        "n":             n,
+        "k":             k,
+        "annualized":    annualize,
+        "rc_sum_check":  float(rc.sum()),   # == portfolio_vol (Euler proof)
+        "sleeves":       sleeves_out,
+    }
+
+
+def risk_contribution_insufficient_history_message(
+    n: int, min_obs: int = MIN_OBS_FOR_COVARIANCE
+) -> str:
+    """Empty-state copy for the risk-contribution section."""
+    return (
+        "Insufficient history for risk decomposition — "
+        f"{n} trading day{'s' if n != 1 else ''} available, ~{min_obs} minimum "
+        "for a stable sleeve covariance matrix. A covariance matrix needs more "
+        "history than a single regression; contributions are suppressed until "
+        "the sample is adequate rather than shown from a degenerate matrix."
+    )
+
+
+def risk_contribution_methodology_notes() -> list[str]:
+    """Methodology / disclosure bullets for the risk-contribution section."""
+    return [
+        "Mechanic: the Euler decomposition of volatility. Portfolio variance is "
+        "σ²_p = wᵀΣw; each sleeve's marginal contribution to risk is MCR_i = "
+        "(Σw)_i / σ_p and its risk contribution is RC_i = w_i × MCR_i. By Euler's "
+        "theorem the contributions sum EXACTLY to total portfolio volatility "
+        "(Σ RC_i = σ_p), and the percentage shares sum to 100% — the summation "
+        "shown is the correctness check.",
+
+        "Why risk share ≠ weight share: the decomposition accounts for "
+        "correlation, not just allocation. A high-volatility or highly-correlated "
+        "sleeve contributes MORE risk than its weight; a diversifying "
+        "(low/negative-correlation) sleeve contributes LESS. A 10% allocation is "
+        "not 10% of the risk.",
+
+        "Inputs: sleeve returns are the SAA sleeve-benchmark series used across "
+        "the Correlations and Asset Evaluation pages (single source), anchored on "
+        "the settled trading frontier; the weight vector is the SAA target "
+        "(policy) weights, ex-cash, normalized to 100%. Actual drift from target "
+        "is small in this buy-and-hold book.",
+
+        "Covariance: the realized SAMPLE covariance over the since-inception "
+        "window — an estimate, with estimation error concentrated in the "
+        "off-diagonal (correlation) terms. The window and observation count are "
+        "shown so the contributions can be judged in context; covariance is "
+        "annualized with the √252 convention used elsewhere in the app.",
+
+        "Scope: this decomposes TOTAL VOLATILITY — a symmetric, vol-based risk "
+        "measure. It is not a VaR or downside-risk contribution (those are "
+        "different decompositions of different risk measures).",
+
+        "Insufficient-history / degenerate handling: fewer than "
+        f"{MIN_OBS_FOR_COVARIANCE} aligned observations, or a singular / "
+        "near-singular covariance matrix (more sleeves than data, or collinear "
+        "sleeves), shows an explicit empty state rather than unstable or "
+        "ill-defined contributions.",
     ]
