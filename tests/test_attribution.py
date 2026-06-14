@@ -380,53 +380,74 @@ def _bpr_helper(series: "pd.Series", period: str) -> float:
     return float(sliced.iloc[-1] / sliced.iloc[0] - 1)
 
 
-def _frozen_cache_end() -> str:
-    """Last price date actually present in the committed demo.db cache — read with
-    NO network fetch.
+def _holdings_common_frontier() -> str:
+    """Latest committed date on which EVERY portfolio holding has a REAL price — the
+    holdings' COMMON frontier = MIN over holdings of each holding's
+    MAX(price_date < today). Read directly from the DB, NO network fetch.
 
-    Reconciliation tests must anchor on this, not date.today(): get_prices fetches a
-    trailing gap from yfinance only when the requested end exceeds the cached max
-    (prices.py), so passing end == cached max means no live intraday fetch. That
-    removes the per-push live-data dependency that made test_identity_bf_sum_reconciles
-    non-deterministic — it failed or passed depending on what partial intraday data
-    yfinance happened to return at the moment CI ran. The reconciliation is an
-    algebraic identity that holds on any internally-consistent dataset, so the frozen
-    committed prices are the correct, deterministic basis. (Which calendar day is the
-    right *display* frontier is a separate, still-open question.)
-
-    Floored to a settled date STRICTLY BEFORE today (WHERE price_date < today): on a
-    fresh checkout the committed frontier already predates today, so the anchor is
-    unchanged and CI behaviour is identical; but if a price-fetching test run before
-    the suite has polluted the shared cache with an incomplete same-day (today) bar,
-    the anchor still resolves to the clean settled frontier rather than that partial
-    bar. Direct DB read, no fetch.
+    The reconciliation consumes only the portfolio holdings, so the anchor must be
+    scoped to them. The GLOBAL MAX(price_date) across all cached tickers OVER-PROMISES:
+    the shared cache also holds non-holding tickers (weekend-trading benchmarks such as
+    BTC-USD / GLD, sleeve benchmarks) and tickers a sibling test's fetch has advanced,
+    any of which can reach a LATER date than the holdings. A global anchor then lands a
+    trading day past the holdings' real frontier, so the 1M window's two endpoints
+    diverge by that day's return — the residual that the strictly-before-today floor
+    (#39) could NOT catch, because it is a SCOPE axis (global vs holdings), not a
+    today-contamination axis. Taking the MIN over holdings — not the max, which is what
+    last_real_price_date returns — guarantees every consumed holding has real data AT
+    the anchor. Per-holding `price_date < today` also floors out any same-day partial
+    bar (#39). No fetch.
     """
     import datetime
     from src.db import get_connection
+    from src.holdings import get_holdings_on_date
     today = datetime.date.today().isoformat()
+    holdings = get_holdings_on_date(today)
+    frontiers: list[str] = []
     with get_connection() as conn:
-        row = conn.execute(
-            "SELECT MAX(price_date) FROM prices WHERE price_date < ?", (today,)
-        ).fetchone()
-    return row[0] if row and row[0] else today
+        for ticker in holdings.index:
+            price_ticker = "BIL" if ticker == "SPAXX" else ticker  # SPAXX proxied via BIL
+            row = conn.execute(
+                "SELECT MAX(price_date) FROM prices WHERE ticker = ? AND price_date < ?",
+                (price_ticker, today),
+            ).fetchone()
+            if row and row[0]:
+                frontiers.append(row[0])
+    return min(frontiers) if frontiers else today
 
 
-# Captured ONCE at import (pytest collection), before any test executes and fetches
-# live prices into the shared demo.db cache. Reading it lazily inside a test instead
-# would pick up sibling tests' live-fetched (partial intraday) rows — the cache
-# pollution that made this non-deterministic. Captured here, it is the committed
-# frontier regardless of test execution order or wall-clock date.
-_FROZEN_CACHE_END = _frozen_cache_end()
+# Captured ONCE at import (pytest collection). Scoped to the holdings' common frontier
+# (min over holdings), not the GLOBAL cache MAX: a non-holding ticker that reaches a
+# later date — a weekend benchmark, or a row a sibling/prior-session fetch advanced —
+# can no longer push the anchor past the date on which the holdings the reconciliation
+# consumes actually have data. Combined with the per-test hermetic fixture below
+# (which holds the cache fixed), the anchor is independent of cache state and order.
+_HOLDINGS_FRONTIER = _holdings_common_frontier()
 
 
-def test_frozen_cache_end_floors_before_today():
-    """The reconciliation anchor is always a settled date strictly before today, so a
-    partial same-day bar (e.g. a price-fetching test run before the suite advances the
-    shared cache to an incomplete today bar) can never become the anchor. Guards the
-    pre-collection-pollution hardening; a regression to raw MAX(price_date) would fail
-    here whenever the cache holds a today bar."""
+@pytest.fixture
+def _no_live_fetch(monkeypatch):
+    """Hold the shared price cache FIXED under the reconciliation tests: any attempted
+    live fetch raises, and get_prices (which swallows fetch errors and falls back to
+    the cache) therefore reads the committed prices as-is. This removes the
+    cache-mutability degree of freedom — a sibling/prior-session fetch can no longer
+    ragged-advance the cache under the test, and the test cannot advance it mid-run.
+    Scoped to the reconciliation tests by explicit request (NOT autouse), so the rest
+    of the suite still fetches normally."""
+    def _blocked(*args, **kwargs):
+        raise RuntimeError("live price fetch disabled inside reconciliation test (hermetic)")
+    monkeypatch.setattr("src.prices.fetch_prices", _blocked)
+    return None
+
+
+def test_holdings_frontier_floors_before_today():
+    """The reconciliation anchor is the holdings' COMMON frontier — the latest date on
+    which EVERY holding has real data — and is always strictly before today, so a
+    partial same-day bar can never become the anchor (#39) and a non-holding ticker's
+    later date can never push it past the holdings' frontier (the scope fix). A
+    regression to the global cache-MAX or to raw MAX(price_date) would fail here."""
     import datetime
-    assert _frozen_cache_end() < datetime.date.today().isoformat()
+    assert _holdings_common_frontier() < datetime.date.today().isoformat()
 
 
 def test_identity_ps_two_stage_si_60_40():
@@ -571,7 +592,7 @@ def test_identity_ps_two_stage_si_spy():
     )
 
 
-def test_identity_bf_sum_reconciles_to_stage2():
+def test_identity_bf_sum_reconciles_to_stage2(_no_live_fetch):
     """Ex-cash BF portfolio return + cash drag must reconcile with the actual TWR
     within 0.5 bps for all windows (Phase 38b-2 bridge).
 
@@ -594,12 +615,13 @@ def test_identity_bf_sum_reconciles_to_stage2():
     from src.returns import period_bounds
 
     INCEPTION = "2025-05-01"
-    # Anchor on the committed cache frontier captured at import (no live fetch),
-    # NOT date.today() — otherwise get_prices gap-fetches partial intraday data at
-    # CI run time and the reconciliation becomes non-deterministic (it failed
-    # intermittently on the calendar rollover). The identity holds on the frozen
-    # committed prices by construction.
-    TODAY = _FROZEN_CACHE_END
+    # Anchor on the HOLDINGS' common frontier captured at import (no live fetch), NOT
+    # date.today() and NOT the global cache MAX — the latter over-promises whenever a
+    # non-holding/sibling-advanced ticker reaches a later date than the holdings, which
+    # made this fail on the first local run after the shared cache had been ragged-
+    # advanced. The identity holds on the committed prices by construction; the
+    # _no_live_fetch fixture keeps the cache fixed under the test.
+    TODAY = _HOLDINGS_FRONTIER
 
     try:
         pv_full = get_portfolio_value_series(INCEPTION, TODAY)
@@ -683,7 +705,7 @@ def test_period_bounds_window_is_anchor_only_not_wall_clock(sim_today_offset_day
 
 
 @pytest.mark.parametrize("days_past_frontier", [0, 1, 3])
-def test_bf_reconciles_when_wall_clock_past_price_frontier(days_past_frontier):
+def test_bf_reconciles_when_wall_clock_past_price_frontier(days_past_frontier, _no_live_fetch):
     """End-to-end proof the anchor fix holds when the wall clock runs past the last
     real price date — the exact CI-failure condition (today=Jun11, prices through Jun10),
     plus weekends (+3).
@@ -703,8 +725,10 @@ def test_bf_reconciles_when_wall_clock_past_price_frontier(days_past_frontier):
     from src.returns import period_bounds
 
     INCEPTION = "2025-05-01"
-    # Frontier = committed cache frontier captured at import (no live fetch), not today.
-    real_end = _FROZEN_CACHE_END
+    # Frontier = holdings' common frontier captured at import (no live fetch), not today
+    # and not the global cache MAX (which a non-holding/sibling-advanced ticker could
+    # push past the holdings). The _no_live_fetch fixture holds the cache fixed.
+    real_end = _HOLDINGS_FRONTIER
     real_end_d = datetime.date.fromisoformat(real_end)
 
     # Cached through the frontier only — no future-date fetch, so this stays offline.
