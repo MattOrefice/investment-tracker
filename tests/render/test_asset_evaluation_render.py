@@ -111,6 +111,26 @@ def test_rf_unit_is_bps_not_percent(ae_app: AppTest) -> None:
     )
 
 
+def test_rf_no_false_cross_page_consistency_claim(ae_app: AppTest) -> None:
+    """Methodology must not claim this page's RF is 'consistent with' the Performance
+    page's Sharpe disclosure — the two pages use different static rates (4.32% here,
+    4.5% on Performance). Corrected 2026-07: the caption previously asserted a false
+    consistency; it must now describe this page's rate as its own, distinct value.
+    """
+    all_md = " ".join(m.value for m in ae_app.markdown)
+    assert "consistent with the Performance page" not in all_md, (
+        "Methodology still claims this page's risk-free rate is 'consistent with' "
+        "the Performance page's — that claim is false (4.32% here vs. a different "
+        "rate on the Performance page). Fix pages/5_Asset_Evaluation.py's caption, "
+        "not this test."
+    )
+    assert "distinct from the risk-free rate disclosed on the Performance page" in all_md, (
+        "Methodology should accurately disclose that this page's risk-free rate "
+        "is separate from the Performance page's — the corrected caption text "
+        "appears to have changed; update this pin to match."
+    )
+
+
 def test_5g_mechanical_lead_paragraph(ae_app: AppTest) -> None:
     """Section 5g must show 'This curve is mechanical, not predictive' before the chart.
     Pinned: Phase 44 Item 7."""

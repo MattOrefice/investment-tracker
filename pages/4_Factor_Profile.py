@@ -153,8 +153,9 @@ with col:
         st.caption(f"Sample window: {win}")
 
     st.caption(
-        "Regression windows end at the most recent locked quarter-end for stability; "
-        "live prices through today are shown in the Performance page KPI strip."
+        "Regression windows end at the most recent date with published Fama-French "
+        "factor data — a publication lag; live prices through today are shown in "
+        "the Performance page KPI strip."
     )
 
     for key in _SLEEVE_ORDER:

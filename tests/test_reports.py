@@ -10,7 +10,12 @@ import pytest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 import src.reports as rpt
-from src.reports import _build_cumulative_chart, _build_holdings_chart, _drift_status
+from src.reports import (
+    _build_cumulative_chart,
+    _build_holdings_chart,
+    _drift_status,
+    build_bhb_cross_reference,
+)
 from src.returns import twr_daily_linked
 
 # ── shared fixtures ──────────────────────────────────────────────────────────
@@ -313,4 +318,52 @@ def test_cover_alpha_bps_are_arithmetic_of_cover_returns():
     )
     assert abs(alpha_bl - (port_pct - bl_pct) * 100) < 2.0, (
         "alpha_bl_str is not arithmetic of cover portfolio and blended returns"
+    )
+
+
+def test_build_bhb_cross_reference_uses_raw_diff_not_selection_effect():
+    """sel_bps must be the raw return differential (r_p - r_b), not the
+    portfolio-weighted selection_effect (w_p * (r_p - r_b)).
+
+    This is the single source used by BOTH src.reports._build_benchmark_section
+    (PDF) and pages/6_Benchmark_Attribution.py (Streamlit) so the two prose
+    surfaces can't diverge again — a prior version of the Streamlit page fed
+    selection_effect into the same "outperformed by N bps" template, understating
+    the displayed differential by a factor of ~1/w_p.
+    """
+    bf_df = pd.DataFrame([
+        # w_p is small (8%) so selection_effect and raw_diff differ sharply —
+        # any regression that swaps raw_diff back for selection_effect fails loudly.
+        {"sleeve": "US Small Cap", "r_p": 0.15, "r_b": 0.07, "selection_effect": 0.08 * 0.08},
+        {"sleeve": "Emerging Markets", "r_p": 0.05, "r_b": 0.05, "selection_effect": 0.0},
+        {"sleeve": "TIPS", "r_p": 0.02, "r_b": 0.03, "selection_effect": 0.06 * -0.01},
+    ])
+
+    top = build_bhb_cross_reference(bf_df, n=3)
+
+    small_cap = next(item for item in top if item["holding"] == "AVUV")
+    # raw_diff = 0.15 - 0.07 = 0.08 -> 800 bps. The weight-scaled selection_effect
+    # (0.08 * 0.08 = 0.0064 -> 64 bps) must NOT be what's reported.
+    assert abs(small_cap["sel_bps"] - 800.0) < 1e-6, (
+        f"Expected raw_diff-based sel_bps of 800, got {small_cap['sel_bps']} — "
+        "sel_bps must be r_p - r_b, not the weight-scaled selection_effect."
+    )
+
+
+def test_build_bhb_cross_reference_empty_df_returns_empty_list():
+    """An empty BF frame (e.g. no holdings data) must return [], not None or raise."""
+    assert build_bhb_cross_reference(pd.DataFrame()) == []
+
+
+def test_benchmark_attribution_page_uses_shared_bhb_cross_reference():
+    """pages/6_Benchmark_Attribution.py must import build_bhb_cross_reference from
+    src.reports rather than re-deriving the top-N BHB list inline — a guard against
+    the two prose surfaces silently re-diverging (see the raw_diff test above).
+    """
+    page_path = pathlib.Path(__file__).resolve().parent.parent / "pages" / "6_Benchmark_Attribution.py"
+    source = page_path.read_text(encoding="utf-8")
+    assert "from src.reports import build_bhb_cross_reference" in source, (
+        "pages/6_Benchmark_Attribution.py no longer imports the shared "
+        "build_bhb_cross_reference helper — check it hasn't reverted to an "
+        "independent (and possibly selection_effect-based) inline implementation."
     )
