@@ -18,7 +18,7 @@ from src.factors import (
     run_benchmark_attribution_regression,
     sig_marker,
 )
-from src.reports import SLEEVE_HOLDING_TICKER as _SLEEVE_HOLDING, SLEEVE_BENCH_TICKER as _SLEEVE_BENCH
+from src.reports import build_bhb_cross_reference
 from src.ui_helpers import render_footer, render_page_header
 render_page_header()
 
@@ -133,31 +133,28 @@ with col:
     c3.metric("Observations", str(result["T"]))
     c4.metric("NW Lags (L)",  str(result["nw_lags"]))
     st.caption(f"Sample window: {window_str}")
+    _lag_days = (date.today() - d_end).days
     st.caption(
-        f"Regression window ends at the most recent locked quarter-end "
-        f"({d_end.strftime('%B')} {d_end.day}, {d_end.year}) for stability; "
-        f"live prices through {date.today().strftime('%B')} {date.today().day}, "
-        f"{date.today().year} are shown on the Performance page."
+        f"Regression window ends at the most recent date with published "
+        f"Fama-French factor data ({d_end.strftime('%B')} {d_end.day}, "
+        f"{d_end.year}) — a {_lag_days}-calendar-day publication lag; "
+        f"live prices through {date.today().strftime('%B')} "
+        f"{date.today().day}, {date.today().year} are shown on the "
+        f"Performance page."
     )
     st.caption(interpret_benchmark_attribution(result))
 
     st.divider()
 
     # ── Interpretation ────────────────────────────────────────────────────────
-    # Compute top-3 BHB selection effects since inception for prose cross-reference
+    # Top-3 BHB selection effects since inception for prose cross-reference.
+    # build_bhb_cross_reference is the single source shared with src/reports.py's
+    # PDF path — it reports raw_diff (r_p - r_b), not the weight-scaled selection
+    # effect, so prose reads "AVUV outperformed IWM by 768 bps" correctly.
     _bhb_top = None
     try:
         _bf_df = brinson_fachler_period(inception, end_date)
-        if not _bf_df.empty:
-            _top3 = _bf_df.nlargest(3, "selection_effect")
-            _bhb_top = []
-            for _, _row in _top3.iterrows():
-                _sleeve = _row["sleeve"]
-                _bhb_top.append({
-                    "holding": _SLEEVE_HOLDING.get(_sleeve, _sleeve),
-                    "bench":   _SLEEVE_BENCH.get(_sleeve, _sleeve),
-                    "sel_bps": _row["selection_effect"] * 10_000,
-                })
+        _bhb_top = build_bhb_cross_reference(_bf_df) or None
     except Exception:
         pass
 

@@ -9,7 +9,7 @@ Usage:
     python scripts/rebuild_prices_cache.py --tickers VOO VEA     # specific tickers
 
 SPAXX is excluded (it is handled as a $1.00 cash position, not a price series).
-DJP is excluded (delisted 2020; Real Assets benchmark uses VNQ+PDBC instead).
+DJP is excluded (delisted 2020; Real Assets benchmark uses VNQ+DBC instead).
 """
 from __future__ import annotations
 

@@ -458,6 +458,40 @@ def test_prose_pdf_real_assets_benchmark_caption_matches_source():
     )
 
 
+def test_prose_saa_real_assets_db_label_matches_computed_split():
+    """asset_classes.benchmark_ticker for Real Assets matches the computed split.
+
+    pages/1_SAA.py renders the sleeve-level (parent_id IS NOT NULL) Real Assets
+    row's benchmark_ticker straight from the DB. That label is a separate copy
+    of the same truth as _SLEEVE_BENCHMARKS["Real Assets"] in src/benchmarks.py
+    (the actual computation) — a prior migration desynced them, writing a 50/50
+    label while the computation stayed 60/40. This test compares the DB label
+    against the computed split directly rather than pinning either as a fresh
+    literal, so the two sources can't silently diverge again.
+    """
+    from src.db import get_connection
+    from src.benchmarks import _SLEEVE_BENCHMARKS
+
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT benchmark_ticker FROM asset_classes "
+            "WHERE name = 'Real Assets' AND parent_id IS NOT NULL"
+        ).fetchone()
+
+    assert row is not None, "No sleeve-level 'Real Assets' row found in asset_classes"
+    label = row["benchmark_ticker"]
+
+    computed = _SLEEVE_BENCHMARKS["Real Assets"]
+    expected_label = " + ".join(f"{t} ({w:.0%})" for t, w in computed)
+
+    assert label == expected_label, (
+        f"asset_classes.benchmark_ticker for Real Assets is {label!r}, but the "
+        f"computed benchmark split (_SLEEVE_BENCHMARKS['Real Assets']) is "
+        f"{computed} — expected DB label {expected_label!r}. The DB label has "
+        "drifted from the computation; fix the migration in src/db.py, not this test."
+    )
+
+
 def test_prose_pdf_drift_thresholds_match_db():
     """PDF drift threshold description derives from DB tolerance_band values.
 

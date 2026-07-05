@@ -123,12 +123,22 @@ def test_fi_sleeve_carhart_note_present(factor_profile_app: AppTest) -> None:
     )
 
 
-def test_regression_window_caption_present(factor_profile_app: AppTest) -> None:
-    """A caption must explain that regression windows end at the locked quarter-end. Pinned: Phase 41 Item 10."""
+def test_regression_window_lag_caption_present(factor_profile_app: AppTest) -> None:
+    """A caption must explain regression windows end at the FF publication lag,
+    NOT a locked quarter-end. Pinned: Phase 41 Item 10; corrected 2026-07 (windows
+    are called with end_date=date.today() — see src/factors.py — and bounded by
+    the last date with published Fama-French factor data, not any quarter lock).
+    """
     captions = [c.value for c in factor_profile_app.caption]
-    assert any("locked quarter-end" in c.lower() or "quarter" in c.lower() and "stability" in c.lower()
-               for c in captions), (
-        "Regression window stability caption not found — Phase 41 Item 10 regression."
+    assert any("publication lag" in c.lower() for c in captions), (
+        "Regression window publication-lag caption not found — this caption must "
+        "describe the actual mechanism (FF data publication lag), not a fictitious "
+        "quarter-end lock."
+    )
+    assert not any("locked quarter-end" in c.lower() or "quarter lock" in c.lower() or "quarter-end lock" in c.lower()
+                   for c in captions), (
+        "Caption falsely claims a 'locked quarter-end' — the regression is called "
+        "with end_date=date.today() (see src/factors.py); there is no quarter lock."
     )
 
 

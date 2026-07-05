@@ -91,6 +91,32 @@ SLEEVE_BENCH_TICKER: dict[str, str] = {
     "Cash / SPAXX":            "BIL",
 }
 
+def build_bhb_cross_reference(bf_df: pd.DataFrame, n: int = 3) -> list[dict]:
+    """Top-n BHB selection effects for prose cross-reference.
+
+    Ranked by selection_effect (portfolio-weighted, w_p * (r_p - r_b)) but
+    reported as raw_diff = r_p - r_b, so prose built from this list reads
+    "AVUV outperformed IWM by 768 bps" — the actual return differential
+    matching the port_ret/bench_ret columns on the BHB attribution table,
+    not the weight-scaled selection effect. Single source for both the PDF
+    report and the Benchmark Attribution page so the two can't diverge.
+    """
+    if bf_df.empty:
+        return []
+    df = bf_df.copy()
+    df["raw_diff"] = df["r_p"] - df["r_b"]
+    top = df.nlargest(n, "selection_effect")
+    out = []
+    for _, row in top.iterrows():
+        sleeve = row["sleeve"]
+        out.append({
+            "holding": SLEEVE_HOLDING_TICKER.get(sleeve, sleeve),
+            "bench":   SLEEVE_BENCH_TICKER.get(sleeve, sleeve),
+            "sel_bps": row["raw_diff"] * 10_000,
+        })
+    return out
+
+
 _PERIODS = ["1M", "3M", "YTD", "1Y", "SI"]
 _PERIOD_LABELS = {
     "1M": "1 Month", "3M": "3 Months",
@@ -757,23 +783,11 @@ def _build_benchmark_section(start_date: str, end_date: str) -> Optional[dict]:
             "significance": sig_marker(p),
         })
 
-    # Top-3 BHB cross-reference — use report period (Q1) window, raw r_p−r_b
-    # differential so prose reads "AVUV outperformed IWM by 768 bps" matching
-    # the bench_ret / port_ret columns on the BHB attribution page.
+    # Top-3 BHB cross-reference — use report period (Q1) window.
     bhb_top = None
     try:
         bf_df = brinson_fachler_period(start_date, end_date)
-        if not bf_df.empty:
-            bf_df["raw_diff"] = bf_df["r_p"] - bf_df["r_b"]
-            top3 = bf_df.nlargest(3, "selection_effect")
-            bhb_top = []
-            for _, row in top3.iterrows():
-                sleeve = row["sleeve"]
-                bhb_top.append({
-                    "holding": SLEEVE_HOLDING_TICKER.get(sleeve, sleeve),
-                    "bench":   SLEEVE_BENCH_TICKER.get(sleeve, sleeve),
-                    "sel_bps": row["raw_diff"] * 10_000,
-                })
+        bhb_top = build_bhb_cross_reference(bf_df) or None
     except Exception:
         pass
 

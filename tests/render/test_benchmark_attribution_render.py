@@ -54,14 +54,25 @@ def test_alpha_ci_in_interpretation_prose(ba_app: AppTest) -> None:
     )
 
 
-def test_regression_window_stability_caption_present(ba_app: AppTest) -> None:
-    """A caption must explain that the regression window ends at the locked quarter-end. Pinned: Phase 40."""
+def test_regression_window_lag_caption_present(ba_app: AppTest) -> None:
+    """A caption must explain the regression window ends at the FF publication lag,
+    NOT a locked quarter-end. Pinned: Phase 40; corrected 2026-07 (the window is
+    actually bounded by the last date with published Fama-French factor data — an
+    inner join in run_benchmark_attribution_regression against date.today(), not
+    any quarter-end lock).
+    """
     if not ba_app.metric:
         pytest.skip("No portfolio data — skipped in local/empty-DB mode")
     captions = [c.value for c in ba_app.caption]
-    assert any("locked quarter-end" in c.lower() or "quarter" in c.lower() and "stability" in c.lower()
-               for c in captions), (
-        "Regression window stability caption not found — Phase 40 regression (Item 9)."
+    assert any("publication lag" in c.lower() for c in captions), (
+        "Regression window publication-lag caption not found — this caption must "
+        "describe the actual mechanism (FF data publication lag), not a fictitious "
+        "quarter-end lock."
+    )
+    assert not any("locked quarter-end" in c.lower() or "quarter lock" in c.lower() or "quarter-end lock" in c.lower()
+                   for c in captions), (
+        "Caption falsely claims a 'locked quarter-end' — the regression is called "
+        "with end_date=date.today() (see src/factors.py); there is no quarter lock."
     )
 
 

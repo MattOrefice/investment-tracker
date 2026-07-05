@@ -15,7 +15,7 @@ Sections:
     8. weekly_resampling_reduces_rows
 
   Structural / cross-module tests:
-    9. rf_annual_consistent_with_performance_page
+    9. rf_annual_value
     10. sample_start_matches_page_caption
 """
 from __future__ import annotations
@@ -311,19 +311,22 @@ def test_weekly_resampling_reduces_rows():
         assert -1.0 <= val <= 1.0, f"Correlation for {sleeve} out of [-1, 1]: {val}"
 
 
-# ── 9. RF_ANNUAL consistent with Performance page ─────────────────────────────
+# ── 9. RF_ANNUAL value pin ──────────────────────────────────────────────────
+#
+# NOTE: this pins RF_ANNUAL to the Asset Evaluation page's own value only.
+# It is NOT the same rate compute_risk_metrics uses by default for the
+# Performance page's Sharpe/Sortino (see test_identity_layer1.py's
+# test_compute_risk_metrics_default_rf — currently 0.045, not 0.0432).
+# The Asset Evaluation page's methodology caption no longer claims the two
+# are "consistent" (see pages/5_Asset_Evaluation.py); reconciling the two
+# rates, if desired, is a separate methodology decision.
 
-def test_rf_annual_consistent_with_performance_page():
-    """ae.RF_ANNUAL must equal 0.0432 (4.32%), matching the Performance page disclosure.
-
-    The Sharpe ratios on the Performance page and the Asset Evaluation page are
-    computed with the same risk-free rate. If either is changed without updating
-    the other, this test fails and forces reconciliation.
-    """
+def test_rf_annual_value():
+    """ae.RF_ANNUAL is pinned to 0.0432 (4.32%) — this page's own static rate."""
     assert RF_ANNUAL == pytest.approx(0.0432, abs=1e-9), (
         f"ae.RF_ANNUAL = {RF_ANNUAL:.6f}, expected 0.0432 (4.32%). "
-        "Update both src/asset_evaluation.py and pages/4_Performance.py "
-        "when changing the risk-free rate."
+        "If intentionally changed, also check pages/5_Asset_Evaluation.py's "
+        "risk-free rate caption still describes the actual value."
     )
 
 
