@@ -8,6 +8,13 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Corrected four displayed claims that had drifted from the code
+_2026-07-05_
+
+Four statements shown in the app described the methodology inaccurately and are corrected: the Real Assets benchmark label in the database recorded a split the computation does not use (and is now self-healed on reconnect); the regression-window caption on the attribution and factor pages described a "locked quarter-end" window the regressions do not use — they run to the latest available data — contradicting the same pages' own methodology notes; the attribution page's selection-effect sentence stated a weight-scaled figure as a plain return differential, which the PDF export already rendered correctly; and a "consistent with the Performance page" note referenced a risk-free rate the two pages did not share. Each fix is to a displayed label, caption, or sentence; no computation changed. Consistency tests now compare the displayed claim against its underlying source rather than pinning a separate literal, so this class of drift fails continuous integration going forward.
+
+---
+
 ## Reconciliation test made independent of shared-cache state
 _2026-06-13_
 
