@@ -28,6 +28,7 @@ from src.cache import (
     snapshot_price_context,
 )
 from src.benchmarks import get_custom_blended_series, get_sp500_series
+from src.config import IS_DEMO
 from src.db import get_connection
 from src.factors import (
     EM_DISCLOSURE,
@@ -137,6 +138,40 @@ REPORT_DISCLAIMER = (
     "from Robert Shiller’s public datasets. Calculations are best-effort "
     "and may contain methodological simplifications."
 )
+
+# Demo-mode variant of REPORT_DISCLAIMER — mirrors the app's demo-banner wording
+# (src/config.py: get_demo_banner_text) so a report generated from the public
+# demo cannot be read as documenting a real account.
+DEMO_REPORT_DISCLAIMER = (
+    "This report documents a simulated paper-trade demo portfolio, "
+    "illustrating the methodology of the author's personal investment "
+    "analytics system, and is provided for informational and educational "
+    "purposes only. Positions and trades are illustrative, not real "
+    "holdings. Nothing in this report constitutes investment advice, a "
+    "recommendation to buy or sell any security, or an offer to provide "
+    "advisory services. Past performance does not predict future "
+    "results, and all return figures are time-weighted historical "
+    "calculations subject to data and methodology limitations. No "
+    "fiduciary, advisory, or client relationship is created by accessing "
+    "this report or the underlying analytics system. Price data sourced "
+    "from public market data feeds; macro data from FRED; valuation data "
+    "from Robert Shiller’s public datasets. Calculations are best-effort "
+    "and may contain methodological simplifications."
+)
+
+REAL_ACCOUNT_LABEL = "Personal Brokerage Account"
+DEMO_ACCOUNT_LABEL = "Demo Mode — Simulated Paper-Trade Portfolio"
+
+
+def _account_label(is_demo: bool) -> str:
+    """Cover-page account-status label, branched on mode so a demo-generated
+    report is never labeled as a real personal account."""
+    return DEMO_ACCOUNT_LABEL if is_demo else REAL_ACCOUNT_LABEL
+
+
+def _report_disclaimer(is_demo: bool) -> str:
+    """Legal disclaimer text, branched on mode to match _account_label."""
+    return DEMO_REPORT_DISCLAIMER if is_demo else REPORT_DISCLAIMER
 
 
 # ── PDF rendering ─────────────────────────────────────────────────────────────
@@ -1322,13 +1357,19 @@ def generate_quarterly_report(
     end_date: str,
     recipient_name: str = "Matthew Orefice",
     output_path: Optional[Path] = None,
+    is_demo: Optional[bool] = None,
 ) -> Path:
     """
     Generate a quarterly PDF report.
 
     Returns the Path of the written PDF file.
     When zero trades exist, produces a structural report (SAA + macro + theses only).
+    `is_demo` defaults to the app's resolved TRACKER_MODE (src.config.IS_DEMO) so a
+    report generated from the public demo is labeled demo/illustrative rather than
+    as a real personal account; pass explicitly to override (e.g. in tests).
     """
+    if is_demo is None:
+        is_demo = IS_DEMO
     with get_connection() as conn:
         trade_count = conn.execute("SELECT COUNT(*) FROM trades").fetchone()[0]
     has_trades = trade_count > 0
@@ -1384,7 +1425,8 @@ def generate_quarterly_report(
         has_trades           = has_trades,
         inception_date       = inception_str,
         si_days              = si_days_report,
-        report_disclaimer    = REPORT_DISCLAIMER,
+        cover_sub_id         = _account_label(is_demo),
+        report_disclaimer    = _report_disclaimer(is_demo),
         exec           = exec_data,
         hold           = hold_data,
         perf           = perf_data,
