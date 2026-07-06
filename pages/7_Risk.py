@@ -251,16 +251,16 @@ with col:
     st.divider()
     st.subheader("Risk contribution")
     st.caption(
-        "Total portfolio volatility decomposed into each sleeve's contribution — "
+        "Total policy volatility decomposed into each sleeve's contribution — "
         "risk share beside capital share, because correlation makes them differ."
     )
 
     with st.expander("How to read this section", expanded=False):
         st.markdown(
-            "Portfolio volatility is split into per-sleeve **risk contributions** "
+            "Policy volatility is split into per-sleeve **risk contributions** "
             "via the **Euler decomposition** — each sleeve's marginal contribution "
             "to risk weighted by its allocation. The contributions **sum exactly "
-            "to total portfolio volatility** (and the percentages to 100%); that "
+            "to total policy volatility** (and the percentages to 100%); that "
             "summation is the correctness check.\n\n"
             "The point is the gap between **risk share and weight share**: a "
             "high-volatility or highly-correlated sleeve contributes **more** risk "
@@ -275,7 +275,12 @@ with col:
     if rc["status"] == "insufficient_history":
         st.info(risk_contribution_insufficient_history_message(rc["n"], rc["min_obs"]))
     else:
-        st.metric("Portfolio volatility (annualized)", f"{rc['portfolio_vol'] * 100:.1f}%")
+        st.metric("Policy / SAA volatility (annualized)", f"{rc['portfolio_vol'] * 100:.1f}%")
+        st.caption(
+            "Computed from SAA target weights and sleeve-benchmark proxies — this "
+            "is the policy portfolio's volatility, not the realized volatility of "
+            "current holdings (which appears on the Performance page)."
+        )
 
         # Grouped horizontal bars: each sleeve's risk share beside its capital
         # share, sorted by risk share (rc["sleeves"] is already risk_pct-desc).
@@ -334,7 +339,7 @@ with col:
         # The Euler summation, surfaced as the correctness proof.
         _rc_sum_pct = sum(s["risk_pct"] for s in rc["sleeves"]) * 100
         st.caption(
-            f"Euler check: the sleeve risk contributions sum to total portfolio "
+            f"Euler check: the sleeve risk contributions sum to total policy "
             f"volatility — Σ RC = {rc['rc_sum_check'] * 100:.2f}% = "
             f"σ_p ({rc['portfolio_vol'] * 100:.2f}%); risk shares sum to "
             f"{_rc_sum_pct:.1f}%. The **Risk − Weight** column is the point: where "

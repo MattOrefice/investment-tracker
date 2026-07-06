@@ -8,6 +8,13 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Risk page volatility metric relabeled to name what it measures
+_2026-07-06_
+
+The risk-contribution section headlined its figure as "portfolio volatility," but it is computed from the strategic-allocation target weights and sleeve-benchmark proxies — it is the policy portfolio's volatility, not the realized volatility of the actual holdings. The metric is now labeled "Policy / SAA volatility," with a note distinguishing it from the realized figure shown on the Performance page, and the section's risk-contribution framing is stated consistently as contributions to policy risk. The computation is unchanged; only the labeling was corrected so the figure is not read as something it is not.
+
+---
+
 ## Closed the test-coverage gaps that let displayed claims drift and pages ship unexecuted
 _2026-07-06_
 
