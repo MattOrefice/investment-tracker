@@ -18,7 +18,7 @@ from src.factors import (
     run_benchmark_attribution_regression,
     sig_marker,
 )
-from src.reports import build_bhb_cross_reference
+from src.reports import build_bf_cross_reference
 from src.ui_helpers import render_footer, render_page_header
 render_page_header()
 
@@ -147,14 +147,14 @@ with col:
     st.divider()
 
     # ── Interpretation ────────────────────────────────────────────────────────
-    # Top-3 BHB selection effects since inception for prose cross-reference.
-    # build_bhb_cross_reference is the single source shared with src/reports.py's
+    # Top-3 Brinson-Fachler selection effects since inception for prose cross-reference.
+    # build_bf_cross_reference is the single source shared with src/reports.py's
     # PDF path — it reports raw_diff (r_p - r_b), not the weight-scaled selection
     # effect, so prose reads "AVUV outperformed IWM by 768 bps" correctly.
     _bhb_top = None
     try:
         _bf_df = brinson_fachler_period(inception, end_date)
-        _bhb_top = build_bhb_cross_reference(_bf_df) or None
+        _bhb_top = build_bf_cross_reference(_bf_df) or None
     except Exception:
         pass
 

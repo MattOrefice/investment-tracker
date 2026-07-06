@@ -145,7 +145,7 @@ def _ols_five_factor(R_excess: pd.Series, factors: pd.DataFrame) -> dict:
 
     All five factors enter ONE regression, so each beta is marginal — the
     exposure to that factor holding the other four fixed. Returns betas, HAC
-    t-stats and p-values, R², the residual (idiosyncratic) share = 1 − R², the
+    t-stats and p-values, R², the residual (unexplained) share = 1 − R², the
     intercept, and the obs count / lag length.
     """
     T = len(R_excess)
@@ -315,9 +315,16 @@ def methodology_notes() -> list[str]:
         "today-bar is never used as the right-edge anchor.",
 
         "Fit: R² is the share of the portfolio's return variance the five factors "
-        "jointly explain; the residual (idiosyncratic) share is 1 − R² — the "
+        "jointly explain; the residual (unexplained) share is 1 − R² — the "
         "portion the systematic factors do NOT account for. The sample size (n) "
         "and date range are shown so the estimates can be judged in context.",
+
+        "Coverage: the regressand is the portfolio's TOTAL return, which includes "
+        "the Emerging Markets and Real Assets sleeves — asset classes none of "
+        "these five factors is built to span. Their return either loads "
+        "imperfectly onto the correlated Mkt-RF/CREDIT betas or lands in the "
+        "residual, so the residual is not purely security-specific noise; it is "
+        "labeled 'unexplained' rather than 'idiosyncratic' for that reason.",
 
         "Standard errors: Newey-West HAC, correcting for autocorrelation in daily "
         "residuals, with lag L = floor(4 × (n/100)^(2/9)).",
@@ -558,6 +565,11 @@ def scenario_methodology_notes(durations: Optional[dict] = None) -> list[str]:
         "(from the maintained ETF duration table) and HY spread duration ≈ "
         f"{durations['credit']:g}y (HYG fact sheet, ~3–4y). Both are stated "
         "assumptions, disclosed like the Phase 1 ETF-proxy disclosure.",
+
+        "Curve shape: the rate shock is modeled as a PARALLEL shift — a single "
+        "duration point translating a uniform yield change across the curve. It "
+        "cannot represent a non-parallel move (curve steepening, flattening, or "
+        "twist), which real rate shocks routinely include.",
 
         INSTANTANEOUS_FRAMING,
 

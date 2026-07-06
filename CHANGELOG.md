@@ -8,6 +8,13 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Four labeling and disclosure corrections for accuracy
+_2026-07-06_
+
+Four displayed labels and disclosures are corrected so the framing matches the analysis. The whole-portfolio factor regression's residual, previously labeled "idiosyncratic," is now "unexplained," with a note that the emerging-markets and real-asset sleeves are not spanned by the five factors and so the residual is not purely security-specific. The attribution model, described in two places as Brinson-Hood-Beebower, is correctly named Brinson-Fachler, matching the implemented mathematics. The single-snapshot attribution caveat now states that the approximation degrades over longer windows rather than framing it only as a quarterly-rebalance matter. And the rate-shock scenario now discloses that it assumes a parallel curve shift and cannot represent curve-twist risk. No computation changed.
+
+---
+
 ## Risk page volatility metric relabeled to name what it measures
 _2026-07-06_
 

@@ -1355,7 +1355,7 @@ def build_benchmark_prose(
     else:
         _ci_part = f" (t = {t_a:.2f})"
 
-    # Second paragraph: intercept interpretation + optional BHB cross-reference
+    # Second paragraph: intercept interpretation + optional Brinson-Fachler cross-reference
     second_para = (
         f"The intercept — active return after controlling for benchmark beta and style tilts — "
         f"is {a_bps:+.0f} bps/yr{_ci_part}, {sig_label}. "
