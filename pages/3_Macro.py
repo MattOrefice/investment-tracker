@@ -1,4 +1,5 @@
 """Macro Dashboard — regime indicator panels."""
+import logging
 from datetime import date, datetime, timedelta
 
 import pandas as pd
@@ -1546,9 +1547,10 @@ with col:
         cape_median  = float(cape_series.median())
         cape_std     = float(cape_series.std())
         cape_ok = True
-    except Exception as exc:
+    except Exception:
         cape_ok = False
-        st.error(f"CAPE data unavailable: {exc}")
+        logging.exception("CAPE data load failed")
+        st.error("CAPE data unavailable — please try again later.")
 
     if cape_ok:
         cape_last_date = cape_series.dropna().index[-1]
@@ -1795,8 +1797,9 @@ with col:
 
         st.caption(interpret_us_vs_intl_spread(current_spread_pp, current_mean_5y))
 
-    except Exception as exc:
-        st.error(f"US vs. International data unavailable: {exc}")
+    except Exception:
+        logging.exception("US vs. International data load failed")
+        st.error("US vs. International data unavailable — please try again later.")
 
     st.divider()
 
@@ -2077,8 +2080,9 @@ with col:
             "Fama-French SMB", "IWM − IWB (proxy)",
             "Fama-French SMB (12M)", "IWM − IWB proxy (12M)", "size",
         )
-    except Exception as exc:
-        st.error(f"Size-factor data unavailable: {exc}")
+    except Exception:
+        logging.exception("Size-factor data load failed")
+        st.error("Size-factor data unavailable — please try again later.")
 
     st.divider()
 
@@ -2093,8 +2097,9 @@ with col:
             "Fama-French HML", "IWD − IWF (proxy)",
             "Fama-French HML (12M)", "IWD − IWF proxy (12M)", "style",
         )
-    except Exception as exc:
-        st.error(f"Style-factor data unavailable: {exc}")
+    except Exception:
+        logging.exception("Style-factor data load failed")
+        st.error("Style-factor data unavailable — please try again later.")
 
     st.divider()
 
@@ -2163,8 +2168,9 @@ with col:
                 "different multiples for reasons unrelated to mean reversion, so a size "
                 "\"valuation spread\" would be more misleading than informative."
             )
-    except Exception as exc:
-        st.error(f"Value-spread data unavailable: {exc}")
+    except Exception:
+        logging.exception("Value-spread data load failed")
+        st.error("Value-spread data unavailable — please try again later.")
 
     with st.expander("Factor Regime methodology", expanded=False):
         st.caption(

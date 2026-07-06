@@ -1,4 +1,5 @@
 """Performance & Attribution page."""
+import logging
 from datetime import date
 from pathlib import Path
 
@@ -237,8 +238,9 @@ with col:
                         mime="application/pdf",
                         key="report_download",
                     )
-                except Exception as _e:
-                    st.error(f"Report generation failed: {_e}")
+                except Exception:
+                    logging.exception("Quarterly report generation failed")
+                    st.error("Report generation failed — please try again later.")
 
     # Empty-state guard — no trades yet
     if pv.empty or float(pv.max()) == 0.0:

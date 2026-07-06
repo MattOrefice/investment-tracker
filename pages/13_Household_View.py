@@ -3,6 +3,7 @@
 Aggregates all household accounts against the SAA framework with
 look-through decomposition of target-date and allocation funds.
 """
+import logging
 import streamlit as st
 
 st.set_page_config(page_title="Household View", layout="wide")
@@ -59,8 +60,9 @@ except FileNotFoundError:
         "Upload the Fidelity positions CSV to `data/uploads/` to use this page."
     )
     st.stop()
-except Exception as exc:
-    st.error(f"Error loading holdings file: {exc}")
+except Exception:
+    logging.exception("Error loading holdings file")
+    st.error("Error loading holdings file — check the logs for details.")
     st.stop()
 
 with get_connection() as conn:

@@ -8,6 +8,13 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Convexity caveat, consistent number formatting, and suppressed internal paths
+_2026-07-06_
+
+The scenario stress-test's linearity note now states that the duration-based model does not capture convexity in the Treasury or high-yield legs, alongside the existing equity example. The Risk page's factor-fit caption no longer restates R² as both a raw decimal and a percentage in the same sentence — it now reads consistently in percentage terms, matching the KPI tiles above it. User-facing error messages across the Risk, Factor Profile, Benchmark Attribution, Macro, Performance, and Household View pages no longer interpolate raw exception text (which can include internal file paths); the underlying exception is logged server-side instead, and a clean message is shown to the user. No computation changed; these are display-layer changes only.
+
+---
+
 ## Four labeling and disclosure corrections for accuracy
 _2026-07-06_
 

@@ -5,6 +5,7 @@ five systematic factors simultaneously (market, size, value, rates, credit) to
 show what drives its risk. Scenario stress-testing (Phase 2) and risk
 contribution (Phase 3) follow as later sections.
 """
+import logging
 import streamlit as st
 from datetime import date
 
@@ -94,8 +95,9 @@ with col:
 
     try:
         result = _get_decomposition(inception, end_date)
-    except Exception as exc:  # pragma: no cover - defensive
-        st.error(f"Factor decomposition unavailable: {exc}")
+    except Exception:  # pragma: no cover - defensive
+        logging.exception("Factor decomposition failed")
+        st.error("Factor decomposition unavailable — please try again later.")
         st.stop()
 
     # ── Insufficient-history empty state (the #38-analog) ─────────────────────
@@ -165,11 +167,11 @@ with col:
     c4.metric("NW Lags (L)",         str(result["nw_lags"]))
     st.caption(f"Sample window: {window_str}")
     st.caption(
-        f"R² = {result['r_squared']:.3f}: the five factors jointly explain "
-        f"{result['r_squared'] * 100:.1f}% of the portfolio's return variance; "
-        f"the remaining {result['residual_share'] * 100:.1f}% is unexplained — "
-        "return the systematic factors do not account for (including any "
-        "Emerging Markets and Real Assets return the five factors don't span)."
+        f"The five factors jointly explain {result['r_squared'] * 100:.1f}% of "
+        f"the portfolio's return variance; the remaining "
+        f"{result['residual_share'] * 100:.1f}% is unexplained — return the "
+        "systematic factors do not account for (including any Emerging "
+        "Markets and Real Assets return the five factors don't span)."
     )
 
     # ── Proxy disclosure ──────────────────────────────────────────────────────

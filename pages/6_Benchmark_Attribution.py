@@ -1,4 +1,5 @@
 """Benchmark Attribution — Portfolio vs Custom Blended SAA Regression."""
+import logging
 import streamlit as st
 from datetime import date
 
@@ -60,8 +61,9 @@ with col:
 
     try:
         result = _get_benchmark_result(inception, end_date)
-    except Exception as exc:
-        st.error(f"Benchmark attribution regression unavailable: {exc}")
+    except Exception:
+        logging.exception("Benchmark attribution regression failed")
+        st.error("Benchmark attribution regression unavailable — please try again later.")
         st.stop()
 
     if result is None:
