@@ -8,6 +8,13 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Missing dividend-distribution data is now surfaced in the app
+_2026-07-06_
+
+When a holding's dividend distribution could not be found, the reinvestment step warned and skipped it — understating that holding's total return — but the warning only appeared in a command-line script, never in the app, so a user saw a quietly understated number with no indication anything was missing. The app now surfaces which holdings hit a missing distribution, both as an on-page notice and in the server logs, mirroring the safeguard added for missing prices. This makes the existing warning visible rather than adding a new validation; an independent reconstruction of total return from adjusted-close data remains future work. The reinvestment computation is unchanged.
+
+---
+
 ## Risk-contribution decomposition gains a low-confidence band
 _2026-07-06_
 
