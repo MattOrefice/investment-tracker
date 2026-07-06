@@ -26,6 +26,7 @@ from src.risk import (
     low_confidence_caveat,
     methodology_notes,
     risk_contribution_insufficient_history_message,
+    risk_contribution_low_confidence_caveat,
     risk_contribution_methodology_notes,
     run_portfolio_factor_regression,
     run_risk_contribution,
@@ -280,6 +281,10 @@ with col:
     if rc["status"] == "insufficient_history":
         st.info(risk_contribution_insufficient_history_message(rc["n"], rc["min_obs"]))
     else:
+        # ── Low-confidence caveat on the [60, 120) observation band ───────────
+        if rc.get("low_confidence"):
+            st.warning(risk_contribution_low_confidence_caveat(rc["n"]))
+
         st.metric("Policy / SAA volatility (annualized)", f"{rc['portfolio_vol'] * 100:.1f}%")
         st.caption(
             "Computed from SAA target weights and sleeve-benchmark proxies — this "

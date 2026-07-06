@@ -134,6 +134,19 @@ def test_risk_contribution_chart_gated_with_table(risk_app: AppTest) -> None:
         )
 
 
+def test_risk_contribution_low_confidence_caveat_absent_at_full_confidence(risk_app: AppTest) -> None:
+    """The risk-contribution low-confidence caveat must NOT render when the
+    decomposition is present (demo has ~270+ obs, well above the 120 band
+    ceiling) — the band is additive and must not surface at full confidence.
+    Personal mode never reaches this branch (insufficient-history empty state)."""
+    all_text = _all_text(risk_app)
+    if "insufficient history for risk decomposition" not in all_text:
+        assert "stable covariance estimate" not in all_text, (
+            "Risk-contribution low-confidence caveat rendered even though the "
+            "decomposition is at full confidence — check the [60, 120) band gate."
+        )
+
+
 def test_scenario_section_behaves_per_band(risk_app: AppTest) -> None:
     """The scenario section must render correctly in BOTH branches:
       - decomposition present (demo) → the honesty-discipline framing
