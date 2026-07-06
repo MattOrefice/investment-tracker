@@ -8,6 +8,13 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Closed the test-coverage gaps that let displayed claims drift and pages ship unexecuted
+_2026-07-06_
+
+Several consistency checks had pinned a literal copy of a value rather than comparing it against its source, so a source could change while the test kept passing against the stale copy — the mechanism behind the recently-corrected displayed claims. Those checks now assert the two sources against each other, so a future divergence fails continuous integration. The blended-benchmark path, whose attribution identity held equally whether the benchmark was correct or silently zero, gains a correctness tripwire that fails if a real benchmark is dropped to zero. And the two largest surfaces that never executed in the merge gate — the macro page and the application entry point — are now import-executed by the smoke suite, so an import-time break in either fails continuous integration rather than reaching deployment. No production code changed; these are test additions and conversions.
+
+---
+
 ## Documentation synced to the current application state
 _2026-07-05_
 
