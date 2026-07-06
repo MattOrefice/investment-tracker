@@ -26,8 +26,10 @@ import pytest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from src.risk import (
+    LOW_CONFIDENCE_OBS_RC,
     MIN_OBS_FOR_COVARIANCE,
     risk_contribution_insufficient_history_message,
+    risk_contribution_low_confidence_caveat,
     run_risk_contribution,
 )
 
@@ -172,6 +174,80 @@ def test_empty_state_copy_pinned():
 
 
 # ── Production wiring sanity (weights default to SAA map, names align) ──────────
+
+# ── Low-confidence band [60, 120): per-band, not all-or-nothing ────────────────
+# Mirrors the analogous regression-band tests in tests/test_risk.py.
+
+def test_full_confidence_above_band_threshold():
+    """n >= 120 (LOW_CONFIDENCE_OBS_RC) → status ok, low_confidence False."""
+    cols = ["A", "B", "C"]
+    R = _returns(150, cols=cols)
+    res = run_risk_contribution(sleeve_returns=R, weights=_equal_weights(cols))
+    assert res["status"] == "ok"
+    assert res["low_confidence"] is False
+    assert res["n"] >= LOW_CONFIDENCE_OBS_RC
+
+
+def test_low_confidence_band_returns_contributions_with_flag():
+    """60 <= n < 120 → contributions computed WITH low_confidence=True."""
+    cols = ["A", "B", "C"]
+    R = _returns(90, cols=cols)
+    res = run_risk_contribution(sleeve_returns=R, weights=_equal_weights(cols))
+    assert res["status"] == "ok"
+    assert res["low_confidence"] is True
+    assert MIN_OBS_FOR_COVARIANCE <= res["n"] < LOW_CONFIDENCE_OBS_RC
+    # Euler property still holds in the low-confidence band — the band flags
+    # confidence, it does not change the decomposition.
+    rc_sum = sum(s["risk_contribution"] for s in res["sleeves"])
+    assert rc_sum == pytest.approx(res["portfolio_vol"], rel=1e-9)
+
+
+def test_band_thresholds_fire_independently_for_risk_contribution():
+    """The three bands are distinct: insufficient < ok-low-conf < ok-full-conf."""
+    cols = ["A", "B", "C"]
+
+    below_floor = run_risk_contribution(
+        sleeve_returns=_returns(40, cols=cols), weights=_equal_weights(cols)
+    )
+    assert below_floor["status"] == "insufficient_history"
+
+    low = run_risk_contribution(
+        sleeve_returns=_returns(90, cols=cols), weights=_equal_weights(cols)
+    )
+    assert low["status"] == "ok" and low["low_confidence"] is True
+
+    full = run_risk_contribution(
+        sleeve_returns=_returns(150, cols=cols), weights=_equal_weights(cols)
+    )
+    assert full["status"] == "ok" and full["low_confidence"] is False
+
+
+def test_band_boundary_at_covariance_floor_is_low_confidence():
+    """n == 60 exactly (the covariance floor) → ok, NOT insufficient — the floor
+    is inclusive on the 'ok' side — and low_confidence True (still below 120)."""
+    cols = ["A", "B", "C"]
+    R = _returns(MIN_OBS_FOR_COVARIANCE, cols=cols)
+    res = run_risk_contribution(sleeve_returns=R, weights=_equal_weights(cols))
+    assert res["status"] == "ok"
+    assert res["low_confidence"] is True
+
+
+def test_band_boundary_at_low_confidence_ceiling_is_full_confidence():
+    """n == 120 exactly (LOW_CONFIDENCE_OBS_RC) → full confidence, no caveat."""
+    cols = ["A", "B", "C"]
+    R = _returns(LOW_CONFIDENCE_OBS_RC, cols=cols)
+    res = run_risk_contribution(sleeve_returns=R, weights=_equal_weights(cols))
+    assert res["status"] == "ok"
+    assert res["low_confidence"] is False
+
+
+def test_low_confidence_caveat_copy_pinned():
+    """Low-confidence caveat copy must name the count and the 120 threshold."""
+    msg = risk_contribution_low_confidence_caveat(90)
+    assert "90" in msg
+    assert str(LOW_CONFIDENCE_OBS_RC) in msg
+    assert "Low-confidence estimate" in msg
+
 
 def test_weights_default_to_saa_map_when_injected_returns_match():
     """When weights are omitted, the SAA weight map is used; with matching sleeve

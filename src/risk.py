@@ -615,7 +615,14 @@ def scenario_methodology_notes(durations: Optional[dict] = None) -> list[str]:
 # n ≤ k. A 60-observation floor (vs Phase 1's 30) keeps the estimate away from
 # that degenerate edge before it is shown; below it, the section shows the
 # insufficient-history empty state.
-MIN_OBS_FOR_COVARIANCE = 60
+#
+# Above the floor, the same graduated treatment Phase 1 applies to the
+# regression applies here: Phase 1's low-confidence ceiling (60) sits at 2x its
+# own floor (30). Mirroring that ratio against the covariance's higher floor
+# gives 120 (2 x 60) — higher than Phase 1's 60, reflecting that a covariance
+# matrix estimates far more parameters than a single regression.
+MIN_OBS_FOR_COVARIANCE = 60   # below this: no contributions, show empty-state
+LOW_CONFIDENCE_OBS_RC  = 120  # [60, 120): contributions WITH a small-sample caveat
 _MAX_COND_NUMBER = 1.0e10  # condition number above which Σ is treated as singular
 
 
@@ -642,10 +649,11 @@ def run_risk_contribution(
         when too few aligned observations OR the covariance is singular/degenerate
         (more sleeves than obs, or perfectly collinear sleeves) — NO contributions.
 
-      {"status": "ok", "portfolio_vol": <σ_p>, "n", "k", "annualized",
-       "rc_sum_check": <Σ RC == σ_p>, "sleeves": [
+      {"status": "ok", "low_confidence": <bool>, "portfolio_vol": <σ_p>, "n", "k",
+       "annualized", "rc_sum_check": <Σ RC == σ_p>, "sleeves": [
           {"sleeve", "weight", "vol", "mcr", "risk_contribution", "risk_pct"} ...]}
-        sorted by risk_pct descending.
+        sorted by risk_pct descending. low_confidence is True on the [60, 120)
+        small-sample band, mirroring the regression's [30, 60) band.
 
     Inputs are injectable for deterministic tests (no live fetch): ``sleeve_returns``
     a DataFrame of daily sleeve returns (columns = sleeve names), ``weights`` a
@@ -719,13 +727,14 @@ def run_risk_contribution(
     sleeves_out.sort(key=lambda d: d["risk_pct"], reverse=True)
 
     return {
-        "status":        "ok",
-        "portfolio_vol": sigma_p,
-        "n":             n,
-        "k":             k,
-        "annualized":    annualize,
-        "rc_sum_check":  float(rc.sum()),   # == portfolio_vol (Euler proof)
-        "sleeves":       sleeves_out,
+        "status":         "ok",
+        "low_confidence": n < LOW_CONFIDENCE_OBS_RC,
+        "portfolio_vol":  sigma_p,
+        "n":              n,
+        "k":              k,
+        "annualized":     annualize,
+        "rc_sum_check":   float(rc.sum()),   # == portfolio_vol (Euler proof)
+        "sleeves":        sleeves_out,
     }
 
 
@@ -739,6 +748,17 @@ def risk_contribution_insufficient_history_message(
         "for a stable sleeve covariance matrix. A covariance matrix needs more "
         "history than a single regression; contributions are suppressed until "
         "the sample is adequate rather than shown from a degenerate matrix."
+    )
+
+
+def risk_contribution_low_confidence_caveat(n: int) -> str:
+    """Small-sample caveat shown on the [60, 120) observation band."""
+    return (
+        f"Low-confidence estimate: only {n} trading days of sleeve-return "
+        f"history (below the {LOW_CONFIDENCE_OBS_RC}-observation threshold for a "
+        "stable covariance estimate). Contributions are shown but the "
+        "correlation terms carry wide estimation error and should be read as "
+        "provisional until the sample grows."
     )
 
 
@@ -778,5 +798,7 @@ def risk_contribution_methodology_notes() -> list[str]:
         f"{MIN_OBS_FOR_COVARIANCE} aligned observations, or a singular / "
         "near-singular covariance matrix (more sleeves than data, or collinear "
         "sleeves), shows an explicit empty state rather than unstable or "
-        "ill-defined contributions.",
+        "ill-defined contributions; between "
+        f"{MIN_OBS_FOR_COVARIANCE} and {LOW_CONFIDENCE_OBS_RC} the contributions "
+        "are shown with a small-sample caveat.",
     ]
