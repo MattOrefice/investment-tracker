@@ -734,7 +734,7 @@ def risk_contribution_methodology_notes() -> list[str]:
         "Mechanic: the Euler decomposition of volatility. Portfolio variance is "
         "σ²_p = wᵀΣw; each sleeve's marginal contribution to risk is MCR_i = "
         "(Σw)_i / σ_p and its risk contribution is RC_i = w_i × MCR_i. By Euler's "
-        "theorem the contributions sum EXACTLY to total portfolio volatility "
+        "theorem the contributions sum EXACTLY to total policy volatility "
         "(Σ RC_i = σ_p), and the percentage shares sum to 100% — the summation "
         "shown is the correctness check.",
 
