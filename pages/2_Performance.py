@@ -729,7 +729,11 @@ with col:
         "targets: **allocation effect** — over/underweights from SAA targets, primarily driven by "
         "drift since this portfolio is not rebalanced intra-quarter; and **selection effect** — the "
         "chosen ETF return vs. the sleeve benchmark return, typically near-zero for passive ETF "
-        f"holdings. Stage 1 + Stage 2 = Portfolio return vs. {_naive_short} (algebra-checked in the summary tiles). The "
+        f"holdings. Stage 1 + Stage 2 = Portfolio return vs. {_naive_short} (algebra-checked in the summary tiles). "
+        "Brinson-Fachler holds a single beginning-of-period weight snapshot fixed for the entire "
+        "selected window, so this decomposition is most precise near a quarter-length horizon and "
+        "its accuracy degrades over longer windows (YTD/1Y/SI) as actual weights drift within the "
+        "period. The "
         "Factor Profile page provides an independent factor-loading view of the same strategic tilts "
         "(HML, SMB, RMW, CMA loadings on the US sleeve regression)."
     )

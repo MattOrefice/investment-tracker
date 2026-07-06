@@ -220,7 +220,7 @@ def _landing_page_render():
                 <h3 class="endow-card-header">Performance</h3>
                 <p class="endow-card-body endow-card-body-clamp">Time-weighted return vs
                 SAA-target-weighted blended benchmark. Cover narrative, cumulative return chart,
-                and period-by-period BHB attribution.</p>
+                and period-by-period Brinson-Fachler attribution.</p>
             </div>
             """,
             unsafe_allow_html=True,

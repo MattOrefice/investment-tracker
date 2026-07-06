@@ -14,7 +14,7 @@ from src.reports import (
     _build_cumulative_chart,
     _build_holdings_chart,
     _drift_status,
-    build_bhb_cross_reference,
+    build_bf_cross_reference,
 )
 from src.returns import twr_daily_linked
 
@@ -321,7 +321,7 @@ def test_cover_alpha_bps_are_arithmetic_of_cover_returns():
     )
 
 
-def test_build_bhb_cross_reference_uses_raw_diff_not_selection_effect():
+def test_build_bf_cross_reference_uses_raw_diff_not_selection_effect():
     """sel_bps must be the raw return differential (r_p - r_b), not the
     portfolio-weighted selection_effect (w_p * (r_p - r_b)).
 
@@ -339,7 +339,7 @@ def test_build_bhb_cross_reference_uses_raw_diff_not_selection_effect():
         {"sleeve": "TIPS", "r_p": 0.02, "r_b": 0.03, "selection_effect": 0.06 * -0.01},
     ])
 
-    top = build_bhb_cross_reference(bf_df, n=3)
+    top = build_bf_cross_reference(bf_df, n=3)
 
     small_cap = next(item for item in top if item["holding"] == "AVUV")
     # raw_diff = 0.15 - 0.07 = 0.08 -> 800 bps. The weight-scaled selection_effect
@@ -350,20 +350,21 @@ def test_build_bhb_cross_reference_uses_raw_diff_not_selection_effect():
     )
 
 
-def test_build_bhb_cross_reference_empty_df_returns_empty_list():
+def test_build_bf_cross_reference_empty_df_returns_empty_list():
     """An empty BF frame (e.g. no holdings data) must return [], not None or raise."""
-    assert build_bhb_cross_reference(pd.DataFrame()) == []
+    assert build_bf_cross_reference(pd.DataFrame()) == []
 
 
-def test_benchmark_attribution_page_uses_shared_bhb_cross_reference():
-    """pages/6_Benchmark_Attribution.py must import build_bhb_cross_reference from
-    src.reports rather than re-deriving the top-N BHB list inline — a guard against
-    the two prose surfaces silently re-diverging (see the raw_diff test above).
+def test_benchmark_attribution_page_uses_shared_bf_cross_reference():
+    """pages/6_Benchmark_Attribution.py must import build_bf_cross_reference from
+    src.reports rather than re-deriving the top-N selection-effect list inline —
+    a guard against the two prose surfaces silently re-diverging (see the
+    raw_diff test above).
     """
     page_path = pathlib.Path(__file__).resolve().parent.parent / "pages" / "6_Benchmark_Attribution.py"
     source = page_path.read_text(encoding="utf-8")
-    assert "from src.reports import build_bhb_cross_reference" in source, (
+    assert "from src.reports import build_bf_cross_reference" in source, (
         "pages/6_Benchmark_Attribution.py no longer imports the shared "
-        "build_bhb_cross_reference helper — check it hasn't reverted to an "
+        "build_bf_cross_reference helper — check it hasn't reverted to an "
         "independent (and possibly selection_effect-based) inline implementation."
     )

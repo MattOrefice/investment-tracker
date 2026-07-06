@@ -37,7 +37,7 @@ The primary benchmark is the custom SAA-blended basket, not the S&P 500. A small
 
 - **SAA as policy.** 10-sleeve strategic asset allocation serves as the policy benchmark; deviations are measured as drift and corrected via the Capital Deployment workflow.
 
-- **Performance attribution.** Brinson-Hood-Beebower decomposition partitioning excess return into allocation and selection effects against a SAA-target-weighted blended benchmark.
+- **Performance attribution.** Brinson-Fachler decomposition partitioning excess return into allocation and selection effects against a SAA-target-weighted blended benchmark.
 
 - **Factor regressions.** Per-sleeve Fama-French 5-factor regressions with Newey-West HAC standard errors. Regional sleeves use region-appropriate factor universes (Ken French Developed ex-US for international developed).
 

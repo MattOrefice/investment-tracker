@@ -91,15 +91,15 @@ SLEEVE_BENCH_TICKER: dict[str, str] = {
     "Cash / SPAXX":            "BIL",
 }
 
-def build_bhb_cross_reference(bf_df: pd.DataFrame, n: int = 3) -> list[dict]:
-    """Top-n BHB selection effects for prose cross-reference.
+def build_bf_cross_reference(bf_df: pd.DataFrame, n: int = 3) -> list[dict]:
+    """Top-n Brinson-Fachler selection effects for prose cross-reference.
 
     Ranked by selection_effect (portfolio-weighted, w_p * (r_p - r_b)) but
     reported as raw_diff = r_p - r_b, so prose built from this list reads
     "AVUV outperformed IWM by 768 bps" — the actual return differential
-    matching the port_ret/bench_ret columns on the BHB attribution table,
-    not the weight-scaled selection effect. Single source for both the PDF
-    report and the Benchmark Attribution page so the two can't diverge.
+    matching the port_ret/bench_ret columns on the Brinson-Fachler attribution
+    table, not the weight-scaled selection effect. Single source for both the
+    PDF report and the Benchmark Attribution page so the two can't diverge.
     """
     if bf_df.empty:
         return []
@@ -743,7 +743,7 @@ def _build_benchmark_section(start_date: str, end_date: str) -> Optional[dict]:
     and format results for the template.  Returns None if insufficient data or on failure.
 
     start_date is the report-period start (e.g. Dec-31 for Q1) and is used only
-    for the BHB cross-reference window — the regression itself always covers the
+    for the Brinson-Fachler cross-reference window — the regression itself always covers the
     full inception-to-end_date window.  Cross-reference uses the raw return
     differential (r_p − r_b) so prose reads "AVUV outperformed IWM by 768 bps"
     rather than the portfolio-weighted selection effect.
@@ -783,11 +783,11 @@ def _build_benchmark_section(start_date: str, end_date: str) -> Optional[dict]:
             "significance": sig_marker(p),
         })
 
-    # Top-3 BHB cross-reference — use report period (Q1) window.
+    # Top-3 Brinson-Fachler cross-reference — use report period (Q1) window.
     bhb_top = None
     try:
         bf_df = brinson_fachler_period(start_date, end_date)
-        bhb_top = build_bhb_cross_reference(bf_df) or None
+        bhb_top = build_bf_cross_reference(bf_df) or None
     except Exception:
         pass
 

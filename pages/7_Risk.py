@@ -76,9 +76,11 @@ with col:
             f"- **Rates** — {RATES_PROXY_DISCLOSURE} *(ETF-based proxy.)*\n"
             f"- **Credit** — {CREDIT_PROXY_DISCLOSURE} *(ETF-based proxy.)*\n\n"
             "**R²** is the share of return variance the factors jointly explain; "
-            "the **residual (idiosyncratic) share = 1 − R²** is the portion they "
-            "do *not* explain. Sample size (n) and the date window are shown so "
-            "the estimates can be judged in context."
+            "the **residual (unexplained) share = 1 − R²** is the portion they "
+            "do *not* explain — including any Emerging Markets and Real Assets "
+            "return the five factors are not built to span, so this residual is "
+            "not purely security-specific noise. Sample size (n) and the date "
+            "window are shown so the estimates can be judged in context."
         )
 
     st.subheader("Factor decomposition")
@@ -158,15 +160,16 @@ with col:
     )
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("R² (explained)",      f"{result['r_squared'] * 100:.1f}%")
-    c2.metric("Residual (idiosyncratic)", f"{result['residual_share'] * 100:.1f}%")
+    c2.metric("Residual (unexplained)", f"{result['residual_share'] * 100:.1f}%")
     c3.metric("Observations (n)",    str(result["n"]))
     c4.metric("NW Lags (L)",         str(result["nw_lags"]))
     st.caption(f"Sample window: {window_str}")
     st.caption(
         f"R² = {result['r_squared']:.3f}: the five factors jointly explain "
         f"{result['r_squared'] * 100:.1f}% of the portfolio's return variance; "
-        f"the remaining {result['residual_share'] * 100:.1f}% is idiosyncratic — "
-        "return the systematic factors do not account for."
+        f"the remaining {result['residual_share'] * 100:.1f}% is unexplained — "
+        "return the systematic factors do not account for (including any "
+        "Emerging Markets and Real Assets return the five factors don't span)."
     )
 
     # ── Proxy disclosure ──────────────────────────────────────────────────────
