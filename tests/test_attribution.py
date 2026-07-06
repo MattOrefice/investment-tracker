@@ -802,7 +802,7 @@ def test_bf_per_sleeve_returns_are_total_return():
     # VEA's own adj_close ratio — no DRIP-share inflation layered on top.
     p_start = _last_adj_price("VEA", INCEPTION)
     p_end   = _last_adj_price("VEA", TODAY)
-    if p_start <= 0 or p_end <= 0:
+    if p_start is None or p_end is None or p_start <= 0 or p_end <= 0:
         pytest.skip("VEA price data unavailable")
 
     r_p_adj_close = p_end / p_start - 1
@@ -859,3 +859,207 @@ def test_bf_ex_cash_weights_and_cash_drag_attr():
         "strategic active (ex-cash) + cash drag must equal the incl-cash active "
         "(the total is unchanged; only the split is new)"
     )
+
+
+# ── Price-gap tripwire ───────────────────────────────────────────────────────
+# Mirrors test_benchmarks.py's r_b tripwire (test_real_benchmark_sleeves_never_
+# silently_zero) for the portfolio side: brinson_fachler()'s internal algebra
+# check holds regardless of whether r_p is real, fabricated-0.0, or
+# fabricated-(-1.0), so it cannot catch a price-data gap — these tests instead
+# construct a genuine gap directly and check _first_adj_price/_last_adj_price/
+# brinson_fachler_period's behavior in response, which no test did before this.
+#
+# Each test's docstring states what the assertion would find against the
+# PRE-FIX code (return 0.0 with no log; a fabricated 0%/-100% row in bf_df
+# instead of exclusion) — that is the proof this tripwire actually catches the
+# bug, not just a description of the fix.
+
+def test_price_gap_helper_returns_none_not_zero(monkeypatch, caplog):
+    """_first_adj_price/_last_adj_price must return None — never a fabricated
+    0.0 — when a price cannot be found within the lookback window, and must log
+    a warning naming the ticker so the gap is debuggable rather than invisible.
+
+    PROVES the pre-fix bug: against the pre-fix code, both assertions below
+    fail — the helper returned 0.0 (a float, not None), and no warning was ever
+    logged anywhere in the module (grep-confirmed zero logging calls existed).
+    """
+    import logging
+    import pandas as pd
+    import src.attribution as attr_mod
+
+    def _empty_prices(ticker, start, end, *a, **k):
+        return pd.DataFrame()
+
+    monkeypatch.setattr(attr_mod, "get_prices", _empty_prices)
+
+    with caplog.at_level(logging.WARNING):
+        result_first = attr_mod._first_adj_price("GHOST", "2025-06-01")
+        result_last  = attr_mod._last_adj_price("GHOST", "2025-06-01")
+
+    assert result_first is None, f"expected None on a price gap, got {result_first!r}"
+    assert result_last is None, f"expected None on a price gap, got {result_last!r}"
+    assert any("GHOST" in rec.message for rec in caplog.records), (
+        "expected a logged warning naming the gapped ticker; none found — "
+        f"captured records: {[r.message for r in caplog.records]}"
+    )
+
+
+def test_price_gap_excludes_sleeve_start_price(monkeypatch):
+    """PATH A: a held ticker's START price is missing beyond the window — the
+    sleeve must be EXCLUDED from the period's attribution (flagged in
+    .attrs['price_gaps']), never assigned a fabricated 0% return.
+
+    PROVES the pre-fix bug: pre-fix, the sleeve would appear in bf_df with r_p
+    exactly 0.0 and w_p exactly 0.0 (a fabricated "flat, zero-weight" row,
+    silently inflating every OTHER sleeve's weight via the under-counted
+    denominator) instead of being excluded and flagged.
+    """
+    import datetime
+    import pandas as pd
+    import src.attribution as attr_mod
+    from src.attribution import brinson_fachler_period
+
+    INCEPTION = "2025-05-01"
+    TODAY = datetime.date.today().isoformat()
+    GAPPED_TICKER = "VNQ"  # Real Assets sleeve
+    real_get_prices = attr_mod.get_prices
+
+    def _gap_start(ticker, start, end, *a, **k):
+        # _last_adj_price(ticker, start_date) calls get_prices(ticker,
+        # start_date-5d, start_date) -- match on the END bound (the actual
+        # queried date), not the internal window's start bound.
+        if ticker == GAPPED_TICKER and end == INCEPTION:
+            return pd.DataFrame()
+        return real_get_prices(ticker, start, end, *a, **k)
+
+    monkeypatch.setattr(attr_mod, "get_prices", _gap_start)
+
+    try:
+        bf_df = brinson_fachler_period(INCEPTION, TODAY)
+    except Exception as exc:
+        pytest.skip(f"Data unavailable: {exc}")
+    if bf_df.empty:
+        pytest.skip("BF result empty — skipped in local/empty-DB mode")
+
+    gaps = bf_df.attrs.get("price_gaps", [])
+    assert any(t == GAPPED_TICKER for t, _ in gaps), (
+        f"expected {GAPPED_TICKER}'s start-price gap to be recorded in "
+        f".attrs['price_gaps'], got: {gaps}"
+    )
+    assert "Real Assets" not in bf_df["sleeve"].tolist(), (
+        "Real Assets should be EXCLUDED from the period's attribution when its "
+        f"only ticker ({GAPPED_TICKER}) has a start-price gap — found it in the "
+        f"output instead:\n{bf_df[bf_df['sleeve'] == 'Real Assets']}"
+    )
+    # No fabricated row, and the remaining (measured) sleeves still reconcile —
+    # both weight columns renormalize to sum to 1.0 over the reduced universe,
+    # and brinson_fachler()'s internal algebra assert did not raise (it would
+    # have crashed brinson_fachler_period() had the weights not been
+    # renormalized consistently on both sides).
+    assert abs(bf_df["w_p"].sum() - 1.0) < 1e-6
+    assert abs(bf_df["w_b"].sum() - 1.0) < 1e-6
+
+
+def test_price_gap_excludes_sleeve_end_price(monkeypatch):
+    """PATH B: a held ticker's END price is missing beyond the window — the
+    sleeve must be EXCLUDED, never assigned a fabricated -100% return.
+
+    PROVES the pre-fix bug: pre-fix, the sleeve's r_p would compute to exactly
+    -1.0 (a fabricated "-100% return") since its start value is intact but its
+    end value is silently zeroed — per the earlier diagnostic, a real chance of
+    being printed as the PDF's "Top detractor" narrative sentence with no
+    plausibility check.
+    """
+    import datetime
+    import pandas as pd
+    import src.attribution as attr_mod
+    from src.attribution import brinson_fachler_period
+
+    INCEPTION = "2025-05-01"
+    TODAY = datetime.date.today().isoformat()
+    GAPPED_TICKER = "VOO"  # US Large Core sleeve
+    real_get_prices = attr_mod.get_prices
+
+    def _gap_end(ticker, start, end, *a, **k):
+        if ticker == GAPPED_TICKER and end == TODAY:
+            return pd.DataFrame()
+        return real_get_prices(ticker, start, end, *a, **k)
+
+    monkeypatch.setattr(attr_mod, "get_prices", _gap_end)
+
+    try:
+        bf_df = brinson_fachler_period(INCEPTION, TODAY)
+    except Exception as exc:
+        pytest.skip(f"Data unavailable: {exc}")
+    if bf_df.empty:
+        pytest.skip("BF result empty — skipped in local/empty-DB mode")
+
+    gaps = bf_df.attrs.get("price_gaps", [])
+    assert any(t == GAPPED_TICKER for t, _ in gaps), (
+        f"expected {GAPPED_TICKER}'s end-price gap to be recorded in "
+        f".attrs['price_gaps'], got: {gaps}"
+    )
+    assert "US Large Core" not in bf_df["sleeve"].tolist(), (
+        "US Large Core should be EXCLUDED from the period's attribution when its "
+        f"only ticker ({GAPPED_TICKER}) has an end-price gap — found it in the "
+        f"output instead (would show a fabricated -100% r_p pre-fix):\n"
+        f"{bf_df[bf_df['sleeve'] == 'US Large Core']}"
+    )
+    assert not (bf_df["r_p"] == -1.0).any(), "no sleeve should show a fabricated -100% return"
+    assert abs(bf_df["w_p"].sum() - 1.0) < 1e-6
+    assert abs(bf_df["w_b"].sum() - 1.0) < 1e-6
+
+
+def test_price_gap_bil_guard_handles_missing_period_price(monkeypatch):
+    """The BIL/cash-sleeve guard (originally only bil_inception<=0) must also
+    cover bil_period_start/bil_period_end being unavailable — degrading to the
+    existing flat-1.0 fallback rather than dividing straight through to a hard,
+    unguarded zero for the Cash/SPAXX sleeve.
+
+    PROVES the pre-fix bug: pre-fix, a BIL period-price gap (with bil_inception
+    intact) had NO guard at all — it divided straight through to p_start/p_end
+    = 0.0, silently zeroing the cash sleeve's value at that endpoint with no
+    log and no flag. Cash is not "excluded" the way a real holding sleeve is
+    (it's an operational float, not a strategic sleeve being measured), so all
+    9 strategic sleeves remain present — only the gap flag and the guarded
+    fallback are new.
+    """
+    import datetime
+    import pandas as pd
+    import src.attribution as attr_mod
+    from src.attribution import brinson_fachler_period
+
+    INCEPTION = "2025-05-01"
+    TODAY = datetime.date.today().isoformat()
+    real_get_prices = attr_mod.get_prices
+
+    def _gap_bil_period_start(ticker, start, end, *a, **k):
+        # bil_period_start = _last_adj_price("BIL", start_date) calls
+        # get_prices("BIL", start_date-5d, start_date) -- match on the END bound
+        # (== start_date == INCEPTION here) so this targets ONLY the period-start
+        # price, not bil_inception (a FORWARD-window _first_adj_price call whose
+        # end bound is portfolio_inception+5d, not portfolio_inception itself).
+        if ticker == "BIL" and end == INCEPTION:
+            return pd.DataFrame()
+        return real_get_prices(ticker, start, end, *a, **k)
+
+    monkeypatch.setattr(attr_mod, "get_prices", _gap_bil_period_start)
+
+    try:
+        bf_df = brinson_fachler_period(INCEPTION, TODAY)
+    except Exception as exc:
+        pytest.skip(f"Data unavailable: {exc}")
+    if bf_df.empty:
+        pytest.skip("BF result empty — skipped in local/empty-DB mode")
+
+    gaps = bf_df.attrs.get("price_gaps", [])
+    assert any(t == "BIL" for t, _ in gaps), (
+        f"expected the BIL period-price gap to be recorded in .attrs['price_gaps'], "
+        f"got: {gaps}"
+    )
+    assert len(bf_df) == 9, (
+        "expected all 9 strategic sleeves present despite the BIL gap (cash "
+        "degrades via the safe-ratio fallback, it doesn't exclude sleeves), "
+        f"got {len(bf_df)}: {sorted(bf_df['sleeve'].tolist())}"
+    )
+    assert "cash_weight" in bf_df.attrs

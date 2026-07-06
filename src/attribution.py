@@ -1,5 +1,7 @@
 """Brinson-Fachler (1985) per-sleeve performance attribution."""
+import logging
 from datetime import date, timedelta
+from typing import Optional
 
 import pandas as pd
 
@@ -122,30 +124,62 @@ def compute_two_stage_attribution(
     }
 
 
-def _first_adj_price(ticker: str, from_date: str, window_days: int = 5) -> float:
-    """Return the first available adj_close (total-return) price on or after from_date."""
+def _first_adj_price(ticker: str, from_date: str, window_days: int = 5) -> Optional[float]:
+    """Return the first available adj_close (total-return) price on or after from_date.
+
+    Returns None — never a fabricated 0.0 — if no price is found within the window,
+    whether because the window came back empty or because the lookup raised. The
+    caller must treat None as an explicit data gap, never as a price of zero.
+    """
     end = (date.fromisoformat(from_date) + timedelta(days=window_days)).isoformat()
     try:
         p = get_prices(ticker, from_date, end)
-        if not p.empty:
-            val = p["adj_close"].iloc[0]
-            return float(val) if val and val > 0 else float(p["close"].iloc[0])
     except Exception:
-        pass
-    return 0.0
+        logging.exception("Price lookup failed for %s in [%s, %s]", ticker, from_date, end)
+        return None
+    if not p.empty:
+        val = p["adj_close"].iloc[0]
+        return float(val) if val and val > 0 else float(p["close"].iloc[0])
+    logging.warning(
+        "No price found for %s in [%s, %s] (%d-day window from %s)",
+        ticker, from_date, end, window_days, from_date,
+    )
+    return None
 
 
-def _last_adj_price(ticker: str, up_to_date: str, window_days: int = 5) -> float:
-    """Return the last available adj_close (total-return) price on or before up_to_date."""
+def _last_adj_price(ticker: str, up_to_date: str, window_days: int = 5) -> Optional[float]:
+    """Return the last available adj_close (total-return) price on or before up_to_date.
+
+    Returns None — never a fabricated 0.0 — if no price is found within the window,
+    whether because the window came back empty or because the lookup raised. The
+    caller must treat None as an explicit data gap, never as a price of zero.
+    """
     start = (date.fromisoformat(up_to_date) - timedelta(days=window_days)).isoformat()
     try:
         p = get_prices(ticker, start, up_to_date)
-        if not p.empty:
-            val = p["adj_close"].iloc[-1]
-            return float(val) if val and val > 0 else float(p["close"].iloc[-1])
     except Exception:
-        pass
-    return 0.0
+        logging.exception("Price lookup failed for %s in [%s, %s]", ticker, start, up_to_date)
+        return None
+    if not p.empty:
+        val = p["adj_close"].iloc[-1]
+        return float(val) if val and val > 0 else float(p["close"].iloc[-1])
+    logging.warning(
+        "No price found for %s in [%s, %s] (%d-day window to %s)",
+        ticker, start, up_to_date, window_days, up_to_date,
+    )
+    return None
+
+
+def price_gap_notice(price_gaps: list[tuple[str, str]]) -> str:
+    """Single-source user-facing notice for a period whose attribution excluded one
+    or more sleeves because a held ticker's price could not be found within the
+    lookback window. Shared across the Performance page, the Benchmark Attribution
+    page, and both PDF report sections so the wording can't drift between them.
+    """
+    if not price_gaps:
+        return ""
+    parts = "; ".join(f"{ticker} as of {dt}" for ticker, dt in price_gaps)
+    return f"Data unavailable for {parts} — excluded from this period's attribution."
 
 
 def brinson_fachler_period(
@@ -158,8 +192,16 @@ def brinson_fachler_period(
     Uses beginning-of-period portfolio weights and sleeve-level returns.
     Benchmark weights = target weights from asset_classes table.
     Benchmark sleeve returns = from get_sleeve_benchmark_returns().
+
+    Price gaps: if a held ticker's price cannot be found within the lookback window
+    (see _first_adj_price/_last_adj_price), that sleeve is EXCLUDED from this
+    period's attribution rather than assigned a fabricated 0% or -100% return. The
+    gap is recorded in the returned DataFrame's ``.attrs["price_gaps"]`` — a list of
+    (ticker, date) pairs — on every return path, including the early-return empty
+    frames, so callers can surface an explicit "data unavailable" notice.
     """
     end = end_date or date.today().isoformat()
+    price_gaps: list[tuple[str, str]] = []
 
     # ── Load DB reference data ────────────────────────────────────────────────
     with get_connection() as conn:
@@ -204,7 +246,9 @@ def brinson_fachler_period(
         )
 
     if not hold_rows:
-        return pd.DataFrame()
+        empty = pd.DataFrame()
+        empty.attrs["price_gaps"] = price_gaps
+        return empty
 
     holdings = {r["ticker"]: float(r["net_shares"]) for r in hold_rows}
 
@@ -216,10 +260,27 @@ def brinson_fachler_period(
     # start dates (e.g. YTD start = Jan 1).
     bil_period_start = _last_adj_price("BIL", start_date)
     bil_period_end   = _last_adj_price("BIL", end)
+    for _bil_date, _bil_price in (
+        (portfolio_inception, bil_inception),
+        (start_date, bil_period_start),
+        (end, bil_period_end),
+    ):
+        if _bil_price is None:
+            price_gaps.append(("BIL", _bil_date))
+
+    def _safe_bil_ratio(numerator: Optional[float], denominator: Optional[float]) -> float:
+        """BIL/cash price ratio, degrading to a flat 1.0 (no appreciation) rather
+        than crashing or dividing by a missing/zero price. Extends the existing
+        bil_inception==0 guard to also cover bil_period_start/bil_period_end being
+        unavailable — the gap is already recorded in price_gaps above."""
+        if numerator is None or denominator is None or denominator <= 0:
+            return 1.0
+        return numerator / denominator
 
     # ── Compute beginning-of-period prices and sleeve values ─────────────────
     start_values: dict[str, float] = {}   # sleeve → market value at start
     end_values: dict[str, float] = {}     # sleeve → market value at end
+    gapped_sleeves: set[str] = set()      # sleeves excluded this period (price gap)
 
     for ticker, shares in holdings.items():
         sleeve = ticker_to_sleeve.get(ticker, "Unknown")
@@ -228,22 +289,39 @@ def brinson_fachler_period(
             # reflects historical BIL appreciation.  Period return is unchanged:
             # p_end / p_start = (BIL_end / BIL_inception) / (BIL_start / BIL_inception)
             #                 = BIL_end / BIL_start.
-            p_start = (bil_period_start / bil_inception) if bil_inception > 0 else 1.0
-            p_end   = (bil_period_end   / bil_inception) if bil_inception > 0 else 1.0
+            p_start = _safe_bil_ratio(bil_period_start, bil_inception)
+            p_end   = _safe_bil_ratio(bil_period_end, bil_inception)
             start_values[sleeve] = start_values.get(sleeve, 0.0) + shares * p_start
             end_values[sleeve]   = end_values.get(sleeve, 0.0)   + shares * p_end
         else:
             p_start = _last_adj_price(ticker, start_date)  # backward-fill matches pv ffill
             p_end   = _last_adj_price(ticker, end)
+            if p_start is None:
+                price_gaps.append((ticker, start_date))
+            if p_end is None:
+                price_gaps.append((ticker, end))
+            if p_start is None or p_end is None:
+                # Data gap: exclude this sleeve from the period rather than
+                # fabricate a 0% (missing start) or -100% (missing end) return.
+                gapped_sleeves.add(sleeve)
+                continue
             # Actual (non-DRIP) shares valued at adj_close on both ends → the sleeve
             # total return p_end/p_start − 1, with dividend income already embedded
             # in adj_close. No DRIP-share addition (that would double-count income).
             start_values[sleeve] = start_values.get(sleeve, 0.0) + shares * p_start
             end_values[sleeve]   = end_values.get(sleeve, 0.0)   + shares * p_end
 
+    # Purge gapped sleeves entirely (not partially) so neither the aggregate
+    # totals nor the per-sleeve rows are built from an incomplete valuation.
+    for sleeve in gapped_sleeves:
+        start_values.pop(sleeve, None)
+        end_values.pop(sleeve, None)
+
     total_start = sum(start_values.values())
     if total_start == 0:
-        return pd.DataFrame()
+        empty = pd.DataFrame()
+        empty.attrs["price_gaps"] = price_gaps
+        return empty
 
     # ── Phase 38b-2 — ex-cash attribution + explicit operational cash drag ────
     # The benchmark is already ex-cash (9 rescaled sleeves; cash untargeted), so
@@ -260,7 +338,9 @@ def brinson_fachler_period(
     total_start_excash = total_start - cash_start
     total_end_excash   = total_end - cash_end
     if total_start_excash <= 0:
-        return pd.DataFrame()
+        empty = pd.DataFrame()
+        empty.attrs["price_gaps"] = price_gaps
+        return empty
 
     r_p_total_incl   = total_end / total_start - 1.0
     r_p_total_excash = total_end_excash / total_start_excash - 1.0
@@ -287,14 +367,31 @@ def brinson_fachler_period(
         s: bm_returns_raw.get(s, 0.0) for s in benchmark_weights
     }
 
-    # ── Align: strategic sleeves only (cash excluded from both sides) ─────────
+    # ── Align: strategic sleeves only (cash and gapped sleeves excluded from
+    # both sides — a gapped sleeve's benchmark weight/return must not be
+    # compared against a fabricated portfolio-side number) ────────────────────
     all_sleeves = sorted(
-        (set(portfolio_weights) | set(benchmark_weights)) - {_CASH_SLEEVE}
+        (set(portfolio_weights) | set(benchmark_weights)) - {_CASH_SLEEVE} - gapped_sleeves
     )
     pw  = {s: portfolio_weights.get(s, 0.0)        for s in all_sleeves}
     bw  = {s: benchmark_weights.get(s, 0.0)        for s in all_sleeves}
     pr  = {s: portfolio_sleeve_returns.get(s, 0.0) for s in all_sleeves}
     br  = {s: bm_sleeve_returns.get(s, 0.0)        for s in all_sleeves}
+
+    # Renormalize benchmark weights over the measured (non-gapped) universe so
+    # they sum to 1.0 again, matching the portfolio weights (which already sum
+    # to 1.0 over this same universe, since total_start_excash was computed
+    # from the same purged start_values). Mirrors the renormalization
+    # convention already used elsewhere in the app (src/risk.py's
+    # run_risk_contribution) when a sleeve is missing from the available data.
+    # A no-op when no sleeve is gapped, since benchmark_weights already sum to
+    # 1.0 over all 9 sleeves in that case.
+    bw_sum = sum(bw.values())
+    if bw_sum <= 0:
+        empty = pd.DataFrame()
+        empty.attrs["price_gaps"] = price_gaps
+        return empty
+    bw = {s: w / bw_sum for s, w in bw.items()}
 
     bf = brinson_fachler(pw, bw, pr, br)
     # Operational-cash figures for the reconciliation bridge (read by the
@@ -303,4 +400,5 @@ def brinson_fachler_period(
     bf.attrs["cash_weight"]      = cash_weight
     bf.attrs["r_p_total_excash"] = r_p_total_excash
     bf.attrs["r_p_total_incl"]   = r_p_total_incl
+    bf.attrs["price_gaps"]       = price_gaps
     return bf

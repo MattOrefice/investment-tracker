@@ -11,7 +11,7 @@ st.set_page_config(page_title="Performance & Attribution", layout="wide")
 
 from src.asof import as_of_banner, most_recent_reportable_quarter, reportable_quarter_phrase, latest_report_link, NO_COMPLETED_QUARTER
 from src.config import get_demo_banner_text, IS_DEMO
-from src.attribution import brinson_fachler_period, compute_two_stage_attribution
+from src.attribution import brinson_fachler_period, compute_two_stage_attribution, price_gap_notice
 from src.benchmarks import get_custom_blended_series, get_naive_60_40_series, get_naive_series, get_sp500_series
 from src.db import get_connection
 from src.factors import run_sleeve_regressions
@@ -747,6 +747,9 @@ with col:
     # forward-filled / partial-intraday tail in any window endpoint.
     with st.spinner("Computing attribution…"):
         bf_df = _load_attribution(bf_period, _C)
+
+    if bf_df.attrs.get("price_gaps"):
+        st.warning(price_gap_notice(bf_df.attrs["price_gaps"]))
 
     # ── Stage 1 + Stage 2 tiles ─────────────────────────────────────────────────────
     if not bf_df.empty:
