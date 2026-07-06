@@ -317,22 +317,45 @@ def test_prose_saa_us_constants_match_db():
 def test_prose_methodology_weight_defaults_match_db():
     """Fallback defaults in the methodology paragraph must match live DB target_weights.
 
-    pages/4_Performance.py uses _saa_sleeves.get('Sleeve Name', fallback) for five
-    sleeves in the methodology caption. The fallback values are safety nets for if
-    the DB lookup returns no data. This test verifies that the hardcoded fallback
-    values match actual DB weights so they would produce correct prose even on failure.
+    pages/2_Performance.py uses _saa_sleeves.get('Sleeve Name', fallback) and
+    _saa_parents.get('Equity', fallback) in the methodology caption — safety nets used
+    only if the DB lookup returns no data. This test EXTRACTS those fallback literals
+    directly from the page source (rather than hand-copying them into a second literal
+    here) and compares them to the live DB target_weight, so an edit to either side that
+    the other doesn't track fails CI.
+
+    A prior version of this test hardcoded its own copy of the expected fallback values
+    (EXPECTED_FALLBACKS / EXPECTED_EQUITY_PARENT) and compared THAT copy to the DB,
+    without ever reading pages/2_Performance.py at all — if the page's actual .get()
+    default drifted from the DB, this test would not have noticed, because it was
+    comparing the DB against its own separately-maintained belief, not against the
+    source it claimed to guard.
     """
+    import re
     from src.db import get_connection
 
-    # Phase 38a — ex-cash SAA: targets rescaled by ÷0.98 (cash is operational float).
-    EXPECTED_FALLBACKS = {
-        "US Large Value":   0.09 / 0.98,
-        "US Small Cap":     0.08 / 0.98,
-        "Emerging Markets": 0.09 / 0.98,
-        "Real Assets":      0.10 / 0.98,
-        "TIPS":             0.04 / 0.98,
-    }
-    EXPECTED_EQUITY_PARENT = 0.78 / 0.98
+    perf_page = pathlib.Path(__file__).resolve().parent.parent / "pages" / "2_Performance.py"
+    source = perf_page.read_text(encoding="utf-8")
+
+    pattern = re.compile(
+        r"_saa_(?:parents|sleeves)\.get\(\s*['\"]([^'\"]+)['\"]\s*,\s*([\d.]+)\s*/\s*([\d.]+)\s*\)"
+    )
+    matches = pattern.findall(source)
+    assert matches, (
+        "No _saa_parents.get(...)/_saa_sleeves.get(...) fallback literals found in "
+        f"{perf_page} — the .get() call pattern may have changed; update this test's "
+        "extraction regex to match."
+    )
+
+    fallbacks: dict[str, float] = {}
+    for name, num, den in matches:
+        value = float(num) / float(den)
+        if name in fallbacks:
+            assert abs(fallbacks[name] - value) < 1e-9, (
+                f"'{name}' has inconsistent fallback defaults within "
+                f"pages/2_Performance.py itself: {fallbacks[name]:.4f} vs {value:.4f}."
+            )
+        fallbacks[name] = value
 
     with get_connection() as conn:
         sleeve_rows = conn.execute(
@@ -342,25 +365,19 @@ def test_prose_methodology_weight_defaults_match_db():
             "SELECT name, target_weight FROM asset_classes WHERE parent_id IS NULL"
         ).fetchall()
 
-    sleeves = {r["name"]: r["target_weight"] for r in sleeve_rows}
-    parents = {r["name"]: r["target_weight"] for r in parent_rows}
+    db_weights = {r["name"]: r["target_weight"] for r in sleeve_rows}
+    db_weights.update({r["name"]: r["target_weight"] for r in parent_rows})
 
-    for sleeve_name, expected in EXPECTED_FALLBACKS.items():
-        db_wt = sleeves.get(sleeve_name)
-        assert db_wt is not None, f"'{sleeve_name}' not found in asset_classes"
-        assert abs(db_wt - expected) < 1e-6, (
-            f"DB target_weight for '{sleeve_name}' is {db_wt:.4f} but methodology "
-            f"paragraph fallback default is {expected:.4f}. "
-            "Update the .get() defaults in pages/4_Performance.py lines 790-793."
+    for name, fallback in fallbacks.items():
+        db_wt = db_weights.get(name)
+        assert db_wt is not None, (
+            f"'{name}' referenced in pages/2_Performance.py not found in asset_classes"
         )
-
-    eq_wt = parents.get("Equity")
-    assert eq_wt is not None, "'Equity' parent not found in asset_classes"
-    assert abs(eq_wt - EXPECTED_EQUITY_PARENT) < 1e-6, (
-        f"DB Equity target_weight is {eq_wt:.4f} but fallback default is "
-        f"{EXPECTED_EQUITY_PARENT:.4f}. "
-        "Update the _saa_parents.get('Equity', ...) default in pages/4_Performance.py."
-    )
+        assert abs(db_wt - fallback) < 1e-6, (
+            f"pages/2_Performance.py fallback default for '{name}' is {fallback:.4f} but "
+            f"DB target_weight is {db_wt:.4f}. Update the .get() default in "
+            "pages/2_Performance.py to match, or update the DB/seed if it is stale."
+        )
 
 
 # ── Phase 12.1 additions ───────────────────────────────────────────────────────
@@ -551,21 +568,44 @@ def test_prose_drift_threshold_matches_rule_constant():
 def test_saa_thesis_sleeve_weights_match_db():
     """Sleeve weights referenced in the SAA investment thesis paragraph match DB target_weights.
 
-    pages/1_SAA.py builds the thesis paragraph dynamically from the asset_classes DB.
-    This test pins the expected weights so any SAA taxonomy change triggers an intentional
-    review of the thesis paragraph fallback defaults.
+    pages/1_SAA.py builds the thesis paragraph dynamically via
+    next((... for ... if p["name"] == "X"), fallback), where fallback is a safety net
+    used only if the DB lookup returns no data. This test EXTRACTS those fallback
+    literals directly from the page source (rather than hand-copying them into a second
+    literal here) and compares them to the live DB target_weight, so an edit to either
+    side that the other doesn't track fails CI.
+
+    A prior version of this test hardcoded its own copy of the expected weights
+    (THESIS_WEIGHTS) and compared THAT copy to the DB, without ever reading
+    pages/1_SAA.py at all — if the page's actual next(...) fallback default drifted from
+    the DB, this test would not have noticed, because it was comparing the DB against
+    its own separately-maintained belief, not against the source it claimed to guard.
     """
+    import re
     from src.db import get_connection
 
-    # Phase 38a — ex-cash SAA: targets rescaled by ÷0.98 (cash is operational float).
-    THESIS_WEIGHTS = {
-        "Equity":                  0.78 / 0.98,   # parent category
-        "International Developed": 0.20 / 0.98,
-        "Emerging Markets":        0.09 / 0.98,
-        "Real Assets":             0.10 / 0.98,
-        "TIPS":                    0.04 / 0.98,
-        "Core Fixed Income":       0.06 / 0.98,
-    }
+    saa_page = pathlib.Path(__file__).resolve().parent.parent / "pages" / "1_SAA.py"
+    source = saa_page.read_text(encoding="utf-8")
+
+    pattern = re.compile(
+        r'\[?"name"\]\s*==\s*"([^"]+)"\)\s*,\s*([\d.]+)\s*/\s*([\d.]+)\s*\)'
+    )
+    matches = pattern.findall(source)
+    assert matches, (
+        "No next((... == 'X'), default) fallback literals found in "
+        f"{saa_page} — the thesis paragraph's fallback pattern may have changed; "
+        "update this test's extraction regex to match."
+    )
+
+    thesis_weights: dict[str, float] = {}
+    for name, num, den in matches:
+        value = float(num) / float(den)
+        if name in thesis_weights:
+            assert abs(thesis_weights[name] - value) < 1e-9, (
+                f"'{name}' has inconsistent fallback defaults within "
+                f"pages/1_SAA.py itself: {thesis_weights[name]:.4f} vs {value:.4f}."
+            )
+        thesis_weights[name] = value
 
     with get_connection() as conn:
         sleeve_rows = conn.execute(
@@ -578,16 +618,16 @@ def test_saa_thesis_sleeve_weights_match_db():
     all_weights = {r["name"]: r["target_weight"] for r in sleeve_rows}
     all_weights.update({r["name"]: r["target_weight"] for r in parent_rows})
 
-    for name, expected in THESIS_WEIGHTS.items():
+    for name, expected in thesis_weights.items():
         actual = all_weights.get(name)
         assert actual is not None, (
-            f"'{name}' referenced in SAA thesis paragraph not found in asset_classes. "
-            "Update the .get() fallback defaults in pages/1_SAA.py."
+            f"'{name}' referenced in pages/1_SAA.py thesis paragraph not found in asset_classes."
         )
         assert abs(actual - expected) < 1e-6, (
-            f"SAA thesis paragraph uses {round(expected * 100)}% for '{name}' "
-            f"but DB has {actual:.4f} ({round(actual * 100)}%). "
-            "Update the .get() fallback defaults in pages/1_SAA.py."
+            f"pages/1_SAA.py thesis paragraph fallback for '{name}' is "
+            f"{round(expected * 100)}% but DB has {actual:.4f} ({round(actual * 100)}%). "
+            "Update the next(...) fallback default in pages/1_SAA.py to match, or "
+            "update the DB/seed if it is stale."
         )
 
 
