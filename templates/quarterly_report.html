@@ -242,6 +242,13 @@
   strategic active (ex-cash) + cash drag = total active vs the SAA blend. The reported total
   return is unchanged; only the attribution is decomposed this way.</p>
 
+  {% if attr.price_gaps %}
+  <p class="muted"><strong>Data unavailable this period:</strong>
+  {% for gap in attr.price_gaps %}{{ gap.ticker }} as of {{ gap.date }}{% if not loop.last %}; {% endif %}{% endfor %}.
+  The affected sleeve(s) are excluded from the table and totals above rather than shown
+  with a fabricated return.</p>
+  {% endif %}
+
   {% if attr.sel_commentary %}
   <div class="bf-commentary">
     <p class="bf-comm-title">Top Selection Effect Drivers</p>

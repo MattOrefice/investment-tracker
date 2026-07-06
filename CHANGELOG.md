@@ -8,6 +8,13 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Attribution price gaps now degrade visibly instead of fabricating a return
+_2026-07-06_
+
+When a holding's price could not be found within the lookback window, the attribution helpers silently returned zero — which fabricated a sleeve's return as either flat or negative one hundred percent, corrupted the other sleeves' weights, and could reach the displayed attribution and the PDF report with no warning, since the algebra checks validate internal consistency of whatever inputs they are given and cannot detect a fabricated price. The helpers now log the gap and return an explicit missing-price signal; the affected sleeve is excluded from that period's computation and flagged, and the displayed pages and PDF sections show a clear "data unavailable" notice for the affected holding rather than a fabricated number. This mirrors the equivalent safeguard already in place for the benchmark side. Normal periods, where every holding has data at the anchor, are unchanged; a new test injects a price gap and confirms the affected sleeve is flagged rather than silently zeroed — a case the previous code passed while producing a wrong number.
+
+---
+
 ## Convexity caveat, consistent number formatting, and suppressed internal paths
 _2026-07-06_
 

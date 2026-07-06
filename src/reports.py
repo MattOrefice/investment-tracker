@@ -19,7 +19,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import plotly.io as pio
 
-from src.attribution import brinson_fachler_period
+from src.attribution import brinson_fachler_period, price_gap_notice
 from src.cache import (
     capture_quarter_snapshot,
     get_quarter_snapshot,
@@ -327,8 +327,11 @@ def _build_executive_summary(start_date: str, end_date: str) -> dict:
 
     top_contributor = top_detractor = None
     _all_positive = False
+    _bf_price_gap_note = None
     try:
         bf_df = brinson_fachler_period(start_date, end_date)
+        if bf_df.attrs.get("price_gaps"):
+            _bf_price_gap_note = price_gap_notice(bf_df.attrs["price_gaps"])
         if not bf_df.empty:
             best  = bf_df.loc[bf_df["total_effect"].idxmax()]
             worst = bf_df.loc[bf_df["total_effect"].idxmin()]
@@ -372,6 +375,8 @@ def _build_executive_summary(start_date: str, end_date: str) -> dict:
             f"CAPE stands at {cape_val:.1f}x, in the {cape_pct:.0f}th historical percentile, "
             f"supporting the diversification rationale across non-US and real asset sleeves."
         )
+    if _bf_price_gap_note:
+        narrative.append(_bf_price_gap_note)
 
     end = date.fromisoformat(end_date)
     formatted_end_date = f"{end.strftime('%B')} {end.day}, {end.year}"
@@ -560,13 +565,17 @@ def _build_attribution_section(start_date: str, end_date: str) -> dict:
         "rows": [], "chart_b64": None,
         "total_alloc": "+0.0", "total_sel": "+0.0", "total_total": "+0.0",
         "sel_commentary": [], "alloc_commentary": None,
+        "price_gaps": [],
     }
     try:
         bf_df = brinson_fachler_period(start_date, end_date)
     except Exception:
         return _empty
+    _price_gaps = [
+        {"ticker": t, "date": d} for t, d in bf_df.attrs.get("price_gaps", [])
+    ]
     if bf_df.empty:
-        return _empty
+        return {**_empty, "price_gaps": _price_gaps}
 
     bf_sorted = bf_df.sort_values("total_effect", ascending=True)
     sleeve_labels = bf_sorted["sleeve"].tolist()
@@ -653,6 +662,7 @@ def _build_attribution_section(start_date: str, end_date: str) -> dict:
         # Phase 38b-2 — operational cash drag, broken out so the ex-cash strategic
         # attribution reconciles to the actual (incl-cash) total active return.
         "cash_drag_bps":    f"{bf_df.attrs.get('cash_drag', 0.0)*10000:+.1f}",
+        "price_gaps":       _price_gaps,
     }
 
 
