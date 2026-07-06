@@ -8,6 +8,13 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Risk-contribution decomposition gains a low-confidence band
+_2026-07-06_
+
+The risk-contribution decomposition previously either suppressed itself entirely below a hard observation floor or displayed with full confidence above it, with nothing in between — unlike the factor regression, which flags a low-confidence band before it has enough history to be trusted. The decomposition now carries the same graduated caveat: when the covariance window has enough observations to compute but not enough to be stable, the contributions are shown with a low-confidence note rather than presented as settled. The observation band is set higher than the regression's, reflecting that a covariance matrix estimates more parameters than a single regression. The Euler decomposition itself is unchanged, and the hard suppression floor is unchanged; this adds only the intermediate confidence flag, mirroring the safeguard already used for the regression.
+
+---
+
 ## Demo-mode PDF reports are labeled illustrative rather than as a real account
 _2026-07-06_
 
