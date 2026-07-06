@@ -426,8 +426,10 @@ LINEARITY_CAVEAT = (
     "Linear first-order sensitivity (P&L = β × shock): it assumes the betas are "
     "stable and the response is linear across the shock size. Large moves "
     "(e.g. −20% equity) involve real non-linearity — convexity and beta "
-    "instability in the tails — that this model does NOT capture. Read the "
-    "magnitudes as first-order estimates, not precise tail outcomes."
+    "instability in the tails — that this model does NOT capture. The rates and "
+    "credit legs are duration-based translations and likewise do not capture "
+    "bond convexity. Read the magnitudes as first-order estimates, not precise "
+    "tail outcomes."
 )
 
 

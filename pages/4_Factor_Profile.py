@@ -1,4 +1,5 @@
 """Factor Profile — Fama-French 5-Factor Regression (per-sleeve decomposition)."""
+import logging
 import streamlit as st
 from datetime import date
 
@@ -83,8 +84,9 @@ with col:
         results     = _get_factor_results(inception, end_date)
         fi_result   = _get_fi_result(inception, end_date)
         results_mom = _get_mom_results(inception, end_date)
-    except Exception as exc:
-        st.error(f"Factor regression unavailable: {exc}")
+    except Exception:
+        logging.exception("Factor regression failed")
+        st.error("Factor regression unavailable — please try again later.")
         st.stop()
 
     # ── Factor definitions panel ─────────────────────────────────────────────
