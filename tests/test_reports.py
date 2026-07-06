@@ -11,9 +11,15 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 import src.reports as rpt
 from src.reports import (
+    DEMO_ACCOUNT_LABEL,
+    DEMO_REPORT_DISCLAIMER,
+    REAL_ACCOUNT_LABEL,
+    REPORT_DISCLAIMER,
+    _account_label,
     _build_cumulative_chart,
     _build_holdings_chart,
     _drift_status,
+    _report_disclaimer,
     build_bf_cross_reference,
 )
 from src.returns import twr_daily_linked
@@ -368,3 +374,54 @@ def test_benchmark_attribution_page_uses_shared_bf_cross_reference():
         "build_bf_cross_reference helper — check it hasn't reverted to an "
         "independent (and possibly selection_effect-based) inline implementation."
     )
+
+
+# ── CODE-GAP 3: PDF demo-mode account-status labeling ───────────────────────
+# The quarterly PDF must never assert real-account status ("Personal Brokerage
+# Account") when generated from the public demo. These tests pin the mode
+# branch directly (no full PDF render — that requires a PDF backend and DB).
+
+def test_account_label_demo_mode_is_not_real_account_text():
+    label = _account_label(is_demo=True)
+    assert label == DEMO_ACCOUNT_LABEL
+    assert label != REAL_ACCOUNT_LABEL
+    assert "Personal Brokerage Account" not in label
+
+
+def test_account_label_personal_mode_matches_existing_real_text():
+    assert _account_label(is_demo=False) == REAL_ACCOUNT_LABEL == "Personal Brokerage Account"
+
+
+def test_report_disclaimer_demo_mode_flags_simulated_portfolio():
+    disclaimer = _report_disclaimer(is_demo=True)
+    assert disclaimer == DEMO_REPORT_DISCLAIMER
+    assert "simulated paper-trade demo portfolio" in disclaimer
+    assert "the author's personal investment portfolio" not in disclaimer
+
+
+def test_report_disclaimer_personal_mode_unchanged():
+    assert _report_disclaimer(is_demo=False) == REPORT_DISCLAIMER
+
+
+def test_generate_quarterly_report_is_demo_param_defaults_from_config():
+    """`is_demo` must default to src.config.IS_DEMO (None sentinel resolved at
+    call time), not a hardcoded False — otherwise a demo deployment would still
+    render real-account labeling unless every call site passed it explicitly."""
+    import inspect
+    sig = inspect.signature(rpt.generate_quarterly_report)
+    assert sig.parameters["is_demo"].default is None
+    source = inspect.getsource(rpt.generate_quarterly_report)
+    assert "if is_demo is None:" in source and "is_demo = IS_DEMO" in source
+
+
+def test_template_cover_sub_id_is_mode_aware_not_hardcoded():
+    """templates/quarterly_report.html must render cover_sub_id as a template
+    variable so the PDF path can label demo reports as illustrative — a
+    hardcoded 'Personal Brokerage Account' literal would assert real-account
+    status regardless of TRACKER_MODE."""
+    tmpl_path = (
+        pathlib.Path(__file__).resolve().parent.parent / "templates" / "quarterly_report.html"
+    )
+    source = tmpl_path.read_text(encoding="utf-8")
+    assert "{{ cover_sub_id }}" in source
+    assert '<p class="cover-sub-id">Personal Brokerage Account</p>' not in source
