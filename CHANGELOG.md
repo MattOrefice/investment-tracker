@@ -16,7 +16,7 @@ Four statements shown in the app described the methodology inaccurately and are 
 ---
 
 ## Reconciliation test made independent of shared-cache state
-_2026-06-13_
+_2026-06-14_
 
 The Brinson-Fachler reconciliation anchored its comparison window on the latest date present anywhere in the shared price cache, but the reconciliation itself consumes only the portfolio's holdings. Because the cache also holds non-holding tickers — some trading on weekends, some advanced by other tests' fetches — its latest date could run a day ahead of the date on which every holding actually has data, so the window's two endpoints diverged by that day's return and the test failed on the first local run after the cache had been partially advanced. The anchor now resolves to the holdings' common frontier — the latest date on which every consumed holding has real data — so it no longer over-promises relative to what the reconciliation reads, and the reconciliation tests now hold the cache fixed under them rather than allowing a live fetch to advance it mid-run. The reconciliation logic itself is unchanged; continuous integration, which always ran from a pristine cache in a single process, was never affected.
 

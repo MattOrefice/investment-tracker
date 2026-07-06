@@ -76,6 +76,17 @@ SKIP_TESTS=1 bash tools/push-and-verify.sh main
 
 ---
 
+## Keep-awake workflow
+
+`.github/workflows/keep-awake.yml` runs every 3 hours (plus manual dispatch) to keep the
+public Streamlit Cloud demo from sleeping. Community Cloud's free tier sleeps an app after
+~12h of inactivity, and a plain HTTP ping does not wake it — the request gets a static shell
+while the Python backend stays asleep. The workflow instead opens the app in headless
+Chromium via Playwright (`scripts/keep_awake.py`), which runs the page's JS, opens the
+WebSocket, and clicks the wake button if the app has gone to sleep.
+
+---
+
 ## Diagnosing CI failures
 
 If a CI run shows red:
