@@ -8,6 +8,13 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Documentation synced to the current application state
+_2026-07-05_
+
+The documentation had fallen behind the Risk-page work and other recent changes. The README and architecture notes now carry the current test count with date-resistant phrasing, describe the navigation's explicit page registration rather than the automatic discovery the app does not use, and correct several stale test-file references and function counts. The Risk page — factor decomposition, scenario stress-testing, and risk-contribution — is now represented in the README's page tree and methodology, where it had been absent. The operational-checks notes have had obsolete file pointers corrected and a test-invocation recommendation fixed to match the exclusions the continuous-integration configuration and README already specify. No code or computation changed.
+
+---
+
 ## Corrected four displayed claims that had drifted from the code
 _2026-07-05_
 
