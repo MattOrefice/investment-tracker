@@ -43,6 +43,8 @@ The primary benchmark is the custom SAA-blended basket, not the S&P 500. A small
 
 - **Macro regime classification.** Rules-based classifier using NBER USREC, 10Y-2Y curve, and unemployment rate. Dynamic interpretations derive from live FRED data rather than static commentary.
 
+- **Portfolio factor-risk decomposition.** Simultaneous five-factor (market, size, value, rates, credit) regression on daily portfolio excess returns, extended into scenario stress-testing and Euler-decomposed risk contribution by sleeve.
+
 - **Tax-aware accounting.** Lot-level inventory with DRIP inheritance, harvest candidate identification, and trade log normalization.
 
 - **Candidate asset evaluation.** Univariate statistics (annualized return, vol, Sharpe, drawdown, skew, kurtosis), full-sample and rolling correlations against SAA sleeves, regime-conditional correlation by NBER cycle phase, mean-variance contribution (unconstrained and constrained), and a decision framework that surfaces allocator-side considerations (liquidity, tax treatment, operational complexity, mandate fit) rather than reducing the decision to a single Sharpe-improvement number.
@@ -63,6 +65,10 @@ Each equity sleeve is regressed against its region-appropriate FF5 factor set �
 
 Portfolio excess returns are regressed on the custom SAA-blended benchmark return plus HML, SMB, and RMW style factors. The regression intercept is the active return component unexplained by benchmark beta or factor tilts — the institutional alpha definition used by PRINCO and JPM IDD. CMA is excluded; for a passive/semi-passive multi-ETF implementation it captures ETF-level capex differences rather than deliberate active tilts.
 
+### Portfolio Factor-Risk Decomposition
+
+The Risk page decomposes portfolio risk in three parts. Factor decomposition regresses daily portfolio excess returns since inception on five factors simultaneously — market, size, and value (Fama-French), plus rates (IEF excess return) and credit (HYG − IEF spread) as ETF-based proxies for the term and credit premia — with Newey-West HAC standard errors, so each beta is a marginal exposure controlling for the other four. Scenario stress-testing applies those same betas to five hypothetical factor shocks, translating yield and spread moves into factor returns through duration, producing instantaneous linear-approximation impact estimates rather than forecasts. Risk contribution decomposes total portfolio volatility by sleeve via Euler (marginal-contribution-to-risk) decomposition on realized sample covariance, so each sleeve's contribution to risk can be compared against its capital weight — the two diverge whenever volatility and correlation differ across sleeves. All three sections share a single insufficient-history gate: with too few observations to estimate the factor betas, all three show an explicit empty state rather than unstable output.
+
 ### Equity Style Box
 
 The style box approximates Morningstar's factor placement using four trailing valuation metrics (book-to-price, earnings-to-price, dividend yield, cash-flow-to-price), each normalized as a fractional deviation from SPY. Size is log₁₀(weighted-average market cap in $B), calibrated so SPY anchors at the Large/Blend center. Coverage is US equity ETFs only (VOO, VTV, SPHQ, AVUV); non-US holdings are excluded with a disclosure note referencing regional style box methodology.
@@ -77,7 +83,7 @@ Tracks four indicators — Shiller CAPE (with implied 10-year real return r ≈ 
 
 ### Integrity Testing
 
-Three layers: (1) math identities that must hold by construction (BF effects sum to active return, sleeve weights sum to 100%, TWR equals absolute return for the lump-sum case); (2) reasonability bounds with tolerance (Sortino ≥ Sharpe, VaR/CVaR within expected range, IR × TE within Jensen's gap); (3) prose-vs-data guards asserting that every numerical citation in interpretive text derives from its source computation, not from a hardcoded constant. All three layers run on every push via GitHub Actions — the per-push run reports 865 passed / 48 skipped / 35 deselected on the Linux runner (the 48 skips are platform-gated render/PDF tests that pass locally on Windows; the full suite is 913).
+Three layers: (1) math identities that must hold by construction (BF effects sum to active return, sleeve weights sum to 100%, TWR equals absolute return for the lump-sum case); (2) reasonability bounds with tolerance (Sortino ≥ Sharpe, VaR/CVaR within expected range, IR × TE within Jensen's gap); (3) prose-vs-data guards asserting that every numerical citation in interpretive text derives from its source computation, not from a hardcoded constant. All three layers run on every push via GitHub Actions — as of 2026-07-05 the per-push run reports 942 passed / 48 skipped / 35 deselected on the Linux runner. The 48 skips gate on personal-mode data files — a holdings CSV, a Fidelity sample export, and a populated `tracker.db` — that hold real account data and aren't committed to the repo (see `CLAUDE.md`), so they skip identically in CI and in a fresh local clone regardless of OS; they run only where that personal data is present. See the CI badge above for current status.
 
 ### Data Sources
 
@@ -98,17 +104,17 @@ Three layers: (1) math identities that must hold by construction (BF effects sum
 
 - **Stack:** Python 3.11, Streamlit, pandas, NumPy, statsmodels, plotly, SQLite
 - **Data sources:** FRED API (macro), Ken French Data Library (factors), Shiller / Yale (CAPE), yfinance (prices)
-- **Test coverage:** 913 unit and integration tests covering return calculation, attribution math, factor regression plumbing, and dynamic-interpretation guards
+- **Test coverage:** unit and integration tests covering return calculation, attribution math, factor regression plumbing, and dynamic-interpretation guards — see [Integrity Testing](#integrity-testing) above for the current pass/skip count
 - **Deployment:** Streamlit Community Cloud, redeploy on push to main
 
 Technical architecture documented in [docs/architecture.md](docs/architecture.md).
 
-Core logic resides in `src/` with no Streamlit imports, making it fully unit-testable. Streamlit pages in `pages/` are auto-discovered by `app.py`. Price data is cached in SQLite to avoid repeated Yahoo Finance API calls. PDF reports are assembled via Jinja2 templates and rendered through WeasyPrint on Linux/Cloud.
+Core logic resides in `src/` with no Streamlit imports, making it fully unit-testable. Streamlit pages in `pages/` are registered explicitly via `st.Page(...)` calls in `app.py`'s `st.navigation()` — not auto-discovered; a page absent from that list stays invisible in the sidebar even if it imports cleanly and passes its own tests. Price data is cached in SQLite to avoid repeated Yahoo Finance API calls. PDF reports are assembled via Jinja2 templates and rendered through WeasyPrint on Linux/Cloud.
 
 ## Repository structure
 
 - `app.py` — landing page and entry point
-- `pages/` — 12 analytical pages (SAA, Performance, Macro, Factor Profile, Benchmark Attribution, Correlations, Tax Lots, Capital Deployment, and others)
+- `pages/` — 12 analytical pages (SAA, Performance, Macro, Factor Profile, Risk, Benchmark Attribution, Correlations, Tax Lots, Capital Deployment, and others)
 - `src/` — analytical modules (attribution, regression, macro, drip, rebalance, interpretations)
 - `tests/` — pytest suite
 - `templates/` — Jinja2 HTML and CSS for quarterly PDF report
@@ -133,6 +139,7 @@ pages/
   4_Factor_Profile.py   Per-sleeve FF5 regressions, benchmark-relative alpha, equity style box
   5_Asset_Evaluation.py  Bitcoin case study: marginal Sharpe, drawdown, decision framework
   6_Benchmark_Attribution.py  Custom-benchmark regression
+  7_Risk.py              Factor-risk decomposition, scenario stress-testing, risk contribution
   8_Research.py         ETF selection: benchmark vs. holding, ER breakdown
   9_Correlations.py     Rolling sleeve correlation matrix
   10_Trade_Log.py       Trade entry, investment/position thesis browser, themes
@@ -140,7 +147,7 @@ pages/
   12_Tax_Lots.py        Lot-level cost basis, holding period, harvest candidates
 
 templates/              PDF report (Jinja2 HTML + CSS)
-tests/                  913 tests across three integrity layers
+tests/                  pytest suite across three integrity layers (see Integrity Testing above)
 docs/                   Methodology diagnostics, phase notes, operational runbooks
 ```
 
@@ -183,7 +190,7 @@ The personal portfolio (`TRACKER_MODE=personal`, `data/tracker.db`) is gitignore
 
 ## CI/CD
 
-GitHub Actions runs `python -m pytest` under `TRACKER_MODE=demo` on every push and pull request to `main`; the run reports 865 passed / 48 skipped / 35 deselected on the Linux runner in approximately 90 seconds (the 48 skips are platform-gated render/PDF tests that pass locally on Windows; the full suite is 913). Slow and live-data tests are excluded via `pytest.ini`, so no external API calls run on PRs. A separate scheduled workflow (`.github/workflows/live-data.yml`, daily plus manual dispatch) runs only the live-data integration tests against the live Ken French and Yahoo endpoints, so ingestion-contract coverage stays decoupled from PR gating. See `docs/ci_setup.md` for branch protection and secrets configuration.
+GitHub Actions runs `python -m pytest` under `TRACKER_MODE=demo` on every push and pull request to `main`, taking about two minutes; see [Integrity Testing](#integrity-testing) above for the current pass/skip/deselect breakdown. Slow and live-data tests are excluded via `pytest.ini`, so no external API calls run on PRs. A separate scheduled workflow (`.github/workflows/live-data.yml`, daily plus manual dispatch) runs only the live-data integration tests against the live Ken French and Yahoo endpoints, so ingestion-contract coverage stays decoupled from PR gating. See `docs/ci_setup.md` for branch protection and secrets configuration.
 
 ---
 

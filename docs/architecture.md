@@ -80,7 +80,7 @@ The SQLite database (`src/db.py`) is the single source of truth for portfolio st
 
 Streamlit pages in `pages/` are thin: they import from `src/`, arrange columns, and render outputs. No analytical logic lives in a page file. This keeps all computation unit-testable without a Streamlit runtime.
 
-`app.py` is the landing page. Streamlit auto-discovers numbered files in `pages/` for the sidebar. The `IS_DEMO` flag from `src/config.py` gates write operations and shows a demo-mode banner; no page bypasses this check.
+`app.py` is the landing page. Pages are registered explicitly via `st.Page(...)` calls passed to `st.navigation()` — not auto-discovered from `pages/`; a page absent from that list stays invisible in the sidebar even if it imports cleanly and passes its own tests (see the CHANGELOG entry "Risk page registered in navigation..."). The `IS_DEMO` flag from `src/config.py` gates write operations and shows a demo-mode banner; no page bypasses this check.
 
 Plotly figures are constructed in `src/` functions that return `go.Figure` objects; pages call `st.plotly_chart()`. PDF export reuses the same data-assembly logic via `src/reports.py`.
 
@@ -88,16 +88,16 @@ Plotly figures are constructed in `src/` functions that return `go.Figure` objec
 
 ## Testing strategy
 
-205 tests across three layers, organized to catch different failure modes:
+990 tests across three layers (942 pass by default as of 2026-07-05; the rest gate on personal-mode data files not committed to the repo — see the README's Integrity Testing section for the current breakdown), organized to catch different failure modes:
 
 **Layer 1 — Math identities**
 Unit tests against hand-calculated values. Cover TWR chain-linking, Modified Dietz mid-period deposits, Brinson-Fachler algebra (allocation + selection must equal active return within 0.001 bps), and factor regression plumbing. Located in `tests/test_returns.py`, `tests/test_attribution.py`, `tests/test_factors.py`.
 
 **Layer 2 — Reasonability bounds**
-Tests that assert outputs fall within plausible ranges given demo-db inputs — portfolio values between $5k and $500k, alpha between −5000 and +5000 bps, R² between 0 and 1, sleeve weights summing to ~1.0. Located in `tests/test_integration_*.py`. These catch regressions that pass math checks but produce nonsensical values.
+Tests that assert outputs fall within plausible ranges given demo-db inputs — portfolio values between $5k and $500k, alpha between −5000 and +5000 bps, R² between 0 and 1, sleeve weights summing to ~1.0. Located in `tests/test_bound_layer2.py`. These catch regressions that pass math checks but produce nonsensical values.
 
 **Layer 3 — Prose and structure guards**
-Snapshot tests (`tests/test_interpretation_snapshots.py`) pin exact string output of the eight `interpret_*` functions in `src/macro.py` and `src/factors.py`. Any change to interpretation logic triggers a diff; placeholder bugs (unclosed `{variable}` strings) are caught immediately. Repository structure tests (`tests/test_repo_structure.py`) assert that required files exist and CI fixtures are wired correctly.
+Snapshot tests (`tests/test_interpretation_snapshots.py`) pin exact string output of eight of the nine `interpret_*` functions in `src/macro.py` and `src/factors.py`; the ninth, `interpret_nfci`, was added later and is covered by ordinary unit tests in `tests/test_interpretations.py` rather than a pinned snapshot. Any change to a snapshotted interpretation triggers a diff; placeholder bugs (unclosed `{variable}` strings) are caught immediately. Repository structure tests (`tests/test_repo_structure.py`) assert that required files exist and CI fixtures are wired correctly.
 
 CI runs on every commit via GitHub Actions.
 
