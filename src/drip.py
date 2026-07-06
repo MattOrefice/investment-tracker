@@ -23,8 +23,10 @@ phase may add pandas_market_calendars for exact holiday-aware arithmetic.
 """
 from __future__ import annotations
 
+import logging
 import warnings
 from datetime import date, timedelta
+from typing import Optional
 
 import pandas as pd
 
@@ -286,3 +288,64 @@ def backfill_all_drip_lots(
         results[ticker] = n
 
     return results
+
+
+def distribution_gaps_for_holdings(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+) -> list[str]:
+    """Currently-held tickers (excluding SPAXX) with NO distribution history on
+    record over [start_date, end_date] — the same condition backfill_all_drip_lots
+    warns and skips on (see above), detected live so it can be surfaced in-app
+    rather than only in that CLI script's console output.
+
+    A ticker in the returned list means its DRIP lots could not be computed, so
+    the displayed current-market-value figure (get_current_market_value, which
+    includes DRIP-reinvested shares) may understate that holding. Read-only
+    detection — does not compute, persist, or alter any DRIP lot.
+
+    Returns an empty list when every held ticker has at least one distribution
+    on record (the common case). Reuses fetch_distributions verbatim, so this
+    adds no new distribution-fetching logic beyond what backfill already runs.
+    """
+    if start_date is None:
+        from src.holdings import get_inception_date
+        start_date = get_inception_date()
+    end = end_date or date.today().isoformat()
+
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT ticker FROM trades WHERE ticker != ? ORDER BY ticker",
+            (_SPAXX_TICKER,),
+        ).fetchall()
+    tickers = [r["ticker"] for r in rows]
+
+    gaps: list[str] = []
+    for ticker in tickers:
+        distributions = fetch_distributions(ticker, start_date, end)
+        if distributions.empty:
+            logging.warning(
+                "%s: no distributions found in %s–%s; DRIP reinvestment "
+                "could not be computed, so the displayed current-market-value "
+                "figure may understate this holding.",
+                ticker, start_date, end,
+            )
+            gaps.append(ticker)
+    return gaps
+
+
+def drip_distribution_gap_notice(tickers: list[str]) -> str:
+    """Single-source user-facing notice for tickers with no distribution history
+    on record — the displayed current-market-value figure (which includes
+    DRIP-reinvested shares) may understate these holdings. Shared across the
+    Performance page and the PDF report so the wording can't drift between them,
+    mirroring src.attribution.price_gap_notice for the analogous price gap.
+    """
+    if not tickers:
+        return ""
+    parts = ", ".join(tickers)
+    return (
+        f"Distribution data unavailable for {parts} — DRIP reinvestment could "
+        "not be computed, so the displayed current market value may understate "
+        "this holding."
+    )

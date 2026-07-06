@@ -13,6 +13,8 @@ from src.drip import (
     PAYMENT_DATE_OFFSET_TRADING_DAYS,
     compute_drip_lots,
     derive_payment_date,
+    distribution_gaps_for_holdings,
+    drip_distribution_gap_notice,
     fetch_distributions,
     persist_drip_lots,
     backfill_all_drip_lots,
@@ -501,3 +503,82 @@ def test_compute_drip_lots_payment_date_price_falls_back_to_prior_trading_day():
     # price_history[index <= pay_date].iloc[-1] = Friday's price (last before Monday)
     assert result[0]["cost_basis_per_share"] == pytest.approx(92.0)
     assert result[0]["purchase_date"] == pay
+
+
+# ── distribution_gaps_for_holdings — surfacing the warn-and-skip in-app ────────
+# CODE-GAP 4: backfill_all_drip_lots' warn-and-skip (this file, above) only ever
+# fired inside the CLI-only backfill script — invisible in the app. These tests
+# pin the same detection made live/render-reachable, naming the affected ticker
+# both in the returned list AND in a logged warning.
+
+def test_distribution_gaps_for_holdings_flags_ticker_with_no_distributions(minimal_db, caplog):
+    """VOO has a trade but zero dividend rows in the fixture DB — the same
+    condition backfill_all_drip_lots warns and skips on. Must be named in the
+    returned gap list AND in a logged warning (debuggable, not silent).
+
+    PROVES the pre-fix gap: distribution_gaps_for_holdings did not exist before
+    this change, so a missing distribution had no in-app-reachable trace at
+    all — nothing a page or report could import and call.
+    """
+    import logging
+    with caplog.at_level(logging.WARNING):
+        gaps = distribution_gaps_for_holdings("2025-05-01", "2025-05-10")
+
+    assert gaps == ["VOO"]
+    assert any("VOO" in rec.message for rec in caplog.records), (
+        "expected a logged warning naming the gapped ticker; none found — "
+        f"captured records: {[r.message for r in caplog.records]}"
+    )
+
+
+def test_distribution_gaps_for_holdings_empty_when_distribution_present(minimal_db):
+    """A ticker WITH a distribution on record must not appear in the gap list —
+    the common case (and the demo's actual case) is an empty list."""
+    import sqlite3 as _sq
+    conn = _sq.connect(str(minimal_db))
+    conn.execute(
+        "INSERT INTO dividends (ticker, ex_date, amount) VALUES ('VOO', '2025-05-05', 1.50)"
+    )
+    conn.commit()
+    conn.close()
+
+    gaps = distribution_gaps_for_holdings("2025-05-01", "2025-05-10")
+    assert gaps == []
+
+
+def test_distribution_gaps_for_holdings_excludes_spaxx(minimal_db):
+    """SPAXX is a money-market sweep with no DRIP reinvestment (see module
+    docstring) — it must never appear in the gap list even though it never has
+    distribution rows, mirroring backfill_all_drip_lots' SPAXX exclusion."""
+    import sqlite3 as _sq
+    conn = _sq.connect(str(minimal_db))
+    conn.execute(
+        "INSERT INTO trades (account_id, ticker, trade_date, action, shares, price, lot_source)"
+        " VALUES (1, 'SPAXX', '2025-05-01', 'buy', 30.0, 1.0, 'initial')"
+    )
+    conn.commit()
+    conn.close()
+
+    gaps = distribution_gaps_for_holdings("2025-05-01", "2025-05-10")
+    assert "SPAXX" not in gaps
+    assert gaps == ["VOO"]  # VOO still flagged; SPAXX correctly excluded
+
+
+def test_drip_distribution_gap_notice_names_ticker_and_impact():
+    """Notice copy must name the ticker and the current-market-value impact —
+    not a generic 'something is wrong' message."""
+    msg = drip_distribution_gap_notice(["VOO"])
+    assert "VOO" in msg
+    assert "current market value" in msg
+    assert "understate" in msg
+
+
+def test_drip_distribution_gap_notice_multiple_tickers():
+    msg = drip_distribution_gap_notice(["VOO", "AVUV"])
+    assert "VOO" in msg and "AVUV" in msg
+
+
+def test_drip_distribution_gap_notice_empty_list_returns_empty_string():
+    """No gaps → no notice (the caller's `if gaps:` guard is the real suppression,
+    but the builder itself must not fabricate a warning from nothing)."""
+    assert drip_distribution_gap_notice([]) == ""
