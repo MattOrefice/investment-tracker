@@ -30,6 +30,7 @@ from src.cache import (
 from src.benchmarks import get_custom_blended_series, get_sp500_series
 from src.config import IS_DEMO
 from src.db import get_connection
+from src.drip import distribution_gaps_for_holdings, drip_distribution_gap_notice
 from src.factors import (
     EM_DISCLOSURE,
     build_benchmark_methodology, build_benchmark_prose,
@@ -363,6 +364,13 @@ def _build_executive_summary(start_date: str, end_date: str) -> dict:
     top_contributor = top_detractor = None
     _all_positive = False
     _bf_price_gap_note = None
+    _drip_gap_note = None
+    try:
+        _drip_gaps = distribution_gaps_for_holdings(inception, end_date)
+        if _drip_gaps:
+            _drip_gap_note = drip_distribution_gap_notice(_drip_gaps)
+    except Exception:
+        pass
     try:
         bf_df = brinson_fachler_period(start_date, end_date)
         if bf_df.attrs.get("price_gaps"):
@@ -412,6 +420,8 @@ def _build_executive_summary(start_date: str, end_date: str) -> dict:
         )
     if _bf_price_gap_note:
         narrative.append(_bf_price_gap_note)
+    if _drip_gap_note:
+        narrative.append(_drip_gap_note)
 
     end = date.fromisoformat(end_date)
     formatted_end_date = f"{end.strftime('%B')} {end.day}, {end.year}"

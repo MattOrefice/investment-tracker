@@ -14,6 +14,7 @@ from src.config import get_demo_banner_text, IS_DEMO
 from src.attribution import brinson_fachler_period, compute_two_stage_attribution, price_gap_notice
 from src.benchmarks import get_custom_blended_series, get_naive_60_40_series, get_naive_series, get_sp500_series
 from src.db import get_connection
+from src.drip import distribution_gaps_for_holdings, drip_distribution_gap_notice
 from src.factors import run_sleeve_regressions
 from src.holdings import (
     get_current_market_value,
@@ -285,6 +286,10 @@ with col:
         f"**{_bps(alpha_sp)}** vs S&P 500",
         unsafe_allow_html=False,
     )
+
+    _drip_gaps = distribution_gaps_for_holdings(INCEPTION, TODAY)
+    if _drip_gaps:
+        st.warning(drip_distribution_gap_notice(_drip_gaps))
 
     st.divider()
 
