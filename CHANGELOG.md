@@ -8,6 +8,13 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Demo-mode PDF reports are labeled illustrative rather than as a real account
+_2026-07-06_
+
+The generated quarterly PDF asserted a real personal brokerage account in its header regardless of mode, so a report generated from the public demo was labeled as if it reflected a real account. The report now branches on mode: in demo mode it is labeled as a simulated paper-trade portfolio, consistent with the app's demo banner, while in personal mode it retains the personal-account labeling that is correct there. No report computation changed.
+
+---
+
 ## Attribution price gaps now degrade visibly instead of fabricating a return
 _2026-07-06_
 
