@@ -311,22 +311,34 @@ def test_weekly_resampling_reduces_rows():
         assert -1.0 <= val <= 1.0, f"Correlation for {sleeve} out of [-1, 1]: {val}"
 
 
-# ── 9. RF_ANNUAL value pin ──────────────────────────────────────────────────
+# ── 9. RF_ANNUAL cross-source consistency ───────────────────────────────────
 #
-# NOTE: this pins RF_ANNUAL to the Asset Evaluation page's own value only.
-# It is NOT the same rate compute_risk_metrics uses by default for the
-# Performance page's Sharpe/Sortino (see test_identity_layer1.py's
-# test_compute_risk_metrics_default_rf — currently 0.045, not 0.0432).
-# The Asset Evaluation page's methodology caption no longer claims the two
-# are "consistent" (see pages/5_Asset_Evaluation.py); reconciling the two
-# rates, if desired, is a separate methodology decision.
+# Corrected 2026-07-07: asset_evaluation.RF_ANNUAL previously pinned its own
+# static 0.0432 (4.32%, arithmetic daily conversion), a different rate and
+# convention than src/performance.py's compute_risk_metrics default (0.045,
+# geometric daily conversion) — despite this module's own comment once
+# claiming the two were "consistent". The two are now standardized on the
+# same rate (4.5%) and the same geometric daily-compounding convention. This
+# test asserts CROSS-SOURCE equality against performance.py's own default
+# (not a literal pin of either value) so a future edit to either side that
+# breaks the match fails CI immediately, instead of silently drifting the
+# way the arithmetic/4.32% mismatch did.
 
-def test_rf_annual_value():
-    """ae.RF_ANNUAL is pinned to 0.0432 (4.32%) — this page's own static rate."""
-    assert RF_ANNUAL == pytest.approx(0.0432, abs=1e-9), (
-        f"ae.RF_ANNUAL = {RF_ANNUAL:.6f}, expected 0.0432 (4.32%). "
-        "If intentionally changed, also check pages/5_Asset_Evaluation.py's "
-        "risk-free rate caption still describes the actual value."
+def test_rf_annual_matches_performance_rf():
+    """ae.RF_ANNUAL must equal compute_risk_metrics' default rf_annual — the
+    same rate disclosed in the Performance page's Sharpe/Sortino caption
+    (see test_identity_layer1.py's test_identity_rf_default_matches_caption_disclosure).
+    """
+    import inspect
+
+    from src.performance import compute_risk_metrics
+
+    perf_rf = inspect.signature(compute_risk_metrics).parameters["rf_annual"].default
+    assert RF_ANNUAL == pytest.approx(perf_rf, abs=1e-10), (
+        f"ae.RF_ANNUAL = {RF_ANNUAL:.6f} but compute_risk_metrics' default "
+        f"rf_annual = {perf_rf:.6f} — the Asset Evaluation and Performance pages "
+        "must use the same risk-free rate. If one changed intentionally, update "
+        "the other to match (and its caption disclosure)."
     )
 
 

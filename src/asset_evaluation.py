@@ -17,7 +17,14 @@ from src.prices import get_prices
 # ── Constants ────────────────────────────────────────────────────────────────
 
 SAMPLE_START  = "2018-01-01"
-RF_ANNUAL     = 0.0432        # 4.32%, consistent with Performance page Sharpe
+# 4.5%, matching src/performance.py's compute_risk_metrics default exactly (same
+# rate, same geometric daily-compounding convention: rf_daily = (1+rf)^(1/252)-1
+# — see solve_tangency_unconstrained/solve_tangency_constrained/compute_mv_analysis
+# below). Redeclared here rather than imported because performance.py exposes the
+# rate only as a function-parameter default, not a module constant; the two are
+# pinned equal by tests/test_asset_evaluation.py::test_rf_annual_matches_performance_rf,
+# a cross-source assertion so the two rates cannot silently drift apart again.
+RF_ANNUAL     = 0.045
 TRADING_DAYS  = 252
 
 # Sleeve benchmark tickers — same mapping as pages/9_Correlations.py.
@@ -297,9 +304,11 @@ def solve_tangency_unconstrained(
     Closed-form unconstrained tangency portfolio.
     w* = Σ^{-1}(μ − rf*1) / [1'Σ^{-1}(μ − rf*1)].
     May produce negative weights (short positions allowed).
-    Input mu and cov are daily; rf_annual is converted to daily internally.
+    Input mu and cov are daily; rf_annual is converted to daily internally via
+    geometric compounding, (1+rf_annual)^(1/252) - 1 — matching
+    src/performance.py's compute_risk_metrics convention.
     """
-    rf_daily = rf_annual / TRADING_DAYS
+    rf_daily = (1 + rf_annual) ** (1 / TRADING_DAYS) - 1
     excess   = mu - rf_daily
     cov_inv  = np.linalg.pinv(cov)
     raw      = cov_inv @ excess
@@ -321,7 +330,7 @@ def solve_tangency_constrained(
     """
     from scipy.optimize import minimize
 
-    rf_daily = rf_annual / TRADING_DAYS
+    rf_daily = (1 + rf_annual) ** (1 / TRADING_DAYS) - 1
     n        = len(mu)
 
     def neg_sharpe(w: np.ndarray) -> float:
@@ -376,7 +385,7 @@ def compute_mv_analysis(
     # Unconstrained Sharpe: √((μ-rf)'Σ⁻¹(μ-rf)) × √252 — non-negative by construction.
     # Using portfolio_sharpe_annual on normalized weights can produce negative Sharpe when
     # the normalization denominator (1'Σ⁻¹excess) is negative, flipping all weight signs.
-    rf_daily   = rf_annual / TRADING_DAYS
+    rf_daily   = (1 + rf_annual) ** (1 / TRADING_DAYS) - 1
     excess_nb  = mu_nb - rf_daily
     cov_inv_nb = np.linalg.pinv(cov_nb)
     sharpe_unc_no = float(

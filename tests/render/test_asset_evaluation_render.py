@@ -101,33 +101,43 @@ def test_5j_reevaluation_triggers_present(ae_app: AppTest) -> None:
 
 
 def test_rf_unit_is_bps_not_percent(ae_app: AppTest) -> None:
-    """Methodology must show rf as 432 bps not 4.32 bps. Pinned: Phase 44 Item 9."""
-    all_md = " ".join(m.value for m in ae_app.markdown)
-    assert "4.32 bps" not in all_md, (
-        "Old rf unit error '4.32 bps' found — Phase 44 Item 9: should be '432 bps'."
-    )
-    assert "432 bps" in all_md, (
-        "Corrected rf unit '432 bps' not found in Methodology — Phase 44 Item 9 regression."
-    )
-
-
-def test_rf_no_false_cross_page_consistency_claim(ae_app: AppTest) -> None:
-    """Methodology must not claim this page's RF is 'consistent with' the Performance
-    page's Sharpe disclosure — the two pages use different static rates (4.32% here,
-    4.5% on Performance). Corrected 2026-07: the caption previously asserted a false
-    consistency; it must now describe this page's rate as its own, distinct value.
+    """Methodology must show rf as 450 bps not 4.5 bps. Pinned: Phase 44 Item 9;
+    value corrected 2026-07-07 from 432/4.32 to 450/4.5 when the page's RF was
+    standardized to match the Performance page (see test_asset_evaluation.py::
+    test_rf_annual_matches_performance_rf).
     """
     all_md = " ".join(m.value for m in ae_app.markdown)
-    assert "consistent with the Performance page" not in all_md, (
-        "Methodology still claims this page's risk-free rate is 'consistent with' "
-        "the Performance page's — that claim is false (4.32% here vs. a different "
-        "rate on the Performance page). Fix pages/5_Asset_Evaluation.py's caption, "
-        "not this test."
+    assert "4.5 bps" not in all_md, (
+        "Rf unit error '4.5 bps' found — should be '450 bps'."
     )
-    assert "distinct from the risk-free rate disclosed on the Performance page" in all_md, (
+    assert "450 bps" in all_md, (
+        "Corrected rf unit '450 bps' not found in Methodology — Phase 44 Item 9 "
+        "regression, or the 2026-07-07 rate standardization was reverted."
+    )
+
+
+def test_rf_matches_performance_page_consistency_claim(ae_app: AppTest) -> None:
+    """Methodology must accurately claim this page's RF now MATCHES the Performance
+    page's Sharpe disclosure — both are standardized on 4.5% geometric as of
+    2026-07-07 (see test_asset_evaluation.py::test_rf_annual_matches_performance_rf).
+
+    History: this page's rate (4.32%, arithmetic) once differed from the
+    Performance page's (4.5%, geometric) while a code comment falsely claimed
+    they were consistent; a prior fix corrected the caption to honestly say
+    'distinct' rather than 'consistent'. Now that the rates and conventions
+    are unified, 'distinct' would itself be a false claim — this pin flips to
+    require the (now true) matching claim instead.
+    """
+    all_md = " ".join(m.value for m in ae_app.markdown)
+    assert "distinct from the risk-free rate disclosed on the Performance page" not in all_md, (
+        "Methodology still claims this page's risk-free rate is 'distinct from' "
+        "the Performance page's — that claim is stale now that both use 4.5% "
+        "geometric. Fix pages/5_Asset_Evaluation.py's caption, not this test."
+    )
+    assert "matching the risk-free rate disclosed on the Performance page" in all_md, (
         "Methodology should accurately disclose that this page's risk-free rate "
-        "is separate from the Performance page's — the corrected caption text "
-        "appears to have changed; update this pin to match."
+        "now matches the Performance page's — the caption text appears to have "
+        "changed; update this pin to match."
     )
 
 
