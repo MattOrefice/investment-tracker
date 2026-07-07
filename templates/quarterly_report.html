@@ -249,6 +249,15 @@
   with a fabricated return.</p>
   {% endif %}
 
+  {% if attr.benchmark_gaps %}
+  <p class="muted"><strong>Benchmark data unavailable this period:</strong>
+  {% for gap in attr.benchmark_gaps %}{{ gap.sleeve }} ({{ gap.ticker }}) as of {{ gap.date }}{% if not loop.last %}; {% endif %}{% endfor %}.
+  A sleeve whose benchmark could not be priced at all is excluded from the table and
+  totals above rather than measured against a fabricated 0% benchmark; a partially
+  priceable blend is measured on its surviving components; the cash sleeve's figures
+  are unaffected (its benchmark is informational only).</p>
+  {% endif %}
+
   {% if attr.sel_commentary %}
   <div class="bf-commentary">
     <p class="bf-comm-title">Top Selection Effect Drivers</p>

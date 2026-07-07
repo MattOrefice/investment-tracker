@@ -1,10 +1,21 @@
 """Benchmark series construction for performance attribution."""
+import logging
 from datetime import date
 
 import pandas as pd
 
 from src.db import get_connection
 from src.prices import get_prices
+
+# Coverage tolerance for benchmark components, mirroring the portfolio side's
+# _first_adj_price/_last_adj_price 5-day tolerance in src/attribution.py: a
+# component with no real price within this many days of each window bound is
+# an explicit data gap, never folded in as a flat/fabricated series. The end
+# bound matches the portfolio convention exactly (last price in [end-5, end]);
+# the start bound is forward-tolerant (first price in [start, start+5]) by
+# construction, since get_prices is bounded below by the window start and
+# cannot return the prior close the portfolio side would back-fill from.
+_COVERAGE_WINDOW_DAYS = 5
 
 # Sleeve → benchmark ticker mapping (from asset_classes.benchmark_ticker).
 # Real Assets benchmark was originally "VNQ+DJP" but DJP (iPath Bloomberg
@@ -52,6 +63,61 @@ def _get_price_series(ticker: str, start_date: str, end_date: str,
         return series.reindex(date_range).ffill().bfill()
     except Exception:
         return pd.Series(dtype=float, index=date_range)
+
+
+def _component_series(
+    ticker: str, start_date: str, end_date: str
+) -> tuple[pd.Series | None, list[str]]:
+    """Daily ffilled adj_close series for one benchmark component, plus the
+    window bound(s) — ISO dates — at which the component has no real price
+    within _COVERAGE_WINDOW_DAYS. An empty gap list means full coverage.
+
+    Returns (None, [bounds]) — never a flat or fabricated series — when the
+    component cannot be priced near a bound, whether because the fetch raised,
+    came back empty, or a stale cache silently ends inside the window
+    (get_prices swallows gap-fetch failures, so coverage is judged on the
+    returned prices, not on whether the fetch raised). Mirrors the portfolio
+    side's _first_adj_price/_last_adj_price None contract in src/attribution.py.
+    """
+    date_range = pd.date_range(start=start_date, end=end_date, freq="D")
+    if ticker == "SPAXX":
+        return pd.Series(1.0, index=date_range), []
+    try:
+        p = get_prices(ticker, start_date, end_date)
+    except Exception:
+        logging.exception(
+            "Benchmark price lookup failed for %s in [%s, %s]",
+            ticker, start_date, end_date,
+        )
+        return None, [start_date, end_date]
+    if p.empty:
+        logging.warning(
+            "No benchmark prices for %s in [%s, %s]", ticker, start_date, end_date
+        )
+        return None, [start_date, end_date]
+    p.index = pd.to_datetime(p.index)
+    # Uncached direct fetches can carry duplicate date labels (get_prices only
+    # dedups on the cache-concat path) — dedup here so reindex can't raise.
+    p = p[~p.index.duplicated(keep="last")]
+    series = p["adj_close"].fillna(p["close"])
+    first_real = series.first_valid_index()
+    last_real = series.last_valid_index()
+    gaps: list[str] = []
+    if first_real is None or (
+        first_real - pd.Timestamp(start_date)
+    ).days > _COVERAGE_WINDOW_DAYS:
+        gaps.append(start_date)
+    if last_real is None or (
+        pd.Timestamp(end_date) - last_real
+    ).days > _COVERAGE_WINDOW_DAYS:
+        gaps.append(end_date)
+    if gaps:
+        logging.warning(
+            "Benchmark component %s lacks price coverage near %s (window [%s, %s])",
+            ticker, ", ".join(gaps), start_date, end_date,
+        )
+        return None, gaps
+    return series.reindex(date_range).ffill().bfill(), gaps
 
 
 def get_sp500_series(start_date: str, end_date: str | None = None) -> pd.Series:
@@ -137,11 +203,21 @@ def get_sleeve_benchmark_returns(
     """
     Return a DataFrame of per-sleeve benchmark cumulative returns over the period.
     Columns = sleeve names, index = dates, values = (price_t / price_0) - 1.
+
+    Benchmark gaps: a component with no real price within _COVERAGE_WINDOW_DAYS
+    of each window bound (see _component_series) is dropped from its sleeve's
+    blend and recorded as a (sleeve, ticker, date) tuple on the returned frame's
+    ``.attrs["benchmark_gaps"]``. A sleeve whose components ALL fail carries an
+    explicit NaN sentinel column — never a flat series that reads as a
+    fabricated 0.0 return; a partially-priceable blend renormalizes to its
+    surviving components (still flagged, so the substitution is visible).
+    Callers must treat NaN as missing data, never as a return of zero.
     """
     end = end_date or date.today().isoformat()
     date_range = pd.date_range(start=start_date, end=end, freq="D")
 
     result: dict[str, pd.Series] = {}
+    benchmark_gaps: list[tuple[str, str, str]] = []
 
     for sleeve, components in _SLEEVE_BENCHMARKS.items():
         # Build blended price series for multi-component sleeves
@@ -149,23 +225,36 @@ def get_sleeve_benchmark_returns(
         total_frac = 0.0
 
         for ticker, frac in components:
-            p = _get_price_series(ticker, start_date, end, col="adj_close")
-            if p.first_valid_index() is None:
+            p, missing_bounds = _component_series(ticker, start_date, end)
+            if missing_bounds:
+                # Explicit data gap: drop the component from the blend and flag
+                # it, never fold in a flat/fabricated series.
+                benchmark_gaps.extend(
+                    (sleeve, ticker, bound) for bound in missing_bounds
+                )
                 continue
-            p0 = float(p.ffill().iloc[0])
+            if p.empty:   # degenerate window (start > end) — nothing to price
+                continue
+            p0 = float(p.iloc[0])
             if p0 > 0:
                 # Normalized so each component starts at frac (proportional weight)
-                sleeve_series += (p.ffill() / p0) * frac
+                sleeve_series += (p / p0) * frac
                 total_frac += frac
+            else:
+                # A non-positive anchor price is unusable data, not a flat market
+                benchmark_gaps.append((sleeve, ticker, start_date))
 
         if total_frac > 0:
             sleeve_series = sleeve_series / total_frac   # renormalize if any component failed
+            result[sleeve] = sleeve_series - 1.0         # convert to return
         else:
-            sleeve_series = pd.Series(1.0, index=date_range)
+            # Every component failed: carry an explicit missing-data sentinel,
+            # never a flat series that reads as a fabricated 0.0 return.
+            result[sleeve] = pd.Series(float("nan"), index=date_range)
 
-        result[sleeve] = sleeve_series - 1.0   # convert to return
-
-    return pd.DataFrame(result, index=date_range)
+    df = pd.DataFrame(result, index=date_range)
+    df.attrs["benchmark_gaps"] = benchmark_gaps
+    return df
 
 
 def get_naive_60_40_series(start_date: str, end_date: str | None = None) -> pd.Series:
@@ -200,14 +289,3 @@ def get_naive_series(kind: str, start_date: str, end_date: str | None = None) ->
     if kind == "spy":
         return get_sp500_series(start_date, end_date)
     return get_naive_60_40_series(start_date, end_date)
-
-
-# Convenience: scalar benchmark return for a single sleeve over a period
-def sleeve_benchmark_return(sleeve: str, start_date: str, end_date: str) -> float:
-    """Return the total return of the benchmark for a single sleeve over the period."""
-    df = get_sleeve_benchmark_returns(start_date, end_date)
-    if sleeve not in df.columns or df.empty:
-        return 0.0
-    # Last non-NaN value
-    series = df[sleeve].dropna()
-    return float(series.iloc[-1]) if not series.empty else 0.0

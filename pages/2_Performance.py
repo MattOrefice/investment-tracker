@@ -11,7 +11,12 @@ st.set_page_config(page_title="Performance & Attribution", layout="wide")
 
 from src.asof import as_of_banner, most_recent_reportable_quarter, reportable_quarter_phrase, latest_report_link, NO_COMPLETED_QUARTER
 from src.config import get_demo_banner_text, IS_DEMO
-from src.attribution import brinson_fachler_period, compute_two_stage_attribution, price_gap_notice
+from src.attribution import (
+    benchmark_gap_notice,
+    brinson_fachler_period,
+    compute_two_stage_attribution,
+    price_gap_notice,
+)
 from src.benchmarks import get_custom_blended_series, get_naive_60_40_series, get_naive_series, get_sp500_series
 from src.db import get_connection
 from src.drip import distribution_gaps_for_holdings, drip_distribution_gap_notice
@@ -755,6 +760,8 @@ with col:
 
     if bf_df.attrs.get("price_gaps"):
         st.warning(price_gap_notice(bf_df.attrs["price_gaps"]))
+    if bf_df.attrs.get("benchmark_gaps"):
+        st.warning(benchmark_gap_notice(bf_df.attrs["benchmark_gaps"]))
 
     # ── Stage 1 + Stage 2 tiles ─────────────────────────────────────────────────────
     if not bf_df.empty:
@@ -933,6 +940,10 @@ with col:
 
         # — Attribution table —
         with bf_table_col:
+            # Sleeves with no real benchmark (w_b == 0, e.g. an unmapped
+            # ticker's "Unknown" bucket): the r_b value is a placeholder that
+            # cancels in the math — render the cell blank, not a fake 0.00%.
+            _no_bm = set(bf_df.attrs.get("no_benchmark_sleeves", []))
             tbl_data = []
             for _, row in bf_df.sort_values("total_effect", ascending=False).iterrows():
                 tbl_data.append({
@@ -940,7 +951,7 @@ with col:
                     "Port Wt":      row["w_p"] * 100,
                     "Bench Wt":     row["w_b"] * 100,
                     "Port Ret":     row["r_p"] * 100,
-                    "Bench Ret":    row["r_b"] * 100,
+                    "Bench Ret":    None if row["sleeve"] in _no_bm else row["r_b"] * 100,
                     "Alloc (bps)":  row["allocation_effect"] * 10_000,
                     "Sel (bps)":    row["selection_effect"] * 10_000,
                     "Total (bps)":  row["total_effect"] * 10_000,

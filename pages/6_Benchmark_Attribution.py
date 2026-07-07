@@ -8,7 +8,7 @@ import pandas as pd
 st.set_page_config(page_title="Benchmark Attribution", layout="wide")
 
 from src.asof import as_of_banner
-from src.attribution import brinson_fachler_period, price_gap_notice
+from src.attribution import benchmark_gap_notice, brinson_fachler_period, price_gap_notice
 from src.config import get_demo_banner_text, IS_DEMO
 from src.holdings import get_inception_date
 from src.factors import (
@@ -155,15 +155,19 @@ with col:
     # effect, so prose reads "AVUV outperformed IWM by 768 bps" correctly.
     _bhb_top = None
     _bf_price_gaps = None
+    _bf_benchmark_gaps = None
     try:
         _bf_df = brinson_fachler_period(inception, end_date)
         _bhb_top = build_bf_cross_reference(_bf_df) or None
         _bf_price_gaps = _bf_df.attrs.get("price_gaps")
+        _bf_benchmark_gaps = _bf_df.attrs.get("benchmark_gaps")
     except Exception:
         pass
 
     if _bf_price_gaps:
         st.warning(price_gap_notice(_bf_price_gaps))
+    if _bf_benchmark_gaps:
+        st.warning(benchmark_gap_notice(_bf_benchmark_gaps))
 
     st.subheader("Interpretation")
     for sentence in build_benchmark_prose(result, bhb_top_selection=_bhb_top):

@@ -182,6 +182,31 @@ def price_gap_notice(price_gaps: list[tuple[str, str]]) -> str:
     return f"Data unavailable for {parts} — excluded from this period's attribution."
 
 
+def benchmark_gap_notice(benchmark_gaps: list[tuple[str, str, str]]) -> str:
+    """Single-source user-facing notice for a period in which one or more
+    benchmark components could not be priced — the benchmark-side mirror of
+    price_gap_notice, shared across the Performance page, the Benchmark
+    Attribution page, and both PDF report sections so the wording can't drift.
+
+    A sleeve whose benchmark is entirely unpriceable is excluded from the
+    period's attribution; a partially-priceable blend degrades to its surviving
+    components; the cash sleeve's figures never depend on its benchmark — the
+    wording covers all three tiers.
+    """
+    if not benchmark_gaps:
+        return ""
+    parts = "; ".join(
+        f"{sleeve} ({ticker}) as of {dt}" for sleeve, ticker, dt in benchmark_gaps
+    )
+    return (
+        f"Benchmark data unavailable for {parts} — a sleeve whose benchmark "
+        f"cannot be priced at all is excluded from this period's attribution; "
+        f"a partially priceable blend is measured on its surviving components; "
+        f"the cash sleeve's figures are unaffected (its benchmark is "
+        f"informational only)."
+    )
+
+
 def brinson_fachler_period(
     start_date: str,
     end_date: str | None = None,
@@ -199,9 +224,24 @@ def brinson_fachler_period(
     gap is recorded in the returned DataFrame's ``.attrs["price_gaps"]`` — a list of
     (ticker, date) pairs — on every return path, including the early-return empty
     frames, so callers can surface an explicit "data unavailable" notice.
+
+    Benchmark gaps (the mirror of the above, for r_b): if a strategic sleeve's
+    benchmark cannot be priced over the window (NaN sentinel from
+    get_sleeve_benchmark_returns), that sleeve is EXCLUDED from this period's
+    attribution through the same purge path — never assigned a fabricated 0%
+    benchmark return that would book its benchmark move as selection skill —
+    and the gap is recorded in ``.attrs["benchmark_gaps"]`` — a list of
+    (sleeve, ticker, date) tuples — on every return path. Two carve-outs: the
+    cash sleeve degrades instead of excluding (its benchmark return is never
+    consumed and purging it would zero the cash-drag bridge), and a sleeve with
+    no benchmark weight (w_b == 0, e.g. an unmapped ticker's "Unknown" bucket)
+    is retained — its r_b placeholder cancels algebraically — and listed in
+    ``.attrs["no_benchmark_sleeves"]`` so render surfaces show N/A instead of a
+    fabricated 0.00%.
     """
     end = end_date or date.today().isoformat()
     price_gaps: list[tuple[str, str]] = []
+    benchmark_gaps: list[tuple[str, str, str]] = []
 
     # ── Load DB reference data ────────────────────────────────────────────────
     with get_connection() as conn:
@@ -248,9 +288,51 @@ def brinson_fachler_period(
     if not hold_rows:
         empty = pd.DataFrame()
         empty.attrs["price_gaps"] = price_gaps
+        empty.attrs["benchmark_gaps"] = benchmark_gaps
+        empty.attrs["no_benchmark_sleeves"] = []
         return empty
 
     holdings = {r["ticker"]: float(r["net_shares"]) for r in hold_rows}
+
+    # ── Benchmark sleeve returns ──────────────────────────────────────────────
+    # Fetched BEFORE the holdings loop (it depends only on the window bounds) so
+    # benchmark-gapped sleeves can join the same purge path as portfolio price
+    # gaps below. The purge runs before the totals, which is what makes the
+    # surviving portfolio weights renormalize implicitly — excluding a sleeve
+    # later, at the alignment step, with only the benchmark weights renormalized
+    # would break the BF algebra check.
+    bm_df = get_sleeve_benchmark_returns(start_date, end)
+    benchmark_gaps.extend(bm_df.attrs.get("benchmark_gaps", []))
+    bm_returns_raw = bm_df.iloc[-1].to_dict() if not bm_df.empty else {}
+
+    # A sleeve carrying real benchmark weight but missing from the static
+    # benchmark map is configuration drift (DB sleeve names vs
+    # _SLEEVE_BENCHMARKS), not a per-period data gap — fail loudly instead of
+    # silently zero-filling its benchmark return.
+    _unmapped = [
+        s for s, w in benchmark_weights.items() if w > 0 and s not in bm_df.columns
+    ]
+    assert not _unmapped, (
+        f"Sleeve(s) {_unmapped} carry benchmark weight but have no "
+        f"_SLEEVE_BENCHMARKS mapping — benchmark configuration drift"
+    )
+
+    # Strategic sleeves whose benchmark could not be priced this period (NaN
+    # sentinel from get_sleeve_benchmark_returns) — excluded below exactly like
+    # portfolio-side price gaps. Derived from benchmark_weights (not the frame)
+    # so a rowless bm_df counts as everything-gapped, never as everything-fine.
+    # Cash is exempt: its benchmark return is never consumed (cash leaves the
+    # BF universe before the decomposition) and purging it would zero the
+    # cash-drag bridge, so it degrades like the portfolio-side BIL path
+    # instead. Zero-weight sleeves are exempt too — they are retained with an
+    # N/A benchmark (their r_b cancels algebraically).
+    benchmark_gapped = {
+        s
+        for s, w in benchmark_weights.items()
+        if w > 0
+        and s != _CASH_SLEEVE
+        and pd.isna(bm_returns_raw.get(s, float("nan")))
+    }
 
     # BIL prices anchored at portfolio inception so SPAXX weight reflects
     # the full historical appreciation of cash since launch.
@@ -313,6 +395,10 @@ def brinson_fachler_period(
 
     # Purge gapped sleeves entirely (not partially) so neither the aggregate
     # totals nor the per-sleeve rows are built from an incomplete valuation.
+    # Benchmark-gapped sleeves take the same path: one exclusion convention,
+    # one renormalization convention (both weight vectors re-sum to 1.0 over
+    # the surviving universe, keeping the BF algebra check exact).
+    gapped_sleeves |= benchmark_gapped
     for sleeve in gapped_sleeves:
         start_values.pop(sleeve, None)
         end_values.pop(sleeve, None)
@@ -321,6 +407,8 @@ def brinson_fachler_period(
     if total_start == 0:
         empty = pd.DataFrame()
         empty.attrs["price_gaps"] = price_gaps
+        empty.attrs["benchmark_gaps"] = benchmark_gaps
+        empty.attrs["no_benchmark_sleeves"] = []
         return empty
 
     # ── Phase 38b-2 — ex-cash attribution + explicit operational cash drag ────
@@ -340,6 +428,8 @@ def brinson_fachler_period(
     if total_start_excash <= 0:
         empty = pd.DataFrame()
         empty.attrs["price_gaps"] = price_gaps
+        empty.attrs["benchmark_gaps"] = benchmark_gaps
+        empty.attrs["no_benchmark_sleeves"] = []
         return empty
 
     r_p_total_incl   = total_end / total_start - 1.0
@@ -357,15 +447,21 @@ def brinson_fachler_period(
         for sleeve, mv in strategic_values.items()
     }
 
-    # ── Benchmark sleeve returns ──────────────────────────────────────────────
-    bm_df = get_sleeve_benchmark_returns(start_date, end)
-    bm_returns_raw = (
-        bm_df.iloc[-1].to_dict() if not bm_df.empty else {}
-    )
-    # Fill any missing sleeves with 0
-    bm_sleeve_returns = {
-        s: bm_returns_raw.get(s, 0.0) for s in benchmark_weights
-    }
+    # ── Benchmark sleeve returns (fetched above, before the holdings loop) ───
+    # NaN sentinels must never reach brinson_fachler (they would poison the
+    # effects and trip its algebra assert): gapped w_b>0 sleeves were purged
+    # above; any remaining unpriceable benchmark (the cash sleeve, or a
+    # zero-weight sleeve) falls back to 0.0 — which cancels algebraically when
+    # w_b == 0 — and is tracked so it renders as N/A, never as a real 0% return.
+    bm_sleeve_returns: dict[str, float] = {}
+    fabricated_rb: set[str] = set()
+    for s in benchmark_weights:
+        v = bm_returns_raw.get(s)
+        if v is None or pd.isna(v):
+            bm_sleeve_returns[s] = 0.0
+            fabricated_rb.add(s)
+        else:
+            bm_sleeve_returns[s] = float(v)
 
     # ── Align: strategic sleeves only (cash and gapped sleeves excluded from
     # both sides — a gapped sleeve's benchmark weight/return must not be
@@ -376,7 +472,17 @@ def brinson_fachler_period(
     pw  = {s: portfolio_weights.get(s, 0.0)        for s in all_sleeves}
     bw  = {s: benchmark_weights.get(s, 0.0)        for s in all_sleeves}
     pr  = {s: portfolio_sleeve_returns.get(s, 0.0) for s in all_sleeves}
+    # The 0.0 default is only reachable for sleeves outside benchmark_weights
+    # (w_b == 0, e.g. "Unknown"), where r_b cancels algebraically in both the
+    # sleeve's total effect and R_b_total — tracked below for N/A rendering.
     br  = {s: bm_sleeve_returns.get(s, 0.0)        for s in all_sleeves}
+
+    # Sleeves whose displayed benchmark return would be a placeholder, not a
+    # real market number: retained in the decomposition (their r_b cancels
+    # with w_b == 0) but surfaced so render surfaces show N/A.
+    no_benchmark_sleeves = sorted(
+        s for s in all_sleeves if s in fabricated_rb or s not in bm_sleeve_returns
+    )
 
     # Renormalize benchmark weights over the measured (non-gapped) universe so
     # they sum to 1.0 again, matching the portfolio weights (which already sum
@@ -390,6 +496,8 @@ def brinson_fachler_period(
     if bw_sum <= 0:
         empty = pd.DataFrame()
         empty.attrs["price_gaps"] = price_gaps
+        empty.attrs["benchmark_gaps"] = benchmark_gaps
+        empty.attrs["no_benchmark_sleeves"] = []
         return empty
     bw = {s: w / bw_sum for s, w in bw.items()}
 
@@ -401,4 +509,6 @@ def brinson_fachler_period(
     bf.attrs["r_p_total_excash"] = r_p_total_excash
     bf.attrs["r_p_total_incl"]   = r_p_total_incl
     bf.attrs["price_gaps"]       = price_gaps
+    bf.attrs["benchmark_gaps"]   = benchmark_gaps
+    bf.attrs["no_benchmark_sleeves"] = no_benchmark_sleeves
     return bf
