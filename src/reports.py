@@ -19,7 +19,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import plotly.io as pio
 
-from src.attribution import brinson_fachler_period, price_gap_notice
+from src.attribution import benchmark_gap_notice, brinson_fachler_period, price_gap_notice
 from src.cache import (
     capture_quarter_snapshot,
     get_quarter_snapshot,
@@ -368,6 +368,7 @@ def _build_executive_summary(start_date: str, end_date: str) -> dict:
     top_contributor = top_detractor = None
     _all_positive = False
     _bf_price_gap_note = None
+    _bf_benchmark_gap_note = None
     _drip_gap_note = None
     try:
         _drip_gaps = distribution_gaps_for_holdings(inception, end_date)
@@ -379,6 +380,8 @@ def _build_executive_summary(start_date: str, end_date: str) -> dict:
         bf_df = brinson_fachler_period(start_date, end_date)
         if bf_df.attrs.get("price_gaps"):
             _bf_price_gap_note = price_gap_notice(bf_df.attrs["price_gaps"])
+        if bf_df.attrs.get("benchmark_gaps"):
+            _bf_benchmark_gap_note = benchmark_gap_notice(bf_df.attrs["benchmark_gaps"])
         if not bf_df.empty:
             best  = bf_df.loc[bf_df["total_effect"].idxmax()]
             worst = bf_df.loc[bf_df["total_effect"].idxmin()]
@@ -424,6 +427,8 @@ def _build_executive_summary(start_date: str, end_date: str) -> dict:
         )
     if _bf_price_gap_note:
         narrative.append(_bf_price_gap_note)
+    if _bf_benchmark_gap_note:
+        narrative.append(_bf_benchmark_gap_note)
     if _drip_gap_note:
         narrative.append(_drip_gap_note)
 
@@ -615,6 +620,7 @@ def _build_attribution_section(start_date: str, end_date: str) -> dict:
         "total_alloc": "+0.0", "total_sel": "+0.0", "total_total": "+0.0",
         "sel_commentary": [], "alloc_commentary": None,
         "price_gaps": [],
+        "benchmark_gaps": [],
     }
     try:
         bf_df = brinson_fachler_period(start_date, end_date)
@@ -623,8 +629,16 @@ def _build_attribution_section(start_date: str, end_date: str) -> dict:
     _price_gaps = [
         {"ticker": t, "date": d} for t, d in bf_df.attrs.get("price_gaps", [])
     ]
+    _benchmark_gaps = [
+        {"sleeve": s, "ticker": t, "date": d}
+        for s, t, d in bf_df.attrs.get("benchmark_gaps", [])
+    ]
     if bf_df.empty:
-        return {**_empty, "price_gaps": _price_gaps}
+        return {
+            **_empty,
+            "price_gaps": _price_gaps,
+            "benchmark_gaps": _benchmark_gaps,
+        }
 
     bf_sorted = bf_df.sort_values("total_effect", ascending=True)
     sleeve_labels = bf_sorted["sleeve"].tolist()
@@ -659,6 +673,10 @@ def _build_attribution_section(start_date: str, end_date: str) -> dict:
         ),
     )
 
+    # Sleeves with no real benchmark (w_b == 0, e.g. an unmapped ticker's
+    # "Unknown" bucket): the r_b value is a placeholder that cancels in the
+    # math — print N/A, not a fake 0.00%.
+    _no_bm = set(bf_df.attrs.get("no_benchmark_sleeves", []))
     rows = []
     for _, row in bf_df.sort_values("total_effect", ascending=False).iterrows():
         rows.append({
@@ -666,7 +684,7 @@ def _build_attribution_section(start_date: str, end_date: str) -> dict:
             "port_wt":   f"{row['w_p']*100:.1f}%",
             "bench_wt":  f"{row['w_b']*100:.1f}%",
             "port_ret":  f"{row['r_p']*100:.2f}%",
-            "bench_ret": f"{row['r_b']*100:.2f}%",
+            "bench_ret": "N/A" if row["sleeve"] in _no_bm else f"{row['r_b']*100:.2f}%",
             "alloc":     f"{row['allocation_effect']*10000:+.1f}",
             "sel":       f"{row['selection_effect']*10000:+.1f}",
             "total":     f"{row['total_effect']*10000:+.1f}",
@@ -712,6 +730,7 @@ def _build_attribution_section(start_date: str, end_date: str) -> dict:
         # attribution reconciles to the actual (incl-cash) total active return.
         "cash_drag_bps":    f"{bf_df.attrs.get('cash_drag', 0.0)*10000:+.1f}",
         "price_gaps":       _price_gaps,
+        "benchmark_gaps":   _benchmark_gaps,
     }
 
 

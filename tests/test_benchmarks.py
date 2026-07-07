@@ -7,17 +7,26 @@ an opaque data input for a different function's identity check (test_attribution
 test_risk_metrics.py), so the allocation/mark-to-market arithmetic itself was never
 independently verified.
 
-Separately, brinson_fachler()'s internal algebra check (sum of effects == r_p_total -
-r_b_total) holds algebraically regardless of what r_b actually is. If a sleeve's benchmark
-price fetch fails, get_sleeve_benchmark_returns() silently substitutes a 0.0 return for that
-sleeve (src/benchmarks.py's total_frac<=0 branch), and brinson_fachler_period() zero-fills
-any sleeve absent from the fetched frame (src/attribution.py's bm_returns_raw.get(s, 0.0)) --
-the algebra check closes either way, so this corruption is invisible to every existing
-identity test. See test_degenerate_benchmark_pins_current_zero_fill_behavior and
-test_real_benchmark_sleeves_never_silently_zero below.
+── Benchmark-gap tripwire ────────────────────────────────────────────────────
+Mirrors test_attribution.py's portfolio-side price-gap suite for the BENCHMARK
+side (r_b): brinson_fachler()'s internal algebra check (sum of effects ==
+r_p_total - r_b_total) computes r_b_total from the same benchmark-return dict
+as the effects, so it holds algebraically for ANY r_b vector — the residual is
+identically R_b x (sum(w_b) - sum(w_p)), which the pipeline pins to zero by
+renormalizing both weight vectors. No identity-style test can therefore detect
+a silently-zeroed benchmark return; these tests instead construct a genuine
+benchmark data gap and check get_sleeve_benchmark_returns()/
+brinson_fachler_period()'s behavior in response.
+
+Each test's docstring states what the assertion would find against the PRE-FIX
+code (a fabricated flat-1.0 series reading as a 0.0 return, no attrs flag, the
+sleeve kept in the decomposition with its entire benchmark return booked as
+selection skill) — that is the proof the test actually catches the bug, not
+just a description of the fix.
 """
 from __future__ import annotations
 
+import logging
 import sys
 import pathlib
 
@@ -27,6 +36,11 @@ import pytest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 import src.benchmarks as bm
+
+# Committed-demo-data window shared by the pipeline tests below (same window as
+# the r_b tripwire at the bottom of this file — covered end-to-end by the
+# committed price cache, no live fetch required).
+_W = ("2025-05-01", "2026-06-10")
 
 
 class _FakeConn:
@@ -49,19 +63,50 @@ class _FakeConn:
         return False
 
 
+def _fail_fetch_for(monkeypatch, *tickers):
+    """Patch src.benchmarks' module-local get_prices to raise for the given
+    tickers only, delegating everything else to the real function — a targeted
+    benchmark data gap. src.attribution's own get_prices binding is untouched,
+    so the portfolio side of the pipeline stays healthy."""
+    real_get_prices = bm.get_prices
+
+    def _targeted(ticker, *args, **kwargs):
+        if ticker in tickers:
+            raise RuntimeError(f"simulated fetch failure for {ticker}")
+        return real_get_prices(ticker, *args, **kwargs)
+
+    monkeypatch.setattr(bm, "get_prices", _targeted)
+
+
+def _bf_or_skip(*window):
+    """brinson_fachler_period with the standard data-unavailable skip guards
+    (mirrors the portfolio-side gap tests in test_attribution.py).
+
+    Use ONLY for the PRE-injection probe. Post-injection calls must be bare —
+    after the probe has proven data availability, an exception or empty frame
+    can only come from the code under test (e.g. one-sided renormalization
+    tripping the BF algebra assert) and must FAIL the test, not skip it.
+    """
+    from src.attribution import brinson_fachler_period
+
+    try:
+        bf_df = brinson_fachler_period(*window)
+    except Exception as exc:
+        pytest.skip(f"BF data unavailable: {exc}")
+    if bf_df.empty:
+        pytest.skip("BF result empty — skipped in local/empty-DB mode")
+    return bf_df
+
+
 def test_custom_blended_series_hand_calculation(monkeypatch):
     """Hand-calculated 2-sleeve blend, fully synthetic (no DB, no price fetch).
 
     SleeveA (60%) tracks TICKA: 100 -> 110 -> 121 (+10%, +10%).
     SleeveB (40%) tracks TICKB: 50 -> 45 -> 40.5 (-10%, -10%).
 
-    Day 0: $0.60 buys 0.006 units of TICKA, $0.40 buys 0.008 units of TICKB -> $1.00 total.
-    Day 1: 0.006*110 + 0.008*45  = 0.66 + 0.36 = 1.02  (= 0.6*1.10 + 0.4*0.90)
-    Day 2: 0.006*121 + 0.008*40.5 = 0.726 + 0.324 = 1.05 (= 0.6*1.21 + 0.4*0.81)
-
-    This is the only test in the suite that verifies get_custom_blended_series()'s
-    allocation/mark-to-market arithmetic directly rather than mocking it or treating it
-    as an opaque input.
+    Day 0: $1 = 0.60 in TICKA (0.006 sh) + 0.40 in TICKB (0.008 sh).
+    Day 1: 0.006*110 + 0.008*45   = 0.66 + 0.36  = 1.02
+    Day 2: 0.006*121 + 0.008*40.5 = 0.726 + 0.324 = 1.05
     """
     dates = pd.date_range("2026-01-01", periods=3, freq="D")
     price_a = pd.Series([100.0, 110.0, 121.0], index=dates)
@@ -90,37 +135,316 @@ def test_custom_blended_series_hand_calculation(monkeypatch):
     )
 
 
-def test_degenerate_benchmark_pins_current_zero_fill_behavior(monkeypatch):
-    """PINS the CURRENT behavior: when every price component for a sleeve's benchmark
-    fails to fetch, get_sleeve_benchmark_returns() returns exactly 0.0 for that sleeve
-    rather than raising, warning, or excluding the sleeve from the result.
+# ── Benchmark-gap mechanism tests (exclude-and-flag, mirroring PR #52) ───────
 
-    FLAG FOR AUTHOR — this is not asserted to be correct, only pinned so a change is
-    deliberate rather than accidental. A 0.0 benchmark return is indistinguishable from
-    "the benchmark was genuinely flat"; downstream, brinson_fachler_period() feeds this
-    straight into selection_effect = w_p*(r_p - r_b), so a failed benchmark price fetch
-    silently misattributes the sleeve's ENTIRE return as manager skill (selection), with
-    zero allocation-effect signal and no error surfaced anywhere in the UI. Candidate
-    fixes to consider: raise / surface an explicit data-quality warning on the affected
-    page, exclude the sleeve from the attribution table rather than zero-fill it, or
-    fall back to a stated proxy ticker. See test_real_benchmark_sleeves_never_silently_zero
-    for the tripwire that checks this isn't currently happening against real data.
+
+def test_component_gap_emits_nan_sentinel_and_flag(monkeypatch, caplog):
+    """A sleeve whose only benchmark component cannot be priced carries an
+    explicit NaN sentinel plus a (sleeve, ticker, date) record on
+    attrs['benchmark_gaps'], and the failure is logged naming the ticker.
+
+    PRE-FIX: the column came back as a flat-1.0 series reading as an exact 0.0
+    return (the total_frac==0 fabrication), there was no attrs flag and no
+    warning — all three assertions fail against that code.
     """
+    _fail_fetch_for(monkeypatch, "QUAL")
+
+    with caplog.at_level(logging.WARNING):
+        df = bm.get_sleeve_benchmark_returns(*_W)
+
+    assert df["US Large Quality"].isna().all(), (
+        "expected an explicit NaN sentinel for an unpriceable benchmark sleeve, "
+        f"got values like {df['US Large Quality'].iloc[-1]!r} (a fabricated flat "
+        "return)"
+    )
+    gaps = df.attrs.get("benchmark_gaps", [])
+    assert any(s == "US Large Quality" and t == "QUAL" for s, t, _ in gaps), (
+        f"expected QUAL's gap recorded in attrs['benchmark_gaps'], got: {gaps}"
+    )
+    assert any("QUAL" in rec.message for rec in caplog.records), (
+        "expected a logged warning naming the unpriceable benchmark ticker"
+    )
+
+
+def test_benchmark_gap_excludes_sleeve_and_flags(monkeypatch):
+    """A benchmark-gapped strategic sleeve is EXCLUDED from that period's
+    attribution (both weight vectors renormalized over the surviving universe,
+    so the BF identity holds exactly) and flagged on attrs['benchmark_gaps'].
+
+    PRE-FIX: the sleeve stayed in the frame with w_b > 0 and a fabricated
+    r_b == 0.0, booking its entire benchmark return (~26% for QUAL over this
+    window) as phantom selection skill and overstating active return by
+    w_b x r_b_true (~403 bps), with no flag anywhere — the exclusion and attrs
+    assertions fail against that code.
+    """
+    from src.attribution import brinson_fachler_period
+
+    _bf_or_skip(*_W)  # probe: committed data present before injecting
+    _fail_fetch_for(monkeypatch, "QUAL")
+
+    bf_df = brinson_fachler_period(*_W)   # bare: a failure here IS the bug
+
+    assert "US Large Quality" not in bf_df["sleeve"].tolist(), (
+        "expected the benchmark-gapped sleeve to be excluded from the period, "
+        f"got rows: {bf_df[bf_df['sleeve'] == 'US Large Quality'][['sleeve', 'w_b', 'r_b']].to_dict('records')}"
+    )
+    gaps = bf_df.attrs.get("benchmark_gaps") or []
+    assert any(s == "US Large Quality" and t == "QUAL" for s, t, _ in gaps), (
+        f"expected QUAL's benchmark gap in .attrs['benchmark_gaps'], got: {gaps}"
+    )
+    # Both weight vectors renormalize over the surviving universe — this is
+    # what keeps the BF algebra check exact after exclusion.
+    assert abs(bf_df["w_p"].sum() - 1.0) < 1e-6
+    assert abs(bf_df["w_b"].sum() - 1.0) < 1e-6
+    active = float(
+        (bf_df["w_p"] * bf_df["r_p"]).sum() - (bf_df["w_b"] * bf_df["r_b"]).sum()
+    )
+    assert abs(float(bf_df["total_effect"].sum()) - active) < 1e-4, (
+        "BF identity must hold over the surviving universe"
+    )
+    # And no fabricated zero remains anywhere.
+    assert bf_df[(bf_df["w_b"] > 0) & (bf_df["r_b"] == 0.0)].empty
+
+
+def test_partial_component_gap_degrades_and_flags(monkeypatch):
+    """A multi-component sleeve (Real Assets = VNQ 0.6 / DBC 0.4) with ONE
+    unpriceable component degrades to its surviving components — retained in
+    the attribution, NOT excluded — but the substitution is flagged on
+    attrs['benchmark_gaps'] (the BIL-style degrade-and-flag tier).
+
+    PRE-FIX: the renormalization happened silently — a plausible NONZERO wrong
+    r_b invisible to the exact-zero tripwire, with no flag anywhere — so the
+    attrs assertions fail against that code.
+    """
+    _bf_or_skip(*_W)  # probe before injecting
+    _fail_fetch_for(monkeypatch, "DBC")
+
+    df = bm.get_sleeve_benchmark_returns(*_W)
+    assert not df["Real Assets"].isna().all(), (
+        "partial component failure must degrade to the surviving components, "
+        "not blank the whole sleeve"
+    )
+    src_gaps = df.attrs.get("benchmark_gaps", [])
+    assert any(s == "Real Assets" and t == "DBC" for s, t, _ in src_gaps), (
+        f"expected DBC's gap recorded at the source, got: {src_gaps}"
+    )
+
+    from src.attribution import brinson_fachler_period
+
+    bf_df = brinson_fachler_period(*_W)   # bare: a failure here IS the bug
+    assert "Real Assets" in bf_df["sleeve"].tolist(), (
+        "a partially-priceable benchmark blend must not exclude the sleeve"
+    )
+    gaps = bf_df.attrs.get("benchmark_gaps") or []
+    assert any(s == "Real Assets" and t == "DBC" for s, t, _ in gaps), (
+        f"expected DBC's benchmark gap surfaced on the BF frame, got: {gaps}"
+    )
+
+
+def test_bil_benchmark_gap_degrades_without_exclusion(monkeypatch):
+    """A BIL (cash-sleeve benchmark) gap is flagged but NEVER excludes: cash's
+    benchmark return is not consumed by the decomposition (cash leaves the BF
+    universe before brinson_fachler) and purging it would zero the cash-drag
+    bridge. All strategic sleeves stay present and cash_drag is unchanged —
+    mirroring the portfolio side's BIL degrade-not-exclude convention.
+
+    PRE-FIX: the cash column was zero-filled with no flag, so the attrs
+    assertion fails against that code (the retention assertions pass either
+    way — they pin the exemption so a careless purge can't regress it).
+    """
+    baseline = _bf_or_skip(*_W)
+    base_drag = float(baseline.attrs.get("cash_drag", 0.0))
+
+    _fail_fetch_for(monkeypatch, "BIL")
+
+    df = bm.get_sleeve_benchmark_returns(*_W)
+    assert df["Cash / SPAXX"].isna().all(), (
+        "expected the NaN sentinel for the unpriceable cash benchmark"
+    )
+
+    from src.attribution import brinson_fachler_period
+
+    bf_df = brinson_fachler_period(*_W)   # bare: a failure here IS the bug
+    assert len(bf_df) == len(baseline), (
+        "a cash-benchmark gap must not exclude any sleeve: expected "
+        f"{len(baseline)} sleeves, got {len(bf_df)}: {sorted(bf_df['sleeve'])}"
+    )
+    assert float(bf_df.attrs.get("cash_drag", 0.0)) == pytest.approx(
+        base_drag, abs=1e-12
+    ), "cash drag must be untouched by a benchmark-side BIL gap"
+    gaps = bf_df.attrs.get("benchmark_gaps") or []
+    assert any(s == "Cash / SPAXX" and t == "BIL" for s, t, _ in gaps), (
+        f"expected the BIL benchmark gap recorded in attrs, got: {gaps}"
+    )
+
+
+def test_total_benchmark_outage_yields_sentinels_and_empty_attribution(monkeypatch):
+    """When EVERY benchmark component fails to price, every sleeve carries the
+    NaN sentinel with a gap record, and brinson_fachler_period returns an
+    EMPTY frame (all strategic sleeves gapped -> nothing left to attribute)
+    that still carries attrs['benchmark_gaps'].
+
+    PRE-FIX: every sleeve came back as exactly 0.0 (this test's predecessor,
+    test_degenerate_benchmark_pins_current_zero_fill_behavior, PINNED that
+    fabrication), and the pipeline silently collapsed active return to R_p
+    with the identity still green — the sentinel, gap, and empty-frame
+    assertions all fail against that code.
+    """
+    _bf_or_skip(*_W)  # probe before injecting
+
     def _always_fails(ticker, *args, **kwargs):
         raise RuntimeError("simulated fetch failure")
 
     monkeypatch.setattr(bm, "get_prices", _always_fails)
 
-    df = bm.get_sleeve_benchmark_returns("2025-05-01", "2026-06-10")
-    last = df.iloc[-1]
-
-    assert (last == 0.0).all(), (
-        f"Expected the CURRENT zero-fill behavior when all price fetches fail (every "
-        f"sleeve return exactly 0.0), got:\n{last}\n"
-        "If this assertion now fails, the zero-fill behavior may have been intentionally "
-        "changed -- update this test to pin the NEW intended behavior rather than "
-        "re-asserting zero-fill blindly."
+    df = bm.get_sleeve_benchmark_returns(*_W)
+    assert df.iloc[-1].isna().all(), (
+        f"expected NaN sentinels for a total benchmark outage, got:\n{df.iloc[-1]}"
     )
+    gapped_sleeves = {s for s, _, _ in df.attrs.get("benchmark_gaps", [])}
+    assert gapped_sleeves == set(bm._SLEEVE_BENCHMARKS), (
+        f"expected every sleeve flagged, got: {sorted(gapped_sleeves)}"
+    )
+
+    from src.attribution import brinson_fachler_period
+
+    bf_df = brinson_fachler_period(*_W)
+    assert bf_df.empty, (
+        "with every strategic sleeve benchmark-gapped there is nothing to "
+        f"attribute — expected an empty frame, got {len(bf_df)} rows"
+    )
+    assert bf_df.attrs.get("benchmark_gaps"), (
+        "the empty frame must still surface the benchmark gaps"
+    )
+
+
+def test_missing_benchmark_mapping_for_weighted_sleeve_asserts(monkeypatch):
+    """A sleeve carrying real benchmark weight (w_b > 0) whose name is missing
+    from the static _SLEEVE_BENCHMARKS map is CONFIG DRIFT, not a per-period
+    data gap — brinson_fachler_period fails loudly instead of zero-filling.
+
+    PRE-FIX: the missing column was silently zero-filled via
+    bm_returns_raw.get(s, 0.0) and the decomposition completed with a
+    fabricated r_b — pytest.raises finds no error against that code.
+    """
+    _bf_or_skip(*_W)  # probe: needs holdings for the pipeline to reach the check
+
+    import src.attribution as attr_mod
+
+    real_gsbr = attr_mod.get_sleeve_benchmark_returns
+
+    def _drop_column(start, end):
+        return real_gsbr(start, end).drop(columns=["US Large Quality"])
+
+    monkeypatch.setattr(attr_mod, "get_sleeve_benchmark_returns", _drop_column)
+
+    with pytest.raises(AssertionError, match="_SLEEVE_BENCHMARKS"):
+        attr_mod.brinson_fachler_period(*_W)
+
+
+def test_unknown_sleeve_retained_with_na_marker(monkeypatch):
+    """A portfolio sleeve with NO benchmark (w_b == 0, the 'Unknown' bucket for
+    a ticker missing from securities) is RETAINED — its real return belongs in
+    the decomposition and its r_b placeholder cancels algebraically — and is
+    listed on attrs['no_benchmark_sleeves'] so render surfaces show its
+    benchmark return as N/A instead of a fabricated 0.00%.
+
+    PRE-FIX: the sleeve was retained with the same math, but nothing marked
+    the fabricated display value — the attrs assertion fails against that code.
+    """
+    import src.attribution as attr_mod
+    from src.db import get_connection as real_get_connection
+
+    _bf_or_skip(*_W)  # probe before injecting
+
+    # Pick a real (non-SPAXX) holding at window start to orphan from securities.
+    with real_get_connection() as conn:
+        row = conn.execute(
+            """SELECT ticker,
+                      SUM(CASE WHEN LOWER(action)='buy' THEN shares ELSE -shares END) AS net
+               FROM trades
+               WHERE trade_date <= ?
+                 AND ticker != 'SPAXX'
+                 AND (lot_source IS NULL OR lot_source != 'drip')
+               GROUP BY ticker HAVING net > 0
+               ORDER BY ticker LIMIT 1""",
+            (_W[0],),
+        ).fetchone()
+    if row is None:
+        pytest.skip("no non-cash holdings at window start")
+    orphan = row["ticker"]
+
+    class _Rows:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def fetchall(self):
+            return self._rows
+
+    class _OrphanConn:
+        """Delegates to the real connection but drops the orphaned ticker from
+        the securities join, so it lands in the 'Unknown' sleeve."""
+
+        def __init__(self, conn):
+            self._conn = conn
+
+        def execute(self, sql, *params):
+            cur = self._conn.execute(sql, *params)
+            if "FROM securities" in sql:
+                return _Rows([r for r in cur.fetchall() if r["ticker"] != orphan])
+            return cur
+
+        def __enter__(self):
+            self._conn.__enter__()
+            return self
+
+        def __exit__(self, *args):
+            return self._conn.__exit__(*args)
+
+    monkeypatch.setattr(
+        attr_mod, "get_connection", lambda: _OrphanConn(real_get_connection())
+    )
+
+    bf_df = attr_mod.brinson_fachler_period(*_W)   # bare: a failure here IS the bug
+
+    assert "Unknown" in bf_df["sleeve"].tolist(), (
+        "a no-benchmark sleeve must be retained, not excluded"
+    )
+    row_u = bf_df[bf_df["sleeve"] == "Unknown"].iloc[0]
+    assert row_u["w_b"] == 0.0
+    assert bf_df.attrs.get("no_benchmark_sleeves") == ["Unknown"], (
+        "expected the no-benchmark sleeve marked for N/A rendering, got "
+        f"attrs['no_benchmark_sleeves'] = {bf_df.attrs.get('no_benchmark_sleeves')!r}"
+    )
+    # Retention must not disturb the identity: both weight vectors still sum
+    # to 1.0 and the algebra check closes over the full row set.
+    assert abs(bf_df["w_p"].sum() - 1.0) < 1e-6
+    assert abs(bf_df["w_b"].sum() - 1.0) < 1e-6
+    active = float(
+        (bf_df["w_p"] * bf_df["r_p"]).sum() - (bf_df["w_b"] * bf_df["r_b"]).sum()
+    )
+    assert abs(float(bf_df["total_effect"].sum()) - active) < 1e-4
+
+
+def test_no_benchmark_gaps_on_committed_demo_windows():
+    """Committed demo data has no benchmark gap and no no-benchmark sleeve on
+    the shared window: the new attrs are present-but-empty and all 9 strategic
+    sleeves attribute normally — the fix is a no-op on the demo's numbers.
+
+    PRE-FIX: the attrs keys did not exist at all, so the equality assertions
+    fail against that code (None != []).
+    """
+    bf_df = _bf_or_skip(*_W)
+
+    assert bf_df.attrs.get("benchmark_gaps") == [], (
+        f"unexpected benchmark gaps on committed demo data: "
+        f"{bf_df.attrs.get('benchmark_gaps')!r}"
+    )
+    assert bf_df.attrs.get("no_benchmark_sleeves") == [], (
+        f"unexpected no-benchmark sleeves on committed demo data: "
+        f"{bf_df.attrs.get('no_benchmark_sleeves')!r}"
+    )
+    assert len(bf_df) == 9
 
 
 def test_real_benchmark_sleeves_never_silently_zero():
@@ -135,6 +459,8 @@ def test_real_benchmark_sleeves_never_silently_zero():
     real market outcome for any of these tickers (SPY/QUAL/IWD/IWM/EFA/EEM/IEF/TIP/
     VNQ+DBC/BIL), so an exact-zero r_b for a sleeve carrying real benchmark weight
     (w_b > 0) is the fingerprint of the degenerate-benchmark bug, not a coincidence.
+    Belt-and-suspenders alongside the mechanism tests above: those prove the handling
+    of an injected gap; this proves the committed data needs none of it.
     """
     from src.attribution import brinson_fachler_period
 
