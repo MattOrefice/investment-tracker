@@ -158,6 +158,8 @@ def test_cover_twr_uses_inception_slice_not_period_scoped():
     bl_flat = _flat_series(inception, end_date)
 
     with patch.object(rpt, "get_portfolio_value_series", return_value=pv_full), \
+         patch.object(rpt, "get_external_cashflow_series",
+                      side_effect=lambda s, e: pd.Series(dtype=float)), \
          patch.object(rpt, "get_inception_date", return_value=inception), \
          patch.object(rpt, "get_sp500_series", return_value=sp_flat), \
          patch.object(rpt, "get_custom_blended_series", return_value=bl_flat), \
@@ -171,6 +173,48 @@ def test_cover_twr_uses_inception_slice_not_period_scoped():
     assert abs(actual_pct - expected_pct) < 0.01, (
         f"Cover TWR {actual_pct:.4f}% should match period-sliced inception "
         f"TWR {expected_pct:.4f}%"
+    )
+
+
+def test_cover_twr_nets_external_contribution_not_counted_as_return():
+    """
+    THE CODE-GAP 5 BUG PROOF at the caller: a $200 mid-period contribution
+    steps the value series from $1,000 to $1,200 with a flat market, so the
+    true TWR is 0%. Pre-fix reports.py hardcoded cf = pd.Series(0.0, ...) —
+    flow-blind — and reported the deposit as a +20% return; against pre-fix
+    code this test fails with 20.0 != 0.0.
+    """
+    inception  = "2025-05-01"
+    start_date = "2026-01-01"
+    end_date   = "2026-03-31"
+
+    idx     = pd.date_range(inception, end_date, freq="D")
+    pv_full = pd.Series(1000.0, index=idx)
+    flow_day = pd.Timestamp("2026-02-15")
+    pv_full.loc[pv_full.index >= flow_day] = 1200.0
+    cf_full = pd.Series(0.0, index=idx)
+    cf_full.loc[flow_day] = 200.0
+
+    sp_flat = _flat_series(inception, end_date)
+    bl_flat = _flat_series(inception, end_date)
+
+    with patch.object(rpt, "get_portfolio_value_series", return_value=pv_full), \
+         patch.object(rpt, "get_external_cashflow_series",
+                      side_effect=lambda s, e: cf_full), \
+         patch.object(rpt, "get_current_market_value", return_value=1200.0), \
+         patch.object(rpt, "get_inception_date", return_value=inception), \
+         patch.object(rpt, "get_sp500_series", return_value=sp_flat), \
+         patch.object(rpt, "get_custom_blended_series", return_value=bl_flat), \
+         patch.object(rpt, "brinson_fachler_period", side_effect=Exception("no db")), \
+         patch.object(rpt, "current_cape", side_effect=Exception("no data")), \
+         patch.object(rpt, "get_cape_series", side_effect=Exception("no data")):
+
+        result = rpt._build_executive_summary(start_date, end_date)
+
+    actual_pct = float(result["portfolio_return_pct"].rstrip("%"))
+    assert abs(actual_pct) < 0.01, (
+        f"Contribution counted as return: cover TWR is {actual_pct:.4f}%, "
+        "expected 0% — the $200 deposit must be netted out, not credited."
     )
 
 
@@ -192,6 +236,8 @@ def test_cover_current_value_is_true_mv_not_return_series_endpoint():
     bl_flat = _flat_series(inception, end_date)
 
     with patch.object(rpt, "get_portfolio_value_series", return_value=pv_full), \
+         patch.object(rpt, "get_external_cashflow_series",
+                      side_effect=lambda s, e: pd.Series(dtype=float)), \
          patch.object(rpt, "get_current_market_value", return_value=1234.0), \
          patch.object(rpt, "get_inception_date", return_value=inception), \
          patch.object(rpt, "get_sp500_series", return_value=sp_flat), \
@@ -221,6 +267,8 @@ def _make_exec_summary_mocks(inception: str, start_date: str, end_date: str,
         return bl_full[bl_full.index >= pd.Timestamp(start)]
 
     with patch.object(rpt, "get_portfolio_value_series", return_value=pv_full), \
+         patch.object(rpt, "get_external_cashflow_series",
+                      side_effect=lambda s, e: pd.Series(dtype=float)), \
          patch.object(rpt, "get_inception_date", return_value=inception), \
          patch.object(rpt, "get_sp500_series", return_value=sp_full), \
          patch.object(rpt, "get_custom_blended_series", side_effect=_blended_side_effect), \

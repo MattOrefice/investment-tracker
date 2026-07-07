@@ -40,6 +40,7 @@ from src.factors import (
 )
 from src.holdings import (
     get_current_market_value,
+    get_external_cashflow_series,
     get_inception_date,
     get_portfolio_value_series,
     get_sleeve_weights_on_date,
@@ -348,7 +349,10 @@ def _build_executive_summary(start_date: str, end_date: str) -> dict:
     current_val = get_current_market_value(end_date)
 
     pv = pv_since_inception[pv_since_inception.index >= pd.Timestamp(start_date)]
-    cf = pd.Series(0.0, index=pv.index)
+    # Real external flows (contributions/withdrawals), aligned to the period
+    # slice — flows before the slice drop out; one on its first date is the
+    # starting NAV. End-of-day netting inside twr_daily_linked.
+    cf = get_external_cashflow_series(inception, end_date).reindex(pv.index).fillna(0.0)
     portfolio_twr = twr_daily_linked(pv, cf) if len(pv) >= 2 else 0.0
 
     sp_full   = get_sp500_series(inception, end_date)
@@ -557,7 +561,7 @@ def _build_performance_section(start_date: str, end_date: str) -> dict:
     if pv.empty or float(pv.max()) == 0.0:
         return {"period_rows": [], "chart_b64": None}
 
-    cf        = pd.Series(0.0, index=pv.index)
+    cf        = get_external_cashflow_series(inception, end_date).reindex(pv.index).fillna(0.0)
     start_val = float(pv.iloc[0])
     sp = get_sp500_series(inception, end_date) * start_val
     bl = get_custom_blended_series(inception, end_date) * start_val

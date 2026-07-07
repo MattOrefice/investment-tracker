@@ -64,8 +64,14 @@ def twr_daily_linked(values: pd.Series, cashflows: pd.Series) -> float:
     Chain-linked daily TWR (GIPS-compliant).
 
     For each day t: r_t = (V_t - V_{t-1} - CF_t) / V_{t-1}
-    Cash flows are assumed to occur at the beginning of day t (before market moves).
+    Cash flows are assumed to occur at the END of day t (after the day's market
+    move): the day's flow is netted from the value change but earns nothing that
+    day, so the denominator is the bare prior value V_{t-1}. (Beginning-of-day
+    timing would put the flow in the denominator, V_{t-1} + CF_t.)
     Returns cumulative product(1 + r_t) - 1.
+
+    A flow on the series' first date is treated as the starting NAV, not a
+    mid-period flow — the chain starts at the second observation.
     """
     if len(values) < 2:
         return 0.0
@@ -90,7 +96,9 @@ def twr_modified_dietz(values: pd.Series, cashflows: pd.Series) -> float:
     Modified Dietz approximation to TWR.
 
     Return = (V_end - V_start - sum(CF)) / (V_start + sum(w_i * CF_i))
-    where w_i = (end_date - cf_date).days / total_days.
+    where w_i = (end_date - cf_date).days / total_days — the fraction of the
+    period the flow was invested, with END-of-day timing (a flow on day t is
+    not invested on day t itself), matching twr_daily_linked's convention.
 
     Cash flows on the first date are excluded (treated as the starting NAV).
     """

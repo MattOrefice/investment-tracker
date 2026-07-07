@@ -187,6 +187,56 @@ def get_portfolio_value_series(
     return (holdings_matrix[common] * prices_matrix[common]).sum(axis=1)
 
 
+def get_external_cashflow_series(
+    start_date: str,
+    end_date: Optional[str] = None,
+) -> pd.Series:
+    """
+    Return the daily net EXTERNAL cash flow into the portfolio (signed dollars:
+    contributions positive, withdrawals negative) over [start_date, end_date],
+    zero on days with no flow. This is the flow series the TWR functions
+    (src/returns.py) and compute_risk_metrics (src/performance.py) net out so
+    that deposited cash is not counted as market return.
+
+    The trades ledger stores no dollar amount, so each flow is reconstructed as
+    shares × price per trade_date (write_trades_batch asserts the per-deploy sum
+    matches the logged contribution). Buys are cash entering the measured
+    portfolio, sells cash leaving it; fees always land as a performance cost
+    (a buy costs shares × price + fees, a sell yields shares × price − fees).
+    Same-date buy/sell pairs (internal rebalances, e.g. sell VOO → buy SPAXX)
+    net toward zero because flows are summed per date.
+
+    DRIP lots (lot_source='drip') are EXCLUDED, mirroring
+    get_portfolio_value_series: reinvested distributions are internal income
+    already embedded in adj_close, not external cash. Inception seed buys
+    ('initial') ARE included — they land on the series' first date, which both
+    TWR methods treat as the starting NAV, so seeding stays inert while any
+    post-inception deployment counts as a real flow.
+    """
+    end = end_date or date.today().isoformat()
+    date_range = pd.date_range(start=start_date, end=end, freq="D")
+
+    with get_connection() as conn:
+        rows = conn.execute(
+            """SELECT trade_date,
+                      SUM(CASE WHEN LOWER(action) = 'buy'
+                               THEN shares * price ELSE -shares * price END
+                          + COALESCE(fees, 0)) AS flow
+               FROM trades
+               WHERE trade_date >= ? AND trade_date <= ?
+                 AND (lot_source IS NULL OR lot_source != 'drip')
+               GROUP BY trade_date""",
+            (start_date, end),
+        ).fetchall()
+
+    flows = pd.Series(0.0, index=date_range)
+    for r in rows:
+        ts = pd.Timestamp(r["trade_date"])
+        if ts in flows.index:
+            flows[ts] = float(r["flow"])
+    return flows
+
+
 _CASH_SLEEVE = "Cash / SPAXX"
 
 
