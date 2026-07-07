@@ -8,6 +8,11 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Cash contributions no longer counted as investment return
+_2026-07-06_
+
+The time-weighted return and the risk metrics computed returns as though no external cash ever entered the portfolio, even though the app records contributions — so a deposit was silently credited as if it were market performance. Returns now account for contributions using the Modified Dietz method with end-of-day flow timing, weighting each flow by the portion of the period it was invested, and the risk metrics are computed consistently off the corrected series. The returns documentation, which described a different flow-timing convention than the formula implemented, is corrected to match, and the convention is now disclosed on the methodology. Periods with no external flows are unchanged; where a contribution had been inflating the return, the corrected figure is lower and more accurate.
+
 ## Missing dividend-distribution data is now surfaced in the app
 _2026-07-06_
 
