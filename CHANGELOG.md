@@ -8,6 +8,11 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Benchmark data gaps no longer fabricate phantom outperformance
+_2026-07-07_
+
+A parallel to the earlier portfolio-side fix, on the benchmark side: when a sleeve's benchmark could not be priced, the benchmark return was silently filled with zero while the sleeve kept its full weight — booking the sleeve's entire benchmark return as if it were stock-selection skill, and overstating active return, with no reconciliation check able to detect it because the attribution identity is algebraically insensitive to the per-sleeve benchmark returns. Benchmark returns are now carried as an explicit missing-data signal rather than zero; a gapped strategic sleeve is excluded from that period's attribution and flagged, with the weights renormalized over the surviving sleeves so the identity still holds, and the affected sleeves are surfaced with the same on-page and PDF notices used for missing prices. Cash is degraded rather than excluded, and sleeves with no benchmark weight are retained with their benchmark cell shown as not-applicable. Periods with no benchmark gaps — including all current demo windows — are unchanged; a new test injects a benchmark gap and confirms the sleeve is excluded and flagged rather than booking phantom outperformance, a case the prior code passed while overstating alpha.
+
 ## Cash contributions no longer counted as investment return
 _2026-07-06_
 
