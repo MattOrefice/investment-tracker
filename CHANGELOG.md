@@ -8,6 +8,11 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Risk-free rate unified across pages
+_2026-07-07_
+
+Two pages used different risk-free rates — one the annual rate compounded to a daily figure, the other a slightly different rate divided arithmetically — while a code comment asserted they matched, which was not true. Both now use the same rate applied the same way (the annual rate compounded geometrically to daily), matching the convention already used on the performance page, and a test now compares the two directly so they cannot silently diverge again. The factor regressions use the published daily risk-free series, which is independent and unchanged. The asset-evaluation page's risk-adjusted figures shift slightly to reflect the corrected rate; the performance page is unchanged.
+
 ## Benchmark data gaps no longer fabricate phantom outperformance
 _2026-07-07_
 
