@@ -18,11 +18,9 @@ from datetime import date
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-import pandas as pd
-
 from src.db import get_connection
 from src.drip import backfill_all_drip_lots
-from src.holdings import get_portfolio_value_series
+from src.holdings import get_external_cashflow_series, get_portfolio_value_series
 from src.prices import get_prices
 from src.returns import period_return
 
@@ -30,21 +28,9 @@ INCEPTION = "2025-05-01"
 TODAY     = date.today().isoformat()
 
 
-def _get_seed_amount() -> float:
-    with get_connection() as conn:
-        row = conn.execute(
-            """SELECT SUM(shares * price) FROM trades
-               WHERE trade_date = ? AND LOWER(action) = 'buy' AND lot_source = 'initial'""",
-            (INCEPTION,),
-        ).fetchone()
-    return float(row[0]) if row and row[0] else 0.0
-
-
 def _twr_summary(label: str) -> None:
-    seed   = _get_seed_amount()
     values = get_portfolio_value_series(INCEPTION, TODAY)
-    cf     = pd.Series(0.0, index=values.index)
-    cf.iloc[0] = seed
+    cf     = get_external_cashflow_series(INCEPTION, TODAY).reindex(values.index).fillna(0.0)
 
     print(f"\n  TWR — {label} ({TODAY})")
     print(f"  {'Period':<8} {'Return':>10}")

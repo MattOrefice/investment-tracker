@@ -51,7 +51,7 @@ The primary benchmark is the custom SAA-blended basket, not the S&P 500. A small
 
 ### Returns
 
-Daily-linked TWR chains sub-period returns as `TWR = ∏(1 + r_t) − 1`, where `r_t = (V_t − V_{t−1} − CF_t) / V_{t−1}`. Cash flows are treated at the beginning of each period. For the lump-sum single-deposit case, daily-linked TWR and Modified Dietz converge within 1 basis point — verified by an identity test in the suite.
+Daily-linked TWR chains sub-period returns as `TWR = ∏(1 + r_t) − 1`, where `r_t = (V_t − V_{t−1} − CF_t) / V_{t−1}`. External cash flows (recorded contributions and withdrawals) are netted with end-of-day timing — the day's flow is excluded from that day's return, so deployed cash is not counted as market performance; Modified Dietz weights each flow by the fraction of the period it was invested, under the same end-of-day convention. Risk metrics are computed from the same flow-adjusted daily returns. For the lump-sum single-deposit case, daily-linked TWR and Modified Dietz converge within 1 basis point — verified by an identity test in the suite.
 
 ### Brinson-Fachler Attribution
 

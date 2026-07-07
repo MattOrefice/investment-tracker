@@ -18,6 +18,7 @@ from src.drip import distribution_gaps_for_holdings, drip_distribution_gap_notic
 from src.factors import run_sleeve_regressions
 from src.holdings import (
     get_current_market_value,
+    get_external_cashflow_series,
     get_inception_date,
     get_portfolio_value_series,
     get_sleeve_weights_on_date,
@@ -43,7 +44,8 @@ PERIOD_LABEL = {"1M": "1 Month", "3M": "3 Months", "YTD": "YTD",
 # Increment when a bug fix changes what get_portfolio_value_series returns so
 # that Streamlit's @st.cache_data (keyed on function args) invalidates the old
 # cached result automatically rather than serving the pre-fix stale value.
-_PORTFOLIO_CACHE_V = 3
+# v4: cf is the real external-flow series, no longer hardcoded zeros.
+_PORTFOLIO_CACHE_V = 4
 
 _PALETTE = {
     "portfolio": "#2E4057",   # deep navy
@@ -59,7 +61,7 @@ _PALETTE = {
 @st.cache_data(ttl=3600, show_spinner=False)
 def _load_portfolio(_v: int = _PORTFOLIO_CACHE_V):
     pv = get_portfolio_value_series(INCEPTION, TODAY)
-    cf = pd.Series(0.0, index=pv.index)
+    cf = get_external_cashflow_series(INCEPTION, TODAY).reindex(pv.index).fillna(0.0)
     return pv, cf
 
 
@@ -390,17 +392,20 @@ with col:
             horizontal=True,
             help=(
                 "**Daily-linked TWR** is the GIPS-compliant institutional standard, "
-                "computed by chain-linking daily sub-period returns.  "
-                "**Modified Dietz** is an approximation that weights cash flows by "
-                "their time within the period — useful when daily valuations aren't "
-                "available, but less precise when cash flows are large or volatile.  "
-                "For a portfolio with one large initial deposit and no subsequent flows "
-                "(this one currently), both methods produce nearly identical results."
+                "computed by chain-linking daily sub-period returns with each day's "
+                "external cash flow netted out.  "
+                "**Modified Dietz** is an approximation that weights each external "
+                "flow by the fraction of the period it was invested — useful when "
+                "daily valuations aren't available, but less precise when cash flows "
+                "are large or volatile.  With no mid-period flows the two methods "
+                "produce nearly identical results."
             ),
         )
         st.caption(
-            "For this single-flow portfolio, Daily-linked and Modified Dietz "
-            "converge within 0 bps — both methods are shown for completeness."
+            "Returns net out recorded external cash flows (contributions and "
+            "withdrawals) using end-of-day flow timing — deployed cash is not "
+            "counted as market return. The Dietz method uses Modified Dietz "
+            "flow weighting."
         )
     method_key = "daily" if method == "Daily-linked" else "modified_dietz"
 
@@ -529,11 +534,11 @@ with col:
         _risk_bm_label  = "60/40 (60% SPY / 40% AGG)"
     _bm_row_label = _BM_ROW_LABELS[_risk_bm_kind]
 
-    _m_si  = compute_risk_metrics(pv, _bl_for_metrics, window="SI")
-    _m_1y  = compute_risk_metrics(pv, _bl_for_metrics, window="1Y")
-    _m_ytd = compute_risk_metrics(pv, _bl_for_metrics, window="YTD")
-    _m_3m  = compute_risk_metrics(pv, _bl_for_metrics, window="3M")
-    _m_1m  = compute_risk_metrics(pv, _bl_for_metrics, window="1M")
+    _m_si  = compute_risk_metrics(pv, _bl_for_metrics, window="SI",  cashflows=cf)
+    _m_1y  = compute_risk_metrics(pv, _bl_for_metrics, window="1Y",  cashflows=cf)
+    _m_ytd = compute_risk_metrics(pv, _bl_for_metrics, window="YTD", cashflows=cf)
+    _m_3m  = compute_risk_metrics(pv, _bl_for_metrics, window="3M",  cashflows=cf)
+    _m_1m  = compute_risk_metrics(pv, _bl_for_metrics, window="1M",  cashflows=cf)
 
     _RISK_WINDOW_LABELS = ["1 Month", "3 Months", "YTD", "1 Year", "Since Inception"]
     _RISK_WINDOW_MAP = {
@@ -1100,14 +1105,28 @@ with col:
         daily_si  = period_return("daily",          pv2, cf2, "SI")
         dietz_si  = period_return("modified_dietz", pv2, cf2, "SI")
         spread_bps = abs(daily_si - dietz_si) * 10_000
+        # First-date flow is the starting NAV; only later flows make the methods diverge.
+        _has_mid_flows = bool((cf2.iloc[1:] != 0).any())
 
+        st.markdown(
+            "**External flows:** returns net out recorded contributions and "
+            "withdrawals with end-of-day flow timing (Modified Dietz weighting "
+            "for the Dietz method)."
+        )
         st.markdown(f"**Daily-linked TWR (SI):** {_pct(daily_si)}")
         st.markdown(f"**Modified Dietz (SI):**   {_pct(dietz_si)}")
-        st.markdown(
-            f"**Method spread:** {spread_bps:.2f} bps — "
-            + ("negligible (expected: single initial flow, no subsequent CFs)"
-               if spread_bps < 5 else "⚠ unexpectedly large, check CF data")
-        )
+        if spread_bps < 5:
+            _spread_note = (
+                "negligible (mid-period flows are small relative to the portfolio)"
+                if _has_mid_flows else "negligible (no mid-period external flows)"
+            )
+        else:
+            _spread_note = (
+                "expected divergence — Modified Dietz approximates the timing of "
+                "mid-period flows, daily linking prices them exactly"
+                if _has_mid_flows else "⚠ unexpectedly large with no recorded flows, check CF data"
+            )
+        st.markdown(f"**Method spread:** {spread_bps:.2f} bps — {_spread_note}")
         st.markdown("---")
 
         if not bf_df.empty:
