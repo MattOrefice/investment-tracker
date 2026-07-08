@@ -391,3 +391,52 @@ def test_cache_rows_not_in_validation_expander(performance_app: AppTest) -> None
     assert not any("Price cache rows" in m for m in all_markdown), (
         "Operational 'Price cache rows' metadata still visible — Phase 39 regression (Item 10)"
     )
+
+
+# ── Attribution-sink hardening: Stage-1/2 gap-exclusion caption (#4b) ────────
+
+def test_stage_reconciliation_gap_caption_absent_on_clean_demo(performance_app: AppTest) -> None:
+    """The gap-exclusion caption explaining 'vs. Stage 2' drift must NOT
+    render on the clean demo — no benchmark_gaps/price_gaps exist over the
+    demo's full history, so the caption is inert on this invariant path."""
+    if not performance_app.metric:
+        pytest.skip("No portfolio data — skipped in local/empty-DB mode")
+    captions = [c.value for c in performance_app.caption]
+    assert not any("quantifies that exclusion" in c for c in captions), (
+        "Gap-exclusion caption rendered on the clean (no-gap) demo — should only "
+        f"appear under a benchmark/price gap. Captions: {captions}"
+    )
+
+
+def test_stage_reconciliation_gap_caption_appears_under_gap(monkeypatch) -> None:
+    """When brinson_fachler_period reports a benchmark or price gap, the
+    page-local caption explaining the expected 'vs. Stage 2' drift must
+    render — confirming the conditional actually fires, not just that it's
+    absent on the gap-free path above.
+    """
+    import streamlit as st
+    import src.attribution as attr_mod
+
+    st.cache_data.clear()
+    real_bf_period = attr_mod.brinson_fachler_period
+
+    def _inject_gap(start, end):
+        bf_df = real_bf_period(start, end)
+        if bf_df.empty:
+            return bf_df
+        bf_df = bf_df.copy()
+        bf_df.attrs["benchmark_gaps"] = [("Real Assets", "VNQ", "2025-06-01")]
+        return bf_df
+
+    monkeypatch.setattr(attr_mod, "brinson_fachler_period", _inject_gap)
+
+    at = AppTest.from_file("pages/2_Performance.py", default_timeout=120)
+    at.run()
+    if not at.metric:
+        pytest.skip("No portfolio data — skipped in local/empty-DB mode")
+    assert not at.exception, f"Page raised with an injected benchmark gap: {at.exception}"
+
+    captions = [c.value for c in at.caption]
+    assert any("quantifies that exclusion" in c for c in captions), (
+        f"Expected gap-exclusion caption not found under an injected gap. Captions: {captions}"
+    )
