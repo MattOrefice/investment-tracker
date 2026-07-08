@@ -265,7 +265,7 @@ def test_identity_risk_metrics_uses_trading_day_annualization():
 def test_identity_performance_page_inception_constant_matches_fallback():
     """get_inception_date() fallback must be the canonical portfolio launch date.
 
-    pages/4_Performance.py now calls get_inception_date() at import time; the
+    pages/2_Performance.py now calls get_inception_date() at import time; the
     fallback hard-coded in src/holdings.py is the only remaining literal and must
     stay set to '2025-05-01'. This test fails if the fallback is changed without
     a deliberate portfolio-relaunch decision.
@@ -320,7 +320,7 @@ def test_identity_rf_default_matches_caption_disclosure():
     rf_default = sig.parameters["rf_annual"].default
     assert rf_default == pytest.approx(0.045, abs=1e-10), (
         f"compute_risk_metrics default rf_annual = {rf_default}, expected 0.045 (4.5%). "
-        "Update both the code default and the caption disclosure in pages/4_Performance.py."
+        "Update both the code default and the caption disclosure in pages/2_Performance.py."
     )
 
     # Also confirm the caption string contains the matching text
@@ -328,7 +328,7 @@ def test_identity_rf_default_matches_caption_disclosure():
     source = page_path.read_text(encoding="utf-8")
     rf_pct_str = f"{rf_default * 100:.1f}%"  # "4.5%"
     assert f"RF = {rf_pct_str}" in source, (
-        f"'RF = {rf_pct_str}' not found in pages/4_Performance.py. "
+        f"'RF = {rf_pct_str}' not found in pages/2_Performance.py. "
         "The caption disclosure must match the rf_annual default."
     )
 
@@ -362,7 +362,7 @@ def test_identity_rf_daily_conversion_from_annual():
 # ── 1.6  Demo-mode write guards ──────────────────────────────────────────────
 
 def test_identity_trade_form_has_demo_guard():
-    """render_trade_form() in pages/3_Trade_Log.py must open with an is_write_enabled()
+    """render_trade_form() in pages/10_Trade_Log.py must open with an is_write_enabled()
     guard that returns early before any write path is reached.
 
     This is a source-code structural invariant: if the guard is accidentally removed
@@ -377,7 +377,7 @@ def test_identity_trade_form_has_demo_guard():
 
     # Locate the function definition
     func_start = source.find("def render_trade_form():")
-    assert func_start != -1, "render_trade_form() not found in pages/3_Trade_Log.py — was it renamed?"
+    assert func_start != -1, "render_trade_form() not found in pages/10_Trade_Log.py — was it renamed?"
 
     func_body = source[func_start:]
     insert_pos = func_body.find("INSERT INTO")
@@ -389,7 +389,7 @@ def test_identity_trade_form_has_demo_guard():
         if any(p != -1 for p in (guard_pos_demo, guard_pos_write)) else -1
 
     assert guard_pos != -1, (
-        "Write guard missing from render_trade_form() in pages/3_Trade_Log.py. "
+        "Write guard missing from render_trade_form() in pages/10_Trade_Log.py. "
         "Demo visitors can write trades to demo.db. "
         "Add: if not is_write_enabled(): write_guard_toast(); return"
     )
@@ -431,7 +431,7 @@ def test_trade_form_no_early_return_in_demo_guard():
 
 
 def test_identity_macro_force_refresh_has_demo_guard():
-    """The Force Refresh button in pages/5_Macro.py must be gated by `not IS_DEMO`.
+    """The Force Refresh button in pages/3_Macro.py must be gated by `not IS_DEMO`.
 
     In demo mode, the button must not render. This prevents public visitors from
     triggering FRED API calls (quota waste) and cache deletion (macro_cache DELETE).
@@ -442,13 +442,13 @@ def test_identity_macro_force_refresh_has_demo_guard():
 
     # Find the Force Refresh button definition
     btn_pos = source.find('"Force refresh"')
-    assert btn_pos != -1, '"Force refresh" button not found in pages/5_Macro.py — was it removed?'
+    assert btn_pos != -1, '"Force refresh" button not found in pages/3_Macro.py — was it removed?'
 
     # The IS_DEMO guard must appear on the same logical line / nearby before the button
     # Check the 120 chars preceding the button string for the guard
     context = source[max(0, btn_pos - 120):btn_pos]
     assert "IS_DEMO" in context, (
-        "IS_DEMO guard not found immediately before the Force Refresh button in pages/5_Macro.py. "
+        "IS_DEMO guard not found immediately before the Force Refresh button in pages/3_Macro.py. "
         "The button must be conditioned on `not IS_DEMO` to prevent demo visitors from "
         "triggering cache deletion and FRED API calls."
     )

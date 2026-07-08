@@ -201,7 +201,7 @@ def test_prose_methodology_sleeve_keys_present():
     missing = required - sleeve_names
     assert not missing, (
         f"Sleeve names referenced in methodology paragraph are absent from DB: {missing}. "
-        "Update the prose expressions in pages/4_Performance.py to match the new names."
+        "Update the prose expressions in pages/2_Performance.py to match the new names."
     )
 
 
@@ -224,7 +224,7 @@ def test_prose_equity_parent_name_matches():
 def test_prose_factor_profile_fi_caption_matches_weights():
     """FI sleeve caption weight percentages (60%/40%) are derived from _FI_WEIGHTS.
 
-    pages/7_Factor_Profile.py renders the FI proportions inline using _FI_WEIGHTS.
+    pages/4_Factor_Profile.py renders the FI proportions inline using _FI_WEIGHTS.
     This test verifies the rendered string is well-formed and that VGIT carries
     more weight than SCHP (consistent with Core FI 9% > TIPS 6%).
     """
