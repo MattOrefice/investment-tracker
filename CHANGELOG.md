@@ -8,6 +8,11 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Reference-benchmark data gaps no longer fabricate returns
+_2026-07-08_
+
+Completing the benchmark-robustness work: the naive sixty-forty baseline and the custom blended benchmark shared the same unguarded price path, so a stale price cache or a failed fetch — the project's known intermittent data condition — could silently turn a missing benchmark into a flat zero return, inflating the displayed active return against the sixty-forty baseline (the default comparison) and swinging the blended benchmark's alpha, with no warning and a reconciliation caption that still read as consistent. Both now use the same coverage-gated price path as the sleeve benchmarks: a missing component is carried as an explicit gap rather than a fabricated zero, surviving legs are renormalized and flagged, a fully missing baseline is shown as unavailable rather than a fabricated flat line, and the affected surfaces carry the same data-gap notice used elsewhere. Full-coverage periods — including all current demo windows — are byte-identical; new tests inject a gap and confirm each path flags rather than fabricates, cases the prior code passed while displaying a wrong number.
+
 ## Attribution sink hardened against sparse-input fabrication
 _2026-07-08_
 
