@@ -18,7 +18,7 @@ import pytest
 
 
 def _pct(v: float, decimals: int = 2) -> str:
-    """Mirror of pages/4_Performance.py::_pct."""
+    """Mirror of pages/2_Performance.py::_pct."""
     return f"{v * 100:.{decimals}f}%"
 
 

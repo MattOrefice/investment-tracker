@@ -8,7 +8,7 @@ import pytest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 
-# ── Helpers that replicate the display-layer logic from pages/3_Trade_Log.py ─
+# ── Helpers that replicate the display-layer logic from pages/10_Trade_Log.py ─
 
 def _build_ticker_thesis(pos_theses: list[dict]) -> dict[str, tuple[str, str]]:
     """Mirror of the _ticker_thesis build in the Trades tab."""

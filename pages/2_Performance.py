@@ -411,6 +411,11 @@ with col:
     # Section 2 — TWR method toggle + period returns table
     # ──────────────────────────────────────────────────────────────────────
     st.markdown("### Period Returns")
+    st.caption(
+        "1M/3M/1Y are trailing 30/90/365-calendar-day windows from the anchor "
+        "date, not month-end anchored. YTD is Jan 1 to the anchor date; Since "
+        "Inception is the portfolio's full history."
+    )
 
     c_left, c_right = st.columns([2, 5])
     with c_left:

@@ -52,8 +52,11 @@ def compute_risk_metrics(
                     so flowless windows are numerically unchanged.
 
     Returns a dict with keys:
-        sharpe, sortino, max_drawdown_pct, tracking_error_pct, information_ratio,
-        n_days, ann_port_return_pct, ann_bench_return_pct.
+        sharpe, sortino, annualized_vol_pct, max_drawdown_pct, tracking_error_pct,
+        information_ratio, beta, active_return_pct, n_days, ann_port_return_pct,
+        ann_bench_return_pct, var_95_pct, cvar_95_pct, bench_sharpe, bench_sortino,
+        bench_annualized_vol_pct, bench_max_drawdown_pct, bench_var_95_pct,
+        bench_cvar_95_pct.
     Returns {} if fewer than 20 observations.
     """
     if pv.empty:
