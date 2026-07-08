@@ -30,6 +30,7 @@ import logging
 import sys
 import pathlib
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -96,6 +97,19 @@ def _bf_or_skip(*window):
     if bf_df.empty:
         pytest.skip("BF result empty — skipped in local/empty-DB mode")
     return bf_df
+
+
+def _series_or_skip(fn, *args):
+    """Pre-injection probe for a benchmark-series builder, mirroring
+    _bf_or_skip. Use ONLY before injecting a failure — post-injection calls
+    must be bare so a regression fails the test, not skips it."""
+    try:
+        s = fn(*args)
+    except Exception as exc:
+        pytest.skip(f"Benchmark data unavailable: {exc}")
+    if s.dropna().empty:
+        pytest.skip("Series empty — skipped in local/empty-DB mode")
+    return s
 
 
 def test_custom_blended_series_hand_calculation(monkeypatch):
@@ -477,4 +491,184 @@ def test_real_benchmark_sleeves_never_silently_zero():
         "Sleeve(s) with real benchmark weight but r_b exactly 0.0 -- this is the "
         "degenerate-benchmark fingerprint (a benchmark price fetch silently failed and "
         f"zero-filled instead of erroring):\n{zeroed[['sleeve', 'w_b', 'r_b']]}"
+    )
+
+
+# ── PR A: reference-benchmark (naive 60/40, custom blended, S&P 500) gap
+# mechanism ─────────────────────────────────────────────────────────────────
+# get_sp500_series / get_custom_blended_series / get_naive_60_40_series shared
+# an UNGUARDED price path (the old _get_price_series): a stale-cache tail or a
+# total fetch failure silently ffilled/zero-filled a fabricated return with no
+# flag, inflating the default Stage-1/Total tiles and swinging blended alpha.
+# _get_price_series is now itself coverage-gated (mirrors _component_series
+# above), and each consumer flags a resulting gap on .attrs["benchmark_gaps"].
+#
+# Each test's docstring states what it would find against the PRE-FIX code —
+# the proof it actually catches the fabrication, not just describes the fix.
+
+def test_get_price_series_full_coverage_matches_old_implementation():
+    """On full-coverage demo data, the coverage-gated _get_price_series must
+    match the OLD (pre-fix) direct reindex/ffill/bfill implementation it
+    replaced byte-for-byte — the coverage gate is a pure safety net, invisible
+    whenever the data is actually complete."""
+    ticker, start, end = "SPY", _W[0], _W[1]
+    gated = bm._get_price_series(ticker, start, end)
+    assert not gated.attrs.get("benchmark_gap_bounds"), (
+        "expected full coverage on the committed demo window, got a gap: "
+        f"{gated.attrs.get('benchmark_gap_bounds')}"
+    )
+
+    date_range = pd.date_range(start=start, end=end, freq="D")
+    p = bm.get_prices(ticker, start, end)
+    p.index = pd.to_datetime(p.index)
+    expected = p["adj_close"].fillna(p["close"]).reindex(date_range).ffill().bfill()
+
+    assert gated.equals(expected), (
+        "coverage-gated _get_price_series diverges from the pre-fix "
+        "reindex/ffill/bfill formula on full-coverage data"
+    )
+
+
+def test_get_price_series_gap_yields_nan_and_gap_bounds(monkeypatch, caplog):
+    """A component that cannot be fetched at all yields a NaN sentinel over
+    the whole window, with the gap bound(s) recorded on
+    .attrs['benchmark_gap_bounds'] and a logged warning naming the ticker.
+
+    PRE-FIX: the except-Exception branch returned an EMPTY (not NaN-filled,
+    not flagged) Series indistinguishable from other edge cases — this proves
+    the new NaN-sentinel-plus-attrs contract.
+    """
+    _series_or_skip(bm._get_price_series, "SPY", _W[0], _W[1])   # probe
+    _fail_fetch_for(monkeypatch, "SPY")
+
+    with caplog.at_level(logging.WARNING):
+        out = bm._get_price_series("SPY", _W[0], _W[1])
+
+    assert out.isna().all(), f"expected an all-NaN sentinel, got:\n{out.tail()}"
+    assert out.attrs.get("benchmark_gap_bounds"), (
+        "expected the gap bound(s) recorded in attrs['benchmark_gap_bounds']"
+    )
+    assert any("SPY" in rec.message for rec in caplog.records)
+
+
+def test_get_sp500_series_total_gap_yields_nan_sentinel_and_flag(monkeypatch):
+    """SPY totally unpriceable: get_sp500_series must carry a NaN sentinel and
+    flag it on .attrs['benchmark_gaps'], never a flat-1.0 fabricated line.
+
+    PRE-FIX: the old _get_price_series's except branch returned an all-NaN
+    but UNFLAGGED series; first_valid_index() found nothing, so
+    get_sp500_series happened to return that same unflagged NaN series — with
+    no gap signal anywhere for a caller to detect and warn on.
+    """
+    _series_or_skip(bm.get_sp500_series, *_W)   # probe
+    _fail_fetch_for(monkeypatch, "SPY")
+
+    out = bm.get_sp500_series(*_W)   # bare: a failure here IS the bug
+
+    assert out.isna().all(), f"expected a NaN sentinel, got:\n{out.tail()}"
+    gaps = out.attrs.get("benchmark_gaps", [])
+    assert any(t == "SPY" for _, t, _ in gaps), (
+        f"expected SPY's gap recorded in attrs['benchmark_gaps'], got: {gaps}"
+    )
+
+
+def test_naive_60_40_total_failure_yields_nan_sentinel_and_flag(monkeypatch):
+    """Both SPY and AGG unpriceable: get_naive_60_40_series must carry an
+    explicit NaN sentinel and flag both legs, never the fabricated flat 0%
+    return pct_change().fillna(0.0) produces on an empty/stale series.
+
+    PRE-FIX: an empty/all-NaN price series' .pct_change().fillna(0.0) is
+    EXACTLY 0.0 every day — a fabricated "flat, zero-return" baseline with no
+    flag anywhere — inflating or sign-flipping the displayed Stage 1/Total
+    tiles depending on the portfolio's own true active return.
+    """
+    _series_or_skip(bm.get_naive_60_40_series, *_W)   # probe
+    _fail_fetch_for(monkeypatch, "SPY", "AGG")
+
+    out = bm.get_naive_60_40_series(*_W)   # bare: a failure here IS the bug
+
+    assert out.isna().all(), f"expected a NaN sentinel, got:\n{out.tail()}"
+    gaps = out.attrs.get("benchmark_gaps", [])
+    assert any(t == "SPY" for _, t, _ in gaps) and any(t == "AGG" for _, t, _ in gaps), (
+        f"expected both SPY and AGG gaps recorded, got: {gaps}"
+    )
+
+
+def test_naive_60_40_partial_failure_renormalizes_and_flags(monkeypatch):
+    """AGG unpriceable, SPY fine: the naive series degrades to 100% SPY (the
+    surviving leg's weight renormalizes to 1.0) and the AGG gap is flagged —
+    never silently kept at a diluted 60% weight against a fabricated 0% AGG.
+
+    PRE-FIX: agg_ret was a fabricated flat 0.0 return series blended in at its
+    full 40% weight (0.6*spy_ret + 0.4*0.0), UNDERSTATING the naive baseline's
+    true sensitivity to the surviving SPY leg by 40%, with no flag.
+    """
+    _series_or_skip(bm.get_naive_60_40_series, *_W)   # probe
+    spy_only = _series_or_skip(bm.get_sp500_series, *_W)
+
+    _fail_fetch_for(monkeypatch, "AGG")
+
+    out = bm.get_naive_60_40_series(*_W)   # bare: a failure here IS the bug
+
+    assert not out.isna().all(), "AGG-only failure must degrade, not blank the series"
+    gaps = out.attrs.get("benchmark_gaps", [])
+    assert any(t == "AGG" for _, t, _ in gaps), f"expected AGG's gap flagged, got: {gaps}"
+    assert not any(t == "SPY" for _, t, _ in gaps), "SPY must not be flagged — it's fine"
+
+    # Renormalized to 100% SPY: the naive series must now match pure SPY, not
+    # a diluted 60%-weighted SPY-only return.
+    common = out.dropna().index.intersection(spy_only.dropna().index)
+    assert len(common) >= 10
+    np.testing.assert_allclose(
+        out.loc[common].values, spy_only.loc[common].values, rtol=1e-6,
+        err_msg="AGG-gapped naive series should renormalize to 100% SPY",
+    )
+
+
+def test_custom_blended_component_gap_drops_and_flags(monkeypatch):
+    """A real-weight component (EFA, International Developed ~20%) unpriceable:
+    get_custom_blended_series must flag it on .attrs['benchmark_gaps'] — not
+    silently renormalize the survivors with no signal anywhere.
+
+    PRE-FIX: the survivor renormalization already happened (implicitly, via
+    the day-0 share allocation), but with NO flag anywhere — a plausible,
+    nonzero, WRONG blended benchmark value invisible to any downstream
+    reconciliation check.
+    """
+    _series_or_skip(bm.get_custom_blended_series, *_W)   # probe
+    _fail_fetch_for(monkeypatch, "EFA")
+
+    out = bm.get_custom_blended_series(*_W)   # bare: a failure here IS the bug
+
+    assert not out.isna().all(), "a single component gap must degrade, not blank the series"
+    gaps = out.attrs.get("benchmark_gaps", [])
+    assert any(t == "EFA" for _, t, _ in gaps), (
+        f"expected EFA's gap recorded in attrs['benchmark_gaps'], got: {gaps}"
+    )
+
+
+def test_custom_blended_total_failure_yields_nan_sentinel(monkeypatch):
+    """Every benchmark component unpriceable: get_custom_blended_series must
+    carry an explicit NaN sentinel, never the fabricated flat $0.00 line the
+    un-normalized fallthrough (daily_value stays all-zero; first_val <= 0 so
+    it's never rescaled) used to produce.
+
+    PRE-FIX: the returned series was a flat 0.0 for every day — read
+    downstream as a "-100%"/"nan bps" figure once any consumer divided by
+    it — with no flag anywhere.
+    """
+    _series_or_skip(bm.get_custom_blended_series, *_W)   # probe
+
+    def _always_fails(ticker, *args, **kwargs):
+        raise RuntimeError("simulated total fetch failure")
+
+    monkeypatch.setattr(bm, "get_prices", _always_fails)
+
+    out = bm.get_custom_blended_series(*_W)   # bare: a failure here IS the bug
+
+    assert out.isna().all(), f"expected a NaN sentinel, got:\n{out.tail()}"
+    gapped_tickers = {t for _, t, _ in out.attrs.get("benchmark_gaps", [])}
+    all_tickers = {t for comps in bm._SLEEVE_BENCHMARKS.values() for t, _ in comps}
+    assert gapped_tickers == all_tickers, (
+        f"expected every component ticker flagged, got: {gapped_tickers} vs {all_tickers}"
     )

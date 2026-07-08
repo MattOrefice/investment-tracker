@@ -332,6 +332,25 @@ def _bm_period_return(series: pd.Series, period: str) -> float:
     return float(s.iloc[-1] / s.iloc[0] - 1) if len(s) >= 2 else 0.0
 
 
+# ── NaN-safe formatting sinks ─────────────────────────────────────────────────
+# A reference-benchmark price gap (see src/benchmarks.py) can carry a NaN
+# sentinel through to a return value here — these render "—", never the
+# literal string "nan%"/"nan bps".
+
+def _fmt_pct(v: float, decimals: int = 2) -> str:
+    if v is None or (isinstance(v, float) and np.isnan(v)):
+        return "—"
+    return f"{v * 100:.{decimals}f}%"
+
+
+def _fmt_bps(v: float) -> str:
+    """v is already in bps units (pre-multiplied by 10,000)."""
+    if v is None or (isinstance(v, float) and np.isnan(v)):
+        return "—"
+    sign = "+" if v >= 0 else ""
+    return f"{sign}{v:.0f} bps"
+
+
 # ── Section builders ──────────────────────────────────────────────────────────
 
 def _build_executive_summary(start_date: str, end_date: str) -> dict:
@@ -359,10 +378,14 @@ def _build_executive_summary(start_date: str, end_date: str) -> dict:
     portfolio_twr = twr_daily_linked(pv, cf) if len(pv) >= 2 else 0.0
 
     sp_full   = get_sp500_series(inception, end_date)
+    # Captured immediately off .attrs, before any further slicing — pandas
+    # doesn't reliably propagate .attrs through arithmetic/indexing.
+    sp_gaps   = sp_full.attrs.get("benchmark_gaps", [])
     sp_period = sp_full[sp_full.index >= pd.Timestamp(start_date)]
     sp_return = float(sp_period.iloc[-1] / sp_period.iloc[0] - 1) if len(sp_period) >= 2 else 0.0
 
     bl = get_custom_blended_series(start_date, end_date)
+    bl_gaps = bl.attrs.get("benchmark_gaps", [])
     bl_return = float(bl.iloc[-1] / bl.iloc[0] - 1) if len(bl) >= 2 else 0.0
 
     alpha_sp_bps = (portfolio_twr - sp_return) * 10_000
@@ -403,14 +426,30 @@ def _build_executive_summary(start_date: str, end_date: str) -> dict:
         pass
 
     period_label = _format_period_label(start_date, end_date)
-    vs_sp = "outperforming" if alpha_sp_bps >= 0 else "underperforming"
-    vs_bl = "outperforming" if alpha_bl_bps >= 0 else "underperforming"
+
+    # A reference-benchmark gap (see src/benchmarks.py) can NaN-sentinel
+    # alpha_sp_bps/alpha_bl_bps — "outperforming/underperforming by nan bps"
+    # is never a sentence to construct, so each half degrades independently
+    # to an explicit unavailable clause instead.
+    sp_phrase = (
+        f"{'outperforming' if alpha_sp_bps >= 0 else 'underperforming'} "
+        f"the S&P 500 by {abs(alpha_sp_bps):.0f} bps"
+        if not np.isnan(alpha_sp_bps)
+        else "the S&P 500 comparison unavailable this period (benchmark data gap)"
+    )
+    bl_phrase = (
+        f"{'outperforming' if alpha_bl_bps >= 0 else 'underperforming'} "
+        f"the custom blended benchmark by {abs(alpha_bl_bps):.0f} bps"
+        if not np.isnan(alpha_bl_bps)
+        else "the custom blended benchmark comparison unavailable this period (benchmark data gap)"
+    )
 
     narrative = [
         f"Portfolio returned {portfolio_twr*100:.2f}% in {period_label}, "
-        f"{vs_sp} the S&P 500 by {abs(alpha_sp_bps):.0f} bps and "
-        f"{vs_bl} the custom blended benchmark by {abs(alpha_bl_bps):.0f} bps.",
+        f"{sp_phrase} and {bl_phrase}.",
     ]
+    if sp_gaps or bl_gaps:
+        narrative.append(benchmark_gap_notice(sp_gaps + bl_gaps))
     if top_contributor and top_contributor[1] >= 5:
         narrative.append(
             f"Top contributor: {top_contributor[0]} ({top_contributor[1]:+.0f} bps total effect)."
@@ -441,12 +480,15 @@ def _build_executive_summary(start_date: str, end_date: str) -> dict:
     return {
         "period_label":         period_label,
         "portfolio_return_pct": f"{portfolio_twr*100:.2f}%",
-        "sp500_return_pct":     f"{sp_return*100:.2f}%",
-        "blended_return_pct":   f"{bl_return*100:.2f}%",
-        "alpha_sp_bps":         alpha_sp_bps,
-        "alpha_bl_bps":         alpha_bl_bps,
-        "alpha_sp_str":         f"{alpha_sp_bps:+.0f} bps",
-        "alpha_bl_str":         f"{alpha_bl_bps:+.0f} bps",
+        "sp500_return_pct":     _fmt_pct(sp_return),
+        "blended_return_pct":   _fmt_pct(bl_return),
+        # Neutralized to 0.0 for the NaN case so the template's sign-based CSS
+        # class (positive/negative) doesn't evaluate against a nan; the
+        # displayed text itself is the NaN-safe alpha_*_str below.
+        "alpha_sp_bps":         0.0 if np.isnan(alpha_sp_bps) else alpha_sp_bps,
+        "alpha_bl_bps":         0.0 if np.isnan(alpha_bl_bps) else alpha_bl_bps,
+        "alpha_sp_str":         _fmt_bps(alpha_sp_bps),
+        "alpha_bl_str":         _fmt_bps(alpha_bl_bps),
         "current_value":        f"${current_val:,.0f}",
         "end_date":             formatted_end_date,
         "narrative":            narrative,
@@ -567,12 +609,17 @@ def _build_performance_section(start_date: str, end_date: str) -> dict:
     inception = get_inception_date()
     pv = get_portfolio_value_series(inception, end_date)
     if pv.empty or float(pv.max()) == 0.0:
-        return {"period_rows": [], "chart_b64": None}
+        return {"period_rows": [], "chart_b64": None, "benchmark_gaps": []}
 
     cf        = get_external_cashflow_series(inception, end_date).reindex(pv.index).fillna(0.0)
     start_val = float(pv.iloc[0])
-    sp = get_sp500_series(inception, end_date) * start_val
-    bl = get_custom_blended_series(inception, end_date) * start_val
+    sp_raw = get_sp500_series(inception, end_date)
+    bl_raw = get_custom_blended_series(inception, end_date)
+    # Captured before the *start_val multiply — see _build_executive_summary.
+    sp_gaps = sp_raw.attrs.get("benchmark_gaps", [])
+    bl_gaps = bl_raw.attrs.get("benchmark_gaps", [])
+    sp = sp_raw * start_val
+    bl = bl_raw * start_val
 
     end_d   = date.fromisoformat(end_date)
     incep_d = date.fromisoformat(inception)
@@ -599,10 +646,10 @@ def _build_performance_section(start_date: str, end_date: str) -> dict:
         period_rows.append({
             "period":    _PERIOD_LABELS[p],
             "portfolio": f"{pr*100:.2f}%",
-            "sp500":     f"{sr*100:.2f}%",
-            "blended":   f"{br*100:.2f}%",
-            "vs_sp":     f"{(pr-sr)*10000:+.0f} bps",
-            "vs_bl":     f"{(pr-br)*10000:+.0f} bps",
+            "sp500":     _fmt_pct(sr),
+            "blended":   _fmt_pct(br),
+            "vs_sp":     _fmt_bps((pr-sr)*10000),
+            "vs_bl":     _fmt_bps((pr-br)*10000),
         })
 
     pv_norm = pv / float(pv.iloc[0])
@@ -614,7 +661,14 @@ def _build_performance_section(start_date: str, end_date: str) -> dict:
     bl_pct = (bl_norm - 1) * 100
 
     fig = _build_cumulative_chart(pv_pct, sp_pct, bl_pct)
-    return {"period_rows": period_rows, "chart_b64": _chart_b64(fig, 700, 290)}
+    _benchmark_gaps = [
+        {"sleeve": s, "ticker": t, "date": d} for s, t, d in sp_gaps + bl_gaps
+    ]
+    return {
+        "period_rows":     period_rows,
+        "chart_b64":       _chart_b64(fig, 700, 290),
+        "benchmark_gaps":  _benchmark_gaps,
+    }
 
 
 def _build_attribution_section(start_date: str, end_date: str) -> dict:

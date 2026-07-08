@@ -1,5 +1,6 @@
 """Performance & Attribution page."""
 import logging
+import math
 from datetime import date
 from pathlib import Path
 
@@ -72,15 +73,25 @@ def _load_portfolio(_v: int = _PORTFOLIO_CACHE_V):
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def _load_benchmarks(start_val: float):
-    sp  = get_sp500_series(INCEPTION, TODAY)      * start_val
-    bl  = get_custom_blended_series(INCEPTION, TODAY) * start_val
-    return sp, bl
+    """Gaps are captured off .attrs BEFORE the *start_val multiply — pandas
+    doesn't reliably propagate .attrs through arithmetic, and this result also
+    round-trips through st.cache_data's pickling — so the gap lists are
+    returned as plain values, not relied upon to survive on the Series."""
+    sp_raw = get_sp500_series(INCEPTION, TODAY)
+    bl_raw = get_custom_blended_series(INCEPTION, TODAY)
+    sp_gaps = sp_raw.attrs.get("benchmark_gaps", [])
+    bl_gaps = bl_raw.attrs.get("benchmark_gaps", [])
+    sp = sp_raw * start_val
+    bl = bl_raw * start_val
+    return sp, bl, sp_gaps, bl_gaps
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def _load_naive_benchmark(start_val: float, kind: str = "60_40"):
-    naive = get_naive_series(kind, INCEPTION, TODAY) * start_val
-    return naive
+    naive_raw  = get_naive_series(kind, INCEPTION, TODAY)
+    naive_gaps = naive_raw.attrs.get("benchmark_gaps", [])
+    naive = naive_raw * start_val
+    return naive, naive_gaps
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -132,10 +143,17 @@ def _load_sleeve_targets():
 
 
 def _pct(v: float, decimals: int = 2) -> str:
+    """NaN-safe — a missing benchmark return (a total gap sentinel) renders
+    '—', never the literal string 'nan%'."""
+    if v is None or (isinstance(v, float) and math.isnan(v)):
+        return "—"
     return f"{v * 100:.{decimals}f}%"
 
 
 def _bps(v: float) -> str:
+    """NaN-safe — a missing benchmark return renders '—', never 'nan bps'."""
+    if v is None or (isinstance(v, float) and math.isnan(v)):
+        return "—"
     b = v * 10_000
     sign = "+" if b >= 0 else ""
     return f"{sign}{b:.0f} bps"
@@ -260,9 +278,14 @@ with col:
 
     with st.spinner("Loading benchmark data…"):
         start_val = float(pv.iloc[0])
-        sp, bl    = _load_benchmarks(start_val)
+        sp, bl, _sp_gaps, _bl_gaps = _load_benchmarks(start_val)
         sp = sp[sp.index <= _C_ts]   # anchor benchmark series on the settled frontier (C)
         bl = bl[bl.index <= _C_ts]
+
+    if _sp_gaps:
+        st.warning(benchmark_gap_notice(_sp_gaps))
+    if _bl_gaps:
+        st.warning(benchmark_gap_notice(_bl_gaps))
 
     _saa_parents, _saa_sleeves = _load_sleeve_targets()
     _non_eq_pct = 1.0 - _saa_parents.get("Equity", 0.78 / 0.98)
@@ -725,7 +748,7 @@ with col:
         help="Stage 1 measures the SAA design effect relative to this baseline.",
     )
     naive_kind   = _NAIVE_OPTIONS[_naive_sel]
-    naive        = _load_naive_benchmark(start_val, naive_kind)
+    naive, _naive_gaps = _load_naive_benchmark(start_val, naive_kind)
     naive        = naive[naive.index <= _C_ts]   # settled frontier (C)
     _naive_label = (
         "60/40 naive baseline (60% SPY, 40% AGG)"
@@ -733,6 +756,15 @@ with col:
         else "S&P 500 baseline (SPY total return)"
     )
     _naive_short = "60/40" if naive_kind == "60_40" else "S&P 500"
+
+    if _naive_gaps:
+        st.warning(benchmark_gap_notice(_naive_gaps))
+    if naive.isna().all():
+        st.info(
+            f"The {_naive_short} baseline could not be priced for any date in "
+            "this window — the Stage 1 and Total tiles below are unavailable "
+            "until the underlying benchmark data gap clears."
+        )
 
     st.caption(
         "**What the two stages measure.** Stage 1 (SAA design) captures the strategic-tilt "
@@ -800,79 +832,98 @@ with col:
         _tc1, _tc2, _tc3 = st.columns(3)
         _tc1.metric(
             "Stage 1: SAA Design",
-            f"{_sign(_ts1_bps)}{_ts1_bps:.0f} bps",
+            _bps(_ts["stage1"]),
             "SAA blend vs. 60/40",
             delta_color="off",
         )
         _tc2.metric(
             "Stage 2: Implementation",
-            f"{_sign(_ts2_bps)}{_ts2_bps:.0f} bps",
+            _bps(_ts["stage2"]),
             "Portfolio vs. SAA blend",
             delta_color="off",
         )
         _tc3.metric(
             f"Total: Portfolio vs. {_naive_short}",
-            f"{_sign(_tot_bps)}{_tot_bps:.0f} bps",
+            _bps(_ts["total"]),
             "Stage 1 + Stage 2",
             delta_color="off",
         )
 
         # Stage1+Stage2=Total by construction (price-series throughout); residual is floating-point only
         _resid_bps = _ts["algebra_residual"] * 10_000
-        st.caption(
-            f"Reconciliation: {_sign(_ts1_bps)}{_ts1_bps:.0f} + "
-            f"{_sign(_ts2_bps)}{_ts2_bps:.0f} = {_sign(_tot_bps)}{_tot_bps:.0f} bps "
-            f"(price-series methodology; algebra residual: {_resid_bps:.2f} bps). "
-            f"✓ reconciled"
-        )
+        if math.isnan(_resid_bps):
+            # naive_return was NaN (baseline unpriceable this window) — the
+            # compact equation below can't render meaningfully with a missing
+            # term, so an explicit unavailable note replaces it rather than
+            # showing "nan bps" anywhere.
+            st.caption(
+                "Reconciliation unavailable this period — the naive baseline "
+                "could not be priced (see the benchmark data gap notice above)."
+            )
+        else:
+            st.caption(
+                f"Reconciliation: {_sign(_ts1_bps)}{_ts1_bps:.0f} + "
+                f"{_sign(_ts2_bps)}{_ts2_bps:.0f} = {_sign(_tot_bps)}{_tot_bps:.0f} bps "
+                f"(price-series methodology; algebra residual: {_resid_bps:.2f} bps). "
+                f"✓ reconciled"
+            )
 
         # ── Stage 1 sleeve bar chart ─────────────────────────────────────────────────────
-        _per_sleeve = _ts["per_sleeve"]
-        _sleeve_order = sorted(_per_sleeve, key=lambda s: abs(_per_sleeve[s]), reverse=True)
-        _sleeve_vals_bps = [_per_sleeve[s] * 10_000 for s in _sleeve_order]
-        _bar_colors = [
-            _PALETTE["alloc"] if v >= 0 else _PALETTE["selection"]
-            for v in _sleeve_vals_bps
-        ]
-
-        _fig_s1 = go.Figure()
-        _fig_s1.add_trace(go.Bar(
-            name="SAA design contribution",
-            y=_sleeve_order,
-            x=_sleeve_vals_bps,
-            orientation="h",
-            marker_color=_bar_colors,
-            hovertemplate="%{y}: %{x:.1f} bps<extra></extra>",
-        ))
-        for _si, (_slv, _val) in enumerate(zip(_sleeve_order, _sleeve_vals_bps)):
-            _fig_s1.add_annotation(
-                x=_val + (3 if _val >= 0 else -3),
-                y=_slv,
-                text=f"{_sign(_val)}{_val:.0f}",
-                showarrow=False,
-                font=dict(size=10, color="#555"),
-                xanchor="left" if _val >= 0 else "right",
+        # Every per-sleeve contribution subtracts naive_return (see
+        # compute_two_stage_attribution), so a NaN naive baseline poisons the
+        # whole chart — skip it rather than plot/annotate an all-NaN bar set.
+        if math.isnan(_naive_r):
+            st.info(
+                f"Stage 1 sleeve breakdown unavailable — the {_naive_short} "
+                "baseline could not be priced this period."
             )
-        _fig_s1.update_layout(
-            xaxis_title="Basis Points",
-            yaxis_title=None,
-            showlegend=False,
-            margin=dict(l=0, r=80, t=20, b=0),
-            height=380,
-            plot_bgcolor="white",
-            paper_bgcolor="white",
-            font=dict(family="sans-serif", size=11, color="#333"),
-            yaxis=dict(autorange="reversed"),
-            xaxis=dict(gridcolor="#E8E8E8", zeroline=True, zerolinecolor="#888"),
-        )
-        st.plotly_chart(_fig_s1, width='stretch')
+        else:
+            _per_sleeve = _ts["per_sleeve"]
+            _sleeve_order = sorted(_per_sleeve, key=lambda s: abs(_per_sleeve[s]), reverse=True)
+            _sleeve_vals_bps = [_per_sleeve[s] * 10_000 for s in _sleeve_order]
+            _bar_colors = [
+                _PALETTE["alloc"] if v >= 0 else _PALETTE["selection"]
+                for v in _sleeve_vals_bps
+            ]
 
-        _sleeve_sum_bps = sum(_sleeve_vals_bps)
-        st.caption(
-            f"Stage 1 sleeve contributions sum to {_sign(_sleeve_sum_bps)}{_sleeve_sum_bps:.0f} bps "
-            f"(= Stage 1 {_sign(_ts1_bps)}{_ts1_bps:.0f} bps). "
-            f"Each sleeve\u2019s contribution = SAA target weight \u00d7 (sleeve benchmark return \u2212 {_naive_short} return)."
-        )
+            _fig_s1 = go.Figure()
+            _fig_s1.add_trace(go.Bar(
+                name="SAA design contribution",
+                y=_sleeve_order,
+                x=_sleeve_vals_bps,
+                orientation="h",
+                marker_color=_bar_colors,
+                hovertemplate="%{y}: %{x:.1f} bps<extra></extra>",
+            ))
+            for _si, (_slv, _val) in enumerate(zip(_sleeve_order, _sleeve_vals_bps)):
+                _fig_s1.add_annotation(
+                    x=_val + (3 if _val >= 0 else -3),
+                    y=_slv,
+                    text=f"{_sign(_val)}{_val:.0f}",
+                    showarrow=False,
+                    font=dict(size=10, color="#555"),
+                    xanchor="left" if _val >= 0 else "right",
+                )
+            _fig_s1.update_layout(
+                xaxis_title="Basis Points",
+                yaxis_title=None,
+                showlegend=False,
+                margin=dict(l=0, r=80, t=20, b=0),
+                height=380,
+                plot_bgcolor="white",
+                paper_bgcolor="white",
+                font=dict(family="sans-serif", size=11, color="#333"),
+                yaxis=dict(autorange="reversed"),
+                xaxis=dict(gridcolor="#E8E8E8", zeroline=True, zerolinecolor="#888"),
+            )
+            st.plotly_chart(_fig_s1, width='stretch')
+
+            _sleeve_sum_bps = sum(_sleeve_vals_bps)
+            st.caption(
+                f"Stage 1 sleeve contributions sum to {_sign(_sleeve_sum_bps)}{_sleeve_sum_bps:.0f} bps "
+                f"(= Stage 1 {_sign(_ts1_bps)}{_ts1_bps:.0f} bps). "
+                f"Each sleeve\u2019s contribution = SAA target weight \u00d7 (sleeve benchmark return \u2212 {_naive_short} return)."
+            )
 
         st.caption(
             "Stage 2 implementation effect (drift + selection) is decomposed in the "

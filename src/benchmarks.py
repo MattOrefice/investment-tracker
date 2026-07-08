@@ -52,17 +52,20 @@ _SLEEVE_HOLDINGS: dict[str, str] = {
 
 def _get_price_series(ticker: str, start_date: str, end_date: str,
                       col: str = "adj_close") -> pd.Series:
-    """Return a daily price series, ffilled over the full date range."""
+    """Return a daily price series, coverage-gated exactly like
+    _component_series below — never a flat/fabricated fill on a missing or
+    stale-tail component (the reference-benchmark mirror of that sleeve-side
+    fix). The window bound(s) at which coverage failed, if any, are attached
+    to the returned series' .attrs["benchmark_gap_bounds"] (an empty list
+    when fully covered) so callers can flag the gap without this function
+    changing its plain-Series return contract — a NaN sentinel over the
+    period is returned in that case, never a fabricated flat line.
+    """
     date_range = pd.date_range(start=start_date, end=end_date, freq="D")
-    if ticker == "SPAXX":
-        return pd.Series(1.0, index=date_range)
-    try:
-        p = get_prices(ticker, start_date, end_date)
-        p.index = pd.to_datetime(p.index)
-        series = p[col].fillna(p["close"]) if col == "adj_close" else p[col]
-        return series.reindex(date_range).ffill().bfill()
-    except Exception:
-        return pd.Series(dtype=float, index=date_range)
+    series, missing_bounds = _component_series(ticker, start_date, end_date)
+    out = series if series is not None else pd.Series(float("nan"), index=date_range)
+    out.attrs["benchmark_gap_bounds"] = missing_bounds
+    return out
 
 
 def _component_series(
@@ -126,13 +129,22 @@ def get_sp500_series(start_date: str, end_date: str | None = None) -> pd.Series:
     available value equals the portfolio's starting value on start_date.
     Returns a Series indexed by pd.Timestamp with dollar values starting at 1.0.
     Call site multiplies by starting portfolio value to align scales.
+
+    A SPY price gap near a window bound (see _component_series) yields an
+    explicit NaN-sentineled series flagged on .attrs["benchmark_gaps"] as
+    (label, ticker, bound) 3-tuples — never a flat/fabricated line.
     """
     end = end_date or date.today().isoformat()
     series = _get_price_series("SPY", start_date, end, col="adj_close")
+    gap_bounds = series.attrs.get("benchmark_gap_bounds", [])
+
     first_valid = series.first_valid_index()
     if first_valid is None or series[first_valid] == 0:
-        return series
-    return series / series[first_valid]   # normalized index starting at 1.0
+        out = series
+    else:
+        out = series / series[first_valid]   # normalized index starting at 1.0
+    out.attrs["benchmark_gaps"] = [("S&P 500", "SPY", b) for b in gap_bounds]
+    return out
 
 
 def get_custom_blended_series(start_date: str, end_date: str | None = None) -> pd.Series:
@@ -142,6 +154,12 @@ def get_custom_blended_series(start_date: str, end_date: str | None = None) -> p
     Allocates $1 across benchmark tickers at target weights on start_date,
     then marks to market daily using adj_close prices.  Returns a Series
     indexed by pd.Timestamp starting at 1.0.
+
+    A component unpriceable near a window bound (see _component_series) is
+    dropped from the basket — the survivors' shares implicitly renormalize
+    to $1 below (unchanged mechanics) — flagged on .attrs["benchmark_gaps"]
+    as (sleeve, ticker, bound) 3-tuples. Total failure (no component
+    priceable) yields an explicit NaN sentinel, never a fabricated flat line.
     """
     end = end_date or date.today().isoformat()
     date_range = pd.date_range(start=start_date, end=end, freq="D")
@@ -157,24 +175,31 @@ def get_custom_blended_series(start_date: str, end_date: str | None = None) -> p
     # Build price matrix for each component ticker
     price_cols: dict[str, pd.Series] = {}
     weight_map: dict[str, float] = {}   # component ticker → effective weight
+    gaps: list[tuple[str, str, str]] = []
 
     for sleeve, components in _SLEEVE_BENCHMARKS.items():
         sleeve_wt = sleeve_weights.get(sleeve, 0.0)
         for ticker, frac in components:
             effective_wt = sleeve_wt * frac
-            p = _get_price_series(ticker, start_date, end, col="adj_close")
             if ticker in price_cols:
                 # Sum weight when same ticker appears in multiple sleeves
                 weight_map[ticker] = weight_map.get(ticker, 0.0) + effective_wt
             else:
+                p = _get_price_series(ticker, start_date, end, col="adj_close")
+                missing_bounds = p.attrs.get("benchmark_gap_bounds", [])
                 price_cols[ticker] = p
                 weight_map[ticker] = effective_wt
+                if missing_bounds:
+                    gaps.extend((sleeve, ticker, b) for b in missing_bounds)
 
     if not price_cols:
         return pd.Series(1.0, index=date_range)
 
     # Determine the number of "shares" for each ticker so that on day 0 the
-    # portfolio value equals $1.00 total.
+    # portfolio value equals $1.00 total. A gapped component's all-NaN column
+    # has no real day-0 price and is dropped here — its dollars are simply
+    # never allocated, so the survivors implicitly renormalize to $1 when
+    # daily_value is scaled below.
     prices_df = pd.DataFrame(price_cols, index=date_range)
     first_row = prices_df.ffill().bfill().iloc[0]
 
@@ -184,16 +209,23 @@ def get_custom_blended_series(start_date: str, end_date: str | None = None) -> p
         if p0 > 0:
             shares[ticker] = wt / p0   # units bought with `wt` dollars at price p0
 
+    if not shares:
+        # Every component gapped: an explicit missing-data sentinel, never
+        # the fabricated flat $0.00 line the un-normalized fallthrough used
+        # to produce (which read as a "nan bps"/"-100%" figure downstream).
+        out = pd.Series(float("nan"), index=date_range)
+        out.attrs["benchmark_gaps"] = gaps
+        return out
+
     daily_value = pd.Series(0.0, index=date_range)
     for ticker, n_shares in shares.items():
         daily_value += prices_df[ticker].ffill() * n_shares
 
     # Normalize to start at 1.0
     first_val = daily_value.iloc[0]
-    if first_val > 0:
-        daily_value = daily_value / first_val
-
-    return daily_value
+    out = daily_value / first_val if first_val > 0 else daily_value
+    out.attrs["benchmark_gaps"] = gaps
+    return out
 
 
 def get_sleeve_benchmark_returns(
@@ -264,19 +296,49 @@ def get_naive_60_40_series(start_date: str, end_date: str | None = None) -> pd.S
     Computes as 0.6 × daily SPY return + 0.4 × daily AGG return at the return
     level (not a portfolio simulation — avoids rebalancing-frequency assumptions).
     Returns a Series indexed by pd.Timestamp starting at 1.0 on start_date.
+
+    A leg unpriceable near a window bound (see _component_series) is dropped
+    and the surviving leg's weight renormalizes to 1.0, flagged on
+    .attrs["benchmark_gaps"] as (label, ticker, bound) 3-tuples; both legs
+    missing yields an explicit NaN sentinel, never a fabricated flat 0% return.
     """
     end = end_date or date.today().isoformat()
+    date_range = pd.date_range(start=start_date, end=end, freq="D")
+
     spy = _get_price_series("SPY", start_date, end, col="adj_close")
     agg = _get_price_series("AGG", start_date, end, col="adj_close")
+    spy_gaps = spy.attrs.get("benchmark_gap_bounds", [])
+    agg_gaps = agg.attrs.get("benchmark_gap_bounds", [])
 
-    spy_ret = spy.pct_change().fillna(0.0)
-    agg_ret = agg.pct_change().fillna(0.0)
+    gaps: list[tuple[str, str, str]] = []
+    gaps.extend(("60/40 Naive", "SPY", b) for b in spy_gaps)
+    gaps.extend(("60/40 Naive", "AGG", b) for b in agg_gaps)
 
-    naive_ret  = 0.6 * spy_ret + 0.4 * agg_ret
+    legs: list[tuple[pd.Series, float]] = []
+    if not spy_gaps:
+        legs.append((spy, 0.6))
+    if not agg_gaps:
+        legs.append((agg, 0.4))
+
+    if not legs:
+        # Both legs gapped: an explicit missing-data sentinel, never the
+        # fabricated flat 0% return pct_change().fillna(0.0) used to produce
+        # on a stale/absent price series.
+        out = pd.Series(float("nan"), index=date_range)
+        out.attrs["benchmark_gaps"] = gaps
+        return out
+
+    total_wt  = sum(wt for _, wt in legs)
+    naive_ret = pd.Series(0.0, index=date_range)
+    for leg_series, wt in legs:
+        naive_ret = naive_ret + (wt / total_wt) * leg_series.pct_change().fillna(0.0)
+
     cumulative = (1 + naive_ret).cumprod()
 
     first = float(cumulative.iloc[0]) if not cumulative.empty else 1.0
-    return cumulative / first if first > 0 else cumulative
+    out = cumulative / first if first > 0 else cumulative
+    out.attrs["benchmark_gaps"] = gaps
+    return out
 
 
 def get_naive_series(kind: str, start_date: str, end_date: str | None = None) -> pd.Series:

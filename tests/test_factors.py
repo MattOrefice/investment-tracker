@@ -501,6 +501,37 @@ def test_benchmark_regression_returns_none_on_insufficient_data():
     assert result is None
 
 
+def test_benchmark_regression_returns_none_on_total_blended_gap():
+    """A totally-unpriceable custom blended benchmark (PR A: get_custom_blended_series
+    now yields an explicit NaN sentinel on a total reference-benchmark data gap,
+    src/benchmarks.py) must degrade this regression to None (same as insufficient
+    data) via the existing .dropna() alignment — not raise or silently regress
+    against garbage.
+
+    This is the intentionally-inert path: run_benchmark_attribution_regression
+    needed NO code change for PR A — R_b = bl.pct_change() is already dropped
+    from `merged` by the existing .dropna(), so a NaN bl_series just shrinks the
+    aligned sample to 0 rows and this pins that None-not-crash behavior explicitly.
+    """
+    T = 100
+    bdays = pd.bdate_range("2025-05-01", periods=T)
+
+    pv_series  = pd.Series(np.full(T, 10000.0), index=bdays)
+    nan_bl     = pd.Series(np.nan, index=bdays)   # total reference-benchmark gap sentinel
+    rng = np.random.default_rng(33)
+    mock_ff = _make_mock_ff(T, rng, bdays)
+
+    with patch("src.factors.get_portfolio_value_series", return_value=pv_series), \
+         patch("src.factors.get_custom_blended_series", return_value=nan_bl), \
+         patch("src.factors.load_factors", return_value=mock_ff):
+        result = run_benchmark_attribution_regression("2025-05-01", "2025-09-30")
+
+    assert result is None, (
+        "a totally NaN-sentineled blended benchmark must degrade to None "
+        f"(insufficient aligned data), got: {result!r}"
+    )
+
+
 def test_benchmark_prose_contains_alpha_interpretation():
     """
     build_benchmark_prose must:
