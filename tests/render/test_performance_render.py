@@ -6,6 +6,7 @@ symptom of the Phase 8p duplicate-price-index bug ($30 current value, 0% TWR).
 """
 from __future__ import annotations
 
+import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
 
@@ -440,3 +441,119 @@ def test_stage_reconciliation_gap_caption_appears_under_gap(monkeypatch) -> None
     assert any("quantifies that exclusion" in c for c in captions), (
         f"Expected gap-exclusion caption not found under an injected gap. Captions: {captions}"
     )
+
+
+# ── PR A: naive/blended reference-benchmark gap exclude-and-flag ────────────
+# get_sp500_series / get_custom_blended_series / get_naive_60_40_series
+# (src/benchmarks.py) shared an unguarded price path that could silently
+# fabricate a return on a benchmark price gap. These tests confirm the fix is
+# invisible on the clean demo and that an injected gap surfaces the notice and
+# NaN-safe "—" tiles rather than "nan bps"/"nan%" anywhere.
+
+def test_naive_gap_notice_absent_on_clean_demo(performance_app: AppTest) -> None:
+    """No naive-baseline gap notice or unavailable note on the clean (no-gap)
+    demo — the fix is inert on this invariant path."""
+    if not performance_app.metric:
+        pytest.skip("No portfolio data — skipped in local/empty-DB mode")
+    warnings = [w.value for w in performance_app.warning]
+    infos = [i.value for i in performance_app.info]
+    assert not any("benchmark cannot be priced" in w for w in warnings), (
+        f"Naive-baseline gap notice rendered on the clean demo. Warnings: {warnings}"
+    )
+    assert not any("could not be priced" in i for i in infos), (
+        f"Baseline-unavailable note rendered on the clean demo. Infos: {infos}"
+    )
+    all_metrics = " ".join(str(m.value) for m in performance_app.metric).lower()
+    assert "nan" not in all_metrics, f"A metric leaked 'nan': {all_metrics}"
+
+
+def test_naive_gap_notice_and_unavailable_tiles_under_total_gap(monkeypatch) -> None:
+    """A total naive-baseline gap (get_naive_series NaN-sentineled) must
+    surface the shared benchmark_gap_notice, an explicit baseline-unavailable
+    note, and the Stage 1 sleeve breakdown replaced by an unavailable note —
+    with no metric anywhere rendering the literal string 'nan'.
+
+    PRE-FIX: get_naive_60_40_series fabricated a flat 0% return on a gap (or
+    get_sp500_series fabricated a flat-1.0 line) with no flag anywhere — the
+    tiles below would have shown a plausible-looking, wrong number instead of
+    this explicit unavailable state.
+    """
+    import streamlit as st
+    import src.benchmarks as bm_mod
+
+    st.cache_data.clear()
+
+    def _nan_naive(kind, start, end):
+        idx = pd.date_range(start, end or start, freq="D")
+        out = pd.Series(float("nan"), index=idx)
+        out.attrs["benchmark_gaps"] = [("60/40 Naive", "SPY", str(idx[-1].date()))]
+        return out
+
+    monkeypatch.setattr(bm_mod, "get_naive_series", _nan_naive)
+
+    at = AppTest.from_file("pages/2_Performance.py", default_timeout=120)
+    at.run()
+    if not at.metric:
+        pytest.skip("No portfolio data — skipped in local/empty-DB mode")
+    assert not at.exception, f"Page raised with an injected naive-baseline gap: {at.exception}"
+
+    warnings = [w.value for w in at.warning]
+    assert any("benchmark cannot be priced" in w for w in warnings), (
+        f"Expected the shared benchmark_gap_notice under a total naive gap. Warnings: {warnings}"
+    )
+
+    infos = [i.value for i in at.info]
+    assert any("could not be priced" in i and "Stage 1 and Total" in i for i in infos), (
+        f"Expected the baseline-unavailable note for the Stage 1/Total tiles. Infos: {infos}"
+    )
+    assert any("Stage 1 sleeve breakdown unavailable" in i for i in infos), (
+        f"Expected the Stage 1 sleeve breakdown to be replaced by an unavailable note. Infos: {infos}"
+    )
+
+    all_metrics = " ".join(str(m.value) for m in at.metric).lower()
+    assert "nan" not in all_metrics, f"A metric leaked 'nan' under the injected gap: {all_metrics}"
+
+    captions = [c.value for c in at.caption]
+    assert any("Reconciliation unavailable" in c for c in captions), (
+        f"Expected the reconciliation caption to degrade explicitly, got: {captions}"
+    )
+
+
+def test_blended_gap_notice_and_banner_unavailable_under_total_gap(monkeypatch) -> None:
+    """A total custom-blended-benchmark gap must surface the shared
+    benchmark_gap_notice at the top-of-page load site, and the summary
+    banner's 'vs blended' figure must render '—', never 'nan bps' — proving
+    the .attrs capture (before the *start_val multiply and the st.cache_data
+    round-trip in _load_benchmarks) actually reaches the page.
+
+    PRE-FIX: get_custom_blended_series fabricated a flat return with no flag
+    on a total component-fetch failure — no warning would have rendered here
+    and the banner would have shown a plausible, wrong bps figure.
+    """
+    import streamlit as st
+    import src.benchmarks as bm_mod
+
+    st.cache_data.clear()
+
+    def _nan_blended(start, end):
+        idx = pd.date_range(start, end or start, freq="D")
+        out = pd.Series(float("nan"), index=idx)
+        out.attrs["benchmark_gaps"] = [("US Large Core", "SPY", str(idx[-1].date()))]
+        return out
+
+    monkeypatch.setattr(bm_mod, "get_custom_blended_series", _nan_blended)
+
+    at = AppTest.from_file("pages/2_Performance.py", default_timeout=120)
+    at.run()
+    if not at.metric:
+        pytest.skip("No portfolio data — skipped in local/empty-DB mode")
+    assert not at.exception, f"Page raised with an injected blended gap: {at.exception}"
+
+    warnings = [w.value for w in at.warning]
+    assert any("benchmark cannot be priced" in w for w in warnings), (
+        f"Expected the shared benchmark_gap_notice for the blended gap. Warnings: {warnings}"
+    )
+
+    banner = " ".join(str(m.value) for m in at.markdown)
+    assert "nan" not in banner.lower(), f"Banner leaked 'nan': {banner}"
+    assert "—" in banner, f"Expected the NaN-safe '—' sink somewhere in the banner: {banner}"

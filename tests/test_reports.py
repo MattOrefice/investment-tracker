@@ -19,6 +19,8 @@ from src.reports import (
     _build_cumulative_chart,
     _build_holdings_chart,
     _drift_status,
+    _fmt_bps,
+    _fmt_pct,
     _report_disclaimer,
     build_bf_cross_reference,
 )
@@ -92,6 +94,28 @@ def test_drift_status_exactly_at_relative_boundary():
     """Exactly 20% relative drift is still Within (boundary is inclusive)."""
     # 200 bps drift, 1000 bps target = 20.0% exactly
     assert _drift_status(200, 1000) == "Within"
+
+
+# ── NaN-safe formatting sinks (PR A: reference-benchmark gaps) ──────────────
+# A totally-unpriceable naive/blended reference benchmark (src/benchmarks.py)
+# carries a NaN sentinel through to these formatters — they must render "—",
+# never the literal string "nan%"/"nan bps".
+
+def test_fmt_pct_renders_em_dash_for_nan():
+    assert _fmt_pct(float("nan")) == "—"
+
+
+def test_fmt_pct_renders_normally_for_real_value():
+    assert _fmt_pct(0.1234) == "12.34%"
+
+
+def test_fmt_bps_renders_em_dash_for_nan():
+    assert _fmt_bps(float("nan")) == "—"
+
+
+def test_fmt_bps_renders_normally_for_real_value():
+    assert _fmt_bps(123.4) == "+123 bps"
+    assert _fmt_bps(-56.7) == "-57 bps"
 
 
 # ── chart figure config tests ────────────────────────────────────────────────
@@ -276,6 +300,62 @@ def _make_exec_summary_mocks(inception: str, start_date: str, end_date: str,
          patch.object(rpt, "current_cape", side_effect=Exception("no data")), \
          patch.object(rpt, "get_cape_series", side_effect=Exception("no data")):
         return rpt._build_executive_summary(start_date, end_date)
+
+
+def test_cover_narrative_degrades_on_total_reference_benchmark_gap():
+    """PR A: when get_sp500_series/get_custom_blended_series both return a
+    NaN-sentineled series (a total reference-benchmark data gap — see
+    src/benchmarks.py), the cover narrative and formatted strings must degrade
+    to explicit "unavailable"/"—" text, never a fabricated number or the
+    literal string "nan bps"/"nan%" anywhere.
+
+    PRE-FIX: sp_return/bl_return/alpha_*_bps were NEVER NaN in the first place
+    (get_sp500_series/get_custom_blended_series always fabricated a flat
+    return on a gap) — this pins the NEW degrade-gracefully contract now that
+    a genuine NaN sentinel can reach this function.
+    """
+    inception  = "2025-05-01"
+    start_date = "2026-01-01"
+    end_date   = "2026-03-31"
+
+    idx     = pd.date_range(inception, end_date, freq="D")
+    pv_full = pd.Series(1000.0 + (idx - idx[0]).days.astype(float), index=idx)
+
+    nan_sp = pd.Series(float("nan"), index=idx)
+    nan_sp.attrs["benchmark_gaps"] = [("S&P 500", "SPY", "2026-03-31")]
+    nan_bl = pd.Series(float("nan"), index=idx)
+    nan_bl.attrs["benchmark_gaps"] = [("US Large Core", "SPY", "2026-03-31")]
+
+    with patch.object(rpt, "get_portfolio_value_series", return_value=pv_full), \
+         patch.object(rpt, "get_external_cashflow_series",
+                      side_effect=lambda s, e: pd.Series(dtype=float)), \
+         patch.object(rpt, "get_current_market_value", return_value=1200.0), \
+         patch.object(rpt, "get_inception_date", return_value=inception), \
+         patch.object(rpt, "get_sp500_series", return_value=nan_sp), \
+         patch.object(rpt, "get_custom_blended_series", return_value=nan_bl), \
+         patch.object(rpt, "brinson_fachler_period", side_effect=Exception("no db")), \
+         patch.object(rpt, "current_cape", side_effect=Exception("no data")), \
+         patch.object(rpt, "get_cape_series", side_effect=Exception("no data")):
+        result = rpt._build_executive_summary(start_date, end_date)
+
+    assert result["sp500_return_pct"] == "—"
+    assert result["blended_return_pct"] == "—"
+    assert result["alpha_sp_str"] == "—"
+    assert result["alpha_bl_str"] == "—"
+    assert result["alpha_sp_bps"] == 0.0, "numeric field must be neutralized, not NaN"
+    assert result["alpha_bl_bps"] == 0.0, "numeric field must be neutralized, not NaN"
+
+    full_narrative = " ".join(result["narrative"]).lower()
+    assert "nan" not in full_narrative, (
+        f"narrative leaked a literal 'nan': {result['narrative']}"
+    )
+    assert "unavailable" in full_narrative, (
+        f"expected an explicit unavailable clause, got: {result['narrative']}"
+    )
+    assert any("SPY" in s for s in result["narrative"]), (
+        f"expected the shared benchmark_gap_notice naming the gapped ticker, "
+        f"got: {result['narrative']}"
+    )
 
 
 def test_cover_sp500_return_uses_inception_slice():
