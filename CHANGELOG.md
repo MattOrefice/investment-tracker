@@ -8,6 +8,11 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Minor disclosure and documentation corrections
+_2026-07-08_
+
+Three small documentation improvements with no change to behavior. The trailing one-month, three-month, and one-year windows are now disclosed as fixed calendar-day windows from the anchor date rather than month-end anchored, matching how they are computed. The risk-metrics function's docstring now lists all of the values it returns. And several test docstrings that referenced an outdated page filename from an earlier renumbering are corrected. No computation changed.
+
 ## Reference-benchmark data gaps no longer fabricate returns
 _2026-07-08_
 
