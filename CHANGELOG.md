@@ -8,6 +8,11 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Attribution sink hardened against sparse-input fabrication
+_2026-07-08_
+
+Three safeguards on the attribution sink, none of which change any displayed number on complete data. The decomposition now asserts that every weighted sleeve has an explicit benchmark return, so a future change that passed a sparse return set would fail loudly rather than silently fabricating a zero return that the algebra check cannot detect. The prose rankings that describe top contributors and detractors now exclude sleeves with no benchmark, rather than describing them against a placeholder zero. And when a data gap excludes a sleeve from the decomposition, a note now explains that the resulting drift in the stage reconciliation quantifies that exclusion rather than signaling a computation error. Periods with complete benchmark data — including all current demo windows — are unchanged.
+
 ## Risk-free rate unified across pages
 _2026-07-07_
 
