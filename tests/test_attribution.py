@@ -95,6 +95,72 @@ def test_equal_returns_no_selection_effect():
         assert row["selection_effect"] == pytest.approx(0.0, abs=1e-10)
 
 
+# ── Completeness precondition on the sink defaults ───────────────────────────
+# brinson_fachler()'s per-sleeve .get(s, 0.0) lookups exist only to keep the
+# dict lookups total, not to paper over a missing return. A sleeve missing
+# from a WEIGHT dict is a legitimate 0 weight (standard BF); a sleeve missing
+# from a RETURNS dict is fabrication the algebra check cannot catch (it
+# cancels out only when w_b == 0, and is silently wrong otherwise). These
+# tests prove the precondition fails loud on the fabrication case and never
+# fires on the normal, complete-dict case every other test in this file uses.
+
+def test_brinson_fachler_fails_loud_on_missing_portfolio_return():
+    """A sleeve carrying weight but absent from portfolio_sleeve_returns must
+    raise, not fall through to the r_p=0.0 sink default.
+
+    PROVES the pre-fix bug: pre-fix, this call returns a DataFrame with sleeve
+    "B" priced at a fabricated r_p=0.0 instead of raising.
+    """
+    pw = {"A": 0.60, "B": 0.40}
+    bw = {"A": 0.60, "B": 0.40}
+    pr = {"A": 0.10}                       # "B" missing
+    br = {"A": 0.08, "B": 0.04}
+
+    with pytest.raises(AssertionError, match="B"):
+        brinson_fachler(pw, bw, pr, br)
+
+
+def test_brinson_fachler_fails_loud_on_missing_benchmark_return():
+    """A sleeve carrying weight but absent from benchmark_sleeve_returns must
+    raise, not fall through to the r_b=0.0 sink default.
+
+    PROVES the pre-fix bug: pre-fix, this call returns a DataFrame with sleeve
+    "B" priced at a fabricated r_b=0.0 instead of raising.
+    """
+    pw = {"A": 0.60, "B": 0.40}
+    bw = {"A": 0.60, "B": 0.40}
+    pr = {"A": 0.10, "B": 0.05}
+    br = {"A": 0.08}                       # "B" missing
+
+    with pytest.raises(AssertionError, match="B"):
+        brinson_fachler(pw, bw, pr, br)
+
+
+def test_brinson_fachler_passes_on_complete_returns():
+    """The completeness precondition must not fire when every weighted sleeve
+    has an explicit return in both returns dicts — the normal case."""
+    pw = {"A": 0.60, "B": 0.40}
+    bw = {"A": 0.60, "B": 0.40}
+    pr = {"A": 0.10, "B": 0.05}
+    br = {"A": 0.08, "B": 0.04}
+
+    df = brinson_fachler(pw, bw, pr, br)   # must not raise
+    assert len(df) == 2
+
+
+def test_brinson_fachler_allows_weight_sparsity():
+    """A sleeve absent from a WEIGHT dict (genuine 0 weight) must still be
+    accepted, as long as it has an explicit return in both returns dicts —
+    only return-dict sparsity is fabrication."""
+    pw = {"A": 1.0}                         # "B" carries 0 portfolio weight
+    bw = {"A": 0.60, "B": 0.40}
+    pr = {"A": 0.10, "B": 0.05}
+    br = {"A": 0.08, "B": 0.04}
+
+    df = brinson_fachler(pw, bw, pr, br)   # must not raise
+    assert set(df["sleeve"]) == {"A", "B"}
+
+
 # ── Two-stage attribution unit tests ─────────────────────────────────────────
 
 def test_identity_stage1_plus_stage2_equals_total():

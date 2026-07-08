@@ -107,6 +107,9 @@ def build_bf_cross_reference(bf_df: pd.DataFrame, n: int = 3) -> list[dict]:
     if bf_df.empty:
         return []
     df = bf_df.copy()
+    _no_bm = set(bf_df.attrs.get("no_benchmark_sleeves", []))
+    if _no_bm:
+        df = df[~df["sleeve"].isin(_no_bm)]
     df["raw_diff"] = df["r_p"] - df["r_b"]
     top = df.nlargest(n, "selection_effect")
     out = []
@@ -690,10 +693,16 @@ def _build_attribution_section(start_date: str, end_date: str) -> dict:
             "total":     f"{row['total_effect']*10000:+.1f}",
         })
 
+    # Sleeves with no real benchmark are excluded from the prose rankings below
+    # (not just N/A-labeled like the table above): a comparative sentence
+    # ("returned X% vs benchmark Y%") is unconstructible without a real r_b,
+    # and the sleeve's selection effect is placeholder-derived (r_b == 0.0).
+    _bf_ranked = bf_df[~bf_df["sleeve"].isin(_no_bm)] if _no_bm else bf_df
+
     # Top 3 selection effect drivers (by absolute value)
     sel_commentary = []
-    sel_sorted = bf_df.reindex(
-        bf_df["selection_effect"].abs().sort_values(ascending=False).index
+    sel_sorted = _bf_ranked.reindex(
+        _bf_ranked["selection_effect"].abs().sort_values(ascending=False).index
     ).head(3)
     for _, r in sel_sorted.iterrows():
         sleeve  = r["sleeve"]
@@ -708,8 +717,11 @@ def _build_attribution_section(start_date: str, end_date: str) -> dict:
 
     # Top allocation effect driver (only if >15 bps absolute)
     alloc_commentary = None
-    top_alloc = bf_df.loc[bf_df["allocation_effect"].abs().idxmax()]
-    if abs(top_alloc["allocation_effect"]) * 10_000 > 15:
+    top_alloc = (
+        _bf_ranked.loc[_bf_ranked["allocation_effect"].abs().idxmax()]
+        if not _bf_ranked.empty else None
+    )
+    if top_alloc is not None and abs(top_alloc["allocation_effect"]) * 10_000 > 15:
         sleeve    = top_alloc["sleeve"]
         direction = "overweight" if top_alloc["w_p"] > top_alloc["w_b"] else "underweight"
         alloc_commentary = (

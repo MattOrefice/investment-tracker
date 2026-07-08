@@ -28,11 +28,32 @@ def brinson_fachler(
 
     Algebra check: sum(total effects) ≈ r_p_total − r_b_total (within 1 bp).
 
-    All inputs are dicts keyed by sleeve name with float values.
+    All inputs are dicts keyed by sleeve name with float values. Weight-dict
+    sparsity is legal (a sleeve absent from a weight dict is a genuine 0
+    weight); a sleeve absent from a returns dict is not — every caller must
+    supply an explicit return for each weighted sleeve, since the .get(s, 0.0)
+    defaults below exist only to keep the lookups total, not to paper over
+    missing data.
     Returns a DataFrame with one row per sleeve.
     """
     sleeves = sorted(
         set(list(portfolio_weights) + list(benchmark_weights))
+    )
+
+    # Completeness precondition: the .get(s, 0.0) defaults below must never be
+    # reached by a real sleeve. A sleeve missing from a *weight* dict is a
+    # legitimate 0 weight (standard BF); a sleeve missing from a *returns*
+    # dict is silent fabrication of a 0% return that the algebra check below
+    # cannot detect (it cancels out when w_b == 0, but is otherwise wrong).
+    # Fail loudly instead.
+    _missing_returns = [
+        s for s in sleeves
+        if s not in portfolio_sleeve_returns or s not in benchmark_sleeve_returns
+    ]
+    assert not _missing_returns, (
+        f"Sleeve(s) {_missing_returns} carry weight but are missing an "
+        f"explicit portfolio and/or benchmark return — the .get(s, 0.0) "
+        f"sink defaults would fabricate a return instead of raising"
     )
 
     r_p_total = sum(

@@ -1003,6 +1003,21 @@ with col:
             f"vs. Stage 2: {'✓' if _bf_reconciled else '⚠'} {_bf_s2_gap_bps:+.2f} bps"
         )
 
+        # A data gap excludes a sleeve from the BF decomposition above, but that
+        # sleeve still contributes to the Stage 1/2 portfolio return (computed
+        # from the full, un-purged price series) — so "vs. Stage 2" is expected
+        # to drift by roughly the excluded sleeve's weight × return differential.
+        # The ⚠ quantifies that exclusion; it is not a computation error.
+        if bf_df.attrs.get("benchmark_gaps") or bf_df.attrs.get("price_gaps"):
+            st.caption(
+                "_A benchmark or price data gap excluded one or more sleeves "
+                "from the BF decomposition above. Those sleeves still "
+                "contribute to the Stage 1 + Stage 2 portfolio return, so the "
+                "'vs. Stage 2' check above is expected to drift by roughly the "
+                "excluded sleeve's weight × return differential — the ⚠ "
+                "quantifies that exclusion, not a computation error._"
+            )
+
     st.divider()
 
     # ──────────────────────────────────────────────────────────────────────

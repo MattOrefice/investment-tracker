@@ -409,6 +409,68 @@ def test_build_bf_cross_reference_empty_df_returns_empty_list():
     assert build_bf_cross_reference(pd.DataFrame()) == []
 
 
+# ── Attribution-sink prose: exclude no_benchmark_sleeves from rankings ───────
+# A sleeve with w_b == 0 (attrs['no_benchmark_sleeves']) carries a placeholder
+# r_b == 0.0 that cancels algebraically in the decomposition math, but is not
+# a real market return — a comparative "X outperformed Y by N bps" sentence
+# built from it is fabricated. These sleeves belong in the full table (labeled
+# N/A), never in a top-N prose ranking.
+
+def test_build_bf_cross_reference_excludes_no_benchmark_sleeves():
+    """A sleeve flagged in attrs['no_benchmark_sleeves'] must be excluded from
+    the ranking, not ranked against its fabricated r_b=0.0.
+
+    PROVES the pre-fix bug: pre-fix, "Unknown"'s selection_effect (0.20*0.30 =
+    0.06) towers over the mapped sleeve's (0.08*0.08 = 0.0064) and it ranks
+    #1 — rendering "... outperformed Unknown by 3000 bps", a fabricated
+    comparison against a sleeve with no real benchmark.
+    """
+    bf_df = pd.DataFrame([
+        {"sleeve": "US Small Cap", "r_p": 0.15, "r_b": 0.07, "selection_effect": 0.08 * 0.08},
+        {"sleeve": "Unknown",      "r_p": 0.30, "r_b": 0.0,  "selection_effect": 0.20 * 0.30},
+    ])
+    bf_df.attrs["no_benchmark_sleeves"] = ["Unknown"]
+
+    top = build_bf_cross_reference(bf_df, n=3)
+
+    assert all(item["holding"] != "Unknown" for item in top), (
+        f"'Unknown' (no_benchmark_sleeves) leaked into the ranking: {top}"
+    )
+
+
+def test_attribution_section_prose_excludes_no_benchmark_sleeves():
+    """sel_commentary and alloc_commentary (the PDF/page prose) must exclude
+    a no_benchmark_sleeves sleeve, same as build_bf_cross_reference.
+
+    PROVES the pre-fix bug: pre-fix, "Unknown" has both the largest
+    |selection_effect| and |allocation_effect| here and is described in the
+    prose against its fabricated r_b=0.0 / w_b=0.0 benchmark.
+    """
+    bf_df = pd.DataFrame([
+        {"sleeve": "US Small Cap", "w_p": 0.08, "w_b": 0.07,
+         "r_p": 0.15, "r_b": 0.07,
+         "allocation_effect": 0.001, "selection_effect": 0.08 * 0.08, "total_effect": 0.0074},
+        {"sleeve": "Unknown", "w_p": 0.20, "w_b": 0.0,
+         "r_p": 0.30, "r_b": 0.0,
+         "allocation_effect": 0.20 * 0.30, "selection_effect": 0.20 * 0.30, "total_effect": 0.12},
+    ])
+    bf_df.attrs["no_benchmark_sleeves"] = ["Unknown"]
+    bf_df.attrs["price_gaps"] = []
+    bf_df.attrs["benchmark_gaps"] = []
+    bf_df.attrs["cash_drag"] = 0.0
+
+    with patch.object(rpt, "brinson_fachler_period", return_value=bf_df), \
+         patch.object(rpt, "_chart_b64", return_value=None):
+        result = rpt._build_attribution_section("2026-01-01", "2026-03-31")
+
+    assert not any("Unknown" in c for c in result["sel_commentary"]), (
+        f"'Unknown' leaked into sel_commentary: {result['sel_commentary']}"
+    )
+    assert result["alloc_commentary"] is None or "Unknown" not in result["alloc_commentary"], (
+        f"'Unknown' leaked into alloc_commentary: {result['alloc_commentary']}"
+    )
+
+
 def test_benchmark_attribution_page_uses_shared_bf_cross_reference():
     """pages/6_Benchmark_Attribution.py must import build_bf_cross_reference from
     src.reports rather than re-deriving the top-N selection-effect list inline —
