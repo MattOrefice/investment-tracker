@@ -36,6 +36,8 @@ from src.location_config import (
     TAX_PROFILE,
     SLEEVE_LOCATION_PRIORITY,
     ACCOUNT_SHELTER_PRIORITY,
+    LTCG_HEADROOM_2026,
+    is_directable,
 )
 from src.location_actions import (
     ACTION_GROUPS,
@@ -43,7 +45,8 @@ from src.location_actions import (
     INFORMATIONAL_KEYS,
     build_roth_deploy_answer,
     resolve_placeholders,
-    render_prose,
+    render_prose_md,
+    escape_md,
     filter_register_for_group,
 )
 
@@ -91,6 +94,17 @@ for _, _r in _case_c.iterrows():
     _m = _pos_disp[(_pos_disp["symbol"] == _r["symbol"]) & (_pos_disp["display_name"] == _r["account"])]
     _kpi_repositionable += float(_m["current_value"].sum())
 
+# Directability — which accounts (present in the export) can be traded jointly today.
+_present_accts = accounts_df[accounts_df["pseudonym"].isin(positions_df["pseudonym"])]
+_directable_names = [n for p, n in zip(_present_accts["pseudonym"], _present_accts["display_name"]) if is_directable(p)]
+_coordination_names = [n for p, n in zip(_present_accts["pseudonym"], _present_accts["display_name"]) if not is_directable(p)]
+
+# 0% LTCG headroom (finite budget): consumed by the recommended gain-side realizations.
+_gain_group = next(g for g in ACTION_GROUPS if g["key"] == "relocate_gain_side")
+_gain_rows = filter_register_for_group(register, _gain_group)
+_headroom_consumed = max(0.0, float(_gain_rows["embedded_gain"].sum())) if not _gain_rows.empty else 0.0
+_headroom_remaining = max(0.0, LTCG_HEADROOM_2026 - _headroom_consumed)
+
 _STATUS_LABEL = {"act_now": "Act now", "evaluate": "Evaluate", "blocked": "Blocked", "accepted": "Accepted"}
 
 # Group render order: status bucket, then score descending within bucket.
@@ -129,16 +143,17 @@ with col:
             "**Dollar figures are live.** Every dollar amount in the prose is "
             "computed from the current positions export, not hardcoded. If a "
             "figure can't be computed, the page refuses to render rather than "
-            "show a misleading $0.\n\n"
+            "show a misleading \\$0.\n\n"
             "**Free vs costly.** A move inside or between shelters (e.g. Roth → "
             "Traditional) is a non-taxable event — *free*. A sale in the taxable "
             "account realizes the embedded gain and is *costly*.\n\n"
             "**Scores are judgement, not output.** The 1–10 scores are the "
             "owner's authored priority, deliberately not derived from a formula. "
             "Sleeve deploy targets are an ordinal ranking, never a return forecast.\n\n"
-            "**Actionability.** Six of seven accounts are externally managed; most "
-            "of this is *observed* and would need manager coordination — the same "
-            "caveat as the Household View."
+            f"**Actionability.** {len(_directable_names)} of the household's accounts "
+            f"are directable jointly today — {', '.join(_directable_names)} — and can be "
+            f"traded now. The others ({', '.join(_coordination_names)}) are externally "
+            "managed and need coordination before anything moves."
         )
     st.divider()
 
@@ -173,10 +188,10 @@ for group in _ordered_groups:
     _, col, _ = st.columns([1, 8, 1])
     with col:
         st.subheader(f"{group['title']}  ·  {group['score']}/10")
-        st.caption(f"**{_STATUS_LABEL[group['status']]}** — {_summary_line(group, resolved, reg_rows)}")
+        st.caption(escape_md(f"**{_STATUS_LABEL[group['status']]}** — {_summary_line(group, resolved, reg_rows)}"))
 
-        st.markdown(f"**For.** {render_prose(group['pros'], resolved)}")
-        st.markdown(f"**Against.** {render_prose(group['cons'], resolved)}")
+        st.markdown(f"**For.** {render_prose_md(group['pros'], resolved)}")
+        st.markdown(f"**Against.** {render_prose_md(group['cons'], resolved)}")
 
         if group["key"] == "deploy_roth_cash":
             tbl = deploy["table"].copy()
@@ -226,13 +241,20 @@ with col:
         st.markdown(
             "**Tax profile** (user-editable in `src/location_config.py`):\n\n"
             f"- Federal ordinary marginal: **{TAX_PROFILE['federal_marginal']:.2%}**\n"
-            f"- Federal long-term capital gains: **{TAX_PROFILE['federal_ltcg']:.2%}**\n"
+            f"- Federal long-term capital gains: **0% up to \\${LTCG_HEADROOM_2026:,.0f} "
+            "of remaining 2026 headroom, then 15%**\n"
             f"- State ordinary (PA flat): **{TAX_PROFILE['state_marginal']:.2%}**\n"
             f"- State LTCG (PA — no preferential rate): **{TAX_PROFILE['state_ltcg']:.2%}**\n"
-            f"- Combined ordinary rate: **{_ord:.2%}** · combined LTCG rate: **{_ltcg:.2%}**\n\n"
+            f"- Combined ordinary rate: **{_ord:.2%}** · combined LTCG rate on "
+            f"realizations: **{_ltcg:.2%}** (federal 0% within headroom + PA)\n\n"
+            f"**0% capital-gains headroom (2026).** A finite budget of "
+            f"**\\${LTCG_HEADROOM_2026:,.0f}**, not a rate. The recommended gain-side "
+            f"relocations would consume **\\${_headroom_consumed:,.0f}**, leaving "
+            f"**\\${_headroom_remaining:,.0f}**; realizations beyond that are taxed at "
+            "15% federal + 3.07% PA.\n\n"
             "**Scores are authored**, not computed — the owner's priority judgement, "
             "deliberately without a scoring formula. **Sleeve deploy targets are an "
             "ordinal ranking**, not a return forecast. **Dollar figures in every card "
             "are templated from the live positions CSV**; an unresolvable figure "
-            "raises rather than rendering $0."
+            "raises rather than rendering \\$0."
         )

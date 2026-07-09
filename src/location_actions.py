@@ -321,7 +321,8 @@ _PLACEHOLDER_RE = re.compile(r"\{(\w+)\}")
 
 def render_prose(template: str, resolved: dict[str, str | None]) -> str:
     """Substitute {placeholders}. RAISE if a referenced placeholder is unresolvable
-    — never render a blank or a misleading $0."""
+    — never render a blank or a misleading $0. Returns raw text with real "$"
+    (use render_prose_md for anything passed to st.markdown)."""
     def _repl(m: re.Match) -> str:
         key = m.group(1)
         val = resolved.get(key)
@@ -332,3 +333,16 @@ def render_prose(template: str, resolved: dict[str, str | None]) -> str:
             )
         return val
     return _PLACEHOLDER_RE.sub(_repl, template)
+
+
+def escape_md(text: str) -> str:
+    r"""Escape "$" as "\$" so Streamlit Markdown does not read it as a LaTeX math
+    delimiter. An unescaped "$" opens math mode and swallows following text (and
+    the "$" itself) into monospace — the visible bug where "$51" rendered as
+    "- 51" and "$77,690" as "77,690"."""
+    return text.replace("$", "\\$")
+
+
+def render_prose_md(template: str, resolved: dict[str, str | None]) -> str:
+    """render_prose, then escape "$" for safe rendering inside st.markdown."""
+    return escape_md(render_prose(template, resolved))

@@ -31,6 +31,29 @@ TAX_PROFILE: dict[str, float] = {
     "state_ltcg": 0.0307,
 }
 
+# 0% federal long-term capital-gains bracket for 2026, modeled as a finite
+# BUDGET rather than a rate: realized long-term gains are federally untaxed up to
+# this remaining headroom, then taxed at 15%. USER-EDITABLE; shrinks with other
+# taxable income and evaporates once wage income lifts past the 0%-rate ceiling.
+LTCG_HEADROOM_2026: float = 2650.0
+
+
+# ── Account directability ──────────────────────────────────────────────────────
+# Which household accounts can actually be traded (jointly) today, keyed by
+# pseudonym. Directability does NOT follow tax_treatment (both taxable accounts
+# differ) or managed_by (the IRAs are externally managed yet directable), so it
+# is enumerated explicitly. USER-EDITABLE.
+DIRECTABLE_PSEUDONYMS: frozenset[str] = frozenset({
+    "acct_taxable_01",   # self-directed taxable
+    "acct_roth_01",      # Roth IRA
+    "acct_trad_ira_01",  # Traditional IRA
+})
+
+
+def is_directable(pseudonym: str) -> bool:
+    """True if the account can be traded jointly today (vs. needs coordination)."""
+    return pseudonym in DIRECTABLE_PSEUDONYMS
+
 
 # ── Sleeve location priority (ORDINAL — not a return forecast) ──────────────────
 # 1 = highest expected return, most deserving of scarce Roth (tax-free) space;
