@@ -9,9 +9,10 @@ import pytest
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 TRACKER_DB = ROOT / "data" / "tracker.db"
 
-RFUTX_VALUE    = 66_167.75
-GAOSX_VALUE    = 10_681.92
-CUSIP_VALUE    =    821.02
+# Fund holding values from the Jul-08-2026 export (used as look-through inputs).
+RFUTX_VALUE    = 77_690.18
+GAOSX_VALUE    = 10_618.01
+CUSIP_VALUE    =    811.87
 
 FUND_SYMBOLS = ["RFUTX", "GAOSX", "31564E540"]
 
@@ -217,8 +218,9 @@ def test_symbol_with_no_sleeve_category_raises(compositions_df):
 # ── Live look-through against tracker.db ──────────────────────────────────────
 
 def _skip_if_no_holdings():
-    holdings_csv = ROOT / "data" / "uploads" / "Portfolio_Positions_May-27-2026.csv"
-    if not holdings_csv.exists():
+    from src.household_data import find_latest_positions_csv
+    holdings_csv = find_latest_positions_csv()
+    if holdings_csv is None or not holdings_csv.exists():
         pytest.skip("Holdings CSV not present (personal-mode file)")
 
 

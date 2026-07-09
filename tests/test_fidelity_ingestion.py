@@ -12,8 +12,10 @@ import pytest
 import pandas as pd
 
 from src.ingestion.fidelity import parse_fidelity_csv
+from src.household_data import find_latest_positions_csv
 
-SAMPLE_CSV = pathlib.Path(__file__).parent.parent / "data" / "uploads" / "Portfolio_Positions_May-27-2026.csv"
+# Newest dated positions CSV in data/uploads/ (None if the personal file is absent).
+SAMPLE_CSV = find_latest_positions_csv()
 
 _HEADER = (
     "Account Number,Account Name,Symbol,Description,Quantity,"
@@ -22,7 +24,7 @@ _HEADER = (
 
 
 def _df() -> pd.DataFrame:
-    if not SAMPLE_CSV.exists():
+    if SAMPLE_CSV is None or not SAMPLE_CSV.exists():
         pytest.skip("Sample CSV not present (personal-mode file, not committed)")
     return parse_fidelity_csv(str(SAMPLE_CSV))
 
@@ -43,17 +45,17 @@ def _write_map(tmp_path, mapping) -> str:
 # ── Real-export tests (skip when the personal CSV is absent) ──────────────────
 
 def test_row_count():
-    # Row count verified against May 27 2026 Fidelity export: 85
-    # holdings across 7 accounts, sum $202,449.62.
+    # Row count verified against Jul 08 2026 Fidelity export: 97
+    # holdings across 7 accounts, sum $221,930.85.
     df = _df()
-    assert len(df) == 85, f"Expected 85 rows, got {len(df)}"
+    assert len(df) == 97, f"Expected 97 rows, got {len(df)}"
 
 
 def test_total_current_value():
     df = _df()
     total = float(df["current_value"].sum())
-    assert abs(total - 202_449.62) < 1.00, (
-        f"Total current_value ${total:,.2f} not within $1 of $202,449.62"
+    assert abs(total - 221_930.85) < 1.00, (
+        f"Total current_value ${total:,.2f} not within $1 of $221,930.85"
     )
 
 
@@ -78,7 +80,9 @@ def test_spaxx_row():
     matches = df[df["symbol"] == "SPAXX"]
     assert len(matches) == 1, "SPAXX row not found"
     val = float(matches["current_value"].iloc[0])
-    assert abs(val - 1_000.36) < 1.00, f"SPAXX current_value ${val:.2f} unexpected"
+    # Jul-08 export: the self-directed sweep was largely deployed into SAA
+    # tickers, leaving a $0.68 SPAXX residual (was $1,000.36 on May-27).
+    assert abs(val - 0.68) < 1.00, f"SPAXX current_value ${val:.2f} unexpected"
 
 
 # ── Pseudonymization behavior (synthetic; fake identifiers only) ──────────────

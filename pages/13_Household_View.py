@@ -28,7 +28,7 @@ if IS_DEMO:
 
 # ── Personal-mode imports ──────────────────────────────────────────────────────
 from src.db import get_connection
-from src.ingestion.fidelity import parse_fidelity_csv
+from src.household_data import load_latest_positions
 from src.household import (
     compute_household_allocation,
     household_summary,
@@ -48,16 +48,19 @@ from src.household import (
 )
 
 # ── Load data ──────────────────────────────────────────────────────────────────
-_CSV      = Path(__file__).resolve().parent.parent / "data" / "uploads" / "Portfolio_Positions_May-27-2026.csv"
+# Newest Portfolio_Positions_<Mon>-DD-YYYY>.csv in data/uploads/, chosen by the
+# date in the filename (see src/household_data). The dated filename is no longer
+# hardcoded here.
 _PERF_CSV  = Path(__file__).resolve().parent.parent / "data" / "seed" / "household_performance.csv"
 _BENCH_CSV = Path(__file__).resolve().parent.parent / "data" / "seed" / "household_benchmarks.csv"
 
 try:
-    positions_df = parse_fidelity_csv(_CSV)
+    positions_df, _csv_path, _as_of_date = load_latest_positions()
 except FileNotFoundError:
     st.warning(
-        f"Holdings file not found at `data/uploads/{_CSV.name}`. "
-        "Upload the Fidelity positions CSV to `data/uploads/` to use this page."
+        "No Fidelity positions file found in `data/uploads/`. "
+        "Upload a `Portfolio_Positions_<Mon>-DD-YYYY>.csv` export to "
+        "`data/uploads/` to use this page."
     )
     st.stop()
 except Exception:
@@ -81,7 +84,7 @@ with get_connection() as conn:
         conn,
     )
 
-summary = household_summary(positions_df, accounts_df, as_of_date="2026-05-27")
+summary = household_summary(positions_df, accounts_df, as_of_date=_as_of_date.isoformat())
 
 _BLUE     = "#3D5A80"
 _BLUE_LT  = "rgba(61, 90, 128, 0.30)"
@@ -132,7 +135,7 @@ with col:
     k2.metric("Accounts",       summary["account_count"])
     k3.metric("Self-Directed", f"${summary['self_aum']:,.0f}")
     k4.metric("Ext. Managed",  f"${summary['external_aum']:,.0f}")
-    st.caption(f"As of {summary['as_of_date']}")
+    st.caption(f"As of {summary['as_of_date']} · source: {_csv_path.name}")
     st.divider()
 
 # ── Strategic Comparison ───────────────────────────────────────────────────────

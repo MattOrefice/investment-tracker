@@ -1,7 +1,8 @@
 """Tests for Phase 25.5: household allocation aggregation.
 
-Snapshot-style tests against the real May-27-2026 positions CSV.
-All live tests skip automatically if the CSV is not present.
+Snapshot-style tests against the real Jul-08-2026 positions CSV (newest dated
+export in data/uploads/). All live tests skip automatically if the CSV is
+not present.
 """
 import pathlib
 import sqlite3
@@ -9,35 +10,38 @@ import sqlite3
 import pandas as pd
 import pytest
 
+from src.household_data import find_latest_positions_csv
+
 ROOT        = pathlib.Path(__file__).resolve().parent.parent
 TRACKER_DB  = ROOT / "data" / "tracker.db"
-HOLDINGS_CSV = ROOT / "data" / "uploads" / "Portfolio_Positions_May-27-2026.csv"
+# Newest dated positions CSV in data/uploads/ (None if the personal file is absent).
+HOLDINGS_CSV = find_latest_positions_csv()
 
-PORTFOLIO_TOTAL   = 202_449.62   # parse_fidelity_csv sum
-SELF_TOTAL        = 1_000.36
+PORTFOLIO_TOTAL   = 221_930.85   # parse_fidelity_csv sum (Jul-08-2026)
+SELF_TOTAL        = 1_987.19
 
 ALLOWED_RATIONALE = {"no_exposure", "on_target", "underweight", "overweight", "off_saa_exposure"}
 
-# Actuals computed from the May-27 data (look_through + total scope).
+# Actuals computed from the Jul-08 data (look_through + total scope).
 # Assertions below use ±2pp tolerance.
 ACTUAL_LT_WEIGHTS = {
-    "US Large Core":         25.59,
-    "International Developed": 12.27,
+    "US Large Core":         25.77,
+    "International Developed": 12.75,
     "Emerging Markets":       4.79,
-    "Core Fixed Income":      3.81,
-    "US Large Quality":       2.57,
-    "Real Assets":            1.54,
-    "cash":                   1.42,   # off-SAA post-38a (cash untargeted, routes to off-SAA bucket)
-    "US Large Value":         1.03,
-    "US Small Cap":           0.00,   # no AVUV held
-    "TIPS":                   0.00,   # no SCHP held
+    "Core Fixed Income":      3.94,
+    "US Large Quality":       2.49,
+    "Real Assets":            1.52,
+    "cash":                   4.23,   # off-SAA post-38a (cash untargeted, routes to off-SAA bucket)
+    "US Large Value":         1.04,
+    "US Small Cap":           0.07,   # AVUV added in the Jul-08 export (was 0 on May-27)
+    "TIPS":                   0.04,   # SCHP added in the Jul-08 export (was 0 on May-27)
 }
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _skip_if_no_holdings():
-    if not HOLDINGS_CSV.exists():
+    if HOLDINGS_CSV is None or not HOLDINGS_CSV.exists():
         pytest.skip("Holdings CSV not present (personal-mode only)")
 
 
@@ -131,14 +135,21 @@ def test_sleeve_weight_within_2pp(lt_total_result, sleeve, expected_pct):
     )
 
 
-def test_tips_and_small_cap_are_no_exposure(lt_total_result):
+def test_tips_and_small_cap_now_held_underweight(lt_total_result):
+    # The Jul-08 export introduced SCHP (TIPS) and AVUV (US Small Value/Cap),
+    # which were absent on May-27. Both SAA sleeves are now held but tiny —
+    # far below target, so 'underweight' rather than the former 'no_exposure'.
     for sleeve in ("TIPS", "US Small Cap"):
         row = lt_total_result[lt_total_result["sleeve"] == sleeve]
         assert not row.empty, f"{sleeve} row missing from allocation table"
-        assert row.iloc[0]["rationale"] == "no_exposure", (
-            f"{sleeve} should be no_exposure (no holdings), got {row.iloc[0]['rationale']!r}"
+        assert row.iloc[0]["dollar_value"] > 0.0, (
+            f"{sleeve} should now hold >$0 (SCHP/AVUV added in Jul-08 export)"
         )
-        assert row.iloc[0]["dollar_value"] == 0.0
+        assert row.iloc[0]["rationale"] == "underweight", (
+            f"{sleeve} should be underweight (held but far below target), "
+            f"got {row.iloc[0]['rationale']!r}"
+        )
+        assert not row.iloc[0]["is_off_saa"], f"{sleeve} is an SAA sleeve"
 
 
 # ── as_held mode: fund sleeves not decomposed ─────────────────────────────────
@@ -219,13 +230,13 @@ def test_household_summary_keys_and_values():
     _skip_if_no_holdings()
     from src.household import household_summary
     pos, acct, *_ = _load_fixtures()
-    summary = household_summary(pos, acct, as_of_date="2026-05-27")
+    summary = household_summary(pos, acct, as_of_date="2026-07-08")
     assert set(summary.keys()) == {"total_aum", "account_count", "as_of_date", "self_aum", "external_aum"}
     assert abs(summary["total_aum"] - PORTFOLIO_TOTAL) <= 1.0
     assert abs(summary["self_aum"] - SELF_TOTAL) <= 1.0
     assert abs(summary["self_aum"] + summary["external_aum"] - summary["total_aum"]) <= 1.0
     assert summary["account_count"] == 7
-    assert summary["as_of_date"] == "2026-05-27"
+    assert summary["as_of_date"] == "2026-07-08"
 
 
 # ── Phase 38b-1 — cash routes to off-SAA (synthetic; runs in CI, no CSV needed) ──

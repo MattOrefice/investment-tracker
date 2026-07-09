@@ -9,15 +9,18 @@ import sqlite3
 import pandas as pd
 import pytest
 
+from src.household_data import find_latest_positions_csv
+
 ROOT        = pathlib.Path(__file__).resolve().parent.parent
 TRACKER_DB  = ROOT / "data" / "tracker.db"
-HOLDINGS_CSV = ROOT / "data" / "uploads" / "Portfolio_Positions_May-27-2026.csv"
+# Newest dated positions CSV in data/uploads/ (None if the personal file is absent).
+HOLDINGS_CSV = find_latest_positions_csv()
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _skip_if_no_holdings():
-    if not HOLDINGS_CSV.exists():
+    if HOLDINGS_CSV is None or not HOLDINGS_CSV.exists():
         pytest.skip("Holdings CSV not present (personal-mode only)")
 
 
