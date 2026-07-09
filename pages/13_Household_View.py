@@ -45,6 +45,11 @@ from src.household import (
     load_household_benchmarks,
     build_benchmark_table,
 )
+from src.location_config import is_directable
+# render_prose / escape_md reused from the Asset Location module so page 13 follows
+# the SAME rule: figures are templated from the live CSV and an unresolvable
+# placeholder raises; escape_md guards Streamlit's "$" math-mode swallow.
+from src.location_actions import render_prose, escape_md
 
 # ── Load data ──────────────────────────────────────────────────────────────────
 # Newest Portfolio_Positions_<Mon>-DD-YYYY>.csv in data/uploads/, chosen by the
@@ -85,6 +90,12 @@ with get_connection() as conn:
 
 summary = household_summary(positions_df, accounts_df, as_of_date=_as_of_date.isoformat())
 
+# Directability — same source of truth as the Asset Location page (is_directable /
+# DIRECTABLE_PSEUDONYMS), so the two pages can never disagree on what is actionable.
+_present_accts = accounts_df[accounts_df["pseudonym"].isin(positions_df["pseudonym"])]
+_directable_names   = [n for p, n in zip(_present_accts["pseudonym"], _present_accts["display_name"]) if is_directable(p)]
+_coordination_names = [n for p, n in zip(_present_accts["pseudonym"], _present_accts["display_name"]) if not is_directable(p)]
+
 _BLUE     = "#3D5A80"
 _BLUE_LT  = "rgba(61, 90, 128, 0.30)"
 _GRAY     = "#AEAEAE"
@@ -102,12 +113,12 @@ with col:
         st.markdown(
             "**Scope.** This page aggregates every household account — self-directed "
             "and externally-managed — against the SAA framework. "
-            # self_aum is templated (not hardcoded) so the figure can't go stale
-            # as balances change between exports.
-            f"Only the self-directed account (Z52…, ~\\${summary['self_aum']:,.0f}) is "
-            "directly actionable; "
-            "externally-managed accounts are shown as observed context. "
-            "Changes to externally-managed accounts require coordination with the manager.\n\n"
+            # Actionability is the directability split (is_directable), stated exactly
+            # as the Asset Location page states it — never a raw account identifier.
+            f"{len(_directable_names)} of the household's accounts are directable jointly "
+            f"today — {', '.join(_directable_names)} — and can be traded now. The others "
+            f"({', '.join(_coordination_names)}) are externally managed and shown as "
+            "observed context; changes there require coordination with the manager.\n\n"
             "**Look Through vs As Held.** Look Through decomposes target-date and "
             "allocation funds (RFUTX, GAOSX, 31564E540) into their underlying sleeve "
             "exposures. As Held treats every fund by its own sleeve label (target\\_date, "
@@ -148,7 +159,8 @@ with col:
     st.subheader("Strategic Comparison — SAA vs Advisor Book")
     st.caption(
         "Side-by-side framing of the SAA framework against the positioning of the "
-        "advisor-managed accounts (six of seven accounts, ~$201k of household). "
+        f"advisor-managed accounts (six of seven accounts, ~\\${summary['external_aum']:,.0f} "
+        "of household). "
         "The advisor book runs a coherent strategy; it is not random — it just differs "
         "from the SAA philosophy. This comparison is editorial context; computed drift "
         "and exposure data follows below."
@@ -277,13 +289,13 @@ with col:
     if scope == "total":
         pct_self = summary["self_aum"] / summary["total_aum"] * 100 if summary["total_aum"] else 0
         pct_ext  = summary["external_aum"] / summary["total_aum"] * 100 if summary["total_aum"] else 0
-        st.info(
+        st.info(escape_md(
             f"Drift is computed against the full household aggregate. "
             f"Of the ${summary['total_aum']:,.0f} household, "
             f"${summary['self_aum']:,.0f} ({pct_self:.1f}%) is self-directed and actionable; "
             f"${summary['external_aum']:,.0f} ({pct_ext:.1f}%) is externally-managed and observed. "
             "Aligning to SAA targets primarily requires manager coordination, not unilateral trades."
-        )
+        ))
     elif scope == "self_only":
         st.info(
             "Showing self-directed account only. Drift here is directly actionable "
@@ -442,4 +454,21 @@ with col:
 _, col, _ = st.columns([1, 8, 1])
 with col:
     with st.expander("Methodology note — household asset location", expanded=False):
-        st.markdown(methodology_note_markdown())
+        # Resolve the note's figures from the live CSV (never hardcoded). off-SAA is
+        # the household-wide look-through total, independent of the page's toggles.
+        _rfutx_value = float(positions_df[positions_df["symbol"] == "RFUTX"]["current_value"].sum())
+        _note_alloc = compute_household_allocation(
+            positions_df, accounts_df, securities_df, compositions_df, saa_targets_df,
+            mode="look_through", scope="total",
+        )
+        _off_saa_value = float(_note_alloc[_note_alloc["is_off_saa"]]["dollar_value"].sum())
+        _ext_pct = (summary["external_aum"] / summary["total_aum"] * 100) if summary["total_aum"] else None
+        _methodology_vars = {
+            "total_aum":     f"${summary['total_aum']:,.0f}",
+            "self_aum":      f"${summary['self_aum']:,.0f}",
+            "external_pct":  f"{_ext_pct:.1f}%" if _ext_pct is not None else None,
+            "rfutx_value":   f"${_rfutx_value:,.0f}" if _rfutx_value else None,
+            "off_saa_value": f"${_off_saa_value:,.0f}" if _off_saa_value else None,
+        }
+        # render_prose raises on any unresolvable figure; escape_md guards the "$" swallow.
+        st.markdown(escape_md(render_prose(methodology_note_markdown(), _methodology_vars)))

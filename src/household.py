@@ -597,7 +597,7 @@ def build_location_register(
     accounts_df: pd.DataFrame,
     securities_df: pd.DataFrame,
     tax_profile: dict,
-    roth_priority: dict,
+    priority_by_account_type: dict,
     shelter_priority: dict,
 ) -> pd.DataFrame:
     """Rank asset-location cleanup actions across four mislocation cases.
@@ -607,8 +607,14 @@ def build_location_register(
       B  medium tax-efficiency in a taxable account -> move to a shelter
       C  low/medium efficiency in a ROTH            -> premium-space waste;
                                                        move to Traditional/workplace
-      D  a high roth-priority sleeve (roth_priority rank 1–4) sitting in taxable
-         while a lower-priority sleeve occupies Roth space -> swap into the Roth
+      D  a sleeve STRANDED in taxable — a sheltered account wants it strictly more
+         than taxable does (roth rank < taxable rank), and the Roth holds a
+         lower-priority sleeve that could be displaced -> swap into the Roth.
+         Equal priority is NOT a strand (a sleeve in the taxable map is a fine
+         taxable holding). Two inputs, two jobs: the per-account-type priority
+         maps only IDENTIFY which rows qualify; the dollar benefit is sized by
+         SLEEVE_ASSUMED_YIELD via _assumed_yield (case-D rows are equity, so any
+         sleeve without a yield entry falls back to EQUITY_DEFAULT_YIELD).
 
     Case C is opportunity cost, not income-tax drag: a zero-yield asset registers
     no drag while being the worst possible use of never-taxed space (e.g. USRT/IAU
@@ -632,6 +638,13 @@ def build_location_register(
     """
     ordinary = float(tax_profile["federal_marginal"]) + float(tax_profile["state_marginal"])
     ltcg     = float(tax_profile["federal_ltcg"]) + float(tax_profile["state_ltcg"])
+
+    # Case D is comparative: a sleeve is stranded only if a shelter ranks it
+    # strictly better than taxable does. Absent from a map = infinity (that
+    # account does not want it); both absent = no case D.
+    roth_priority    = priority_by_account_type.get("roth_ira", {})
+    taxable_priority = priority_by_account_type.get("taxable", {})
+    _INF = 10 ** 9
 
     sec = securities_df[["ticker", "name", "tax_efficiency", "sleeve_category"]].copy()
     acct = (
@@ -678,14 +691,16 @@ def build_location_register(
         if not te or not tt or not sleeve or sleeve == "cash":
             continue
 
-        prio = roth_priority.get(sleeve)
+        roth_rank    = roth_priority.get(sleeve, _INF)
+        taxable_rank = taxable_priority.get(sleeve, _INF)
         if tt == "taxable" and te == "low":
             case = "A"
         elif tt == "taxable" and te == "medium":
             case = "B"
         elif tt == "roth_ira" and te in ("low", "medium"):
             case = "C"
-        elif tt == "taxable" and prio in (1, 2, 3, 4) and _worst_roth_below(prio) is not None:
+        elif (tt == "taxable" and roth_rank < taxable_rank
+              and _worst_roth_below(roth_rank) is not None):
             case = "D"
         else:
             continue
@@ -927,19 +942,24 @@ def build_single_stock_summary(
 
 
 def methodology_note_markdown() -> str:
-    """Returns the household asset-location methodology note as a markdown string.
-    Personal-mode editorial content — must never render in demo mode."""
+    """Returns the household asset-location methodology note as a markdown TEMPLATE.
+    Personal-mode editorial content — must never render in demo mode.
+
+    Dollar/percent figures are {placeholders} (total_aum, self_aum, external_pct,
+    rfutx_value, off_saa_value), resolved by the caller from the live CSV via
+    location_actions.render_prose — same rule as the Asset Location page: an
+    unresolvable placeholder RAISES rather than rendering a stale number."""
     return """\
 ### Methodology Note — Household-Level Asset Location
 *An allocator's analysis of an inherited, multi-manager household*
 
 **The setup.** I'm a 27-year-old CFA charterholder on an allocator track. My mother, also a CFA, has managed the bulk of my investable assets for years at no fee — a genuine gift, and a good portfolio. As I built out my own strategic asset allocation framework, I wanted to answer a question most retail tooling can't: not "how is each account doing," but "what does my entire household look like as a single allocation, and how far does it sit from the framework I would run if I controlled every dollar?" This note documents what the household-aggregation view revealed and the methodology decisions behind it.
 
-**The structural fact that shapes everything.** Of ~$202,450 across seven accounts, exactly $1,000 — the self-directed brokerage I opened in May 2026 — is under my discretion. The other 99.5% is externally managed: six accounts run by my mother, plus one employer-default target-date fund (RFUTX) on auto-pilot in a profit-sharing plan. This means household drift against my SAA is largely *observed*, not *actionable*. The framework is mine; the dollars mostly aren't. A tool that surfaced drift as if I could rebalance it would imply a control I don't have, so this page distinguishes self-directed (actionable) exposure from externally-managed (observed) context throughout.
+**The structural fact that shapes everything.** Of ~{total_aum} across seven accounts, exactly {self_aum} — the self-directed brokerage I opened in May 2026 — is under my discretion. The other {external_pct} is externally managed: six accounts run by my mother, plus one employer-default target-date fund (RFUTX) on auto-pilot in a profit-sharing plan. This means household drift against my SAA is largely *observed*, not *actionable*. The framework is mine; the dollars mostly aren't. A tool that surfaced drift as if I could rebalance it would imply a control I don't have, so this page distinguishes self-directed (actionable) exposure from externally-managed (observed) context throughout.
 
-**Methodology decision 1 — look-through over as-held.** Three holdings are funds-of-funds: RFUTX (American Funds 2060, my single largest position at ~$66k), GAOSX (JPMorgan Global Allocation), and a Fidelity Freedom 2065 fund. Treating these as opaque "target-date" or "multi-asset" blobs would misstate the household's true exposure by roughly a third. I decompose each into underlying sleeves at approximate prospectus glide-path weights, sourced and flagged as estimates. The look-through reveals that a large share of the household's apparent US-equity and international-developed exposure is actually one workplace fund's glide path, not discretionary positioning — invisible at the account level, obvious once decomposed.
+**Methodology decision 1 — look-through over as-held.** Three holdings are funds-of-funds: RFUTX (American Funds 2060, my single largest position at ~{rfutx_value}), GAOSX (JPMorgan Global Allocation), and a Fidelity Freedom 2065 fund. Treating these as opaque "target-date" or "multi-asset" blobs would misstate the household's true exposure by roughly a third. I decompose each into underlying sleeves at approximate prospectus glide-path weights, sourced and flagged as estimates. The look-through reveals that a large share of the household's apparent US-equity and international-developed exposure is actually one workplace fund's glide path, not discretionary positioning — invisible at the account level, obvious once decomposed.
 
-**Methodology decision 2 — honest off-SAA reporting over forced mapping.** My SAA prescribes factor tilts: quality (SPHQ), value (VTV), small-value (AVUV). The advisor book holds broad-market equivalents — IXUS/VXUS for international, broad small-core rather than small-value, a range of thematic and hedged-equity strategies. The temptation is to map these onto the nearest SAA sleeve and call it close enough. I don't. Exposures that don't map cleanly to a factor-tilted SAA target are reported as "off-SAA" — held, real, but counted against no target. Roughly $87k of the household sits in off-SAA categories: broad international, small-core, hedged equity (JHEQX, JEPI, JEPQ, HELO), thematic ETFs, multi-sector and high-yield fixed income. Forcing these into SAA sleeves would manufacture false precision; reporting them honestly is the analytical point.
+**Methodology decision 2 — honest off-SAA reporting over forced mapping.** My SAA prescribes factor tilts: quality (SPHQ), value (VTV), small-value (AVUV). The advisor book holds broad-market equivalents — IXUS/VXUS for international, broad small-core rather than small-value, a range of thematic and hedged-equity strategies. The temptation is to map these onto the nearest SAA sleeve and call it close enough. I don't. Exposures that don't map cleanly to a factor-tilted SAA target are reported as "off-SAA" — held, real, but counted against no target. Roughly {off_saa_value} of the household sits in off-SAA categories: broad international, small-core, hedged equity (JHEQX, JEPI, JEPQ, HELO), thematic ETFs, multi-sector and high-yield fixed income. Forcing these into SAA sleeves would manufacture false precision; reporting them honestly is the analytical point.
 
 **Methodology decision 3 — substitution analysis as a separate layer.** Off-SAA doesn't mean unwanted. IXUS + VXUS is a high-equivalence substitute for my VEA+IEMG international target. Broad small-core is a medium-equivalence stand-in for small-value (same size factor, different value tilt). Hedged equity is a medium substitute for US large core with downside dampening. Multi-sector credit is a low-equivalence substitute for Treasury duration — it generates yield but doesn't provide the recession ballast my framework wants from fixed income. Separating "off-SAA" from "off-SAA but a reasonable substitute" keeps the drift numbers honest while acknowledging that two allocators can express the same view through different instruments.
 

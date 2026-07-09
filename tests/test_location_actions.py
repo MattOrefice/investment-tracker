@@ -26,6 +26,8 @@ from src.location_actions import (
     filter_register_for_group,
     capital_gains_headroom,
     validate_action_groups,
+    assert_full_coverage,
+    _group_title,
 )
 from src.location_config import (
     TAX_PROFILE,
@@ -55,7 +57,7 @@ def _live():
     sec = pd.read_sql_query("SELECT * FROM securities", conn)
     conn.close()
     reg = build_location_register(pos, acct, sec, TAX_PROFILE,
-                                  SLEEVE_PRIORITY_BY_ACCOUNT_TYPE["roth_ira"], ACCOUNT_SHELTER_PRIORITY)
+                                  SLEEVE_PRIORITY_BY_ACCOUNT_TYPE, ACCOUNT_SHELTER_PRIORITY)
     return pos, acct, sec, reg
 
 
@@ -70,6 +72,9 @@ def test_scores_are_read_from_config_verbatim():
         "relocate_gain_side": 5,
         "thematic_sprawl": 2,
         "rollover_401k": 3,
+        "frozen_tod_income": 1,
+        "saa_sleeves_taxable": 2,
+        "predeploy_stranded_equity": 4,
     }
 
 
@@ -82,6 +87,9 @@ def test_statuses_are_read_from_config_verbatim():
         "relocate_gain_side": "evaluate",
         "thematic_sprawl": "accepted",
         "rollover_401k": "blocked",
+        "frozen_tod_income": "accepted",
+        "saa_sleeves_taxable": "accepted",
+        "predeploy_stranded_equity": "evaluate",
     }
 
 
@@ -324,12 +332,15 @@ def test_no_rendered_prose_contains_comma_emdash():
 # Exact rendered lengths against the live Jul-08 CSV — a brittle-on-purpose canary
 # for silent prose corruption (dropped words render as valid Markdown).
 RENDERED_PROSE_LEN = {
-    "deploy_roth_cash":      (382, 336),
-    "clear_roth_non_equity": (477, 335),
-    "relocate_loss_side":    (409, 363),
-    "relocate_gain_side":    (201, 456),
-    "thematic_sprawl":       (217, 465),
-    "rollover_401k":         (341, 526),
+    "deploy_roth_cash":          (382, 336),
+    "clear_roth_non_equity":     (477, 335),
+    "relocate_loss_side":        (409, 440),   # cons +{group_2_title} cross-ref sentence
+    "relocate_gain_side":        (201, 372),   # cons rewritten: headroom-correct, no 15% claim
+    "thematic_sprawl":           (217, 465),
+    "rollover_401k":             (341, 526),
+    "frozen_tod_income":         (134, 68),    # scaffold prose (authored copy pending)
+    "saa_sleeves_taxable":       (153, 73),    # scaffold prose (authored copy pending)
+    "predeploy_stranded_equity": (156, 77),    # scaffold prose (authored copy pending)
 }
 
 
@@ -549,3 +560,63 @@ def test_unresolvable_rollover_source_raises_no_fallback():
     resolved = resolve_placeholders(g6, pos, acct, sec, reg)
     with pytest.raises(ValueError):
         render_prose(g6["pros"], resolved)
+
+
+# ── Coverage guard: every register row belongs to >=1 group (this PR) ───────────
+
+def test_coverage_guard_passes_over_live_register():
+    """assert_full_coverage must not raise: after groups 7-9, every one of the
+    live register's rows is claimed by some action group (zero orphans)."""
+    _pos, _acct, _sec, reg = _live()
+    assert_full_coverage(reg)   # raises on any orphan
+
+
+def test_coverage_guard_raises_and_names_the_orphan():
+    """Dropping a coverage group must orphan its rows and make the guard RAISE,
+    naming the uncovered symbol — this is the whole point of the guard."""
+    import src.location_actions as la
+    _pos, _acct, _sec, reg = _live()
+    orig = la.ACTION_GROUPS
+    la.ACTION_GROUPS = [g for g in orig if g["key"] != "saa_sleeves_taxable"]
+    try:
+        with pytest.raises(ValueError) as ei:
+            la.assert_full_coverage(reg)
+        assert "VGIT" in str(ei.value), "guard must name the now-orphaned SAA sleeves"
+    finally:
+        la.ACTION_GROUPS = orig
+
+
+# ── Item 5: thematic is not a Roth deploy target ───────────────────────────────
+
+def test_thematic_absent_from_roth_and_hsa_priority_maps():
+    for acct_type in ("roth_ira", "hsa"):
+        assert "thematic" not in SLEEVE_PRIORITY_BY_ACCOUNT_TYPE[acct_type], (
+            f"thematic must not be a deploy target in {acct_type}"
+        )
+
+
+def test_thematic_never_in_a_roth_deploy_answer():
+    _pos, _acct, _sec, _reg = _live()
+    ans = build_roth_deploy_answer(_pos, _acct, _sec)
+    assert "thematic" not in set(ans["sleeves"]), "thematic leaked into the Roth deploy sleeves"
+    assert "thematic" not in set(ans["table"]["sleeve"]), "thematic leaked into the Roth deploy table"
+
+
+# ── Item 2: group 4 cons is headroom-correct (no 15% claim, no self-reference) ──
+
+def test_gain_side_cons_templates_consumed_and_drops_false_claims():
+    g4 = next(g for g in ACTION_GROUPS if g["key"] == "relocate_gain_side")
+    assert "{headroom_consumed}" in g4["cons"], "group 4 must template the consumed headroom"
+    for phrase in ("15%", "gain-side realization above"):
+        assert phrase not in g4["cons"], f"group 4 cons must not contain {phrase!r} (factually wrong)"
+
+
+# ── Item 3: group 3 cross-references group 2 by its LIVE title, not a hardcode ──
+
+def test_loss_side_cons_references_current_group2_title():
+    pos, acct, sec, reg = _live()
+    dep = build_roth_deploy_answer(pos, acct, sec)
+    g3 = next(g for g in ACTION_GROUPS if g["key"] == "relocate_loss_side")
+    assert "{group_2_title}" in g3["cons"], "group 3 must template group 2's title, not hardcode it"
+    cons = render_prose_md(g3["cons"], resolve_placeholders(g3, pos, acct, sec, reg, roth_idle_cash=dep["idle_cash"]))
+    assert _group_title("clear_roth_non_equity") in cons, "rendered group 3 cons must show group 2's live title"

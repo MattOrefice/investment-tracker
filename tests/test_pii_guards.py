@@ -4,8 +4,8 @@ Structural guards (always run in CI):
   * the accounts schema carries no account_number column,
   * parse_fidelity_csv() output carries no account_number column,
   * a freshly-created DB and a migrated DB agree on the accounts schema,
-  * no account-number-shaped literal (9-digit run or UUID) is in any tracked
-    TEXT file.
+  * no account-number-shaped literal (9-digit run, letter-prefixed Z-account, or
+    UUID) is in any tracked TEXT file.
 
 Local-only guard (skips when private/account_map.json is absent, e.g. in CI):
   * none of the real account numbers (map keys) appear in any tracked text file.
@@ -24,10 +24,12 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 _SKIP_EXT = {".db", ".csv", ".png", ".jpg", ".jpeg", ".gif", ".ico", ".pdf",
              ".xlsx", ".xls", ".parquet", ".zip", ".woff", ".woff2", ".ttf"}
 
-# 9-digit run OR a canonical UUID. Deliberately not 5-digit (would false-positive
-# on prices/dates); the 9-digit + UUID forms are the account-number shapes.
+# 9-digit run, a letter-prefixed account (one uppercase letter + 8 digits — the
+# Fidelity "Z-account" shape, also 9 chars), OR a canonical UUID. Deliberately not
+# 5-digit (would false-positive on prices/dates). Kept in lockstep with the ci.yml
+# grep step of the same name.
 _LITERAL_RE = re.compile(
-    r"\b\d{9}\b|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+    r"\b\d{9}\b|\b[A-Z]\d{8}\b|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
 )
 
 # Pre-migration accounts shape (account_number present) — mirrors the old live DB.
@@ -121,6 +123,22 @@ def test_fresh_and_migrated_accounts_schema_agree():
     assert fresh_idx == mig_idx, (
         f"accounts indexes differ:\n fresh   = {fresh_idx}\n migrated= {mig_idx}"
     )
+
+
+def test_literal_re_catches_letter_prefixed_account():
+    """The guard must catch a letter-prefixed account (e.g. a Fidelity Z-account),
+    not just bare 9-digit runs — a planted literal trips it, innocuous shapes don't.
+    Manual equivalent: planting a one-letter-plus-eight-digit literal in a tracked
+    file makes the file scan below and the ci.yml grep step fail; removing it
+    restores green."""
+    # Assemble the account-shaped probes at runtime so no literal account-shaped run
+    # sits in this file (that would trip the file-scan guard below on this very file).
+    letter_acct = "Z" + "1" * 8   # one uppercase letter + eight digits
+    nine_digits = "1" * 9         # a bare nine-digit run
+    assert _LITERAL_RE.search(letter_acct), "letter-prefixed account shape must trip the guard"
+    assert _LITERAL_RE.search(nine_digits), "bare 9-digit run must still trip the guard"
+    for benign in ("Z52", "AVUV", "us_small_value", "A1", "IEMG2026"):
+        assert not _LITERAL_RE.search(benign), f"{benign!r} must not false-positive"
 
 
 def test_no_account_number_shaped_literals_in_tracked_files():

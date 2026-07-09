@@ -1,9 +1,11 @@
 """Asset Location — personal-mode only.
 
-Reads as six decisions: where to deploy idle Roth cash, and five ranked cleanup
-actions. Scores and prose are authored (src/location_actions.py); dollar figures
-are templated from the live CSV. Rides the household CSV path; does not touch
-holdings.py, rebalance.py, or page 11.
+Reads as a set of decisions: where to deploy idle Roth cash, then a series of
+ranked cleanup/coverage actions (count derived from ACTION_GROUPS, not hardcoded).
+Scores and prose are authored (src/location_actions.py); dollar figures are
+templated from the live CSV. Every register row must belong to some action group
+(assert_full_coverage raises at render otherwise). Rides the household CSV path;
+does not touch holdings.py, rebalance.py, or page 11.
 """
 import logging
 import streamlit as st
@@ -50,6 +52,7 @@ from src.location_actions import (
     escape_md,
     filter_register_for_group,
     capital_gains_headroom,
+    assert_full_coverage,
 )
 
 # ── Load data ──────────────────────────────────────────────────────────────────
@@ -80,8 +83,11 @@ with get_connection() as conn:
 # ── Derived frames ──────────────────────────────────────────────────────────────
 register = build_location_register(
     positions_df, accounts_df, securities_df,
-    TAX_PROFILE, SLEEVE_PRIORITY_BY_ACCOUNT_TYPE["roth_ira"], ACCOUNT_SHELTER_PRIORITY,
+    TAX_PROFILE, SLEEVE_PRIORITY_BY_ACCOUNT_TYPE, ACCOUNT_SHELTER_PRIORITY,
 )
+# Coverage invariant: every register row must be claimed by some action group.
+# Raise loudly at render if a new mislocation slips in with no group to narrate it.
+assert_full_coverage(register)
 deploy = build_roth_deploy_answer(positions_df, accounts_df, securities_df)
 _roth_idle_cash = deploy["idle_cash"]
 
@@ -131,12 +137,15 @@ def _summary_line(group: dict, resolved: dict, reg_rows: pd.DataFrame) -> str:
 _, col, _ = st.columns([1, 8, 1])
 with col:
     st.title("Asset Location")
-    st.caption("Six decisions: deploy idle Roth cash, then five ranked cleanup actions")
+    st.caption(
+        f"{len(ACTION_GROUPS)} decisions: deploy idle Roth cash, then "
+        f"{len(ACTION_GROUPS) - 1} ranked cleanup actions"
+    )
     st.caption(f"As of {_as_of_date.isoformat()} · source: {_csv_path.name}")
 
     with st.expander("How to read this page", expanded=False):
         st.markdown(
-            "**Six decisions, not a table.** Each card is a decision with a "
+            f"**{len(ACTION_GROUPS)} decisions, not a table.** Each card is a decision with a "
             "score (authored, 1–10), a one-line summary, a **For** and an "
             "**Against**, and — for the cleanup actions — an expander with the "
             "underlying positions. Cards are ordered *act now → evaluate → "
@@ -145,9 +154,11 @@ with col:
             "computed from the current positions export, not hardcoded. If a "
             "figure can't be computed, the page refuses to render rather than "
             "show a misleading \\$0.\n\n"
-            "**Free vs costly.** A move inside or between shelters (e.g. Roth → "
-            "Traditional) is a non-taxable event — *free*. A sale in the taxable "
-            "account realizes the embedded gain and is *costly*.\n\n"
+            "**Free vs costly.** Trades INSIDE any tax-advantaged account are "
+            "non-taxable — *free*. Assets cannot be transferred between accounts; "
+            "relocation is synthesized as two independent trades whose net effect "
+            "leaves household exposure unchanged. A sale in a taxable account "
+            "realizes the embedded gain and is *costly*.\n\n"
             "**Scores are judgement, not output.** The 1–10 scores are the "
             "owner's authored priority, deliberately not derived from a formula. "
             "Sleeve deploy targets are an ordinal ranking, never a return forecast.\n\n"

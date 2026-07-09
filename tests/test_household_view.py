@@ -333,7 +333,9 @@ def test_methodology_note_contains_heading():
 def test_methodology_note_contains_load_bearing_phrases():
     from src.household import methodology_note_markdown
     note = methodology_note_markdown()
-    assert "99.5% is externally managed" in note
+    # The figure is templated now (resolved from the live CSV by the caller), so the
+    # load-bearing phrase carries the placeholder, not a hardcoded percentage.
+    assert "{external_pct} is externally managed" in note
     assert "look-through over as-held" in note
     assert "off-SAA" in note
     assert "two-philosophy finding" in note
@@ -343,6 +345,34 @@ def test_methodology_note_contains_real_ticker():
     from src.household import methodology_note_markdown
     note = methodology_note_markdown()
     assert "RFUTX" in note, "Expected RFUTX ticker in methodology note"
+
+
+def test_methodology_note_figures_are_templated_not_hardcoded():
+    """Every stale figure the audit flagged must be a placeholder, not a literal,
+    and the note must resolve cleanly against live-shaped values (render_prose
+    raises on any unresolvable placeholder — same rule as the Asset Location page)."""
+    from src.household import methodology_note_markdown
+    from src.location_actions import render_prose
+    note = methodology_note_markdown()
+    for ph in ("{total_aum}", "{self_aum}", "{external_pct}", "{rfutx_value}", "{off_saa_value}"):
+        assert ph in note, f"methodology note must template {ph}"
+    for stale in ("$202,450", "$87k", "99.5%", "~$66k", "exactly $1,000"):
+        assert stale not in note, f"stale literal {stale!r} must not survive in the note"
+    resolved = {
+        "total_aum": "$221,931", "self_aum": "$1,987", "external_pct": "99.1%",
+        "rfutx_value": "$77,690", "off_saa_value": "$105,585",
+    }
+    out = render_prose(note, resolved)
+    assert all(v in out for v in resolved.values())
+
+
+def test_methodology_note_raises_on_unresolvable_figure():
+    from src.household import methodology_note_markdown
+    from src.location_actions import render_prose
+    note = methodology_note_markdown()
+    with pytest.raises(ValueError):
+        render_prose(note, {"total_aum": "$1", "self_aum": "$1", "external_pct": "1%",
+                            "rfutx_value": "$1", "off_saa_value": None})
 
 
 # ── load_household_performance / build_performance_table ─────────────────────

@@ -60,7 +60,7 @@ def _fixture():
 def _register():
     pos, acct, sec = _fixture()
     return build_location_register(pos, acct, sec, TAX_PROFILE,
-                                   SLEEVE_PRIORITY_BY_ACCOUNT_TYPE["roth_ira"], ACCOUNT_SHELTER_PRIORITY)
+                                   SLEEVE_PRIORITY_BY_ACCOUNT_TYPE, ACCOUNT_SHELTER_PRIORITY)
 
 
 # ── Case C: the case the existing function cannot see ──────────────────────────
@@ -208,3 +208,62 @@ def test_build_account_breakdown_unchanged_by_refactor_real_data():
         build_account_breakdown(pos, acct, sec),
         _old_build_account_breakdown(pos, acct, sec),
     )
+
+
+# ── Case D is comparative: roth_rank < taxable_rank (no one-sided over-fire) ────
+
+def _case_d_fixture():
+    """Every ticker in taxable; a displaceable REIT in the Roth so _worst_roth_below
+    is satisfied. Case D must fire on AVUV only (roth 1 < taxable 2)."""
+    acct = pd.DataFrame([
+        {"pseudonym": "t", "display_name": "Taxable", "tax_treatment": "taxable"},
+        {"pseudonym": "r", "display_name": "Roth",    "tax_treatment": "roth_ira"},
+    ])
+    sec = pd.DataFrame([
+        {"ticker": "MCO",  "name": "Moody's",      "tax_efficiency": "high", "sleeve_category": "single_stock"},
+        {"ticker": "IXUS", "name": "iShares Intl", "tax_efficiency": "high", "sleeve_category": "intl_all_exus"},
+        {"ticker": "VXUS", "name": "Vanguard Intl","tax_efficiency": "high", "sleeve_category": "intl_all_exus"},
+        {"ticker": "VOO",  "name": "S&P 500",      "tax_efficiency": "high", "sleeve_category": "us_large_core"},
+        {"ticker": "AVUV", "name": "Avantis SCV",  "tax_efficiency": "high", "sleeve_category": "us_small_value"},
+        {"ticker": "ZZZ",  "name": "Nowhere",      "tax_efficiency": "high", "sleeve_category": "not_a_mapped_sleeve"},
+        {"ticker": "USRT", "name": "REIT",         "tax_efficiency": "low",  "sleeve_category": "real_assets_reit"},
+    ])
+    pos = pd.DataFrame(
+        [{"pseudonym": "t", "symbol": s, "current_value": 10000.0, "total_gain_loss": 100.0, "cost_basis_total": 9900.0}
+         for s in ("MCO", "IXUS", "VXUS", "VOO", "AVUV", "ZZZ")]
+        + [{"pseudonym": "r", "symbol": "USRT", "current_value": 5000.0, "total_gain_loss": 100.0, "cost_basis_total": 4900.0}]
+    )
+    return pos, acct, sec
+
+
+def _case_d_symbols():
+    pos, acct, sec = _case_d_fixture()
+    reg = build_location_register(pos, acct, sec, TAX_PROFILE,
+                                  SLEEVE_PRIORITY_BY_ACCOUNT_TYPE, ACCOUNT_SHELTER_PRIORITY)
+    return set(reg[reg["case"] == "D"]["symbol"])
+
+
+def test_case_d_mco_no_row():
+    # single_stock is absent from the roth map (INF) -> never stranded.
+    assert "MCO" not in _case_d_symbols()
+
+
+def test_case_d_international_no_row():
+    # intl is taxable-rank 1 and absent from the roth map (the FTC is only
+    # claimable in taxable) -> never case D.
+    d = _case_d_symbols()
+    assert "IXUS" not in d and "VXUS" not in d
+
+
+def test_case_d_us_large_core_no_row():
+    # roth 5 > taxable 1 -> taxable is the better home, no strand.
+    assert "VOO" not in _case_d_symbols()
+
+
+def test_case_d_avuv_fires():
+    # roth 1 < taxable 2 -> a shelter wants it more than taxable -> case D.
+    assert "AVUV" in _case_d_symbols()
+
+
+def test_case_d_sleeve_absent_from_both_maps_no_row():
+    assert "ZZZ" not in _case_d_symbols()
