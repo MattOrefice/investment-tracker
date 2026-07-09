@@ -51,10 +51,11 @@ def _skip_if_no_tracker_db():
 
 
 def _holding_symbols():
-    """Distinct symbols from the May-27 holdings CSV via the Phase 25.1 parser."""
+    """Distinct symbols from the newest holdings CSV via the Phase 25.1 parser."""
     from src.ingestion.fidelity import parse_fidelity_csv
-    holdings_csv = ROOT / "data" / "uploads" / "Portfolio_Positions_May-27-2026.csv"
-    if not holdings_csv.exists():
+    from src.household_data import find_latest_positions_csv
+    holdings_csv = find_latest_positions_csv()
+    if holdings_csv is None or not holdings_csv.exists():
         pytest.skip("Holdings CSV not present (personal-mode file)")
     df = parse_fidelity_csv(str(holdings_csv))
     return set(df["symbol"].dropna().unique())
