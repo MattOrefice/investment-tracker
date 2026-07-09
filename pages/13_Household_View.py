@@ -36,7 +36,6 @@ from src.household import (
     build_account_breakdown,
     build_strategic_comparison,
     sleeve_display_name,
-    build_tax_drag_ranking,
     build_top_holdings,
     build_issuer_concentration,
     build_single_stock_summary,
@@ -126,7 +125,9 @@ with col:
             "The demo SAA page, by contrast, measures the invested portfolio *ex-cash* "
             "(operational SPAXX float excluded), where cash is operational liquidity rather "
             "than a strategic holding. Here, household cash is real and material, so it is "
-            "shown as an off-SAA line at its actual dollar value rather than stripped out."
+            "shown as an off-SAA line at its actual dollar value rather than stripped out.\n\n"
+            "**Asset location.** Tax-location cleanup and where to deploy new tax-advantaged "
+            "cash are on the **Asset Location** page."
         )
     st.divider()
 
@@ -435,51 +436,6 @@ with col:
 
     st.markdown("**Single-Stock Exposure**")
     st.markdown(build_single_stock_summary(positions_df, securities_df))
-    st.divider()
-
-# ── Asset-Location Observations (tax drag ranking) ─────────────────────────────
-_, col, _ = st.columns([1, 8, 1])
-with col:
-    st.subheader("Asset-Location Observations")
-    st.caption(
-        "Ranked by estimated annual tax drag. "
-        "Six of seven accounts are externally managed; addressing this would require "
-        "coordination with the account manager."
-    )
-
-    with st.expander("Assumptions (annual tax drag is a rough estimate)", expanded=False):
-        st.markdown(
-            "- **Marginal rate:** 32% federal + 9% DC = 41% combined\n"
-            "- **Alt rate (low-efficiency in taxable):** 20% (LTCG + state) if moved "
-            "to tax-advantaged\n"
-            "- **Yields:** per-sleeve assumed annual distribution yields (not per-ticker)\n"
-            "- **Formula:** `drag = value × assumed_yield × (marginal_rate − alt_rate)`\n"
-            "- Holdings with zero estimated drag (e.g. equity ETFs in Roth) are excluded."
-        )
-
-    top_n = st.slider(
-        "Showing top N suboptimal holdings", min_value=5, max_value=25, value=10, step=5
-    )
-    drag_df = build_tax_drag_ranking(positions_df, accounts_df, securities_df, top_n=top_n)
-
-    if drag_df.empty:
-        st.success("No suboptimal tax-location patterns with estimated drag detected.")
-    else:
-        st.dataframe(
-            drag_df,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Est. Annual Drag ($)": st.column_config.NumberColumn(format="$%.0f"),
-            },
-        )
-        total_drag = drag_df["Est. Annual Drag ($)"].sum()
-        st.caption(
-            f"Estimated total annual tax drag from top {len(drag_df)} flagged holdings: "
-            f"**${total_drag:,.0f}**. "
-            "Six of seven accounts are externally managed; addressing this would require "
-            "coordination with the account manager."
-        )
     st.divider()
 
 # ── Methodology Note ───────────────────────────────────────────────────────────

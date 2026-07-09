@@ -31,6 +31,29 @@ TAX_PROFILE: dict[str, float] = {
     "state_ltcg": 0.0307,
 }
 
+# Assumed annual distribution YIELD per sleeve (income throw-off, not total
+# return). Sizes the income-shelter value at stake in the Asset Location register
+# (build_location_register, via household._assumed_yield). USER-EDITABLE.
+SLEEVE_ASSUMED_YIELD: dict[str, float] = {
+    "real_assets_reit":        0.040,
+    "real_assets_commodities": 0.015,
+    "real_assets_gold":        0.000,
+    "high_yield_fi":           0.060,
+    "high_yield_muni":         0.045,
+    "floating_rate":           0.055,
+    "multi_sector_fi":         0.040,
+    "core_fi_credit":          0.035,
+    "core_fi_treasury":        0.040,
+    "tips":                    0.025,
+    "cash":                    0.045,
+    "hedged_equity":           0.060,
+    "single_stock":            0.020,
+    "crypto":                  0.000,
+    "liquid_alt":              0.020,
+}
+# Fallback yield for sleeves absent from the table (broad equity).
+EQUITY_DEFAULT_YIELD: float = 0.018
+
 # 0% federal long-term capital-gains bracket for 2026, modeled as a finite
 # BUDGET rather than a rate: realized long-term gains are federally untaxed up to
 # this remaining headroom, then taxed at 15%. USER-EDITABLE; shrinks with other

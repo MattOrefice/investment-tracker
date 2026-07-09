@@ -8,6 +8,11 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Page 13's asset-location table retired
+_2026-07-09_
+
+Page 13's asset-location table has been retired. It assumed a 41% marginal rate and detected a single mislocation case out of four — its second branch computed a zero rate differential and dropped every row it matched. Medium-efficiency holdings and premium-space waste inside a Roth were structurally invisible to it. The Asset Location page supersedes it, using the household's actual tax profile and modeling the 0% capital-gains bracket as a finite budget rather than a rate.
+
 ## Asset Location page — six decisions, not a register
 _2026-07-09_
 
