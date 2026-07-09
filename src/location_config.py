@@ -37,6 +37,18 @@ TAX_PROFILE: dict[str, float] = {
 # taxable income and evaporates once wage income lifts past the 0%-rate ceiling.
 LTCG_HEADROOM_2026: float = 2650.0
 
+# Equity sleeves, ENUMERATED EXPLICITLY — never inferred from a substring match on
+# the sleeve name. Used to size an account's absorbable-equity capacity. Excludes
+# fixed income, real assets, cash, multi-asset/target-date blends, liquid alts,
+# and crypto. USER-EDITABLE.
+EQUITY_SLEEVES: frozenset[str] = frozenset({
+    "us_large_core", "us_large_quality", "us_large_value", "us_large_growth",
+    "us_small_core", "us_small_value", "us_mid_cap",
+    "us_sector_tech", "us_sector_healthcare",
+    "intl_developed", "intl_all_exus", "emerging_markets",
+    "hedged_equity", "single_stock", "thematic",
+})
+
 
 # ── Account directability ──────────────────────────────────────────────────────
 # Which household accounts can actually be traded (jointly) today, keyed by

@@ -66,3 +66,7 @@
   updated when this happens; parse_fidelity_csv raises on an unmapped
   account, which is the intended behavior. The map is gitignored — carry
   new entries manually between machines.
+- A running Streamlit server survives merges and hot-reloads partially,
+  rendering a mix of old and new module state. Restart it after any PR
+  before trusting a personal-mode render. A visual "bug" in a long-running
+  session is a stale-cache artifact until proven otherwise.
