@@ -45,9 +45,11 @@ from src.location_actions import (
     INFORMATIONAL_KEYS,
     build_roth_deploy_answer,
     resolve_placeholders,
+    resolve_caption,
     render_prose_md,
     escape_md,
     filter_register_for_group,
+    capital_gains_headroom,
 )
 
 # ── Load data ──────────────────────────────────────────────────────────────────
@@ -99,11 +101,10 @@ _present_accts = accounts_df[accounts_df["pseudonym"].isin(positions_df["pseudon
 _directable_names = [n for p, n in zip(_present_accts["pseudonym"], _present_accts["display_name"]) if is_directable(p)]
 _coordination_names = [n for p, n in zip(_present_accts["pseudonym"], _present_accts["display_name"]) if not is_directable(p)]
 
-# 0% LTCG headroom (finite budget): consumed by the recommended gain-side realizations.
-_gain_group = next(g for g in ACTION_GROUPS if g["key"] == "relocate_gain_side")
-_gain_rows = filter_register_for_group(register, _gain_group)
-_headroom_consumed = max(0.0, float(_gain_rows["embedded_gain"].sum())) if not _gain_rows.empty else 0.0
-_headroom_remaining = max(0.0, LTCG_HEADROOM_2026 - _headroom_consumed)
+# 0% LTCG headroom (finite budget) — same source of truth as group 4's prose.
+_hr = capital_gains_headroom(register)
+_headroom_consumed = _hr["consumed"]
+_headroom_remaining = _hr["remaining"]
 
 _STATUS_LABEL = {"act_now": "Act now", "evaluate": "Evaluate", "blocked": "Blocked", "accepted": "Accepted"}
 
@@ -210,6 +211,9 @@ for group in _ordered_groups:
                 "computed optimum. No ticker beyond these is auto-selected."
             )
         elif group["key"] not in INFORMATIONAL_KEYS:
+            _cap = resolve_caption(group, positions_df, accounts_df, register)
+            if _cap:
+                st.caption(_cap)
             with st.expander(f"Underlying positions ({len(reg_rows)})", expanded=False):
                 show = reg_rows.copy()
                 show["case"] = show["case"].map(_CASE_LABEL).fillna(show["case"])
