@@ -192,18 +192,10 @@ INFORMATIONAL_KEYS = frozenset({"deploy_roth_cash", "rollover_401k"})
 
 
 # ── Roth deploy answer ─────────────────────────────────────────────────────────
-# Equity, non-international sleeves only belong in the Roth's tax-free space.
-# Everything below is INELIGIBLE and must never appear in the deploy answer.
-ROTH_DEPLOY_EXCLUDED_SLEEVES = frozenset({
-    "cash", "hedged_equity",
-    "core_fi_treasury", "core_fi_credit", "tips",
-    "high_yield_fi", "high_yield_muni", "floating_rate", "multi_sector_fi",
-    "real_assets_reit", "real_assets_commodities", "real_assets_gold",
-    "intl_developed", "intl_all_exus",
-})
-# The priority map labels the small-cap slot us_small_core; the SAA implements it
-# with the small-VALUE ETF (AVUV), so map to it for the is_in_saa lookup.
-_DEPLOY_SLEEVE_ALIAS = {"us_small_core": "us_small_value"}
+# Eligibility is structural: only sleeves in the roth_ira priority map can be
+# deployed into, so cash / fixed income / real assets / hedged equity /
+# international never appear — they are simply not in that map. No exclusion list,
+# no alias; the ticker and the label both resolve from one sleeve key.
 
 
 def _saa_ticker_by_sleeve(securities_df: pd.DataFrame) -> dict[str, str]:
@@ -227,39 +219,37 @@ def build_roth_deploy_answer(
     positions_df: pd.DataFrame,
     accounts_df: pd.DataFrame,
     securities_df: pd.DataFrame,
-    sleeve_priority: dict,
     n_sleeves: int = 2,
 ) -> dict:
-    """Answer 'where does the idle Roth cash go', not a picker.
+    """Answer 'where does the idle Roth cash go', using the roth_ira account-type
+    priority map. Ticker AND label resolve from ONE sleeve key (no alias): the
+    Roth's rank-1 sleeve is us_small_value → its is_in_saa ticker AVUV → the label
+    "US Small Value". Only sleeves in the roth map (and that have an SAA ticker to
+    buy) can appear, so cash / fixed income / real assets / hedged equity /
+    international never surface.
 
-    Returns {idle_cash, sleeves, table} where table has columns
-    [ticker, sleeve, dollar] — the top-N eligible deploy sleeves split evenly.
-    RAISES if an ineligible sleeve (cash / hedged_equity / FI / real asset /
-    international) would appear — that means PR A's exclusion logic is broken.
+    Returns {idle_cash, sleeves, table} with table columns [ticker, sleeve, dollar].
     """
+    from src.location_config import SLEEVE_PRIORITY_BY_ACCOUNT_TYPE
+    roth_priority = SLEEVE_PRIORITY_BY_ACCOUNT_TYPE["roth_ira"]
+
     sba = compute_sleeve_by_account(positions_df, accounts_df, securities_df)
     _, idle_cash = _roth_idle_cash(sba, accounts_df)
 
+    ticker_by_sleeve = _saa_ticker_by_sleeve(securities_df)
+    # Deploy candidates: roth-map sleeves that have an is_in_saa ticker to buy,
+    # ranked by the roth map. No aliasing — the same key yields ticker and label.
     eligible = [
-        s for s, _ in sorted(sleeve_priority.items(), key=lambda kv: kv[1])
-        if s not in ROTH_DEPLOY_EXCLUDED_SLEEVES
+        s for s, _ in sorted(roth_priority.items(), key=lambda kv: kv[1])
+        if s in ticker_by_sleeve
     ]
     top = eligible[:n_sleeves]
-    leaked = set(top) & ROTH_DEPLOY_EXCLUDED_SLEEVES
-    if leaked:
-        raise ValueError(
-            f"Ineligible sleeve(s) reached the Roth deploy answer: {sorted(leaked)}. "
-            "PR A's exclusion logic is broken."
-        )
 
-    ticker_by_sleeve = _saa_ticker_by_sleeve(securities_df)
     per = idle_cash / len(top) if top else 0.0
-    rows = []
-    for sleeve in top:
-        ticker = ticker_by_sleeve.get(_DEPLOY_SLEEVE_ALIAS.get(sleeve, sleeve))
-        if ticker is None:
-            raise ValueError(f"No is_in_saa ticker for deploy sleeve {sleeve!r}.")
-        rows.append({"ticker": ticker, "sleeve": sleeve, "dollar": round(per, 2)})
+    rows = [
+        {"ticker": ticker_by_sleeve[sleeve], "sleeve": sleeve, "dollar": round(per, 2)}
+        for sleeve in top
+    ]
     table = pd.DataFrame(rows, columns=["ticker", "sleeve", "dollar"])
     return {"idle_cash": idle_cash, "sleeves": top, "table": table}
 

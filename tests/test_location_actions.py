@@ -15,7 +15,6 @@ import re
 from src.location_actions import (
     ACTION_GROUPS,
     INFORMATIONAL_KEYS,
-    ROTH_DEPLOY_EXCLUDED_SLEEVES,
     build_roth_deploy_answer,
     resolve_placeholders,
     resolve_caption,
@@ -30,7 +29,7 @@ from src.location_actions import (
 )
 from src.location_config import (
     TAX_PROFILE,
-    SLEEVE_LOCATION_PRIORITY,
+    SLEEVE_PRIORITY_BY_ACCOUNT_TYPE,
     ACCOUNT_SHELTER_PRIORITY,
     DIRECTABLE_PSEUDONYMS,
     is_directable,
@@ -56,7 +55,7 @@ def _live():
     sec = pd.read_sql_query("SELECT * FROM securities", conn)
     conn.close()
     reg = build_location_register(pos, acct, sec, TAX_PROFILE,
-                                  SLEEVE_LOCATION_PRIORITY, ACCOUNT_SHELTER_PRIORITY)
+                                  SLEEVE_PRIORITY_BY_ACCOUNT_TYPE["roth_ira"], ACCOUNT_SHELTER_PRIORITY)
     return pos, acct, sec, reg
 
 
@@ -90,7 +89,7 @@ def test_statuses_are_read_from_config_verbatim():
 
 def test_no_two_groups_render_identical_prose():
     pos, acct, sec, reg = _live()
-    deploy = build_roth_deploy_answer(pos, acct, sec, SLEEVE_LOCATION_PRIORITY)
+    deploy = build_roth_deploy_answer(pos, acct, sec)
     rendered = []
     for g in ACTION_GROUPS:
         resolved = resolve_placeholders(g, pos, acct, sec, reg, roth_idle_cash=deploy["idle_cash"])
@@ -178,35 +177,65 @@ def _deploy_fixture():
     return positions, accounts, securities
 
 
-def test_deploy_excludes_ineligible_even_at_top_priority():
+def test_deploy_answer_uses_only_roth_map_sleeves():
+    # Eligibility is structural now: no priority is injected and there is no
+    # exclusion list. The answer can only contain roth-map sleeves with a ticker.
     pos, acct, sec = _deploy_fixture()
-    # hedged_equity ranked TOP (0) must still be excluded, not deployed into.
-    prio = {"hedged_equity": 0, "us_small_core": 1, "emerging_markets": 2}
-    ans = build_roth_deploy_answer(pos, acct, sec, prio, n_sleeves=2)
-    sleeves = set(ans["table"]["sleeve"])
-    assert not (sleeves & ROTH_DEPLOY_EXCLUDED_SLEEVES), "an ineligible sleeve reached the deploy answer"
+    ans = build_roth_deploy_answer(pos, acct, sec, n_sleeves=2)
+    roth_map = SLEEVE_PRIORITY_BY_ACCOUNT_TYPE["roth_ira"]
+    assert set(ans["table"]["sleeve"]).issubset(set(roth_map)), "a non-roth-map sleeve appeared"
     assert list(ans["table"]["ticker"]) == ["AVUV", "IEMG"]
     assert ans["idle_cash"] == 1000.0
     assert ans["table"]["dollar"].tolist() == [500.0, 500.0], "must split 50/50"
 
 
+def test_ineligible_sleeves_absent_from_roth_map():
+    # cash / fixed income / real assets / hedged equity / international are simply
+    # not in the roth map, so they can never be a Roth deploy target.
+    roth = SLEEVE_PRIORITY_BY_ACCOUNT_TYPE["roth_ira"]
+    for s in ("cash", "hedged_equity", "core_fi_treasury", "core_fi_credit", "tips",
+              "high_yield_fi", "high_yield_muni", "floating_rate", "multi_sector_fi",
+              "real_assets_reit", "real_assets_commodities", "real_assets_gold",
+              "intl_developed", "intl_all_exus", "single_stock"):
+        assert s not in roth
+
+
 def test_deploy_answer_live_excludes_all_banned_sleeves():
+    from src.household import sleeve_display_name
     pos, acct, sec, _reg = _live()
-    ans = build_roth_deploy_answer(pos, acct, sec, SLEEVE_LOCATION_PRIORITY)
+    ans = build_roth_deploy_answer(pos, acct, sec)
     sleeves = set(ans["table"]["sleeve"])
-    assert not (sleeves & ROTH_DEPLOY_EXCLUDED_SLEEVES)
-    # No cash / hedged_equity / FI / real asset / international, explicitly.
     for banned in ("cash", "hedged_equity", "intl_developed", "intl_all_exus",
                    "core_fi_treasury", "tips", "real_assets_reit"):
         assert banned not in sleeves
     assert list(ans["table"]["ticker"]) == ["AVUV", "IEMG"]
+    # Ticker AND label from ONE key: AVUV -> us_small_value -> "US Small Value".
+    labels = [sleeve_display_name(s) for s in ans["table"]["sleeve"]]
+    assert labels[0] == "US Small Value", labels
+    assert "US Small Core" not in labels
+
+
+def test_priority_maps_are_account_conditional():
+    from src.location_config import sleeve_priority
+    # International appears for taxable, never for roth (a Roth forfeits the FTC).
+    assert sleeve_priority("taxable", "intl_developed") == 1
+    assert sleeve_priority("roth_ira", "intl_developed") is None
+    # hedged_equity appears for traditional_ira, never for roth.
+    assert sleeve_priority("traditional_ira", "hedged_equity") == 4
+    assert sleeve_priority("roth_ira", "hedged_equity") is None
+    # Cash is never a deploy target anywhere.
+    for at in ("roth_ira", "hsa", "traditional_ira", "workplace_plan", "taxable"):
+        assert sleeve_priority(at, "cash") is None
+    # Roth rank 1 = small VALUE (AVUV), not broad small-core.
+    assert sleeve_priority("roth_ira", "us_small_value") == 1
+    assert sleeve_priority("roth_ira", "us_small_core") == 6
 
 
 # ── Informational groups render (deploy uses {value}; rollover is literal) ─────
 
 def test_deploy_and_rollover_render():
     pos, acct, sec, reg = _live()
-    deploy = build_roth_deploy_answer(pos, acct, sec, SLEEVE_LOCATION_PRIORITY)
+    deploy = build_roth_deploy_answer(pos, acct, sec)
     by_key = {g["key"]: g for g in ACTION_GROUPS}
 
     d = resolve_placeholders(by_key["deploy_roth_cash"], pos, acct, sec, reg,
@@ -276,7 +305,7 @@ def test_directability_is_not_managed_by_or_tax_treatment():
 
 def _rendered_all():
     pos, acct, sec, reg = _live()
-    dep = build_roth_deploy_answer(pos, acct, sec, SLEEVE_LOCATION_PRIORITY)
+    dep = build_roth_deploy_answer(pos, acct, sec)
     out = {}
     for g in ACTION_GROUPS:
         r = resolve_placeholders(g, pos, acct, sec, reg, roth_idle_cash=dep["idle_cash"])
@@ -385,7 +414,7 @@ def test_gain_side_prose_headroom_matches_computed():
     pos, acct, sec, reg = _live()
     hr = capital_gains_headroom(reg)
     g4 = next(g for g in ACTION_GROUPS if g["key"] == "relocate_gain_side")
-    dep = build_roth_deploy_answer(pos, acct, sec, SLEEVE_LOCATION_PRIORITY)
+    dep = build_roth_deploy_answer(pos, acct, sec)
     cons = render_prose_md(g4["cons"], resolve_placeholders(g4, pos, acct, sec, reg, roth_idle_cash=dep["idle_cash"]))
     assert escape_md(_fmt_dollars(hr["total"])) in cons
     assert escape_md(_fmt_dollars(hr["remaining"])) in cons

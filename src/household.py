@@ -597,7 +597,7 @@ def build_location_register(
     accounts_df: pd.DataFrame,
     securities_df: pd.DataFrame,
     tax_profile: dict,
-    sleeve_priority: dict,
+    roth_priority: dict,
     shelter_priority: dict,
 ) -> pd.DataFrame:
     """Rank asset-location cleanup actions across four mislocation cases.
@@ -607,8 +607,8 @@ def build_location_register(
       B  medium tax-efficiency in a taxable account -> move to a shelter
       C  low/medium efficiency in a ROTH            -> premium-space waste;
                                                        move to Traditional/workplace
-      D  a high-priority sleeve (rank 1–4) sitting in taxable while a
-         lower-priority sleeve occupies Roth space  -> swap into the Roth
+      D  a high roth-priority sleeve (roth_priority rank 1–4) sitting in taxable
+         while a lower-priority sleeve occupies Roth space -> swap into the Roth
 
     Case C is opportunity cost, not income-tax drag: a zero-yield asset registers
     no drag while being the worst possible use of never-taxed space (e.g. USRT/IAU
@@ -662,7 +662,7 @@ def build_location_register(
         """A Roth-held sleeve strictly lower priority than p (or unranked)."""
         worst, worst_key = None, -1
         for s in roth_sleeves:
-            sp = sleeve_priority.get(s)
+            sp = roth_priority.get(s)
             if sp is None or sp > p:
                 key = sp if sp is not None else 10 ** 9
                 if key > worst_key:
@@ -678,7 +678,7 @@ def build_location_register(
         if not te or not tt or not sleeve or sleeve == "cash":
             continue
 
-        prio = sleeve_priority.get(sleeve)
+        prio = roth_priority.get(sleeve)
         if tt == "taxable" and te == "low":
             case = "A"
         elif tt == "taxable" and te == "medium":
@@ -747,20 +747,23 @@ def build_deploy_view(
     positions_df: pd.DataFrame,
     accounts_df: pd.DataFrame,
     securities_df: pd.DataFrame,
-    sleeve_priority: dict,
+    account_type: str,
     account_pseudonym: str,
     cash_amount: float,
 ) -> pd.DataFrame:
-    """Rank deploy-candidate sleeves for one account and a cash amount.
+    """Rank deploy-candidate sleeves for one account, using its account-type map
+    (SLEEVE_PRIORITY_BY_ACCOUNT_TYPE[account_type]).
 
-    Sleeves are ranked by ordinal sleeve_priority ascending (1 = most deserving
-    of tax-free space). Sleeves whose priority is None are EXCLUDED (not a deploy
-    target) — they are never coerced to a large number and sorted last.
+    Sleeves are ranked ascending (1 = most deserving of that account's space).
+    Sleeves ABSENT from the account type's map are NOT deploy targets for it and
+    never appear — they are not coerced to a large number and sorted last.
 
     Returns [sleeve, priority, current_value_in_account, rationale]. Sleeve level
     only — no ticker is selected. Rationale is templated prose, never a return
     claim.
     """
+    from src.location_config import priority_map_for
+    priority = priority_map_for(account_type)
     sba = compute_sleeve_by_account(positions_df, accounts_df, securities_df)
     in_acct = (
         sba[sba["pseudonym"] == account_pseudonym]
@@ -768,9 +771,7 @@ def build_deploy_view(
     )
 
     rows: list[dict] = []
-    for sleeve, prio in sleeve_priority.items():
-        if prio is None:
-            continue
+    for sleeve, prio in priority.items():
         cur = float(in_acct.get(sleeve, 0.0))
         disp = sleeve_display_name(sleeve)
         if cur > 0:
