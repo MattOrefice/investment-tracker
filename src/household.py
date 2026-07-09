@@ -541,6 +541,8 @@ _SLEEVE_ASSUMED_YIELD: dict[str, float] = {
     "liquid_alt":              0.020,
 }
 _EQUITY_DEFAULT_YIELD = 0.018
+# PLACEHOLDER assumption: 32% federal + 9% DC = 41% combined marginal rate.
+# Hardcoded pending per-user tax configuration — not yet wired to any config.
 _MARGINAL_RATE = 0.41
 
 
