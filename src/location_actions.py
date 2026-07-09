@@ -87,7 +87,8 @@ _GAIN_SIDE_PROS = (
 )
 _GAIN_SIDE_CONS = (
     "This is where the honest uncertainty sits. Your 0% capital-gains headroom for "
-    "2026 is roughly $2,650 — narrow, and it shrinks with every dollar of "
+    "2026 is roughly {headroom_total}, of which {headroom_remaining} is left after "
+    "the gain-side realization above — narrow, and it shrinks with every dollar of "
     "unemployment income. Part of this fits inside it; the rest is taxed at 15% "
     "federal plus 3.07% Pennsylvania. Worse, the headroom depends on income you "
     "cannot know until December, and it evaporates the day you start a job. A "
@@ -107,6 +108,12 @@ _THEMATIC_CONS = (
     "though each position is a rounding error. The correct action is to log "
     "this as accepted, capped at its current weight — not to fix it. A logged "
     "decision is not drift."
+)
+
+_THEMATIC_CAPTION = (
+    "{population_count} holdings, {population_value}. Only {row_count} appear "
+    "below — the register lists mislocations, and most of this book is correctly "
+    "located in taxable. The case for cleanup is fees and sprawl, not location."
 )
 
 _ROLLOVER_PROS = (
@@ -151,6 +158,7 @@ ACTION_GROUPS: list[dict] = [
         "symbols": ["BFRIX", "HLIPX", "JEPI"],
         "case_filter": ["A", "B"], "accounts": ["Individual Taxable (TOD)"],
         "pros": _LOSS_SIDE_PROS, "cons": _LOSS_SIDE_CONS,
+        "allow_literals": True,   # "$8,400" IRA capacity — editorial estimate, not computed
     },
     {
         "key": "relocate_gain_side", "title": "Relocate the gain side",
@@ -167,12 +175,17 @@ ACTION_GROUPS: list[dict] = [
                     "JTEK", "QQQ", "IBIT"],
         "case_filter": ["B", "D"], "accounts": ["Individual Taxable (TOD)"],
         "pros": _THEMATIC_PROS, "cons": _THEMATIC_CONS,
+        # {count}/{value} measure the whole sprawl (matched symbols), but the
+        # expander lists only the 2 mislocation rows — so a caption is required.
+        "population": "matched_symbols", "caption": _THEMATIC_CAPTION,
+        "allow_literals": True,   # "$76" excess-fee estimate, not computed
     },
     {
         "key": "rollover_401k", "title": "401(k) rollover",
         "score": 3, "status": "blocked",
         "symbols": None, "case_filter": None, "accounts": None,   # informational
         "pros": _ROLLOVER_PROS, "cons": _ROLLOVER_CONS,
+        "allow_literals": True,   # $77,690 / $10,194 / $87,884 — the known exception
     },
 ]
 
@@ -278,6 +291,46 @@ def _fmt_dollars(x: float) -> str:
     return f"-${abs(x):,.0f}" if x < 0 else f"${x:,.0f}"
 
 
+def capital_gains_headroom(register: pd.DataFrame) -> dict:
+    """The 0% LTCG bracket as a finite budget: total, consumed by the recommended
+    gain-side realizations, and remaining. Single source of truth for both the
+    Assumptions block and group 4's prose, so the two can never disagree."""
+    from src.location_config import LTCG_HEADROOM_2026
+    gain = next(g for g in ACTION_GROUPS if g["key"] == "relocate_gain_side")
+    rows = filter_register_for_group(register, gain)
+    consumed = max(0.0, float(rows["embedded_gain"].sum())) if not rows.empty else 0.0
+    remaining = max(0.0, float(LTCG_HEADROOM_2026) - consumed)
+    return {"total": float(LTCG_HEADROOM_2026), "consumed": consumed, "remaining": remaining}
+
+
+def _pop_holdings(
+    group: dict, positions_df: pd.DataFrame, accounts_df: pd.DataFrame, register: pd.DataFrame,
+) -> pd.DataFrame:
+    """Holdings a group's {value}/{count} measure over, per its `population`:
+      "matched_symbols" — every held position matching symbols ∩ accounts;
+      "register_rows"   — only those that are actual register rows (the default).
+    For groups whose symbols are all mislocations the two coincide, so making
+    "register_rows" the default leaves their rendered output byte-identical."""
+    syms = set(group.get("symbols") or [])
+    if not syms:
+        return positions_df.iloc[0:0]
+    pseudos = _accounts_to_pseudonyms(accounts_df, group.get("accounts")) if group.get("accounts") else None
+    matched = positions_df[positions_df["symbol"].isin(syms)]
+    if pseudos is not None:
+        matched = matched[matched["pseudonym"].isin(pseudos)]
+
+    if group.get("population", "register_rows") == "matched_symbols":
+        return matched
+
+    reg = filter_register_for_group(register, group)
+    if reg.empty:
+        return matched.iloc[0:0]
+    disp_to_pseudo = dict(zip(accounts_df["display_name"], accounts_df["pseudonym"]))
+    reg_pairs = {(r["symbol"], disp_to_pseudo.get(r["account"])) for _, r in reg.iterrows()}
+    keep = matched.apply(lambda r: (r["symbol"], r["pseudonym"]) in reg_pairs, axis=1)
+    return matched[keep] if len(matched) else matched
+
+
 def resolve_placeholders(
     group: dict,
     positions_df: pd.DataFrame,
@@ -285,34 +338,37 @@ def resolve_placeholders(
     register: pd.DataFrame,
     roth_idle_cash: float | None = None,
 ) -> dict[str, str | None]:
-    """Resolve {value}/{count}/{embedded_gain}/{annual_benefit} for a group.
+    """Resolve every placeholder for a group. A key maps to a formatted string, or
+    None if it cannot resolve (empty subset) — render_prose raises if the prose
+    references a None key.
 
-    A key maps to a formatted string, or None if it cannot resolve (empty subset)
-    — render_prose raises if the prose references a None key.
+    value/count/embedded_gain measure over the group's `population` holdings;
+    annual_benefit is register-based; headroom_* are household-wide.
     """
+    hr = capital_gains_headroom(register)
+    base = {
+        "headroom_total": _fmt_dollars(hr["total"]),
+        "headroom_remaining": _fmt_dollars(hr["remaining"]),
+    }
     if group["key"] == "deploy_roth_cash":
         v = None if roth_idle_cash is None else _fmt_dollars(roth_idle_cash)
-        return {"value": v, "count": None, "embedded_gain": None, "annual_benefit": None}
+        return {**base, "value": v, "count": None, "embedded_gain": None, "annual_benefit": None}
 
-    syms = set(group.get("symbols") or [])
-    pseudos = _accounts_to_pseudonyms(accounts_df, group.get("accounts")) if group.get("accounts") else None
+    pop = _pop_holdings(group, positions_df, accounts_df, register)
+    value = _fmt_dollars(pop["current_value"].sum()) if not pop.empty else None
+    count = str(len(pop)) if not pop.empty else None
 
-    pos = positions_df[positions_df["symbol"].isin(syms)]
-    if pseudos is not None:
-        pos = pos[pos["pseudonym"].isin(pseudos)]
-    value = _fmt_dollars(pos["current_value"].sum()) if not pos.empty else None
-    count = str(len(pos)) if not pos.empty else None
-
-    eg, _ = compute_embedded_gain(positions_df)
-    eg = eg[eg["symbol"].isin(syms)]
-    if pseudos is not None:
-        eg = eg[eg["pseudonym"].isin(pseudos)]
-    embedded_gain = _fmt_dollars(eg["embedded_gain"].sum()) if not eg.empty else None
+    if not pop.empty:
+        eg, _ = compute_embedded_gain(positions_df)
+        eg = eg.merge(pop[["pseudonym", "symbol"]].drop_duplicates(), on=["pseudonym", "symbol"], how="inner")
+        embedded_gain = _fmt_dollars(eg["embedded_gain"].sum()) if not eg.empty else None
+    else:
+        embedded_gain = None
 
     reg = filter_register_for_group(register, group)
     annual_benefit = _fmt_dollars(reg["annual_benefit"].sum()) if not reg.empty else None
 
-    return {"value": value, "count": count,
+    return {**base, "value": value, "count": count,
             "embedded_gain": embedded_gain, "annual_benefit": annual_benefit}
 
 
@@ -346,3 +402,37 @@ def escape_md(text: str) -> str:
 def render_prose_md(template: str, resolved: dict[str, str | None]) -> str:
     """render_prose, then escape "$" for safe rendering inside st.markdown."""
     return escape_md(render_prose(template, resolved))
+
+
+def resolve_caption(
+    group: dict, positions_df: pd.DataFrame, accounts_df: pd.DataFrame, register: pd.DataFrame,
+) -> str | None:
+    """Render a group's population caption (escaped for markdown), or None if the
+    group has none. Uses {population_count}/{population_value} (population holdings)
+    and {row_count} (register rows shown in the expander)."""
+    tmpl = group.get("caption")
+    if not tmpl:
+        return None
+    pop = _pop_holdings(group, positions_df, accounts_df, register)
+    reg = filter_register_for_group(register, group)
+    resolved = {
+        "population_count": str(len(pop)) if not pop.empty else None,
+        "population_value": _fmt_dollars(pop["current_value"].sum()) if not pop.empty else None,
+        "row_count": str(len(reg)),
+    }
+    return escape_md(render_prose(tmpl, resolved))
+
+
+def validate_action_groups() -> None:
+    """Config-load-time invariants — raise HERE (at import), never at render time:
+      - a group whose population can differ from its register-row count
+        (population='matched_symbols') MUST supply a caption."""
+    for g in ACTION_GROUPS:
+        if g.get("population") == "matched_symbols" and not g.get("caption"):
+            raise ValueError(
+                f"group {g['key']!r} uses population='matched_symbols' (its count may "
+                "differ from its register-row count) but supplies no caption."
+            )
+
+
+validate_action_groups()   # enforce config invariants at import time

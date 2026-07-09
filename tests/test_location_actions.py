@@ -10,17 +10,23 @@ import sqlite3
 import pandas as pd
 import pytest
 
+import re
+
 from src.location_actions import (
     ACTION_GROUPS,
     INFORMATIONAL_KEYS,
     ROTH_DEPLOY_EXCLUDED_SLEEVES,
     build_roth_deploy_answer,
     resolve_placeholders,
+    resolve_caption,
     render_prose,
     render_prose_md,
     escape_md,
     _fmt_dollars,
+    _pop_holdings,
     filter_register_for_group,
+    capital_gains_headroom,
+    validate_action_groups,
 )
 from src.location_config import (
     TAX_PROFILE,
@@ -137,10 +143,12 @@ def test_unresolvable_placeholder_raises_not_zero():
 
 def test_resolved_zero_is_not_confused_with_unresolvable():
     # A genuinely-present holding with a computed value renders; only *missing*
-    # data raises. (Sanity: a real symbol resolves.)
+    # data raises. (Sanity: a real symbol resolves.) population=matched_symbols so
+    # {value} measures the held position directly, independent of the register.
     bad_group = {
         "key": "synthetic", "symbols": ["VOO"], "case_filter": None,
-        "accounts": None, "pros": "value is {value}", "cons": "",
+        "accounts": None, "population": "matched_symbols",
+        "pros": "value is {value}", "cons": "",
     }
     pos = pd.DataFrame([{
         "pseudonym": "a", "symbol": "VOO", "current_value": 100.0,
@@ -254,3 +262,137 @@ def test_directability_is_not_managed_by_or_tax_treatment():
     # shares tax_treatment with the directable self-directed taxable yet is not.
     assert is_directable("acct_roth_01") and is_directable("acct_trad_ira_01")   # external, but directable
     assert not is_directable("acct_taxable_02")                                  # taxable, but not directable
+
+
+# ── Bug 1: prose-corruption guards ─────────────────────────────────────────────
+
+def _rendered_all():
+    pos, acct, sec, reg = _live()
+    dep = build_roth_deploy_answer(pos, acct, sec, SLEEVE_LOCATION_PRIORITY)
+    out = {}
+    for g in ACTION_GROUPS:
+        r = resolve_placeholders(g, pos, acct, reg, roth_idle_cash=dep["idle_cash"])
+        out[g["key"]] = (render_prose_md(g["pros"], r), render_prose_md(g["cons"], r), r, g)
+    return out
+
+
+def test_no_rendered_prose_contains_comma_emdash():
+    """A dropped clause renders as valid Markdown ('accepted, — not to fix it') and
+    is invisible in review. This is the canary."""
+    for key, (pros, cons, _r, _g) in _rendered_all().items():
+        assert ", —" not in pros, f"{key} pros contains ', —' (dropped clause): {pros!r}"
+        assert ", —" not in cons, f"{key} cons contains ', —' (dropped clause): {cons!r}"
+
+
+# Exact rendered lengths against the live Jul-08 CSV — a brittle-on-purpose canary
+# for silent prose corruption (dropped words render as valid Markdown).
+RENDERED_PROSE_LEN = {
+    "deploy_roth_cash":      (382, 336),
+    "clear_roth_non_equity": (477, 335),
+    "relocate_loss_side":    (409, 363),
+    "relocate_gain_side":    (201, 456),
+    "thematic_sprawl":       (217, 465),
+    "rollover_401k":         (341, 526),
+}
+
+
+def test_rendered_prose_char_lengths_pinned():
+    for key, (pros, cons, _r, _g) in _rendered_all().items():
+        assert (len(pros), len(cons)) == RENDERED_PROSE_LEN[key], (
+            f"{key} rendered length drifted: got {(len(pros), len(cons))}, "
+            f"pinned {RENDERED_PROSE_LEN[key]} — possible silent prose corruption"
+        )
+
+
+def test_every_placeholder_resolves_into_rendered_output():
+    ph_re = re.compile(r"\{(\w+)\}")
+    for key, (pros, cons, resolved, g) in _rendered_all().items():
+        for field, rendered in (("pros", pros), ("cons", cons)):
+            for ph in ph_re.findall(g[field]):
+                val = resolved.get(ph)
+                assert val is not None, f"{key}.{field}: placeholder {{{ph}}} did not resolve"
+                assert escape_md(val) in rendered, (
+                    f"{key}.{field}: resolved {{{ph}}}={val!r} is absent from the rendered output"
+                )
+
+
+# ── Bug 2: population field ────────────────────────────────────────────────────
+
+def test_only_thematic_uses_matched_symbols_population():
+    for g in ACTION_GROUPS:
+        if g["key"] == "thematic_sprawl":
+            assert g.get("population") == "matched_symbols"
+        else:
+            assert g.get("population", "register_rows") == "register_rows"
+
+
+def test_thematic_population_exceeds_register_rows_and_caption_states_both():
+    pos, acct, sec, reg = _live()
+    g = next(x for x in ACTION_GROUPS if x["key"] == "thematic_sprawl")
+    pop = _pop_holdings(g, pos, acct, reg)
+    rows = filter_register_for_group(reg, g)
+    assert len(pop) > len(rows), "thematic population must exceed its register-row count"
+    cap = resolve_caption(g, pos, acct, reg)
+    assert cap, "thematic must render a caption"
+    assert str(len(pop)) in cap and str(len(rows)) in cap, "caption must state both counts"
+
+
+def test_non_thematic_groups_population_byte_identical():
+    """Switching the default population to register_rows must not change any group
+    whose symbols are all mislocations (their two populations coincide)."""
+    pos, acct, sec, reg = _live()
+    for g in ACTION_GROUPS:
+        if g["key"] in ("deploy_roth_cash", "rollover_401k", "thematic_sprawl"):
+            continue
+        a = _pop_holdings({**g, "population": "register_rows"}, pos, acct, reg)
+        b = _pop_holdings({**g, "population": "matched_symbols"}, pos, acct, reg)
+        assert len(a) == len(b)
+        assert abs(float(a["current_value"].sum()) - float(b["current_value"].sum())) < 1e-9
+
+
+def test_matched_symbols_without_caption_raises_at_config_load():
+    import src.location_actions as la
+    bad = {"key": "bad", "population": "matched_symbols", "caption": None, "symbols": ["X"]}
+    orig = la.ACTION_GROUPS
+    la.ACTION_GROUPS = orig + [bad]
+    try:
+        with pytest.raises(ValueError):
+            validate_action_groups()
+    finally:
+        la.ACTION_GROUPS = orig
+
+
+# ── Bug 3: no hardcoded headroom / dollar literals ─────────────────────────────
+
+_DOLLAR_LITERAL = re.compile(r"\$[\d,]")
+
+
+def test_gain_side_headroom_templated_no_literal():
+    g4 = next(g for g in ACTION_GROUPS if g["key"] == "relocate_gain_side")
+    assert not _DOLLAR_LITERAL.search(g4["pros"] + g4["cons"]), "group 4 must have no $ literal"
+    assert "{headroom_total}" in g4["cons"] and "{headroom_remaining}" in g4["cons"]
+
+
+def test_gain_side_prose_headroom_matches_computed():
+    pos, acct, sec, reg = _live()
+    hr = capital_gains_headroom(reg)
+    g4 = next(g for g in ACTION_GROUPS if g["key"] == "relocate_gain_side")
+    dep = build_roth_deploy_answer(pos, acct, sec, SLEEVE_LOCATION_PRIORITY)
+    cons = render_prose_md(g4["cons"], resolve_placeholders(g4, pos, acct, reg, roth_idle_cash=dep["idle_cash"]))
+    assert escape_md(_fmt_dollars(hr["total"])) in cons
+    assert escape_md(_fmt_dollars(hr["remaining"])) in cons
+
+
+def test_no_dollar_literals_except_allow_literals_groups():
+    for g in ACTION_GROUPS:
+        has_lit = bool(_DOLLAR_LITERAL.search(g["pros"])) or bool(_DOLLAR_LITERAL.search(g["cons"]))
+        if g.get("allow_literals"):
+            continue
+        assert not has_lit, f"group {g['key']!r} has an un-allowed dollar literal in its prose"
+
+
+def test_allow_literals_only_where_expected():
+    allowed = {g["key"] for g in ACTION_GROUPS if g.get("allow_literals")}
+    assert allowed == {"relocate_loss_side", "thematic_sprawl", "rollover_401k"}, (
+        f"allow_literals groups drifted: {sorted(allowed)}"
+    )
