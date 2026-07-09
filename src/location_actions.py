@@ -135,35 +135,62 @@ _ROLLOVER_CONS = (
 
 
 # Groups 7–9 are register-backed COVERAGE groups (they exist so every register
-# row is claimed by some group). Their persuasive prose is authored by the
-# repository owner and SUPPLIED SEPARATELY — the text below is a deliberate
-# scaffold, not final copy. It only wires the templating ({value}/{count} resolve
-# against the live register) and stays distinct from every other group (no two
-# groups may render identical prose). Replace the text; keep the placeholders.
+# row is claimed by some group). Prose is AUTHORED by the repository owner —
+# verbatim; do not edit for style. Dollar figures are templated ({value}/{count}/
+# {annual_benefit}/{embedded_gain}/{trad_ira_equity}/{pretax_capacity}/
+# {pretax_capacity_threshold}); render_prose raises on any unresolvable one.
 _TOD_INCOME_PROS = (
-    "PLACEHOLDER (Frozen TOD income · For.) — authored prose pending. "
-    "{count} ordinary-income holdings worth {value} sit in the frozen TOD book."
+    "{count} ordinary-income holdings worth {value} sit in the TOD account, "
+    "throwing off {annual_benefit} of ordinary income annually into your "
+    "highest-taxed wrapper. A high-yield muni fund, a hedged-equity mutual fund, a "
+    "liquid-alternatives fund, and a global allocation fund — none of which you "
+    "selected, none of which you would buy today. Relocating them to pre-tax space "
+    "would eliminate the drag entirely."
 )
 _TOD_INCOME_CONS = (
-    "PLACEHOLDER (Frozen TOD income · Against.) — authored prose pending."
+    "There is no pre-tax space. The Traditional IRA holds {trad_ira_equity} of "
+    "equity and is already spoken for twice over. And GHYIX is a municipal fund — "
+    "its interest is federally exempt, so taxable is exactly where it belongs; "
+    "sheltering it would waste the shelter. The rest carry embedded gains of "
+    "{embedded_gain} against a narrow 0% headroom you would rather spend on the "
+    "income assets above. This book is externally managed and frozen by decision, "
+    "not by oversight. Logged as accepted."
 )
 
 _SAA_TAXABLE_PROS = (
-    "PLACEHOLDER (SAA sleeves in taxable · For.) — authored prose pending. "
-    "{count} SAA fixed-income and real-asset sleeves worth {value} in the "
-    "self-directed account."
+    "{count} holdings worth {value} — treasuries, TIPS, commodities, and a REIT — "
+    "sit in a taxable account, generating {annual_benefit} of ordinary income and "
+    "phantom income annually. The framework says these are the sleeves that most "
+    "deserve shelter. The register is right to flag them."
 )
 _SAA_TAXABLE_CONS = (
-    "PLACEHOLDER (SAA sleeves in taxable · Against.) — authored prose pending."
+    "But it is flagging your policy, not a mistake. These are the SAA's own "
+    "fixed-income and real-asset sleeves, and the self-directed brokerage is the "
+    "only account where the framework operates. Investable pre-tax capacity is "
+    "{pretax_capacity}, exhausted at a policy book of roughly "
+    "{pretax_capacity_threshold}; the book is already larger than that. There is "
+    "nowhere better for them to go until the 401(k) rollover creates space — which "
+    "is the argument that makes that rollover the household's largest lever. The "
+    "drag is the honest price of running a coherent SAA inside the only wrapper you "
+    "control. Accepted, and revisited when the rollover lands."
 )
 
 _STRANDED_EQUITY_PROS = (
-    "PLACEHOLDER (Pre-deploy stranded equity · For.) — authored prose pending. "
-    "{count} case-D equity sleeves worth {value} that a shelter wants more than "
-    "taxable does."
+    "{count} equity positions worth {value} sit in taxable accounts whose sleeves "
+    "rank higher in a Roth than in taxable — small-cap value and emerging markets, "
+    "the two sleeves carrying the largest long-run risk premia. Case D is "
+    "comparative: it fires only when a sheltered account wants a sleeve more than "
+    "taxable does. These four qualify."
 )
 _STRANDED_EQUITY_CONS = (
-    "PLACEHOLDER (Pre-deploy stranded equity · Against.) — authored prose pending."
+    "Two of them resolve themselves. The Roth deploy above buys AVUV and IEMG "
+    "directly, which is the correct response to the flag — you build the sheltered "
+    "position rather than relocating the taxable one. DFAE and XSOE are "
+    "emerging-markets exposure inside the frozen TOD book: observed, not "
+    "actionable, and carrying {embedded_gain} of embedded gain. Note also that "
+    "holding EM in taxable preserves the foreign tax credit, which an IRA forfeits "
+    "entirely — so the case for moving them is weaker than the ranking alone "
+    "suggests. Evaluate, don't act."
 )
 
 
@@ -437,6 +464,10 @@ def _household_placeholders(
                              (ROLLOVER_SOURCE_PSEUDONYM) — a definition, not an
                              argmax; the Moody's PPP is deliberately excluded
       pretax_capacity_after  pretax_capacity + workplace_plan_value (derived)
+      pretax_capacity_threshold
+                             the fixed-income/real-asset policy book that the
+                             pre-tax capacity can shelter, given pre-tax's ~25%
+                             target share of that book: pretax_capacity / 0.25
     """
     from src.location_config import EQUITY_SLEEVES, ROLLOVER_SOURCE_PSEUDONYM
     tt = accounts_df.set_index("pseudonym")["tax_treatment"].to_dict()
@@ -461,12 +492,18 @@ def _household_placeholders(
     if pretax_capacity is not None and workplace_plan_value is not None:
         after = pretax_capacity + workplace_plan_value
 
+    # The pre-tax capacity shelters a policy book ~4x its size — pre-tax is the
+    # ~25% ordinary-income/real-asset share of that book, so capacity / 0.25.
+    _PRETAX_BOOK_SHARE = 0.25
+    threshold = None if pretax_capacity is None else pretax_capacity / _PRETAX_BOOK_SHARE
+
     def _fmt(x): return None if x is None else _fmt_dollars(x)
     return {
-        "trad_ira_equity":       _fmt(trad_ira_equity),
-        "pretax_capacity":       _fmt(pretax_capacity),
-        "workplace_plan_value":  _fmt(workplace_plan_value),
-        "pretax_capacity_after": _fmt(after),
+        "trad_ira_equity":           _fmt(trad_ira_equity),
+        "pretax_capacity":           _fmt(pretax_capacity),
+        "workplace_plan_value":      _fmt(workplace_plan_value),
+        "pretax_capacity_after":     _fmt(after),
+        "pretax_capacity_threshold": _fmt(threshold),
     }
 
 

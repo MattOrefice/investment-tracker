@@ -338,9 +338,9 @@ RENDERED_PROSE_LEN = {
     "relocate_gain_side":        (201, 372),   # cons rewritten: headroom-correct, no 15% claim
     "thematic_sprawl":           (217, 465),
     "rollover_401k":             (341, 526),
-    "frozen_tod_income":         (134, 68),    # scaffold prose (authored copy pending)
-    "saa_sleeves_taxable":       (153, 73),    # scaffold prose (authored copy pending)
-    "predeploy_stranded_equity": (156, 77),    # scaffold prose (authored copy pending)
+    "frozen_tod_income":         (387, 468),   # authored prose
+    "saa_sleeves_taxable":       (261, 616),   # authored prose
+    "predeploy_stranded_equity": (328, 530),   # authored prose
 }
 
 
