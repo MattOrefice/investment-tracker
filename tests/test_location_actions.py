@@ -93,7 +93,7 @@ def test_no_two_groups_render_identical_prose():
     deploy = build_roth_deploy_answer(pos, acct, sec, SLEEVE_LOCATION_PRIORITY)
     rendered = []
     for g in ACTION_GROUPS:
-        resolved = resolve_placeholders(g, pos, acct, reg, roth_idle_cash=deploy["idle_cash"])
+        resolved = resolve_placeholders(g, pos, acct, sec, reg, roth_idle_cash=deploy["idle_cash"])
         rendered.append(render_prose(g["pros"], resolved))
         rendered.append(render_prose(g["cons"], resolved))
     assert len(set(rendered)) == len(rendered), (
@@ -133,9 +133,10 @@ def test_unresolvable_placeholder_raises_not_zero():
         "total_gain_loss": 10.0, "cost_basis_total": 90.0,
     }])
     acct = pd.DataFrame([{"pseudonym": "a", "display_name": "A", "tax_treatment": "taxable"}])
+    sec = pd.DataFrame(columns=["ticker", "sleeve_category"])
     reg = pd.DataFrame(columns=_REGISTER_COLS)
 
-    resolved = resolve_placeholders(bad_group, pos, acct, reg)
+    resolved = resolve_placeholders(bad_group, pos, acct, sec, reg)
     assert resolved["value"] is None, "empty subset must resolve to None, not 0"
     with pytest.raises(ValueError):
         render_prose(bad_group["pros"], resolved)
@@ -155,8 +156,9 @@ def test_resolved_zero_is_not_confused_with_unresolvable():
         "total_gain_loss": 10.0, "cost_basis_total": 90.0,
     }])
     acct = pd.DataFrame([{"pseudonym": "a", "display_name": "A", "tax_treatment": "taxable"}])
+    sec = pd.DataFrame(columns=["ticker", "sleeve_category"])
     reg = pd.DataFrame(columns=_REGISTER_COLS)
-    resolved = resolve_placeholders(bad_group, pos, acct, reg)
+    resolved = resolve_placeholders(bad_group, pos, acct, sec, reg)
     assert render_prose(bad_group["pros"], resolved) == "value is $100"
 
 
@@ -207,14 +209,20 @@ def test_deploy_and_rollover_render():
     deploy = build_roth_deploy_answer(pos, acct, sec, SLEEVE_LOCATION_PRIORITY)
     by_key = {g["key"]: g for g in ACTION_GROUPS}
 
-    d = resolve_placeholders(by_key["deploy_roth_cash"], pos, acct, reg,
+    d = resolve_placeholders(by_key["deploy_roth_cash"], pos, acct, sec, reg,
                              roth_idle_cash=deploy["idle_cash"])
     deploy_pros = render_prose(by_key["deploy_roth_cash"]["pros"], d)
     assert f"${deploy['idle_cash']:,.0f}" in deploy_pros
 
-    r = resolve_placeholders(by_key["rollover_401k"], pos, acct, reg)
-    # rollover prose is all literals (no placeholders) -> renders unchanged.
-    assert render_prose(by_key["rollover_401k"]["pros"], r) == by_key["rollover_401k"]["pros"]
+    r = resolve_placeholders(by_key["rollover_401k"], pos, acct, sec, reg)
+    # rollover pros now templates three account-level figures (informational group,
+    # so they must resolve from positions_df, not from register rows).
+    rollover_pros = render_prose(by_key["rollover_401k"]["pros"], r)
+    for key in ("workplace_plan_value", "pretax_capacity", "pretax_capacity_after"):
+        assert r[key] is not None, f"{key} must resolve for the informational rollover group"
+        assert r[key] in rollover_pros
+    # cons carries no placeholders -> renders unchanged.
+    assert render_prose(by_key["rollover_401k"]["cons"], r) == by_key["rollover_401k"]["cons"]
 
 
 # ── Dollar formatting + Markdown escaping (bugs 1 & 2) ─────────────────────────
@@ -271,7 +279,7 @@ def _rendered_all():
     dep = build_roth_deploy_answer(pos, acct, sec, SLEEVE_LOCATION_PRIORITY)
     out = {}
     for g in ACTION_GROUPS:
-        r = resolve_placeholders(g, pos, acct, reg, roth_idle_cash=dep["idle_cash"])
+        r = resolve_placeholders(g, pos, acct, sec, reg, roth_idle_cash=dep["idle_cash"])
         out[g["key"]] = (render_prose_md(g["pros"], r), render_prose_md(g["cons"], r), r, g)
     return out
 
@@ -378,7 +386,7 @@ def test_gain_side_prose_headroom_matches_computed():
     hr = capital_gains_headroom(reg)
     g4 = next(g for g in ACTION_GROUPS if g["key"] == "relocate_gain_side")
     dep = build_roth_deploy_answer(pos, acct, sec, SLEEVE_LOCATION_PRIORITY)
-    cons = render_prose_md(g4["cons"], resolve_placeholders(g4, pos, acct, reg, roth_idle_cash=dep["idle_cash"]))
+    cons = render_prose_md(g4["cons"], resolve_placeholders(g4, pos, acct, sec, reg, roth_idle_cash=dep["idle_cash"]))
     assert escape_md(_fmt_dollars(hr["total"])) in cons
     assert escape_md(_fmt_dollars(hr["remaining"])) in cons
 
@@ -391,8 +399,65 @@ def test_no_dollar_literals_except_allow_literals_groups():
         assert not has_lit, f"group {g['key']!r} has an un-allowed dollar literal in its prose"
 
 
-def test_allow_literals_only_where_expected():
-    allowed = {g["key"] for g in ACTION_GROUPS if g.get("allow_literals")}
-    assert allowed == {"relocate_loss_side", "thematic_sprawl", "rollover_401k"}, (
-        f"allow_literals groups drifted: {sorted(allowed)}"
-    )
+def test_exactly_one_allow_literals_group_and_all_commented():
+    """After templating the five live literals, exactly one group keeps
+    allow_literals (thematic's $76 fee estimate). A second one cannot be added
+    without an explanatory comment on the same config line."""
+    import src.location_actions as la
+    allowed = [g for g in ACTION_GROUPS if g.get("allow_literals")]
+    assert len(allowed) == 1, f"exactly one allow_literals group expected; got {[g['key'] for g in allowed]}"
+    assert allowed[0]["key"] == "thematic_sprawl"
+
+    src = pathlib.Path(la.__file__).read_text(encoding="utf-8")
+    lit_lines = [ln for ln in src.splitlines() if re.search(r'"allow_literals":\s*True', ln)]
+    assert len(lit_lines) == 1, f"expected exactly one allow_literals line in config, got {len(lit_lines)}"
+    for ln in lit_lines:
+        after_true = ln.split("True", 1)[1]
+        assert "#" in after_true, (
+            f"allow_literals must carry an explanatory comment on the same line: {ln.strip()!r}"
+        )
+
+
+# ── Templated account-level literals (this PR) ─────────────────────────────────
+
+_EXPECTED_HOUSEHOLD = {
+    "trad_ira_equity":       "$8,396",   # equity-sleeve holdings in the Traditional IRA
+    "pretax_capacity":       "$10,194",  # Traditional IRA total
+    "workplace_plan_value":  "$77,690",  # largest workplace-plan account (the RFUTX 401k)
+    "pretax_capacity_after": "$87,884",  # the two summed
+}
+
+
+def test_household_placeholders_resolve_from_positions():
+    from src.location_actions import _household_placeholders
+    pos, acct, sec, _reg = _live()
+    hp = _household_placeholders(pos, acct, sec)
+    for k, expected in _EXPECTED_HOUSEHOLD.items():
+        assert hp[k] == expected, f"{k}: got {hp[k]!r}, expected {expected!r}"
+
+
+def test_trad_ira_equity_excludes_non_equity_sleeves():
+    """Equity capacity is equity sleeves only — bond/real-asset holdings in the
+    Traditional IRA must not inflate it (enumerated, not substring-inferred)."""
+    from src.location_actions import _household_placeholders, _fmt_dollars
+    from src.location_config import EQUITY_SLEEVES
+    pos, acct, sec, _reg = _live()
+    tt = acct.set_index("pseudonym")["tax_treatment"].to_dict()
+    trad = pos[pos["pseudonym"].map(tt) == "traditional_ira"].merge(
+        sec[["ticker", "sleeve_category"]], left_on="symbol", right_on="ticker", how="left")
+    total = float(trad["current_value"].sum())
+    equity = float(trad[trad["sleeve_category"].isin(EQUITY_SLEEVES)]["current_value"].sum())
+    assert equity < total, "the Traditional IRA holds non-equity that must be excluded"
+    hp = _household_placeholders(pos, acct, sec)
+    assert hp["trad_ira_equity"] == _fmt_dollars(equity)
+
+
+def test_group3_and_group6_templated_not_literal():
+    g3 = next(g for g in ACTION_GROUPS if g["key"] == "relocate_loss_side")
+    g6 = next(g for g in ACTION_GROUPS if g["key"] == "rollover_401k")
+    assert not _DOLLAR_LITERAL.search(g3["pros"] + g3["cons"]), "group 3 must have no $ literal"
+    assert not _DOLLAR_LITERAL.search(g6["pros"] + g6["cons"]), "group 6 must have no $ literal"
+    assert "{trad_ira_equity}" in g3["cons"]
+    for ph in ("{workplace_plan_value}", "{pretax_capacity}", "{pretax_capacity_after}"):
+        assert ph in g6["pros"]
+    assert not g3.get("allow_literals") and not g6.get("allow_literals")

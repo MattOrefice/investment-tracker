@@ -77,7 +77,7 @@ _LOSS_SIDE_CONS = (
     "either side permanently destroys the loss — it cannot attach to a basis "
     "inside an IRA. Buy a different bond fund in the Traditional IRA, not the same "
     "ticker. Separately, that account has finite capacity: it can absorb roughly "
-    "$8,400 of its own equity, which this consumes almost entirely."
+    "{trad_ira_equity} of its own equity, which this consumes almost entirely."
 )
 
 _GAIN_SIDE_PROS = (
@@ -117,11 +117,11 @@ _THEMATIC_CAPTION = (
 )
 
 _ROLLOVER_PROS = (
-    "The single largest lever in the household. It converts $77,690 of "
+    "The single largest lever in the household. It converts {workplace_plan_value} of "
     "self-allocating target-date money into pre-tax space that can actually hold "
     "your bonds — which is what finally lets fixed income leave your taxable "
-    "account entirely. Your investable pre-tax capacity today is $10,194, and it "
-    "is already exhausted. This raises it to $87,884."
+    "account entirely. Your investable pre-tax capacity today is {pretax_capacity}, and it "
+    "is already exhausted. This raises it to {pretax_capacity_after}."
 )
 _ROLLOVER_CONS = (
     "Rolling into a Traditional IRA creates a pre-tax IRA balance, triggers the "
@@ -158,7 +158,6 @@ ACTION_GROUPS: list[dict] = [
         "symbols": ["BFRIX", "HLIPX", "JEPI"],
         "case_filter": ["A", "B"], "accounts": ["Individual Taxable (TOD)"],
         "pros": _LOSS_SIDE_PROS, "cons": _LOSS_SIDE_CONS,
-        "allow_literals": True,   # "$8,400" IRA capacity — editorial estimate, not computed
     },
     {
         "key": "relocate_gain_side", "title": "Relocate the gain side",
@@ -185,7 +184,6 @@ ACTION_GROUPS: list[dict] = [
         "score": 3, "status": "blocked",
         "symbols": None, "case_filter": None, "accounts": None,   # informational
         "pros": _ROLLOVER_PROS, "cons": _ROLLOVER_CONS,
-        "allow_literals": True,   # $77,690 / $10,194 / $87,884 — the known exception
     },
 ]
 
@@ -331,10 +329,56 @@ def _pop_holdings(
     return matched[keep] if len(matched) else matched
 
 
+def _household_placeholders(
+    positions_df: pd.DataFrame, accounts_df: pd.DataFrame, securities_df: pd.DataFrame,
+) -> dict[str, str | None]:
+    """Account-level placeholders derived straight from positions (not register
+    rows), available to every group. A value is None (→ render_prose raises) only
+    when the underlying account is absent — never a $0 fallback.
+
+      trad_ira_equity        Σ current_value of EQUITY_SLEEVES holdings in the
+                             Traditional IRA (equity sleeves enumerated, not inferred)
+      pretax_capacity        Traditional IRA total current_value
+      workplace_plan_value   total of the LARGEST workplace-plan account (the 401(k)
+                             being rolled; the household has a second, tiny one)
+      pretax_capacity_after  pretax_capacity + workplace_plan_value
+    """
+    from src.location_config import EQUITY_SLEEVES
+    tt = accounts_df.set_index("pseudonym")["tax_treatment"].to_dict()
+    pos = positions_df.copy()
+    pos["_tt"] = pos["pseudonym"].map(tt)
+
+    trad = pos[pos["_tt"] == "traditional_ira"]
+    pretax_capacity = float(trad["current_value"].sum()) if not trad.empty else None
+
+    trad_ira_equity = None
+    if not trad.empty:
+        sec = securities_df[["ticker", "sleeve_category"]]
+        joined = trad.merge(sec, left_on="symbol", right_on="ticker", how="left")
+        eq = joined[joined["sleeve_category"].isin(EQUITY_SLEEVES)]
+        trad_ira_equity = float(eq["current_value"].sum())
+
+    wk = pos[pos["_tt"] == "workplace_plan"]
+    workplace_plan_value = float(wk.groupby("pseudonym")["current_value"].sum().max()) if not wk.empty else None
+
+    after = None
+    if pretax_capacity is not None and workplace_plan_value is not None:
+        after = pretax_capacity + workplace_plan_value
+
+    def _fmt(x): return None if x is None else _fmt_dollars(x)
+    return {
+        "trad_ira_equity":       _fmt(trad_ira_equity),
+        "pretax_capacity":       _fmt(pretax_capacity),
+        "workplace_plan_value":  _fmt(workplace_plan_value),
+        "pretax_capacity_after": _fmt(after),
+    }
+
+
 def resolve_placeholders(
     group: dict,
     positions_df: pd.DataFrame,
     accounts_df: pd.DataFrame,
+    securities_df: pd.DataFrame,
     register: pd.DataFrame,
     roth_idle_cash: float | None = None,
 ) -> dict[str, str | None]:
@@ -343,12 +387,14 @@ def resolve_placeholders(
     references a None key.
 
     value/count/embedded_gain measure over the group's `population` holdings;
-    annual_benefit is register-based; headroom_* are household-wide.
+    annual_benefit is register-based; headroom_* and the account-level values
+    (trad_ira_equity, workplace_plan_value, …) are household-wide.
     """
     hr = capital_gains_headroom(register)
     base = {
         "headroom_total": _fmt_dollars(hr["total"]),
         "headroom_remaining": _fmt_dollars(hr["remaining"]),
+        **_household_placeholders(positions_df, accounts_df, securities_df),
     }
     if group["key"] == "deploy_roth_cash":
         v = None if roth_idle_cash is None else _fmt_dollars(roth_idle_cash)
