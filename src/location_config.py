@@ -112,7 +112,9 @@ _ROTH_PRIORITY: dict[str, int] = {
     "us_large_value":   4,
     "us_large_core":    5,
     "us_small_core":    6,
-    "thematic":         7,
+    # thematic is deliberately ABSENT: never-taxed Roth space is too scarce to
+    # spend deploying new cash into single-theme sector bets. A thematic sleeve
+    # already held in the Roth is a case-C cleanup row, not a deploy target.
 }
 # Traditional / workplace — rank by ordinary-income intensity (shelter the most
 # ordinary-taxed income). high_yield_muni is absent (already exempt).

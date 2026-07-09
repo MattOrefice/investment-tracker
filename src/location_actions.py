@@ -77,7 +77,8 @@ _LOSS_SIDE_CONS = (
     "either side permanently destroys the loss — it cannot attach to a basis "
     "inside an IRA. Buy a different bond fund in the Traditional IRA, not the same "
     "ticker. Separately, that account has finite capacity: it can absorb roughly "
-    "{trad_ira_equity} of its own equity, which this consumes almost entirely."
+    "{trad_ira_equity} of its own equity, which this consumes almost entirely. "
+    "Note that {group_2_title} also draws on this account."
 )
 
 _GAIN_SIDE_PROS = (
@@ -86,13 +87,12 @@ _GAIN_SIDE_PROS = (
     "block is only {embedded_gain}, which is small relative to what it buys."
 )
 _GAIN_SIDE_CONS = (
-    "This is where the honest uncertainty sits. Your 0% capital-gains headroom for "
-    "2026 is roughly {headroom_total}, of which {headroom_remaining} is left after "
-    "the gain-side realization above — narrow, and it shrinks with every dollar of "
-    "unemployment income. Part of this fits inside it; the rest is taxed at 15% "
-    "federal plus 3.07% Pennsylvania. Worse, the headroom depends on income you "
-    "cannot know until December, and it evaporates the day you start a job. A "
-    "genuine wait-and-see."
+    "Your 0% capital-gains headroom for 2026 is {headroom_total}. These "
+    "realizations consume {headroom_consumed}, leaving {headroom_remaining} — so "
+    "the whole block fits inside the 0% bracket and costs only Pennsylvania's flat "
+    "3.07%. But the headroom shrinks with every dollar of unemployment income, "
+    "depends on income you cannot know until December, and evaporates the day you "
+    "start a job. A genuine wait-and-see."
 )
 
 _THEMATIC_PROS = (
@@ -134,6 +134,39 @@ _ROLLOVER_CONS = (
 )
 
 
+# Groups 7–9 are register-backed COVERAGE groups (they exist so every register
+# row is claimed by some group). Their persuasive prose is authored by the
+# repository owner and SUPPLIED SEPARATELY — the text below is a deliberate
+# scaffold, not final copy. It only wires the templating ({value}/{count} resolve
+# against the live register) and stays distinct from every other group (no two
+# groups may render identical prose). Replace the text; keep the placeholders.
+_TOD_INCOME_PROS = (
+    "PLACEHOLDER (Frozen TOD income · For.) — authored prose pending. "
+    "{count} ordinary-income holdings worth {value} sit in the frozen TOD book."
+)
+_TOD_INCOME_CONS = (
+    "PLACEHOLDER (Frozen TOD income · Against.) — authored prose pending."
+)
+
+_SAA_TAXABLE_PROS = (
+    "PLACEHOLDER (SAA sleeves in taxable · For.) — authored prose pending. "
+    "{count} SAA fixed-income and real-asset sleeves worth {value} in the "
+    "self-directed account."
+)
+_SAA_TAXABLE_CONS = (
+    "PLACEHOLDER (SAA sleeves in taxable · Against.) — authored prose pending."
+)
+
+_STRANDED_EQUITY_PROS = (
+    "PLACEHOLDER (Pre-deploy stranded equity · For.) — authored prose pending. "
+    "{count} case-D equity sleeves worth {value} that a shelter wants more than "
+    "taxable does."
+)
+_STRANDED_EQUITY_CONS = (
+    "PLACEHOLDER (Pre-deploy stranded equity · Against.) — authored prose pending."
+)
+
+
 # ── Authored group config (scores/statuses are fixed, never computed) ──────────
 # status order for the page: act_now, evaluate, blocked, accepted.
 STATUS_ORDER = ["act_now", "evaluate", "blocked", "accepted"]
@@ -146,9 +179,9 @@ ACTION_GROUPS: list[dict] = [
         "pros": _DEPLOY_ROTH_CASH_PROS, "cons": _DEPLOY_ROTH_CASH_CONS,
     },
     {
-        "key": "clear_roth_non_equity", "title": "Clear non-equity from the Roth",
+        "key": "clear_roth_non_equity", "title": "Clear misplaced holdings from the Roth",
         "score": 9, "status": "act_now",
-        "symbols": ["JEPI", "JEPQ", "HELO", "JHEQX", "USRT", "IAU"],
+        "symbols": ["JEPI", "JEPQ", "HELO", "JHEQX", "USRT", "IAU", "IDGT"],
         "case_filter": ["C"], "accounts": ["Roth IRA"],
         "pros": _CLEAR_ROTH_PROS, "cons": _CLEAR_ROTH_CONS,
     },
@@ -184,6 +217,39 @@ ACTION_GROUPS: list[dict] = [
         "score": 3, "status": "blocked",
         "symbols": None, "case_filter": None, "accounts": None,   # informational
         "pros": _ROLLOVER_PROS, "cons": _ROLLOVER_CONS,
+    },
+    # ── Coverage groups (7–9): every register row must belong to some group ─────
+    # These exist so assert_full_coverage passes over the FULL register, not a
+    # narrated subset. Prose is scaffolded (see above) pending authored copy.
+    {
+        "key": "frozen_tod_income", "title": "Frozen TOD income assets",
+        "score": 1, "status": "accepted",
+        # Ordinary-income holdings in the frozen TOD book (case A/B). GAOSX is the
+        # multi-asset fund with a credit sleeve; MCO is NOT here (correctly located).
+        "symbols": ["BILPX", "GAOSX", "GHYIX", "JHEQX"],
+        "case_filter": ["A", "B"], "accounts": ["Individual Taxable (TOD)"],
+        "pros": _TOD_INCOME_PROS, "cons": _TOD_INCOME_CONS,
+    },
+    {
+        "key": "saa_sleeves_taxable", "title": "SAA sleeves in taxable · accepted",
+        "score": 2, "status": "accepted",
+        # The SAA's own fixed-income/real-asset sleeves in the self-directed
+        # account (case A). Accepted: pre-tax capacity is exhausted, so there is
+        # nowhere better until the 401(k) rollover creates space.
+        "symbols": ["PDBC", "SCHP", "VGIT", "VNQ"],
+        "case_filter": ["A"], "accounts": ["Individual Taxable (Self-Directed)"],
+        "pros": _SAA_TAXABLE_PROS, "cons": _SAA_TAXABLE_CONS,
+    },
+    {
+        "key": "predeploy_stranded_equity", "title": "Pre-deploy stranded equity",
+        "score": 4, "status": "evaluate",
+        # Case-D equity a shelter wants more than taxable does. AVUV/IEMG are what
+        # the Roth deploy buys directly; DFAE/XSOE are EM in the frozen TOD book —
+        # observed, not actionable.
+        "symbols": ["AVUV", "IEMG", "DFAE", "XSOE"],
+        "case_filter": ["D"],
+        "accounts": ["Individual Taxable (Self-Directed)", "Individual Taxable (TOD)"],
+        "pros": _STRANDED_EQUITY_PROS, "cons": _STRANDED_EQUITY_CONS,
     },
 ]
 
@@ -263,7 +329,15 @@ def _accounts_to_pseudonyms(accounts_df: pd.DataFrame, display_names) -> set[str
 
 
 def filter_register_for_group(register: pd.DataFrame, group: dict) -> pd.DataFrame:
-    """Register rows belonging to a group: symbols ∩ case_filter ∩ accounts."""
+    """Register rows belonging to a group: symbols ∩ case_filter ∩ accounts.
+
+    Rows keep their ORIGINAL register index — no reset_index — so a caller can
+    union the returned indices across groups and diff against register.index to
+    find rows no group claims (assert_full_coverage depends on exactly this).
+    Every current consumer reads column values, lengths, sums, or iterrows, none
+    of which the index affects, so preserving it is inert for them; the previous
+    reset_index(drop=True) was a footgun that collided a 0-based result index with
+    the register's own 0-based index in any index-set arithmetic."""
     if register.empty or not group.get("symbols"):
         return register.iloc[0:0]
     out = register[register["symbol"].isin(group["symbols"])]
@@ -271,7 +345,37 @@ def filter_register_for_group(register: pd.DataFrame, group: dict) -> pd.DataFra
         out = out[out["case"].isin(group["case_filter"])]
     if group.get("accounts"):
         out = out[out["account"].isin(group["accounts"])]
-    return out.reset_index(drop=True)
+    return out
+
+
+def _group_title(key: str) -> str:
+    """The authored title of a group, by key — so prose can reference another
+    group's title (e.g. group 3 → group 2) without hardcoding it, surviving a
+    retitle. Raises if the key is unknown (a config typo, caught at render)."""
+    return next(g["title"] for g in ACTION_GROUPS if g["key"] == key)
+
+
+def assert_full_coverage(register: pd.DataFrame) -> None:
+    """Every register row must be claimed by at least one action group. RAISE (at
+    render) if any row is orphaned — the authored groups and the computed register
+    must never silently drift apart. Depends on filter_register_for_group keeping
+    each row's original register index (see that function)."""
+    if register.empty:
+        return
+    covered: set = set()
+    for g in ACTION_GROUPS:
+        covered |= set(filter_register_for_group(register, g).index)
+    orphans = register.index.difference(covered)
+    if len(orphans):
+        det = "; ".join(
+            f"{r.symbol}/{r.account}/{r.case}"
+            for r in register.loc[orphans, ["symbol", "account", "case"]].itertuples()
+        )
+        raise ValueError(
+            f"{len(orphans)} register row(s) belong to no action group: {det}. "
+            "Every register row must be claimed by a group — extend a group's "
+            "symbols/case_filter/accounts, or add a group."
+        )
 
 
 def _fmt_dollars(x: float) -> str:
@@ -385,7 +489,11 @@ def resolve_placeholders(
     hr = capital_gains_headroom(register)
     base = {
         "headroom_total": _fmt_dollars(hr["total"]),
+        "headroom_consumed": _fmt_dollars(hr["consumed"]),
         "headroom_remaining": _fmt_dollars(hr["remaining"]),
+        # A group may reference another group's authored title (group 3 → group 2)
+        # without hardcoding it, so a retitle never leaves stale cross-references.
+        "group_2_title": _group_title("clear_roth_non_equity"),
         **_household_placeholders(positions_df, accounts_df, securities_df),
     }
     if group["key"] == "deploy_roth_cash":

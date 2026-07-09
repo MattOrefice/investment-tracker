@@ -41,7 +41,7 @@ jobs:
       - name: Guard — no account-number-shaped literals in tracked text files
         run: |
           hits=$(git ls-files -z -- ':!:*.db' ':!:*.csv' ':!:*.png' ':!:*.jpg' ':!:*.jpeg' ':!:*.gif' ':!:*.ico' ':!:*.pdf' ':!:*.xlsx' \
-            | xargs -0 -r grep -InEH '(\b[0-9]{9}\b|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})' || true)
+            | xargs -0 -r grep -InEH '(\b[0-9]{9}\b|\b[A-Z][0-9]{8}\b|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})' || true)
           if [ -n "$hits" ]; then
             echo "Account-number-shaped literals found in tracked files (file:line only):"
             printf '%s\n' "$hits" | sed -E 's/^([^:]+):([0-9]+):.*/\1:\2/'
