@@ -103,7 +103,10 @@ with col:
         st.markdown(
             "**Scope.** This page aggregates every household account — self-directed "
             "and externally-managed — against the SAA framework. "
-            "Only the self-directed account (Z52…, ~\\$1k) is directly actionable; "
+            # self_aum is templated (not hardcoded) so the figure can't go stale
+            # as balances change between exports.
+            f"Only the self-directed account (Z52…, ~\\${summary['self_aum']:,.0f}) is "
+            "directly actionable; "
             "externally-managed accounts are shown as observed context. "
             "Changes to externally-managed accounts require coordination with the manager.\n\n"
             "**Look Through vs As Held.** Look Through decomposes target-date and "

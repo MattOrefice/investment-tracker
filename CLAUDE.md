@@ -61,3 +61,8 @@
   moment a second account has trades. Any multi-account work must fix
   read-time scoping first. demo.db has one account, so CI cannot catch
   this — a two-account fixture with overlapping tickers is required.
+- Fidelity rotates workplace-plan account identifiers. The Jul-2026 export
+  changed the plan UUID vs May-2026. private/account_map.json must be
+  updated when this happens; parse_fidelity_csv raises on an unmapped
+  account, which is the intended behavior. The map is gitignored — carry
+  new entries manually between machines.
