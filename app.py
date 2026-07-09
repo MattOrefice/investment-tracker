@@ -317,6 +317,7 @@ _page_groups = {
 if not IS_DEMO:
     _page_groups["Household"] = [
         st.Page("pages/13_Household_View.py", title="Household View"),
+        st.Page("pages/14_Asset_Location.py", title="Asset Location"),
     ]
 
 _inject_global_styles()
