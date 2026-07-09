@@ -461,3 +461,62 @@ def test_group3_and_group6_templated_not_literal():
     for ph in ("{workplace_plan_value}", "{pretax_capacity}", "{pretax_capacity_after}"):
         assert ph in g6["pros"]
     assert not g3.get("allow_literals") and not g6.get("allow_literals")
+
+
+# ── {workplace_plan_value} is a definition, not an argmax (this PR) ─────────────
+
+def test_workplace_plan_value_selects_by_pseudonym_not_largest():
+    """A SECOND workplace_plan account larger than the roll source must NOT change
+    {workplace_plan_value}. This is what distinguishes a definition from an argmax
+    that happens to be correct."""
+    from src.location_actions import _household_placeholders
+    from src.location_config import ROLLOVER_SOURCE_PSEUDONYM
+    acct = pd.DataFrame([
+        {"pseudonym": ROLLOVER_SOURCE_PSEUDONYM, "display_name": "Workplace Plan",  "tax_treatment": "workplace_plan"},
+        {"pseudonym": "acct_wkpl_bigger",        "display_name": "Bigger Plan",     "tax_treatment": "workplace_plan"},
+        {"pseudonym": "acct_trad_ira_01",        "display_name": "Traditional IRA", "tax_treatment": "traditional_ira"},
+    ])
+    pos = pd.DataFrame([
+        {"pseudonym": ROLLOVER_SOURCE_PSEUDONYM, "symbol": "RFUTX", "current_value": 77690.18,
+         "total_gain_loss": float("nan"), "cost_basis_total": float("nan")},
+        {"pseudonym": "acct_wkpl_bigger", "symbol": "BIGX", "current_value": 200000.0,   # bigger than the 401k
+         "total_gain_loss": 0.0, "cost_basis_total": 0.0},
+        {"pseudonym": "acct_trad_ira_01", "symbol": "VOO", "current_value": 10000.0,
+         "total_gain_loss": 0.0, "cost_basis_total": 10000.0},
+    ])
+    sec = pd.DataFrame([
+        {"ticker": "RFUTX", "sleeve_category": "target_date"},
+        {"ticker": "BIGX",  "sleeve_category": "target_date"},
+        {"ticker": "VOO",   "sleeve_category": "us_large_core"},
+    ])
+    hp = _household_placeholders(pos, acct, sec)
+    assert hp["workplace_plan_value"] == "$77,690", (
+        f"argmax leak — a larger second workplace account changed the figure: {hp['workplace_plan_value']}"
+    )
+    # after stays derived: pretax_capacity ($10,000) + workplace_plan_value ($77,690)
+    assert hp["pretax_capacity"] == "$10,000"
+    assert hp["pretax_capacity_after"] == "$87,690"
+
+
+def test_unresolvable_rollover_source_raises_no_fallback():
+    """If ROLLOVER_SOURCE_PSEUDONYM has no positions, the figure is unresolvable and
+    group 6's prose must RAISE — never fall back to another workplace account."""
+    from src.location_actions import _household_placeholders
+    acct = pd.DataFrame([
+        {"pseudonym": "acct_wkpl_other", "display_name": "Other Plan",      "tax_treatment": "workplace_plan"},
+        {"pseudonym": "acct_trad_ira_01","display_name": "Traditional IRA", "tax_treatment": "traditional_ira"},
+    ])
+    pos = pd.DataFrame([
+        {"pseudonym": "acct_wkpl_other",  "symbol": "BIGX", "current_value": 50000.0, "total_gain_loss": 0.0, "cost_basis_total": 0.0},
+        {"pseudonym": "acct_trad_ira_01", "symbol": "VOO",  "current_value": 10000.0, "total_gain_loss": 0.0, "cost_basis_total": 10000.0},
+    ])
+    sec = pd.DataFrame([{"ticker": "BIGX", "sleeve_category": "target_date"}, {"ticker": "VOO", "sleeve_category": "us_large_core"}])
+    hp = _household_placeholders(pos, acct, sec)
+    assert hp["workplace_plan_value"] is None, "must not fall back to another workplace account"
+    assert hp["pretax_capacity_after"] is None, "derived-from-None stays None"
+
+    g6 = next(g for g in ACTION_GROUPS if g["key"] == "rollover_401k")
+    reg = pd.DataFrame(columns=_REGISTER_COLS)
+    resolved = resolve_placeholders(g6, pos, acct, sec, reg)
+    with pytest.raises(ValueError):
+        render_prose(g6["pros"], resolved)

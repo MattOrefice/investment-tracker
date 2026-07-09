@@ -339,11 +339,12 @@ def _household_placeholders(
       trad_ira_equity        Σ current_value of EQUITY_SLEEVES holdings in the
                              Traditional IRA (equity sleeves enumerated, not inferred)
       pretax_capacity        Traditional IRA total current_value
-      workplace_plan_value   total of the LARGEST workplace-plan account (the 401(k)
-                             being rolled; the household has a second, tiny one)
-      pretax_capacity_after  pretax_capacity + workplace_plan_value
+      workplace_plan_value   total of the specific rollable 401(k) account
+                             (ROLLOVER_SOURCE_PSEUDONYM) — a definition, not an
+                             argmax; the Moody's PPP is deliberately excluded
+      pretax_capacity_after  pretax_capacity + workplace_plan_value (derived)
     """
-    from src.location_config import EQUITY_SLEEVES
+    from src.location_config import EQUITY_SLEEVES, ROLLOVER_SOURCE_PSEUDONYM
     tt = accounts_df.set_index("pseudonym")["tax_treatment"].to_dict()
     pos = positions_df.copy()
     pos["_tt"] = pos["pseudonym"].map(tt)
@@ -358,8 +359,9 @@ def _household_placeholders(
         eq = joined[joined["sleeve_category"].isin(EQUITY_SLEEVES)]
         trad_ira_equity = float(eq["current_value"].sum())
 
-    wk = pos[pos["_tt"] == "workplace_plan"]
-    workplace_plan_value = float(wk.groupby("pseudonym")["current_value"].sum().max()) if not wk.empty else None
+    # The rollable 401(k) is identified by pseudonym — never by comparing balances.
+    wk = positions_df[positions_df["pseudonym"] == ROLLOVER_SOURCE_PSEUDONYM]
+    workplace_plan_value = float(wk["current_value"].sum()) if not wk.empty else None
 
     after = None
     if pretax_capacity is not None and workplace_plan_value is not None:

@@ -67,6 +67,12 @@ def is_directable(pseudonym: str) -> bool:
     return pseudonym in DIRECTABLE_PSEUDONYMS
 
 
+# The specific rollable 401(k) that the rollover_401k action describes, identified
+# by pseudonym so {workplace_plan_value} is a definition, not an argmax over
+# balances. USER-EDITABLE.
+ROLLOVER_SOURCE_PSEUDONYM: str = "acct_wkpl_02"  # RFUTX 401k; Moody's PPP (acct_wkpl_01) is a separate former-employer plan, independently rollable, deliberately excluded from this figure
+
+
 # ── Sleeve location priority (ORDINAL — not a return forecast) ──────────────────
 # 1 = highest expected return, most deserving of scarce Roth (tax-free) space;
 # larger = less deserving. A sleeve ABSENT from this dict resolves to None,
