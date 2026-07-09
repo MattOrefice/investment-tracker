@@ -306,6 +306,38 @@ def build_drift_table(
     return saa_tbl, off_tbl
 
 
+def compute_sleeve_by_account(
+    positions_df: pd.DataFrame,
+    accounts_df: pd.DataFrame,
+    securities_df: pd.DataFrame,
+) -> pd.DataFrame:
+    """Per-account, per-sleeve dollar exposure in long form.
+
+    Returns columns [pseudonym, sleeve_category, current_value, pct_of_account],
+    one row per (account, sleeve). Unmapped tickers coalesce to 'unknown';
+    pct_of_account is the sleeve's share of that account's total (0–100).
+
+    This is the intermediate build_account_breakdown reduces to a single dominant
+    sleeve — surfaced here so callers (the Asset Location page) can use the full
+    matrix instead of re-deriving it. accounts_df is accepted for API symmetry
+    with the other household builders; the grouping needs only positions +
+    securities. The [pseudonym, sleeve_category, current_value] projection is
+    byte-identical to the frame build_account_breakdown previously built inline.
+    """
+    sec = securities_df[["ticker", "sleeve_category"]].copy()
+    joined = positions_df.merge(sec, left_on="symbol", right_on="ticker", how="left")
+    joined["sleeve_category"] = joined["sleeve_category"].fillna("unknown")
+
+    sleeve_by_acct = (
+        joined.groupby(["pseudonym", "sleeve_category"])["current_value"]
+        .sum()
+        .reset_index()
+    )
+    acct_total = sleeve_by_acct.groupby("pseudonym")["current_value"].transform("sum")
+    sleeve_by_acct["pct_of_account"] = sleeve_by_acct["current_value"] / acct_total * 100
+    return sleeve_by_acct
+
+
 def build_account_breakdown(
     positions_df: pd.DataFrame,
     accounts_df: pd.DataFrame,
@@ -316,23 +348,15 @@ def build_account_breakdown(
     The pseudonym join key is dropped; only display_name identifies accounts.
     Columns: Account, Managed By, Tax Treatment, Dominant Sleeve, Total AUM ($).
     """
-    sec = securities_df[["ticker", "sleeve_category"]].copy()
     acct = (
         accounts_df[["pseudonym", "display_name", "managed_by", "tax_treatment"]]
         .dropna(subset=["pseudonym"])
         .copy()
     )
 
-    joined = positions_df.merge(sec, left_on="symbol", right_on="ticker", how="left")
-    joined["sleeve_category"] = joined["sleeve_category"].fillna("unknown")
-
     totals = positions_df.groupby("pseudonym")["current_value"].sum().reset_index()
 
-    sleeve_by_acct = (
-        joined.groupby(["pseudonym", "sleeve_category"])["current_value"]
-        .sum()
-        .reset_index()
-    )
+    sleeve_by_acct = compute_sleeve_by_account(positions_df, accounts_df, securities_df)
     dom_idx = sleeve_by_acct.groupby("pseudonym")["current_value"].idxmax()
     dominant = (
         sleeve_by_acct.loc[dom_idx, ["pseudonym", "sleeve_category"]]
@@ -626,6 +650,247 @@ def build_tax_drag_ranking(
         .head(top_n)
         .reset_index(drop=True)
     )
+
+
+# ── Asset-location register & deploy view (Asset Location page) ─────────────────
+#
+# These generalize the tax-drag idea WITHOUT touching build_tax_drag_ranking
+# (which page 13 pins). build_location_register sees four mislocation cases, not
+# one, and carries a realization-cost term; build_deploy_view ranks where new
+# tax-advantaged cash should go by an ordinal sleeve priority.
+
+
+def compute_embedded_gain(positions_df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+    """Per (pseudonym, symbol) embedded gain and cost basis from the ingest frame.
+
+    Rows with NaN total_gain_loss or cost_basis_total (cash / money-market lines)
+    are EXCLUDED, never zero-filled — a NaN gain is 'not applicable', not $0.
+
+    Returns (df, n_excluded):
+      df: columns [pseudonym, symbol, embedded_gain, cost_basis, gain_pct]
+      n_excluded: count of position rows dropped for missing gain/cost.
+    """
+    cols = ["pseudonym", "symbol", "embedded_gain", "cost_basis", "gain_pct"]
+    needed = positions_df[["pseudonym", "symbol", "total_gain_loss", "cost_basis_total"]].copy()
+    valid_mask = needed["total_gain_loss"].notna() & needed["cost_basis_total"].notna()
+    n_excluded = int((~valid_mask).sum())
+    valid = needed[valid_mask]
+    if valid.empty:
+        return pd.DataFrame(columns=cols), n_excluded
+
+    grouped = (
+        valid.groupby(["pseudonym", "symbol"], as_index=False)
+        .agg(embedded_gain=("total_gain_loss", "sum"),
+             cost_basis=("cost_basis_total", "sum"))
+    )
+    grouped["gain_pct"] = (
+        grouped["embedded_gain"] / grouped["cost_basis"].replace(0, pd.NA) * 100
+    )
+    return grouped[cols], n_excluded
+
+
+def build_location_register(
+    positions_df: pd.DataFrame,
+    accounts_df: pd.DataFrame,
+    securities_df: pd.DataFrame,
+    tax_profile: dict,
+    sleeve_priority: dict,
+    shelter_priority: dict,
+) -> pd.DataFrame:
+    """Rank asset-location cleanup actions across four mislocation cases.
+
+    Cases (disjoint per holding):
+      A  low  tax-efficiency in a taxable account   -> move to a shelter
+      B  medium tax-efficiency in a taxable account -> move to a shelter
+      C  low/medium efficiency in a ROTH            -> premium-space waste;
+                                                       move to Traditional/workplace
+      D  a high-priority sleeve (rank 1–4) sitting in taxable while a
+         lower-priority sleeve occupies Roth space  -> swap into the Roth
+
+    Case C is exactly what build_tax_drag_ranking structurally cannot see (a
+    correctly-sheltered but premium-wasting holding, e.g. USRT/IAU in the Roth).
+    The `cash` sleeve is excluded throughout — it is dry powder for the deploy
+    view, not a holding to relocate.
+
+    Money model (all from tax_profile — no hardcoded rate):
+      ordinary = federal_marginal + state_marginal
+      ltcg     = federal_ltcg     + state_ltcg
+      annual_benefit  = value * assumed_sleeve_yield * ordinary   (income-shelter
+                        value at stake — a ranking magnitude, not a forecast)
+      cost_to_realize = 0                     for a sale inside a shelter
+                      = embedded_gain * ltcg  for a taxable sale
+      is_free         = cost_to_realize <= 0  (in-shelter, or a loss to harvest)
+      payback_months  = 12 * cost_to_realize / annual_benefit, None when free
+
+    Columns: holding, symbol, account, sleeve, case, annual_benefit,
+             embedded_gain, cost_to_realize, is_free, payback_months
+    Sorted: free actions first (annual_benefit desc), then paid by payback asc.
+    """
+    ordinary = float(tax_profile["federal_marginal"]) + float(tax_profile["state_marginal"])
+    ltcg     = float(tax_profile["federal_ltcg"]) + float(tax_profile["state_ltcg"])
+
+    sec = securities_df[["ticker", "name", "tax_efficiency", "sleeve_category"]].copy()
+    acct = (
+        accounts_df[["pseudonym", "display_name", "tax_treatment"]]
+        .dropna(subset=["pseudonym"]).copy()
+    )
+    joined = (
+        positions_df
+        .merge(sec, left_on="symbol", right_on="ticker", how="left")
+        .merge(acct, on="pseudonym", how="left")
+    )
+
+    eg_df, _ = compute_embedded_gain(positions_df)
+    eg_lookup = {(r["pseudonym"], r["symbol"]): r["embedded_gain"] for _, r in eg_df.iterrows()}
+
+    # Roth/HSA (shelter priority 1) sleeve occupancy — the "premium space" whose
+    # waste case C and case D reason about.
+    sba = compute_sleeve_by_account(positions_df, accounts_df, securities_df)
+    tt_by_acct = acct.set_index("pseudonym")["tax_treatment"].to_dict()
+    roth_sleeves: set[str] = {
+        r["sleeve_category"]
+        for _, r in sba.iterrows()
+        if shelter_priority.get(tt_by_acct.get(r["pseudonym"], "")) == 1
+        and r["sleeve_category"] != "cash"
+    }
+
+    def _worst_roth_below(p: int):
+        """A Roth-held sleeve strictly lower priority than p (or unranked)."""
+        worst, worst_key = None, -1
+        for s in roth_sleeves:
+            sp = sleeve_priority.get(s)
+            if sp is None or sp > p:
+                key = sp if sp is not None else 10 ** 9
+                if key > worst_key:
+                    worst, worst_key = s, key
+        return worst
+
+    rows: list[dict] = []
+    for _, row in joined.iterrows():
+        te = str(row.get("tax_efficiency") or "")
+        tt = str(row.get("tax_treatment") or "")
+        sleeve = str(row.get("sleeve_category") or "")
+        dollar = float(row.get("current_value", 0) or 0)
+        if not te or not tt or not sleeve or sleeve == "cash":
+            continue
+
+        prio = sleeve_priority.get(sleeve)
+        if tt == "taxable" and te == "low":
+            case = "A"
+        elif tt == "taxable" and te == "medium":
+            case = "B"
+        elif tt == "roth_ira" and te in ("low", "medium"):
+            case = "C"
+        elif tt == "taxable" and prio in (1, 2, 3, 4) and _worst_roth_below(prio) is not None:
+            case = "D"
+        else:
+            continue
+
+        annual_benefit = dollar * _assumed_yield(sleeve) * ordinary
+        # Cases A/B are only worth acting on if there is income tax to save.
+        if case in ("A", "B") and annual_benefit <= 0:
+            continue
+
+        embedded_gain = eg_lookup.get((row["pseudonym"], row["symbol"]))
+        has_gain = embedded_gain is not None and pd.notna(embedded_gain)
+        if tt != "taxable" or not has_gain:
+            cost_to_realize = 0.0                      # in-shelter sale is free
+        else:
+            cost_to_realize = float(embedded_gain) * ltcg
+        is_free = cost_to_realize <= 0
+        payback_months = (
+            None if (is_free or annual_benefit <= 0)
+            else round(12.0 * cost_to_realize / annual_benefit, 1)
+        )
+
+        rows.append({
+            "holding":         str(row.get("name") or row.get("description") or row["symbol"]),
+            "symbol":          row["symbol"],
+            "account":         str(row.get("display_name") or ""),
+            "sleeve":          sleeve,
+            "case":            case,
+            "annual_benefit":  round(annual_benefit, 2),
+            "embedded_gain":   (round(float(embedded_gain), 2) if has_gain else None),
+            "cost_to_realize": round(cost_to_realize, 2),
+            "is_free":         bool(is_free),
+            "payback_months":  payback_months,
+        })
+
+    cols = ["holding", "symbol", "account", "sleeve", "case", "annual_benefit",
+            "embedded_gain", "cost_to_realize", "is_free", "payback_months"]
+    if not rows:
+        return pd.DataFrame(columns=cols)
+
+    out = pd.DataFrame(rows, columns=cols)
+
+    def _paykey(r):
+        if pd.notna(r["payback_months"]):
+            return float(r["payback_months"])
+        return -1.0 if r["is_free"] else 1e9      # free -> first; paid+no-payback -> last
+
+    out["_free_rank"] = (~out["is_free"]).astype(int)   # 0 free, 1 paid
+    out["_pay"] = out.apply(_paykey, axis=1)
+    out = (
+        out.sort_values(by=["_free_rank", "_pay", "annual_benefit"],
+                        ascending=[True, True, False])
+        .drop(columns=["_free_rank", "_pay"])
+        .reset_index(drop=True)
+    )
+    return out
+
+
+def build_deploy_view(
+    positions_df: pd.DataFrame,
+    accounts_df: pd.DataFrame,
+    securities_df: pd.DataFrame,
+    sleeve_priority: dict,
+    account_pseudonym: str,
+    cash_amount: float,
+) -> pd.DataFrame:
+    """Rank deploy-candidate sleeves for one account and a cash amount.
+
+    Sleeves are ranked by ordinal sleeve_priority ascending (1 = most deserving
+    of tax-free space). Sleeves whose priority is None are EXCLUDED (not a deploy
+    target) — they are never coerced to a large number and sorted last.
+
+    Returns [sleeve, priority, current_value_in_account, rationale]. Sleeve level
+    only — no ticker is selected. Rationale is templated prose, never a return
+    claim.
+    """
+    sba = compute_sleeve_by_account(positions_df, accounts_df, securities_df)
+    in_acct = (
+        sba[sba["pseudonym"] == account_pseudonym]
+        .set_index("sleeve_category")["current_value"].to_dict()
+    )
+
+    rows: list[dict] = []
+    for sleeve, prio in sleeve_priority.items():
+        if prio is None:
+            continue
+        cur = float(in_acct.get(sleeve, 0.0))
+        disp = sleeve_display_name(sleeve)
+        if cur > 0:
+            rationale = (
+                f"Priority {prio} deploy rank. Account already holds ${cur:,.0f} "
+                f"in {disp} — adding here builds on an existing position."
+            )
+        else:
+            rationale = (
+                f"Priority {prio} deploy rank. No current {disp} exposure — a "
+                f"candidate home for the ${cash_amount:,.0f} of new cash."
+            )
+        rows.append({
+            "sleeve":                   disp,
+            "priority":                 prio,
+            "current_value_in_account": round(cur, 2),
+            "rationale":                rationale,
+        })
+
+    cols = ["sleeve", "priority", "current_value_in_account", "rationale"]
+    out = pd.DataFrame(rows, columns=cols)
+    if out.empty:
+        return out
+    return out.sort_values(["priority", "sleeve"]).reset_index(drop=True)
 
 
 # ── Concentration panel ────────────────────────────────────────────────────────
