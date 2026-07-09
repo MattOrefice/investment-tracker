@@ -3,10 +3,38 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 import os
 from datetime import datetime
+from pathlib import Path
 
 import pandas as pd
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_DEFAULT_ACCOUNT_MAP = _REPO_ROOT / "private" / "account_map.json"
+
+
+def _load_account_map(account_map_path: str | Path | None = None) -> dict[str, str]:
+    """Load the {account_number: pseudonym} map used to pseudonymize ingested rows.
+
+    The map lives in private/account_map.json (gitignored). It is required to
+    ingest a Fidelity export so that raw account numbers never reach the returned
+    DataFrame. Demo mode never ingests, so demo never needs this file.
+
+    Raises FileNotFoundError with a clear message if the map is absent.
+    """
+    path = Path(account_map_path) if account_map_path is not None else _DEFAULT_ACCOUNT_MAP
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Account map not found at {path}. It is required to ingest Fidelity "
+            "exports (it maps raw account numbers to pseudonyms so numbers never "
+            "reach the schema). Create private/account_map.json — see "
+            "src/seed/household_accounts.py for the pseudonyms."
+        )
+    with open(path, encoding="utf-8") as fh:
+        raw = json.load(fh)
+    return {str(k): str(v) for k, v in raw.items()}
+
 
 _COL_MAP = {
     "Account Number":         "account_number",
@@ -30,15 +58,24 @@ def _clean_numeric(series: pd.Series) -> pd.Series:
     return pd.to_numeric(s, errors="coerce")
 
 
-def parse_fidelity_csv(path: str) -> pd.DataFrame:
+def parse_fidelity_csv(
+    path: str,
+    account_map_path: str | Path | None = None,
+) -> pd.DataFrame:
     """Parse a Fidelity portfolio positions CSV export.
 
     Handles: UTF-8 BOM, trailing footer paragraphs, '--' sentinels,
     dollar/percent/comma symbols, empty Quantity for cash, CUSIP-as-symbol,
     and '*' suffix on money-market symbols.
 
+    Raw account numbers are resolved to pseudonyms via private/account_map.json
+    (override with ``account_map_path``) and the raw ``account_number`` column is
+    dropped — no account number is ever returned. A parsed account number absent
+    from the map raises (the row is never passed through raw, never silently
+    dropped). A missing map file raises.
+
     Returns a DataFrame with columns:
-        account_number, account_name, symbol, description, quantity,
+        pseudonym, account_name, symbol, description, quantity,
         current_value, cost_basis_total, total_gain_loss, type
     """
     df = pd.read_csv(path, encoding="utf-8-sig", index_col=False, dtype=str)
@@ -52,13 +89,29 @@ def parse_fidelity_csv(path: str) -> pd.DataFrame:
     # Select and rename output columns
     df = df[list(_COL_MAP.keys())].rename(columns=_COL_MAP)
 
-    # account_number must remain a plain string — no numeric inference
+    # account_number must remain a plain string — no numeric inference. Leading
+    # zeros matter: the raw string is the exact lookup key into account_map.json.
     df["account_number"] = df["account_number"].astype(str).str.strip()
+
+    # Resolve to pseudonym and DROP the raw number. Never emit an account number.
+    account_map = _load_account_map(account_map_path)
+    df["pseudonym"] = df["account_number"].map(account_map)
+    unmapped = int(df["pseudonym"].isna().sum())
+    if unmapped:
+        # Do NOT include the raw numbers in the message — they must not reach logs.
+        raise KeyError(
+            f"{unmapped} account number(s) in the export are not present in the "
+            "account map (private/account_map.json). Add them (mapped to a "
+            "pseudonym) and re-run; rows are never imported with a raw number."
+        )
+    df = df.drop(columns=["account_number"])
 
     for col in _NUMERIC_COLS:
         df[col] = _clean_numeric(df[col])
 
-    return df.reset_index(drop=True)
+    # pseudonym leads the frame (it replaces account_number's former position)
+    cols = ["pseudonym"] + [c for c in df.columns if c != "pseudonym"]
+    return df[cols].reset_index(drop=True)
 
 
 # ── Account-history (transaction) export parser ───────────────────────────────

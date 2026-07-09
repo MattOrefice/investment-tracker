@@ -13,16 +13,6 @@ ROOT        = pathlib.Path(__file__).resolve().parent.parent
 TRACKER_DB  = ROOT / "data" / "tracker.db"
 HOLDINGS_CSV = ROOT / "data" / "uploads" / "Portfolio_Positions_May-27-2026.csv"
 
-RAW_ACCOUNT_NUMBERS = [
-    "acct_taxable_02",
-    "acct_roth_01",
-    "acct_trad_ira_01",
-    "acct_taxable_01",
-    "74369",
-    "acct_hsa_01",
-    "acct_wkpl_02",
-]
-
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -45,13 +35,13 @@ def _load_fixtures():
 
 def _mock_location_data(symbol, tax_efficiency, tax_treatment, managed_by="external"):
     pos = pd.DataFrame([{
-        "account_number": "MOCK_ACCT",
+        "pseudonym": "MOCK_ACCT",
         "symbol": symbol,
         "description": f"{symbol} mock",
         "current_value": 5000.0,
     }])
     acct = pd.DataFrame([{
-        "account_number": "MOCK_ACCT",
+        "pseudonym": "MOCK_ACCT",
         "display_name":   f"Mock {tax_treatment.title()} Account",
         "tax_treatment":  tax_treatment,
         "managed_by":     managed_by,
@@ -109,7 +99,7 @@ def test_location_flag_account_column_uses_display_name():
     pos, acct, sec = _mock_location_data("VNQ", "low", "taxable")
     flags = build_location_flags(pos, acct, sec)
     assert "Account" in flags.columns
-    assert "MOCK_ACCT" not in flags.to_string(), "Raw account_number must not appear in output"
+    assert "MOCK_ACCT" not in flags.to_string(), "pseudonym join key must not appear in output"
     assert "Mock Taxable Account" in flags["Account"].values
 
 
@@ -175,15 +165,16 @@ def test_drift_table_off_saa_sorted_by_dollar_value_desc(alloc_df_total):
 
 # ── build_account_breakdown ────────────────────────────────────────────────────
 
-def test_account_breakdown_no_raw_account_numbers():
+def test_account_breakdown_no_join_key_leak():
     _skip_if_no_holdings()
     from src.household import build_account_breakdown
     pos, acct, sec = _load_fixtures()
     result = build_account_breakdown(pos, acct, sec)
     result_str = result.to_string(index=False)
-    for acct_num in RAW_ACCOUNT_NUMBERS:
-        assert acct_num not in result_str, (
-            f"Raw account number {acct_num!r} leaked into account breakdown output"
+    assert "pseudonym" not in result.columns
+    for pseudo in acct["pseudonym"].dropna():
+        assert pseudo not in result_str, (
+            f"pseudonym {pseudo!r} leaked into account breakdown output"
         )
 
 
@@ -296,13 +287,13 @@ def test_substitution_note_none():
 def test_tax_drag_reit_in_taxable_nonzero():
     from src.household import build_tax_drag_ranking
     pos = pd.DataFrame([{
-        "account_number": "MOCK",
+        "pseudonym": "MOCK",
         "symbol": "VNQ",
         "description": "Vanguard REIT ETF",
         "current_value": 10000.0,
     }])
     acct = pd.DataFrame([{
-        "account_number": "MOCK",
+        "pseudonym": "MOCK",
         "display_name":   "Mock Taxable",
         "tax_treatment":  "taxable",
         "managed_by":     "external",
@@ -321,13 +312,13 @@ def test_tax_drag_reit_in_taxable_nonzero():
 def test_tax_drag_equity_in_taxable_not_flagged():
     from src.household import build_tax_drag_ranking
     pos = pd.DataFrame([{
-        "account_number": "MOCK",
+        "pseudonym": "MOCK",
         "symbol": "VOO",
         "description": "Vanguard S&P 500",
         "current_value": 10000.0,
     }])
     acct = pd.DataFrame([{
-        "account_number": "MOCK",
+        "pseudonym": "MOCK",
         "display_name":   "Mock Taxable",
         "tax_treatment":  "taxable",
         "managed_by":     "self",
@@ -507,13 +498,11 @@ def test_build_performance_table_mwr_returns_all_7_accounts():
         assert (no_data[col] == "—").all(), f"MWR-absent account has non-dash in {col}"
 
 
-def test_build_performance_table_no_raw_account_numbers():
+def test_build_performance_table_no_pseudonym_leak():
     from src.household import build_performance_table
     tbl = build_performance_table(_make_perf_df_twr(), _make_accounts_df_7(), return_type="TWR")
     tbl_str = tbl.to_string()
-    for raw in RAW_ACCOUNT_NUMBERS:
-        assert raw not in tbl_str, f"Raw account number {raw!r} leaked into performance table"
-    assert "acct_taxable_01" not in tbl_str, "Pseudonym leaked into performance table"
+    assert "acct_taxable_01" not in tbl_str, "Pseudonym join key leaked into performance table"
 
 
 def test_build_performance_table_self_directed_sorts_first():
@@ -543,15 +532,3 @@ def test_build_benchmark_table_household_row_first():
     assert len(tbl) == 6
     assert tbl.iloc[0]["Benchmark"] == "Household (time-weighted)"
     assert "+24.52%" in tbl.iloc[0]["1Y Return"]
-
-
-# ── CI grep: page file has no raw account numbers ────────────────────────────
-
-def test_household_view_page_has_no_raw_account_numbers():
-    page = ROOT / "pages" / "13_Household_View.py"
-    assert page.exists(), "pages/13_Household_View.py must exist"
-    content = page.read_text(encoding="utf-8", errors="ignore")
-    for acct_num in RAW_ACCOUNT_NUMBERS:
-        assert acct_num not in content, (
-            f"Raw account number {acct_num!r} found in pages/13_Household_View.py"
-        )

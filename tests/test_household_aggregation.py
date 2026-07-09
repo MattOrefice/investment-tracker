@@ -14,7 +14,6 @@ TRACKER_DB  = ROOT / "data" / "tracker.db"
 HOLDINGS_CSV = ROOT / "data" / "uploads" / "Portfolio_Positions_May-27-2026.csv"
 
 PORTFOLIO_TOTAL   = 202_449.62   # parse_fidelity_csv sum
-SELF_ACCOUNT      = "acct_taxable_01"
 SELF_TOTAL        = 1_000.36
 
 ALLOWED_RATIONALE = {"no_exposure", "on_target", "underweight", "overweight", "off_saa_exposure"}
@@ -239,12 +238,12 @@ def test_cash_routes_to_off_saa_synthetic():
     from src.household import compute_household_allocation
 
     positions_df = pd.DataFrame([
-        {"account_number": "A1", "symbol": "VOO",   "current_value": 8000.0},
-        {"account_number": "A1", "symbol": "SPAXX", "current_value": 2000.0},
+        {"pseudonym": "A1", "symbol": "VOO",   "current_value": 8000.0},
+        {"pseudonym": "A1", "symbol": "SPAXX", "current_value": 2000.0},
     ])
     accounts_df = pd.DataFrame([
-        {"account_number": "A1", "managed_by": "self", "display_name": "Acct",
-         "pseudonym": "Acct", "tax_treatment": "taxable"},
+        {"pseudonym": "A1", "managed_by": "self", "display_name": "Acct",
+         "tax_treatment": "taxable"},
     ])
     # SPAXX: in-SAA flag set, but its asset class (cash) is untargeted post-38a.
     securities_df = pd.DataFrame([
