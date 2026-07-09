@@ -17,12 +17,17 @@ from src.location_actions import (
     build_roth_deploy_answer,
     resolve_placeholders,
     render_prose,
+    render_prose_md,
+    escape_md,
+    _fmt_dollars,
     filter_register_for_group,
 )
 from src.location_config import (
     TAX_PROFILE,
     SLEEVE_LOCATION_PRIORITY,
     ACCOUNT_SHELTER_PRIORITY,
+    DIRECTABLE_PSEUDONYMS,
+    is_directable,
 )
 from src.household import build_location_register
 
@@ -202,3 +207,50 @@ def test_deploy_and_rollover_render():
     r = resolve_placeholders(by_key["rollover_401k"], pos, acct, reg)
     # rollover prose is all literals (no placeholders) -> renders unchanged.
     assert render_prose(by_key["rollover_401k"]["pros"], r) == by_key["rollover_401k"]["pros"]
+
+
+# ── Dollar formatting + Markdown escaping (bugs 1 & 2) ─────────────────────────
+
+def test_fmt_dollars_keeps_symbol_and_sign():
+    assert _fmt_dollars(51) == "$51"
+    assert _fmt_dollars(77690) == "$77,690"
+    assert _fmt_dollars(-51) == "-$51"        # negative is "-$51", never "- 51"
+    assert _fmt_dollars(-51.4) == "-$51"
+
+
+def test_render_prose_md_escapes_every_dollar():
+    resolved = {"value": "$8,159", "count": "3", "embedded_gain": "-$51", "annual_benefit": "$62"}
+    template = "These {count} sit at {embedded_gain}; removing {annual_benefit} on {value}."
+    out = render_prose_md(template, resolved)
+    # Every "$" is escaped as "\$" — no bare "$" that could open LaTeX math mode.
+    assert "\\$" in out, "expected escaped \\$ in rendered markdown"
+    assert "$" not in out.replace("\\$", ""), f"bare $ would open math mode: {out!r}"
+    # Numbers and sign survive the escaping.
+    assert "8,159" in out and "-\\$51" in out and "\\$62" in out
+
+
+def test_escape_md_leaves_non_dollar_markdown_intact():
+    assert escape_md("**For.** costs $780 today") == "**For.** costs \\$780 today"
+    assert escape_md("no dollars here") == "no dollars here"
+
+
+# ── Account directability (bug 5) ──────────────────────────────────────────────
+
+def test_directable_accounts_enumerated():
+    assert DIRECTABLE_PSEUDONYMS == frozenset({"acct_taxable_01", "acct_roth_01", "acct_trad_ira_01"})
+    # Directable: self-directed taxable + both IRAs.
+    assert is_directable("acct_taxable_01") is True
+    assert is_directable("acct_roth_01") is True
+    assert is_directable("acct_trad_ira_01") is True
+    # Needs coordination: TOD taxable, workplace plans, HSA.
+    assert is_directable("acct_taxable_02") is False
+    assert is_directable("acct_wkpl_01") is False
+    assert is_directable("acct_wkpl_02") is False
+    assert is_directable("acct_hsa_01") is False
+
+
+def test_directability_is_not_managed_by_or_tax_treatment():
+    # The Roth/Traditional are externally managed yet directable; the TOD taxable
+    # shares tax_treatment with the directable self-directed taxable yet is not.
+    assert is_directable("acct_roth_01") and is_directable("acct_trad_ira_01")   # external, but directable
+    assert not is_directable("acct_taxable_02")                                  # taxable, but not directable
