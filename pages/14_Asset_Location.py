@@ -1,15 +1,15 @@
 """Asset Location — personal-mode only.
 
-Two questions: where new tax-advantaged cash should go (by an ordinal sleeve
-priority), and which cleanup actions exist ranked by benefit / cost / urgency.
-Rides the household CSV path; does not touch holdings.py or the trades ledger.
+Reads as six decisions: where to deploy idle Roth cash, and five ranked cleanup
+actions. Scores and prose are authored (src/location_actions.py); dollar figures
+are templated from the live CSV. Rides the household CSV path; does not touch
+holdings.py, rebalance.py, page 11, or build_tax_drag_ranking.
 """
 import logging
 import streamlit as st
 
 st.set_page_config(page_title="Asset Location", layout="wide")
 
-from pathlib import Path
 import pandas as pd
 
 from src.config import IS_DEMO
@@ -29,16 +29,22 @@ if IS_DEMO:
 from src.db import get_connection
 from src.household_data import load_latest_positions
 from src.household import (
-    compute_sleeve_by_account,
-    compute_embedded_gain,
     build_location_register,
-    build_deploy_view,
     sleeve_display_name,
 )
 from src.location_config import (
     TAX_PROFILE,
     SLEEVE_LOCATION_PRIORITY,
     ACCOUNT_SHELTER_PRIORITY,
+)
+from src.location_actions import (
+    ACTION_GROUPS,
+    STATUS_ORDER,
+    INFORMATIONAL_KEYS,
+    build_roth_deploy_answer,
+    resolve_placeholders,
+    render_prose,
+    filter_register_for_group,
 )
 
 # ── Load data ──────────────────────────────────────────────────────────────────
@@ -67,166 +73,149 @@ with get_connection() as conn:
     securities_df = pd.read_sql_query("SELECT * FROM securities", conn)
 
 # ── Derived frames ──────────────────────────────────────────────────────────────
-sba = compute_sleeve_by_account(positions_df, accounts_df, securities_df)
-_eg_df, _n_excluded_gain = compute_embedded_gain(positions_df)
 register = build_location_register(
     positions_df, accounts_df, securities_df,
     TAX_PROFILE, SLEEVE_LOCATION_PRIORITY, ACCOUNT_SHELTER_PRIORITY,
 )
+deploy = build_roth_deploy_answer(positions_df, accounts_df, securities_df, SLEEVE_LOCATION_PRIORITY)
+_roth_idle_cash = deploy["idle_cash"]
 
-# Idle cash per account (cash sleeve), for the deploy default + a KPI.
-_cash_by_acct = (
-    sba[sba["sleeve_category"] == "cash"]
-    .set_index("pseudonym")["current_value"].to_dict()
+# ── KPIs (three distinct units; the last two must never be summed) ─────────────
+_kpi_idle_roth = _roth_idle_cash
+_kpi_annual_drag = float(register[register["case"].isin(["A", "B", "D"])]["annual_benefit"].sum())
+# Case C is repositionable inside shelters — a stock of dollars, NOT an annual flow.
+_case_c = register[register["case"] == "C"]
+_pos_disp = positions_df.merge(accounts_df[["pseudonym", "display_name"]], on="pseudonym", how="left")
+_kpi_repositionable = 0.0
+for _, _r in _case_c.iterrows():
+    _m = _pos_disp[(_pos_disp["symbol"] == _r["symbol"]) & (_pos_disp["display_name"] == _r["account"])]
+    _kpi_repositionable += float(_m["current_value"].sum())
+
+_STATUS_LABEL = {"act_now": "Act now", "evaluate": "Evaluate", "blocked": "Blocked", "accepted": "Accepted"}
+
+# Group render order: status bucket, then score descending within bucket.
+_ordered_groups = sorted(
+    ACTION_GROUPS, key=lambda g: (STATUS_ORDER.index(g["status"]), -g["score"])
 )
-_total_idle_cash = float(sum(_cash_by_acct.values()))
-_total_annual_drag = float(register["annual_benefit"].sum()) if not register.empty else 0.0
-_free_action_count = int(register["is_free"].sum()) if not register.empty else 0
 
-_CASE_LABEL = {
-    "A": "A — low-efficiency in taxable",
-    "B": "B — medium-efficiency in taxable",
-    "C": "C — premium-space waste in Roth",
-    "D": "D — high-priority sleeve stuck in taxable",
-}
+
+def _summary_line(group: dict, resolved: dict, reg_rows: pd.DataFrame) -> str:
+    """One computed line: what it is, dollar size, free or costly."""
+    if group["key"] == "deploy_roth_cash":
+        return f"{resolved['value']} idle Roth cash · free · zero tax, zero friction"
+    if group["key"] == "rollover_401k":
+        return "The household's largest lever · blocked — needs your next employer's plan"
+    size = resolved.get("value") or "—"
+    n = resolved.get("count")
+    where = f" across {n} holdings" if n else ""
+    cost = "free" if (not reg_rows.empty and bool(reg_rows["is_free"].all())) else "costly"
+    return f"{size}{where} · {cost}"
+
 
 # ── Title ──────────────────────────────────────────────────────────────────────
 _, col, _ = st.columns([1, 8, 1])
 with col:
     st.title("Asset Location")
-    st.caption("Where to deploy new tax-advantaged cash, and which mislocations to clean up")
+    st.caption("Six decisions: deploy idle Roth cash, then five ranked cleanup actions")
     st.caption(f"As of {_as_of_date.isoformat()} · source: {_csv_path.name}")
 
     with st.expander("How to read this page", expanded=False):
         st.markdown(
-            "**Scope.** This page rides the same household positions export as the "
-            "Household View. It answers two questions the drift view does not: "
-            "*where should new tax-advantaged cash go*, and *which existing holdings "
-            "sit in the wrong account type*.\n\n"
-            "**Deploy ranking is ordinal.** Sleeves are ranked 1–N by how deserving "
-            "they are of scarce tax-free (Roth) space — highest-expected-return "
-            "sleeves first. This is a **ranking, not a return forecast**: no number on "
-            "this page is a predicted return. A sleeve with no rank is simply *not a "
-            "deploy target*, which is different from being ranked last.\n\n"
-            "**Action register — four cases.** (A) tax-inefficient income asset in a "
-            "taxable account; (B) medium-efficiency asset in taxable; (C) a "
-            "low/medium-efficiency asset sitting in the **Roth**, which is correctly "
-            "sheltered but wastes premium tax-free space that a higher-return asset "
-            "should occupy; (D) a high-priority sleeve stuck in taxable while a "
-            "lower-priority sleeve occupies Roth space. Case C is invisible to the "
-            "Household View's tax-drag table, which only sees case A.\n\n"
-            "**Free vs paid.** A move *inside or between shelters* (e.g. Roth → "
-            "Traditional) triggers **no taxable sale — it is free**. A move out of a "
-            "taxable account realizes the embedded gain; its cost is that gain times "
-            "the combined long-term capital-gains rate, and `payback (months)` is how "
-            "long the annual benefit takes to earn that cost back. Free actions are "
-            "listed first.\n\n"
+            "**Six decisions, not a table.** Each card is a decision with a "
+            "score (authored, 1–10), a one-line summary, a **For** and an "
+            "**Against**, and — for the cleanup actions — an expander with the "
+            "underlying positions. Cards are ordered *act now → evaluate → "
+            "blocked → accepted*.\n\n"
+            "**Dollar figures are live.** Every dollar amount in the prose is "
+            "computed from the current positions export, not hardcoded. If a "
+            "figure can't be computed, the page refuses to render rather than "
+            "show a misleading $0.\n\n"
+            "**Free vs costly.** A move inside or between shelters (e.g. Roth → "
+            "Traditional) is a non-taxable event — *free*. A sale in the taxable "
+            "account realizes the embedded gain and is *costly*.\n\n"
+            "**Scores are judgement, not output.** The 1–10 scores are the "
+            "owner's authored priority, deliberately not derived from a formula. "
+            "Sleeve deploy targets are an ordinal ranking, never a return forecast.\n\n"
             "**Actionability.** Six of seven accounts are externally managed; most "
-            "register rows are *observed* mislocations that would need manager "
-            "coordination, not unilateral trades — the same caveat as the Household View."
+            "of this is *observed* and would need manager coordination — the same "
+            "caveat as the Household View."
         )
     st.divider()
 
-# ── KPI header ─────────────────────────────────────────────────────────────────
+# ── KPIs ────────────────────────────────────────────────────────────────────────
 _, col, _ = st.columns([1, 8, 1])
 with col:
     k1, k2, k3 = st.columns(3)
-    k1.metric("Est. total annual drag", f"${_total_annual_drag:,.0f}")
-    k2.metric("Idle cash across accounts", f"${_total_idle_cash:,.0f}")
-    k3.metric("Free actions available", _free_action_count)
+    k1.metric("Idle Roth cash", f"${_kpi_idle_roth:,.0f}")
+    k2.metric("Annual tax drag (A/B/D)", f"${_kpi_annual_drag:,.0f}")
+    k3.metric("Repositionable in shelters (C)", f"${_kpi_repositionable:,.0f}")
     st.caption(
-        "Annual drag is the summed income-shelter value at stake across all "
-        "register rows (a ranking magnitude, not a precise forecast)."
+        "Annual tax drag is a yearly flow (cases A/B/D; case C is excluded — it "
+        "carries no drag). Repositionable is a one-time stock of dollars that can "
+        "move between shelters for free (case C). Different units — never summed."
     )
     st.divider()
 
-# ── Deploy new cash ─────────────────────────────────────────────────────────────
-_, col, _ = st.columns([1, 8, 1])
-with col:
-    st.subheader("Deploy new cash")
-    st.caption(
-        "Pick an account and an amount; sleeves are ranked by deploy priority "
-        "(1 = most deserving of tax-free space). Sleeve level only — no ticker is picked."
+# ── Six decisions ───────────────────────────────────────────────────────────────
+_CASE_LABEL = {
+    "A": "A — low-eff in taxable", "B": "B — medium-eff in taxable",
+    "C": "C — premium-space waste in Roth", "D": "D — high-priority stuck in taxable",
+}
+
+for group in _ordered_groups:
+    reg_rows = (
+        filter_register_for_group(register, group)
+        if group["key"] not in INFORMATIONAL_KEYS else register.iloc[0:0]
     )
+    resolved = resolve_placeholders(group, positions_df, accounts_df, register,
+                                    roth_idle_cash=_roth_idle_cash)
 
-    _present = accounts_df[accounts_df["pseudonym"].isin(positions_df["pseudonym"])].copy()
-    _pseudo_by_label = dict(zip(_present["display_name"], _present["pseudonym"]))
-    _labels = list(_pseudo_by_label.keys())
+    _, col, _ = st.columns([1, 8, 1])
+    with col:
+        st.subheader(f"{group['title']}  ·  {group['score']}/10")
+        st.caption(f"**{_STATUS_LABEL[group['status']]}** — {_summary_line(group, resolved, reg_rows)}")
 
-    # Default to the account holding the most idle cash (typically the Roth).
-    if _cash_by_acct:
-        _default_pseudo = max(_cash_by_acct, key=_cash_by_acct.get)
-        _default_label = _present[_present["pseudonym"] == _default_pseudo]["display_name"]
-        _default_idx = _labels.index(_default_label.iloc[0]) if not _default_label.empty else 0
-    else:
-        _default_idx = 0
+        st.markdown(f"**For.** {render_prose(group['pros'], resolved)}")
+        st.markdown(f"**Against.** {render_prose(group['cons'], resolved)}")
 
-    sel_label = st.selectbox("Account", _labels, index=_default_idx)
-    sel_pseudo = _pseudo_by_label[sel_label]
-    _default_amt = float(_cash_by_acct.get(sel_pseudo, 0.0))
-
-    amount = st.number_input(
-        "Cash to deploy ($)", min_value=0.0, value=round(_default_amt, 2), step=100.0,
-        help="Defaults to this account's current idle cash.",
-    )
-
-    deploy_df = build_deploy_view(
-        positions_df, accounts_df, securities_df,
-        SLEEVE_LOCATION_PRIORITY, sel_pseudo, amount,
-    )
-    st.dataframe(
-        deploy_df.rename(columns={
-            "sleeve": "Sleeve", "priority": "Priority",
-            "current_value_in_account": "In This Account ($)", "rationale": "Rationale",
-        }),
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Priority": st.column_config.NumberColumn(format="%d"),
-            "In This Account ($)": st.column_config.NumberColumn(format="$%.0f"),
-        },
-    )
-    st.divider()
-
-# ── Action register ─────────────────────────────────────────────────────────────
-_, col, _ = st.columns([1, 8, 1])
-with col:
-    st.subheader("Action register")
-    st.caption(
-        "Ranked: free actions first (by annual benefit), then paid actions by "
-        "payback period. `is_free` and `cost_to_realize` are always shown — an "
-        "in-shelter move costs $0."
-    )
-
-    if register.empty:
-        st.success("No asset-location mislocations detected.")
-    else:
-        display = register.copy()
-        display["case"] = display["case"].map(_CASE_LABEL).fillna(display["case"])
-        display = display.rename(columns={
-            "holding": "Holding", "symbol": "Symbol", "account": "Account",
-            "sleeve": "Sleeve", "case": "Case", "annual_benefit": "Annual Benefit ($)",
-            "embedded_gain": "Embedded Gain ($)", "cost_to_realize": "Cost to Realize ($)",
-            "is_free": "Free?", "payback_months": "Payback (months)",
-        })
-        display["Sleeve"] = display["Sleeve"].map(sleeve_display_name)
-        st.dataframe(
-            display,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Annual Benefit ($)":  st.column_config.NumberColumn(format="$%.2f"),
-                "Embedded Gain ($)":   st.column_config.NumberColumn(format="$%.0f"),
-                "Cost to Realize ($)": st.column_config.NumberColumn(format="$%.2f"),
-                "Free?":               st.column_config.CheckboxColumn(),
-                "Payback (months)":    st.column_config.NumberColumn(format="%.1f"),
-            },
-        )
-        st.caption(
-            f"{_free_action_count} of {len(register)} actions are free "
-            "(in-shelter moves or loss-harvest opportunities)."
-        )
-    st.divider()
+        if group["key"] == "deploy_roth_cash":
+            tbl = deploy["table"].copy()
+            tbl["sleeve"] = tbl["sleeve"].map(sleeve_display_name)
+            total = pd.DataFrame([{"ticker": "Total", "sleeve": "", "dollar": deploy["idle_cash"]}])
+            disp = pd.concat([tbl, total], ignore_index=True).rename(
+                columns={"ticker": "Ticker", "sleeve": "Sleeve", "dollar": "Amount ($)"}
+            )
+            st.dataframe(
+                disp, use_container_width=True, hide_index=True,
+                column_config={"Amount ($)": st.column_config.NumberColumn(format="$%.0f")},
+            )
+            st.caption(
+                "One is_in_saa ticker per sleeve; split 50/50 across the top two "
+                "eligible sleeves. The 50/50 split is a policy choice, not a "
+                "computed optimum. No ticker beyond these is auto-selected."
+            )
+        elif group["key"] not in INFORMATIONAL_KEYS:
+            with st.expander(f"Underlying positions ({len(reg_rows)})", expanded=False):
+                show = reg_rows.copy()
+                show["case"] = show["case"].map(_CASE_LABEL).fillna(show["case"])
+                show["sleeve"] = show["sleeve"].map(sleeve_display_name)
+                show = show.rename(columns={
+                    "holding": "Holding", "symbol": "Symbol", "account": "Account",
+                    "sleeve": "Sleeve", "case": "Case", "annual_benefit": "Annual Benefit ($)",
+                    "embedded_gain": "Embedded Gain ($)", "cost_to_realize": "Cost to Realize ($)",
+                    "is_free": "Free?", "payback_months": "Payback (months)",
+                })
+                st.dataframe(
+                    show, use_container_width=True, hide_index=True,
+                    column_config={
+                        "Annual Benefit ($)":  st.column_config.NumberColumn(format="$%.2f"),
+                        "Embedded Gain ($)":   st.column_config.NumberColumn(format="$%.0f"),
+                        "Cost to Realize ($)": st.column_config.NumberColumn(format="$%.2f"),
+                        "Free?":               st.column_config.CheckboxColumn(),
+                        "Payback (months)":    st.column_config.NumberColumn(format="%.1f"),
+                    },
+                )
+        st.divider()
 
 # ── Assumptions ─────────────────────────────────────────────────────────────────
 _, col, _ = st.columns([1, 8, 1])
@@ -240,17 +229,10 @@ with col:
             f"- Federal long-term capital gains: **{TAX_PROFILE['federal_ltcg']:.2%}**\n"
             f"- State ordinary (PA flat): **{TAX_PROFILE['state_marginal']:.2%}**\n"
             f"- State LTCG (PA — no preferential rate): **{TAX_PROFILE['state_ltcg']:.2%}**\n"
-            f"- Combined ordinary rate used for annual benefit: **{_ord:.2%}**\n"
-            f"- Combined LTCG rate used for realization cost: **{_ltcg:.2%}**\n\n"
-            "**Annual benefit** = holding value × an assumed per-sleeve distribution "
-            "yield × the combined ordinary rate. It is the income-shelter value at "
-            "stake — a **ranking magnitude, not a dollar forecast**.\n\n"
-            "**Cost to realize** = embedded gain × combined LTCG rate, and is **$0 for "
-            "any sale inside a tax-advantaged account** (the crux: in-shelter moves are "
-            "free). A negative embedded gain makes the move free too (a loss to harvest).\n\n"
-            "**Sleeve deploy priority is an ordinal ranking**, not a return forecast. "
-            "1 = most deserving of scarce tax-free space. A sleeve absent from the "
-            "ranking is *not a deploy target* — it is not ranked last.\n\n"
-            f"Cash / money-market rows carry no cost basis; **{_n_excluded_gain}** such "
-            "rows were excluded from the embedded-gain computation (not zero-filled)."
+            f"- Combined ordinary rate: **{_ord:.2%}** · combined LTCG rate: **{_ltcg:.2%}**\n\n"
+            "**Scores are authored**, not computed — the owner's priority judgement, "
+            "deliberately without a scoring formula. **Sleeve deploy targets are an "
+            "ordinal ranking**, not a return forecast. **Dollar figures in every card "
+            "are templated from the live positions CSV**; an unresolvable figure "
+            "raises rather than rendering $0."
         )
