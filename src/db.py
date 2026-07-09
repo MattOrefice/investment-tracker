@@ -13,7 +13,11 @@ CREATE TABLE IF NOT EXISTS accounts (
     type          TEXT NOT NULL,
     custodian     TEXT,
     is_active     INTEGER DEFAULT 1,
-    created_at    TEXT DEFAULT CURRENT_TIMESTAMP
+    created_at    TEXT DEFAULT CURRENT_TIMESTAMP,
+    tax_treatment TEXT DEFAULT 'other',
+    pseudonym     TEXT,
+    display_name  TEXT,
+    managed_by    TEXT DEFAULT 'self'
 );
 
 CREATE TABLE IF NOT EXISTS asset_classes (
@@ -117,9 +121,48 @@ CREATE TABLE IF NOT EXISTS dividends (
 CREATE INDEX IF NOT EXISTS idx_trades_account_date  ON trades(account_id, trade_date);
 CREATE INDEX IF NOT EXISTS idx_prices_ticker_date   ON prices(ticker, price_date);
 CREATE INDEX IF NOT EXISTS idx_dividends_ticker_date ON dividends(ticker, ex_date);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_accounts_pseudonym ON accounts (pseudonym);
 """
 
 _migrated_paths: set[str] = set()
+
+
+def _drop_account_number(conn: sqlite3.Connection) -> None:
+    """PII migration — remove the raw ``account_number`` column from ``accounts``.
+
+    Account metadata is keyed on ``pseudonym`` instead; ingestion resolves raw
+    numbers to pseudonyms before anything reaches the DB. Idempotent: safe to run
+    twice, and a no-op once the column is gone. Requires SQLite >= 3.35 for
+    ALTER TABLE DROP COLUMN, and the account_number unique index must be dropped
+    first (SQLite forbids dropping an indexed column).
+    """
+    has_accounts = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='accounts'"
+    ).fetchone()
+    if not has_accounts:
+        return
+
+    cols = [row[1] for row in conn.execute("PRAGMA table_info(accounts)")]
+    if "account_number" in cols:
+        version = tuple(int(p) for p in sqlite3.sqlite_version.split("."))
+        if version < (3, 35, 0):
+            raise RuntimeError(
+                f"SQLite {sqlite3.sqlite_version} is too old for ALTER TABLE DROP "
+                "COLUMN (needs >= 3.35). Cannot complete the account_number PII "
+                "migration; upgrade SQLite/Python before running."
+            )
+        conn.execute("DROP INDEX IF EXISTS ux_accounts_account_number")
+        conn.execute("ALTER TABLE accounts DROP COLUMN account_number")
+
+    # The seed's ON CONFLICT(pseudonym) upsert depends on this uniqueness; ensure
+    # it exists whenever the column is present. Minimal/legacy accounts tables
+    # (bare test DBs) have no pseudonym column — skip the index there rather than
+    # error, keeping the migration a safe no-op on incomplete schemas.
+    if "pseudonym" in cols:
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ux_accounts_pseudonym ON accounts (pseudonym)"
+        )
+    conn.commit()
 
 
 def _auto_migrate(conn: sqlite3.Connection) -> None:
@@ -168,6 +211,9 @@ def _auto_migrate(conn: sqlite3.Connection) -> None:
             "AND benchmark_ticker IN ('VNQ+DBC', 'VNQ+DJP', 'VNQ (50%) + DBC (50%)')"
         )
         conn.commit()
+
+    # Migration: drop the raw account_number PII column (keyed on pseudonym now).
+    _drop_account_number(conn)
 
 
 def get_connection():

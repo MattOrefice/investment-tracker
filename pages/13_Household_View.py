@@ -66,7 +66,13 @@ except Exception:
     st.stop()
 
 with get_connection() as conn:
-    accounts_df     = pd.read_sql_query("SELECT * FROM accounts", conn)
+    # Explicit column list — account_number is intentionally never selected
+    # (raw account numbers must not reach this page or its DataFrames).
+    accounts_df     = pd.read_sql_query(
+        "SELECT account_id, name, type, custodian, is_active, created_at, "
+        "tax_treatment, pseudonym, display_name, managed_by FROM accounts",
+        conn,
+    )
     securities_df   = pd.read_sql_query("SELECT * FROM securities", conn)
     compositions_df = pd.read_sql_query("SELECT * FROM fund_compositions", conn)
     saa_targets_df  = pd.read_sql_query(
@@ -359,7 +365,7 @@ with col:
     _perf_df = load_household_performance(_PERF_CSV)
     # Filter accounts_df to the 7 active accounts (those with positions in the CSV)
     _active_accounts = accounts_df[
-        accounts_df["account_number"].isin(positions_df["account_number"])
+        accounts_df["pseudonym"].isin(positions_df["pseudonym"])
     ]
     _perf_tbl = build_performance_table(_perf_df, _active_accounts, return_type=_return_type)
     st.dataframe(_perf_tbl, use_container_width=True, hide_index=True)

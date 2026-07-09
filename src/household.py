@@ -1,7 +1,8 @@
 """Household account display, look-through, and aggregation helpers.
 
-UI code must call get_account_display() rather than reading
-account_number directly — raw account numbers must never appear in pages/.
+Accounts are keyed by pseudonym; raw Fidelity account numbers are never
+stored or joined on (ingestion resolves them to pseudonyms). UI code renders
+display_name via get_account_display() and never surfaces the join key.
 """
 from pathlib import Path
 
@@ -12,13 +13,13 @@ _BENCH_COLS = ["benchmark_name", "period", "return_pct", "as_of_range", "source"
 _PERF_PERIODS = ("1M", "3M", "YTD", "1Y", "3Y", "5Y", "SI")
 
 
-def get_account_display(account_number: str, accounts_df: pd.DataFrame) -> dict:
-    """Return display metadata for an account number.
+def get_account_display(pseudonym: str, accounts_df: pd.DataFrame) -> dict:
+    """Return display metadata for an account pseudonym.
 
     Returns dict with keys: pseudonym, display_name, tax_treatment, managed_by.
     All values are strings; empty strings are returned for unknown accounts.
     """
-    match = accounts_df[accounts_df["account_number"] == account_number]
+    match = accounts_df[accounts_df["pseudonym"] == pseudonym]
     if match.empty:
         return {"pseudonym": "", "display_name": "", "tax_treatment": "", "managed_by": ""}
     row = match.iloc[0]
@@ -80,7 +81,7 @@ def compute_household_allocation(
 
     Parameters
     ----------
-    positions_df : ingestion output (account_number, symbol, current_value, ...)
+    positions_df : ingestion output (pseudonym, symbol, current_value, ...)
     accounts_df  : accounts table with managed_by column
     securities_df: securities table with sleeve_category, is_in_saa, asset_class_id
     compositions_df: fund_compositions table
@@ -104,17 +105,17 @@ def compute_household_allocation(
     # ── 1. scope filter ────────────────────────────────────────────────────
     if scope == "self_only":
         valid_accts = set(
-            accounts_df[accounts_df["managed_by"] == "self"]["account_number"].dropna()
+            accounts_df[accounts_df["managed_by"] == "self"]["pseudonym"].dropna()
         )
     elif scope == "external_only":
         valid_accts = set(
-            accounts_df[accounts_df["managed_by"] == "external"]["account_number"].dropna()
+            accounts_df[accounts_df["managed_by"] == "external"]["pseudonym"].dropna()
         )
     else:
         valid_accts = None
 
     if valid_accts is not None:
-        scoped = positions_df[positions_df["account_number"].isin(valid_accts)].copy()
+        scoped = positions_df[positions_df["pseudonym"].isin(valid_accts)].copy()
     else:
         scoped = positions_df.copy()
 
@@ -251,20 +252,20 @@ def household_summary(
     """
     total_aum = float(positions_df["current_value"].sum())
     self_accts = set(
-        accounts_df[accounts_df["managed_by"] == "self"]["account_number"].dropna()
+        accounts_df[accounts_df["managed_by"] == "self"]["pseudonym"].dropna()
     )
     ext_accts = set(
-        accounts_df[accounts_df["managed_by"] == "external"]["account_number"].dropna()
+        accounts_df[accounts_df["managed_by"] == "external"]["pseudonym"].dropna()
     )
     self_aum = float(
-        positions_df[positions_df["account_number"].isin(self_accts)]["current_value"].sum()
+        positions_df[positions_df["pseudonym"].isin(self_accts)]["current_value"].sum()
     )
     external_aum = float(
-        positions_df[positions_df["account_number"].isin(ext_accts)]["current_value"].sum()
+        positions_df[positions_df["pseudonym"].isin(ext_accts)]["current_value"].sum()
     )
     return {
         "total_aum":     round(total_aum, 2),
-        "account_count": int(positions_df["account_number"].nunique()),
+        "account_count": int(positions_df["pseudonym"].nunique()),
         "as_of_date":    as_of_date,
         "self_aum":      round(self_aum, 2),
         "external_aum":  round(external_aum, 2),
@@ -312,37 +313,37 @@ def build_account_breakdown(
 ) -> pd.DataFrame:
     """Per-account exposure summary using display_name only.
 
-    Raw account_number never appears in the output DataFrame.
+    The pseudonym join key is dropped; only display_name identifies accounts.
     Columns: Account, Managed By, Tax Treatment, Dominant Sleeve, Total AUM ($).
     """
     sec = securities_df[["ticker", "sleeve_category"]].copy()
     acct = (
-        accounts_df[["account_number", "display_name", "managed_by", "tax_treatment"]]
-        .dropna(subset=["account_number"])
+        accounts_df[["pseudonym", "display_name", "managed_by", "tax_treatment"]]
+        .dropna(subset=["pseudonym"])
         .copy()
     )
 
     joined = positions_df.merge(sec, left_on="symbol", right_on="ticker", how="left")
     joined["sleeve_category"] = joined["sleeve_category"].fillna("unknown")
 
-    totals = positions_df.groupby("account_number")["current_value"].sum().reset_index()
+    totals = positions_df.groupby("pseudonym")["current_value"].sum().reset_index()
 
     sleeve_by_acct = (
-        joined.groupby(["account_number", "sleeve_category"])["current_value"]
+        joined.groupby(["pseudonym", "sleeve_category"])["current_value"]
         .sum()
         .reset_index()
     )
-    dom_idx = sleeve_by_acct.groupby("account_number")["current_value"].idxmax()
+    dom_idx = sleeve_by_acct.groupby("pseudonym")["current_value"].idxmax()
     dominant = (
-        sleeve_by_acct.loc[dom_idx, ["account_number", "sleeve_category"]]
+        sleeve_by_acct.loc[dom_idx, ["pseudonym", "sleeve_category"]]
         .rename(columns={"sleeve_category": "dominant_sleeve"})
     )
 
     result = (
         totals
-        .merge(dominant, on="account_number", how="left")
-        .merge(acct, on="account_number", how="left")
-        .drop(columns=["account_number"])
+        .merge(dominant, on="pseudonym", how="left")
+        .merge(acct, on="pseudonym", how="left")
+        .drop(columns=["pseudonym"])
         .rename(columns={
             "current_value":  "Total AUM ($)",
             "display_name":   "Account",
@@ -372,19 +373,19 @@ def build_location_flags(
 
     Returns a DataFrame with columns:
         Holding, Symbol, Account, Tax Efficiency, Account Type, Note
-    Account column uses display_name — never raw account_number.
+    Account column uses display_name, never the pseudonym join key.
     """
     sec = securities_df[["ticker", "name", "tax_efficiency"]].copy()
     acct = (
-        accounts_df[["account_number", "display_name", "tax_treatment"]]
-        .dropna(subset=["account_number"])
+        accounts_df[["pseudonym", "display_name", "tax_treatment"]]
+        .dropna(subset=["pseudonym"])
         .copy()
     )
 
     joined = (
         positions_df
         .merge(sec, left_on="symbol", right_on="ticker", how="left")
-        .merge(acct, on="account_number", how="left")
+        .merge(acct, on="pseudonym", how="left")
     )
 
     flags: list[dict] = []
@@ -565,14 +566,14 @@ def build_tax_drag_ranking(
     """
     sec = securities_df[["ticker", "name", "tax_efficiency", "sleeve_category"]].copy()
     acct = (
-        accounts_df[["account_number", "display_name", "tax_treatment"]]
-        .dropna(subset=["account_number"])
+        accounts_df[["pseudonym", "display_name", "tax_treatment"]]
+        .dropna(subset=["pseudonym"])
         .copy()
     )
     joined = (
         positions_df
         .merge(sec, left_on="symbol", right_on="ticker", how="left")
-        .merge(acct, on="account_number", how="left")
+        .merge(acct, on="pseudonym", how="left")
     )
 
     rows: list[dict] = []
@@ -663,12 +664,12 @@ def build_top_holdings(
     """
     total_aum = float(positions_df["current_value"].sum())
     sec = securities_df[["ticker", "name"]].copy()
-    acct = accounts_df[["account_number", "display_name"]].copy()
+    acct = accounts_df[["pseudonym", "display_name"]].copy()
 
     df = (
         positions_df
         .merge(sec, left_on="symbol", right_on="ticker", how="left")
-        .merge(acct, on="account_number", how="left")
+        .merge(acct, on="pseudonym", how="left")
         .sort_values("current_value", ascending=False)
         .head(n)
         .reset_index(drop=True)

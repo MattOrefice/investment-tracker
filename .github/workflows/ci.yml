@@ -38,6 +38,17 @@ jobs:
       - name: Guard — render_page_header called in all inner pages
         run: grep -rn "render_page_header" pages/
 
+      - name: Guard — no account-number-shaped literals in tracked text files
+        run: |
+          hits=$(git ls-files -z -- ':!:*.db' ':!:*.csv' ':!:*.png' ':!:*.jpg' ':!:*.jpeg' ':!:*.gif' ':!:*.ico' ':!:*.pdf' ':!:*.xlsx' \
+            | xargs -0 -r grep -InEH '(\b[0-9]{9}\b|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})' || true)
+          if [ -n "$hits" ]; then
+            echo "Account-number-shaped literals found in tracked files (file:line only):"
+            printf '%s\n' "$hits" | sed -E 's/^([^:]+):([0-9]+):.*/\1:\2/'
+            exit 1
+          fi
+          echo "OK — no account-number-shaped literals in tracked text files."
+
       - name: Run fast tests (slow/network tests excluded)
         # Exclusions live in pytest.ini addopts (not slow and not live_data). Do NOT add a CLI -m here — it overrides addopts and silently re-includes the live_data tests (live external API calls on every push).
         run: python -m pytest --tb=long -q
