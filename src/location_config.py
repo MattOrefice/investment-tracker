@@ -4,7 +4,7 @@ Everything here is USER-EDITABLE assumption, deliberately kept as data (dicts)
 rather than scattered constants in functions, so the whole tax/location model
 can be reviewed and changed in one place.
 
-Nothing here is a return forecast. SLEEVE_LOCATION_PRIORITY is an ORDINAL
+Nothing here is a return forecast. SLEEVE_PRIORITY_BY_ACCOUNT_TYPE is an ORDINAL
 ranking of how deserving a sleeve is of scarce tax-free (Roth) space — it must
 never be presented in the UI as an expected return.
 """
@@ -96,27 +96,58 @@ def is_directable(pseudonym: str) -> bool:
 ROLLOVER_SOURCE_PSEUDONYM: str = "acct_wkpl_02"  # RFUTX 401k; Moody's PPP (acct_wkpl_01) is a separate former-employer plan, independently rollable, deliberately excluded from this figure
 
 
-# ── Sleeve location priority (ORDINAL — not a return forecast) ──────────────────
-# 1 = highest expected return, most deserving of scarce Roth (tax-free) space;
-# larger = less deserving. A sleeve ABSENT from this dict resolves to None,
-# which means "not a deploy target" — it is explicitly NOT treated as the lowest
-# priority. Ordinal only; never render these numbers as returns.
-SLEEVE_LOCATION_PRIORITY: dict[str, int] = {
-    "us_small_core":            1,
-    "emerging_markets":         2,
-    "us_large_quality":         3,
-    "us_large_value":           4,
-    "us_large_core":            5,
-    "intl_developed":           6,
-    "intl_all_exus":            6,
-    "real_assets_reit":         7,
-    "real_assets_commodities":  7,
-    "real_assets_gold":         7,
-    "core_fi_treasury":         8,
-    "core_fi_credit":           8,
-    "tips":                     9,
-    "hedged_equity":           10,   # capped upside — worst use of Roth space
-    "cash":                    11,
+# ── Sleeve deploy priority, keyed BY ACCOUNT TYPE (ORDINAL — not a forecast) ─────
+# Where new cash should go depends on the wrapper, so the ranking is per account
+# type. 1 = most deserving of that account's space. A sleeve ABSENT from an
+# account type's map is NOT a deploy target for that account (distinct from
+# "ranked last") — it simply never appears. This shape replaces the old flat dict
+# and makes both the deploy alias and a global exclusion list unnecessary.
+#
+# Roth / HSA — rank by expected return (highest-growth deserves never-taxed space).
+# International is absent: a Roth forfeits the foreign tax credit.
+_ROTH_PRIORITY: dict[str, int] = {
+    "us_small_value":   1,   # AVUV — the SAA small-cap slot (small VALUE, not core)
+    "emerging_markets": 2,
+    "us_large_quality": 3,
+    "us_large_value":   4,
+    "us_large_core":    5,
+    "us_small_core":    6,
+    "thematic":         7,
+}
+# Traditional / workplace — rank by ordinary-income intensity (shelter the most
+# ordinary-taxed income). high_yield_muni is absent (already exempt).
+_PRETAX_PRIORITY: dict[str, int] = {
+    "core_fi_credit":          1,
+    "multi_sector_fi":         1,
+    "high_yield_fi":           1,
+    "floating_rate":           1,
+    "core_fi_treasury":        2,
+    "tips":                    2,
+    "real_assets_reit":        3,
+    "hedged_equity":           4,
+    "real_assets_commodities": 5,
+    "real_assets_gold":        5,
+}
+# Taxable — rank by tax efficiency (the most tax-efficient stays exposed to tax).
+_TAXABLE_PRIORITY: dict[str, int] = {
+    "us_large_core":    1,
+    "intl_all_exus":    1,
+    "intl_developed":   1,
+    "us_large_quality": 2,
+    "us_large_value":   2,
+    "us_small_value":   2,
+    "us_small_core":    2,
+    "emerging_markets": 3,
+    "high_yield_muni":  3,
+    "single_stock":     4,
+    "thematic":         5,
+}
+SLEEVE_PRIORITY_BY_ACCOUNT_TYPE: dict[str, dict[str, int]] = {
+    "roth_ira":        _ROTH_PRIORITY,
+    "hsa":             _ROTH_PRIORITY,
+    "traditional_ira": _PRETAX_PRIORITY,
+    "workplace_plan":  _PRETAX_PRIORITY,
+    "taxable":         _TAXABLE_PRIORITY,
 }
 
 
@@ -137,13 +168,17 @@ TAX_ADVANTAGED_TREATMENTS = frozenset(
 )
 
 
-def sleeve_location_priority(sleeve: str) -> int | None:
-    """Ordinal deploy priority for a sleeve, or None if it is not a deploy target.
+def priority_map_for(account_type: str) -> dict[str, int]:
+    """The sleeve→rank map for an account type ({} if the type is unknown)."""
+    return SLEEVE_PRIORITY_BY_ACCOUNT_TYPE.get(account_type, {})
 
-    None is a first-class value meaning 'not a candidate for new cash' — callers
+
+def sleeve_priority(account_type: str, sleeve: str) -> int | None:
+    """Deploy rank of a sleeve in an account type, or None if it is not a deploy
+    target there. None is first-class ('not a candidate for new cash') — callers
     must NOT coerce it to a large number and sort it last.
     """
-    return SLEEVE_LOCATION_PRIORITY.get(sleeve)
+    return SLEEVE_PRIORITY_BY_ACCOUNT_TYPE.get(account_type, {}).get(sleeve)
 
 
 def account_shelter_priority(tax_treatment: str) -> int | None:

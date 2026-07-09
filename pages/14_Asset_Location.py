@@ -34,7 +34,7 @@ from src.household import (
 )
 from src.location_config import (
     TAX_PROFILE,
-    SLEEVE_LOCATION_PRIORITY,
+    SLEEVE_PRIORITY_BY_ACCOUNT_TYPE,
     ACCOUNT_SHELTER_PRIORITY,
     LTCG_HEADROOM_2026,
     is_directable,
@@ -80,9 +80,9 @@ with get_connection() as conn:
 # ── Derived frames ──────────────────────────────────────────────────────────────
 register = build_location_register(
     positions_df, accounts_df, securities_df,
-    TAX_PROFILE, SLEEVE_LOCATION_PRIORITY, ACCOUNT_SHELTER_PRIORITY,
+    TAX_PROFILE, SLEEVE_PRIORITY_BY_ACCOUNT_TYPE["roth_ira"], ACCOUNT_SHELTER_PRIORITY,
 )
-deploy = build_roth_deploy_answer(positions_df, accounts_df, securities_df, SLEEVE_LOCATION_PRIORITY)
+deploy = build_roth_deploy_answer(positions_df, accounts_df, securities_df)
 _roth_idle_cash = deploy["idle_cash"]
 
 # ── KPIs (three distinct units; the last two must never be summed) ─────────────

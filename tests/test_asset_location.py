@@ -21,9 +21,9 @@ from src.household import (
 )
 from src.location_config import (
     TAX_PROFILE,
-    SLEEVE_LOCATION_PRIORITY,
+    SLEEVE_PRIORITY_BY_ACCOUNT_TYPE,
     ACCOUNT_SHELTER_PRIORITY,
-    sleeve_location_priority,
+    sleeve_priority,
 )
 
 ROOT       = pathlib.Path(__file__).resolve().parent.parent
@@ -39,7 +39,7 @@ def _fixture():
     ])
     securities_df = pd.DataFrame([
         {"ticker": "VNQ",   "name": "Vanguard Real Estate ETF", "tax_efficiency": "low",    "sleeve_category": "real_assets_reit"},
-        {"ticker": "IJR",   "name": "iShares Core Small-Cap",   "tax_efficiency": "high",   "sleeve_category": "us_small_core"},
+        {"ticker": "AVUV",  "name": "Avantis US Small Cap Value","tax_efficiency": "high",   "sleeve_category": "us_small_value"},
         {"ticker": "JEPI",  "name": "JPM Equity Premium",       "tax_efficiency": "medium", "sleeve_category": "hedged_equity"},
         {"ticker": "VOO",   "name": "Vanguard S&P 500 ETF",     "tax_efficiency": "high",   "sleeve_category": "us_large_core"},
         {"ticker": "SPAXX", "name": "Fidelity Money Market",    "tax_efficiency": "low",    "sleeve_category": "cash"},
@@ -48,7 +48,7 @@ def _fixture():
     positions_df = pd.DataFrame([
         {"pseudonym": "acct_tax",  "symbol": "VNQ",   "description": "REIT",  "current_value": 10000.0, "total_gain_loss": 2000.0, "cost_basis_total": 8000.0},
         {"pseudonym": "acct_roth", "symbol": "VNQ",   "description": "REIT",  "current_value":  5000.0, "total_gain_loss": 1000.0, "cost_basis_total": 4000.0},
-        {"pseudonym": "acct_tax",  "symbol": "IJR",   "description": "SC",    "current_value":  6000.0, "total_gain_loss":  500.0, "cost_basis_total": 5500.0},
+        {"pseudonym": "acct_tax",  "symbol": "AVUV",  "description": "SCV",   "current_value":  6000.0, "total_gain_loss":  500.0, "cost_basis_total": 5500.0},
         {"pseudonym": "acct_tax",  "symbol": "JEPI",  "description": "HEQ",   "current_value":  4000.0, "total_gain_loss":  300.0, "cost_basis_total": 3700.0},
         {"pseudonym": "acct_tax",  "symbol": "VOO",   "description": "LC",    "current_value":  8000.0, "total_gain_loss": 1000.0, "cost_basis_total": 7000.0},
         {"pseudonym": "acct_tax",  "symbol": "SPAXX", "description": "CASH",  "current_value":   100.0, "total_gain_loss": float("nan"), "cost_basis_total": float("nan")},
@@ -60,7 +60,7 @@ def _fixture():
 def _register():
     pos, acct, sec = _fixture()
     return build_location_register(pos, acct, sec, TAX_PROFILE,
-                                   SLEEVE_LOCATION_PRIORITY, ACCOUNT_SHELTER_PRIORITY)
+                                   SLEEVE_PRIORITY_BY_ACCOUNT_TYPE["roth_ira"], ACCOUNT_SHELTER_PRIORITY)
 
 
 # ── Case C: the case the existing function cannot see ──────────────────────────
@@ -104,33 +104,37 @@ def test_taxable_move_has_positive_cost_and_payback():
 
 # ── build_deploy_view: absent sleeve excluded, not sorted last ─────────────────
 
-def test_deploy_view_excludes_priority_none_sleeve():
+def test_deploy_view_excludes_absent_sleeve():
     pos, acct, sec = _fixture()
-    dv = build_deploy_view(pos, acct, sec, SLEEVE_LOCATION_PRIORITY, "acct_roth", 1000.0)
-    # 'thematic' has no priority -> must not appear as a deploy candidate.
-    assert sleeve_display_name("thematic") not in set(dv["sleeve"]), "unranked sleeve leaked into deploy view"
-    # And it must not be coerced to a huge sentinel and sorted last.
+    dv = build_deploy_view(pos, acct, sec, "roth_ira", "acct_roth", 1000.0)
+    roth_map = SLEEVE_PRIORITY_BY_ACCOUNT_TYPE["roth_ira"]
+    # Sleeves absent from the roth map are not deploy targets -> never appear.
+    for absent in ("cash", "hedged_equity", "core_fi_treasury", "intl_developed"):
+        assert sleeve_display_name(absent) not in set(dv["sleeve"]), f"{absent} leaked into deploy view"
+    # And nothing is coerced to a huge sentinel and sorted last.
     assert dv["priority"].notna().all(), "no deploy row may have a null priority"
-    assert dv["priority"].max() <= max(SLEEVE_LOCATION_PRIORITY.values()), (
+    assert dv["priority"].max() <= max(roth_map.values()), (
         "an absent sleeve appears to have been sorted last via a large sentinel"
     )
-    # Every sleeve shown maps back to a real priority key.
-    known = {sleeve_display_name(s) for s in SLEEVE_LOCATION_PRIORITY}
+    # Every sleeve shown maps back to a real roth-map key.
+    known = {sleeve_display_name(s) for s in roth_map}
     assert set(dv["sleeve"]).issubset(known)
 
 
 def test_absent_priority_is_none_not_lowest():
-    # Absent -> None (not a deploy target), which is distinct from ranked-last.
-    assert sleeve_location_priority("thematic") is None
-    assert sleeve_location_priority("multi_asset") is None
-    assert sleeve_location_priority("definitely_not_a_sleeve") is None
-    assert sleeve_location_priority("us_small_core") == 1
-    assert sleeve_location_priority("cash") == 11  # ranked last, and that is a real rank
+    # Absent from an account type's map -> None (not a deploy target), distinct
+    # from ranked-last.
+    assert sleeve_priority("roth_ira", "cash") is None                    # cash: never a target
+    assert sleeve_priority("roth_ira", "hedged_equity") is None
+    assert sleeve_priority("roth_ira", "definitely_not_a_sleeve") is None
+    assert sleeve_priority("roth_ira", "us_small_value") == 1             # rank 1 = small VALUE (AVUV)
+    assert sleeve_priority("roth_ira", "us_small_core") == 6              # broad small-core: a real (low) rank
+    assert sleeve_priority("taxable", "us_large_core") == 1               # account-conditional
 
 
 def test_deploy_view_sorted_by_priority_ascending():
     pos, acct, sec = _fixture()
-    dv = build_deploy_view(pos, acct, sec, SLEEVE_LOCATION_PRIORITY, "acct_roth", 1000.0)
+    dv = build_deploy_view(pos, acct, sec, "roth_ira", "acct_roth", 1000.0)
     assert list(dv["priority"]) == sorted(dv["priority"]), "deploy view must be priority-ascending"
 
 
