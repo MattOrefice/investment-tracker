@@ -102,8 +102,9 @@ _THEMATIC_PROS = (
 _THEMATIC_CONS = (
     "The excess fee is about $76 a year. Unwinding realizes {embedded_gain} of "
     "gain, costing several hundred dollars against a narrow 0% headroom you would "
-    "rather spend on the income assets. You have decided to keep the sector bets, "
-    "and at 13.5% of the Roth that is defensible. The correct action is to log "
+    "rather spend on the income assets. You have decided to keep the sector bets. "
+    "Household-wide the thematic book is 11.8% of your equity — a real allocation, "
+    "though each position is a rounding error. The correct action is to log "
     "this as accepted, capped at its current weight — not to fix it. A logged "
     "decision is not drift."
 )

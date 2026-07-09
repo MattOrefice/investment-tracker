@@ -30,6 +30,9 @@ data/ff_factors_developed_exus.csv
 data/ff_factors_global.csv
 data/ff_umd_us.csv
 # data/cache/ is committed (seed files for Streamlit Cloud cold start)
+# ...except this transient book-to-market breakpoints file, a test byproduct
+# that regenerates on each run and is not a seed.
+data/cache/ff_beme_breakpoints.csv
 
 # Editor / tool dirs
 .cursor/

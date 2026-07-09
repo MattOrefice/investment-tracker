@@ -8,6 +8,11 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Asset Location page — six decisions, not a register
+_2026-07-09_
+
+The Asset Location page now reads as six authored decisions rather than a thirty-two-row register. Deploy guidance answers a question rather than offering a picker. Sleeve priority is now keyed to account type, because the correct sleeve depends on the wrapper; the 0% capital-gains bracket is modeled as a finite budget rather than a rate; and premium-space waste inside a Roth is measured as dollars repositioned rather than income-tax drag, since a zero-yield asset registers no drag while being the worst possible use of never-taxed space.
+
 ## Minor disclosure and documentation corrections
 _2026-07-08_
 
