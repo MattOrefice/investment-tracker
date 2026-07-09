@@ -34,3 +34,4 @@ data/ff_umd_us.csv
 # Editor / tool dirs
 .cursor/
 .claude/
+private/
