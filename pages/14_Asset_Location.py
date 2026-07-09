@@ -3,7 +3,7 @@
 Reads as six decisions: where to deploy idle Roth cash, and five ranked cleanup
 actions. Scores and prose are authored (src/location_actions.py); dollar figures
 are templated from the live CSV. Rides the household CSV path; does not touch
-holdings.py, rebalance.py, page 11, or build_tax_drag_ranking.
+holdings.py, rebalance.py, or page 11.
 """
 import logging
 import streamlit as st

@@ -285,57 +285,6 @@ def test_substitution_note_none():
     assert get_substitution_note("thematic") == "—"
 
 
-# ── build_tax_drag_ranking ────────────────────────────────────────────────────
-
-def test_tax_drag_reit_in_taxable_nonzero():
-    from src.household import build_tax_drag_ranking
-    pos = pd.DataFrame([{
-        "pseudonym": "MOCK",
-        "symbol": "VNQ",
-        "description": "Vanguard REIT ETF",
-        "current_value": 10000.0,
-    }])
-    acct = pd.DataFrame([{
-        "pseudonym": "MOCK",
-        "display_name":   "Mock Taxable",
-        "tax_treatment":  "taxable",
-        "managed_by":     "external",
-    }])
-    sec = pd.DataFrame([{
-        "ticker":          "VNQ",
-        "name":            "Vanguard Real Estate ETF",
-        "tax_efficiency":  "low",
-        "sleeve_category": "real_assets_reit",
-    }])
-    result = build_tax_drag_ranking(pos, acct, sec, top_n=10)
-    assert len(result) == 1, "REIT in taxable should produce one flagged row"
-    assert result.iloc[0]["Est. Annual Drag ($)"] > 0, "Estimated drag should be positive"
-
-
-def test_tax_drag_equity_in_taxable_not_flagged():
-    from src.household import build_tax_drag_ranking
-    pos = pd.DataFrame([{
-        "pseudonym": "MOCK",
-        "symbol": "VOO",
-        "description": "Vanguard S&P 500",
-        "current_value": 10000.0,
-    }])
-    acct = pd.DataFrame([{
-        "pseudonym": "MOCK",
-        "display_name":   "Mock Taxable",
-        "tax_treatment":  "taxable",
-        "managed_by":     "self",
-    }])
-    sec = pd.DataFrame([{
-        "ticker":          "VOO",
-        "name":            "Vanguard S&P 500 ETF",
-        "tax_efficiency":  "high",
-        "sleeve_category": "us_large_core",
-    }])
-    result = build_tax_drag_ranking(pos, acct, sec, top_n=10)
-    assert len(result) == 0, "High-efficiency in taxable should not be flagged"
-
-
 # ── build_top_holdings ────────────────────────────────────────────────────────
 
 def test_top_holdings_returns_five_rows():

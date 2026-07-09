@@ -15,7 +15,6 @@ import pytest
 from src.household import (
     build_location_register,
     build_deploy_view,
-    build_tax_drag_ranking,
     build_account_breakdown,
     compute_embedded_gain,
     sleeve_display_name,
@@ -71,17 +70,6 @@ def test_case_c_fires_for_low_efficiency_in_roth():
     c = reg[(reg["symbol"] == "VNQ") & (reg["case"] == "C")]
     assert len(c) == 1, "VNQ in the Roth (low efficiency) must produce a case-C row"
     assert c.iloc[0]["account"] == "Roth Acct"
-
-
-def test_build_tax_drag_ranking_does_not_see_case_c():
-    """Pin the difference: the existing function flags VNQ-in-taxable but is blind
-    to VNQ-in-Roth. That blindness is why the new register exists."""
-    pos, acct, sec = _fixture()
-    drag = build_tax_drag_ranking(pos, acct, sec, top_n=100)
-    roth_vnq = drag[(drag["Symbol"] == "VNQ") & (drag["Account"] == "Roth Acct")]
-    tax_vnq  = drag[(drag["Symbol"] == "VNQ") & (drag["Account"] == "Taxable Acct")]
-    assert roth_vnq.empty, "build_tax_drag_ranking must NOT flag the Roth (case C is invisible to it)"
-    assert len(tax_vnq) == 1, "build_tax_drag_ranking should still flag VNQ in taxable (its case A)"
 
 
 def test_all_four_cases_present():
@@ -216,26 +204,3 @@ def test_build_account_breakdown_unchanged_by_refactor_real_data():
         build_account_breakdown(pos, acct, sec),
         _old_build_account_breakdown(pos, acct, sec),
     )
-
-
-# ── Guard: build_tax_drag_ranking output is unchanged by this PR ───────────────
-
-def test_build_tax_drag_ranking_output_pinned():
-    """Documents that build_tax_drag_ranking is UNCHANGED by this PR: it fires its
-    original case A (low efficiency in taxable) with the |0.41 - 0.20| = 0.21 rate,
-    on EVERY low-efficiency taxable holding — including the cash sweep, which the
-    new register deliberately skips. Pinning both rows documents that difference."""
-    pos, acct, sec = _fixture()
-    drag = build_tax_drag_ranking(pos, acct, sec, top_n=100)
-    assert len(drag) == 2, (
-        "old function flags both VNQ and SPAXX in taxable (it does not skip cash)"
-    )
-    # Sorted by drag descending.
-    vnq, spaxx = drag.iloc[0], drag.iloc[1]
-    assert vnq["Symbol"] == "VNQ" and vnq["Account"] == "Taxable Acct"
-    assert vnq["Est. Annual Drag ($)"] == pytest.approx(84.0, abs=0.01)   # 10000*0.04*0.21
-    assert spaxx["Symbol"] == "SPAXX" and spaxx["Account"] == "Taxable Acct"
-    assert spaxx["Est. Annual Drag ($)"] == pytest.approx(1.0, abs=0.01)   # round(100*0.045*0.21)
-    # The new register, by contrast, excludes the cash sleeve entirely.
-    reg = _register()
-    assert reg[reg["symbol"] == "SPAXX"].empty, "register must skip cash (dry powder, not a relocation)"

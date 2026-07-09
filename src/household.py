@@ -545,119 +545,22 @@ def get_substitution_note(sleeve_key: str) -> str:
     return f"{saa_equiv} ({equiv_level})"
 
 
-# ── Tax drag ranking ───────────────────────────────────────────────────────────
-
-_SLEEVE_ASSUMED_YIELD: dict[str, float] = {
-    "real_assets_reit":        0.040,
-    "real_assets_commodities": 0.015,
-    "real_assets_gold":        0.000,
-    "high_yield_fi":           0.060,
-    "high_yield_muni":         0.045,
-    "floating_rate":           0.055,
-    "multi_sector_fi":         0.040,
-    "core_fi_credit":          0.035,
-    "core_fi_treasury":        0.040,
-    "tips":                    0.025,
-    "cash":                    0.045,
-    "hedged_equity":           0.060,
-    "single_stock":            0.020,
-    "crypto":                  0.000,
-    "liquid_alt":              0.020,
-}
-_EQUITY_DEFAULT_YIELD = 0.018
-# PLACEHOLDER assumption: 32% federal + 9% DC = 41% combined marginal rate.
-# Hardcoded pending per-user tax configuration — not yet wired to any config.
-_MARGINAL_RATE = 0.41
-
+# ── Assumed per-sleeve distribution yields ─────────────────────────────────────
+# The yield table and equity default now live in src/location_config.py — they are
+# location-model parameters, and their only consumer is build_location_register
+# (via _assumed_yield below).
 
 def _assumed_yield(sleeve_key: str) -> float:
-    return _SLEEVE_ASSUMED_YIELD.get(sleeve_key, _EQUITY_DEFAULT_YIELD)
-
-
-def build_tax_drag_ranking(
-    positions_df: pd.DataFrame,
-    accounts_df: pd.DataFrame,
-    securities_df: pd.DataFrame,
-    top_n: int = 10,
-) -> pd.DataFrame:
-    """Rank suboptimally-located holdings by estimated annual tax drag.
-
-    Columns: Holding, Symbol, Account, Current Issue, Suggested Move, Est. Annual Drag ($)
-    Sorted by Est. Annual Drag descending, capped at top_n.
-
-    Drag formula: dollar_value * assumed_yield * abs(marginal_rate - alt_rate)
-      low-efficiency in taxable:           alt_rate = 0.20 (LTCG + state)
-      high-efficiency in tax-advantaged:   alt_rate = 0.41 (marginal; drag = 0 by formula)
-    Rows with zero estimated drag are excluded.
-    """
-    sec = securities_df[["ticker", "name", "tax_efficiency", "sleeve_category"]].copy()
-    acct = (
-        accounts_df[["pseudonym", "display_name", "tax_treatment"]]
-        .dropna(subset=["pseudonym"])
-        .copy()
-    )
-    joined = (
-        positions_df
-        .merge(sec, left_on="symbol", right_on="ticker", how="left")
-        .merge(acct, on="pseudonym", how="left")
-    )
-
-    rows: list[dict] = []
-    for _, row in joined.iterrows():
-        te = str(row.get("tax_efficiency") or "")
-        tt = str(row.get("tax_treatment") or "")
-        dollar = float(row.get("current_value", 0) or 0)
-        sleeve = str(row.get("sleeve_category") or "")
-        if not te or not tt:
-            continue
-
-        issue = None
-        suggested = None
-        alt_rate = 0.0
-
-        if te == "low" and tt == "taxable":
-            issue = "Low-efficiency in taxable"
-            suggested = "Move to Traditional IRA or Roth IRA"
-            alt_rate = 0.20
-        elif te == "high" and tt in ("traditional_ira", "roth_ira"):
-            issue = "High-efficiency in tax-advantaged"
-            suggested = "Move to Taxable"
-            alt_rate = _MARGINAL_RATE
-
-        if issue is None:
-            continue
-
-        drag = dollar * _assumed_yield(sleeve) * abs(_MARGINAL_RATE - alt_rate)
-        if drag <= 0:
-            continue
-
-        rows.append({
-            "Holding":              str(row.get("name") or row.get("description") or row["symbol"]),
-            "Symbol":               row["symbol"],
-            "Account":              str(row.get("display_name") or ""),
-            "Current Issue":        issue,
-            "Suggested Move":       suggested,
-            "Est. Annual Drag ($)": round(drag, 0),
-        })
-
-    cols = ["Holding", "Symbol", "Account", "Current Issue", "Suggested Move", "Est. Annual Drag ($)"]
-    if not rows:
-        return pd.DataFrame(columns=cols)
-
-    return (
-        pd.DataFrame(rows, columns=cols)
-        .sort_values("Est. Annual Drag ($)", ascending=False)
-        .head(top_n)
-        .reset_index(drop=True)
-    )
+    from src.location_config import SLEEVE_ASSUMED_YIELD, EQUITY_DEFAULT_YIELD
+    return SLEEVE_ASSUMED_YIELD.get(sleeve_key, EQUITY_DEFAULT_YIELD)
 
 
 # ── Asset-location register & deploy view (Asset Location page) ─────────────────
 #
-# These generalize the tax-drag idea WITHOUT touching build_tax_drag_ranking
-# (which page 13 pins). build_location_register sees four mislocation cases, not
-# one, and carries a realization-cost term; build_deploy_view ranks where new
-# tax-advantaged cash should go by an ordinal sleeve priority.
+# These generalize the tax-drag idea across four cases rather than one.
+# build_location_register sees four mislocation cases, not one, and carries a
+# realization-cost term; build_deploy_view ranks where new tax-advantaged cash
+# goes by an ordinal sleeve priority.
 
 
 def compute_embedded_gain(positions_df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
@@ -707,8 +610,9 @@ def build_location_register(
       D  a high-priority sleeve (rank 1–4) sitting in taxable while a
          lower-priority sleeve occupies Roth space  -> swap into the Roth
 
-    Case C is exactly what build_tax_drag_ranking structurally cannot see (a
-    correctly-sheltered but premium-wasting holding, e.g. USRT/IAU in the Roth).
+    Case C is opportunity cost, not income-tax drag: a zero-yield asset registers
+    no drag while being the worst possible use of never-taxed space (e.g. USRT/IAU
+    in the Roth).
     The `cash` sleeve is excluded throughout — it is dry powder for the deploy
     view, not a holding to relocate.
 
