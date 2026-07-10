@@ -140,12 +140,12 @@ _ROLLOVER_CONS = (
 # {annual_benefit}/{embedded_gain}/{trad_ira_equity}/{pretax_capacity}/
 # {pretax_capacity_threshold}); render_prose raises on any unresolvable one.
 _TOD_INCOME_PROS = (
-    "{count} ordinary-income holdings worth {value} sit in the TOD account, "
-    "throwing off {annual_benefit} of ordinary income annually into your "
-    "highest-taxed wrapper. A high-yield muni fund, a hedged-equity mutual fund, a "
-    "liquid-alternatives fund, and a global allocation fund — none of which you "
-    "selected, none of which you would buy today. Relocating them to pre-tax space "
-    "would eliminate the drag entirely."
+    "{count} ordinary-income holdings worth {value} sit in the TOD account. Three "
+    "of them — a hedged-equity mutual fund, a liquid-alternatives fund, and a global "
+    "allocation fund — throw ordinary income into your highest-taxed wrapper, at a "
+    "cost of {annual_benefit} a year. None of which you selected, none of which you "
+    "would buy today. Relocating them to pre-tax space would eliminate that drag "
+    "entirely."
 )
 _TOD_INCOME_CONS = (
     "There is no pre-tax space. The Traditional IRA holds {trad_ira_equity} of "
@@ -155,6 +155,16 @@ _TOD_INCOME_CONS = (
     "{embedded_gain} against a narrow 0% headroom you would rather spend on the "
     "income assets above. This book is externally managed and frozen by decision, "
     "not by oversight. Logged as accepted."
+)
+
+# {population_count}/{population_value} span all matched holdings (matched_symbols);
+# {row_count} is the register-row count shown in the expander. The gap is GHYIX: a
+# federally-exempt muni that generates no A/B action, so it is counted but not listed.
+_TOD_INCOME_CAPTION = (
+    "{population_count} holdings, {population_value}. Only {row_count} appear below. "
+    "GHYIX is a federally exempt municipal fund — there is no federal tax to save, "
+    "and moving it into a pre-tax account would convert exempt interest into ordinary "
+    "income. It is correctly located and generates no action."
 )
 
 _SAA_TAXABLE_PROS = (
@@ -253,9 +263,13 @@ ACTION_GROUPS: list[dict] = [
         "score": 1, "status": "accepted",
         # Ordinary-income holdings in the frozen TOD book (case A/B). GAOSX is the
         # multi-asset fund with a credit sleeve; MCO is NOT here (correctly located).
+        # GHYIX is a federally-exempt muni: build_location_register drops it from
+        # cases A/B, so it stays in the population ({count}/{value}, via
+        # matched_symbols) but is NOT a register row — the caption states that gap.
         "symbols": ["BILPX", "GAOSX", "GHYIX", "JHEQX"],
         "case_filter": ["A", "B"], "accounts": ["Individual Taxable (TOD)"],
         "pros": _TOD_INCOME_PROS, "cons": _TOD_INCOME_CONS,
+        "population": "matched_symbols", "caption": _TOD_INCOME_CAPTION,
     },
     {
         "key": "saa_sleeves_taxable", "title": "SAA sleeves in taxable · accepted",
