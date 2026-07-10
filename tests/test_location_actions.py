@@ -338,7 +338,7 @@ RENDERED_PROSE_LEN = {
     "relocate_gain_side":        (201, 372),   # cons rewritten: headroom-correct, no 15% claim
     "thematic_sprawl":           (217, 465),
     "rollover_401k":             (341, 526),
-    "frozen_tod_income":         (387, 468),   # authored prose
+    "frozen_tod_income":         (382, 468),   # authored prose (pros re-pinned: muni dropped from the fund list)
     "saa_sleeves_taxable":       (261, 616),   # authored prose
     "predeploy_stranded_equity": (328, 530),   # authored prose
 }
@@ -366,10 +366,16 @@ def test_every_placeholder_resolves_into_rendered_output():
 
 # ── Bug 2: population field ────────────────────────────────────────────────────
 
-def test_only_thematic_uses_matched_symbols_population():
+def test_matched_symbols_population_groups_are_declared_and_captioned():
+    """Exactly the two coverage groups that count more than they list use
+    population='matched_symbols', and each MUST carry a caption stating the gap
+    (thematic_sprawl: fees/sprawl; frozen_tod_income: the federally-exempt GHYIX,
+    counted in the population but never a register row)."""
+    matched = {g["key"] for g in ACTION_GROUPS if g.get("population") == "matched_symbols"}
+    assert matched == {"thematic_sprawl", "frozen_tod_income"}
     for g in ACTION_GROUPS:
-        if g["key"] == "thematic_sprawl":
-            assert g.get("population") == "matched_symbols"
+        if g["key"] in matched:
+            assert g.get("caption"), f"{g['key']} uses matched_symbols but has no caption"
         else:
             assert g.get("population", "register_rows") == "register_rows"
 
@@ -387,10 +393,12 @@ def test_thematic_population_exceeds_register_rows_and_caption_states_both():
 
 def test_non_thematic_groups_population_byte_identical():
     """Switching the default population to register_rows must not change any group
-    whose symbols are all mislocations (their two populations coincide)."""
+    whose symbols are all mislocations (their two populations coincide). Excludes the
+    two matched_symbols groups, whose populations DELIBERATELY exceed their register
+    rows (thematic_sprawl: correctly-located sprawl; frozen_tod_income: exempt GHYIX)."""
     pos, acct, sec, reg = _live()
     for g in ACTION_GROUPS:
-        if g["key"] in ("deploy_roth_cash", "rollover_401k", "thematic_sprawl"):
+        if g["key"] in ("deploy_roth_cash", "rollover_401k", "thematic_sprawl", "frozen_tod_income"):
             continue
         a = _pop_holdings({**g, "population": "register_rows"}, pos, acct, reg)
         b = _pop_holdings({**g, "population": "matched_symbols"}, pos, acct, reg)

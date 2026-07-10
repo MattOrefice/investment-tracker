@@ -23,6 +23,7 @@ from src.location_config import (
     TAX_PROFILE,
     SLEEVE_PRIORITY_BY_ACCOUNT_TYPE,
     ACCOUNT_SHELTER_PRIORITY,
+    SLEEVE_ASSUMED_YIELD,
     sleeve_priority,
 )
 
@@ -267,3 +268,117 @@ def test_case_d_avuv_fires():
 
 def test_case_d_sleeve_absent_from_both_maps_no_row():
     assert "ZZZ" not in _case_d_symbols()
+
+
+# ── Federally-exempt sleeves generate no A/B action (municipal) ─────────────────
+# high_yield_muni income is federally exempt: relocating it into a pre-tax shelter
+# converts exempt interest into ordinary income at withdrawal — strictly worse — so
+# it generates NO case A/B action, categorically (not because its drag is small). It
+# keeps its state-only drag magnitude; it just never fires a relocation row. The
+# comparison holding (NONEX / multi_sector_fi) has the SAME assumed yield AND value
+# in the SAME taxable account, so the only thing that differs is the federal
+# exemption. Keyed on the SLEEVE, never a symbol.
+
+_MUNI_VALUE = 50000.0
+
+
+def _muni_fixture():
+    acct = pd.DataFrame([
+        {"pseudonym": "acct_tax", "display_name": "Taxable Acct", "tax_treatment": "taxable"},
+    ])
+    sec = pd.DataFrame([
+        {"ticker": "GHYIX", "name": "HY Muni",  "tax_efficiency": "medium", "sleeve_category": "high_yield_muni"},
+        {"ticker": "NONEX", "name": "Multi FI", "tax_efficiency": "medium", "sleeve_category": "multi_sector_fi"},
+    ])
+    pos = pd.DataFrame([
+        {"pseudonym": "acct_tax", "symbol": "GHYIX", "current_value": _MUNI_VALUE, "total_gain_loss": 2000.0, "cost_basis_total": 48000.0},
+        {"pseudonym": "acct_tax", "symbol": "NONEX", "current_value": _MUNI_VALUE, "total_gain_loss": 2000.0, "cost_basis_total": 48000.0},
+    ])
+    return pos, acct, sec
+
+
+def _muni_register(pos, acct, sec):
+    return build_location_register(pos, acct, sec, TAX_PROFILE,
+                                   SLEEVE_PRIORITY_BY_ACCOUNT_TYPE, ACCOUNT_SHELTER_PRIORITY)
+
+
+def test_exempt_sleeve_no_ab_row_but_nonexempt_same_yield_and_value_does():
+    """Pin BOTH sides at once: identical yield, value, and account — the muni
+    generates no case A/B row; the non-exempt sleeve does."""
+    assert SLEEVE_ASSUMED_YIELD["multi_sector_fi"] == pytest.approx(SLEEVE_ASSUMED_YIELD["high_yield_muni"])
+    reg = _muni_register(*_muni_fixture())
+    assert reg[reg["symbol"] == "GHYIX"].empty, "a federally-exempt sleeve must generate no case A/B row"
+    nonexempt = reg[reg["symbol"] == "NONEX"]
+    assert len(nonexempt) == 1 and nonexempt.iloc[0]["case"] in ("A", "B"), (
+        "a non-exempt sleeve at the same yield/value must still generate a row"
+    )
+
+
+def test_adding_sleeve_to_exempt_set_suppresses_its_rows(monkeypatch):
+    """Declaring multi_sector_fi federally exempt (adding it to the set) must drop its
+    row with NO other edit — proving the exclusion consults the set, not a symbol."""
+    import src.location_config as lc
+    pos, acct, sec = _muni_fixture()
+
+    before = _muni_register(pos, acct, sec)
+    assert not before[before["symbol"] == "NONEX"].empty, "baseline: NONEX registers a row"
+
+    monkeypatch.setattr(lc, "FEDERALLY_EXEMPT_SLEEVES",
+                        frozenset({"high_yield_muni", "multi_sector_fi"}))
+    after = _muni_register(pos, acct, sec)
+    assert after[after["symbol"] == "NONEX"].empty, (
+        "adding multi_sector_fi to FEDERALLY_EXEMPT_SLEEVES must suppress its rows"
+    )
+
+
+def test_yield_table_does_not_encode_tax_status():
+    # The muni's yield is its real income throw-off, not a zero smuggling in
+    # "tax-exempt". Exemption lives in FEDERALLY_EXEMPT_SLEEVES, not this table.
+    assert SLEEVE_ASSUMED_YIELD["high_yield_muni"] > 0
+
+
+# ── Group 7 (frozen_tod_income): population 4, register rows 3, coverage intact ──
+# GHYIX is counted in the population ({count}/{value}, matched_symbols) but is not a
+# register row; the other three (BILPX/GAOSX/JHEQX) are. assert_full_coverage must
+# still see zero orphans — GHYIX's vanished row must not orphan anything.
+
+def _group7_fixture():
+    """The four real frozen_tod_income symbols in the TOD account, sleeves and
+    efficiencies mirroring data/seed/securities_household.csv."""
+    acct = pd.DataFrame([
+        {"pseudonym": "tod", "display_name": "Individual Taxable (TOD)", "tax_treatment": "taxable"},
+    ])
+    sec = pd.DataFrame([
+        {"ticker": "BILPX", "name": "Liquid Fed",    "tax_efficiency": "low",    "sleeve_category": "liquid_alt"},
+        {"ticker": "GAOSX", "name": "Global Alloc",  "tax_efficiency": "medium", "sleeve_category": "multi_asset"},
+        {"ticker": "GHYIX", "name": "HY Muni",       "tax_efficiency": "medium", "sleeve_category": "high_yield_muni"},
+        {"ticker": "JHEQX", "name": "Hedged Equity", "tax_efficiency": "medium", "sleeve_category": "hedged_equity"},
+    ])
+    pos = pd.DataFrame([
+        {"pseudonym": "tod", "symbol": s, "current_value": 20000.0, "total_gain_loss": 500.0, "cost_basis_total": 19500.0}
+        for s in ("BILPX", "GAOSX", "GHYIX", "JHEQX")
+    ])
+    return pos, acct, sec
+
+
+def test_group7_population_four_rows_three_caption_and_coverage():
+    from src.location_actions import (
+        ACTION_GROUPS, filter_register_for_group, resolve_placeholders,
+        resolve_caption, assert_full_coverage,
+    )
+    pos, acct, sec = _group7_fixture()
+    reg = _muni_register(pos, acct, sec)
+    g7 = next(g for g in ACTION_GROUPS if g["key"] == "frozen_tod_income")
+
+    reg7 = filter_register_for_group(reg, g7)
+    assert set(reg7["symbol"]) == {"BILPX", "GAOSX", "JHEQX"}, "GHYIX must not be a register row"
+    assert len(reg7) == 3
+
+    resolved = resolve_placeholders(g7, pos, acct, sec, reg)
+    assert resolved["count"] == "4", "population (matched_symbols) must count all four holdings"
+
+    cap = resolve_caption(g7, pos, acct, reg)
+    assert cap and "Only 3 appear below" in cap and "generates no action" in cap
+
+    # A vanished row (GHYIX) must not orphan anything.
+    assert_full_coverage(reg)   # raises on any orphan

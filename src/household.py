@@ -555,6 +555,15 @@ def _assumed_yield(sleeve_key: str) -> float:
     return SLEEVE_ASSUMED_YIELD.get(sleeve_key, EQUITY_DEFAULT_YIELD)
 
 
+def _is_federally_exempt(sleeve_key: str) -> bool:
+    """True if the sleeve's income is federally tax-exempt (municipal). Read at
+    call time from FEDERALLY_EXEMPT_SLEEVES — so the exemption is keyed on the
+    SLEEVE (never a symbol), and editing the config set (or patching it in a test)
+    changes the rate with no edit here."""
+    from src.location_config import FEDERALLY_EXEMPT_SLEEVES
+    return sleeve_key in FEDERALLY_EXEMPT_SLEEVES
+
+
 # ── Asset-location register & deploy view (Asset Location page) ─────────────────
 #
 # These generalize the tax-drag idea across four cases rather than one.
@@ -620,13 +629,18 @@ def build_location_register(
     no drag while being the worst possible use of never-taxed space (e.g. USRT/IAU
     in the Roth).
     The `cash` sleeve is excluded throughout — it is dry powder for the deploy
-    view, not a holding to relocate.
+    view, not a holding to relocate. A FEDERALLY-EXEMPT sleeve (municipal — see
+    FEDERALLY_EXEMPT_SLEEVES) is excluded from cases A/B: with no federal tax to
+    save, relocating it into a pre-tax shelter is categorically wrong, so it stays
+    in taxable and generates no action (it keeps its state-only drag magnitude).
 
     Money model (all from tax_profile — no hardcoded rate):
       ordinary = federal_marginal + state_marginal
       ltcg     = federal_ltcg     + state_ltcg
-      annual_benefit  = value * assumed_sleeve_yield * ordinary   (income-shelter
-                        value at stake — a ranking magnitude, not a forecast)
+      annual_benefit  = value * assumed_sleeve_yield * income_rate (income-shelter
+                        value at stake — a ranking magnitude, not a forecast), where
+                        income_rate = state_marginal for a FEDERALLY-EXEMPT sleeve
+                        (municipal — see FEDERALLY_EXEMPT_SLEEVES), else ordinary
       cost_to_realize = 0                     for a sale inside a shelter
                       = embedded_gain * ltcg  for a taxable sale
       is_free         = cost_to_realize <= 0  (in-shelter, or a loss to harvest)
@@ -638,6 +652,7 @@ def build_location_register(
     """
     ordinary = float(tax_profile["federal_marginal"]) + float(tax_profile["state_marginal"])
     ltcg     = float(tax_profile["federal_ltcg"]) + float(tax_profile["state_ltcg"])
+    state_only = float(tax_profile["state_marginal"])   # federally-exempt (muni) sleeves
 
     # Case D is comparative: a sleeve is stranded only if a shelter ranks it
     # strictly better than taxable does. Absent from a map = infinity (that
@@ -705,9 +720,20 @@ def build_location_register(
         else:
             continue
 
-        annual_benefit = dollar * _assumed_yield(sleeve) * ordinary
-        # Cases A/B are only worth acting on if there is income tax to save.
-        if case in ("A", "B") and annual_benefit <= 0:
+        # A federally-exempt (muni) sleeve owes no federal tax on its income — only
+        # PA's flat rate — so its income-shelter value at stake is the state rate
+        # alone, not the combined ordinary rate. Keyed on the sleeve, not the symbol.
+        income_rate = state_only if _is_federally_exempt(sleeve) else ordinary
+        annual_benefit = dollar * _assumed_yield(sleeve) * income_rate
+        # Cases A/B are only worth acting on if there is income tax to save — AND a
+        # federally-exempt sleeve generates NO relocation action, categorically:
+        # there is no federal tax to save, and moving it into a pre-tax shelter would
+        # convert exempt interest into ordinary income at withdrawal — strictly
+        # worse. The state-only drag above stays available to any by-sleeve drag
+        # aggregate; it simply never fires an A/B action. Categorical, not size-based:
+        # a dollar threshold could resurrect a categorically-wrong recommendation for
+        # a large muni.
+        if case in ("A", "B") and (_is_federally_exempt(sleeve) or annual_benefit <= 0):
             continue
 
         embedded_gain = eg_lookup.get((row["pseudonym"], row["symbol"]))
