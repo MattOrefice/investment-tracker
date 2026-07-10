@@ -5,6 +5,7 @@ import csv
 import io
 import json
 import os
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -36,6 +37,11 @@ def _load_account_map(account_map_path: str | Path | None = None) -> dict[str, s
     return {str(k): str(v) for k, v in raw.items()}
 
 
+# Canonical internal column names, documented by Fidelity's own header spelling.
+# Header matching is casing- and whitespace-insensitive: the export's headers are
+# normalized (see _normalize_header) and looked up against the normalized form of
+# these keys, so any casing/spacing resolves. Do NOT add a second lowercased copy
+# here — normalization handles every spelling from this one source.
 _COL_MAP = {
     "Account Number":         "account_number",
     "Account Name":           "account_name",
@@ -47,6 +53,22 @@ _COL_MAP = {
     "Total Gain/Loss Dollar": "total_gain_loss",
     "Type":                   "type",
 }
+
+
+def _normalize_header(name: str) -> str:
+    """Canonical header form: lowercased, trimmed, internal whitespace collapsed.
+
+    ``'Account Number'`` / ``'account number'`` / ``'Account  Number '`` all map to
+    ``'account number'``, so a casing or spacing change in the export still resolves.
+    """
+    return re.sub(r"\s+", " ", str(name).strip()).lower()
+
+
+# normalized-export-header -> canonical internal name (derived from _COL_MAP —
+# single source of truth, no second hardcoded spelling).
+_HEADER_TO_CANONICAL = {_normalize_header(k): v for k, v in _COL_MAP.items()}
+# Every canonical column the parser needs downstream (the required set).
+_REQUIRED_CANONICAL = list(_COL_MAP.values())
 
 _NUMERIC_COLS = {"quantity", "current_value", "cost_basis_total", "total_gain_loss"}
 
@@ -64,9 +86,10 @@ def parse_fidelity_csv(
 ) -> pd.DataFrame:
     """Parse a Fidelity portfolio positions CSV export.
 
-    Handles: UTF-8 BOM, trailing footer paragraphs, '--' sentinels,
-    dollar/percent/comma symbols, empty Quantity for cash, CUSIP-as-symbol,
-    and '*' suffix on money-market symbols.
+    Handles: case- and whitespace-insensitive headers (a re-cased/re-spaced
+    export ingests unchanged), UTF-8 BOM, trailing footer paragraphs, '--'
+    sentinels, dollar/percent/comma symbols, empty Quantity for cash,
+    CUSIP-as-symbol, and '*' suffix on money-market symbols.
 
     Raw account numbers are resolved to pseudonyms via private/account_map.json
     (override with ``account_map_path``) and the raw ``account_number`` column is
@@ -80,14 +103,34 @@ def parse_fidelity_csv(
     """
     df = pd.read_csv(path, encoding="utf-8-sig", index_col=False, dtype=str)
 
-    # Drop footer paragraphs and blank rows — keep only rows with a Symbol
-    df = df[df["Symbol"].notna() & (df["Symbol"].str.strip() != "")].copy()
+    # Normalize headers to canonical internal names once, right after read —
+    # casing- and whitespace-insensitive — so a re-cased or re-spaced export
+    # (e.g. "Account number" vs "Account Number") ingests unchanged. Everything
+    # downstream references canonical names only.
+    df = df.rename(columns={
+        col: _HEADER_TO_CANONICAL[_normalize_header(col)]
+        for col in df.columns
+        if _normalize_header(col) in _HEADER_TO_CANONICAL
+    })
+
+    # A genuinely missing required column must still raise — clearly, by canonical
+    # name — never be silently defaulted away. (Header cells only, never values.)
+    missing = [c for c in _REQUIRED_CANONICAL if c not in df.columns]
+    if missing:
+        raise KeyError(
+            f"Fidelity export is missing required column(s) {missing} — matched "
+            "case- and whitespace-insensitively, so the column is absent under any "
+            "casing. Cannot ingest."
+        )
+
+    # Drop footer paragraphs and blank rows — keep only rows with a symbol
+    df = df[df["symbol"].notna() & (df["symbol"].str.strip() != "")].copy()
 
     # Strip '*' suffix (e.g. "SPAXX**" -> "SPAXX")
-    df["Symbol"] = df["Symbol"].str.replace(r"\*+$", "", regex=True).str.strip()
+    df["symbol"] = df["symbol"].str.replace(r"\*+$", "", regex=True).str.strip()
 
-    # Select and rename output columns
-    df = df[list(_COL_MAP.keys())].rename(columns=_COL_MAP)
+    # Keep only the canonical columns (drops export extras: last price, etc.)
+    df = df[_REQUIRED_CANONICAL].copy()
 
     # account_number must remain a plain string — no numeric inference. Leading
     # zeros matter: the raw string is the exact lookup key into account_map.json.
