@@ -174,15 +174,16 @@ _SAA_TAXABLE_PROS = (
     "deserve shelter. The register is right to flag them."
 )
 _SAA_TAXABLE_CONS = (
-    "But it is flagging your policy, not a mistake. These are the SAA's own "
-    "fixed-income and real-asset sleeves, and the self-directed brokerage is the "
-    "only account where the framework operates. Investable pre-tax capacity is "
+    "But it is flagging a capacity constraint, not a mistake. These are the SAA's "
+    "own fixed-income and real-asset sleeves, and the framework is right that a "
+    "pre-tax account would hold them better. Investable pre-tax capacity is "
     "{pretax_capacity}, exhausted at a policy book of roughly "
-    "{pretax_capacity_threshold}; the book is already larger than that. There is "
-    "nowhere better for them to go until the 401(k) rollover creates space — which "
-    "is the argument that makes that rollover the household's largest lever. The "
-    "drag is the honest price of running a coherent SAA inside the only wrapper you "
-    "control. Accepted, and revisited when the rollover lands."
+    "{pretax_capacity_threshold}; the book is already larger than that, and the "
+    "Traditional IRA is spoken for twice over by the relocations above. So the "
+    "better home exists and is full. The drag is {annual_benefit} a year — the "
+    "honest price of running a coherent SAA inside the only wrapper you control. "
+    "Accepted until the 401(k) rollover creates space, which is the argument that "
+    "makes that rollover the household's largest lever."
 )
 
 _STRANDED_EQUITY_PROS = (
@@ -260,7 +261,7 @@ ACTION_GROUPS: list[dict] = [
     # narrated subset. Prose is scaffolded (see above) pending authored copy.
     {
         "key": "frozen_tod_income", "title": "Frozen TOD income assets",
-        "score": 1, "status": "accepted",
+        "score": 5, "status": "accepted",
         # Ordinary-income holdings in the frozen TOD book (case A/B). GAOSX is the
         # multi-asset fund with a credit sleeve; MCO is NOT here (correctly located).
         # GHYIX is a federally-exempt muni: build_location_register drops it from
@@ -273,7 +274,7 @@ ACTION_GROUPS: list[dict] = [
     },
     {
         "key": "saa_sleeves_taxable", "title": "SAA sleeves in taxable · accepted",
-        "score": 2, "status": "accepted",
+        "score": 1, "status": "accepted",
         # The SAA's own fixed-income/real-asset sleeves in the self-directed
         # account (case A). Accepted: pre-tax capacity is exhausted, so there is
         # nowhere better until the 401(k) rollover creates space.
@@ -612,12 +613,19 @@ def resolve_caption(
         return None
     pop = _pop_holdings(group, positions_df, accounts_df, register)
     reg = filter_register_for_group(register, group)
+    row_count = len(reg)
     resolved = {
         "population_count": str(len(pop)) if not pop.empty else None,
         "population_value": _fmt_dollars(pop["current_value"].sum()) if not pop.empty else None,
-        "row_count": str(len(reg)),
+        "row_count": str(row_count),
     }
-    return escape_md(render_prose(tmpl, resolved))
+    out = escape_md(render_prose(tmpl, resolved))
+    # Subject-verb agreement for the "{row_count} appear below" clause, fixed HERE so
+    # no caption template carries a per-group singular/plural form: one row "appears",
+    # more than one "appear".
+    if row_count == 1:
+        out = out.replace(" appear below", " appears below")
+    return out
 
 
 def validate_action_groups() -> None:

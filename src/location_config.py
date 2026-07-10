@@ -74,6 +74,15 @@ EQUITY_DEFAULT_YIELD: float = 0.018
 # never a symbol list. USER-EDITABLE.
 FEDERALLY_EXEMPT_SLEEVES: frozenset[str] = frozenset({"high_yield_muni"})
 
+# Minimum annual income-shelter benefit for a register row to be SURFACED as an
+# individual action. This is a PRESENTATION THRESHOLD, not a modeling claim: a row
+# below it is real drag — it still counts in the aggregate drag KPI and in every
+# group's own totals — but a sub-dollar "relocation" (e.g. a $0.43/yr row) is a
+# rounding error, not a decision, so build_location_register tags it surfaced=False
+# and the page omits it from the per-group action tables. Every dollar figure still
+# sums every row, filtered or not. USER-EDITABLE.
+MIN_ANNUAL_BENEFIT: float = 1.00
+
 # 0% federal long-term capital-gains bracket for 2026, modeled as a finite
 # BUDGET rather than a rate: realized long-term gains are federally untaxed up to
 # this remaining headroom, then taxed at 15%. USER-EDITABLE; shrinks with other

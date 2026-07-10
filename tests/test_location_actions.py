@@ -72,8 +72,8 @@ def test_scores_are_read_from_config_verbatim():
         "relocate_gain_side": 5,
         "thematic_sprawl": 2,
         "rollover_401k": 3,
-        "frozen_tod_income": 1,
-        "saa_sleeves_taxable": 2,
+        "frozen_tod_income": 5,
+        "saa_sleeves_taxable": 1,
         "predeploy_stranded_equity": 4,
     }
 
@@ -339,7 +339,7 @@ RENDERED_PROSE_LEN = {
     "thematic_sprawl":           (217, 465),
     "rollover_401k":             (341, 526),
     "frozen_tod_income":         (382, 468),   # authored prose (pros re-pinned: muni dropped from the fund list)
-    "saa_sleeves_taxable":       (261, 616),   # authored prose
+    "saa_sleeves_taxable":       (261, 665),   # cons rewritten: capacity-constraint framing + {annual_benefit}
     "predeploy_stranded_equity": (328, 530),   # authored prose
 }
 
