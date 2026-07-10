@@ -382,3 +382,29 @@ def test_group7_population_four_rows_three_caption_and_coverage():
 
     # A vanished row (GHYIX) must not orphan anything.
     assert_full_coverage(reg)   # raises on any orphan
+
+
+def test_caption_verb_agrees_with_singular_row_count():
+    """Fix 4: the '{row_count} appear below' clause must agree in number — one row
+    'appears', many 'appear'. The rule lives in resolve_caption (not per template),
+    so a lone register row renders 'Only 1 appears below', never 'Only 1 appear'."""
+    from src.location_actions import (
+        ACTION_GROUPS, filter_register_for_group, resolve_caption,
+    )
+    acct = pd.DataFrame([
+        {"pseudonym": "tod", "display_name": "Individual Taxable (TOD)", "tax_treatment": "taxable"},
+    ])
+    sec = pd.DataFrame([
+        {"ticker": "GHYIX", "name": "HY Muni",       "tax_efficiency": "medium", "sleeve_category": "high_yield_muni"},
+        {"ticker": "JHEQX", "name": "Hedged Equity", "tax_efficiency": "medium", "sleeve_category": "hedged_equity"},
+    ])
+    pos = pd.DataFrame([
+        {"pseudonym": "tod", "symbol": s, "current_value": 20000.0, "total_gain_loss": 500.0, "cost_basis_total": 19500.0}
+        for s in ("GHYIX", "JHEQX")
+    ])
+    reg = _muni_register(pos, acct, sec)
+    g7 = next(g for g in ACTION_GROUPS if g["key"] == "frozen_tod_income")
+    assert len(filter_register_for_group(reg, g7)) == 1, "fixture must yield exactly one register row"
+    cap = resolve_caption(g7, pos, acct, reg)
+    assert "Only 1 appears below" in cap, f"singular verb expected: {cap!r}"
+    assert "Only 1 appear below" not in cap

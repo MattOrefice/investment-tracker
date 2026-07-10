@@ -225,8 +225,12 @@ for group in _ordered_groups:
             _cap = resolve_caption(group, positions_df, accounts_df, register)
             if _cap:
                 st.caption(_cap)
-            with st.expander(f"Underlying positions ({len(reg_rows)})", expanded=False):
-                show = reg_rows.copy()
+            # Surface only rows at or above MIN_ANNUAL_BENEFIT: sub-threshold rows are
+            # rounding errors, not actions. They remain in `register` (so the drag KPI
+            # and every group total above still sum them) — only this table omits them.
+            _shown = reg_rows[reg_rows["surfaced"]] if "surfaced" in reg_rows.columns else reg_rows
+            with st.expander(f"Underlying positions ({len(_shown)})", expanded=False):
+                show = _shown.drop(columns=["surfaced"], errors="ignore").copy()
                 show["case"] = show["case"].map(_CASE_LABEL).fillna(show["case"])
                 show["sleeve"] = show["sleeve"].map(sleeve_display_name)
                 show = show.rename(columns={
