@@ -228,10 +228,24 @@ def get_connection():
     return conn
 
 def initialize_db():
-    """Create tables if they don't exist, then seed the personal account."""
+    """Create the schema, run migrations, then seed the personal account.
+
+    Schema creation must precede migrations. A fresh or 0-byte DB (a clean clone's
+    first personal-mode launch) has no tables for ``_auto_migrate`` to ALTER, so
+    running migrations first raised ``OperationalError: no such table: trades``.
+    SCHEMA is ``CREATE ... IF NOT EXISTS`` throughout, so applying it up front is a
+    no-op on an existing DB; the ``get_connection()`` below then runs
+    ``_auto_migrate`` against a DB that already has the tables — a no-op on a fresh
+    DB, the usual migration on an existing one.
+    """
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    schema_conn = sqlite3.connect(DB_PATH)
+    try:
+        schema_conn.executescript(SCHEMA)
+        schema_conn.commit()
+    finally:
+        schema_conn.close()
     with get_connection() as conn:
-        conn.executescript(SCHEMA)
         existing = conn.execute(
             "SELECT account_id FROM accounts WHERE name = ?",
             ("Personal Fidelity",),
