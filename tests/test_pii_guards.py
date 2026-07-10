@@ -4,14 +4,17 @@ Structural guards (always run in CI):
   * the accounts schema carries no account_number column,
   * parse_fidelity_csv() output carries no account_number column,
   * a freshly-created DB and a migrated DB agree on the accounts schema,
-  * no account-number-shaped literal (9-digit run, letter-prefixed Z-account, or
-    UUID) is in any tracked TEXT file.
+  * no account-number-shaped literal (9-digit run, letter-prefixed account of
+    six or more digits, a UUID, or a broker "@" suffix) is in any tracked TEXT
+    file,
+  * no committed database's accounts table carries such a value in any text
+    column — the binary the page renders from, which the text scan cannot see.
 
 Local-only guard (skips when private/account_map.json is absent, e.g. in CI):
   * none of the real account numbers (map keys) appear in any tracked text file.
 """
+import importlib.util
 import json
-import re
 import sqlite3
 import subprocess
 import pathlib
@@ -20,17 +23,21 @@ import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
+# Single source of truth for the account-number shapes: the committed-DB scanner.
+# Importing it here keeps the tracked-text-file guard and the committed-DB guard
+# on one regex, so a shape added in one place cannot silently lag the other. The
+# ci.yml grep step is the only copy that must be hand-kept in lockstep (POSIX ERE
+# — a different engine). Loaded by path so it works regardless of sys.path.
+_scan_spec = importlib.util.spec_from_file_location(
+    "scan_committed_dbs_pii", ROOT / "scripts" / "scan_committed_dbs_pii.py"
+)
+_scan_mod = importlib.util.module_from_spec(_scan_spec)
+_scan_spec.loader.exec_module(_scan_mod)
+_LITERAL_RE = _scan_mod.LITERAL_RE
+
 # Extensions excluded from the text scan (binaries / committed data blobs).
 _SKIP_EXT = {".db", ".csv", ".png", ".jpg", ".jpeg", ".gif", ".ico", ".pdf",
              ".xlsx", ".xls", ".parquet", ".zip", ".woff", ".woff2", ".ttf"}
-
-# 9-digit run, a letter-prefixed account (one uppercase letter + 8 digits — the
-# Fidelity "Z-account" shape, also 9 chars), OR a canonical UUID. Deliberately not
-# 5-digit (would false-positive on prices/dates). Kept in lockstep with the ci.yml
-# grep step of the same name.
-_LITERAL_RE = re.compile(
-    r"\b\d{9}\b|\b[A-Z]\d{8}\b|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
-)
 
 # Pre-migration accounts shape (account_number present) — mirrors the old live DB.
 _PRE_SHAPE = """
@@ -125,19 +132,25 @@ def test_fresh_and_migrated_accounts_schema_agree():
     )
 
 
-def test_literal_re_catches_letter_prefixed_account():
-    """The guard must catch a letter-prefixed account (e.g. a Fidelity Z-account),
-    not just bare 9-digit runs — a planted literal trips it, innocuous shapes don't.
-    Manual equivalent: planting a one-letter-plus-eight-digit literal in a tracked
-    file makes the file scan below and the ci.yml grep step fail; removing it
-    restores green."""
-    # Assemble the account-shaped probes at runtime so no literal account-shaped run
-    # sits in this file (that would trip the file-scan guard below on this very file).
-    letter_acct = "Z" + "1" * 8   # one uppercase letter + eight digits
-    nine_digits = "1" * 9         # a bare nine-digit run
-    assert _LITERAL_RE.search(letter_acct), "letter-prefixed account shape must trip the guard"
-    assert _LITERAL_RE.search(nine_digits), "bare 9-digit run must still trip the guard"
-    for benign in ("Z52", "AVUV", "us_small_value", "A1", "IEMG2026"):
+def test_literal_re_catches_account_shapes():
+    """The guard must catch every account-number shape — a bare 9-digit run, a
+    letter-prefixed account of six or more digits (generalized from the old fixed
+    eight-digit form), a UUID, and a broker "@" suffix — while innocuous shapes
+    stay clean. Manual equivalent: planting any of these literals in a tracked file
+    makes the file scan below and the ci.yml grep step fail; removing it restores
+    green."""
+    # Assemble every probe at runtime so no matching literal sits in this file
+    # (that would trip the file-scan guard below on this very file).
+    nine_digits   = "1" * 9                                  # bare nine-digit run
+    letter_acct_8 = "Z" + "1" * 8                            # letter + eight digits (old fixed form)
+    letter_acct_6 = "Z" + "1" * 6                            # letter + six digits (newly caught)
+    uuid_like     = "-".join(["a" * 8, "b" * 4, "c" * 4, "d" * 4, "e" * 12])
+    broker_suffix = "acct" + "@" + "fidelity"                # broker "@" domain suffix
+    for probe in (nine_digits, letter_acct_8, letter_acct_6, uuid_like, broker_suffix):
+        assert _LITERAL_RE.search(probe), f"account shape must trip the guard: {probe!r}"
+    # Below the six-digit floor and non-account tokens must not false-positive.
+    letter_acct_5 = "Z" + "1" * 5                            # letter + five digits — under the floor
+    for benign in ("Z52", "AVUV", "us_small_value", "A1", "IEMG2026", letter_acct_5):
         assert not _LITERAL_RE.search(benign), f"{benign!r} must not false-positive"
 
 
@@ -149,8 +162,21 @@ def test_no_account_number_shaped_literals_in_tracked_files():
             if _LITERAL_RE.search(line):
                 offenders.append(f"{rel}:{i}")  # location only — never the literal
     assert not offenders, (
-        "account-number-shaped literals (9-digit / UUID) found in tracked files:\n  "
-        + "\n  ".join(offenders)
+        "account-number-shaped literals (9-digit / letter-account / UUID / @-suffix) "
+        "found in tracked files:\n  " + "\n  ".join(offenders)
+    )
+
+
+def test_committed_databases_have_no_pii_in_accounts():
+    """Every committed *.db's accounts table — name, pseudonym, and every other
+    text column — must be free of account-number-shaped values. This reads the
+    binary the Household View renders from; the tracked-text scan above skips
+    *.db, so a value baked into the file is invisible to it. Mirrors the ci.yml
+    'committed databases' step — both call scan_committed_dbs()."""
+    offenders = _scan_mod.scan_committed_dbs(ROOT)
+    assert not offenders, (
+        "account-number-shaped values in committed DB accounts tables "
+        "(location only — value withheld):\n  " + "\n  ".join(offenders)
     )
 
 

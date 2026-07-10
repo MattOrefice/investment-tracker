@@ -39,15 +39,24 @@ jobs:
         run: grep -rn "render_page_header" pages/
 
       - name: Guard — no account-number-shaped literals in tracked text files
+        # Shape set kept in lockstep with LITERAL_RE in scripts/scan_committed_dbs_pii.py
+        # (imported by tests/test_pii_guards.py). POSIX ERE here, Python re there.
         run: |
           hits=$(git ls-files -z -- ':!:*.db' ':!:*.csv' ':!:*.png' ':!:*.jpg' ':!:*.jpeg' ':!:*.gif' ':!:*.ico' ':!:*.pdf' ':!:*.xlsx' \
-            | xargs -0 -r grep -InEH '(\b[0-9]{9}\b|\b[A-Z][0-9]{8}\b|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})' || true)
+            | xargs -0 -r grep -InEH '(\b[0-9]{9}\b|\b[A-Z][0-9]{6,}\b|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|@[Ff]idelity)' || true)
           if [ -n "$hits" ]; then
             echo "Account-number-shaped literals found in tracked files (file:line only):"
             printf '%s\n' "$hits" | sed -E 's/^([^:]+):([0-9]+):.*/\1:\2/'
             exit 1
           fi
           echo "OK — no account-number-shaped literals in tracked text files."
+
+      - name: Guard — no account-number-shaped values in committed databases
+        # The step above skips *.db, but a value inside a committed SQLite file is
+        # invisible to a text grep and is exactly what a page renders (Household
+        # View). This opens each committed DB and checks its accounts table the way
+        # the page reads it. Lockstep with tests/test_pii_guards.py.
+        run: python scripts/scan_committed_dbs_pii.py
 
       - name: Run fast tests (slow/network tests excluded)
         # Exclusions live in pytest.ini addopts (not slow and not live_data). Do NOT add a CLI -m here — it overrides addopts and silently re-includes the live_data tests (live external API calls on every push).
