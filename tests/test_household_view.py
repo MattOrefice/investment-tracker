@@ -19,9 +19,27 @@ HOLDINGS_CSV = find_latest_positions_csv()
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
+def _tracker_db_has_schema() -> bool:
+    """True only if tracker.db exists AND carries the schema (the trades table)."""
+    if not TRACKER_DB.exists() or TRACKER_DB.stat().st_size == 0:
+        return False
+    conn = sqlite3.connect(str(TRACKER_DB))
+    try:
+        return conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='trades'"
+        ).fetchone() is not None
+    finally:
+        conn.close()
+
+
 def _skip_if_no_holdings():
+    # These tests read BOTH the positions CSV and tracker.db. A CSV alone is not
+    # enough: on a machine with a CSV but an unpopulated tracker.db (no schema) the
+    # reads below would error instead of skip. Require both.
     if HOLDINGS_CSV is None or not HOLDINGS_CSV.exists():
         pytest.skip("Holdings CSV not present (personal-mode only)")
+    if not _tracker_db_has_schema():
+        pytest.skip("tracker.db not populated (no schema / trades table) — personal-mode only")
 
 
 def _load_fixtures():
@@ -351,16 +369,22 @@ def test_methodology_note_figures_are_templated_not_hardcoded():
     """Every stale figure the audit flagged must be a placeholder, not a literal,
     and the note must resolve cleanly against live-shaped values (render_prose
     raises on any unresolvable placeholder — same rule as the Asset Location page)."""
+    import re
     from src.household import methodology_note_markdown
     from src.location_actions import render_prose
     note = methodology_note_markdown()
     for ph in ("{total_aum}", "{self_aum}", "{external_pct}", "{rfutx_value}", "{off_saa_value}"):
         assert ph in note, f"methodology note must template {ph}"
-    for stale in ("$202,450", "$87k", "99.5%", "~$66k", "exactly $1,000"):
-        assert stale not in note, f"stale literal {stale!r} must not survive in the note"
+    # Invariant: the unresolved template carries NO hardcoded dollar figure — every
+    # amount is a placeholder. Replaces a list of specific (real) stale literals;
+    # no real figure appears in this test.
+    assert not re.search(r"\$\s?\d", note), (
+        "methodology note must not hardcode a dollar figure — template it instead"
+    )
+    # Synthetic substitution values — arbitrary, only exercise render_prose.
     resolved = {
-        "total_aum": "$221,931", "self_aum": "$1,987", "external_pct": "99.1%",
-        "rfutx_value": "$77,690", "off_saa_value": "$105,585",
+        "total_aum": "$100,000", "self_aum": "$2,000", "external_pct": "98.0%",
+        "rfutx_value": "$40,000", "off_saa_value": "$60,000",
     }
     out = render_prose(note, resolved)
     assert all(v in out for v in resolved.values())

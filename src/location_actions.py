@@ -593,7 +593,7 @@ def escape_md(text: str) -> str:
     r"""Escape "$" as "\$" so Streamlit Markdown does not read it as a LaTeX math
     delimiter. An unescaped "$" opens math mode and swallows following text (and
     the "$" itself) into monospace — the visible bug where "$51" rendered as
-    "- 51" and "$77,690" as "77,690"."""
+    "- 51" and a workplace-plan balance rendered without its leading "$"."""
     return text.replace("$", "\\$")
 
 

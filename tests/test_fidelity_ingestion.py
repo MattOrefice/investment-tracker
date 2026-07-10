@@ -59,19 +59,25 @@ def _write_map(tmp_path, mapping) -> str:
 # ── Real-export tests (skip when the personal CSV is absent) ──────────────────
 
 def test_row_count():
-    # Row count verified against Jul 10 2026 Fidelity export: 97
-    # holdings across 7 accounts, sum $224,584.68.
+    # 97 holdings across the 7 household accounts in the current export.
     df = _df()
     assert len(df) == 97, f"Expected 97 rows, got {len(df)}"
 
 
-def test_total_current_value():
-    # $ total tracks the current export (Jul 10 2026); the market moved it up
-    # from the Jul-08 figure of $221,930.85. Re-pin when a newer CSV lands.
-    df = _df()
-    total = float(df["current_value"].sum())
-    assert abs(total - 224_584.68) < 1.00, (
-        f"Total current_value ${total:,.2f} not within $1 of $224,584.68"
+def test_total_current_value_matches_source_sum():
+    """Invariant, not a pinned figure: the parsed total equals the Current value
+    column summed straight from the source CSV, to the cent. Proves ingest
+    completeness (no rows/values dropped or mis-routed) without hardcoding a real
+    portfolio dollar amount in tracked source, and never goes stale."""
+    df = _df()  # parsed (skips when the personal CSV is absent)
+    from src.ingestion.fidelity import _clean_numeric, _normalize_header
+    raw = pd.read_csv(SAMPLE_CSV, encoding="utf-8-sig", index_col=False, dtype=str)
+    raw = raw.rename(columns={c: _normalize_header(c) for c in raw.columns})
+    raw = raw[raw["symbol"].notna() & (raw["symbol"].str.strip() != "")]
+    source_total = float(_clean_numeric(raw["current value"]).sum())
+    parsed_total = float(df["current_value"].sum())
+    assert abs(parsed_total - source_total) < 0.01, (
+        f"parsed Current value sum ({parsed_total:.2f}) != source CSV sum ({source_total:.2f})"
     )
 
 
@@ -92,13 +98,12 @@ def test_cusip_symbol_present():
 
 
 def test_spaxx_row():
+    """The money-market sweep row parses and its '**' suffix is stripped to
+    'SPAXX' — no pinned dollar value (it's a near-zero cash residual)."""
     df = _df()
     matches = df[df["symbol"] == "SPAXX"]
-    assert len(matches) == 1, "SPAXX row not found"
-    val = float(matches["current_value"].iloc[0])
-    # Jul-08 export: the self-directed sweep was largely deployed into SAA
-    # tickers, leaving a $0.68 SPAXX residual (was $1,000.36 on May-27).
-    assert abs(val - 0.68) < 1.00, f"SPAXX current_value ${val:.2f} unexpected"
+    assert len(matches) == 1, "SPAXX row not found (or '**' suffix not stripped)"
+    assert float(matches["current_value"].iloc[0]) >= 0, "SPAXX value did not parse to a number"
 
 
 # ── Pseudonymization behavior (synthetic; fake identifiers only) ──────────────

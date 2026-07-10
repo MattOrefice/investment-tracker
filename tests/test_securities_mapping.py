@@ -230,7 +230,8 @@ def test_cusip_loads_as_target_date(loaded_db):
 # ── Live tracker.db tests (skip if personal CSV absent) ───────────────────────
 
 def test_all_holding_symbols_have_sleeve_category():
-    """Every distinct symbol in the May-27 holdings must have a non-null sleeve_category."""
+    """Every distinct symbol in the newest holdings must have a non-null sleeve_category."""
+    _skip_if_no_tracker_db()  # queries tracker.db.securities — skip on an empty/absent DB
     symbols = _holding_symbols()
     conn = sqlite3.connect(str(TRACKER_DB))
     conn.row_factory = sqlite3.Row
@@ -248,6 +249,7 @@ def test_all_holding_symbols_have_sleeve_category():
 
 def test_no_unmapped_sleeve_category_value():
     """sleeve_category must not contain literal 'unmapped' for any holding symbol."""
+    _skip_if_no_tracker_db()  # queries tracker.db.securities — skip on an empty/absent DB
     symbols = _holding_symbols()
     conn = sqlite3.connect(str(TRACKER_DB))
     conn.row_factory = sqlite3.Row
@@ -283,6 +285,7 @@ def test_exactly_11_saa_tickers():
 
 def test_tax_efficiency_no_nulls_and_valid_values():
     """All securities loaded from CSV must have tax_efficiency in {high,medium,low}."""
+    _skip_if_no_tracker_db()  # queries tracker.db.securities — skip on an empty/absent DB
     symbols = _holding_symbols()
     conn = sqlite3.connect(str(TRACKER_DB))
     conn.row_factory = sqlite3.Row
