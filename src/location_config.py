@@ -32,14 +32,17 @@ TAX_PROFILE: dict[str, float] = {
 }
 
 # Assumed annual distribution YIELD per sleeve (income throw-off, not total
-# return). Sizes the income-shelter value at stake in the Asset Location register
-# (build_location_register, via household._assumed_yield). USER-EDITABLE.
+# return). This table is INCOME ONLY — it must never encode tax status. A
+# federally-exempt sleeve still throws off real income; its exemption lives in
+# FEDERALLY_EXEMPT_SLEEVES below, not as a fake zero here. Sizes the income-shelter
+# value at stake in the Asset Location register (build_location_register, via
+# household._assumed_yield). USER-EDITABLE.
 SLEEVE_ASSUMED_YIELD: dict[str, float] = {
     "real_assets_reit":        0.040,
     "real_assets_commodities": 0.015,
     "real_assets_gold":        0.000,
     "high_yield_fi":           0.060,
-    "high_yield_muni":         0.045,
+    "high_yield_muni":         0.040,   # real distribution yield; exemption is separate (see FEDERALLY_EXEMPT_SLEEVES)
     "floating_rate":           0.055,
     "multi_sector_fi":         0.040,
     "core_fi_credit":          0.035,
@@ -53,6 +56,17 @@ SLEEVE_ASSUMED_YIELD: dict[str, float] = {
 }
 # Fallback yield for sleeves absent from the table (broad equity).
 EQUITY_DEFAULT_YIELD: float = 0.018
+
+# Sleeves whose income is EXEMPT FROM FEDERAL TAX (municipal bonds). Tax status is
+# a SEPARATE fact from yield: the table above is what the sleeve throws off; this
+# set is whether that income is federally taxable. build_location_register charges
+# a federally-exempt sleeve the STATE rate only, never the combined federal+state
+# ordinary rate — so its income-shelter value at stake is correctly small rather
+# than a phantom federal saving. PA taxes out-of-state muni interest, and a
+# national HY-muni fund (e.g. GHYIX, sleeve high_yield_muni) is mostly out-of-state,
+# so PA's flat 3.07% still applies: the exemption is federal, not total. Keyed on
+# the SLEEVE, never a symbol list. USER-EDITABLE.
+FEDERALLY_EXEMPT_SLEEVES: frozenset[str] = frozenset({"high_yield_muni"})
 
 # 0% federal long-term capital-gains bracket for 2026, modeled as a finite
 # BUDGET rather than a rate: realized long-term gains are federally untaxed up to

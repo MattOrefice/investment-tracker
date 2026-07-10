@@ -23,6 +23,7 @@ from src.location_config import (
     TAX_PROFILE,
     SLEEVE_PRIORITY_BY_ACCOUNT_TYPE,
     ACCOUNT_SHELTER_PRIORITY,
+    SLEEVE_ASSUMED_YIELD,
     sleeve_priority,
 )
 
@@ -267,3 +268,91 @@ def test_case_d_avuv_fires():
 
 def test_case_d_sleeve_absent_from_both_maps_no_row():
     assert "ZZZ" not in _case_d_symbols()
+
+
+# ── Federally-exempt sleeves charged the state rate only (municipal) ────────────
+# high_yield_muni income is federally exempt but PA-taxable (a national HY-muni
+# fund's interest is mostly out-of-state). The drag must credit only PA's 3.07%,
+# not the combined 15.07% ordinary rate — and it must key on the SLEEVE, not a
+# symbol. The comparison holding (NONEX / multi_sector_fi) is deliberately chosen
+# to carry the SAME assumed yield as the muni, so the ONLY thing that can differ
+# in annual_benefit is the tax rate.
+
+_ORDINARY   = TAX_PROFILE["federal_marginal"] + TAX_PROFILE["state_marginal"]   # 0.1507
+_STATE_ONLY = TAX_PROFILE["state_marginal"]                                     # 0.0307
+_MUNI_VALUE = 50000.0
+
+
+def _muni_fixture():
+    acct = pd.DataFrame([
+        {"pseudonym": "acct_tax", "display_name": "Taxable Acct", "tax_treatment": "taxable"},
+    ])
+    sec = pd.DataFrame([
+        {"ticker": "GHYIX", "name": "HY Muni",  "tax_efficiency": "medium", "sleeve_category": "high_yield_muni"},
+        {"ticker": "NONEX", "name": "Multi FI", "tax_efficiency": "medium", "sleeve_category": "multi_sector_fi"},
+    ])
+    pos = pd.DataFrame([
+        {"pseudonym": "acct_tax", "symbol": "GHYIX", "current_value": _MUNI_VALUE, "total_gain_loss": 2000.0, "cost_basis_total": 48000.0},
+        {"pseudonym": "acct_tax", "symbol": "NONEX", "current_value": _MUNI_VALUE, "total_gain_loss": 2000.0, "cost_basis_total": 48000.0},
+    ])
+    return pos, acct, sec
+
+
+def _muni_register(pos, acct, sec):
+    return build_location_register(pos, acct, sec, TAX_PROFILE,
+                                   SLEEVE_PRIORITY_BY_ACCOUNT_TYPE, ACCOUNT_SHELTER_PRIORITY)
+
+
+def _applied_rate(row, sleeve):
+    """The income-tax rate the register actually applied = benefit / (value*yield)."""
+    return row["annual_benefit"] / (_MUNI_VALUE * SLEEVE_ASSUMED_YIELD[sleeve])
+
+
+def test_muni_in_taxable_charged_state_rate_not_ordinary():
+    pos, acct, sec = _muni_fixture()
+    reg = _muni_register(pos, acct, sec)
+    row = reg[reg["symbol"] == "GHYIX"].iloc[0]
+    applied = _applied_rate(row, "high_yield_muni")
+    assert applied == pytest.approx(_STATE_ONLY, abs=1e-9), "muni must be charged PA state rate (3.07%)"
+    assert applied != pytest.approx(_ORDINARY, abs=1e-6), "muni must NOT be charged the combined 15.07%"
+    assert row["annual_benefit"] == pytest.approx(
+        _MUNI_VALUE * SLEEVE_ASSUMED_YIELD["high_yield_muni"] * _STATE_ONLY, abs=0.01)   # $61.40
+
+
+def test_nonexempt_same_yield_charged_ordinary_rate():
+    pos, acct, sec = _muni_fixture()
+    # Same assumed yield -> the only possible difference is the tax rate.
+    assert SLEEVE_ASSUMED_YIELD["multi_sector_fi"] == pytest.approx(SLEEVE_ASSUMED_YIELD["high_yield_muni"])
+    reg = _muni_register(pos, acct, sec)
+    row = reg[reg["symbol"] == "NONEX"].iloc[0]
+    applied = _applied_rate(row, "multi_sector_fi")
+    assert applied == pytest.approx(_ORDINARY, abs=1e-9), "a non-exempt sleeve must be charged the full 15.07%"
+    assert row["annual_benefit"] == pytest.approx(
+        _MUNI_VALUE * SLEEVE_ASSUMED_YIELD["multi_sector_fi"] * _ORDINARY, abs=0.01)      # $301.40
+
+
+def test_exemption_keyed_on_set_not_symbol(monkeypatch):
+    """Adding a second sleeve to FEDERALLY_EXEMPT_SLEEVES must switch that sleeve to
+    the state rate with NO other edit — proving the drag consults the set, not a
+    hardcoded symbol/sleeve list."""
+    import src.location_config as lc
+    pos, acct, sec = _muni_fixture()
+
+    base = _muni_register(pos, acct, sec)
+    base_row = base[base["symbol"] == "NONEX"].iloc[0]
+    assert _applied_rate(base_row, "multi_sector_fi") == pytest.approx(_ORDINARY, abs=1e-9)
+
+    monkeypatch.setattr(lc, "FEDERALLY_EXEMPT_SLEEVES",
+                        frozenset({"high_yield_muni", "multi_sector_fi"}))
+    after = _muni_register(pos, acct, sec)
+    after_row = after[after["symbol"] == "NONEX"].iloc[0]
+    assert _applied_rate(after_row, "multi_sector_fi") == pytest.approx(_STATE_ONLY, abs=1e-9), (
+        "declaring multi_sector_fi exempt in the set must flip its rate to state-only"
+    )
+    assert after_row["annual_benefit"] < base_row["annual_benefit"]
+
+
+def test_yield_table_does_not_encode_tax_status():
+    # The muni's yield is its real income throw-off, not a zero smuggling in
+    # "tax-exempt". Exemption lives in FEDERALLY_EXEMPT_SLEEVES, not this table.
+    assert SLEEVE_ASSUMED_YIELD["high_yield_muni"] > 0
