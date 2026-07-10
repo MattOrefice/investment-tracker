@@ -17,9 +17,6 @@ TRACKER_DB  = ROOT / "data" / "tracker.db"
 # Newest dated positions CSV in data/uploads/ (None if the personal file is absent).
 HOLDINGS_CSV = find_latest_positions_csv()
 
-PORTFOLIO_TOTAL   = 221_930.85   # parse_fidelity_csv sum (Jul-08-2026)
-SELF_TOTAL        = 1_987.19
-
 ALLOWED_RATIONALE = {"no_exposure", "on_target", "underweight", "overweight", "off_saa_exposure"}
 
 # Actuals computed from the Jul-08 data (look_through + total scope).
@@ -40,9 +37,27 @@ ACTUAL_LT_WEIGHTS = {
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
+def _tracker_db_has_schema() -> bool:
+    """True only if tracker.db exists AND carries the schema (the trades table)."""
+    if not TRACKER_DB.exists() or TRACKER_DB.stat().st_size == 0:
+        return False
+    conn = sqlite3.connect(str(TRACKER_DB))
+    try:
+        return conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='trades'"
+        ).fetchone() is not None
+    finally:
+        conn.close()
+
+
 def _skip_if_no_holdings():
+    # These tests read BOTH the positions CSV and tracker.db. A CSV alone is not
+    # enough: on a machine with a CSV but an unpopulated tracker.db (no schema) the
+    # reads below would error, not skip — masking nothing real. Require both.
     if HOLDINGS_CSV is None or not HOLDINGS_CSV.exists():
         pytest.skip("Holdings CSV not present (personal-mode only)")
+    if not _tracker_db_has_schema():
+        pytest.skip("tracker.db not populated (no schema / trades table) — personal-mode only")
 
 
 def _load_fixtures():
@@ -72,8 +87,12 @@ def test_look_through_total_sums_to_portfolio_value():
     result = compute_household_allocation(pos, acct, sec, comp, saa,
                                           mode="look_through", scope="total")
     total = result["dollar_value"].sum()
-    assert abs(total - PORTFOLIO_TOTAL) <= 1.0, (
-        f"look_through/total sum ${total:,.2f} ≠ expected ${PORTFOLIO_TOTAL:,.2f}"
+    # Invariant: look-through redistributes fund value into sleeves but conserves
+    # the total — it must equal the raw Current value sum from the source CSV. No
+    # hardcoded portfolio figure: never goes stale, no real $ in tracked source.
+    source_total = pos["current_value"].sum()
+    assert abs(total - source_total) <= 1.0, (
+        f"look_through/total sum {total:,.2f} != source Current value sum {source_total:,.2f}"
     )
 
 
@@ -84,8 +103,13 @@ def test_self_only_sums_to_self_directed_value():
     result = compute_household_allocation(pos, acct, sec, comp, saa,
                                           mode="look_through", scope="self_only")
     total = result["dollar_value"].sum()
-    assert abs(total - SELF_TOTAL) <= 1.0, (
-        f"self_only sum ${total:,.2f} ≠ expected ${SELF_TOTAL:,.2f}"
+    # Invariant: self_only conserves the value of the self-directed accounts —
+    # the sum of Current value for positions whose account is managed_by='self'
+    # (the exact filter self_only applies). No hardcoded figure.
+    self_pseudos = set(acct.loc[acct["managed_by"] == "self", "pseudonym"].dropna())
+    source_self = pos.loc[pos["pseudonym"].isin(self_pseudos), "current_value"].sum()
+    assert abs(total - source_self) <= 1.0, (
+        f"self_only sum {total:,.2f} != source self-directed sum {source_self:,.2f}"
     )
 
 
@@ -100,9 +124,12 @@ def test_self_and_external_sum_to_total():
         pos, acct, sec, comp, saa, mode="look_through", scope="external_only"
     )["dollar_value"].sum()
     combined = self_total + ext_total
-    assert abs(combined - PORTFOLIO_TOTAL) <= 1.0, (
+    # Invariant: self + external partition the portfolio — their sum equals the
+    # source Current value total (conservation), no hardcoded figure.
+    source_total = pos["current_value"].sum()
+    assert abs(combined - source_total) <= 1.0, (
         f"self ({self_total:,.2f}) + external ({ext_total:,.2f}) = {combined:,.2f} "
-        f"≠ portfolio total {PORTFOLIO_TOTAL:,.2f}"
+        f"!= source total {source_total:,.2f}"
     )
 
 

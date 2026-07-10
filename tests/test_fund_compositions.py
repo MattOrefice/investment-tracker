@@ -9,10 +9,12 @@ import pytest
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 TRACKER_DB = ROOT / "data" / "tracker.db"
 
-# Fund holding values from the Jul-08-2026 export (used as look-through inputs).
-RFUTX_VALUE    = 77_690.18
-GAOSX_VALUE    = 10_618.01
-CUSIP_VALUE    =    811.87
+# Synthetic look-through input amounts — the value is arbitrary. The tests assert
+# conservation (look-through of $X sums back to $X) and sleeve splits, so no real
+# portfolio figure belongs here.
+RFUTX_VALUE    = 50_000.00
+GAOSX_VALUE    = 25_000.00
+CUSIP_VALUE    =  1_000.00
 
 FUND_SYMBOLS = ["RFUTX", "GAOSX", "31564E540"]
 
@@ -217,11 +219,28 @@ def test_symbol_with_no_sleeve_category_raises(compositions_df):
 
 # ── Live look-through against tracker.db ──────────────────────────────────────
 
+def _tracker_db_has_schema() -> bool:
+    """True only if tracker.db exists AND carries the schema (the trades table)."""
+    if not TRACKER_DB.exists() or TRACKER_DB.stat().st_size == 0:
+        return False
+    conn = sqlite3.connect(str(TRACKER_DB))
+    try:
+        return conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='trades'"
+        ).fetchone() is not None
+    finally:
+        conn.close()
+
+
 def _skip_if_no_holdings():
     from src.household_data import find_latest_positions_csv
     holdings_csv = find_latest_positions_csv()
     if holdings_csv is None or not holdings_csv.exists():
         pytest.skip("Holdings CSV not present (personal-mode file)")
+    # The live look-through tests also read tracker.db; require its schema too, so a
+    # CSV-present-but-empty-DB machine skips instead of erroring.
+    if not _tracker_db_has_schema():
+        pytest.skip("tracker.db not populated (no schema / trades table) — personal-mode only")
 
 
 def test_live_rfutx_look_through():

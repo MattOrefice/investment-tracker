@@ -266,12 +266,13 @@ def test_deploy_and_rollover_render():
 
 def test_fmt_dollars_keeps_symbol_and_sign():
     assert _fmt_dollars(51) == "$51"
-    assert _fmt_dollars(77690) == "$77,690"
+    assert _fmt_dollars(12345) == "$12,345"   # synthetic value — exercises comma insertion
     assert _fmt_dollars(-51) == "-$51"        # negative is "-$51", never "- 51"
     assert _fmt_dollars(-51.4) == "-$51"
 
 
 def test_render_prose_md_escapes_every_dollar():
+    # Synthetic fixture values — arbitrary strings that exercise the $-escaping path.
     resolved = {"value": "$8,159", "count": "3", "embedded_gain": "-$51", "annual_benefit": "$62"}
     template = "These {count} sit at {embedded_gain}; removing {annual_benefit} on {value}."
     out = render_prose_md(template, resolved)
@@ -468,20 +469,21 @@ def test_exactly_one_allow_literals_group_and_all_commented():
 
 # ── Templated account-level literals (this PR) ─────────────────────────────────
 
-_EXPECTED_HOUSEHOLD = {
-    "trad_ira_equity":       "$8,396",   # equity-sleeve holdings in the Traditional IRA
-    "pretax_capacity":       "$10,194",  # Traditional IRA total
-    "workplace_plan_value":  "$77,690",  # largest workplace-plan account (the RFUTX 401k)
-    "pretax_capacity_after": "$87,884",  # the two summed
-}
-
-
 def test_household_placeholders_resolve_from_positions():
+    """Every account-level placeholder resolves to a formatted dollar string, and
+    pretax_capacity_after is the sum of the Traditional IRA capacity and the
+    workplace-plan value. Invariants against live data — no hardcoded real figure.
+    (Skips without personal inputs, so it runs on the desktop, not in CI.)"""
+    import re
     from src.location_actions import _household_placeholders
-    pos, acct, sec, _reg = _live()
+    pos, acct, sec, _reg = _live()   # skips without the personal CSV + tracker.db
     hp = _household_placeholders(pos, acct, sec)
-    for k, expected in _EXPECTED_HOUSEHOLD.items():
-        assert hp[k] == expected, f"{k}: got {hp[k]!r}, expected {expected!r}"
+    for k in ("trad_ira_equity", "pretax_capacity", "workplace_plan_value", "pretax_capacity_after"):
+        assert re.fullmatch(r"\$[\d,]+", hp[k]), f"{k} not a formatted $ value: {hp[k]!r}"
+    _d = lambda s: int(s.replace("$", "").replace(",", ""))
+    assert _d(hp["pretax_capacity_after"]) == _d(hp["pretax_capacity"]) + _d(hp["workplace_plan_value"]), (
+        f"pretax_capacity_after {hp['pretax_capacity_after']!r} != capacity + workplace_plan"
+    )
 
 
 def test_trad_ira_equity_excludes_non_equity_sleeves():
@@ -525,7 +527,7 @@ def test_workplace_plan_value_selects_by_pseudonym_not_largest():
         {"pseudonym": "acct_trad_ira_01",        "display_name": "Traditional IRA", "tax_treatment": "traditional_ira"},
     ])
     pos = pd.DataFrame([
-        {"pseudonym": ROLLOVER_SOURCE_PSEUDONYM, "symbol": "RFUTX", "current_value": 77690.18,
+        {"pseudonym": ROLLOVER_SOURCE_PSEUDONYM, "symbol": "RFUTX", "current_value": 77_000.0,
          "total_gain_loss": float("nan"), "cost_basis_total": float("nan")},
         {"pseudonym": "acct_wkpl_bigger", "symbol": "BIGX", "current_value": 200000.0,   # bigger than the 401k
          "total_gain_loss": 0.0, "cost_basis_total": 0.0},
@@ -538,12 +540,12 @@ def test_workplace_plan_value_selects_by_pseudonym_not_largest():
         {"ticker": "VOO",   "sleeve_category": "us_large_core"},
     ])
     hp = _household_placeholders(pos, acct, sec)
-    assert hp["workplace_plan_value"] == "$77,690", (
+    assert hp["workplace_plan_value"] == "$77,000", (
         f"argmax leak — a larger second workplace account changed the figure: {hp['workplace_plan_value']}"
     )
-    # after stays derived: pretax_capacity ($10,000) + workplace_plan_value ($77,690)
+    # after stays derived: pretax_capacity ($10,000) + workplace_plan_value ($77,000)
     assert hp["pretax_capacity"] == "$10,000"
-    assert hp["pretax_capacity_after"] == "$87,690"
+    assert hp["pretax_capacity_after"] == "$87,000"
 
 
 def test_unresolvable_rollover_source_raises_no_fallback():
