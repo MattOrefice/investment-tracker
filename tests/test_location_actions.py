@@ -338,7 +338,7 @@ RENDERED_PROSE_LEN = {
     "relocate_gain_side":        (201, 372),   # cons rewritten: headroom-correct, no 15% claim
     "thematic_sprawl":           (217, 465),
     "rollover_401k":             (341, 526),
-    "frozen_tod_income":         (387, 468),   # authored prose
+    "frozen_tod_income":         (382, 468),   # authored prose (pros re-pinned: muni dropped from the fund list)
     "saa_sleeves_taxable":       (261, 616),   # authored prose
     "predeploy_stranded_equity": (328, 530),   # authored prose
 }
