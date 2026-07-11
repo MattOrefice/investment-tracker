@@ -62,14 +62,22 @@ with col:
     )
     st.caption(f"As of {_as_of_date.isoformat()} · source: {_csv_path.name}")
 
-# ── Household liquidity as ONE nested figure (not three parallel numbers) ────────
-_total = float(ladder["value"].sum())
-_liquid = float(ladder[ladder["tier"] < 3]["net_cash"].sum())          # T1+T2 net
-_free = float(ladder[ladder["tier"] == 1]["net_cash"].sum())           # T1 net (subset of liquid)
-_locked = float(ladder[ladder["tier"] == 3]["value"].sum())            # T3 gross
-_locked_cost = float(ladder[ladder["tier"] == 3]["cost_to_cash"].sum())
-_access_pct = (_locked_cost / _locked * 100) if _locked else 0.0
-_locked_net = _locked - _locked_cost
+# ── Tier-capital cards — pure aggregation of the ladder's own columns ────────────
+# gross = Σ Value for the tier's rows; net = Σ Net cash for the tier's rows. No new
+# tax computation — these reuse the per-row figures the table below already shows,
+# so any tier-total is guaranteed to equal the tier section beneath it.
+_by = ladder.groupby("tier").agg(gross=("value", "sum"), net=("net_cash", "sum"))
+
+
+def _tier(t, c):
+    return float(_by.loc[t, c]) if t in _by.index else 0.0
+
+
+_t1g, _t1n = _tier(1, "gross"), _tier(1, "net")
+_t2g, _t2n = _tier(2, "gross"), _tier(2, "net")
+_t3g, _t3n = _tier(3, "gross"), _tier(3, "net")
+_total_gross = float(ladder["value"].sum())
+_total_net = float(ladder["net_cash"].sum())
 
 
 def _d(x):
@@ -78,11 +86,18 @@ def _d(x):
 
 
 with col:
-    st.markdown(
-        f"**Total household {_d(_total)}** → **liquid in taxable {_d(_liquid)}** "
-        f"(of which **{_d(_free)} free-to-sell now**, the rest at 15% LTCG) → "
-        f"**locked in retirement {_d(_locked)}** — about {_access_pct:.0f}% to access "
-        f"before 59½, so ~{_d(_locked_net)} net. These figures **nest**; they do not add up."
+    _c1, _c2, _c3 = st.columns(3)
+    _c1.metric("Tier 1 · taxable, minimal gains", f"${_t1g:,.0f}", f"net ${_t1n:,.0f} if sold", delta_color="off")
+    _c2.metric("Tier 2 · taxable with gains", f"${_t2g:,.0f}", f"net ${_t2n:,.0f} if sold", delta_color="off")
+    _c3.metric("Tier 3 · locked (retirement)", f"${_t3g:,.0f}", f"net ${_t3n:,.0f} if sold", delta_color="off")
+    _tc1, _tc2 = st.columns(2)
+    _tc1.metric("Total available (gross)", f"${_total_gross:,.0f}")
+    _tc2.metric("Total net if fully liquidated", f"${_total_net:,.0f}")
+    st.caption(
+        "Gross is market value; **net** is after the tax/penalty to convert to cash. Tier 1 + "
+        "Tier 2 are the liquid-in-taxable total — they nest, and do not add to Tier 3. "
+        "**Settlement:** ETFs, equities, and most mutual funds settle **T+1**; core / "
+        "money-market cash is **same-day**."
     )
     st.info(
         "Roth and pre-tax costs assume withdrawal **before age 59½** and **no accessible "
