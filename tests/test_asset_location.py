@@ -364,7 +364,7 @@ def _group7_fixture():
 def test_group7_population_four_rows_three_caption_and_coverage():
     from src.location_actions import (
         ACTION_GROUPS, filter_register_for_group, resolve_placeholders,
-        resolve_caption, assert_full_coverage,
+        resolve_caption, assert_full_coverage, _fmt_dollars,
     )
     pos, acct, sec = _group7_fixture()
     reg = _muni_register(pos, acct, sec)
@@ -378,7 +378,10 @@ def test_group7_population_four_rows_three_caption_and_coverage():
     assert resolved["count"] == "4", "population (matched_symbols) must count all four holdings"
 
     cap = resolve_caption(g7, pos, acct, reg)
-    assert cap and "Only 3 appear below" in cap and "generates no action" in cap
+    # Caption states the shown-rows value (matches the table's Value total), not only
+    # the population value: "4 holdings worth $80,000. 3 appear below (worth $60,000)".
+    shown = _fmt_dollars(float(reg7["current_value"].sum())).lstrip("$")
+    assert cap and "3 appear below" in cap and shown in cap and "generates no action" in cap, cap
 
     # A vanished row (GHYIX) must not orphan anything.
     assert_full_coverage(reg)   # raises on any orphan
@@ -406,8 +409,8 @@ def test_caption_verb_agrees_with_singular_row_count():
     g7 = next(g for g in ACTION_GROUPS if g["key"] == "frozen_tod_income")
     assert len(filter_register_for_group(reg, g7)) == 1, "fixture must yield exactly one register row"
     cap = resolve_caption(g7, pos, acct, reg)
-    assert "Only 1 appears below" in cap, f"singular verb expected: {cap!r}"
-    assert "Only 1 appear below" not in cap
+    assert "1 appears below" in cap, f"singular verb expected: {cap!r}"
+    assert "1 appear below" not in cap
 
 
 # ── Fix 2: the register carries each position's market value (Value ($) column) ──

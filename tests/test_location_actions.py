@@ -734,17 +734,37 @@ def test_stranded_equity_renamed_to_plain_language():
 
 def test_gap_captions_lead_with_prominent_coverage_phrasing():
     """The only groups with a real count>rows gap are the two matched_symbols groups,
-    and each phrases it 'This group covers {population_count} ... Only {row_count}
-    appear below — {reason}'. SAA sleeves (count==row_count) carries no caption."""
+    and each states BOTH the population value AND the shown-rows value: 'This group
+    covers {population_count} ... {row_count} appear below (worth {shown_value}) —
+    {reason}'. The {shown_value} figure lets the caption match the table's Value total
+    instead of contradicting it. SAA sleeves (count==row_count) carries no caption."""
     gapped = {g["key"] for g in ACTION_GROUPS if g.get("population") == "matched_symbols"}
     assert gapped == {"thematic_sprawl", "frozen_tod_income"}
     for g in ACTION_GROUPS:
         if g["key"] in gapped:
             cap = g["caption"]
             assert cap.startswith("This group covers "), f"{g['key']} caption not prominent: {cap!r}"
-            assert "{population_count}" in cap and "{population_value}" in cap and "{row_count}" in cap
+            for ph in ("{population_count}", "{population_value}", "{row_count}", "{shown_value}"):
+                assert ph in cap, f"{g['key']} caption missing {ph}: {cap!r}"
     saa = next(x for x in ACTION_GROUPS if x["key"] == "saa_sleeves_taxable")
     assert not saa.get("caption"), "SAA sleeves (count==row_count) must carry no caption"
+
+
+def test_gap_caption_shown_value_equals_register_rows_value_live():
+    """Fix 1: each population-gap caption's {shown_value} equals the value of the rows
+    it shows — i.e. the expander's Value total row — so the caption's second figure
+    matches the table (no more $17,526-in-caption vs $13,005-in-table contradiction)."""
+    pos, acct, sec, reg = _live()
+    for g in ACTION_GROUPS:
+        if g.get("population") != "matched_symbols":
+            continue
+        rr = filter_register_for_group(reg, g)
+        shown = _fmt_dollars(float(rr["current_value"].sum()))   # == the table's Value total
+        cap = resolve_caption(g, pos, acct, reg)
+        assert cap is not None, f"{g['key']}: expected a caption"
+        assert f"(worth {escape_md(shown)})" in cap, (
+            f"{g['key']}: caption must state shown value {shown} (= table Value total): {cap!r}"
+        )
 
 
 def test_deploy_targets_split_sources_tickers_and_amount_from_answer():
@@ -870,4 +890,48 @@ def test_page14_value_tables_total_and_summaries_live(monkeypatch):
     # 4. group 4's action labels both value and gain
     assert "of holdings (GBOSX, FIWDX, JEPQ, USRT)" in md and "in gains" in md, (
         "group 4 action must show both the position value and the gain, labelled"
+    )
+
+
+def test_kpi_scope_note_partitions_drag_accepted_vs_actionable_live(monkeypatch):
+    """Fix 2: the drag KPI counts ALL A/B/D drag; the scope note splits it into
+    accepted vs actionable. accepted_drag = the A/B/D benefit of accepted-status
+    groups' register rows, and accepted + actionable == KPI (a partition — every
+    register row belongs to exactly one group, so nothing is double-counted or
+    exceeds the KPI). The note is NOT '$X excluded'; the drag is included."""
+    pos, acct, sec, reg = _live()
+    ABD = ["A", "B", "D"]
+    kpi = float(reg[reg["case"].isin(ABD)]["annual_benefit"].sum())
+    acc_idx = set()
+    for g in ACTION_GROUPS:
+        if g["status"] == "accepted":
+            acc_idx |= set(filter_register_for_group(reg, g).index)
+    acc = reg.loc[sorted(acc_idx)]
+    accepted = float(acc[acc["case"].isin(ABD)]["annual_benefit"].sum())
+    actionable = kpi - accepted
+    assert accepted > 0, "accepted groups must carry some A/B/D drag for this to matter"
+    assert abs((accepted + actionable) - kpi) < 0.005, "accepted + actionable must equal the KPI"
+    # summing A/B/D over ALL group tables must equal the KPI (no double-counting / no $273)
+    all_groups_abd = 0.0
+    for g in ACTION_GROUPS:
+        if g["key"] in INFORMATIONAL_KEYS:
+            continue
+        rr = filter_register_for_group(reg, g)
+        all_groups_abd += float(rr[rr["case"].isin(ABD)]["annual_benefit"].sum())
+    assert abs(all_groups_abd - kpi) < 0.005, f"all-groups A/B/D {all_groups_abd} must equal KPI {kpi}"
+
+    import src.config
+    import src.db
+    monkeypatch.setattr(src.config, "IS_DEMO", False)
+    monkeypatch.setattr(src.db, "DB_PATH", TRACKER_DB)
+    from streamlit.testing.v1 import AppTest
+    at = AppTest.from_file(str(ROOT / "pages" / "14_Asset_Location.py"), default_timeout=120).run()
+    assert not at.exception, f"page raised: {at.exception}"
+    caps = " ||| ".join(c.value for c in at.caption)
+    assert "accepted/no-action groups" in caps, "KPI scope note missing"
+    assert f"about {escape_md(_fmt_dollars(accepted))} of it" in caps, (
+        f"note must show accepted drag {_fmt_dollars(accepted)}: {caps!r}"
+    )
+    assert f"about {escape_md(_fmt_dollars(actionable))}." in caps, (
+        f"note must show actionable drag {_fmt_dollars(actionable)}"
     )
