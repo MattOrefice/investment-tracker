@@ -432,7 +432,7 @@ def test_no_rendered_prose_contains_comma_emdash():
 # for silent prose corruption (dropped words render as valid Markdown).
 RENDERED_PROSE_LEN = {
     "deploy_roth_cash":          (514, 577),   # gap-proportional prose + EM/FTC clause
-    "clear_roth_non_equity":     (477, 335),
+    "clear_roth_non_equity":     (840, 887),   # + Traditional-IRA leg: tax logic, capacity block, horizon caveat
     "relocate_loss_side":        (410, 859),   # cons: + rebuy rec (BND/AGG/FXNAX) + duration-risk note
     "relocate_gain_side":        (311, 404),   # rewritten: 22%/15% capacity-defer, no 0% headroom
     "thematic_sprawl":           (217, 475),   # cons: 0% headroom -> 15% cap-gains language
