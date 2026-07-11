@@ -16,6 +16,7 @@ from src.location_actions import (
     ACTION_GROUPS,
     INFORMATIONAL_KEYS,
     build_roth_deploy_answer,
+    deploy_targets_split,
     resolve_placeholders,
     resolve_caption,
     render_prose,
@@ -699,3 +700,101 @@ def test_loss_side_cons_references_current_group2_title():
     assert "{group_2_title}" in g3["cons"], "group 3 must template group 2's title, not hardcode it"
     cons = render_prose_md(g3["cons"], resolve_placeholders(g3, pos, acct, sec, reg, roth_idle_cash=dep["idle_cash"]))
     assert _group_title("clear_roth_non_equity") in cons, "rendered group 3 cons must show group 2's live title"
+
+
+# ── Clarity + structure pass: action lines, rename, prominent captions ─────────
+
+def test_every_group_declares_a_nonempty_action_line():
+    for g in ACTION_GROUPS:
+        assert isinstance(g.get("action"), str) and g["action"].strip(), (
+            f"{g['key']} must declare a one-line action decision"
+        )
+
+
+def test_action_lines_have_no_dollar_literal_except_allow_literals():
+    """The bold action line is templated like the prose: dollar figures resolve from
+    placeholders, never a hardcoded literal (allow_literals groups exempt, same rule
+    as pros/cons)."""
+    for g in ACTION_GROUPS:
+        if g.get("allow_literals"):
+            continue
+        assert not _DOLLAR_LITERAL.search(g["action"]), (
+            f"{g['key']} action has a $ literal — template it: {g['action']!r}"
+        )
+
+
+def test_stranded_equity_renamed_to_plain_language():
+    """'Pre-deploy stranded equity' was jargon. The KEY is unchanged (scores/coverage
+    tests key on it); only the human-facing title is plain language now."""
+    g = next(x for x in ACTION_GROUPS if x["key"] == "predeploy_stranded_equity")
+    assert g["title"] == "Taxable small-cap/EM — already handled"
+    low = g["title"].lower()
+    assert "stranded" not in low and "pre-deploy" not in low
+
+
+def test_gap_captions_lead_with_prominent_coverage_phrasing():
+    """The only groups with a real count>rows gap are the two matched_symbols groups,
+    and each phrases it 'This group covers {population_count} ... Only {row_count}
+    appear below — {reason}'. SAA sleeves (count==row_count) carries no caption."""
+    gapped = {g["key"] for g in ACTION_GROUPS if g.get("population") == "matched_symbols"}
+    assert gapped == {"thematic_sprawl", "frozen_tod_income"}
+    for g in ACTION_GROUPS:
+        if g["key"] in gapped:
+            cap = g["caption"]
+            assert cap.startswith("This group covers "), f"{g['key']} caption not prominent: {cap!r}"
+            assert "{population_count}" in cap and "{population_value}" in cap and "{row_count}" in cap
+    saa = next(x for x in ACTION_GROUPS if x["key"] == "saa_sleeves_taxable")
+    assert not saa.get("caption"), "SAA sleeves (count==row_count) must carry no caption"
+
+
+def test_deploy_targets_split_sources_tickers_and_amount_from_answer():
+    """deploy_targets_split reads the computed deploy table (never hardcodes tickers):
+    targets are the table's tickers joined, split is the per-sleeve dollar amount; an
+    empty answer degrades to None so the page can fall back rather than raise."""
+    pos, acct, sec, _reg = _live()
+    dep = build_roth_deploy_answer(pos, acct, sec)
+    dts = deploy_targets_split(dep)
+    assert dts["deploy_targets"] == " and ".join(dep["table"]["ticker"].tolist())
+    assert dts["deploy_split"] == _fmt_dollars(float(dep["table"]["dollar"].iloc[0]))
+    empty = {"table": pd.DataFrame(columns=["ticker", "sleeve", "dollar"])}
+    assert deploy_targets_split(empty) == {"deploy_targets": None, "deploy_split": None}
+
+
+def test_every_group_action_line_renders_live():
+    """Each action line resolves fully against live data — no unresolved {placeholder}
+    reaches the page. The deploy line's injected {deploy_targets}/{deploy_split} are
+    added exactly as the page does it."""
+    pos, acct, sec, reg = _live()
+    dep = build_roth_deploy_answer(pos, acct, sec)
+    for g in ACTION_GROUPS:
+        r = resolve_placeholders(g, pos, acct, sec, reg, roth_idle_cash=dep["idle_cash"])
+        if g["key"] == "deploy_roth_cash":
+            r = {**r, **deploy_targets_split(dep)}
+        rendered = render_prose_md(g["action"], r)   # raises on any unresolved placeholder
+        assert rendered and "\n" not in rendered
+        assert "{" not in rendered and "}" not in rendered, (
+            f"{g['key']} action left an unresolved placeholder: {rendered!r}"
+        )
+
+
+def test_page14_action_lines_and_prominent_captions_live(monkeypatch):
+    """Rendered page: bold action lines appear in markdown, and the gap captions
+    render as prominent markdown — NOT a muted st.caption."""
+    from src.household_data import find_latest_positions_csv
+    csv = find_latest_positions_csv()
+    if csv is None or not TRACKER_DB.exists() or TRACKER_DB.stat().st_size == 0:
+        pytest.skip("personal-mode inputs absent")
+    import src.config
+    import src.db
+    monkeypatch.setattr(src.config, "IS_DEMO", False)
+    monkeypatch.setattr(src.db, "DB_PATH", TRACKER_DB)
+    from streamlit.testing.v1 import AppTest
+    at = AppTest.from_file(str(ROOT / "pages" / "14_Asset_Location.py"), default_timeout=90).run()
+    assert not at.exception, f"page raised: {at.exception}"
+    md = " ||| ".join(m.value for m in at.markdown)
+    caps = " ||| ".join(c.value for c in at.caption)
+    for snippet in ("Buy AVUV and IEMG", "not into a Traditional IRA",
+                    "already builds these positions", "belong in a shelter"):
+        assert snippet in md, f"action line missing from render: {snippet!r}"
+    assert "This group covers" in md, "gap caption must render as prominent markdown"
+    assert "This group covers" not in caps, "gap caption must NOT be a muted st.caption"

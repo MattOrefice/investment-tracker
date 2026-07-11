@@ -46,6 +46,7 @@ from src.location_actions import (
     STATUS_ORDER,
     INFORMATIONAL_KEYS,
     build_roth_deploy_answer,
+    deploy_targets_split,
     resolve_placeholders,
     resolve_caption,
     render_prose_md,
@@ -200,6 +201,16 @@ for group in _ordered_groups:
     _, col, _ = st.columns([1, 8, 1])
     with col:
         st.subheader(f"{group['title']}  ·  {group['score']}/10")
+        # One-line imperative decision, directly under the score — what to DO, in
+        # bold, before the two-paragraph For/Against reasoning below.
+        if group["key"] == "deploy_roth_cash":
+            _dts = deploy_targets_split(deploy)
+            if _dts["deploy_targets"]:
+                st.markdown(f"**{render_prose_md(group['action'], {**resolved, **_dts})}**")
+            else:
+                st.markdown("**Deploy the idle Roth cash across your top Roth sleeves.**")
+        else:
+            st.markdown(f"**{render_prose_md(group['action'], resolved)}**")
         st.caption(escape_md(f"**{_STATUS_LABEL[group['status']]}** — {_summary_line(group, resolved, reg_rows)}"))
 
         st.markdown(f"**For.** {render_prose_md(group['pros'], resolved)}")
@@ -224,7 +235,10 @@ for group in _ordered_groups:
         elif group["key"] not in INFORMATIONAL_KEYS:
             _cap = resolve_caption(group, positions_df, accounts_df, register)
             if _cap:
-                st.caption(_cap)
+                # Prominent (normal-weight markdown, not a muted st.caption): the
+                # book-vs-mislocation gap is the whole reason the count exceeds the
+                # rows below, so it must be unmissable, directly above the expander.
+                st.markdown(_cap)
             # Show EVERY register row backing this group, including sub-threshold
             # (< MIN_ANNUAL_BENEFIT) drag. The Value column gives each row its position
             # size, so a small drag reads as small — not as a count-vs-empty-table

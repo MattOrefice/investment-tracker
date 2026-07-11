@@ -111,9 +111,10 @@ _THEMATIC_CONS = (
 )
 
 _THEMATIC_CAPTION = (
-    "{population_count} holdings, {population_value}. Only {row_count} appear "
-    "below — the register lists mislocations, and most of this book is correctly "
-    "located in taxable. The case for cleanup is fees and sprawl, not location."
+    "This group covers {population_count} holdings worth {population_value}. Only "
+    "{row_count} appear below — the register lists mislocations, and most of this "
+    "book is correctly located in taxable. The case for cleanup is fees and "
+    "sprawl, not location."
 )
 
 _ROLLOVER_PROS = (
@@ -161,10 +162,11 @@ _TOD_INCOME_CONS = (
 # {row_count} is the register-row count shown in the expander. The gap is GHYIX: a
 # federally-exempt muni that generates no A/B action, so it is counted but not listed.
 _TOD_INCOME_CAPTION = (
-    "{population_count} holdings, {population_value}. Only {row_count} appear below. "
-    "GHYIX is a federally exempt municipal fund — there is no federal tax to save, "
-    "and moving it into a pre-tax account would convert exempt interest into ordinary "
-    "income. It is correctly located and generates no action."
+    "This group covers {population_count} holdings worth {population_value}. Only "
+    "{row_count} appear below — GHYIX is a federally exempt municipal fund, so "
+    "there is no federal tax to save and moving it into a pre-tax account would "
+    "convert exempt interest into ordinary income. It is correctly located and "
+    "generates no action."
 )
 
 _SAA_TAXABLE_PROS = (
@@ -213,12 +215,16 @@ ACTION_GROUPS: list[dict] = [
     {
         "key": "deploy_roth_cash", "title": "Deploy idle Roth cash",
         "score": 10, "status": "act_now",
+        "action": "Buy {deploy_targets} with the {value} of idle Roth cash — "
+                  "about {deploy_split} each.",
         "symbols": None, "case_filter": None, "accounts": None,   # informational
         "pros": _DEPLOY_ROTH_CASH_PROS, "cons": _DEPLOY_ROTH_CASH_CONS,
     },
     {
         "key": "clear_roth_non_equity", "title": "Clear misplaced holdings from the Roth",
         "score": 9, "status": "act_now",
+        "action": "Sell the {count} misplaced income and non-equity holdings in the "
+                  "Roth and rebuy broad equity there — free, no tax.",
         "symbols": ["JEPI", "JEPQ", "HELO", "JHEQX", "USRT", "IAU", "IDGT"],
         "case_filter": ["C"], "accounts": ["Roth IRA"],
         "pros": _CLEAR_ROTH_PROS, "cons": _CLEAR_ROTH_CONS,
@@ -226,6 +232,8 @@ ACTION_GROUPS: list[dict] = [
     {
         "key": "relocate_loss_side", "title": "Relocate the loss side (free)",
         "score": 9, "status": "act_now",
+        "action": "Sell BFRIX, HLIPX, and JEPI in taxable at a loss, then rebuy the "
+                  "exposure in the Traditional IRA with a different bond fund.",
         "symbols": ["BFRIX", "HLIPX", "JEPI"],
         "case_filter": ["A", "B"], "accounts": ["Individual Taxable (TOD)"],
         "pros": _LOSS_SIDE_PROS, "cons": _LOSS_SIDE_CONS,
@@ -233,6 +241,9 @@ ACTION_GROUPS: list[dict] = [
     {
         "key": "relocate_gain_side", "title": "Relocate the gain side",
         "score": 5, "status": "evaluate",
+        "action": "Optional — move GBOSX, FIWDX, JEPQ, and USRT to the Traditional "
+                  "IRA; realizes {embedded_gain} of gains but fits the 0% bracket. "
+                  "Wait-and-see.",
         "symbols": ["GBOSX", "FIWDX", "JEPQ", "USRT"],
         "case_filter": ["A", "B"], "accounts": ["Individual Taxable (TOD)"],
         "pros": _GAIN_SIDE_PROS, "cons": _GAIN_SIDE_CONS,
@@ -240,6 +251,8 @@ ACTION_GROUPS: list[dict] = [
     {
         "key": "thematic_sprawl", "title": "Thematic sprawl",
         "score": 2, "status": "accepted",
+        "action": "Leave as-is — logged as an accepted 11.8% thematic tilt, capped "
+                  "at its current weight.",
         "symbols": ["ARKK", "BOTZ", "CIBR", "EMQQ", "FINX", "FRNW", "IBB", "ICLN",
                     "IDGT", "PAVE", "ROBO", "IWC", "QQQJ", "XLK", "XLV", "UFO",
                     "JTEK", "QQQ", "IBIT"],
@@ -253,6 +266,8 @@ ACTION_GROUPS: list[dict] = [
     {
         "key": "rollover_401k", "title": "401(k) rollover",
         "score": 3, "status": "blocked",
+        "action": "When you start your next job, roll the 401(k) into that plan — "
+                  "not into a Traditional IRA. Blocked until then.",
         "symbols": None, "case_filter": None, "accounts": None,   # informational
         "pros": _ROLLOVER_PROS, "cons": _ROLLOVER_CONS,
     },
@@ -262,6 +277,8 @@ ACTION_GROUPS: list[dict] = [
     {
         "key": "frozen_tod_income", "title": "Frozen TOD income assets",
         "score": 5, "status": "accepted",
+        "action": "Leave as-is — no better account exists until the 401(k) rollover "
+                  "frees pre-tax space.",
         # Ordinary-income holdings in the frozen TOD book (case A/B). GAOSX is the
         # multi-asset fund with a credit sleeve; MCO is NOT here (correctly located).
         # GHYIX is a federally-exempt muni: build_location_register drops it from
@@ -275,6 +292,8 @@ ACTION_GROUPS: list[dict] = [
     {
         "key": "saa_sleeves_taxable", "title": "SAA sleeves in taxable · accepted",
         "score": 1, "status": "accepted",
+        "action": "Leave as-is — these belong in a shelter, but pre-tax space is "
+                  "full. Revisit after the 401(k) rollover.",
         # The SAA's own fixed-income/real-asset sleeves in the self-directed
         # account (case A). Accepted: pre-tax capacity is exhausted, so there is
         # nowhere better until the 401(k) rollover creates space.
@@ -283,11 +302,14 @@ ACTION_GROUPS: list[dict] = [
         "pros": _SAA_TAXABLE_PROS, "cons": _SAA_TAXABLE_CONS,
     },
     {
-        "key": "predeploy_stranded_equity", "title": "Pre-deploy stranded equity",
+        "key": "predeploy_stranded_equity", "title": "Taxable small-cap/EM — already handled",
         "score": 4, "status": "evaluate",
+        "action": "No action — the Roth deploy above already builds these positions. "
+                  "The taxable lots stay put.",
         # Case-D equity a shelter wants more than taxable does. AVUV/IEMG are what
         # the Roth deploy buys directly; DFAE/XSOE are EM in the frozen TOD book —
-        # observed, not actionable.
+        # observed, not actionable. (Key kept as predeploy_stranded_equity; the
+        # title is plain-language, the jargon lived only in the header.)
         "symbols": ["AVUV", "IEMG", "DFAE", "XSOE"],
         "case_filter": ["D"],
         "accounts": ["Individual Taxable (Self-Directed)", "Individual Taxable (TOD)"],
@@ -423,6 +445,22 @@ def assert_full_coverage(register: pd.DataFrame) -> None:
 def _fmt_dollars(x: float) -> str:
     x = float(x)
     return f"-${abs(x):,.0f}" if x < 0 else f"${x:,.0f}"
+
+
+def deploy_targets_split(deploy_answer: dict) -> dict[str, str | None]:
+    """The {deploy_targets}/{deploy_split} placeholders for the deploy_roth_cash
+    action line: the tickers the idle Roth cash buys ("AVUV and IEMG") and the
+    per-sleeve amount (the 50/50 split). Sourced from build_roth_deploy_answer's
+    computed table — never hardcoded — so the one-liner tracks the deploy table
+    shown directly below it. Returns None values when there is nothing to deploy;
+    the page falls back to a generic line rather than rendering a blank."""
+    tbl = deploy_answer.get("table")
+    if tbl is None or tbl.empty:
+        return {"deploy_targets": None, "deploy_split": None}
+    return {
+        "deploy_targets": " and ".join(tbl["ticker"].tolist()),
+        "deploy_split": _fmt_dollars(float(tbl["dollar"].iloc[0])),
+    }
 
 
 def capital_gains_headroom(register: pd.DataFrame) -> dict:
