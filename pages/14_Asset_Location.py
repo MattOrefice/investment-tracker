@@ -190,6 +190,19 @@ _CASE_LABEL = {
     "C": "C — premium-space waste in Roth", "D": "D — high-priority stuck in taxable",
 }
 
+# Each status bucket gets a visible section header (H2, above the H3 card titles) so
+# the act-now → evaluate → blocked → accepted grouping is obvious at a glance — not
+# just implied by each card's caption. _ordered_groups is status-then-score sorted,
+# so a bucket's cards are contiguous and the header fires on each status change.
+_BUCKET_BLURB = {
+    "act_now":  "Trade now — free, or clearly worth the cost.",
+    "evaluate": "Optional — depends on this year's income; wait-and-see.",
+    "blocked":  "Waiting on an external event before it can happen.",
+    "accepted": "Logged as a deliberate decision — no action.",
+}
+_bucket_counts = {s: sum(1 for g in _ordered_groups if g["status"] == s) for s in STATUS_ORDER}
+_prev_status = None
+
 for group in _ordered_groups:
     reg_rows = (
         filter_register_for_group(register, group)
@@ -200,6 +213,11 @@ for group in _ordered_groups:
 
     _, col, _ = st.columns([1, 8, 1])
     with col:
+        if group["status"] != _prev_status:
+            _n = _bucket_counts[group["status"]]
+            st.header(_STATUS_LABEL[group["status"]])
+            st.caption(f"{_n} {'decision' if _n == 1 else 'decisions'} · {_BUCKET_BLURB[group['status']]}")
+            _prev_status = group["status"]
         st.subheader(f"{group['title']}  ·  {group['score']}/10")
         # One-line imperative decision, directly under the score — what to DO, in
         # bold, before the two-paragraph For/Against reasoning below.

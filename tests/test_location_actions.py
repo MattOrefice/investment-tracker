@@ -798,3 +798,23 @@ def test_page14_action_lines_and_prominent_captions_live(monkeypatch):
         assert snippet in md, f"action line missing from render: {snippet!r}"
     assert "This group covers" in md, "gap caption must render as prominent markdown"
     assert "This group covers" not in caps, "gap caption must NOT be a muted st.caption"
+
+
+def test_page14_renders_status_bucket_headers_live(monkeypatch):
+    """Status grouping is made visible: each status bucket renders a section header
+    (st.header), in act_now -> evaluate -> blocked -> accepted order, above its cards."""
+    from src.household_data import find_latest_positions_csv
+    csv = find_latest_positions_csv()
+    if csv is None or not TRACKER_DB.exists() or TRACKER_DB.stat().st_size == 0:
+        pytest.skip("personal-mode inputs absent")
+    import src.config
+    import src.db
+    monkeypatch.setattr(src.config, "IS_DEMO", False)
+    monkeypatch.setattr(src.db, "DB_PATH", TRACKER_DB)
+    from streamlit.testing.v1 import AppTest
+    at = AppTest.from_file(str(ROOT / "pages" / "14_Asset_Location.py"), default_timeout=90).run()
+    assert not at.exception, f"page raised: {at.exception}"
+    headers = [h.value for h in at.header]
+    assert headers == ["Act now", "Evaluate", "Blocked", "Accepted"], (
+        f"status bucket headers missing or out of order: {headers}"
+    )
