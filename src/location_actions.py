@@ -290,7 +290,7 @@ ACTION_GROUPS: list[dict] = [
         "population": "matched_symbols", "caption": _TOD_INCOME_CAPTION,
     },
     {
-        "key": "saa_sleeves_taxable", "title": "SAA sleeves in taxable · accepted",
+        "key": "saa_sleeves_taxable", "title": "SAA sleeves in taxable",
         "score": 1, "status": "accepted",
         "action": "Leave as-is — these belong in a shelter, but pre-tax space is "
                   "full. Revisit after the 401(k) rollover.",
