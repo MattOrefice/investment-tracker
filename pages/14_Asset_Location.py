@@ -51,6 +51,7 @@ from src.location_actions import (
     resolve_caption,
     render_prose_md,
     escape_md,
+    _fmt_dollars,
     filter_register_for_group,
     capital_gains_headroom,
     assert_full_coverage,
@@ -102,6 +103,12 @@ _kpi_repositionable = 0.0
 for _, _r in _case_c.iterrows():
     _m = _pos_disp[(_pos_disp["symbol"] == _r["symbol"]) & (_pos_disp["display_name"] == _r["account"])]
     _kpi_repositionable += float(_m["current_value"].sum())
+
+# Loss-side total value for the Act-now summary — the relocate_loss_side group's
+# position value, computed from the register (not hardcoded). This is a VALUE total
+# (parallel to _kpi_repositionable), not the net embedded loss.
+_loss_group = next(g for g in ACTION_GROUPS if g["key"] == "relocate_loss_side")
+_loss_side_total = float(filter_register_for_group(register, _loss_group)["current_value"].sum())
 
 # Directability — which accounts (present in the export) can be traded jointly today.
 _present_accts = accounts_df[accounts_df["pseudonym"].isin(positions_df["pseudonym"])]
@@ -217,6 +224,16 @@ for group in _ordered_groups:
             _n = _bucket_counts[group["status"]]
             st.header(_STATUS_LABEL[group["status"]])
             st.caption(f"{_n} {'decision' if _n == 1 else 'decisions'} · {_BUCKET_BLURB[group['status']]}")
+            if group["status"] == "act_now":
+                # Actionable dollar weight in one glance — every figure computed from
+                # the register above. loss-side is a VALUE total (relocated free); its
+                # net embedded loss is tiny, so this is deliberately not "$X in losses".
+                st.markdown(
+                    f"Deploy **{escape_md(_fmt_dollars(_kpi_idle_roth))}** · "
+                    f"reposition **{escape_md(_fmt_dollars(_kpi_repositionable))}** "
+                    f"in-shelter (free) · harvest the loss side "
+                    f"(**{escape_md(_fmt_dollars(_loss_side_total))}**, free)"
+                )
             _prev_status = group["status"]
         st.subheader(f"{group['title']}  ·  {group['score']}/10")
         # One-line imperative decision, directly under the score — what to DO, in
@@ -274,6 +291,20 @@ for group in _ordered_groups:
                     "embedded_gain": "Embedded Gain ($)", "cost_to_realize": "Cost to Realize ($)",
                     "is_free": "Free?", "payback_months": "Payback (months)",
                 })
+                # Total row (Value summed) so the header count/value reconciles against
+                # the rows below — same style as the Deploy card's Total row. Only Value
+                # is totalled; the other money columns stay blank in the total row.
+                _total = {}
+                for _c in show.columns:
+                    if _c == "Holding":
+                        _total[_c] = "Total"
+                    elif _c == "Value ($)":
+                        _total[_c] = float(reg_rows["current_value"].sum())
+                    elif pd.api.types.is_bool_dtype(show[_c]) or pd.api.types.is_numeric_dtype(show[_c]):
+                        _total[_c] = float("nan")
+                    else:
+                        _total[_c] = ""
+                show = pd.concat([show, pd.DataFrame([_total])], ignore_index=True)
                 st.dataframe(
                     show, use_container_width=True, hide_index=True,
                     column_config={
@@ -285,6 +316,13 @@ for group in _ordered_groups:
                         "Payback (months)":    st.column_config.NumberColumn(format="%.1f"),
                     },
                 )
+                # Case C "Annual Benefit" is repositioning value, not tax drag — it is
+                # excluded from the drag KPI, so summing the tables won't reconcile to it.
+                if (reg_rows["case"] == "C").any():
+                    st.caption(
+                        "Case C “Annual Benefit” is repositioning value, not tax drag — "
+                        "excluded from the drag KPI above."
+                    )
         st.divider()
 
 # ── Assumptions ─────────────────────────────────────────────────────────────────
