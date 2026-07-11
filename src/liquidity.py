@@ -64,7 +64,6 @@ def build_liquidity_ladder(
         value = float(r["current_value"])
         egv = r["embedded_gain"]
         gain_pct = r["gain_pct"]
-        basis = r["cost_basis"]
 
         if tt == "taxable":
             if pd.isna(egv):                    # cash / money-market — no gain, spendable now
@@ -76,13 +75,20 @@ def build_liquidity_ladder(
                     tier, note = 1, "Taxable at a loss or small gain — minimal or no tax"
                 else:
                     tier, note = 2, "Taxable with a meaningful gain — 15% LTCG + PA on the gain"
-        elif tt == "roth_ira":
-            growth = max(0.0, value - (float(basis) if pd.notna(basis) else 0.0))
-            cost = growth * (EARLY_WITHDRAWAL_PENALTY + ord_rate)
-            tier, note = 3, "Roth — contributions withdraw free; earnings penalized before 59½"
-        else:                                   # traditional_ira / workplace_plan / hsa — all pre-tax
+        else:
+            # Tax-advantaged (Roth, Traditional IRA, 401(k)/workplace, HSA): LOCKED.
+            # Conservative cost — the WHOLE withdrawal penalized + ordinary-taxed IF taken
+            # before 59½. The tool can see neither the user's age nor Roth contribution
+            # basis, so it assumes neither is favorable and never shows $0. (Roth and
+            # pre-tax therefore carry the same value × ~35% here; the caveat on the page
+            # states the assumptions.)
             cost = value * (EARLY_WITHDRAWAL_PENALTY + ord_rate)
-            tier, note = 3, "Pre-tax — 10% penalty + ordinary income on the whole withdrawal"
+            tier = 3
+            if tt == "roth_ira":
+                note = ("Roth — full value penalized + ordinary-taxed if withdrawn before 59½; "
+                        "contributions come out cheaper, but this tool can't see your basis")
+            else:
+                note = "Pre-tax — 10% penalty + ordinary income on the whole withdrawal if before 59½"
 
         rows.append({
             "symbol": r["symbol"],
