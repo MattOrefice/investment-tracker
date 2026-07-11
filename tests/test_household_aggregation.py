@@ -259,8 +259,13 @@ def test_household_summary_keys_and_values():
     pos, acct, *_ = _load_fixtures()
     summary = household_summary(pos, acct, as_of_date="2026-07-08")
     assert set(summary.keys()) == {"total_aum", "account_count", "as_of_date", "self_aum", "external_aum"}
-    assert abs(summary["total_aum"] - PORTFOLIO_TOTAL) <= 1.0
-    assert abs(summary["self_aum"] - SELF_TOTAL) <= 1.0
+    # Invariants, not pinned figures: total_aum is the source Current value sum;
+    # self_aum is the sum for self-directed (managed_by='self') accounts.
+    source_total = pos["current_value"].sum()
+    self_pseudos = set(acct.loc[acct["managed_by"] == "self", "pseudonym"].dropna())
+    source_self  = pos.loc[pos["pseudonym"].isin(self_pseudos), "current_value"].sum()
+    assert abs(summary["total_aum"] - source_total) <= 1.0
+    assert abs(summary["self_aum"] - source_self) <= 1.0
     assert abs(summary["self_aum"] + summary["external_aum"] - summary["total_aum"]) <= 1.0
     assert summary["account_count"] == 7
     assert summary["as_of_date"] == "2026-07-08"
