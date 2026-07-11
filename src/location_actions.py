@@ -241,9 +241,9 @@ ACTION_GROUPS: list[dict] = [
     {
         "key": "relocate_gain_side", "title": "Relocate the gain side",
         "score": 5, "status": "evaluate",
-        "action": "Optional — move GBOSX, FIWDX, JEPQ, and USRT to the Traditional "
-                  "IRA; realizes {embedded_gain} of gains but fits the 0% bracket. "
-                  "Wait-and-see.",
+        "action": "Optional — move {value} of holdings (GBOSX, FIWDX, JEPQ, USRT) "
+                  "to the Traditional IRA; realizes only {embedded_gain} in gains, "
+                  "fits the 0% bracket. Wait-and-see.",
         "symbols": ["GBOSX", "FIWDX", "JEPQ", "USRT"],
         "case_filter": ["A", "B"], "accounts": ["Individual Taxable (TOD)"],
         "pros": _GAIN_SIDE_PROS, "cons": _GAIN_SIDE_CONS,

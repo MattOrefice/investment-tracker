@@ -818,3 +818,56 @@ def test_page14_renders_status_bucket_headers_live(monkeypatch):
     assert headers == ["Act now", "Evaluate", "Blocked", "Accepted"], (
         f"status bucket headers missing or out of order: {headers}"
     )
+
+
+# ── Final polish: totals, labelled figures, case-C footnote, act-now summary ────
+
+def test_gain_side_action_labels_both_value_and_gain():
+    """Group 4's action must template BOTH the position value {value} and the embedded
+    gain {embedded_gain} — the two dollar figures ($11,161 vs $846) are never shown
+    unlabeled. Guards against the value-vs-benefit ambiguity this polish fixed."""
+    g4 = next(g for g in ACTION_GROUPS if g["key"] == "relocate_gain_side")
+    assert "{value}" in g4["action"] and "{embedded_gain}" in g4["action"], (
+        f"group 4 action must template value AND gain distinctly: {g4['action']!r}"
+    )
+    assert "in gains" in g4["action"], "the gain figure must be labelled 'in gains'"
+
+
+def test_page14_value_tables_total_and_summaries_live(monkeypatch):
+    """Final-polish render checks: every Value ($) expander table ends in a 'Total'
+    row equal to the sum of its rows; the Act-now actionable-dollars summary and the
+    case-C footnote render; and group 4's action shows both value and gain."""
+    from src.household_data import find_latest_positions_csv
+    csv = find_latest_positions_csv()
+    if csv is None or not TRACKER_DB.exists() or TRACKER_DB.stat().st_size == 0:
+        pytest.skip("personal-mode inputs absent")
+    import src.config
+    import src.db
+    monkeypatch.setattr(src.config, "IS_DEMO", False)
+    monkeypatch.setattr(src.db, "DB_PATH", TRACKER_DB)
+    from streamlit.testing.v1 import AppTest
+    at = AppTest.from_file(str(ROOT / "pages" / "14_Asset_Location.py"), default_timeout=90).run()
+    assert not at.exception, f"page raised: {at.exception}"
+
+    # 1. every Value ($) table totals its Value column in a trailing 'Total' row
+    value_tables = [d.value for d in at.dataframe if "Value ($)" in list(d.value.columns)]
+    assert value_tables, "no Value ($) tables rendered"
+    for t in value_tables:
+        assert str(t.iloc[-1]["Holding"]) == "Total", f"no Total row: {list(t['Holding'])}"
+        body = t.iloc[:-1]
+        assert abs(float(body["Value ($)"].sum()) - float(t.iloc[-1]["Value ($)"])) < 0.5, (
+            "Total row Value must equal the sum of the rows above it"
+        )
+
+    md = " ||| ".join(m.value for m in at.markdown)
+    caps = " ||| ".join(c.value for c in at.caption)
+    # 2. Act-now actionable-dollars summary (three computed figures)
+    assert "Deploy" in md and "in-shelter (free)" in md and "harvest the loss side" in md, (
+        "Act-now actionable-dollars summary line is missing"
+    )
+    # 3. case-C footnote (subtle st.caption, present)
+    assert "repositioning value, not tax drag" in caps, "case-C footnote missing"
+    # 4. group 4's action labels both value and gain
+    assert "of holdings (GBOSX, FIWDX, JEPQ, USRT)" in md and "in gains" in md, (
+        "group 4 action must show both the position value and the gain, labelled"
+    )
