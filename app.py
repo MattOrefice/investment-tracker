@@ -12,7 +12,11 @@ from src.config import IS_DEMO
 from src.db import initialize_db
 from src.ui_helpers import render_footer, render_sidebar_footer
 
-initialize_db()
+if IS_DEMO:
+    initialize_db()          # demo.db is committed/prebuilt — just ensure base schema
+else:
+    from src.bootstrap import bootstrap_personal_db
+    bootstrap_personal_db()  # fresh personal DB: base schema + all migrations + all seeds
 
 
 def _inject_global_styles():
