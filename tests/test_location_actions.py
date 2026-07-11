@@ -16,6 +16,8 @@ from src.location_actions import (
     ACTION_GROUPS,
     INFORMATIONAL_KEYS,
     build_roth_deploy_answer,
+    household_deploy_gaps,
+    _gap_proportional_split,
     deploy_targets_split,
     resolve_placeholders,
     resolve_caption,
@@ -60,6 +62,19 @@ def _live():
     reg = build_location_register(pos, acct, sec, TAX_PROFILE,
                                   SLEEVE_PRIORITY_BY_ACCOUNT_TYPE, ACCOUNT_SHELTER_PRIORITY)
     return pos, acct, sec, reg
+
+
+def _live_saa():
+    """The two SAA tables the gap-proportional deploy needs (compositions +
+    per-sleeve targets), loaded exactly as the page does. Call alongside _live()
+    only in tests that inspect the deploy TABLE (not those needing idle_cash only)."""
+    conn = sqlite3.connect(str(TRACKER_DB))
+    comps = pd.read_sql_query("SELECT * FROM fund_compositions", conn)
+    targets = pd.read_sql_query(
+        "SELECT asset_class_id, name, target_weight FROM asset_classes "
+        "WHERE parent_id IS NOT NULL AND target_weight > 0", conn)
+    conn.close()
+    return comps, targets
 
 
 # ── Scores are authored config, never computed ─────────────────────────────────
@@ -173,29 +188,108 @@ def test_resolved_zero_is_not_confused_with_unresolvable():
 # ── Roth deploy answer excludes ineligible sleeves (synthetic + live) ──────────
 
 def _deploy_fixture():
+    """A self-contained household for gap-proportional deploy tests.
+
+    $1,000 idle Roth cash; household $7,500. Targets make four eligible equity
+    sleeves underweight (US Small Cap, US Large Quality, US Large Value, EM) and one
+    OVERWEIGHT (US Large Core, held at $6,000 vs a $1,500 target) so the deploy must
+    EXCLUDE the overweight sleeve. Cash ($1,000) < Σgap ($4,750) so no sleeve caps
+    and there is no residual. Gap-desc order: AVUV 2250, SPHQ 1500, VTV 750, IEMG 250.
+    """
     securities = pd.DataFrame([
-        {"ticker": "AVUV", "sleeve_category": "us_small_value",   "is_in_saa": 1},
-        {"ticker": "IEMG", "sleeve_category": "emerging_markets", "is_in_saa": 1},
-        {"ticker": "SPAXX", "sleeve_category": "cash",            "is_in_saa": 1},
+        {"ticker": "AVUV",  "sleeve_category": "us_small_value",   "is_in_saa": 1, "asset_class_id": 10},
+        {"ticker": "IEMG",  "sleeve_category": "emerging_markets", "is_in_saa": 1, "asset_class_id": 20},
+        {"ticker": "SPHQ",  "sleeve_category": "us_large_quality", "is_in_saa": 1, "asset_class_id": 30},
+        {"ticker": "VTV",   "sleeve_category": "us_large_value",   "is_in_saa": 1, "asset_class_id": 40},
+        {"ticker": "VOO",   "sleeve_category": "us_large_core",    "is_in_saa": 1, "asset_class_id": 50},
+        {"ticker": "SPAXX", "sleeve_category": "cash",             "is_in_saa": 1, "asset_class_id": 99},
     ])
-    accounts = pd.DataFrame([{"pseudonym": "r", "tax_treatment": "roth_ira", "display_name": "Roth"}])
-    positions = pd.DataFrame([{
-        "pseudonym": "r", "symbol": "SPAXX", "current_value": 1000.0,
-        "total_gain_loss": float("nan"), "cost_basis_total": float("nan"),
-    }])
-    return positions, accounts, securities
+    saa_targets = pd.DataFrame([
+        {"asset_class_id": 10, "name": "US Small Cap",     "target_weight": 0.30},
+        {"asset_class_id": 20, "name": "Emerging Markets", "target_weight": 0.10},
+        {"asset_class_id": 30, "name": "US Large Quality", "target_weight": 0.20},
+        {"asset_class_id": 40, "name": "US Large Value",   "target_weight": 0.10},
+        {"asset_class_id": 50, "name": "US Large Core",    "target_weight": 0.20},
+    ])
+    compositions = pd.DataFrame(columns=["fund_symbol", "underlying_sleeve", "weight"])
+    accounts = pd.DataFrame([
+        {"pseudonym": "r", "tax_treatment": "roth_ira", "display_name": "Roth",    "managed_by": "self"},
+        {"pseudonym": "t", "tax_treatment": "taxable",  "display_name": "Taxable", "managed_by": "self"},
+    ])
+    def _p(pseudo, sym, val):
+        return {"pseudonym": pseudo, "symbol": sym, "current_value": val,
+                "total_gain_loss": float("nan"), "cost_basis_total": float("nan")}
+    positions = pd.DataFrame([
+        _p("r", "SPAXX", 1000.0),   # idle Roth cash
+        _p("t", "VOO",   6000.0),   # us_large_core — overweight ($6k vs $1.5k target)
+        _p("t", "IEMG",   500.0),   # emerging_markets — partial ($0.5k vs $0.75k target)
+    ])
+    return positions, accounts, securities, compositions, saa_targets
 
 
-def test_deploy_answer_uses_only_roth_map_sleeves():
-    # Eligibility is structural now: no priority is injected and there is no
-    # exclusion list. The answer can only contain roth-map sleeves with a ticker.
-    pos, acct, sec = _deploy_fixture()
-    ans = build_roth_deploy_answer(pos, acct, sec, n_sleeves=2)
+def test_deploy_answer_sizes_buys_to_household_gaps():
+    # Eligibility is structural (roth-map sleeve with an is_in_saa ticker) and sizing
+    # is gap-proportional: each buy = idle_cash × sleeve_gap / Σgap, capped at its gap.
+    pos, acct, sec, comp, tgt = _deploy_fixture()
+    ans = build_roth_deploy_answer(pos, acct, sec, comp, tgt)
     roth_map = SLEEVE_PRIORITY_BY_ACCOUNT_TYPE["roth_ira"]
     assert set(ans["table"]["sleeve"]).issubset(set(roth_map)), "a non-roth-map sleeve appeared"
-    assert list(ans["table"]["ticker"]) == ["AVUV", "IEMG"]
     assert ans["idle_cash"] == 1000.0
-    assert ans["table"]["dollar"].tolist() == [500.0, 500.0], "must split 50/50"
+    # Four underweight sleeves, gap-desc; the OVERWEIGHT us_large_core (VOO) is excluded.
+    assert list(ans["table"]["ticker"]) == ["AVUV", "SPHQ", "VTV", "IEMG"]
+    assert "VOO" not in set(ans["table"]["ticker"]), "an overweight sleeve must not be a buy target"
+    # Each buy equals its gap-proportional share (cash < Σgap → no cap, no residual).
+    gaps = household_deploy_gaps(pos, acct, sec, comp, tgt)
+    total_gap = float(gaps["gap"].sum())
+    for _, g in gaps.iterrows():
+        got = float(ans["table"].set_index("ticker").loc[g["ticker"], "dollar"])
+        assert got == pytest.approx(1000.0 * g["gap"] / total_gap, abs=0.02), g["ticker"]
+    assert ans["table"]["dollar"].sum() == pytest.approx(1000.0, abs=0.05), "buys must sum to idle cash"
+    assert ans["residual"] < 1.0, "cash < Σgap → at most sub-dollar rounding, nothing reported"
+
+
+def test_gap_proportional_split_caps_and_reports_residual():
+    """The pure sizer: proportional when cash ≤ Σgap; when cash > Σgap every gap fills
+    to its cap and the remainder is residual (never forced into a sleeve); a sleeve
+    with no positive gap gets nothing."""
+    # cash ≤ Σgap: proportional, no residual.
+    allocs, residual = _gap_proportional_split(20.0, [30.0, 10.0])
+    assert allocs == [15.0, 5.0] and residual == 0.0
+    # cash > Σgap: fill both gaps, report the leftover.
+    allocs, residual = _gap_proportional_split(100.0, [30.0, 10.0])
+    assert allocs == [30.0, 10.0] and residual == 60.0
+    # a non-positive gap receives nothing.
+    allocs, residual = _gap_proportional_split(50.0, [40.0, 0.0, -5.0])
+    assert allocs == [40.0, 0.0, 0.0] and residual == 10.0
+    # nothing underweight → all cash is residual.
+    assert _gap_proportional_split(50.0, [0.0, -1.0]) == ([0.0, 0.0], 50.0)
+
+
+def test_deploy_answer_reports_residual_when_gaps_smaller_than_cash():
+    """When the idle cash exceeds the sum of household gaps, every gap fills exactly
+    and the leftover is reported as residual — not padded into a sleeve past target."""
+    pos, acct, sec, comp, tgt = _deploy_fixture()
+    tgt = tgt.copy()
+    tgt["target_weight"] = tgt["target_weight"] / 100.0    # gaps now ~$47.50 total ≪ $1,000 cash
+    ans = build_roth_deploy_answer(pos, acct, sec, comp, tgt)
+    gaps = household_deploy_gaps(pos, acct, sec, comp, tgt)
+    # every buy equals its (small) gap exactly …
+    for _, g in gaps.iterrows():
+        got = float(ans["table"].set_index("ticker").loc[g["ticker"], "dollar"])
+        assert got == pytest.approx(g["gap"], abs=0.01), g["ticker"]
+    # … and the rest of the idle cash is residual.
+    assert ans["residual"] == pytest.approx(1000.0 - float(gaps["gap"].sum()), abs=0.05)
+    assert ans["table"]["dollar"].sum() + ans["residual"] == pytest.approx(1000.0, abs=0.05)
+
+
+def test_deploy_answer_without_targets_returns_idle_cash_only():
+    """A caller that omits the SAA tables (needs only idle_cash) gets an empty table
+    and the whole idle cash as residual — no flat-split fallback."""
+    pos, acct, sec, _comp, _tgt = _deploy_fixture()
+    ans = build_roth_deploy_answer(pos, acct, sec)
+    assert ans["idle_cash"] == 1000.0
+    assert ans["table"].empty
+    assert ans["residual"] == 1000.0
 
 
 def test_ineligible_sleeves_absent_from_roth_map():
@@ -212,15 +306,18 @@ def test_ineligible_sleeves_absent_from_roth_map():
 def test_deploy_answer_live_excludes_all_banned_sleeves():
     from src.household import sleeve_display_name
     pos, acct, sec, _reg = _live()
-    ans = build_roth_deploy_answer(pos, acct, sec)
+    comp, tgt = _live_saa()
+    ans = build_roth_deploy_answer(pos, acct, sec, comp, tgt)
     sleeves = set(ans["table"]["sleeve"])
     for banned in ("cash", "hedged_equity", "intl_developed", "intl_all_exus",
                    "core_fi_treasury", "tips", "real_assets_reit"):
         assert banned not in sleeves
-    assert list(ans["table"]["ticker"]) == ["AVUV", "IEMG"]
-    # Ticker AND label from ONE key: AVUV -> us_small_value -> "US Small Value".
+    # The deploy table is exactly the household-underweight eligible sleeves, gap-desc.
+    gaps = household_deploy_gaps(pos, acct, sec, comp, tgt)
+    assert list(ans["table"]["ticker"]) == list(gaps["ticker"]), "table must be the underweight gap set"
+    assert set(ans["table"]["sleeve"]).issubset(set(SLEEVE_PRIORITY_BY_ACCOUNT_TYPE["roth_ira"]))
+    # Ticker AND label from ONE key: e.g. AVUV -> us_small_value -> "US Small Value".
     labels = [sleeve_display_name(s) for s in ans["table"]["sleeve"]]
-    assert labels[0] == "US Small Value", labels
     assert "US Small Core" not in labels
 
 
@@ -334,7 +431,7 @@ def test_no_rendered_prose_contains_comma_emdash():
 # Exact rendered lengths against the live Jul-08 CSV — a brittle-on-purpose canary
 # for silent prose corruption (dropped words render as valid Markdown).
 RENDERED_PROSE_LEN = {
-    "deploy_roth_cash":          (382, 336),
+    "deploy_roth_cash":          (514, 577),   # gap-proportional prose + EM/FTC clause
     "clear_roth_non_equity":     (477, 335),
     "relocate_loss_side":        (410, 859),   # cons: + rebuy rec (BND/AGG/FXNAX) + duration-risk note
     "relocate_gain_side":        (311, 404),   # rewritten: 22%/15% capacity-defer, no 0% headroom
@@ -688,7 +785,8 @@ def test_thematic_absent_from_roth_and_hsa_priority_maps():
 
 def test_thematic_never_in_a_roth_deploy_answer():
     _pos, _acct, _sec, _reg = _live()
-    ans = build_roth_deploy_answer(_pos, _acct, _sec)
+    _comp, _tgt = _live_saa()
+    ans = build_roth_deploy_answer(_pos, _acct, _sec, _comp, _tgt)
     assert "thematic" not in set(ans["sleeves"]), "thematic leaked into the Roth deploy sleeves"
     assert "thematic" not in set(ans["table"]["sleeve"]), "thematic leaked into the Roth deploy table"
 
@@ -782,15 +880,20 @@ def test_gap_caption_shown_value_equals_register_rows_value_live():
 
 def test_deploy_targets_split_sources_tickers_and_amount_from_answer():
     """deploy_targets_split reads the computed deploy table (never hardcodes tickers):
-    targets are the table's tickers joined, split is the per-sleeve dollar amount; an
-    empty answer degrades to None so the page can fall back rather than raise."""
+    targets are the table's tickers grammatically joined, and deploy_largest is the
+    ticker taking the biggest buy (deepest underweight); an empty answer degrades to
+    None so the page can fall back rather than raise."""
     pos, acct, sec, _reg = _live()
-    dep = build_roth_deploy_answer(pos, acct, sec)
+    comp, tgt = _live_saa()
+    dep = build_roth_deploy_answer(pos, acct, sec, comp, tgt)
     dts = deploy_targets_split(dep)
-    assert dts["deploy_targets"] == " and ".join(dep["table"]["ticker"].tolist())
-    assert dts["deploy_split"] == _fmt_dollars(float(dep["table"]["dollar"].iloc[0]))
+    tickers = dep["table"]["ticker"].tolist()
+    for t in tickers:
+        assert t in dts["deploy_targets"], f"{t} missing from joined targets"
+    # deploy_largest is the ticker with the largest dollar buy.
+    assert dts["deploy_largest"] == dep["table"].loc[dep["table"]["dollar"].idxmax(), "ticker"]
     empty = {"table": pd.DataFrame(columns=["ticker", "sleeve", "dollar"])}
-    assert deploy_targets_split(empty) == {"deploy_targets": None, "deploy_split": None}
+    assert deploy_targets_split(empty) == {"deploy_targets": None, "deploy_largest": None}
 
 
 def test_every_group_action_line_renders_live():
@@ -798,7 +901,8 @@ def test_every_group_action_line_renders_live():
     reaches the page. The deploy line's injected {deploy_targets}/{deploy_split} are
     added exactly as the page does it."""
     pos, acct, sec, reg = _live()
-    dep = build_roth_deploy_answer(pos, acct, sec)
+    comp, tgt = _live_saa()
+    dep = build_roth_deploy_answer(pos, acct, sec, comp, tgt)
     for g in ACTION_GROUPS:
         r = resolve_placeholders(g, pos, acct, sec, reg, roth_idle_cash=dep["idle_cash"])
         if g["key"] == "deploy_roth_cash":
@@ -826,7 +930,9 @@ def test_page14_action_lines_and_prominent_captions_live(monkeypatch):
     assert not at.exception, f"page raised: {at.exception}"
     md = " ||| ".join(m.value for m in at.markdown)
     caps = " ||| ".join(c.value for c in at.caption)
-    for snippet in ("Buy AVUV and IEMG", "not into a Traditional IRA",
+    # The deploy action line is gap-proportional now — assert its stable phrasing
+    # (the tickers/order are data-driven), plus the other cards' fixed action lines.
+    for snippet in ("sized to its household underweight gap", "not into a Traditional IRA",
                     "already builds these positions", "belong in a shelter"):
         assert snippet in md, f"action line missing from render: {snippet!r}"
     assert "This group covers" in md, "gap caption must render as prominent markdown"
