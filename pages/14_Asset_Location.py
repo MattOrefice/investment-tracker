@@ -42,6 +42,20 @@ from src.location_config import (
     ORDINARY_INCOME_2026,
     LTCG_0_BRACKET_CEILING_SINGLE_2026,
     is_directable,
+    # IRS 2026 limits — for the ideal-location reference table (2c). Named constants
+    # so no dollar literal is scattered in the page.
+    IRA_CONTRIB_LIMIT_2026,
+    IRA_CATCHUP_50_2026,
+    WORKPLACE_ELECTIVE_DEFERRAL_2026,
+    WORKPLACE_CATCHUP_50_2026,
+    WORKPLACE_CATCHUP_60_63_2026,
+    WORKPLACE_415C_TOTAL_2026,
+    ROTH_MAGI_PHASEOUT_SINGLE_2026,
+    ROTH_MAGI_PHASEOUT_MFJ_2026,
+    TRAD_IRA_DEDUCTION_PHASEOUT_SINGLE_2026,
+    HSA_CONTRIB_LIMIT_SELF_2026,
+    HSA_CONTRIB_LIMIT_FAMILY_2026,
+    HSA_CATCHUP_55_2026,
 )
 from src.location_actions import (
     ACTION_GROUPS,
@@ -187,6 +201,15 @@ with col:
             "relocation is synthesized as two independent trades whose net effect "
             "leaves household exposure unchanged. A sale in a taxable account "
             "realizes the embedded gain and is *costly*.\n\n"
+            "**How the shelters are taxed.** Inside a Roth, IRA, or 401(k) nothing "
+            "is taxed as it happens — income and gains compound untaxed, with no "
+            "basis tracking and no wash-sale rule — which is *why* the in-shelter "
+            "moves above are free: the account is taxed on what you withdraw, not "
+            "on gains, so there is no gain to realize. The only taxable event is "
+            "money leaving: a Traditional-IRA withdrawal is ordinary income no "
+            "matter which lots were sold, while qualified Roth withdrawals are "
+            "tax-free. Only taxable-account holdings carry an embedded-gain cost — "
+            "which is why they alone show one here and on the Liquidity page.\n\n"
             "**Scores are judgement, not output.** The 1–10 scores are the "
             "owner's authored priority, deliberately not derived from a formula. "
             "Sleeve deploy targets are an ordinal ranking, never a return forecast.\n\n"
@@ -389,4 +412,67 @@ with col:
             "ordinal ranking**, not a return forecast. **Dollar figures in every card "
             "are templated from the live positions CSV**; an unresolvable figure "
             "raises rather than rendering \\$0."
+        )
+
+# ── Ideal account location — 2026 reference ─────────────────────────────────────
+# A static reference: the TARGET location for each account type, with IRS-2026
+# limits. Every dollar figure templates from the named constants in
+# location_config.py (no scattered literals); ages/years are inherent content.
+_, col, _ = st.columns([1, 8, 1])
+with col:
+    with st.expander("Where each account type ideally sits — 2026", expanded=False):
+        def _d(x):   return escape_md(_fmt_dollars(x))     # full dollars: "\$7,500"
+        def _k(x):   return "\\$" + f"{x / 1000:,.0f}k"    # abbreviated:  "\$153k"
+        def _rng(t): return f"{_k(t[0])}–{_k(t[1])}"       # phase-out range: "\$153k–\$168k"
+
+        _ira_contrib = f"{_d(IRA_CONTRIB_LIMIT_2026)} combined¹ (+{_d(IRA_CATCHUP_50_2026)} if 50+)"
+        _rows = [
+            ("Roth IRA",
+             "Highest-return equity — broad-market, growth-tilted",
+             _ira_contrib,
+             f"Phases out MAGI {_rng(ROTH_MAGI_PHASEOUT_SINGLE_2026)} single, "
+             f"{_rng(ROTH_MAGI_PHASEOUT_MFJ_2026)} joint",
+             "Growth & withdrawals never taxed — worth most on what compounds hardest; "
+             "contributions withdrawable anytime; no RMDs."),
+            ("Traditional IRA",
+             "Income-heavy / lower-return — bonds, REITs, hedged equity",
+             _ira_contrib,
+             f"Anyone can contribute; deduction phases out "
+             f"{_rng(TRAD_IRA_DEDUCTION_PHASEOUT_SINGLE_2026)} single if covered by a workplace plan",
+             "Withdrawn as ordinary income, so ordinary-income holdings cost nothing extra; "
+             "RMDs from 73 (75 if born 1960+)."),
+            ("401(k) / 403(b)",
+             "Same as Traditional; capture the full employer match first",
+             f"{_d(WORKPLACE_ELECTIVE_DEFERRAL_2026)} employee (+{_d(WORKPLACE_CATCHUP_50_2026)} if 50+, "
+             f"+{_d(WORKPLACE_CATCHUP_60_63_2026)} if 60–63); {_k(WORKPLACE_415C_TOTAL_2026)} incl. employer",
+             "No income limit",
+             "Employer match is a guaranteed return no market beats; Roth 401(k) sub-account "
+             "has no income limit."),
+            ("Taxable brokerage",
+             "Tax-efficient broad equity, munis, anything needed before 59½",
+             "No limit",
+             "No limit",
+             "Low turnover + qualified dividends keep drag low; only account with no "
+             "early-withdrawal penalty; harvest losses; step-up at death."),
+            ("HSA (needs HDHP)",
+             "Long-horizon growth equity, if medical bills paid out of pocket",
+             f"{_d(HSA_CONTRIB_LIMIT_SELF_2026)} self / {_d(HSA_CONTRIB_LIMIT_FAMILY_2026)} family "
+             f"(+{_d(HSA_CATCHUP_55_2026)} if 55+)",
+             "No income limit; requires an HSA-eligible HDHP",
+             "Triple tax-free; after 65 works like a Traditional IRA for non-medical spending."),
+        ]
+        _hdr = ("| Account | Ideal holdings | 2026 contribution limit | "
+                "2026 income / eligibility limit | Why here / key note |\n"
+                "|---|---|---|---|---|\n")
+        _body = "\n".join("| " + " | ".join(r) + " |" for r in _rows)
+        st.markdown(_hdr + _body)
+        st.markdown(
+            f"¹ {_d(IRA_CONTRIB_LIMIT_2026)} is the *combined* ceiling across both IRAs, not each.\n\n"
+            "This is the **target** location for each account type. The decision cards above "
+            "show where this household deliberately deviates — capacity blocks, the frozen TOD "
+            "book — and why; read a table-vs-card difference as intentional, not inconsistent.\n\n"
+            "**International exception.** International and emerging-markets equity is an "
+            "exception to “growth → Roth”: held in taxable it preserves the foreign "
+            "tax credit an IRA forfeits, so those sleeves carry a taxable-location argument of "
+            "their own (mirroring the Evaluate card)."
         )

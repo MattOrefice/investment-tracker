@@ -94,6 +94,29 @@ ORDINARY_INCOME_2026: float = 89_000.0
 LTCG_0_BRACKET_CEILING_SINGLE_2026: float = 48_350.0
 LTCG_HEADROOM_2026: float = max(0.0, LTCG_0_BRACKET_CEILING_SINGLE_2026 - ORDINARY_INCOME_2026)
 
+# ── IRS 2026 figures — verify annually (tax year 2026) ──────────────────────────
+# STATIC tax-law limits — contribution ceilings and income/eligibility phase-outs.
+# These are NOT portfolio figures: they are named constants (never scattered dollar
+# literals) so the Asset Location page's ideal-location reference table templates
+# every amount from here. Re-verify against the IRS annual inflation-adjustment
+# release each year and bump the _2026 suffix when the tax year rolls. Phase-outs
+# are (start, end) ranges — the deduction/eligibility fades linearly across them.
+IRA_CONTRIB_LIMIT_2026: float = 7_500.0            # combined Traditional + Roth (per person, not per account)
+IRA_CATCHUP_50_2026: float = 1_100.0               # additional, age 50+
+WORKPLACE_ELECTIVE_DEFERRAL_2026: float = 24_500.0  # 401(k)/403(b) employee elective deferral
+WORKPLACE_CATCHUP_50_2026: float = 8_000.0         # additional, age 50+
+WORKPLACE_CATCHUP_60_63_2026: float = 11_250.0     # additional, age 60-63 (SECURE 2.0 higher catch-up)
+WORKPLACE_415C_TOTAL_2026: float = 72_000.0        # total employee + employer (IRC 415(c))
+ROTH_MAGI_PHASEOUT_SINGLE_2026: tuple[float, float] = (153_000.0, 168_000.0)   # single / head of household
+ROTH_MAGI_PHASEOUT_MFJ_2026: tuple[float, float] = (242_000.0, 252_000.0)      # married filing jointly
+# Traditional IRA deduction phase-out applies only when the contributor is covered
+# by a workplace plan; there is no income limit to CONTRIBUTE (only to deduct).
+TRAD_IRA_DEDUCTION_PHASEOUT_SINGLE_2026: tuple[float, float] = (81_000.0, 91_000.0)   # single, covered by a plan
+TRAD_IRA_DEDUCTION_PHASEOUT_MFJ_2026: tuple[float, float] = (129_000.0, 149_000.0)    # MFJ, contributor covered
+HSA_CONTRIB_LIMIT_SELF_2026: float = 4_400.0       # self-only HDHP coverage
+HSA_CONTRIB_LIMIT_FAMILY_2026: float = 8_750.0     # family HDHP coverage
+HSA_CATCHUP_55_2026: float = 1_000.0               # additional, age 55+
+
 # Equity sleeves, ENUMERATED EXPLICITLY — never inferred from a substring match on
 # the sleeve name. Used to size an account's absorbable-equity capacity. Excludes
 # fixed income, real assets, cash, multi-asset/target-date blends, liquid alts,
