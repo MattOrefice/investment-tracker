@@ -83,6 +83,15 @@ with get_connection() as conn:
         conn,
     )
     securities_df = pd.read_sql_query("SELECT * FROM securities", conn)
+    # For gap-proportional Roth deploy sizing — the SAME household aggregation the
+    # Household View uses (compute_household_allocation), so the deploy closes real
+    # household sleeve gaps rather than splitting by a round number.
+    compositions_df = pd.read_sql_query("SELECT * FROM fund_compositions", conn)
+    saa_targets_df  = pd.read_sql_query(
+        "SELECT asset_class_id, name, target_weight FROM asset_classes "
+        "WHERE parent_id IS NOT NULL AND target_weight > 0",
+        conn,
+    )
 
 # ── Derived frames ──────────────────────────────────────────────────────────────
 register = build_location_register(
@@ -92,8 +101,11 @@ register = build_location_register(
 # Coverage invariant: every register row must be claimed by some action group.
 # Raise loudly at render if a new mislocation slips in with no group to narrate it.
 assert_full_coverage(register)
-deploy = build_roth_deploy_answer(positions_df, accounts_df, securities_df)
+deploy = build_roth_deploy_answer(
+    positions_df, accounts_df, securities_df, compositions_df, saa_targets_df)
 _roth_idle_cash = deploy["idle_cash"]
+_deploy_residual = float(deploy.get("residual", 0.0))
+_deploy_buys = float(deploy["table"]["dollar"].sum()) if not deploy["table"].empty else 0.0
 
 # ── KPIs (three distinct units; the last two must never be summed) ─────────────
 _kpi_idle_roth = _roth_idle_cash
@@ -257,7 +269,7 @@ for group in _ordered_groups:
             if _dts["deploy_targets"]:
                 st.markdown(f"**{render_prose_md(group['action'], {**resolved, **_dts})}**")
             else:
-                st.markdown("**Deploy the idle Roth cash across your top Roth sleeves.**")
+                st.markdown("**Deploy the idle Roth cash across your underweight Roth sleeves.**")
         else:
             st.markdown(f"**{render_prose_md(group['action'], resolved)}**")
         st.caption(escape_md(f"**{_STATUS_LABEL[group['status']]}** — {_summary_line(group, resolved, reg_rows)}"))
@@ -268,7 +280,10 @@ for group in _ordered_groups:
         if group["key"] == "deploy_roth_cash":
             tbl = deploy["table"].copy()
             tbl["sleeve"] = tbl["sleeve"].map(sleeve_display_name)
-            total = pd.DataFrame([{"ticker": "Total", "sleeve": "", "dollar": deploy["idle_cash"]}])
+            # Total row = Σ buys (= idle cash minus any residual), so the table
+            # reconciles against its own rows. A residual (cash left after every gap
+            # is filled) is reported separately below — never forced into a sleeve.
+            total = pd.DataFrame([{"ticker": "Total", "sleeve": "", "dollar": _deploy_buys}])
             disp = pd.concat([tbl, total], ignore_index=True).rename(
                 columns={"ticker": "Ticker", "sleeve": "Sleeve", "dollar": "Amount ($)"}
             )
@@ -276,11 +291,21 @@ for group in _ordered_groups:
                 disp, use_container_width=True, hide_index=True,
                 column_config={"Amount ($)": st.column_config.NumberColumn(format="$%.0f")},
             )
-            st.caption(
-                "One is_in_saa ticker per sleeve; split 50/50 across the top two "
-                "eligible sleeves. The 50/50 split is a policy choice, not a "
-                "computed optimum. No ticker beyond these is auto-selected."
+            _sizing_note = (
+                "One is_in_saa ticker per sleeve; the idle cash is sized to close each "
+                "sleeve's household gap to target, filling the underweight equity "
+                "sleeves in proportion to their dollar gaps (largest underweight gets "
+                "the most), capped so none overshoots. The number of tickers follows "
+                "from how many sleeves are underweight — no fixed count, no round-number "
+                "split."
             )
+            if _deploy_residual >= 1.0:
+                _sizing_note += (
+                    f" Every gap is already fully funded, so about "
+                    f"{escape_md(_fmt_dollars(_deploy_residual))} of the idle cash stays "
+                    "undeployed rather than being forced into a sleeve past its target."
+                )
+            st.caption(_sizing_note)
         elif group["key"] not in INFORMATIONAL_KEYS:
             _cap = resolve_caption(group, positions_df, accounts_df, register)
             if _cap:

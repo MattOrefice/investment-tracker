@@ -35,16 +35,20 @@ _DEPLOY_ROTH_CASH_PROS = (
     "Zero tax, zero friction, one session. {value} is this year's contribution "
     "sitting in a money market inside your most valuable account. Every day it "
     "sits is compounding you don't get back, in the one wrapper where growth is "
-    "never taxed. Both target sleeves are household-underweight against your own "
-    "revealed targets, so the trade closes an allocation gap and a location gap "
-    "at once."
+    "never taxed. Every target sleeve is household-underweight against your own "
+    "revealed targets, and the buys are sized to each sleeve's dollar gap, so the "
+    "trade closes an allocation gap and a location gap at once — the largest share "
+    "goes to the deepest underweight, not split by a round number."
 )
 _DEPLOY_ROTH_CASH_CONS = (
-    "Concentrates the Roth into two high-variance factor bets. Small-cap value "
-    "underperformed broad equity for most of the 2010s; emerging markets have had "
-    "worse decades. You will open this account in some future year and see it "
-    "trailing the S&P 500, and that will be the design working, not failing. If "
-    "you can't hold that, hold less of it."
+    "Tilts the Roth toward the factor sleeves you are most underweight — small-cap "
+    "value and emerging markets among them. Small-cap value underperformed broad "
+    "equity for most of the 2010s; emerging markets have had worse decades. You "
+    "will open this account in some future year and see it trailing the S&P 500, "
+    "and that will be the design working, not failing. The emerging-markets slice "
+    "(IEMG) also forfeits the foreign tax credit inside the Roth — a minor drag "
+    "accepted because this cash is Roth-trapped and never-taxed growth outweighs "
+    "it. If you can't hold that, hold less of it."
 )
 
 _CLEAR_ROTH_PROS = (
@@ -222,8 +226,8 @@ ACTION_GROUPS: list[dict] = [
     {
         "key": "deploy_roth_cash", "title": "Deploy idle Roth cash",
         "score": 10, "status": "act_now",
-        "action": "Buy {deploy_targets} with the {value} of idle Roth cash — "
-                  "about {deploy_split} each.",
+        "action": "Buy {deploy_targets} with the {value} of idle Roth cash, each "
+                  "sized to its household underweight gap — most to {deploy_largest}.",
         "symbols": None, "case_filter": None, "accounts": None,   # informational
         "pros": _DEPLOY_ROTH_CASH_PROS, "cons": _DEPLOY_ROTH_CASH_CONS,
     },
@@ -362,43 +366,150 @@ def _roth_idle_cash(sba: pd.DataFrame, accounts_df: pd.DataFrame) -> tuple[str, 
     return str(row["pseudonym"]), float(row["current_value"])
 
 
+def household_deploy_gaps(
+    positions_df: pd.DataFrame,
+    accounts_df: pd.DataFrame,
+    securities_df: pd.DataFrame,
+    compositions_df: pd.DataFrame,
+    saa_targets_df: pd.DataFrame,
+) -> pd.DataFrame:
+    """Roth-deploy-eligible sleeves that are HOUSEHOLD-underweight, with each one's
+    dollar gap (target$ − current$), sourced from the single household aggregation
+    the Household View uses — compute_household_allocation(mode='look_through',
+    scope='total'). Weights are NOT recomputed here; this only reads that frame.
+
+    Eligibility is the same structural rule as the deploy: a sleeve in the roth_ira
+    priority map that also has an is_in_saa ticker to buy (so cash / fixed income /
+    real assets / hedged equity / developed international never qualify — developed
+    intl is absent from the map because a Roth forfeits the foreign tax credit).
+
+    A sleeve at or over its household target (gap ≤ 0) is dropped — new cash never
+    overshoots a target. Returns [sleeve, ticker, roth_rank, current, target, gap],
+    underweight only, ordered by gap descending (largest underweight first). Empty
+    if nothing eligible is underweight.
+    """
+    from src.location_config import SLEEVE_PRIORITY_BY_ACCOUNT_TYPE
+    roth_priority = SLEEVE_PRIORITY_BY_ACCOUNT_TYPE["roth_ira"]
+    ticker_by_sleeve = _saa_ticker_by_sleeve(securities_df)
+    total_hh = float(positions_df["current_value"].sum())
+
+    from src.household import compute_household_allocation
+    alloc = compute_household_allocation(
+        positions_df, accounts_df, securities_df, compositions_df, saa_targets_df,
+        mode="look_through", scope="total",
+    )
+    # sleeve_category → SAA output name: the SAME join compute_household_allocation
+    # builds internally (is_in_saa securities → asset_classes.name), so the deploy's
+    # sleeve_category keys line up with the allocation's SAA-named rows.
+    saa_secs = (
+        securities_df[securities_df["is_in_saa"] == 1][["sleeve_category", "asset_class_id"]]
+        .drop_duplicates("sleeve_category")
+    )
+    saa_join = saa_secs.merge(
+        saa_targets_df[["asset_class_id", "name", "target_weight"]], on="asset_class_id", how="left"
+    )
+    sleeve_to_saa_name = dict(zip(saa_join["sleeve_category"], saa_join["name"]))
+    alloc_by_name = alloc.set_index("sleeve")
+
+    cols = ["sleeve", "ticker", "roth_rank", "current", "target", "gap"]
+    rows: list[dict] = []
+    for sleeve, rank in sorted(roth_priority.items(), key=lambda kv: kv[1]):
+        if sleeve not in ticker_by_sleeve:
+            continue                                  # no is_in_saa ticker → not a deploy target
+        name = sleeve_to_saa_name.get(sleeve)
+        if name is None or name not in alloc_by_name.index:
+            continue                                  # sleeve not represented in the SAA allocation
+        r = alloc_by_name.loc[name]
+        current = float(r["dollar_value"])
+        target = float(r["target_weight"]) * total_hh
+        gap = target - current
+        if gap <= 0:
+            continue                                  # at/over household target → don't add
+        rows.append({
+            "sleeve": sleeve, "ticker": ticker_by_sleeve[sleeve], "roth_rank": rank,
+            "current": round(current, 2), "target": round(target, 2), "gap": round(gap, 2),
+        })
+    if not rows:
+        return pd.DataFrame(columns=cols)
+    return pd.DataFrame(rows, columns=cols).sort_values("gap", ascending=False).reset_index(drop=True)
+
+
+def _gap_proportional_split(cash: float, gaps: list[float]) -> tuple[list[float], float]:
+    """Allocate `cash` across sleeves in proportion to their dollar `gaps`, capping
+    each sleeve's buy at its own gap so none overshoots target. Returns (allocs,
+    residual).
+
+    Because the proportional share of sleeve i is cash·gapᵢ/Σgap, a share exceeds
+    its gap iff cash > Σgap — the SAME condition for every sleeve at once (the ratio
+    share/gap = cash/Σgap is uniform). So there is no partial-cap case: either cash
+    ≤ Σgap and a single proportional pass never overshoots, or cash > Σgap and every
+    gap fills to the brim with cash − Σgap left over. No iterative water-filling
+    needed. Non-positive gaps contribute nothing and receive nothing.
+    """
+    cash = float(cash)
+    pos = [g if g > 0 else 0.0 for g in gaps]
+    total = sum(pos)
+    if cash <= 0 or total <= 0:
+        return [0.0] * len(gaps), round(max(0.0, cash), 2)
+    if cash <= total:
+        allocs = [round(cash * g / total, 2) for g in pos]
+    else:
+        allocs = [round(g, 2) for g in pos]          # fill every gap; remainder is residual
+    residual = round(cash - sum(allocs), 2)
+    return allocs, max(0.0, residual)
+
+
 def build_roth_deploy_answer(
     positions_df: pd.DataFrame,
     accounts_df: pd.DataFrame,
     securities_df: pd.DataFrame,
-    n_sleeves: int = 2,
+    compositions_df: pd.DataFrame | None = None,
+    saa_targets_df: pd.DataFrame | None = None,
 ) -> dict:
-    """Answer 'where does the idle Roth cash go', using the roth_ira account-type
-    priority map. Ticker AND label resolve from ONE sleeve key (no alias): the
-    Roth's rank-1 sleeve is us_small_value → its is_in_saa ticker AVUV → the label
-    "US Small Value". Only sleeves in the roth map (and that have an SAA ticker to
-    buy) can appear, so cash / fixed income / real assets / hedged equity /
-    international never surface.
+    """Answer 'where does the idle Roth cash go' with GAP-PROPORTIONAL sizing: the
+    idle cash is spread across every Roth-eligible equity sleeve that is
+    household-underweight, in proportion to each sleeve's dollar gap, capped at its
+    gap so no sleeve overshoots target. Ticker AND label resolve from ONE sleeve key
+    (no alias): us_small_value → its is_in_saa ticker AVUV → the label "US Small
+    Value". Only roth-map sleeves with an SAA ticker qualify, so cash / fixed income /
+    real assets / hedged equity / developed international never surface.
 
-    Returns {idle_cash, sleeves, table} with table columns [ticker, sleeve, dollar].
+    The number of tickers now FOLLOWS from how many sleeves are underweight (not a
+    fixed count): the pool expands or contracts on real gaps. If the cash exceeds the
+    sum of gaps, every gap is filled and the remainder is reported as `residual`
+    rather than forced into a sleeve.
+
+    Gaps come from household_deploy_gaps (one household aggregation, not recomputed).
+    compositions_df / saa_targets_df are required to size the buys; when omitted (a
+    caller that only needs idle_cash) the table is empty and residual == idle_cash.
+
+    Returns {idle_cash, sleeves, table, residual} with table columns
+    [ticker, sleeve, dollar], ordered largest-gap first.
     """
-    from src.location_config import SLEEVE_PRIORITY_BY_ACCOUNT_TYPE
-    roth_priority = SLEEVE_PRIORITY_BY_ACCOUNT_TYPE["roth_ira"]
-
     sba = compute_sleeve_by_account(positions_df, accounts_df, securities_df)
     _, idle_cash = _roth_idle_cash(sba, accounts_df)
 
-    ticker_by_sleeve = _saa_ticker_by_sleeve(securities_df)
-    # Deploy candidates: roth-map sleeves that have an is_in_saa ticker to buy,
-    # ranked by the roth map. No aliasing — the same key yields ticker and label.
-    eligible = [
-        s for s, _ in sorted(roth_priority.items(), key=lambda kv: kv[1])
-        if s in ticker_by_sleeve
-    ]
-    top = eligible[:n_sleeves]
+    empty = pd.DataFrame(columns=["ticker", "sleeve", "dollar"])
+    if compositions_df is None or saa_targets_df is None:
+        return {"idle_cash": idle_cash, "sleeves": [], "table": empty, "residual": round(idle_cash, 2)}
 
-    per = idle_cash / len(top) if top else 0.0
-    rows = [
-        {"ticker": ticker_by_sleeve[sleeve], "sleeve": sleeve, "dollar": round(per, 2)}
-        for sleeve in top
-    ]
-    table = pd.DataFrame(rows, columns=["ticker", "sleeve", "dollar"])
-    return {"idle_cash": idle_cash, "sleeves": top, "table": table}
+    gaps_df = household_deploy_gaps(
+        positions_df, accounts_df, securities_df, compositions_df, saa_targets_df)
+    if gaps_df.empty or idle_cash <= 0:
+        return {"idle_cash": idle_cash, "sleeves": [], "table": empty, "residual": round(idle_cash, 2)}
+
+    allocs, residual = _gap_proportional_split(idle_cash, gaps_df["gap"].tolist())
+    table = pd.DataFrame({
+        "ticker": gaps_df["ticker"].tolist(),
+        "sleeve": gaps_df["sleeve"].tolist(),
+        "dollar": allocs,
+    }, columns=["ticker", "sleeve", "dollar"])
+    return {
+        "idle_cash": idle_cash,
+        "sleeves": gaps_df["sleeve"].tolist(),
+        "table": table,
+        "residual": residual,
+    }
 
 
 # ── Register filtering + placeholder resolution ────────────────────────────────
@@ -464,20 +575,30 @@ def _fmt_dollars(x: float) -> str:
     return f"-${abs(x):,.0f}" if x < 0 else f"${x:,.0f}"
 
 
+def _join_tickers(tickers: list[str]) -> str:
+    """Grammatical join: "AVUV", "AVUV and IEMG", "AVUV, SPHQ, and IEMG"."""
+    if len(tickers) == 1:
+        return tickers[0]
+    if len(tickers) == 2:
+        return " and ".join(tickers)
+    return ", ".join(tickers[:-1]) + ", and " + tickers[-1]
+
+
 def deploy_targets_split(deploy_answer: dict) -> dict[str, str | None]:
-    """The {deploy_targets}/{deploy_split} placeholders for the deploy_roth_cash
-    action line: the tickers the idle Roth cash buys ("AVUV and IEMG") and the
-    per-sleeve amount (the 50/50 split). Sourced from build_roth_deploy_answer's
-    computed table — never hardcoded — so the one-liner tracks the deploy table
-    shown directly below it. Returns None values when there is nothing to deploy;
-    the page falls back to a generic line rather than rendering a blank."""
+    """The {deploy_targets}/{deploy_largest} placeholders for the deploy_roth_cash
+    action line: the tickers the idle Roth cash buys, grammatically joined, and the
+    ticker taking the largest buy (the deepest household underweight). Sourced from
+    build_roth_deploy_answer's gap-proportional table — never hardcoded — so the
+    one-liner tracks the deploy table shown directly below it. The per-sleeve amounts
+    are no longer a single figure (they vary with each sleeve's gap), so the table
+    below carries them; the line names the pool and its largest buy. Returns None
+    values when there is nothing to deploy; the page falls back to a generic line."""
     tbl = deploy_answer.get("table")
     if tbl is None or tbl.empty:
-        return {"deploy_targets": None, "deploy_split": None}
-    return {
-        "deploy_targets": " and ".join(tbl["ticker"].tolist()),
-        "deploy_split": _fmt_dollars(float(tbl["dollar"].iloc[0])),
-    }
+        return {"deploy_targets": None, "deploy_largest": None}
+    tickers = tbl["ticker"].tolist()
+    largest = str(tbl.loc[tbl["dollar"].idxmax(), "ticker"])
+    return {"deploy_targets": _join_tickers(tickers), "deploy_largest": largest}
 
 
 def capital_gains_headroom(register: pd.DataFrame) -> dict:
