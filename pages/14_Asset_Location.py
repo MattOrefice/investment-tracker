@@ -96,6 +96,16 @@ _roth_idle_cash = deploy["idle_cash"]
 # ── KPIs (three distinct units; the last two must never be summed) ─────────────
 _kpi_idle_roth = _roth_idle_cash
 _kpi_annual_drag = float(register[register["case"].isin(["A", "B", "D"])]["annual_benefit"].sum())
+# The KPI counts ALL A/B/D drag. Partition it into actionable vs accepted/no-action
+# groups for the scope note below (every register row belongs to exactly one group, so
+# this is a partition of the KPI, not a re-sum — it never double-counts or exceeds it).
+_accepted_idx = set()
+for _g in ACTION_GROUPS:
+    if _g["status"] == "accepted":
+        _accepted_idx |= set(filter_register_for_group(register, _g).index)
+_acc_rows = register.loc[sorted(_accepted_idx)]
+_accepted_drag = float(_acc_rows[_acc_rows["case"].isin(["A", "B", "D"])]["annual_benefit"].sum()) if len(_acc_rows) else 0.0
+_actionable_drag = _kpi_annual_drag - _accepted_drag
 # Case C is repositionable inside shelters — a stock of dollars, NOT an annual flow.
 _case_c = register[register["case"] == "C"]
 _pos_disp = positions_df.merge(accounts_df[["pseudonym", "display_name"]], on="pseudonym", how="left")
@@ -188,6 +198,12 @@ with col:
         "Annual tax drag is a yearly flow (cases A/B/D; case C is excluded — it "
         "carries no drag). Repositionable is a one-time stock of dollars that can "
         "move between shelters for free (case C). Different units — never summed."
+    )
+    st.caption(
+        f"The drag counts A/B/D across all groups; about {escape_md(_fmt_dollars(_accepted_drag))} "
+        "of it sits in accepted/no-action groups (Frozen TOD, SAA sleeves, Thematic sprawl) "
+        "you've chosen not to act on — so the drag you'd actually remove by acting is about "
+        f"{escape_md(_fmt_dollars(_actionable_drag))}."
     )
     st.divider()
 

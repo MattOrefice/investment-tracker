@@ -111,10 +111,10 @@ _THEMATIC_CONS = (
 )
 
 _THEMATIC_CAPTION = (
-    "This group covers {population_count} holdings worth {population_value}. Only "
-    "{row_count} appear below — the register lists mislocations, and most of this "
-    "book is correctly located in taxable. The case for cleanup is fees and "
-    "sprawl, not location."
+    "This group covers {population_count} holdings worth {population_value}. "
+    "{row_count} appear below (worth {shown_value}) — the register lists "
+    "mislocations, and most of this book is correctly located in taxable. The "
+    "case for cleanup is fees and sprawl, not location."
 )
 
 _ROLLOVER_PROS = (
@@ -162,11 +162,11 @@ _TOD_INCOME_CONS = (
 # {row_count} is the register-row count shown in the expander. The gap is GHYIX: a
 # federally-exempt muni that generates no A/B action, so it is counted but not listed.
 _TOD_INCOME_CAPTION = (
-    "This group covers {population_count} holdings worth {population_value}. Only "
-    "{row_count} appear below — GHYIX is a federally exempt municipal fund, so "
-    "there is no federal tax to save and moving it into a pre-tax account would "
-    "convert exempt interest into ordinary income. It is correctly located and "
-    "generates no action."
+    "This group covers {population_count} holdings worth {population_value}. "
+    "{row_count} appear below (worth {shown_value}) — GHYIX is a federally exempt "
+    "municipal fund, so there is no federal tax to save and moving it into a "
+    "pre-tax account would convert exempt interest into ordinary income. It is "
+    "correctly located and generates no action."
 )
 
 _SAA_TAXABLE_PROS = (
@@ -644,8 +644,10 @@ def resolve_caption(
     group: dict, positions_df: pd.DataFrame, accounts_df: pd.DataFrame, register: pd.DataFrame,
 ) -> str | None:
     """Render a group's population caption (escaped for markdown), or None if the
-    group has none. Uses {population_count}/{population_value} (population holdings)
-    and {row_count} (register rows shown in the expander)."""
+    group has none. Uses {population_count}/{population_value} (population holdings),
+    {row_count} (register rows shown in the expander), and {shown_value} (the value
+    of those shown rows — equals the expander's Value total row, so the caption's
+    second figure matches the table rather than the population figure)."""
     tmpl = group.get("caption")
     if not tmpl:
         return None
@@ -656,6 +658,7 @@ def resolve_caption(
         "population_count": str(len(pop)) if not pop.empty else None,
         "population_value": _fmt_dollars(pop["current_value"].sum()) if not pop.empty else None,
         "row_count": str(row_count),
+        "shown_value": _fmt_dollars(reg["current_value"].sum()) if not reg.empty else None,
     }
     out = escape_md(render_prose(tmpl, resolved))
     # Subject-verb agreement for the "{row_count} appear below" clause, fixed HERE so
