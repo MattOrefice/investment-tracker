@@ -97,6 +97,23 @@ def test_tier_capital_reconciles_to_ladder():
     assert (by["gross"] >= by["net"] - 0.01).all(), "gross must be >= net for every tier"
 
 
+def test_marginal_cost_exhibit_derivation():
+    """Part 3: marginal cost per tier = tier cost ÷ tier gross (cheapest-first) and it
+    steps UP across tiers (T1 ≤ T2 ≤ T3); Tier 3 == the whole-withdrawal rate (~35%).
+    Boundaries are the cumulative gross at the end of Tier 1 and Tier 2. All derived
+    from the ladder's existing columns — no tax recomputation."""
+    pos, acct = _fixture()
+    lad = build_liquidity_ladder(pos, acct, TAX_PROFILE)
+    mc = lad.groupby("tier").agg(gross=("value", "sum"), cost=("cost_to_cash", "sum")).sort_index()
+    mc["pct"] = mc["cost"] / mc["gross"] * 100
+    assert mc.loc[1, "pct"] <= mc.loc[2, "pct"] <= mc.loc[3, "pct"], "marginal cost must step up T1→T2→T3"
+    penord = EARLY_WITHDRAWAL_PENALTY + ordinary_rate(TAX_PROFILE)
+    assert mc.loc[3, "pct"] == pytest.approx(penord * 100, abs=0.1), "Tier 3 marginal == whole-withdrawal rate"
+    cum = mc["gross"].cumsum()
+    assert cum.loc[1] == pytest.approx(mc.loc[1, "gross"]), "boundary 1 = Tier-1 gross"
+    assert cum.loc[2] == pytest.approx(mc.loc[1, "gross"] + mc.loc[2, "gross"]), "boundary 2 = Tier1+2 gross"
+
+
 def test_liquidity_page_renders_live(monkeypatch):
     """End-to-end render on real personal data: page loads, the ladder has the
     cumulative column, tiers are the three known labels, and cumulative is monotone."""
@@ -128,6 +145,10 @@ def test_liquidity_page_renders_live(monkeypatch):
     assert abs(_sum3 - _num(mets["Total available (gross)"])) < 1.5, "tier cards must sum to total gross"
     assert any("T+1" in c.value and "same-day" in c.value for c in at.caption), "settlement caption missing"
     assert any("no accessible" in i.value for i in at.info), "Roth/age caveat missing"
+    # Part 3 — marginal cost exhibit: subheader + readout naming both boundaries
+    assert any("Marginal cost of the next dollar" in s.value for s in at.subheader), "exhibit missing"
+    assert any("before touching a taxable gain" in c.value and "before touching retirement" in c.value
+               for c in at.caption), "exhibit readout missing the two boundaries"
     # ladder
     tables = [d.value for d in at.dataframe if "Cumulative net cash ($)" in list(d.value.columns)]
     assert tables, "liquidity ladder not rendered"
