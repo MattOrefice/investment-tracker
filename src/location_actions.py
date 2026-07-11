@@ -232,8 +232,13 @@ ACTION_GROUPS: list[dict] = [
     {
         "key": "relocate_loss_side", "title": "Relocate the loss side (free)",
         "score": 9, "status": "act_now",
-        "action": "Sell BFRIX, HLIPX, and JEPI in taxable at a loss, then rebuy the "
-                  "exposure in the Traditional IRA with a different bond fund.",
+        # JEPI in this group is a small GAIN lot (a distinct account-lot that stays
+        # here); naming it individually "at a loss" was false. The block still NETS to
+        # a loss ({embedded_gain}), so the group-level framing holds — only JEPI's
+        # per-holding label is corrected. {embedded_gain} is templated (never a literal).
+        "action": "Sell BFRIX and HLIPX at a loss, and JEPI in taxable; the block "
+                  "nets to a small loss ({embedded_gain}), so selling harvests a "
+                  "deduction.",
         "symbols": ["BFRIX", "HLIPX", "JEPI"],
         "case_filter": ["A", "B"], "accounts": ["Individual Taxable (TOD)"],
         "pros": _LOSS_SIDE_PROS, "cons": _LOSS_SIDE_CONS,

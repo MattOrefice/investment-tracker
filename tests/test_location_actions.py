@@ -935,3 +935,34 @@ def test_kpi_scope_note_partitions_drag_accepted_vs_actionable_live(monkeypatch)
     assert f"about {escape_md(_fmt_dollars(actionable))}." in caps, (
         f"note must show actionable drag {_fmt_dollars(actionable)}"
     )
+
+
+# ── Check-7 fix: no per-holding prose claim contradicts a per-holding value ─────
+
+def test_loss_side_action_templates_net_loss_no_literal():
+    """The loss-side action states the NET loss via {embedded_gain} (never a $ literal),
+    so 'the block nets to a small loss (...)' stays live-accurate as the data moves."""
+    g = next(x for x in ACTION_GROUPS if x["key"] == "relocate_loss_side")
+    assert "{embedded_gain}" in g["action"], "loss-side action must template the net loss figure"
+    assert not _DOLLAR_LITERAL.search(g["action"]), f"no $ literal in loss-side action: {g['action']!r}"
+
+
+def test_loss_side_action_names_only_loss_lots_at_a_loss_live():
+    """The loss-side action must not name a GAIN lot as sold 'at a loss'. JEPI is a
+    +$ gain lot in this group; every ticker in the 'at a loss' clause must be at an
+    embedded loss, and JEPI must not appear there. The group still nets to a loss."""
+    pos, acct, sec, reg = _live()
+    g = next(x for x in ACTION_GROUPS if x["key"] == "relocate_loss_side")
+    rr = filter_register_for_group(reg, g)
+    action = render_prose(g["action"], resolve_placeholders(g, pos, acct, sec, reg))
+    assert "at a loss" in action, action
+    before = action.split("at a loss")[0]
+    for sym, eg in zip(rr["symbol"], rr["embedded_gain"]):
+        if sym in before:
+            assert eg is not None and float(eg) < 0, (
+                f"{sym} is named 'at a loss' but embedded_gain={eg} (a gain, not a loss)"
+            )
+    gains = [s for s, e in zip(rr["symbol"], rr["embedded_gain"]) if e is not None and float(e) > 0]
+    for s in gains:
+        assert s not in before, f"gain lot {s} must not be named 'at a loss'"
+    assert float(rr["embedded_gain"].sum()) < 0, "group must still net to a loss (net framing preserved)"
