@@ -51,7 +51,16 @@ def test_liquidity_tiers_and_costs():
     assert lad.loc["SPAXX", "cost_to_cash"] == 0.0
     assert lad.loc["BIG", "cost_to_cash"] == pytest.approx(500.0 * ltcg, abs=0.01)
     assert lad.loc["TDX", "cost_to_cash"] == pytest.approx(1000.0 * penord, abs=0.01)
-    assert lad.loc["RGROW", "cost_to_cash"] == pytest.approx((2000.0 - 1200.0) * penord, abs=0.01)
+    # Roth is CONSERVATIVE — the WHOLE value penalized+taxed (not growth-only), since the
+    # tool can't see contribution basis or age; it must never show $0.
+    assert lad.loc["RGROW", "cost_to_cash"] == pytest.approx(2000.0 * penord, abs=0.01)
+    # every Tier-3 row (Roth + pre-tax) uses value × (penalty + ordinary), and > $0
+    t3 = lad[lad["tier"] == 3]
+    assert (t3["cost_to_cash"] > 0).all(), "no Tier-3 row may show $0 cost"
+    for sym, r in t3.iterrows():
+        assert r["cost_to_cash"] == pytest.approx(r["value"] * penord, abs=0.01), (
+            f"{sym}: Tier-3 cost must be whole-withdrawal value × {penord:.4f}"
+        )
 
 
 def test_liquidity_sorted_cheapest_first_and_cumulative():
@@ -90,9 +99,23 @@ def test_liquidity_page_renders_live(monkeypatch):
     from streamlit.testing.v1 import AppTest
     at = AppTest.from_file(str(ROOT / "pages" / "15_Liquidity.py"), default_timeout=90).run()
     assert not at.exception, f"page raised: {at.exception}"
+    # Fix 3 — nested KPI line (not three parallel numbers) + Fix 1 caveat
+    md = " ||| ".join(m.value for m in at.markdown)
+    assert "Total household" in md and "nest" in md, "nested KPI line missing"
+    assert any("no accessible" in i.value for i in at.info), "Roth/age caveat missing"
+    # ladder
     tables = [d.value for d in at.dataframe if "Cumulative net cash ($)" in list(d.value.columns)]
     assert tables, "liquidity ladder not rendered"
     t = tables[0]
     assert (t["Cumulative net cash ($)"].diff().dropna() >= -0.01).all(), "cumulative must be non-decreasing"
     assert set(t["Tier"]) <= {
         "Tier 1 · free / cheap", "Tier 2 · moderate (15% LTCG)", "Tier 3 · locked (penalty + tax)"}
+    # Fix 1 — no locked (Tier-3) row shows $0 cost
+    locked = t[t["Tier"].str.contains("locked")]
+    assert not locked.empty and (locked["Cost to cash ($)"] > 0).all(), "no locked row may show $0 cost"
+    # Feature A — entering a target names the top-N holdings to sell
+    at.number_input[0].set_value(40000).run()
+    assert not at.exception
+    assert any("To raise" in s.value and "sell the top" in s.value for s in at.success), (
+        "raise-cash summary missing"
+    )

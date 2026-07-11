@@ -62,19 +62,33 @@ with col:
     )
     st.caption(f"As of {_as_of_date.isoformat()} · source: {_csv_path.name}")
 
-# ── KPIs ────────────────────────────────────────────────────────────────────────
-_liquid = float(ladder[ladder["tier"] < 3]["net_cash"].sum())
-_tier1 = float(ladder[ladder["tier"] == 1]["net_cash"].sum())
-_locked = float(ladder[ladder["tier"] == 3]["value"].sum())
+# ── Household liquidity as ONE nested figure (not three parallel numbers) ────────
+_total = float(ladder["value"].sum())
+_liquid = float(ladder[ladder["tier"] < 3]["net_cash"].sum())          # T1+T2 net
+_free = float(ladder[ladder["tier"] == 1]["net_cash"].sum())           # T1 net (subset of liquid)
+_locked = float(ladder[ladder["tier"] == 3]["value"].sum())            # T3 gross
+_locked_cost = float(ladder[ladder["tier"] == 3]["cost_to_cash"].sum())
+_access_pct = (_locked_cost / _locked * 100) if _locked else 0.0
+_locked_net = _locked - _locked_cost
+
+
+def _d(x):
+    """Dollars, escaped for markdown so a leading $ isn't read as LaTeX."""
+    return "\\$" + f"{x:,.0f}"
+
+
 with col:
-    k1, k2, k3 = st.columns(3)
-    k1.metric("Spendable from taxable (net)", f"${_liquid:,.0f}")
-    k2.metric("Tier-1 free-to-sell (net)", f"${_tier1:,.0f}")
-    k3.metric("Locked in retirement accounts", f"${_locked:,.0f}")
-    st.caption(
-        "Spendable-from-taxable is net of the 15% capital-gains tax on gains. "
-        "Locked-in-retirement is the gross balance you'd raid only as a last resort — "
-        "a withdrawal before 59½ costs a 10% penalty plus ordinary income tax."
+    st.markdown(
+        f"**Total household {_d(_total)}** → **liquid in taxable {_d(_liquid)}** "
+        f"(of which **{_d(_free)} free-to-sell now**, the rest at 15% LTCG) → "
+        f"**locked in retirement {_d(_locked)}** — about {_access_pct:.0f}% to access "
+        f"before 59½, so ~{_d(_locked_net)} net. These figures **nest**; they do not add up."
+    )
+    st.info(
+        "Roth and pre-tax costs assume withdrawal **before age 59½** and **no accessible "
+        "Roth contribution basis**. Your actual cost is lower if you're over 59½ or "
+        "withdraw Roth contributions first — this tool can't see your basis or age. "
+        "Confirm with Fidelity."
     )
     st.divider()
 
@@ -83,33 +97,64 @@ with col:
     st.subheader("If you need cash, sell from the top")
     st.caption(
         "Rows are cheapest-to-convert first. **Cumulative net cash** is the running "
-        "total of spendable dollars raised as you sell down the list — to raise \\$X, "
-        "sell from the top until it reaches \\$X."
+        "total of net dollars raised as you sell down the list. The same symbol in a "
+        "different **Account** is a distinct lot, not a duplicate."
     )
 
-    show = ladder.copy()
-    show["tier"] = show["tier"].map(TIER_LABEL)
-    show["cost_pct"] = (show["cost_to_cash"] / show["value"].where(show["value"] != 0)).fillna(0.0)
-    show = show[[
-        "symbol", "account", "tier", "value", "embedded_gain",
-        "cost_to_cash", "cost_pct", "net_cash", "cumulative_net_cash", "note",
-    ]].rename(columns={
+    # Feature A — answer the actual question: how far down do I sell to raise $X?
+    _need = st.number_input(
+        "How much cash do you need?  (house, car, … — enter 0 to hide)",
+        min_value=0, value=0, step=1000, format="%d",
+    )
+    _sell_n = 0
+    if _need and _need > 0:
+        _mask = ladder["cumulative_net_cash"] >= float(_need)
+        if not _mask.any():
+            _sell_n = len(ladder)
+            st.warning(
+                f"Even selling **everything** raises only {_d(float(ladder['cumulative_net_cash'].iloc[-1]))} "
+                f"net — short of {_d(float(_need))}."
+            )
+        else:
+            _idx = int(_mask.idxmax())
+            _sell_n = _idx + 1
+            _sold = ladder.iloc[:_sell_n]
+            _tax = float(_sold["cost_to_cash"].sum())
+            _gross = float(_sold["value"].sum())
+            _blend = (_tax / _gross * 100) if _gross else 0.0
+            st.success(
+                f"To raise {_d(float(_need))}, sell the top **{_sell_n}** holdings (down to "
+                f"**{ladder.iloc[_idx]['symbol']}** in **{ladder.iloc[_idx]['account']}**) — "
+                f"realizing ~{_d(_tax)} in tax/penalty on {_d(_gross)} sold, a blended cost of "
+                f"**{_blend:.1f}%**. The highlighted rows below are what you'd sell."
+            )
+
+    _disp = ladder.copy()
+    _disp["tier"] = _disp["tier"].map(TIER_LABEL)
+    _disp["cost_pct"] = (_disp["cost_to_cash"] / _disp["value"].where(_disp["value"] != 0) * 100).fillna(0.0)
+    _disp["embedded_gain"] = pd.to_numeric(_disp["embedded_gain"], errors="coerce")
+    _cols = {
         "symbol": "Symbol", "account": "Account", "tier": "Tier", "value": "Value ($)",
         "embedded_gain": "Embedded Gain ($)", "cost_to_cash": "Cost to cash ($)",
         "cost_pct": "Cost %", "net_cash": "Net cash ($)",
         "cumulative_net_cash": "Cumulative net cash ($)", "note": "Why",
-    })
-    st.dataframe(
-        show, use_container_width=True, hide_index=True,
-        column_config={
-            "Value ($)":                st.column_config.NumberColumn(format="$%.0f"),
-            "Embedded Gain ($)":        st.column_config.NumberColumn(format="$%.0f"),
-            "Cost to cash ($)":         st.column_config.NumberColumn(format="$%.0f"),
-            "Cost %":                   st.column_config.NumberColumn(format="%.0f%%"),
-            "Net cash ($)":             st.column_config.NumberColumn(format="$%.0f"),
-            "Cumulative net cash ($)":  st.column_config.NumberColumn(format="$%.0f"),
-        },
+    }
+    _disp = _disp[list(_cols)].rename(columns=_cols)
+    _fmt = {c: "${:,.0f}" for c in ["Value ($)", "Embedded Gain ($)", "Cost to cash ($)",
+                                    "Net cash ($)", "Cumulative net cash ($)"]}
+    _fmt["Cost %"] = "{:.1f}%"          # Feature C — one decimal, no more 0% on small lots
+
+    def _row_style(row):               # Feature A — shade the rows you'd sell to raise $X
+        hl = "background-color: rgba(46,160,67,0.20)" if row.name < _sell_n else ""
+        return [hl] * len(row)
+
+    _sty = (
+        _disp.style
+        .format(_fmt, na_rep="—")
+        .apply(_row_style, axis=1)
+        .set_properties(subset=["Account"], **{"font-weight": "700"})   # Feature B — bold account
     )
+    st.dataframe(_sty, use_container_width=True, hide_index=True)
     st.divider()
 
 # ── How to read ──────────────────────────────────────────────────────────────────
@@ -127,10 +172,12 @@ with col:
             "and taxable cash. Sell first: little or no tax.\n"
             "- **Tier 2 — moderate.** Taxable holdings with a meaningful embedded gain. "
             "Selling realizes 15% long-term capital-gains tax (plus PA) on the gain.\n"
-            "- **Tier 3 — locked.** Roth first (your *contributions* come out penalty- "
-            "and tax-free, but you forfeit the tax-free growth), then Traditional "
-            "IRA/401(k) (10% penalty + ordinary income on the whole withdrawal) — the "
-            "genuine last resort.\n\n"
+            "- **Tier 3 — locked.** Roth, both IRAs, and the 401(k). This tool costs the "
+            "**whole withdrawal** at a 10% penalty + ordinary income tax (~35%), *if taken "
+            "before 59½* — deliberately conservative, because it can't see your age or your "
+            "Roth contribution basis. Your real cost is lower if you're over 59½, or (for a "
+            "Roth) if you withdraw contributions first, which come out penalty- and tax-free. "
+            "Never treat the shown cost as exact — confirm with Fidelity.\n\n"
             "**Why this matters for the IRA.** This is the mirror image of the Asset "
             "Location page, and the reason **not to over-fund the IRA if a house or car "
             "purchase is likely in the next 5–10 years.** Every dollar you shelter for "
