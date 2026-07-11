@@ -96,9 +96,10 @@ def test_in_shelter_move_is_free():
 
 def test_taxable_move_has_positive_cost_and_payback():
     reg = _register()
-    # VNQ in taxable: gain 2000 * (0 + 0.0307) = 61.4 cost.
+    # VNQ in taxable: gain 2000 * combined LTCG rate (federal 15% + PA 3.07%).
     a = reg[(reg["symbol"] == "VNQ") & (reg["case"] == "A")].iloc[0]
-    assert a["cost_to_realize"] == pytest.approx(2000.0 * 0.0307, abs=0.01)
+    _ltcg = TAX_PROFILE["federal_ltcg"] + TAX_PROFILE["state_ltcg"]
+    assert a["cost_to_realize"] == pytest.approx(2000.0 * _ltcg, abs=0.01)
     assert not bool(a["is_free"])
     assert a["payback_months"] is not None and a["payback_months"] > 0
 

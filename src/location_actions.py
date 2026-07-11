@@ -75,24 +75,31 @@ _LOSS_SIDE_PROS = (
 _LOSS_SIDE_CONS = (
     "The wash-sale rule. Rebuying substantially identical funds within 30 days "
     "either side permanently destroys the loss — it cannot attach to a basis "
-    "inside an IRA. Buy a different bond fund in the Traditional IRA, not the same "
-    "ticker. Separately, that account has finite capacity: it can absorb roughly "
-    "{trad_ira_equity} of its own equity, which this consumes almost entirely. "
-    "Note that {group_2_title} also draws on this account."
+    "inside an IRA. Rebuy the exposure with a broad total-bond-market fund — BND, "
+    "AGG, or FXNAX — in the Traditional IRA, not the same ticker: different enough "
+    "to clear the wash-sale rule, and it restores investment-grade bond ballast. "
+    "Note the change in kind, not just location: this trades BFRIX/HLIPX's credit "
+    "and floating-rate risk for a bond index's duration (rate) risk. That is what "
+    "the SAA's Treasury-ballast intent wants, so it is an improvement — but a change "
+    "in character, not a like-for-like swap. Separately, that account has finite "
+    "capacity: it can absorb roughly {trad_ira_equity} of its own equity, which this "
+    "consumes almost entirely. Note that {group_2_title} also draws on this account."
 )
 
 _GAIN_SIDE_PROS = (
     "{annual_benefit} of recurring annual drag on {value} of assets, and the same "
-    "credit-risk argument as the loss side. The embedded gain across the whole "
-    "block is only {embedded_gain}, which is small relative to what it buys."
+    "credit-risk argument as the loss side. Relocating realizes {embedded_gain} of "
+    "gains — now taxable at 15%, since 2026 income put the 0% bracket out of reach — "
+    "but that {cost_to_realize} is a {payback} payback against the {annual_benefit}/yr "
+    "of relief. On the merits, worth doing."
 )
 _GAIN_SIDE_CONS = (
-    "Your 0% capital-gains headroom for 2026 is {headroom_total}. These "
-    "realizations consume {headroom_consumed}, leaving {headroom_remaining} — so "
-    "the whole block fits inside the 0% bracket and costs only Pennsylvania's flat "
-    "3.07%. But the headroom shrinks with every dollar of unemployment income, "
-    "depends on income you cannot know until December, and evaporates the day you "
-    "start a job. A genuine wait-and-see."
+    "It is worth doing, but there is nowhere to put it yet. The Traditional IRA "
+    "absorbs only about {trad_ira_equity} of relocated fixed income, and the loss "
+    "side above nearly exhausts that — the Roth cleanup draws on it too. So this is "
+    "blocked on capacity, not merit: the 401(k) rollover is what frees the pre-tax "
+    "space to shelter these gains, the same constraint that makes that rollover the "
+    "household's largest lever."
 )
 
 _THEMATIC_PROS = (
@@ -102,8 +109,8 @@ _THEMATIC_PROS = (
 )
 _THEMATIC_CONS = (
     "The excess fee is about $76 a year. Unwinding realizes {embedded_gain} of "
-    "gain, costing several hundred dollars against a narrow 0% headroom you would "
-    "rather spend on the income assets. You have decided to keep the sector bets. "
+    "gain, costing several hundred dollars in 15% capital-gains tax now that the "
+    "0% bracket is gone — for no location benefit. You have decided to keep the sector bets. "
     "Household-wide the thematic book is 11.8% of your equity — a real allocation, "
     "though each position is a rounding error. The correct action is to log "
     "this as accepted, capped at its current weight — not to fix it. A logged "
@@ -153,8 +160,8 @@ _TOD_INCOME_CONS = (
     "equity and is already spoken for twice over. And GHYIX is a municipal fund — "
     "its interest is federally exempt, so taxable is exactly where it belongs; "
     "sheltering it would waste the shelter. The rest carry embedded gains of "
-    "{embedded_gain} against a narrow 0% headroom you would rather spend on the "
-    "income assets above. This book is externally managed and frozen by decision, "
+    "{embedded_gain}, now taxable at 15% with the 0% bracket gone — another reason "
+    "to leave them undisturbed. This book is externally managed and frozen by decision, "
     "not by oversight. Logged as accepted."
 )
 
@@ -238,17 +245,22 @@ ACTION_GROUPS: list[dict] = [
         # per-holding label is corrected. {embedded_gain} is templated (never a literal).
         "action": "Sell BFRIX and HLIPX at a loss, and JEPI in taxable; the block "
                   "nets to a small loss ({embedded_gain}), so selling harvests a "
-                  "deduction.",
+                  "deduction. Rebuy the exposure in the Traditional IRA with a broad "
+                  "total-bond fund (BND/AGG/FXNAX).",
         "symbols": ["BFRIX", "HLIPX", "JEPI"],
         "case_filter": ["A", "B"], "accounts": ["Individual Taxable (TOD)"],
         "pros": _LOSS_SIDE_PROS, "cons": _LOSS_SIDE_CONS,
     },
     {
         "key": "relocate_gain_side", "title": "Relocate the gain side",
-        "score": 5, "status": "evaluate",
-        "action": "Optional — move {value} of holdings (GBOSX, FIWDX, JEPQ, USRT) "
-                  "to the Traditional IRA; realizes only {embedded_gain} in gains, "
-                  "fits the 0% bracket. Wait-and-see.",
+        # A genuinely good move (short payback) that is BLOCKED on pre-tax capacity,
+        # not weak on merit — so it sits in the blocked/waiting bucket, scored near
+        # the rollover that unblocks it, not down at "not worth doing".
+        "score": 3, "status": "blocked",
+        "action": "Defer — with the 0% bracket gone this costs {cost_to_realize} to "
+                  "relieve {annual_benefit}/yr (a {payback} payback, worth doing), but "
+                  "the Traditional IRA is full: the loss side alone nearly consumes it. "
+                  "Revisit after the 401(k) rollover frees space.",
         "symbols": ["GBOSX", "FIWDX", "JEPQ", "USRT"],
         "case_filter": ["A", "B"], "accounts": ["Individual Taxable (TOD)"],
         "pros": _GAIN_SIDE_PROS, "cons": _GAIN_SIDE_CONS,
@@ -608,9 +620,16 @@ def resolve_placeholders(
 
     reg = filter_register_for_group(register, group)
     annual_benefit = _fmt_dollars(reg["annual_benefit"].sum()) if not reg.empty else None
+    # Cost to realize the group's gains (<=0 for a net-loss / free move) and the
+    # payback in years (cost / annual relief) — used by the gain-side defer prose.
+    _ctr = float(reg["cost_to_realize"].sum()) if not reg.empty else 0.0
+    _ab = float(reg["annual_benefit"].sum()) if not reg.empty else 0.0
+    cost_to_realize = _fmt_dollars(_ctr) if not reg.empty else None
+    payback = f"{_ctr / _ab:.1f}-year" if (_ctr > 0 and _ab > 0) else None
 
     return {**base, "value": value, "count": count,
-            "embedded_gain": embedded_gain, "annual_benefit": annual_benefit}
+            "embedded_gain": embedded_gain, "annual_benefit": annual_benefit,
+            "cost_to_realize": cost_to_realize, "payback": payback}
 
 
 _PLACEHOLDER_RE = re.compile(r"\{(\w+)\}")

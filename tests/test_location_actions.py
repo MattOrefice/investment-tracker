@@ -70,7 +70,7 @@ def test_scores_are_read_from_config_verbatim():
         "deploy_roth_cash": 10,
         "clear_roth_non_equity": 9,
         "relocate_loss_side": 9,
-        "relocate_gain_side": 5,
+        "relocate_gain_side": 3,
         "thematic_sprawl": 2,
         "rollover_401k": 3,
         "frozen_tod_income": 5,
@@ -85,7 +85,7 @@ def test_statuses_are_read_from_config_verbatim():
         "deploy_roth_cash": "act_now",
         "clear_roth_non_equity": "act_now",
         "relocate_loss_side": "act_now",
-        "relocate_gain_side": "evaluate",
+        "relocate_gain_side": "blocked",
         "thematic_sprawl": "accepted",
         "rollover_401k": "blocked",
         "frozen_tod_income": "accepted",
@@ -336,13 +336,13 @@ def test_no_rendered_prose_contains_comma_emdash():
 RENDERED_PROSE_LEN = {
     "deploy_roth_cash":          (382, 336),
     "clear_roth_non_equity":     (477, 335),
-    "relocate_loss_side":        (409, 440),   # cons +{group_2_title} cross-ref sentence
-    "relocate_gain_side":        (201, 372),   # cons rewritten: headroom-correct, no 15% claim
-    "thematic_sprawl":           (217, 465),
-    "rollover_401k":             (341, 526),
-    "frozen_tod_income":         (382, 468),   # authored prose (pros re-pinned: muni dropped from the fund list)
-    "saa_sleeves_taxable":       (261, 665),   # cons rewritten: capacity-constraint framing + {annual_benefit}
-    "predeploy_stranded_equity": (328, 530),   # authored prose
+    "relocate_loss_side":        (410, 859),   # cons: + rebuy rec (BND/AGG/FXNAX) + duration-risk note
+    "relocate_gain_side":        (311, 404),   # rewritten: 22%/15% capacity-defer, no 0% headroom
+    "thematic_sprawl":           (217, 475),   # cons: 0% headroom -> 15% cap-gains language
+    "rollover_401k":             (338, 526),
+    "frozen_tod_income":         (382, 477),   # cons: 0% headroom -> 15% cap-gains language
+    "saa_sleeves_taxable":       (261, 665),
+    "predeploy_stranded_equity": (328, 530),
 }
 
 
@@ -436,8 +436,9 @@ def test_saa_sleeves_count_equals_row_count_live():
     )
     assert set(rows["case"]) == {"A"}, f"SAA sleeves are case A, got {sorted(set(rows['case']))}"
     assert len(pop) == len(rows) == 4, f"count {len(pop)} must equal row_count {len(rows)} == 4"
-    # The whole point of the fix: these are sub-threshold, yet must still be shown.
-    assert not rows["surfaced"].any(), "SAA-sleeve rows are sub-threshold — that's why they were hidden"
+    # count == row_count holds regardless of the MIN_ANNUAL_BENEFIT surfacing flag: the
+    # expander shows every backing row whether or not it clears the threshold (at higher
+    # ordinary rates some of these sub-$1 sleeves now cross it — the invariant is unaffected).
 
 
 def test_only_matched_symbols_groups_have_a_population_gap_live():
@@ -494,20 +495,30 @@ def test_page14_renders_value_column_and_saa_rows_live(monkeypatch):
 _DOLLAR_LITERAL = re.compile(r"\$[\d,]")
 
 
-def test_gain_side_headroom_templated_no_literal():
+def test_gain_side_prose_is_capacity_framed_no_literal():
+    """The gain-side card is capacity-framed (deferred on pre-tax room), not
+    headroom-framed. The cons templates the IRA capacity; no $ figure in
+    pros/cons/action is a literal; and the stale 0%-headroom language is gone."""
     g4 = next(g for g in ACTION_GROUPS if g["key"] == "relocate_gain_side")
-    assert not _DOLLAR_LITERAL.search(g4["pros"] + g4["cons"]), "group 4 must have no $ literal"
-    assert "{headroom_total}" in g4["cons"] and "{headroom_remaining}" in g4["cons"]
+    blob = g4["pros"] + g4["cons"] + g4["action"]
+    assert not _DOLLAR_LITERAL.search(blob), f"group 4 must have no $ literal: {blob!r}"
+    assert "{trad_ira_equity}" in g4["cons"], "gain-side cons must template the IRA capacity"
+    assert "headroom" not in blob.lower(), "stale 0%-headroom language must be gone"
+    for ph in ("{headroom_total}", "{headroom_consumed}", "{headroom_remaining}"):
+        assert ph not in blob, f"{ph} must be gone from the gain-side prose"
 
 
-def test_gain_side_prose_headroom_matches_computed():
+def test_gain_side_action_shows_computed_cost_relief_payback_live():
+    """The gain-side action states the live cost and relief: cost == Σ cost_to_realize
+    of its register rows, relief == Σ annual_benefit, both rendered, plus a payback and
+    the defer-to-rollover framing."""
     pos, acct, sec, reg = _live()
-    hr = capital_gains_headroom(reg)
     g4 = next(g for g in ACTION_GROUPS if g["key"] == "relocate_gain_side")
-    dep = build_roth_deploy_answer(pos, acct, sec)
-    cons = render_prose_md(g4["cons"], resolve_placeholders(g4, pos, acct, sec, reg, roth_idle_cash=dep["idle_cash"]))
-    assert escape_md(_fmt_dollars(hr["total"])) in cons
-    assert escape_md(_fmt_dollars(hr["remaining"])) in cons
+    rows = filter_register_for_group(reg, g4)
+    action = render_prose_md(g4["action"], resolve_placeholders(g4, pos, acct, sec, reg))
+    assert escape_md(_fmt_dollars(float(rows["cost_to_realize"].sum()))) in action, "action must show the real cost"
+    assert escape_md(_fmt_dollars(float(rows["annual_benefit"].sum()))) in action, "action must show the real relief"
+    assert "payback" in action.lower() and "rollover" in action.lower()
 
 
 def test_no_dollar_literals_except_allow_literals_groups():
@@ -684,11 +695,13 @@ def test_thematic_never_in_a_roth_deploy_answer():
 
 # ── Item 2: group 4 cons is headroom-correct (no 15% claim, no self-reference) ──
 
-def test_gain_side_cons_templates_consumed_and_drops_false_claims():
+def test_gain_side_cons_frames_capacity_and_the_rollover():
+    """The gain-side cons defers on capacity (not headroom): it names the pre-tax
+    capacity constraint and ties it to the 401(k) rollover that unblocks it."""
     g4 = next(g for g in ACTION_GROUPS if g["key"] == "relocate_gain_side")
-    assert "{headroom_consumed}" in g4["cons"], "group 4 must template the consumed headroom"
-    for phrase in ("15%", "gain-side realization above"):
-        assert phrase not in g4["cons"], f"group 4 cons must not contain {phrase!r} (factually wrong)"
+    cons = g4["cons"].lower()
+    assert "capacity" in cons and "rollover" in cons, "cons must frame capacity + the rollover"
+    assert "headroom" not in cons, "no stale 0%-headroom language"
 
 
 # ── Item 3: group 3 cross-references group 2 by its LIVE title, not a hardcode ──
@@ -842,15 +855,17 @@ def test_page14_renders_status_bucket_headers_live(monkeypatch):
 
 # ── Final polish: totals, labelled figures, case-C footnote, act-now summary ────
 
-def test_gain_side_action_labels_both_value_and_gain():
-    """Group 4's action must template BOTH the position value {value} and the embedded
-    gain {embedded_gain} — the two dollar figures ($11,161 vs $846) are never shown
-    unlabeled. Guards against the value-vs-benefit ambiguity this polish fixed."""
+def test_gain_side_action_templates_cost_relief_payback():
+    """Group 4's action is now a capacity-defer: it templates the realization COST and
+    the annual RELIEF (each labelled, no bare figures) plus the payback, and no $
+    literal. Guards against reverting to hardcoded or unlabelled figures."""
     g4 = next(g for g in ACTION_GROUPS if g["key"] == "relocate_gain_side")
-    assert "{value}" in g4["action"] and "{embedded_gain}" in g4["action"], (
-        f"group 4 action must template value AND gain distinctly: {g4['action']!r}"
+    a = g4["action"]
+    assert "{cost_to_realize}" in a and "{annual_benefit}" in a and "{payback}" in a, (
+        f"gain-side action must template cost, relief, and payback: {a!r}"
     )
-    assert "in gains" in g4["action"], "the gain figure must be labelled 'in gains'"
+    assert not _DOLLAR_LITERAL.search(a), f"no $ literal in gain-side action: {a!r}"
+    assert "defer" in a.lower() and "rollover" in a.lower()
 
 
 def test_page14_value_tables_total_and_summaries_live(monkeypatch):
@@ -887,31 +902,30 @@ def test_page14_value_tables_total_and_summaries_live(monkeypatch):
     )
     # 3. case-C footnote (subtle st.caption, present)
     assert "repositioning value, not tax drag" in caps, "case-C footnote missing"
-    # 4. group 4's action labels both value and gain
-    assert "of holdings (GBOSX, FIWDX, JEPQ, USRT)" in md and "in gains" in md, (
-        "group 4 action must show both the position value and the gain, labelled"
+    # 4. group 4's action is the capacity-defer line (cost/relief/payback + rollover)
+    assert "Defer" in md and "payback" in md and "rollover frees space" in md, (
+        "group 4 action must render the capacity-defer line"
     )
 
 
-def test_kpi_scope_note_partitions_drag_accepted_vs_actionable_live(monkeypatch):
-    """Fix 2: the drag KPI counts ALL A/B/D drag; the scope note splits it into
-    accepted vs actionable. accepted_drag = the A/B/D benefit of accepted-status
-    groups' register rows, and accepted + actionable == KPI (a partition — every
-    register row belongs to exactly one group, so nothing is double-counted or
-    exceeds the KPI). The note is NOT '$X excluded'; the drag is included."""
+def test_kpi_scope_note_partitions_drag_deferred_vs_actionable_live(monkeypatch):
+    """The drag KPI counts ALL A/B/D drag; the scope note splits it into DEFERRED
+    (accepted OR blocked groups — logged-no-action plus the capacity-blocked gain
+    side) vs actionable-today. deferred + actionable == KPI (a partition — every
+    register row belongs to exactly one group). Nothing is 'excluded'; it's included."""
     pos, acct, sec, reg = _live()
     ABD = ["A", "B", "D"]
     kpi = float(reg[reg["case"].isin(ABD)]["annual_benefit"].sum())
-    acc_idx = set()
+    def_idx = set()
     for g in ACTION_GROUPS:
-        if g["status"] == "accepted":
-            acc_idx |= set(filter_register_for_group(reg, g).index)
-    acc = reg.loc[sorted(acc_idx)]
-    accepted = float(acc[acc["case"].isin(ABD)]["annual_benefit"].sum())
-    actionable = kpi - accepted
-    assert accepted > 0, "accepted groups must carry some A/B/D drag for this to matter"
-    assert abs((accepted + actionable) - kpi) < 0.005, "accepted + actionable must equal the KPI"
-    # summing A/B/D over ALL group tables must equal the KPI (no double-counting / no $273)
+        if g["status"] in ("accepted", "blocked"):
+            def_idx |= set(filter_register_for_group(reg, g).index)
+    _def = reg.loc[sorted(def_idx)] if def_idx else reg.iloc[0:0]
+    deferred = float(_def[_def["case"].isin(ABD)]["annual_benefit"].sum())
+    actionable = kpi - deferred
+    assert deferred > 0, "deferred (accepted + blocked) groups must carry some A/B/D drag"
+    assert abs((deferred + actionable) - kpi) < 0.005, "deferred + actionable must equal the KPI"
+    # summing A/B/D over ALL group tables must equal the KPI (no double-counting)
     all_groups_abd = 0.0
     for g in ACTION_GROUPS:
         if g["key"] in INFORMATIONAL_KEYS:
@@ -928,9 +942,9 @@ def test_kpi_scope_note_partitions_drag_accepted_vs_actionable_live(monkeypatch)
     at = AppTest.from_file(str(ROOT / "pages" / "14_Asset_Location.py"), default_timeout=120).run()
     assert not at.exception, f"page raised: {at.exception}"
     caps = " ||| ".join(c.value for c in at.caption)
-    assert "accepted/no-action groups" in caps, "KPI scope note missing"
-    assert f"about {escape_md(_fmt_dollars(accepted))} of it" in caps, (
-        f"note must show accepted drag {_fmt_dollars(accepted)}: {caps!r}"
+    assert "accepted or capacity-blocked groups" in caps, "KPI scope note missing/mis-worded"
+    assert f"about {escape_md(_fmt_dollars(deferred))} " in caps, (
+        f"note must show deferred drag {_fmt_dollars(deferred)}: {caps!r}"
     )
     assert f"about {escape_md(_fmt_dollars(actionable))}." in caps, (
         f"note must show actionable drag {_fmt_dollars(actionable)}"
