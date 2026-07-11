@@ -225,23 +225,27 @@ for group in _ordered_groups:
             _cap = resolve_caption(group, positions_df, accounts_df, register)
             if _cap:
                 st.caption(_cap)
-            # Surface only rows at or above MIN_ANNUAL_BENEFIT: sub-threshold rows are
-            # rounding errors, not actions. They remain in `register` (so the drag KPI
-            # and every group total above still sum them) — only this table omits them.
-            _shown = reg_rows[reg_rows["surfaced"]] if "surfaced" in reg_rows.columns else reg_rows
-            with st.expander(f"Underlying positions ({len(_shown)})", expanded=False):
-                show = _shown.drop(columns=["surfaced"], errors="ignore").copy()
+            # Show EVERY register row backing this group, including sub-threshold
+            # (< MIN_ANNUAL_BENEFIT) drag. The Value column gives each row its position
+            # size, so a small drag reads as small — not as a count-vs-empty-table
+            # contradiction. This table now sums the same rows as the drag KPI and the
+            # group totals above (count == row_count); the only legitimate count≠rows
+            # gap is the matched_symbols groups, which carry a caption for it.
+            with st.expander(f"Underlying positions ({len(reg_rows)})", expanded=False):
+                show = reg_rows.drop(columns=["surfaced"], errors="ignore").copy()
                 show["case"] = show["case"].map(_CASE_LABEL).fillna(show["case"])
                 show["sleeve"] = show["sleeve"].map(sleeve_display_name)
                 show = show.rename(columns={
                     "holding": "Holding", "symbol": "Symbol", "account": "Account",
-                    "sleeve": "Sleeve", "case": "Case", "annual_benefit": "Annual Benefit ($)",
+                    "sleeve": "Sleeve", "case": "Case", "current_value": "Value ($)",
+                    "annual_benefit": "Annual Benefit ($)",
                     "embedded_gain": "Embedded Gain ($)", "cost_to_realize": "Cost to Realize ($)",
                     "is_free": "Free?", "payback_months": "Payback (months)",
                 })
                 st.dataframe(
                     show, use_container_width=True, hide_index=True,
                     column_config={
+                        "Value ($)":           st.column_config.NumberColumn(format="$%.0f"),
                         "Annual Benefit ($)":  st.column_config.NumberColumn(format="$%.2f"),
                         "Embedded Gain ($)":   st.column_config.NumberColumn(format="$%.0f"),
                         "Cost to Realize ($)": st.column_config.NumberColumn(format="$%.2f"),

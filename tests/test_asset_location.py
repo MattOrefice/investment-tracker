@@ -408,3 +408,56 @@ def test_caption_verb_agrees_with_singular_row_count():
     cap = resolve_caption(g7, pos, acct, reg)
     assert "Only 1 appears below" in cap, f"singular verb expected: {cap!r}"
     assert "Only 1 appear below" not in cap
+
+
+# ── Fix 2: the register carries each position's market value (Value ($) column) ──
+# The Underlying-positions expander gains a "Value ($)" column so a small annual
+# drag can be read against the position size that produces it. The value is the
+# register row's current_value — the same positions-CSV field {value} already sums,
+# so there is exactly one source of truth.
+
+def test_register_carries_position_market_value():
+    reg = _register()
+    assert "current_value" in reg.columns, "register must carry current_value for the Value column"
+    pos, acct, _ = _fixture()
+    disp = pos.merge(acct[["pseudonym", "display_name"]], on="pseudonym", how="left")
+    assert not reg.empty
+    for _, r in reg.iterrows():
+        src = disp[(disp["symbol"] == r["symbol"]) & (disp["display_name"] == r["account"])]
+        assert len(src) == 1, f"no unique source position for {r['symbol']}/{r['account']}"
+        assert r["current_value"] == pytest.approx(float(src.iloc[0]["current_value"])), (
+            "register current_value must equal the source position's market value"
+        )
+
+
+# ── Fix 1: a register_rows group shows ALL backing rows, sub-threshold included ──
+# Regression for the SAA-sleeves "count 4, table empty, no caption" bug. A
+# register_rows group whose rows are ALL below MIN_ANNUAL_BENEFIT still has
+# count == row_count; the page now renders reg_rows (not reg_rows[surfaced]), so the
+# tiny-drag rows appear with their Value rather than as an empty table under a
+# non-zero header. There is no filter-based gap to caption — count == row_count.
+
+def test_register_rows_group_shows_all_backing_rows_including_subthreshold():
+    from src.location_actions import _pop_holdings, filter_register_for_group
+    acct = pd.DataFrame([
+        {"pseudonym": "t", "display_name": "SynthTax", "tax_treatment": "taxable"},
+    ])
+    sec = pd.DataFrame([
+        {"ticker": "TSYX", "name": "Treasury sleeve", "tax_efficiency": "low",
+         "sleeve_category": "core_fi_treasury"},
+    ])
+    pos = pd.DataFrame([
+        {"pseudonym": "t", "symbol": "TSYX", "current_value": 10.0,   # $10 -> drag << $1
+         "total_gain_loss": 0.0, "cost_basis_total": 10.0},
+    ])
+    reg = build_location_register(pos, acct, sec, TAX_PROFILE,
+                                  SLEEVE_PRIORITY_BY_ACCOUNT_TYPE, ACCOUNT_SHELTER_PRIORITY)
+    group = {"key": "synthetic_saa", "symbols": ["TSYX"], "case_filter": ["A"],
+             "accounts": ["SynthTax"], "population": "register_rows"}
+    reg_rows = filter_register_for_group(reg, group)
+    assert len(reg_rows) == 1 and reg_rows.iloc[0]["case"] == "A"
+    assert not reg_rows["surfaced"].any(), "fixture must be sub-threshold (surfaced=False)"
+    # The OLD expander filtered reg_rows[surfaced] -> 0 rows under a count of 1 (the bug).
+    assert len(reg_rows[reg_rows["surfaced"]]) == 0
+    # count (population) == row_count, and the page now shows every reg_row.
+    assert len(_pop_holdings(group, pos, acct, reg)) == len(reg_rows) == 1

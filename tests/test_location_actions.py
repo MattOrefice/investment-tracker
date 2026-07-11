@@ -41,8 +41,8 @@ from src.household import build_location_register
 ROOT       = pathlib.Path(__file__).resolve().parent.parent
 TRACKER_DB = ROOT / "data" / "tracker.db"
 
-_REGISTER_COLS = ["holding", "symbol", "account", "sleeve", "case", "annual_benefit",
-                  "embedded_gain", "cost_to_realize", "is_free", "payback_months"]
+_REGISTER_COLS = ["holding", "symbol", "account", "sleeve", "case", "current_value",
+                  "annual_benefit", "embedded_gain", "cost_to_realize", "is_free", "payback_months"]
 
 
 def _live():
@@ -417,6 +417,75 @@ def test_matched_symbols_without_caption_raises_at_config_load():
             validate_action_groups()
     finally:
         la.ACTION_GROUPS = orig
+
+
+# ── SAA sleeves: sub-threshold backing rows now surface (count == row_count) ─────
+
+def test_saa_sleeves_count_equals_row_count_live():
+    """The 'SAA sleeves in taxable' group's four holdings (VGIT/SCHP/PDBC/VNQ) are
+    low-efficiency case-A rows whose annual drag is below MIN_ANNUAL_BENEFIT. They
+    are register rows and its population counts them, so count MUST equal row_count —
+    the expander now shows every one. Pins the 'header says 4, table empty' bug."""
+    pos, acct, sec, reg = _live()
+    g = next(x for x in ACTION_GROUPS if x["key"] == "saa_sleeves_taxable")
+    rows = filter_register_for_group(reg, g)
+    pop = _pop_holdings(g, pos, acct, reg)
+    assert set(rows["symbol"]) == {"VGIT", "SCHP", "PDBC", "VNQ"}, (
+        f"the four SAA-sleeve symbols must all be register rows, got {sorted(set(rows['symbol']))}"
+    )
+    assert set(rows["case"]) == {"A"}, f"SAA sleeves are case A, got {sorted(set(rows['case']))}"
+    assert len(pop) == len(rows) == 4, f"count {len(pop)} must equal row_count {len(rows)} == 4"
+    # The whole point of the fix: these are sub-threshold, yet must still be shown.
+    assert not rows["surfaced"].any(), "SAA-sleeve rows are sub-threshold — that's why they were hidden"
+
+
+def test_only_matched_symbols_groups_have_a_population_gap_live():
+    """After showing all backing rows, the ONLY groups whose count differs from their
+    register-row count are the two matched_symbols coverage groups (they count
+    correctly-located / federally-exempt holdings that are never register rows). Every
+    other group has count == row_count, and each gap-bearing group carries a caption."""
+    pos, acct, sec, reg = _live()
+    gap = set()
+    for g in ACTION_GROUPS:
+        if g["key"] in INFORMATIONAL_KEYS:
+            continue
+        if len(_pop_holdings(g, pos, acct, reg)) != len(filter_register_for_group(reg, g)):
+            gap.add(g["key"])
+    assert gap == {"thematic_sprawl", "frozen_tod_income"}, f"unexpected population gaps: {gap}"
+    for k in gap:
+        gg = next(x for x in ACTION_GROUPS if x["key"] == k)
+        assert gg.get("caption"), f"{k} has a population gap but no caption"
+    # And no group is orphaned (every register row is claimed).
+    assert_full_coverage(reg)
+
+
+def test_page14_renders_value_column_and_saa_rows_live(monkeypatch):
+    """End-to-end render on real personal data: the Asset Location page loads without
+    exception, every Underlying-positions table carries a 'Value ($)' column, and the
+    four SAA-sleeve symbols — previously dropped as sub-threshold — appear in a table."""
+    from src.household_data import find_latest_positions_csv
+    csv = find_latest_positions_csv()
+    if csv is None or not TRACKER_DB.exists() or TRACKER_DB.stat().st_size == 0:
+        pytest.skip("personal-mode inputs absent")
+    import src.config
+    import src.db
+    monkeypatch.setattr(src.config, "IS_DEMO", False)     # force the personal-mode branch
+    monkeypatch.setattr(src.db, "DB_PATH", TRACKER_DB)     # read the real tracker.db, not demo.db
+
+    from streamlit.testing.v1 import AppTest
+    at = AppTest.from_file(str(ROOT / "pages" / "14_Asset_Location.py"), default_timeout=90).run()
+    assert not at.exception, f"page raised: {at.exception}"
+
+    value_tables = [df.value for df in at.dataframe
+                    if "Value ($)" in list(getattr(df.value, "columns", []))]
+    assert value_tables, "no Underlying-positions table carried a 'Value ($)' column"
+    shown = set()
+    for t in value_tables:
+        if "Symbol" in t.columns:
+            shown |= set(t["Symbol"])
+    assert {"VGIT", "SCHP", "PDBC", "VNQ"} <= shown, (
+        f"SAA-sleeve rows missing from rendered tables; shown symbols: {sorted(shown)}"
+    )
 
 
 # ── Bug 3: no hardcoded headroom / dollar literals ─────────────────────────────
