@@ -754,6 +754,7 @@ def build_location_register(
             "account":         str(row.get("display_name") or ""),
             "sleeve":          sleeve,
             "case":            case,
+            "current_value":   round(dollar, 2),     # position market value (from positions CSV)
             "annual_benefit":  round(annual_benefit, 2),
             "embedded_gain":   (round(float(embedded_gain), 2) if has_gain else None),
             "cost_to_realize": round(cost_to_realize, 2),
@@ -761,8 +762,8 @@ def build_location_register(
             "payback_months":  payback_months,
         })
 
-    base_cols = ["holding", "symbol", "account", "sleeve", "case", "annual_benefit",
-                 "embedded_gain", "cost_to_realize", "is_free", "payback_months"]
+    base_cols = ["holding", "symbol", "account", "sleeve", "case", "current_value",
+                 "annual_benefit", "embedded_gain", "cost_to_realize", "is_free", "payback_months"]
     # `surfaced` is a PRESENTATION flag, not a modeling one: sub-threshold rows stay
     # in the register (so every aggregate sums them) but are not shown as actions.
     cols = base_cols + ["surfaced"]
