@@ -85,6 +85,18 @@ def test_liquidity_is_the_inverse_of_shelter_priority():
     assert lad.loc["LOSS", "cost_to_cash"] < lad.loc["TDX", "cost_to_cash"]
 
 
+def test_tier_capital_reconciles_to_ladder():
+    """Part 2: the tier cards are pure aggregation of the ladder's own columns —
+    Σ per-tier gross == total Value, Σ per-tier net == total Net cash, and gross ≥ net
+    for every tier (cost is non-negative). No new tax computation is introduced."""
+    pos, acct = _fixture()
+    lad = build_liquidity_ladder(pos, acct, TAX_PROFILE)
+    by = lad.groupby("tier").agg(gross=("value", "sum"), net=("net_cash", "sum"))
+    assert abs(by["gross"].sum() - lad["value"].sum()) < 0.01, "tier grosses must sum to total value"
+    assert abs(by["net"].sum() - lad["net_cash"].sum()) < 0.01, "tier nets must sum to total net cash"
+    assert (by["gross"] >= by["net"] - 0.01).all(), "gross must be >= net for every tier"
+
+
 def test_liquidity_page_renders_live(monkeypatch):
     """End-to-end render on real personal data: page loads, the ladder has the
     cumulative column, tiers are the three known labels, and cumulative is monotone."""
@@ -99,9 +111,22 @@ def test_liquidity_page_renders_live(monkeypatch):
     from streamlit.testing.v1 import AppTest
     at = AppTest.from_file(str(ROOT / "pages" / "15_Liquidity.py"), default_timeout=90).run()
     assert not at.exception, f"page raised: {at.exception}"
-    # Fix 3 — nested KPI line (not three parallel numbers) + Fix 1 caveat
-    md = " ||| ".join(m.value for m in at.markdown)
-    assert "Total household" in md and "nest" in md, "nested KPI line missing"
+    # Part 2 — tier-capital cards (replaced the prose line); the three tiers reconcile
+    # to Total available (gross), and the caveat + settlement caption render.
+    import re
+    mets = {m.label: m.value for m in at.metric}
+
+    def _num(s):
+        return float(re.sub(r"[^\d.]", "", s))
+
+    for lbl in ("Tier 1 · taxable, minimal gains", "Tier 2 · taxable with gains",
+                "Tier 3 · locked (retirement)", "Total available (gross)",
+                "Total net if fully liquidated"):
+        assert lbl in mets, f"tier card '{lbl}' missing"
+    _sum3 = sum(_num(mets[l]) for l in ("Tier 1 · taxable, minimal gains",
+                                        "Tier 2 · taxable with gains", "Tier 3 · locked (retirement)"))
+    assert abs(_sum3 - _num(mets["Total available (gross)"])) < 1.5, "tier cards must sum to total gross"
+    assert any("T+1" in c.value and "same-day" in c.value for c in at.caption), "settlement caption missing"
     assert any("no accessible" in i.value for i in at.info), "Roth/age caveat missing"
     # ladder
     tables = [d.value for d in at.dataframe if "Cumulative net cash ($)" in list(d.value.columns)]
