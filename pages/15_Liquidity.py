@@ -172,6 +172,36 @@ with col:
     st.dataframe(_sty, use_container_width=True, hide_index=True)
     st.divider()
 
+# ── Marginal cost-to-cash exhibit (Part 3) — derived from the same per-row columns ─
+# Marginal cost of each successive block (tier), cheapest-first: cost ÷ gross. Reuses
+# the ladder's Value + Cost-to-cash columns — no tax recomputation.
+with col:
+    st.subheader("Marginal cost of the next dollar raised")
+    _mc = ladder.groupby("tier").agg(gross=("value", "sum"), cost=("cost_to_cash", "sum")).sort_index()
+    _mc["pct"] = (_mc["cost"] / _mc["gross"].where(_mc["gross"] != 0) * 100).fillna(0.0)
+    _cum = _mc["gross"].cumsum()
+
+    def _p(t):
+        return float(_mc.loc[t, "pct"]) if t in _mc.index else 0.0
+
+    _b1 = float(_cum.loc[1]) if 1 in _cum.index else 0.0          # end of Tier 1 → first taxable gain
+    _b2 = float(_cum.loc[2]) if 2 in _cum.index else _b1          # end of Tier 2 → first retirement dollar
+
+    _pts, _prev = [], 0.0                                         # step-shaped points (holds each tier's %)
+    for _t in _mc.index:
+        _pct, _end = float(_mc.loc[_t, "pct"]), float(_cum.loc[_t])
+        _pts.append({"Cumulative gross raised ($)": _prev, "Marginal cost %": _pct})
+        _pts.append({"Cumulative gross raised ($)": _end, "Marginal cost %": _pct})
+        _prev = _end
+    st.line_chart(pd.DataFrame(_pts), x="Cumulative gross raised ($)", y="Marginal cost %", height=240)
+    st.caption(
+        f"Cost ÷ gross of each block, cheapest first: **Tier 1 ≈ {_p(1):.1f}%** → "
+        f"**Tier 2 ≈ {_p(2):.1f}%** (15% LTCG + PA, on the embedded gain only) → "
+        f"**Tier 3 ≈ {_p(3):.1f}%** (10% penalty + ordinary on the whole withdrawal). You can raise "
+        f"~{_d(_b1)} before touching a taxable gain, and ~{_d(_b2)} before touching retirement."
+    )
+    st.divider()
+
 # ── How to read ──────────────────────────────────────────────────────────────────
 with col:
     with st.expander("How to read this page", expanded=False):
