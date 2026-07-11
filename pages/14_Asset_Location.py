@@ -39,6 +39,8 @@ from src.location_config import (
     SLEEVE_PRIORITY_BY_ACCOUNT_TYPE,
     ACCOUNT_SHELTER_PRIORITY,
     LTCG_HEADROOM_2026,
+    ORDINARY_INCOME_2026,
+    LTCG_0_BRACKET_CEILING_SINGLE_2026,
     is_directable,
 )
 from src.location_actions import (
@@ -96,16 +98,17 @@ _roth_idle_cash = deploy["idle_cash"]
 # ── KPIs (three distinct units; the last two must never be summed) ─────────────
 _kpi_idle_roth = _roth_idle_cash
 _kpi_annual_drag = float(register[register["case"].isin(["A", "B", "D"])]["annual_benefit"].sum())
-# The KPI counts ALL A/B/D drag. Partition it into actionable vs accepted/no-action
-# groups for the scope note below (every register row belongs to exactly one group, so
-# this is a partition of the KPI, not a re-sum — it never double-counts or exceeds it).
-_accepted_idx = set()
+# The KPI counts ALL A/B/D drag. Partition it into actionable-now vs deferred, where
+# deferred = accepted groups (logged, no action) + blocked groups (a good move you
+# can't make yet — the gain side is blocked on pre-tax capacity). Every register row
+# belongs to exactly one group, so this is a partition of the KPI, never a re-sum.
+_deferred_idx = set()
 for _g in ACTION_GROUPS:
-    if _g["status"] == "accepted":
-        _accepted_idx |= set(filter_register_for_group(register, _g).index)
-_acc_rows = register.loc[sorted(_accepted_idx)]
-_accepted_drag = float(_acc_rows[_acc_rows["case"].isin(["A", "B", "D"])]["annual_benefit"].sum()) if len(_acc_rows) else 0.0
-_actionable_drag = _kpi_annual_drag - _accepted_drag
+    if _g["status"] in ("accepted", "blocked"):
+        _deferred_idx |= set(filter_register_for_group(register, _g).index)
+_def_rows = register.loc[sorted(_deferred_idx)]
+_deferred_drag = float(_def_rows[_def_rows["case"].isin(["A", "B", "D"])]["annual_benefit"].sum()) if len(_def_rows) else 0.0
+_actionable_drag = _kpi_annual_drag - _deferred_drag
 # Case C is repositionable inside shelters — a stock of dollars, NOT an annual flow.
 _case_c = register[register["case"] == "C"]
 _pos_disp = positions_df.merge(accounts_df[["pseudonym", "display_name"]], on="pseudonym", how="left")
@@ -124,11 +127,6 @@ _loss_side_total = float(filter_register_for_group(register, _loss_group)["curre
 _present_accts = accounts_df[accounts_df["pseudonym"].isin(positions_df["pseudonym"])]
 _directable_names = [n for p, n in zip(_present_accts["pseudonym"], _present_accts["display_name"]) if is_directable(p)]
 _coordination_names = [n for p, n in zip(_present_accts["pseudonym"], _present_accts["display_name"]) if not is_directable(p)]
-
-# 0% LTCG headroom (finite budget) — same source of truth as group 4's prose.
-_hr = capital_gains_headroom(register)
-_headroom_consumed = _hr["consumed"]
-_headroom_remaining = _hr["remaining"]
 
 _STATUS_LABEL = {"act_now": "Act now", "evaluate": "Evaluate", "blocked": "Blocked", "accepted": "Accepted"}
 
@@ -200,10 +198,10 @@ with col:
         "move between shelters for free (case C). Different units — never summed."
     )
     st.caption(
-        f"The drag counts A/B/D across all groups; about {escape_md(_fmt_dollars(_accepted_drag))} "
-        "of it sits in accepted/no-action groups (Frozen TOD, SAA sleeves, Thematic sprawl) "
-        "you've chosen not to act on — so the drag you'd actually remove by acting is about "
-        f"{escape_md(_fmt_dollars(_actionable_drag))}."
+        f"The drag counts A/B/D across all groups; about {escape_md(_fmt_dollars(_deferred_drag))} "
+        "of it sits in accepted or capacity-blocked groups you can't act on now — most of it "
+        "waiting on the 401(k) rollover to free pre-tax space — so the drag you'd actually "
+        f"remove by acting today is about {escape_md(_fmt_dollars(_actionable_drag))}."
     )
     st.divider()
 
@@ -349,18 +347,18 @@ with col:
         _ltcg = TAX_PROFILE["federal_ltcg"] + TAX_PROFILE["state_ltcg"]
         st.markdown(
             "**Tax profile** (user-editable in `src/location_config.py`):\n\n"
-            f"- Federal ordinary marginal: **{TAX_PROFILE['federal_marginal']:.2%}**\n"
-            f"- Federal long-term capital gains: **0% up to \\${LTCG_HEADROOM_2026:,.0f} "
-            "of remaining 2026 headroom, then 15%**\n"
+            f"- Federal ordinary marginal: **{TAX_PROFILE['federal_marginal']:.0%}** "
+            f"(2026 single bracket at ~\\${ORDINARY_INCOME_2026:,.0f} income)\n"
+            f"- Federal long-term capital gains: **{TAX_PROFILE['federal_ltcg']:.0%}** — "
+            "the 0% bracket is out of reach at this income, so gains are taxed\n"
             f"- State ordinary (PA flat): **{TAX_PROFILE['state_marginal']:.2%}**\n"
             f"- State LTCG (PA — no preferential rate): **{TAX_PROFILE['state_ltcg']:.2%}**\n"
-            f"- Combined ordinary rate: **{_ord:.2%}** · combined LTCG rate on "
-            f"realizations: **{_ltcg:.2%}** (federal 0% within headroom + PA)\n\n"
-            f"**0% capital-gains headroom (2026).** A finite budget of "
-            f"**\\${LTCG_HEADROOM_2026:,.0f}**, not a rate. The recommended gain-side "
-            f"relocations would consume **\\${_headroom_consumed:,.0f}**, leaving "
-            f"**\\${_headroom_remaining:,.0f}**; realizations beyond that are taxed at "
-            "15% federal + 3.07% PA.\n\n"
+            f"- Combined ordinary rate: **{_ord:.2%}** · combined rate on realized "
+            f"gains: **{_ltcg:.2%}** (15% federal + PA)\n\n"
+            f"**0% capital-gains headroom (2026): \\${LTCG_HEADROOM_2026:,.0f}.** With 2026 "
+            f"income of ~\\${ORDINARY_INCOME_2026:,.0f} above the ~\\${LTCG_0_BRACKET_CEILING_SINGLE_2026:,.0f} "
+            "single-filer 0%-rate ceiling, the 0% bracket is exhausted — every realized "
+            "long-term gain is taxed at 15% federal + 3.07% PA.\n\n"
             "**Scores are authored**, not computed — the owner's priority judgement, "
             "deliberately without a scoring formula. **Sleeve deploy targets are an "
             "ordinal ranking**, not a return forecast. **Dollar figures in every card "

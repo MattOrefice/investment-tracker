@@ -16,13 +16,14 @@ from __future__ import annotations
 # fractions (0.12 == 12%). Sources noted per line; update when your situation
 # or the law changes.
 TAX_PROFILE: dict[str, float] = {
-    # Federal ordinary marginal bracket. Source: 2026 federal brackets for the
-    # user's taxable income (12% bracket). Drives income-tax benefit of moving
-    # ordinary-income assets into a shelter.
-    "federal_marginal": 0.12,
-    # Federal long-term capital-gains rate. Source: 0% LTCG bracket (taxable
-    # income under the 0%-rate threshold). Makes taxable realizations cheap.
-    "federal_ltcg": 0.0,
+    # Federal ordinary marginal bracket. Source: 2026 federal single brackets at
+    # ~$89K 2026 ordinary income (post-severance) — the 22% bracket (~$48.5K–$103K).
+    # Drives the income-tax benefit of moving ordinary-income assets into a shelter.
+    "federal_marginal": 0.22,
+    # Federal long-term capital-gains rate. Source: 15% LTCG bracket — 2026 income
+    # (~$89K) is above the 0%-rate ceiling (~$48.35K), so the 0% bracket is out of
+    # reach this year and realized gains are federally taxed at 15%.
+    "federal_ltcg": 0.15,
     # State ordinary marginal rate. Source: Pennsylvania flat personal income
     # tax, 3.07%.
     "state_marginal": 0.0307,
@@ -83,11 +84,15 @@ FEDERALLY_EXEMPT_SLEEVES: frozenset[str] = frozenset({"high_yield_muni"})
 # sums every row, filtered or not. USER-EDITABLE.
 MIN_ANNUAL_BENEFIT: float = 1.00
 
-# 0% federal long-term capital-gains bracket for 2026, modeled as a finite
-# BUDGET rather than a rate: realized long-term gains are federally untaxed up to
-# this remaining headroom, then taxed at 15%. USER-EDITABLE; shrinks with other
-# taxable income and evaporates once wage income lifts past the 0%-rate ceiling.
-LTCG_HEADROOM_2026: float = 2650.0
+# 2026 ordinary income (post-severance) and the single-filer 0% long-term-cap-gains
+# ceiling. The 0% LTCG bracket is a finite BUDGET, not a rate: realized long-term
+# gains are federally untaxed up to (ceiling − ordinary income), then taxed at 15%
+# (TAX_PROFILE['federal_ltcg']). USER-EDITABLE. With ~$89K income above the ~$48.35K
+# ceiling, the remaining headroom is $0 — the 0% bracket is gone this year, so every
+# realized gain is taxed at 15% federal + PA's flat 3.07%.
+ORDINARY_INCOME_2026: float = 89_000.0
+LTCG_0_BRACKET_CEILING_SINGLE_2026: float = 48_350.0
+LTCG_HEADROOM_2026: float = max(0.0, LTCG_0_BRACKET_CEILING_SINGLE_2026 - ORDINARY_INCOME_2026)
 
 # Equity sleeves, ENUMERATED EXPLICITLY — never inferred from a substring match on
 # the sleeve name. Used to size an account's absorbable-equity capacity. Excludes
