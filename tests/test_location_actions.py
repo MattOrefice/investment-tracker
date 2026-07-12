@@ -432,7 +432,7 @@ def test_no_rendered_prose_contains_comma_emdash():
 # for silent prose corruption (dropped words render as valid Markdown).
 RENDERED_PROSE_LEN = {
     "deploy_roth_cash":          (514, 577),   # gap-proportional prose + EM/FTC clause
-    "clear_roth_non_equity":     (840, 887),   # + Traditional-IRA leg: tax logic, capacity block, horizon caveat
+    "clear_roth_non_equity":     (1169, 887),  # + named VTI Roth rebuy (1:1 to hedged equity) — cons unchanged
     "relocate_loss_side":        (410, 859),   # cons: + rebuy rec (BND/AGG/FXNAX) + duration-risk note
     "relocate_gain_side":        (311, 404),   # rewritten: 22%/15% capacity-defer, no 0% headroom
     "thematic_sprawl":           (217, 475),   # cons: 0% headroom -> 15% cap-gains language
@@ -811,6 +811,42 @@ def test_loss_side_cons_references_current_group2_title():
     assert "{group_2_title}" in g3["cons"], "group 3 must template group 2's title, not hardcode it"
     cons = render_prose_md(g3["cons"], resolve_placeholders(g3, pos, acct, sec, reg, roth_idle_cash=dep["idle_cash"]))
     assert _group_title("clear_roth_non_equity") in cons, "rendered group 3 cons must show group 2's live title"
+
+
+# ── Roth-cleanup card names VTI as the Roth equity rebuy (1:1, not gap-sized) ───
+
+def test_clear_roth_names_vti_and_templates_the_rebuy_figure():
+    """Config/template guard (runs in CI, no live data): the Roth-cleanup card carries
+    the hedged-equity rebuy subset and both its action and For prose name VTI and
+    template the {roth_equity_rebuy} figure — never a hardcoded dollar or a ticker-less
+    'broad equity'. The subset is a strict subset of the 7 sold symbols (equity only)."""
+    g = next(x for x in ACTION_GROUPS if x["key"] == "clear_roth_non_equity")
+    assert g["equity_rebuy_symbols"] == ["JEPQ", "JEPI", "JHEQX", "HELO"]
+    assert set(g["equity_rebuy_symbols"]) < set(g["symbols"]), "rebuy subset must be equity-only, a subset of the 7"
+    assert "{roth_equity_rebuy}" in g["action"] and "{roth_equity_rebuy}" in g["pros"]
+    assert "VTI" in g["action"] and "VTI" in g["pros"]
+    assert "broad equity there" not in g["action"], "the ticker-less 'broad equity' clause must be replaced"
+    assert not _DOLLAR_LITERAL.search(g["action"]) and not _DOLLAR_LITERAL.search(g["pros"]), "no $ literal"
+
+
+def test_clear_roth_rebuy_sized_1to1_to_hedged_equity_live():
+    """The VTI rebuy is sized 1:1 to the hedged, covered-call equity sold
+    (JEPQ/JEPI/JHEQX/HELO) in the Roth — a location move, the equity portion only,
+    NOT the whole card value and NOT gap-sized. The figure templates from live rows."""
+    pos, acct, sec, reg = _live()
+    dep = build_roth_deploy_answer(pos, acct, sec)
+    g = next(x for x in ACTION_GROUPS if x["key"] == "clear_roth_non_equity")
+    r = resolve_placeholders(g, pos, acct, sec, reg, roth_idle_cash=dep["idle_cash"])
+    roth_pseudos = set(acct[acct["display_name"] == "Roth IRA"]["pseudonym"])
+    hedged = pos[(pos["symbol"].isin(g["equity_rebuy_symbols"])) & (pos["pseudonym"].isin(roth_pseudos))]
+    assert not hedged.empty, "expected the hedged-equity lots in the Roth"
+    assert r["roth_equity_rebuy"] == _fmt_dollars(float(hedged["current_value"].sum())), "rebuy must equal Σ hedged equity"
+    assert r["roth_equity_rebuy"] != r["value"], "rebuy is the equity portion, strictly less than the whole card"
+    action = render_prose_md(g["action"], r)
+    pros = render_prose_md(g["pros"], r)
+    assert "VTI" in action and "VTI" in pros
+    assert r["roth_equity_rebuy"] in action, "action must show the sized figure"
+    assert "location move" in pros and "overweight" in pros, "why/location-move framing must render"
 
 
 # ── Clarity + structure pass: action lines, rename, prominent captions ─────────
