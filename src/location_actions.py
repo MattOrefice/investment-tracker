@@ -52,9 +52,10 @@ _DEPLOY_ROTH_CASH_CONS = (
 )
 
 _CLEAR_ROTH_PROS = (
-    "Free — trades inside a shelter aren't taxable events. This moves {value} "
-    "across {count} holdings out of capped-upside and zero-yield assets and into "
-    "equity: the {roth_equity_rebuy} of hedged, covered-call funds is rebought "
+    "Free — trades inside a shelter aren't taxable events. This clears {value} of "
+    "misplaced income and non-equity holdings across {count} lots out of your most "
+    "valuable account, then puts only the equity portion back to work in the Roth: "
+    "the {roth_equity_rebuy} of hedged, covered-call funds is rebought "
     "one-for-one as VTI — the uncapped total US market they were selling away "
     "(total-market, not the S&P 500, since the household is already overweight "
     "large-cap), a location move sized to the equity sold, not an allocation change "
