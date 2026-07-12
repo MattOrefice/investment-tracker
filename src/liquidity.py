@@ -34,6 +34,8 @@ def build_liquidity_ladder(
     positions_df: pd.DataFrame,
     accounts_df: pd.DataFrame,
     tax_profile: dict[str, float],
+    roth_contribution_basis: float = 0.0,
+    roth_is_qualified_age: bool = False,
 ) -> pd.DataFrame:
     """Rank every household holding by cost to convert to spendable cash, cheapest
     first. Returns a DataFrame with columns:
@@ -42,13 +44,27 @@ def build_liquidity_ladder(
       note (plain-language reason).
 
     Tiers:
-      1  taxable at a loss / small gain, and taxable cash/money-market — ~$0 tax.
+      1  taxable at a loss / small gain, and taxable cash/money-market — ~$0 tax;
+         plus the Roth CONTRIBUTION-BASIS tranche (comes out first, free, any age).
       2  taxable with a meaningful embedded gain — 15% LTCG + PA on the gain.
-      3  Roth (contributions free, earnings penalized) and pre-tax IRA/401k
-         (10% penalty + ordinary income on the whole withdrawal) — locked.
+      3  pre-tax IRA/401k (10% penalty + ordinary income on the whole withdrawal),
+         and the Roth EARNINGS tranche when the owner is under 59½ — locked.
+
+    Roth IRA — basis-aware ordering, NOT pro-rata. The IRS Roth withdrawal order is
+    contributions first (tax- and penalty-free at any age), then earnings (free only
+    at 59½+ and a 5-year account). That is an ordering over CUMULATIVE dollars, not a
+    per-holding split — which security you sell is irrelevant to the cost — so the
+    whole Roth is collapsed to two synthetic, fungible tranche rows:
+      free_tranche     = min(roth_contribution_basis, roth_total)   # underwater-safe
+      earnings_tranche = max(0, roth_total − free_tranche)
+    The basis tranche is Tier 1 (net = gross). The earnings tranche is Tier 1 (free)
+    when ``roth_is_qualified_age`` else Tier 3 (10% penalty + ordinary). basis/age
+    come from the personal profile (src/personal_profile); with a zero basis this
+    reduces to one locked earnings row = the whole Roth, the prior behavior.
     """
     ord_rate = ordinary_rate(tax_profile)   # e.g. 22% federal + 3.07% PA
     ltcg = ltcg_rate(tax_profile)           # e.g. 15% federal + 3.07% PA
+    penord = EARLY_WITHDRAWAL_PENALTY + ord_rate
     eg, _ = compute_embedded_gain(positions_df)
 
     merged = (
@@ -61,6 +77,8 @@ def build_liquidity_ladder(
     rows: list[dict] = []
     for _, r in merged.iterrows():
         tt = r.get("tax_treatment")
+        if tt == "roth_ira":
+            continue    # Roth is aggregated into basis/earnings tranches below (ordering, not per-holding)
         value = float(r["current_value"])
         egv = r["embedded_gain"]
         gain_pct = r["gain_pct"]
@@ -76,19 +94,11 @@ def build_liquidity_ladder(
                 else:
                     tier, note = 2, "Taxable with a meaningful gain — 15% LTCG + PA on the gain"
         else:
-            # Tax-advantaged (Roth, Traditional IRA, 401(k)/workplace, HSA): LOCKED.
-            # Conservative cost — the WHOLE withdrawal penalized + ordinary-taxed IF taken
-            # before 59½. The tool can see neither the user's age nor Roth contribution
-            # basis, so it assumes neither is favorable and never shows $0. (Roth and
-            # pre-tax therefore carry the same value × ~35% here; the caveat on the page
-            # states the assumptions.)
-            cost = value * (EARLY_WITHDRAWAL_PENALTY + ord_rate)
+            # Pre-tax (Traditional IRA, 401(k)/workplace, HSA): LOCKED — the WHOLE
+            # withdrawal is penalized + ordinary-taxed if taken before 59½.
+            cost = value * penord
             tier = 3
-            if tt == "roth_ira":
-                note = ("Roth — full value penalized + ordinary-taxed if withdrawn before 59½; "
-                        "contributions come out cheaper, but this tool can't see your basis")
-            else:
-                note = "Pre-tax — 10% penalty + ordinary income on the whole withdrawal if before 59½"
+            note = "Pre-tax — 10% penalty + ordinary income on the whole withdrawal if before 59½"
 
         rows.append({
             "symbol": r["symbol"],
@@ -101,6 +111,40 @@ def build_liquidity_ladder(
             "net_cash": round(value - float(cost), 2),
             "note": note,
         })
+
+    # ── Roth IRA — contribution-basis ordering (two fungible tranches) ───────────
+    roth = merged[merged["tax_treatment"] == "roth_ira"]
+    if not roth.empty:
+        roth_total = float(roth["current_value"].sum())
+        roth_account = str(roth["display_name"].iloc[0] or "Roth IRA")
+        free_tranche = min(max(0.0, float(roth_contribution_basis)), roth_total)   # underwater-safe cap
+        earnings_tranche = max(0.0, roth_total - free_tranche)
+
+        if free_tranche > 0:
+            rows.append({
+                "symbol": "Roth IRA — contribution basis (free)",
+                "account": roth_account, "tax_treatment": "roth_ira",
+                "value": round(free_tranche, 2), "embedded_gain": None,
+                "tier": 1, "cost_to_cash": 0.0, "net_cash": round(free_tranche, 2),
+                "note": "Roth contributions come out first — tax- and penalty-free at any age (basis you entered)",
+            })
+        if earnings_tranche > 0:
+            if roth_is_qualified_age:
+                e_sym = "Roth IRA — earnings (qualified, tax-free)"
+                e_tier, e_cost = 1, 0.0
+                e_note = "Roth earnings — tax-free: you are 59½+ (a 5-year account is assumed, not verified)"
+            else:
+                e_sym = "Roth IRA — earnings (locked until 59½)"
+                e_tier, e_cost = 3, earnings_tranche * penord
+                e_note = "Roth earnings — locked: 10% penalty + ordinary income if withdrawn before 59½"
+            rows.append({
+                "symbol": e_sym,
+                "account": roth_account, "tax_treatment": "roth_ira",
+                "value": round(earnings_tranche, 2), "embedded_gain": None,
+                "tier": e_tier, "cost_to_cash": round(float(e_cost), 2),
+                "net_cash": round(earnings_tranche - float(e_cost), 2),
+                "note": e_note,
+            })
 
     if not rows:
         return pd.DataFrame(columns=[
