@@ -1,0 +1,5 @@
+{
+  "_comment": "TEMPLATE — copy to private/personal_profile.json (gitignored) and fill in your real values. Never commit the real file. date_of_birth: ISO YYYY-MM-DD. roth_contribution_basis: total dollars of direct Roth contributions (verify against Form 8606, Form 5498 box 10, or Fidelity). Converted amounts and their 5-year clocks are not modeled.",
+  "date_of_birth": "1990-01-01",
+  "roth_contribution_basis": 0
+}

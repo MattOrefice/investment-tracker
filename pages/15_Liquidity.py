@@ -27,6 +27,7 @@ from src.db import get_connection
 from src.household_data import load_latest_positions
 from src.location_config import TAX_PROFILE
 from src.liquidity import build_liquidity_ladder, TIER_LABEL
+from src.personal_profile import load_roth_profile
 
 # ── Load data ──────────────────────────────────────────────────────────────────
 try:
@@ -49,7 +50,17 @@ with get_connection() as conn:
         conn,
     )
 
-ladder = build_liquidity_ladder(positions_df, accounts_df, TAX_PROFILE)
+# Roth basis/age profile — synthetic in demo, gitignored private/ file in personal
+# (absent → zero basis, whole Roth stays locked). Drives the Roth contribution-basis
+# tranche (Tier 1) vs earnings tranche (Tier 3 until 59½). No real data is committed.
+_profile = load_roth_profile(IS_DEMO, _as_of_date)
+_roth_basis = float(_profile["roth_contribution_basis"])
+_roth_qualified = bool(_profile["is_qualified_age"])
+
+ladder = build_liquidity_ladder(
+    positions_df, accounts_df, TAX_PROFILE,
+    roth_contribution_basis=_roth_basis, roth_is_qualified_age=_roth_qualified,
+)
 
 # ── Title ──────────────────────────────────────────────────────────────────────
 _, col, _ = st.columns([1, 10, 1])
@@ -99,12 +110,33 @@ with col:
         "**Settlement:** ETFs, equities, and most mutual funds settle **T+1**; core / "
         "money-market cash is **same-day**."
     )
-    st.info(
-        "Roth and pre-tax costs assume withdrawal **before age 59½** and **no accessible "
-        "Roth contribution basis**. Your actual cost is lower if you're over 59½ or "
-        "withdraw Roth contributions first — this tool can't see your basis or age. "
-        "Confirm with Fidelity."
-    )
+    if _roth_basis > 0:
+        _earn = (
+            "Since you are 59½ or older, the Roth **earnings are also free** (Tier 1), "
+            "assuming the account is at least 5 years old. "
+            if _roth_qualified else
+            "The remaining Roth **earnings stay locked (Tier 3) until 59½**. "
+        )
+        st.info(
+            f"Your Roth **contribution basis of {_d(_roth_basis)}** (as entered locally) is "
+            f"treated as **Tier-1 free** — contributions come out first, tax- and "
+            f"penalty-free at any age. {_earn}"
+            "Verify the basis against **Form 8606**, **Form 5498 box 10**, or Fidelity. "
+            "This assumes **direct contributions**: converted amounts carry their own "
+            "5-year clocks, and the earnings 5-year-account rule also applies at 59½ — "
+            "neither is modeled. Pre-tax accounts remain locked (10% penalty + ordinary "
+            "income) before 59½."
+        )
+    else:
+        st.info(
+            "No Roth contribution basis is configured, so the **whole Roth is shown as "
+            "locked (Tier 3)** — the conservative default. To split out the penalty-free "
+            "contribution basis (it comes out first, tax- and penalty-free at any age), "
+            "add your date of birth and direct-contribution basis to "
+            "`private/personal_profile.json` (gitignored — see `personal_profile.example.json`). "
+            "Verify the basis against Form 8606, Form 5498 box 10, or Fidelity. Pre-tax "
+            "accounts remain locked (10% penalty + ordinary income) before 59½."
+        )
     st.divider()
 
 # ── The ladder ───────────────────────────────────────────────────────────────────
