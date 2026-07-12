@@ -110,9 +110,9 @@ _LOSS_SIDE_CONS = (
 _GAIN_SIDE_PROS = (
     "{annual_benefit} of recurring annual drag on {value} of assets, and the same "
     "credit-risk argument as the loss side. Relocating realizes {embedded_gain} of "
-    "gains — now taxable at 15%, since 2026 income put the 0% bracket out of reach — "
-    "but that {cost_to_realize} is a {payback} payback against the {annual_benefit}/yr "
-    "of relief. On the merits, worth doing."
+    "gains — now taxable at 18.07% (15% federal + 3.07% PA), since 2026 income put the "
+    "0% bracket out of reach — but that {cost_to_realize} is a {payback} payback against "
+    "the {annual_benefit}/yr of relief. On the merits, worth doing."
 )
 _GAIN_SIDE_CONS = (
     "It is worth doing, but there is nowhere to put it yet. The Traditional IRA "
@@ -130,8 +130,8 @@ _THEMATIC_PROS = (
 )
 _THEMATIC_CONS = (
     "The excess fee is about $76 a year. Unwinding realizes {embedded_gain} of "
-    "gain, costing several hundred dollars in 15% capital-gains tax now that the "
-    "0% bracket is gone — for no location benefit. You have decided to keep the sector bets. "
+    "gain, costing several hundred dollars in 18.07% capital-gains tax (15% federal + "
+    "3.07% PA) now that the 0% bracket is gone — for no location benefit. You have decided to keep the sector bets. "
     "Household-wide the thematic book is 11.8% of your equity — a real allocation, "
     "though each position is a rounding error. The correct action is to log "
     "this as accepted, capped at its current weight — not to fix it. A logged "
@@ -181,8 +181,8 @@ _TOD_INCOME_CONS = (
     "equity and is already spoken for twice over. And GHYIX is a municipal fund — "
     "its interest is federally exempt, so taxable is exactly where it belongs; "
     "sheltering it would waste the shelter. The rest carry embedded gains of "
-    "{embedded_gain}, now taxable at 15% with the 0% bracket gone — another reason "
-    "to leave them undisturbed. This book is externally managed and frozen by decision, "
+    "{embedded_gain}, now taxable at 18.07% (15% federal + 3.07% PA) with the 0% "
+    "bracket gone — another reason to leave them undisturbed. This book is externally managed and frozen by decision, "
     "not by oversight. Logged as accepted."
 )
 

@@ -434,10 +434,10 @@ RENDERED_PROSE_LEN = {
     "deploy_roth_cash":          (514, 577),   # gap-proportional prose + EM/FTC clause
     "clear_roth_non_equity":     (1169, 887),  # + named VTI Roth rebuy (1:1 to hedged equity) — cons unchanged
     "relocate_loss_side":        (410, 859),   # cons: + rebuy rec (BND/AGG/FXNAX) + duration-risk note
-    "relocate_gain_side":        (311, 404),   # rewritten: 22%/15% capacity-defer, no 0% headroom
-    "thematic_sprawl":           (217, 475),   # cons: 0% headroom -> 15% cap-gains language
+    "relocate_gain_side":        (339, 404),   # gain rate 15% -> 18.07% (15% fed + 3.07% PA)
+    "thematic_sprawl":           (217, 503),   # cons: gain rate 15% -> 18.07% (15% fed + 3.07% PA)
     "rollover_401k":             (338, 526),
-    "frozen_tod_income":         (382, 477),   # cons: 0% headroom -> 15% cap-gains language
+    "frozen_tod_income":         (382, 505),   # cons: gain rate 15% -> 18.07% (15% fed + 3.07% PA)
     "saa_sleeves_taxable":       (261, 665),
     "predeploy_stranded_equity": (328, 530),
 }
