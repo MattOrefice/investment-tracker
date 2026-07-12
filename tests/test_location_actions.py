@@ -432,7 +432,7 @@ def test_no_rendered_prose_contains_comma_emdash():
 # for silent prose corruption (dropped words render as valid Markdown).
 RENDERED_PROSE_LEN = {
     "deploy_roth_cash":          (514, 577),   # gap-proportional prose + EM/FTC clause
-    "clear_roth_non_equity":     (1169, 887),  # + named VTI Roth rebuy (1:1 to hedged equity) — cons unchanged
+    "clear_roth_non_equity":     (1245, 887),  # For headline: exposure-neutral (no whole-card "into equity" overclaim)
     "relocate_loss_side":        (410, 859),   # cons: + rebuy rec (BND/AGG/FXNAX) + duration-risk note
     "relocate_gain_side":        (339, 404),   # gain rate 15% -> 18.07% (15% fed + 3.07% PA)
     "thematic_sprawl":           (217, 503),   # cons: gain rate 15% -> 18.07% (15% fed + 3.07% PA)
