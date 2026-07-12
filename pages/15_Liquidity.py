@@ -101,14 +101,24 @@ with col:
     _c1.metric("Tier 1 · taxable, minimal gains", f"${_t1g:,.0f}", f"net ${_t1n:,.0f} if sold", delta_color="off")
     _c2.metric("Tier 2 · taxable with gains", f"${_t2g:,.0f}", f"net ${_t2n:,.0f} if sold", delta_color="off")
     _c3.metric("Tier 3 · locked (retirement)", f"${_t3g:,.0f}", f"net ${_t3n:,.0f} if sold", delta_color="off")
-    _tc1, _tc2 = st.columns(2)
-    _tc1.metric("Total available (gross)", f"${_total_gross:,.0f}")
-    _tc2.metric("Total net if fully liquidated", f"${_total_net:,.0f}")
+    # "Accessible now" is the genuinely-spendable number on a page titled "if you need
+    # cash": Tier 1 + Tier 2, reached without the 10% early-withdrawal penalty. It
+    # REUSES the tier totals above (_tier), so it can never disagree with them. Tier 3
+    # (locked retirement) is deliberately excluded — the portfolio total is separate.
+    _acc_gross, _acc_net = _t1g + _t2g, _t1n + _t2n
+    _tc1, _tc2, _tc3 = st.columns(3)
+    _tc1.metric("Accessible now — no penalty (Tier 1 + Tier 2)", f"${_acc_gross:,.0f}",
+                f"net ${_acc_net:,.0f} after tax", delta_color="off")
+    _tc2.metric("Total portfolio (gross)", f"${_total_gross:,.0f}")
+    _tc3.metric("Total net if fully liquidated", f"${_total_net:,.0f}")
     st.caption(
-        "Gross is market value; **net** is after the tax/penalty to convert to cash. Tier 1 + "
-        "Tier 2 are the liquid-in-taxable total — they nest, and do not add to Tier 3. "
-        "**Settlement:** ETFs, equities, and most mutual funds settle **T+1**; core / "
-        "money-market cash is **same-day**."
+        "Gross is market value; **net** is after the tax/penalty to convert to cash. "
+        "**Accessible now** is Tier 1 + Tier 2 — what you can reach *without* the 10% "
+        "early-withdrawal penalty: taxable holdings plus your penalty-free Roth "
+        "contribution basis. They nest and do **not** add to Tier 3 (locked retirement "
+        "— the 401(k) and IRAs, and Roth earnings before 59½). **Settlement:** ETFs, "
+        "equities, and most mutual funds settle **T+1**; core / money-market cash is "
+        "**same-day**."
     )
     if _roth_basis > 0:
         _earn = (

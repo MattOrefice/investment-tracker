@@ -183,12 +183,17 @@ def test_liquidity_page_renders_live(monkeypatch):
         return float(re.sub(r"[^\d.]", "", s))
 
     for lbl in ("Tier 1 · taxable, minimal gains", "Tier 2 · taxable with gains",
-                "Tier 3 · locked (retirement)", "Total available (gross)",
-                "Total net if fully liquidated"):
+                "Tier 3 · locked (retirement)", "Accessible now — no penalty (Tier 1 + Tier 2)",
+                "Total portfolio (gross)", "Total net if fully liquidated"):
         assert lbl in mets, f"tier card '{lbl}' missing"
-    _sum3 = sum(_num(mets[l]) for l in ("Tier 1 · taxable, minimal gains",
-                                        "Tier 2 · taxable with gains", "Tier 3 · locked (retirement)"))
-    assert abs(_sum3 - _num(mets["Total available (gross)"])) < 1.5, "tier cards must sum to total gross"
+    _t1, _t2, _t3 = (_num(mets["Tier 1 · taxable, minimal gains"]),
+                     _num(mets["Tier 2 · taxable with gains"]), _num(mets["Tier 3 · locked (retirement)"]))
+    assert abs((_t1 + _t2 + _t3) - _num(mets["Total portfolio (gross)"])) < 1.5, "tier cards must sum to portfolio gross"
+    # "Accessible now" is exactly Tier 1 + Tier 2 (excludes locked Tier 3) — same source.
+    assert abs(_num(mets["Accessible now — no penalty (Tier 1 + Tier 2)"]) - (_t1 + _t2)) < 1.5, (
+        "accessible-now gross must equal Tier 1 + Tier 2")
+    assert _num(mets["Accessible now — no penalty (Tier 1 + Tier 2)"]) < _num(mets["Total portfolio (gross)"]), (
+        "accessible-now must exclude locked Tier 3")
     assert any("T+1" in c.value and "same-day" in c.value for c in at.caption), "settlement caption missing"
     # Basis-aware caveat (replaced "can't see your basis or age"): names the templated
     # basis, the Tier-1 treatment, the verification forms, and the 5-year-clock clause.
