@@ -8,6 +8,24 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Asset Location — bonds-in-Roth, hedged-ETF, and rollover-mechanics answers
+_2026-07-13_
+
+The Asset Location page's account-location table and cards now answer several
+conceptual questions that were previously implicit: why bonds don't belong in the
+Roth despite being tax-inefficient (value scales with growth, not drag avoided),
+why the hedged-equity funds are equity positions with an option-income overlay
+rather than bond-like income holdings, the liquidity cost of relocating taxable
+assets into the Traditional IRA before 59½, what "pre-tax capacity" means where
+it first appears, the mechanics of a 401(k) rollover (assets are typically sold
+to cash, not moved in-kind) and the pro-rata rule that makes an empty Traditional
+IRA worth preserving, and a Roth 401(k) note plus a footnote on holding a pre-tax
+401(k), Roth 401(k), and Roth IRA at once. Five cards that separately restated
+"the Traditional IRA capacity is already spoken for" now cross-reference one
+consolidated summary instead. Every edited card is net shorter or equal in
+length; the page as a whole is about 60 words shorter than before despite the
+additions.
+
 ## Page 13's asset-location table retired
 _2026-07-09_
 

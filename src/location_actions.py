@@ -60,39 +60,37 @@ _CLEAR_ROTH_PROS = (
     "(total-market, not the S&P 500, since the household is already overweight "
     "large-cap), a location move sized to the equity sold, not an allocation change "
     "— those are the Deploy card's job, with new cash. The equivalents are bought "
-    "inside the Traditional IRA to keep household exposure flat. That is where the "
-    "hedged, covered-call funds belong, "
-    "not the Roth: their heavy ordinary income is sheltered for free in a "
-    "tax-deferred account — withdrawals are ordinary regardless — while their "
-    "capped upside means a lower expected return that does not merit the Roth's "
-    "never-taxed growth. The order follows from that: highest-return equity to the "
-    "Roth, income-heavy or lower-return to the Traditional, tax-efficient broad "
-    "equity to taxable. Gold yields nothing and compounds at roughly inflation; "
-    "thirty-two years of never-taxed growth is wasted on it. REIT income is "
-    "ordinary and belongs in pre-tax."
+    "inside the Traditional IRA to keep household exposure flat: that is where "
+    "hedged, covered-call funds belong, not the Roth — their heavy ordinary income "
+    "is sheltered for free there (withdrawals are ordinary regardless), while their "
+    "capped upside doesn't merit the Roth's never-taxed growth. Gold yields nothing "
+    "and compounds at roughly inflation; thirty-two years of never-taxed growth is "
+    "wasted on it. REIT income is ordinary and belongs in pre-tax."
 )
 _CLEAR_ROTH_CONS = (
-    "JHEQX is a mutual fund — check Fidelity's transaction fee and any short-term "
-    "redemption charge before selling. Rebuilding the hedge in the Traditional IRA "
-    "— sell equity there, buy the same funds; no wash-sale problem, since the Roth "
-    "lots sell at a gain — needs room the account does not have: it holds only "
-    "about {trad_ira_equity} of sellable equity, and the loss- and gain-side "
-    "relocations already claim more than all of it, so any rebuild waits on the "
-    "401(k) rollover to free pre-tax space. Rebuilding at all is optional, though: "
-    "you give up the downside hedge those positions provide — that is the point, "
-    "but it is a real change in the account's risk profile. The horizon argument "
-    "that pulls the hedge out of the Roth applies to the Traditional IRA just as "
-    "well, so keeping it is a volatility decision, not a tax one — decide it "
-    "deliberately rather than as a side effect of a location argument."
+    "JHEQX is a mutual fund — check Fidelity's transaction fee and redemption "
+    "charge before selling. These (JEPI/JEPQ/HELO/JHEQX) are equity funds with an "
+    "option-income overlay, not stable income — most of the long-run return still "
+    "comes from equity exposure, with a high distribution yield (largely option "
+    "premium) standing in for some appreciation. They cap upside for income; they "
+    "are not bond-like, so rebuilding the hedge (in the Traditional IRA, once "
+    "there's room) is optional: you give up that downside cushion, a real change "
+    "in risk profile. The horizon argument that pulls the hedge from the Roth "
+    "applies to the Traditional IRA too, so keeping it is a volatility decision, "
+    "not a tax one — decide it deliberately, not as a side effect of location.\n\n"
+    "**What happens in the Traditional IRA.** This rebuild, the loss-side bond "
+    "rebuy, and the gain-side relocation compete for the same {trad_ira_equity} of "
+    "room — one shared capacity, not three; none fit until the 401(k) rollover "
+    "frees space."
 )
 
 _LOSS_SIDE_PROS = (
     "These {count} holdings sit at a net embedded gain of {embedded_gain} — a "
     "loss. Selling owes nothing and harvests a small deduction. It removes "
-    "{annual_benefit} of recurring annual drag on {value} of assets, and, more "
-    "importantly, it removes credit risk from holdings you had been treating as a "
-    "safety buffer. Floating-rate bank loans and multisector income are "
-    "equity-correlated in exactly the drawdowns where you would want them stable."
+    "{annual_benefit} of recurring annual drag on {value} of assets, and removes "
+    "credit risk from holdings treated as a safety buffer. Floating-rate bank "
+    "loans and multisector income are equity-correlated in exactly the drawdowns "
+    "where you would want them stable."
 )
 _LOSS_SIDE_CONS = (
     "The wash-sale rule. Rebuying substantially identical funds within 30 days "
@@ -101,11 +99,12 @@ _LOSS_SIDE_CONS = (
     "AGG, or FXNAX — in the Traditional IRA, not the same ticker: different enough "
     "to clear the wash-sale rule, and it restores investment-grade bond ballast. "
     "Note the change in kind, not just location: this trades BFRIX/HLIPX's credit "
-    "and floating-rate risk for a bond index's duration (rate) risk. That is what "
-    "the SAA's Treasury-ballast intent wants, so it is an improvement — but a change "
-    "in character, not a like-for-like swap. Separately, that account has finite "
-    "capacity: it can absorb roughly {trad_ira_equity} of its own equity, which this "
-    "consumes almost entirely. Note that {group_2_title} also draws on this account."
+    "and floating-rate risk for a bond index's duration (rate) risk. This is what "
+    "the SAA's Treasury-ballast intent wants — an improvement, but a change in "
+    "character, not like-for-like. Relocating into the Traditional IRA also means "
+    "these dollars are no longer penalty-free accessible before 59½ — a real "
+    "liquidity cost if the house/car goal lands sooner than expected. This "
+    "capacity is shared — see {group_2_title}'s Traditional IRA summary."
 )
 
 _GAIN_SIDE_PROS = (
@@ -116,12 +115,11 @@ _GAIN_SIDE_PROS = (
     "the {annual_benefit}/yr of relief. On the merits, worth doing."
 )
 _GAIN_SIDE_CONS = (
-    "It is worth doing, but there is nowhere to put it yet. The Traditional IRA "
-    "absorbs only about {trad_ira_equity} of relocated fixed income, and the loss "
-    "side above nearly exhausts that — the Roth cleanup draws on it too. So this is "
-    "blocked on capacity, not merit: the 401(k) rollover is what frees the pre-tax "
-    "space to shelter these gains, the same constraint that makes that rollover the "
-    "household's largest lever."
+    "It is worth doing, but there is nowhere to put it yet — the same shared "
+    "Traditional IRA capacity {group_2_title} details is already spoken for. So "
+    "this is blocked on capacity, not merit: the 401(k) rollover is what frees "
+    "the pre-tax space to shelter these gains, the same constraint that makes "
+    "that rollover the household's largest lever."
 )
 
 _THEMATIC_PROS = (
@@ -148,19 +146,21 @@ _THEMATIC_CAPTION = (
 
 _ROLLOVER_PROS = (
     "The single largest lever in the household. It converts {workplace_plan_value} of "
-    "self-allocating target-date money into pre-tax space that can actually hold "
-    "your bonds — which is what finally lets fixed income leave your taxable "
-    "account entirely. Your investable pre-tax capacity today is {pretax_capacity}, and it "
-    "is already exhausted. This raises it to {pretax_capacity_after}."
+    "self-allocating target-date money into pre-tax space that can hold "
+    "your bonds — letting fixed income leave taxable entirely. Pre-tax capacity "
+    "(room to relocate assets into the Traditional IRA/401(k) before they're full) "
+    "is {pretax_capacity} today, already exhausted; this raises it to "
+    "{pretax_capacity_after}. Rollovers typically sell to cash and reinvest in "
+    "the new plan's menu — these exact holdings don't survive. Keep the "
+    "Traditional IRA empty, too: any pre-tax balance there taxes a backdoor Roth "
+    "conversion pro-rata across all IRAs."
 )
 _ROLLOVER_CONS = (
-    "Rolling into a Traditional IRA creates a pre-tax IRA balance, triggers the "
-    "pro-rata rule, and quietly forecloses clean backdoor Roth contributions once "
-    "buy-side income lifts you past the direct limits. Rolling into your next "
-    "employer's plan avoids that, and you can move the existing Traditional IRA in "
-    "too. But you cannot know whether that plan accepts roll-ins, or whether its "
-    "menu is any good, until you have it. Waiting is not procrastination here; it "
-    "is the correct move — and it is irreversible enough to run past a CPA."
+    "That's why: an existing Traditional IRA balance is what triggers pro-rata "
+    "and forecloses backdoor Roth — the new employer plan doesn't. But you "
+    "cannot know if that plan accepts roll-ins or has a decent menu until you "
+    "have it — waiting is the correct move, and irreversible enough to run past "
+    "a CPA."
 )
 
 
@@ -178,13 +178,13 @@ _TOD_INCOME_PROS = (
     "entirely."
 )
 _TOD_INCOME_CONS = (
-    "There is no pre-tax space. The Traditional IRA holds {trad_ira_equity} of "
-    "equity and is already spoken for twice over. And GHYIX is a municipal fund — "
-    "its interest is federally exempt, so taxable is exactly where it belongs; "
-    "sheltering it would waste the shelter. The rest carry embedded gains of "
-    "{embedded_gain}, now taxable at 18.07% (15% federal + 3.07% PA) with the 0% "
-    "bracket gone — another reason to leave them undisturbed. This book is externally managed and frozen by decision, "
-    "not by oversight. Logged as accepted."
+    "There is no pre-tax space — the Traditional IRA capacity {group_2_title} "
+    "details is already spoken for. And GHYIX is a municipal fund — its interest "
+    "is federally exempt, so taxable is exactly where it belongs; sheltering it "
+    "would waste the shelter. The rest carry embedded gains of {embedded_gain}, "
+    "now taxable at 18.07% (15% federal + 3.07% PA) with the 0% bracket gone — "
+    "another reason to leave them undisturbed. This book is externally managed "
+    "and frozen by decision, not by oversight. Logged as accepted."
 )
 
 # {population_count}/{population_value} span all matched holdings (matched_symbols);
@@ -209,12 +209,12 @@ _SAA_TAXABLE_CONS = (
     "own fixed-income and real-asset sleeves, and the framework is right that a "
     "pre-tax account would hold them better. Investable pre-tax capacity is "
     "{pretax_capacity}, exhausted at a policy book of roughly "
-    "{pretax_capacity_threshold}; the book is already larger than that, and the "
-    "Traditional IRA is spoken for twice over by the relocations above. So the "
-    "better home exists and is full. The drag is {annual_benefit} a year — the "
-    "honest price of running a coherent SAA inside the only wrapper you control. "
-    "Accepted until the 401(k) rollover creates space, which is the argument that "
-    "makes that rollover the household's largest lever."
+    "{pretax_capacity_threshold} — already smaller than this book, and "
+    "{group_2_title} claims what's left. So the better home exists and is full. "
+    "The drag is {annual_benefit} a year — the honest price of running a coherent "
+    "SAA inside the only wrapper you control. Accepted until the 401(k) rollover "
+    "creates space, which is the argument that makes that rollover the "
+    "household's largest lever."
 )
 
 _STRANDED_EQUITY_PROS = (
