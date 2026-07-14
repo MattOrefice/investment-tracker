@@ -8,6 +8,25 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Roth-cleanup card: not rebuilding the hedge is the default
+_2026-07-14_
+
+The "Clear misplaced holdings from the Roth" card already noted that rebuilding
+the hedged-equity position is blocked on Traditional IRA capacity — one shared
+$8,553 of room claimed by three competing moves — and that keeping the hedge is
+a volatility decision, not a tax one. It did not state the practical implication.
+This adds two sentences to the card's Traditional-IRA summary saying it plainly:
+over a multi-decade horizon a return-capped fund fits neither shelter, so the
+honest default is not to rebuild at all, letting household hedged equity fall to
+about zero. And if pre-tax space stays scarce even after the 401(k) rollover, the
+hedge rebuild is the claim to drop of the three — the loss-side bond rebuy and
+gain-side relocation each buy real drag relief ($104/yr and $126/yr), which the
+rebuild has no equivalent of. Both relief figures template from the live loss-
+and gain-side registers via new cross-group placeholders, never hardcoded; the
+card face gains prose only, no new element.
+
+---
+
 ## Deploy sizing exhibit: label the filtered subset, cross-reference the full breakdown
 _2026-07-14_
 
