@@ -436,7 +436,7 @@ RENDERED_PROSE_LEN = {
     "relocate_loss_side":        (374, 914),   # cons: + 59½ liquidity-lock tradeoff; capacity restatement -> cross-ref
     "relocate_gain_side":        (339, 361),   # cons: capacity restatement -> cross-ref to clear_roth_non_equity
     "thematic_sprawl":           (217, 503),   # cons: gain rate 15% -> 18.07% (15% fed + 3.07% PA)
-    "rollover_401k":             (486, 353),   # available now (MissionSquare, acct_wkpl_01), not blocked on the next job
+    "rollover_401k":             (486, 353),   # available now (MissionSquare 401(k), acct_wkpl_02 — holds RFUTX), not blocked on the next job
     "frozen_tod_income":         (382, 523),   # cons: capacity restatement -> cross-ref to clear_roth_non_equity
     "saa_sleeves_taxable":       (261, 648),   # cons: capacity restatement -> cross-ref to clear_roth_non_equity
     "predeploy_stranded_equity": (328, 530),

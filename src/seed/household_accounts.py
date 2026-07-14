@@ -32,10 +32,16 @@ _ACCOUNTS: list[tuple[str, str, str, str, int]] = [
     ("taxable",         "external", "acct_taxable_02",  "Individual Taxable (TOD)", 1),
     ("traditional_ira", "external", "acct_trad_ira_01", "Traditional IRA", 1),
     ("roth_ira",        "external", "acct_roth_01",     "Roth IRA", 1),
-    ("workplace_plan",  "external", "acct_wkpl_01",     "Former Employer 401(k) (MissionSquare)", 1),
-    # 0% vested at a former employer — forfeitable employer money, not the
-    # user's asset. Excluded from household totals/allocation/liquidity.
-    ("workplace_plan",  "external", "acct_wkpl_02",     "Moody's PPP", 0),
+    # 0% vested — forfeitable Moody's employer money (holds the small Fidelity
+    # Freedom 2065 position), not the user's asset. Excluded from household
+    # totals/allocation/liquidity. Its Fidelity account is literally named
+    # "MOODY'S PPP"; account_map.json binds that raw account to acct_wkpl_01.
+    ("workplace_plan",  "external", "acct_wkpl_01",     "Moody's PPP", 0),
+    # Fully-vested former-employer (MissionSquare) 401(k) — the user's own asset,
+    # and their single largest position: the American Funds 2060 (RFUTX) target-
+    # date fund. Included in the household; the rollover source (see
+    # ROLLOVER_SOURCE_PSEUDONYM). account_map.json binds RFUTX's raw account here.
+    ("workplace_plan",  "external", "acct_wkpl_02",     "MissionSquare 401(k)", 1),
     ("hsa",             "external", "acct_hsa_01",      "HSA", 1),
 ]
 
@@ -57,7 +63,13 @@ def seed_household_accounts(db_path: str | Path) -> None:
                          included_in_household)
                     VALUES (?, ?, 'Fidelity', 1, ?, ?, ?, ?, ?)
                     ON CONFLICT(pseudonym) DO UPDATE SET
-                        name          = excluded.name,
+                        -- name is a NOT NULL UNIQUE internal identifier, set once at
+                        -- INSERT; it is NEVER rendered (the UI reads display_name). It
+                        -- is deliberately NOT updated here: overwriting it from
+                        -- display_name would make a label SWAP between two existing
+                        -- rows transiently violate UNIQUE(name) (row A wants the name
+                        -- row B still holds), silently skipping one row. display_name
+                        -- is the mutable label and carries the swap; name stays put.
                         type          = excluded.type,
                         custodian     = excluded.custodian,
                         is_active     = excluded.is_active,
