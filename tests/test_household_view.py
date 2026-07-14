@@ -441,7 +441,7 @@ def _make_accounts_df_7():
         ],
         "display_name": [
             "Individual Taxable (Self-Directed)", "Individual Taxable (TOD)", "Roth IRA",
-            "Moody's PPP", "Traditional IRA", "HSA", "Workplace Plan",
+            "Former Employer 401(k) (MissionSquare)", "Traditional IRA", "HSA", "Moody's PPP",
         ],
         "managed_by": [
             "self", "external", "external", "external",
@@ -487,7 +487,7 @@ def test_build_performance_table_twr_returns_all_7_accounts():
     tbl = build_performance_table(_make_perf_df_twr(), _make_accounts_df_7(), return_type="TWR")
     assert len(tbl) == 7, f"Expected 7 rows (all accounts), got {len(tbl)}"
     # The 3 absent accounts should have "—" for all period columns
-    absent = tbl[tbl["Account"].isin(["Traditional IRA", "HSA", "Workplace Plan"])]
+    absent = tbl[tbl["Account"].isin(["Traditional IRA", "HSA", "Moody's PPP"])]
     assert len(absent) == 3
     for col in ("1M", "3M", "YTD", "1Y", "3Y", "5Y", "Since Inception"):
         assert (absent[col] == "—").all(), f"Absent account has non-dash in {col}"
@@ -497,8 +497,10 @@ def test_build_performance_table_mwr_returns_all_7_accounts():
     from src.household import build_performance_table
     tbl = build_performance_table(_make_perf_df_mwr(), _make_accounts_df_7(), return_type="MWR")
     assert len(tbl) == 7, f"Expected 7 rows, got {len(tbl)}"
-    # Moody's PPP (acct_wkpl_01) and 3 absent accounts should be all "—"
-    no_data = tbl[tbl["Account"].isin(["Moody's PPP", "Traditional IRA", "HSA", "Workplace Plan"])]
+    # Former Employer 401(k) (acct_wkpl_01) and 3 absent accounts should be all "—"
+    no_data = tbl[tbl["Account"].isin([
+        "Former Employer 401(k) (MissionSquare)", "Traditional IRA", "HSA", "Moody's PPP",
+    ])]
     assert len(no_data) == 4
     for col in ("1M", "3M", "YTD", "1Y", "3Y", "5Y", "Since Inception"):
         assert (no_data[col] == "—").all(), f"MWR-absent account has non-dash in {col}"

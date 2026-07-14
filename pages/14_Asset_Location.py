@@ -167,7 +167,7 @@ def _summary_line(group: dict, resolved: dict, reg_rows: pd.DataFrame) -> str:
     if group["key"] == "deploy_roth_cash":
         return f"{resolved['value']} idle Roth cash · free · zero tax, zero friction"
     if group["key"] == "rollover_401k":
-        return "The household's largest lever · blocked — needs your next employer's plan"
+        return f"{resolved['workplace_plan_value']} former-employer 401(k) · available now · destination is the choice"
     size = resolved.get("value") or "—"
     n = resolved.get("count")
     where = f" across {n} holdings" if n else ""

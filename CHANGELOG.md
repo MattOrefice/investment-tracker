@@ -8,6 +8,20 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Asset Location — workplace-account labels corrected, rollover card unblocked
+_2026-07-13_
+
+The two workplace-plan accounts were mislabeled: the one holding a $78,410
+former-employer target-date fund was tagged with the *other* plan's name, and
+vice versa for the small, unvested current one. The account map itself was
+never wrong — only the display names and the rollover card's source pointer
+were swapped. Both are corrected, and the rollover card no longer reads
+"blocked until your next job": that framing described the small, $0-vested
+plan, not the $78,410 former-employer account, which is rollable today. The
+card now says so, while keeping its existing guidance to prefer a future
+employer's plan over a Traditional IRA (to avoid triggering the pro-rata rule
+on a backdoor Roth) — available now doesn't mean rolling it over immediately.
+
 ## Liquidity — Roth contribution basis no longer jumps the taxable queue
 _2026-07-13_
 
