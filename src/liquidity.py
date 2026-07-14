@@ -61,6 +61,15 @@ def build_liquidity_ladder(
     when ``roth_is_qualified_age`` else Tier 3 (10% penalty + ordinary). basis/age
     come from the personal profile (src/personal_profile); with a zero basis this
     reduces to one locked earnings row = the whole Roth, the prior behavior.
+
+    Within-tier tie-break: rows are ordered by explicit cost first, but a $0-cost
+    Roth row (basis, or qualified earnings) ranks AFTER every $0-cost taxable row,
+    never ahead of one on account of being the larger dollar amount. A Roth
+    withdrawal has a real cost the model doesn't price — it permanently forfeits
+    that dollar's future tax-free space, which a same-cost taxable sale does not —
+    so taxable Tier-1 capacity is meant to exhaust before Roth basis is tapped.
+    Only the ORDER shifts; tier assignment (and therefore tier totals and
+    Accessible-now) is unchanged.
     """
     ord_rate = ordinary_rate(tax_profile)   # e.g. 22% federal + 3.07% PA
     ltcg = ltcg_rate(tax_profile)           # e.g. 15% federal + 3.07% PA
@@ -153,7 +162,10 @@ def build_liquidity_ladder(
 
     out = (
         pd.DataFrame(rows)
-        .sort_values(["tier", "cost_to_cash", "value"], ascending=[True, True, False])
+        .assign(_roth_last=lambda d: (d["tax_treatment"] == "roth_ira").astype(int))
+        .sort_values(["tier", "cost_to_cash", "_roth_last", "value"],
+                     ascending=[True, True, True, False])
+        .drop(columns="_roth_last")
         .reset_index(drop=True)
     )
     out["cumulative_net_cash"] = out["net_cash"].cumsum().round(2)

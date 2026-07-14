@@ -8,6 +8,20 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Liquidity — Roth contribution basis no longer jumps the taxable queue
+_2026-07-13_
+
+Within a tier, rows were sorted cheapest-first by cost, then by dollar size for
+any tie — which let the Roth contribution-basis tranche, being the single
+largest $0-cost holding, sort ahead of every taxable cash and zero-gain lot
+purely because of its size. That's backwards: withdrawing Roth basis is
+penalty- and tax-free, but it permanently forfeits that dollar's future
+tax-free growth, a cost a same-price taxable sale doesn't carry. Roth rows now
+tie-break after taxable rows at equal cost, so taxable Tier-1 capacity is
+exhausted before the Roth is touched — in the "raise $X" walk and the table
+alike. Tier assignment, tier totals, and the Accessible-now figure are
+unchanged; only the row order shifts.
+
 ## Asset Location — bonds-in-Roth, hedged-ETF, and rollover-mechanics answers
 _2026-07-13_
 
