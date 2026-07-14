@@ -32,6 +32,7 @@ from src.db import get_connection
 from src.household_data import load_latest_positions
 from src.household import (
     build_location_register,
+    compute_household_allocation,
     exclude_non_household_positions,
     sleeve_display_name,
 )
@@ -63,6 +64,7 @@ from src.location_actions import (
     STATUS_ORDER,
     INFORMATIONAL_KEYS,
     build_roth_deploy_answer,
+    household_deploy_gaps,
     deploy_targets_split,
     resolve_placeholders,
     resolve_caption,
@@ -336,6 +338,70 @@ for group in _ordered_groups:
                     "undeployed rather than being forced into a sleeve past its target."
                 )
             st.caption(_sizing_note)
+
+            with st.expander("How these weights were sized", expanded=False):
+                _total_hh = float(positions_df["current_value"].sum())
+                _gaps_df = household_deploy_gaps(
+                    positions_df, accounts_df, securities_df, compositions_df, saa_targets_df)
+                _buy_by_ticker = dict(zip(deploy["table"]["ticker"], deploy["table"]["dollar"]))
+                _exhibit = _gaps_df.copy()
+                _exhibit["Sleeve"] = _exhibit["sleeve"].map(sleeve_display_name)
+                _exhibit["Target (%)"] = _exhibit["target"] / _total_hh * 100
+                _exhibit["Current (%)"] = _exhibit["current"] / _total_hh * 100
+                _exhibit["Buy ($)"] = _exhibit["ticker"].map(_buy_by_ticker)
+                _exhibit = _exhibit.rename(columns={"gap": "Gap ($)"})[
+                    ["Sleeve", "Target (%)", "Current (%)", "Gap ($)", "Buy ($)"]
+                ]
+                st.markdown(
+                    "**Method.** Each buy is sized proportional to its sleeve's dollar "
+                    "gap — target weight × household value, minus what look-through "
+                    "already counts toward it — across the Roth-eligible sleeves still "
+                    "underweight after that look-through, capped so none overshoots target."
+                )
+                st.dataframe(
+                    _exhibit, use_container_width=True, hide_index=True,
+                    column_config={
+                        "Target (%)":  st.column_config.NumberColumn(format="%.1f%%"),
+                        "Current (%)": st.column_config.NumberColumn(format="%.1f%%"),
+                        "Gap ($)":     st.column_config.NumberColumn(format="$%.0f"),
+                        "Buy ($)":     st.column_config.NumberColumn(format="$%.0f"),
+                    },
+                )
+
+                _lt_symbols = set(compositions_df["fund_symbol"].unique())
+                _lt_value = float(
+                    positions_df[positions_df["symbol"].isin(_lt_symbols)]["current_value"].sum()
+                )
+                _lt_pct = (_lt_value / _total_hh * 100) if _total_hh else 0.0
+                _alloc = compute_household_allocation(
+                    positions_df, accounts_df, securities_df, compositions_df, saa_targets_df,
+                    mode="look_through", scope="total",
+                )
+                _ulc = _alloc[_alloc["sleeve"] == "US Large Core"]
+                _ulc_current = float(_ulc.iloc[0]["dollar_value"])
+                _ulc_target = float(_ulc.iloc[0]["target_weight"]) * _total_hh
+                st.markdown(
+                    f"**Why look-through matters.** About {_lt_pct:.0f}% of the household "
+                    "sits inside multi-asset funds — chiefly the American Funds 2060 "
+                    "target-date fund — that are decomposed into underlying sleeves rather "
+                    "than counted as one lump. That is why US Large Core (VOO) is excluded "
+                    f"above despite never being bought directly: look-through counts it at "
+                    f"{escape_md(_fmt_dollars(_ulc_current))} against a "
+                    f"{escape_md(_fmt_dollars(_ulc_target))} target — already overweight — "
+                    "because broad US equity buried inside those funds counts toward it."
+                )
+                st.markdown(
+                    "**Provenance.** The target-date fund's sleeve split is sourced from "
+                    "its factsheet, but the split BY sleeve — large-core vs. value, "
+                    "developed vs. emerging within its international exposure — is "
+                    "approximated to fit the factsheet's published totals, not read off "
+                    "exact underlying holdings: sourced and reasoned, not precise. The "
+                    "blended large-core weight across the household's multi-asset funds "
+                    "would have to be overstated by roughly 18 percentage points before "
+                    "US Large Core flipped from overweight to underweight and changed "
+                    "which sleeves get bought — the ranking is not fragile to this "
+                    "approximation, even though the approximation itself is real."
+                )
         elif group["key"] not in INFORMATIONAL_KEYS:
             _cap = resolve_caption(group, positions_df, accounts_df, register)
             if _cap:

@@ -8,6 +8,29 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Deploy sizing corrected to real target-date data, and shown to work
+_2026-07-13_
+
+The $78,410 target-date fund's look-through split was a generic manual
+estimate with no US-large-*value* sleeve at all — replaced with a breakdown
+sourced from the fund's own factsheet, which does carry a value tilt. That
+shifts the Roth deploy split materially: the value sleeve's share drops by
+about $500 as the fund's real large-core and large-value exposure is counted
+correctly, while the other three buys pick up the difference. Same four
+tickers, same overweight core sleeve correctly excluded — the ranking holds,
+the sizing is more accurate.
+
+The Deploy card also gained a collapsed "How these weights were sized"
+expander: the sizing method in plain English, a compact table of every
+underweight sleeve's target/current/gap/buy figures (templated live, matching
+the card above exactly), why look-through is what keeps the household's
+already-overweight core sleeve out of the buy list, and — the important
+part — an explicit statement that the target-date fund's sleeve-level split
+is a reasoned approximation of its published totals, not exact holdings data,
+along with how much that estimate would have to be wrong before it changed
+which sleeves get bought. The card face is unchanged; the expander holds the
+detail.
+
 ## Unvested employer money excluded from the household at one source
 _2026-07-13_
 
