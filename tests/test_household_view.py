@@ -539,4 +539,6 @@ def test_build_benchmark_table_household_row_first():
     tbl = build_benchmark_table(df)
     assert len(tbl) == 6
     assert tbl.iloc[0]["Benchmark"] == "Household (time-weighted)"
-    assert "+24.52%" in tbl.iloc[0]["1Y Return"]
+    # Synthetic seed value (audit #5): the real household return was replaced with an
+    # obviously-round demo figure so no real track record ships in the repo.
+    assert "+12.00%" in tbl.iloc[0]["1Y Return"]
