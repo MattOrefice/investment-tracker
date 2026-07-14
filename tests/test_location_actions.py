@@ -432,13 +432,13 @@ def test_no_rendered_prose_contains_comma_emdash():
 # for silent prose corruption (dropped words render as valid Markdown).
 RENDERED_PROSE_LEN = {
     "deploy_roth_cash":          (514, 577),   # gap-proportional prose + EM/FTC clause
-    "clear_roth_non_equity":     (1245, 887),  # For headline: exposure-neutral (no whole-card "into equity" overclaim)
-    "relocate_loss_side":        (410, 859),   # cons: + rebuy rec (BND/AGG/FXNAX) + duration-risk note
-    "relocate_gain_side":        (339, 404),   # gain rate 15% -> 18.07% (15% fed + 3.07% PA)
+    "clear_roth_non_equity":     (1033, 980),  # cons: + hedged-ETF composition note + Traditional IRA summary
+    "relocate_loss_side":        (374, 914),   # cons: + 59½ liquidity-lock tradeoff; capacity restatement -> cross-ref
+    "relocate_gain_side":        (339, 361),   # cons: capacity restatement -> cross-ref to clear_roth_non_equity
     "thematic_sprawl":           (217, 503),   # cons: gain rate 15% -> 18.07% (15% fed + 3.07% PA)
-    "rollover_401k":             (338, 526),
-    "frozen_tod_income":         (382, 505),   # cons: gain rate 15% -> 18.07% (15% fed + 3.07% PA)
-    "saa_sleeves_taxable":       (261, 665),
+    "rollover_401k":             (578, 298),   # pros: + capacity definition + rollover mechanics/pro-rata
+    "frozen_tod_income":         (382, 523),   # cons: capacity restatement -> cross-ref to clear_roth_non_equity
+    "saa_sleeves_taxable":       (261, 648),   # cons: capacity restatement -> cross-ref to clear_roth_non_equity
     "predeploy_stranded_equity": (328, 530),
 }
 
@@ -594,12 +594,15 @@ _DOLLAR_LITERAL = re.compile(r"\$[\d,]")
 
 def test_gain_side_prose_is_capacity_framed_no_literal():
     """The gain-side card is capacity-framed (deferred on pre-tax room), not
-    headroom-framed. The cons templates the IRA capacity; no $ figure in
-    pros/cons/action is a literal; and the stale 0%-headroom language is gone."""
+    headroom-framed. The cons no longer restates the IRA capacity directly —
+    it cross-references the consolidated "What happens in the Traditional IRA"
+    summary in clear_roth_non_equity's cons via {group_2_title} — but no $
+    figure in pros/cons/action is a literal, and the stale 0%-headroom
+    language is gone."""
     g4 = next(g for g in ACTION_GROUPS if g["key"] == "relocate_gain_side")
     blob = g4["pros"] + g4["cons"] + g4["action"]
     assert not _DOLLAR_LITERAL.search(blob), f"group 4 must have no $ literal: {blob!r}"
-    assert "{trad_ira_equity}" in g4["cons"], "gain-side cons must template the IRA capacity"
+    assert "{group_2_title}" in g4["cons"], "gain-side cons must cross-reference the Traditional IRA summary"
     assert "headroom" not in blob.lower(), "stale 0%-headroom language must be gone"
     for ph in ("{headroom_total}", "{headroom_consumed}", "{headroom_remaining}"):
         assert ph not in blob, f"{ph} must be gone from the gain-side prose"
@@ -685,7 +688,10 @@ def test_group3_and_group6_templated_not_literal():
     g6 = next(g for g in ACTION_GROUPS if g["key"] == "rollover_401k")
     assert not _DOLLAR_LITERAL.search(g3["pros"] + g3["cons"]), "group 3 must have no $ literal"
     assert not _DOLLAR_LITERAL.search(g6["pros"] + g6["cons"]), "group 6 must have no $ literal"
-    assert "{trad_ira_equity}" in g3["cons"]
+    # group 3's capacity restatement was consolidated into group 2's cons (the
+    # "What happens in the Traditional IRA" summary); group 3 now cross-references
+    # it by title instead of re-templating {trad_ira_equity} itself.
+    assert "{group_2_title}" in g3["cons"]
     for ph in ("{workplace_plan_value}", "{pretax_capacity}", "{pretax_capacity_after}"):
         assert ph in g6["pros"]
     assert not g3.get("allow_literals") and not g6.get("allow_literals")

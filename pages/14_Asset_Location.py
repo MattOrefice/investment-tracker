@@ -432,28 +432,28 @@ with col:
              _ira_contrib,
              f"Phases out MAGI {_rng(ROTH_MAGI_PHASEOUT_SINGLE_2026)} single, "
              f"{_rng(ROTH_MAGI_PHASEOUT_MFJ_2026)} joint",
-             "Growth & withdrawals never taxed — worth most on what compounds hardest; "
-             "contributions withdrawable anytime; no RMDs."),
+             "Growth & withdrawals never taxed; contributions withdrawable anytime; "
+             "no RMDs."),
             ("Traditional IRA",
              "Income-heavy / lower-return — bonds, REITs, hedged equity",
              _ira_contrib,
              f"Anyone can contribute; deduction phases out "
              f"{_rng(TRAD_IRA_DEDUCTION_PHASEOUT_SINGLE_2026)} single if covered by a workplace plan",
-             "Withdrawn as ordinary income, so ordinary-income holdings cost nothing extra; "
-             "RMDs from 73 (75 if born 1960+)."),
+             "Withdrawn as ordinary income; RMDs from 73 (75 if born 1960+)."),
             ("401(k) / 403(b)",
              "Same as Traditional; capture the full employer match first",
              f"{_d(WORKPLACE_ELECTIVE_DEFERRAL_2026)} employee (+{_d(WORKPLACE_CATCHUP_50_2026)} if 50+, "
              f"+{_d(WORKPLACE_CATCHUP_60_63_2026)} if 60–63); {_k(WORKPLACE_415C_TOTAL_2026)} incl. employer",
              "No income limit",
-             "Employer match is a guaranteed return no market beats; Roth 401(k) sub-account "
-             "has no income limit."),
+             "Employer match beats any market return. Roth 401(k): after-tax in, "
+             "tax-free growth out, no income limit — same ideal contents as a Roth "
+             "IRA; pre-tax side holds bonds like a Traditional IRA."),
             ("Taxable brokerage",
              "Tax-efficient broad equity, munis, anything needed before 59½",
              "No limit",
              "No limit",
-             "Low turnover + qualified dividends keep drag low; only account with no "
-             "early-withdrawal penalty; harvest losses; step-up at death."),
+             "Low turnover + qualified dividends keep drag low; no early-withdrawal "
+             "penalty; harvest losses; step-up at death."),
             ("HSA (needs HDHP)",
              "Long-horizon growth equity, if medical bills paid out of pocket",
              f"{_d(HSA_CONTRIB_LIMIT_SELF_2026)} self / {_d(HSA_CONTRIB_LIMIT_FAMILY_2026)} family "
@@ -468,11 +468,11 @@ with col:
         st.markdown(_hdr + _body)
         st.markdown(
             f"¹ {_d(IRA_CONTRIB_LIMIT_2026)} is the *combined* ceiling across both IRAs, not each.\n\n"
-            "This is the **target** location for each account type. The decision cards above "
-            "show where this household deliberately deviates — capacity blocks, the frozen TOD "
-            "book — and why; read a table-vs-card difference as intentional, not inconsistent.\n\n"
-            "**International exception.** International and emerging-markets equity is an "
-            "exception to “growth → Roth”: held in taxable it preserves the foreign "
-            "tax credit an IRA forfeits, so those sleeves carry a taxable-location argument of "
-            "their own (mirroring the Evaluate card)."
+            "**Why growth, not drag, picks the Roth.** Value scales with tax-free growth, "
+            "not drag avoided — equities (highest return) go here; bonds (low return, "
+            "tax-inefficient) cost nothing extra in the Traditional IRA regardless.\n\n"
+            "**International exception.** Taxable intl/EM equity keeps the foreign tax "
+            "credit an IRA forfeits.\n\n"
+            "² Pre-tax 401(k), Roth 401(k), and Roth IRA can coexist — the 401(k) limit "
+            "is shared across pre-tax + Roth; the Roth IRA limit is separate."
         )
