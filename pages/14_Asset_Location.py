@@ -553,9 +553,10 @@ with col:
             f"¹ {_d(IRA_CONTRIB_LIMIT_2026)} is the *combined* ceiling across both IRAs, not each.\n\n"
             "**Why growth, not drag, picks the Roth.** Value scales with tax-free growth, "
             "not drag avoided — equities (highest return) go here; bonds (low return, "
-            "tax-inefficient) cost nothing extra in the Traditional IRA regardless.\n\n"
-            "**International exception.** Taxable intl/EM equity keeps the foreign tax "
-            "credit an IRA forfeits.\n\n"
+            "tax-inefficient) cost nothing extra in the Traditional IRA regardless. The "
+            "40-year horizon is beside the point: location only answers where the bonds "
+            "you hold go, not whether to hold them — that is a whole-portfolio risk "
+            "decision (the SAA's fixed-income target), not a location one.\n\n"
             "² Pre-tax 401(k), Roth 401(k), and Roth IRA can coexist — the 401(k) limit "
             "is shared across pre-tax + Roth; the Roth IRA limit is separate."
         )
