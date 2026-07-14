@@ -8,6 +8,27 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Deploy sizing exhibit: label the filtered subset, cross-reference the full breakdown
+_2026-07-14_
+
+The "How these weights were sized" exhibit on the Deploy card lists the four
+Roth-eligible sleeves still underweight after look-through — SPHQ, AVUV, VTV,
+IEMG — each with its Current (%). Because that column sums to roughly 11% of the
+book rather than 100%, the table read like a portfolio breakdown that failed to
+add up, when it is in fact a deliberately filtered subset: sleeves already at or
+over their household target — notably US Large Core, which look-through leaves
+overweight — receive no new cash and so never appear.
+
+This adds one line above the table stating plainly that it is a filtered subset,
+not the household breakdown, and why the at-target sleeves are absent. It also
+points to the Household View page, whose drift table already carries the full
+household sleeve breakdown — every sleeve with current $, current %, target %,
+and drift — so that detail is cross-referenced, not duplicated. The method,
+look-through, and provenance prose are unchanged, and the addition lives entirely
+inside the collapsed expander, so the card face is unchanged.
+
+---
+
 ## Household exclusion was on the wrong workplace account — VOO no longer wrongly bought
 _2026-07-14_
 

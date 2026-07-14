@@ -358,6 +358,16 @@ for group in _ordered_groups:
                     "already counts toward it — across the Roth-eligible sleeves still "
                     "underweight after that look-through, capped so none overshoots target."
                 )
+                st.caption(
+                    "This table is a filtered subset, not the household breakdown: it "
+                    "lists only the Roth-eligible sleeves still underweight after "
+                    "look-through, so its Current (%) sums to a fraction of the book "
+                    "rather than 100% — sleeves already at or over target (notably US "
+                    "Large Core) do not appear because new cash never overshoots a "
+                    "target. The full household sleeve breakdown — every sleeve with "
+                    "current $, current %, target %, and drift — is on the Household "
+                    "View page."
+                )
                 st.dataframe(
                     _exhibit, use_container_width=True, hide_index=True,
                     column_config={
