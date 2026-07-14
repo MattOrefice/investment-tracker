@@ -136,10 +136,10 @@ def test_fund_weights_sum_to_one(seeded_db):
         )
 
 
-def test_rfutx_has_6_sleeves(seeded_db):
+def test_rfutx_has_7_sleeves(seeded_db):
     df = _compositions_from_db(seeded_db)
     rfutx_rows = df[df["fund_symbol"] == "RFUTX"]
-    assert len(rfutx_rows) == 6, f"RFUTX expected 6 composition rows, got {len(rfutx_rows)}"
+    assert len(rfutx_rows) == 7, f"RFUTX expected 7 composition rows, got {len(rfutx_rows)}"
 
 
 def test_gaosx_has_7_sleeves(seeded_db):
@@ -163,7 +163,7 @@ def compositions_df():
     from src.seed.fund_compositions import _COMPOSITIONS
     return pd.DataFrame(
         [{"fund_symbol": s, "underlying_sleeve": sl, "weight": w}
-         for s, sl, w in _COMPOSITIONS]
+         for s, sl, w, _as_of, _source in _COMPOSITIONS]
     )
 
 
@@ -180,7 +180,7 @@ def securities_df():
 def test_rfutx_look_through_row_count(compositions_df, securities_df):
     from src.household import look_through_position
     result = look_through_position("RFUTX", RFUTX_VALUE, compositions_df, securities_df)
-    assert len(result) == 6, f"Expected 6 rows for RFUTX, got {len(result)}"
+    assert len(result) == 7, f"Expected 7 rows for RFUTX, got {len(result)}"
 
 
 def test_rfutx_look_through_sums_to_holding_value(compositions_df, securities_df):
@@ -249,7 +249,7 @@ def test_live_rfutx_look_through():
     sec_df  = _securities_from_db(TRACKER_DB)
     from src.household import look_through_position
     result = look_through_position("RFUTX", RFUTX_VALUE, comp_df, sec_df)
-    assert len(result) == 6
+    assert len(result) == 7
     assert abs(result["dollar_value"].sum() - RFUTX_VALUE) <= 1.00
 
 

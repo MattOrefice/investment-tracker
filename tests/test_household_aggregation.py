@@ -21,15 +21,22 @@ ALLOWED_RATIONALE = {"no_exposure", "on_target", "underweight", "overweight", "o
 
 # Actuals computed from the Jul-08 data (look_through + total scope).
 # Assertions below use ±2pp tolerance.
+#
+# RFUTX's look-through composition was replaced with real factsheet data (was a
+# generic manual estimate with no us_large_value sleeve at all); the unvested,
+# $0-vested workplace account was also excluded from the household total. Both
+# shift these weights — US Large Value materially (1.04 -> 3.83, since RFUTX's
+# factsheet-sourced split carries an explicit value-tilt slice the old estimate
+# didn't), the rest by under a point.
 ACTUAL_LT_WEIGHTS = {
-    "US Large Core":         25.77,
-    "International Developed": 12.75,
-    "Emerging Markets":       4.79,
-    "Core Fixed Income":      3.94,
-    "US Large Quality":       2.49,
-    "Real Assets":            1.52,
-    "cash":                   4.23,   # off-SAA post-38a (cash untargeted, routes to off-SAA bucket)
-    "US Large Value":         1.04,
+    "US Large Core":         24.64,
+    "International Developed": 11.27,
+    "Emerging Markets":       4.80,
+    "Core Fixed Income":      3.91,
+    "US Large Quality":       2.52,
+    "Real Assets":            1.51,
+    "cash":                   4.90,   # off-SAA post-38a (cash untargeted, routes to off-SAA bucket)
+    "US Large Value":         3.83,
     "US Small Cap":           0.07,   # AVUV added in the Jul-08 export (was 0 on May-27)
     "TIPS":                   0.04,   # SCHP added in the Jul-08 export (was 0 on May-27)
 }

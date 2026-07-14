@@ -43,7 +43,7 @@ JEPI,JPMorgan Equity Premium Income ETF,hedged_equity,medium,false,S&P covered c
 HELO,JPMorgan Hedged Equity Laddered Overlay ETF,hedged_equity,medium,false,Laddered hedged equity
 BILPX,BlackRock Liquid Federal Trust,liquid_alt,low,false,Short-term Treasury liquidity
 GAOSX,JPMorgan Global Allocation Fund I,multi_asset,medium,false,Look-through to underlying sleeves
-RFUTX,American Funds 2060 Target Date R6,target_date,medium,false,Look-through to glide path
+RFUTX,American Funds 2060 Target Date (R6),target_date,medium,false,Look-through to glide path (2026-03-31 factsheet)
 31564E540,Fidelity Freedom Index 2065 Fund Class T,target_date,medium,false,Look-through to glide path — CUSIP-as-symbol
 FRNW,Fidelity Clean Energy ETF,thematic,high,false,Clean energy thematic
 ICLN,iShares Global Clean Energy ETF,thematic,high,false,Clean energy thematic
