@@ -8,8 +8,31 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
-## Three concise answers: the $8,553 room, the foreign tax credit, bonds in pre-tax
+## Pre-public hardening: session-scoped PDF reports and Jinja autoescape
 _2026-07-14_
+
+Two changes to the quarterly PDF report ahead of the repo going public, both
+about isolating one visitor from another on the shared Streamlit Cloud host.
+
+The report was written to a shared, deterministic path (`data/reports/
+Orefice_Portfolio_<quarter>.pdf`) and the Performance page globbed that directory
+to offer "the latest report" for download — to every visitor. On Cloud, where all
+sessions share one filesystem, that meant one visitor could download a PDF another
+had just generated. The report is now produced in memory: a new
+`generate_quarterly_report_bytes()` returns the PDF bytes with no file written, the
+page serves them straight to the download button, and a re-download of the same
+report is held in per-session `st.session_state` rather than read off disk. No
+shared file, no cross-session glob, no leak. (The disk-writing
+`generate_quarterly_report()` is kept for CLI and personal-mode use.)
+
+The Jinja environment that renders the report HTML had `autoescape=False`, so any
+templated value — including the free-text recipient name a visitor types — passed
+through unescaped, a latent HTML/script-injection surface. Autoescape is now on;
+the one trusted value that must stay raw, the stylesheet, is marked
+`{{ css_content|safe }}` so styling is unaffected. All other templated values
+(returns, tickers, prose) are plain text and render identically. On the public
+demo the report already carries synthetic paper-trade data and a demo label, so
+these changes close an isolation gap rather than a real-data exposure.
 
 The Asset Location page took three things for granted that a reader might not
 know. Each is now stated, paid for by tightening existing prose so the page does

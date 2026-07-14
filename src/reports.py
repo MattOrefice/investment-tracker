@@ -1451,17 +1451,31 @@ def _build_methodology_vars() -> dict:
 
 # ── Main public function ──────────────────────────────────────────────────────
 
-def generate_quarterly_report(
+def _make_report_env() -> Environment:
+    """Jinja environment for the PDF templates, with autoescape ON (audit #6).
+
+    autoescape neutralizes HTML/script injection through any templated value —
+    notably the visitor-supplied recipient name and any ticker / thesis / fund
+    string. The trusted stylesheet is the one value that must pass through raw;
+    the template marks it ``{{ css_content|safe }}`` so autoescape does not mangle
+    the CSS.
+    """
+    return Environment(loader=FileSystemLoader(str(TEMPLATES_DIR)), autoescape=True)
+
+
+def generate_quarterly_report_bytes(
     start_date: str,
     end_date: str,
     recipient_name: str = "Matthew Orefice",
-    output_path: Optional[Path] = None,
     is_demo: Optional[bool] = None,
-) -> Path:
+) -> bytes:
     """
-    Generate a quarterly PDF report.
+    Render a quarterly report and return the PDF as in-memory bytes — no file is
+    written. This is the session-safe entry point (audit #6): the Streamlit page
+    serves these bytes straight to st.download_button, so on shared Cloud
+    infrastructure one visitor's report never lands on a shared disk path where
+    another visitor's session could glob and download it.
 
-    Returns the Path of the written PDF file.
     When zero trades exist, produces a structural report (SAA + macro + theses only).
     `is_demo` defaults to the app's resolved TRACKER_MODE (src.config.IS_DEMO) so a
     report generated from the public demo is labeled demo/illustrative rather than
@@ -1500,7 +1514,7 @@ def generate_quarterly_report(
 
     css_content = (TEMPLATES_DIR / "report_styles.css").read_text(encoding="utf-8")
 
-    env  = Environment(loader=FileSystemLoader(str(TEMPLATES_DIR)), autoescape=False)
+    env  = _make_report_env()
     tmpl = env.get_template("quarterly_report.html")
 
     # Cross-platform date formatting (%-d fails on Windows)
@@ -1539,12 +1553,36 @@ def generate_quarterly_report(
         **_build_methodology_vars(),
     )
 
-    pdf_bytes = _render_pdf(html_content)
+    return _render_pdf(html_content)
 
+
+def generate_quarterly_report(
+    start_date: str,
+    end_date: str,
+    recipient_name: str = "Matthew Orefice",
+    output_path: Optional[Path] = None,
+    is_demo: Optional[bool] = None,
+) -> Path:
+    """
+    Generate a quarterly PDF report and WRITE it to disk, returning the Path.
+
+    Retained for CLI / personal-mode / test use. The public Streamlit page does
+    NOT call this — it uses generate_quarterly_report_bytes() and serves the bytes
+    from memory, so no PDF is written to the shared Cloud filesystem (audit #6).
+    When zero trades exist, produces a structural report (SAA + macro + theses only).
+    `is_demo` defaults to the app's resolved TRACKER_MODE (src.config.IS_DEMO) so a
+    report generated from the public demo is labeled demo/illustrative rather than
+    as a real personal account; pass explicitly to override (e.g. in tests).
+    """
+    if is_demo is None:
+        is_demo = IS_DEMO
+    pdf_bytes = generate_quarterly_report_bytes(
+        start_date, end_date, recipient_name=recipient_name, is_demo=is_demo
+    )
     if output_path is None:
+        period_label = _format_period_label(start_date, end_date)
         _REPORTS_DIR.mkdir(parents=True, exist_ok=True)
         output_path = _REPORTS_DIR / _format_filename(start_date, end_date, period_label)
-
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_bytes(pdf_bytes)

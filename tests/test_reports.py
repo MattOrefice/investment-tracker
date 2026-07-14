@@ -615,3 +615,52 @@ def test_template_cover_sub_id_is_mode_aware_not_hardcoded():
     source = tmpl_path.read_text(encoding="utf-8")
     assert "{{ cover_sub_id }}" in source
     assert '<p class="cover-sub-id">Personal Brokerage Account</p>' not in source
+
+
+# ── Audit #6: autoescape + session-scoped (in-memory) PDF generation ──────────
+
+def test_report_jinja_env_autoescape_on_and_escapes_user_input():
+    """The PDF Jinja env must autoescape, so a visitor-supplied recipient name (or
+    any ticker / thesis / fund string) cannot inject markup into the report HTML."""
+    env = rpt._make_report_env()
+    assert env.autoescape is True
+    rendered = env.from_string("{{ v }}").render(v="<script>alert(1)</script>")
+    assert "<script>" not in rendered
+    assert "&lt;script&gt;" in rendered
+
+
+def test_report_template_marks_css_safe_so_autoescape_keeps_styling():
+    """With autoescape on, the trusted stylesheet must be marked |safe or its CSS
+    (>, &, quotes) would be escaped and the PDF would render unstyled."""
+    tmpl = (
+        pathlib.Path(__file__).resolve().parent.parent / "templates" / "quarterly_report.html"
+    ).read_text(encoding="utf-8")
+    assert "{{ css_content|safe }}" in tmpl
+    assert "{{ css_content }}" not in tmpl, "raw (un-safe) css_content interpolation must be gone"
+
+
+def test_generate_quarterly_report_bytes_is_in_memory_no_disk():
+    """The session-safe entry point returns PDF bytes and writes no file, so a demo
+    visitor's report never lands on the shared Cloud disk where another session
+    could reach it."""
+    import inspect
+    assert hasattr(rpt, "generate_quarterly_report_bytes")
+    sig = inspect.signature(rpt.generate_quarterly_report_bytes)
+    assert sig.return_annotation is bytes
+    assert "output_path" not in sig.parameters, "the bytes entry point must not take/write a path"
+    src = inspect.getsource(rpt.generate_quarterly_report_bytes)
+    assert ".write_bytes" not in src and "_REPORTS_DIR" not in src, "must not write to disk"
+    assert src.rstrip().endswith("return _render_pdf(html_content)")
+
+
+def test_performance_page_serves_reports_from_session_not_shared_dir():
+    """The Performance page must generate reports in memory and re-download from
+    per-session state — never glob a shared reports directory, which on Cloud would
+    hand one visitor another visitor's report."""
+    page = (
+        pathlib.Path(__file__).resolve().parent.parent / "pages" / "2_Performance.py"
+    ).read_text(encoding="utf-8")
+    assert "generate_quarterly_report_bytes" in page
+    assert "_REPORTS_DIR" not in page, "the shared reports dir must be gone from the page"
+    assert ".glob(" not in page, "no directory globbing to serve another visitor's file"
+    assert "st.session_state" in page and "generated_report" in page
