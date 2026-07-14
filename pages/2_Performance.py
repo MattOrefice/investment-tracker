@@ -2,7 +2,6 @@
 import logging
 import math
 from datetime import date
-from pathlib import Path
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -10,7 +9,7 @@ import streamlit as st
 
 st.set_page_config(page_title="Performance & Attribution", layout="wide")
 
-from src.asof import as_of_banner, most_recent_reportable_quarter, reportable_quarter_phrase, latest_report_link, NO_COMPLETED_QUARTER
+from src.asof import as_of_banner, most_recent_reportable_quarter, reportable_quarter_phrase, NO_COMPLETED_QUARTER
 from src.config import get_demo_banner_text, IS_DEMO
 from src.attribution import (
     benchmark_gap_notice,
@@ -31,15 +30,13 @@ from src.holdings import (
     last_settled_price_date,
 )
 from src.performance import compute_risk_metrics
-from src.reports import generate_quarterly_report
+from src.reports import generate_quarterly_report_bytes
 from src.returns import annualize, period_bounds, period_return, period_window_predates_inception, twr_daily_linked
 from src.positioning import get_effective_duration
 from src.rebalance import compute_drift
 from src.ui_helpers import render_footer, render_page_header
 render_page_header()
 
-
-_REPORTS_DIR = Path(__file__).parent.parent / "data" / "reports"
 
 INCEPTION    = get_inception_date()
 TODAY        = date.today().isoformat()
@@ -193,17 +190,17 @@ with col:
 
     # ── Generate Report expander ──────────────────────────────────────────
     with st.expander("Generate Quarterly Report", expanded=False):
-        _existing_pdfs = sorted(_REPORTS_DIR.glob("*.pdf"), key=lambda p: p.stat().st_mtime, reverse=True)
-        # Inception-gate the "Latest report" link through the same reportability
-        # helper the report itself uses: when no completed quarter is reportable
-        # (pre-inception), surface no link — otherwise a stale pre-fix PDF on disk
-        # would sit above the "No completed quarter yet." empty state.
-        _latest = latest_report_link(_existing_pdfs, INCEPTION, date.fromisoformat(TODAY))
-        if _latest is not None:
+        # Session-scoped re-download (audit #6): a report generated this session is
+        # held in st.session_state and re-served from memory. Nothing is written to
+        # the shared Cloud filesystem, so no visitor can glob a directory and reach
+        # another visitor's report — the "Latest report" link only ever shows a PDF
+        # this session produced.
+        _prev_report = st.session_state.get("generated_report")
+        if _prev_report is not None:
             st.download_button(
-                f"⬇ Latest report: {_latest.name}",
-                _latest.read_bytes(),
-                file_name=_latest.name,
+                f"⬇ Latest report (this session): {_prev_report['name']}",
+                _prev_report["bytes"],
+                file_name=_prev_report["name"],
                 mime="application/pdf",
                 key="latest_report_dl",
             )
@@ -252,10 +249,17 @@ with col:
         if _can_generate and st.button("Generate Report", type="primary", key="gen_report_btn"):
             with st.spinner("Generating PDF — this takes ~30 seconds for chart rendering…"):
                 try:
-                    _pdf_path = generate_quarterly_report(
+                    # In-memory generation — no file is written to the shared disk.
+                    _pdf_bytes = generate_quarterly_report_bytes(
                         _r_start, _r_end, recipient_name=_recipient
                     )
-                    _pdf_bytes = Path(_pdf_path).read_bytes()
+                    # Stash in the per-session state so a rerun can re-offer the
+                    # download without regenerating — session_state is not shared
+                    # across visitors, so this stays session-scoped.
+                    st.session_state["generated_report"] = {
+                        "bytes": _pdf_bytes,
+                        "name":  _report_filename,
+                    }
                     st.success(f"Report generated ({len(_pdf_bytes):,} bytes)")
                     st.download_button(
                         "⬇ Download PDF",
