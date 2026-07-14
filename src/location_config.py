@@ -150,7 +150,7 @@ def is_directable(pseudonym: str) -> bool:
 # The specific rollable 401(k) that the rollover_401k action describes, identified
 # by pseudonym so {workplace_plan_value} is a definition, not an argmax over
 # balances. USER-EDITABLE.
-ROLLOVER_SOURCE_PSEUDONYM: str = "acct_wkpl_01"  # MissionSquare former-employer plan (RFUTX), rollable now; Moody's PPP (acct_wkpl_02) is $0-vested and not worth rolling, deliberately excluded from this figure
+ROLLOVER_SOURCE_PSEUDONYM: str = "acct_wkpl_02"  # MissionSquare former-employer 401(k) — holds RFUTX, fully vested, rollable now; Moody's PPP (acct_wkpl_01) is $0-vested forfeitable money, not worth rolling, deliberately excluded from this figure
 
 
 # ── Sleeve deploy priority, keyed BY ACCOUNT TYPE (ORDINAL — not a forecast) ─────

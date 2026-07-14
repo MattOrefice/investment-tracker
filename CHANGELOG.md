@@ -8,6 +8,44 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Household exclusion was on the wrong workplace account — VOO no longer wrongly bought
+_2026-07-14_
+
+The Deploy card was suggesting a fifth buy, VOO (US Large Core), that should
+not have been there: once the $78,410 American Funds 2060 (RFUTX) target-date
+position is decomposed by look-through, the household is already US-large-core
+*overweight*, so new cash has no gap to fill there. VOO appeared anyway — and
+the cause was not the look-through join (which is correct and applies the
+factsheet composition exactly), but the household-exclusion filter added in the
+previous change.
+
+That filter was meant to drop one workplace account holding unvested,
+forfeitable employer money. It landed on the wrong account. The two workplace
+plans had their identities swapped: the account actually holding RFUTX is the
+user's own, fully-vested former-employer MissionSquare 401(k) — his single
+largest position — while the small (~$814) Fidelity Freedom 2065 holding is the
+0%-vested, forfeitable Moody's profit-sharing plan. The flag excluded the
+$78,410 MissionSquare money and kept the $814 Moody's money, so RFUTX's hidden
+US-large exposure never reached the allocation, leaving core artificially
+underweight and VOO on the buy list. This corrects the prior change, which
+excluded the wrong account and silently defeated the target-date look-through.
+
+The fix swaps both workplace accounts to their real identities: the MissionSquare
+401(k) (RFUTX) is now included in the household and is the 401(k)-rollover source
+the rollover card describes; the Moody's plan is excluded from every total,
+allocation, and the Liquidity ladder, where truly forfeitable money does not
+belong. With RFUTX back in the household the Deploy card drops to its correct
+four buys — SPHQ, AVUV, VTV, IEMG — VOO gone, sized to each sleeve's real
+household gap; the rollover card now names the $78,410 it can actually convert
+to pre-tax space rather than the $814 it referenced before; and the workplace
+account's return history follows it to the right label.
+
+One durability fix underneath: the account seed's conflict-update no longer
+rewrites the internal `NOT NULL UNIQUE` name column, so a display-name *swap*
+between two existing rows can no longer transiently collide on that constraint
+and silently skip a row. The name is a stable internal identifier set once;
+display_name is the mutable label the UI actually shows.
+
 ## Deploy sizing corrected to real target-date data, and shown to work
 _2026-07-13_
 
