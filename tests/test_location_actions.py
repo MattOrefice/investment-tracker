@@ -102,7 +102,7 @@ def test_statuses_are_read_from_config_verbatim():
         "relocate_loss_side": "act_now",
         "relocate_gain_side": "blocked",
         "thematic_sprawl": "accepted",
-        "rollover_401k": "blocked",
+        "rollover_401k": "evaluate",
         "frozen_tod_income": "accepted",
         "saa_sleeves_taxable": "accepted",
         "predeploy_stranded_equity": "evaluate",
@@ -436,7 +436,7 @@ RENDERED_PROSE_LEN = {
     "relocate_loss_side":        (374, 914),   # cons: + 59½ liquidity-lock tradeoff; capacity restatement -> cross-ref
     "relocate_gain_side":        (339, 361),   # cons: capacity restatement -> cross-ref to clear_roth_non_equity
     "thematic_sprawl":           (217, 503),   # cons: gain rate 15% -> 18.07% (15% fed + 3.07% PA)
-    "rollover_401k":             (578, 298),   # pros: + capacity definition + rollover mechanics/pro-rata
+    "rollover_401k":             (486, 353),   # available now (MissionSquare, acct_wkpl_01), not blocked on the next job
     "frozen_tod_income":         (382, 523),   # cons: capacity restatement -> cross-ref to clear_roth_non_equity
     "saa_sleeves_taxable":       (261, 648),   # cons: capacity restatement -> cross-ref to clear_roth_non_equity
     "predeploy_stranded_equity": (328, 530),
@@ -974,7 +974,7 @@ def test_page14_action_lines_and_prominent_captions_live(monkeypatch):
     caps = " ||| ".join(c.value for c in at.caption)
     # The deploy action line is gap-proportional now — assert its stable phrasing
     # (the tickers/order are data-driven), plus the other cards' fixed action lines.
-    for snippet in ("sized to its household underweight gap", "not into a Traditional IRA",
+    for snippet in ("sized to its household underweight gap", "keeps the Traditional IRA empty",
                     "already builds these positions", "belong in a shelter"):
         assert snippet in md, f"action line missing from render: {snippet!r}"
     assert "This group covers" in md, "gap caption must render as prominent markdown"

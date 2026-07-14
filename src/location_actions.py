@@ -145,22 +145,21 @@ _THEMATIC_CAPTION = (
 )
 
 _ROLLOVER_PROS = (
-    "The single largest lever in the household. It converts {workplace_plan_value} of "
-    "self-allocating target-date money into pre-tax space that can hold "
-    "your bonds — letting fixed income leave taxable entirely. Pre-tax capacity "
-    "(room to relocate assets into the Traditional IRA/401(k) before they're full) "
-    "is {pretax_capacity} today, already exhausted; this raises it to "
-    "{pretax_capacity_after}. Rollovers typically sell to cash and reinvest in "
-    "the new plan's menu — these exact holdings don't survive. Keep the "
-    "Traditional IRA empty, too: any pre-tax balance there taxes a backdoor Roth "
-    "conversion pro-rata across all IRAs."
+    "Available now — a former employer's plan, not gated on your next job. "
+    "It converts {workplace_plan_value} of self-allocating target-date money "
+    "into pre-tax space that can hold your bonds — letting fixed income leave "
+    "taxable entirely. Pre-tax capacity (room to relocate assets into the "
+    "Traditional IRA/401(k) before they're full) is {pretax_capacity} today, "
+    "already exhausted; this raises it to {pretax_capacity_after}. Rollovers "
+    "typically sell to cash and reinvest in the new plan's menu — these exact "
+    "holdings don't survive."
 )
 _ROLLOVER_CONS = (
-    "That's why: an existing Traditional IRA balance is what triggers pro-rata "
-    "and forecloses backdoor Roth — the new employer plan doesn't. But you "
-    "cannot know if that plan accepts roll-ins or has a decent menu until you "
-    "have it — waiting is the correct move, and irreversible enough to run past "
-    "a CPA."
+    "Rolling straight into a Traditional IRA works today, but creates a "
+    "pre-tax balance that triggers pro-rata and forecloses backdoor Roth once "
+    "income clears the direct limits. A future employer plan avoids that — so "
+    "available now doesn't mean immediately: if a decent plan is coming, wait "
+    "for it, not the account being locked. Worth a CPA check either way."
 )
 
 
@@ -309,9 +308,10 @@ ACTION_GROUPS: list[dict] = [
     },
     {
         "key": "rollover_401k", "title": "401(k) rollover",
-        "score": 3, "status": "blocked",
-        "action": "When you start your next job, roll the 401(k) into that plan — "
-                  "not into a Traditional IRA. Blocked until then.",
+        "score": 3, "status": "evaluate",
+        "action": "Roll the {workplace_plan_value} MissionSquare 401(k) now — a future "
+                  "employer plan keeps the Traditional IRA empty; an IRA works too, but "
+                  "starts the pro-rata clock.",
         "symbols": None, "case_filter": None, "accounts": None,   # informational
         "pros": _ROLLOVER_PROS, "cons": _ROLLOVER_CONS,
     },
@@ -676,7 +676,7 @@ def _household_placeholders(
       pretax_capacity        Traditional IRA total current_value
       workplace_plan_value   total of the specific rollable 401(k) account
                              (ROLLOVER_SOURCE_PSEUDONYM) — a definition, not an
-                             argmax; the Moody's PPP is deliberately excluded
+                             argmax; the $0-vested Moody's PPP is deliberately excluded
       pretax_capacity_after  pretax_capacity + workplace_plan_value (derived)
       pretax_capacity_threshold
                              the fixed-income/real-asset policy book that the

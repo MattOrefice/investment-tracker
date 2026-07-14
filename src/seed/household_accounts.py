@@ -29,8 +29,8 @@ _ACCOUNTS: list[tuple[str, str, str, str]] = [
     ("taxable",         "external", "acct_taxable_02",  "Individual Taxable (TOD)"),
     ("traditional_ira", "external", "acct_trad_ira_01", "Traditional IRA"),
     ("roth_ira",        "external", "acct_roth_01",     "Roth IRA"),
-    ("workplace_plan",  "external", "acct_wkpl_01",     "Moody's PPP"),
-    ("workplace_plan",  "external", "acct_wkpl_02",     "Workplace Plan"),
+    ("workplace_plan",  "external", "acct_wkpl_01",     "Former Employer 401(k) (MissionSquare)"),
+    ("workplace_plan",  "external", "acct_wkpl_02",     "Moody's PPP"),
     ("hsa",             "external", "acct_hsa_01",      "HSA"),
 ]
 
