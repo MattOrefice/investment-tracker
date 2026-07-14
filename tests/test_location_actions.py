@@ -432,14 +432,14 @@ def test_no_rendered_prose_contains_comma_emdash():
 # for silent prose corruption (dropped words render as valid Markdown).
 RENDERED_PROSE_LEN = {
     "deploy_roth_cash":          (514, 577),   # gap-proportional prose + EM/FTC clause
-    "clear_roth_non_equity":     (1033, 1423),  # cons: + hedged-ETF composition note + Traditional IRA summary + not-rebuilding-is-the-default note (loss/gain-side relief cited)
+    "clear_roth_non_equity":     (1033, 1441),  # cons: + hedged-ETF composition note + Traditional IRA summary + not-rebuilding-is-the-default note (loss/gain-side relief cited) + {trad_ira_equity} definition (offset by trimming the parenthetical + relief clause; cons word count unchanged at 235)
     "relocate_loss_side":        (374, 914),   # cons: + 59½ liquidity-lock tradeoff; capacity restatement -> cross-ref
     "relocate_gain_side":        (339, 361),   # cons: capacity restatement -> cross-ref to clear_roth_non_equity
     "thematic_sprawl":           (217, 503),   # cons: gain rate 15% -> 18.07% (15% fed + 3.07% PA)
     "rollover_401k":             (486, 353),   # available now (MissionSquare 401(k), acct_wkpl_02 — holds RFUTX), not blocked on the next job
     "frozen_tod_income":         (382, 523),   # cons: capacity restatement -> cross-ref to clear_roth_non_equity
     "saa_sleeves_taxable":       (261, 648),   # cons: capacity restatement -> cross-ref to clear_roth_non_equity
-    "predeploy_stranded_equity": (328, 530),
+    "predeploy_stranded_equity": (328, 728),   # cons: + foreign-tax-credit mechanism (withheld dividend tax creditable in taxable, lost in an IRA/Roth)
 }
 
 

@@ -8,6 +8,35 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Three concise answers: the $8,553 room, the foreign tax credit, bonds in pre-tax
+_2026-07-14_
+
+The Asset Location page took three things for granted that a reader might not
+know. Each is now stated, paid for by tightening existing prose so the page does
+not grow meaningfully (net addition ~56 words, and no card face grows).
+
+First, the "$8,553 of room" the Roth-cleanup card weighs three competing moves
+against is now defined where the figure appears: the equity currently in the
+Traditional IRA — the only dollars sellable to make room for relocated income
+assets without new contributions. The figure still templates from live positions;
+the definition is offset by trimming a redundant parenthetical, so the card's
+word count is unchanged.
+
+Second, the foreign tax credit — already flagged on the Evaluate card as
+something an IRA forfeits — now carries the mechanism: foreign governments
+withhold tax on non-US dividends, which a taxable account reclaims as a US credit
+but an IRA or Roth, with no US tax to credit it against, simply loses. That is
+the real argument for holding international equity in taxable despite the
+growth-to-Roth default. The redundant one-line "International exception" in the
+2026 reference table is removed, now that the Evaluate card explains it in full.
+
+Third, the account-location note answers the forty-year question about bonds:
+the pre-tax account isn't chosen because bonds suit a long horizon — location
+only decides where the bonds you hold go, while whether to hold bonds at all is a
+whole-portfolio risk decision (the SAA's fixed-income target), not a location one.
+
+---
+
 ## Roth-cleanup card: not rebuilding the hedge is the default
 _2026-07-14_
 
