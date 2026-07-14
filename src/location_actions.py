@@ -81,7 +81,13 @@ _CLEAR_ROTH_CONS = (
     "**What happens in the Traditional IRA.** This rebuild, the loss-side bond "
     "rebuy, and the gain-side relocation compete for the same {trad_ira_equity} of "
     "room — one shared capacity, not three; none fit until the 401(k) rollover "
-    "frees space."
+    "frees space. The practical default is not to rebuild at all: over a multi-decade "
+    "horizon a return-capped fund fits neither shelter, so the honest baseline lets "
+    "household hedged equity fall to about zero, with no rebuild to follow. If space "
+    "is still scarce after the rollover, the rebuild is the claim to drop: the "
+    "loss-side bond rebuy and gain-side relocation each buy real tax relief "
+    "({loss_side_benefit}/yr and {gain_side_benefit}/yr of drag) that the rebuild "
+    "has no equivalent of."
 )
 
 _LOSS_SIDE_PROS = (
@@ -570,6 +576,16 @@ def _group_title(key: str) -> str:
     return next(g["title"] for g in ACTION_GROUPS if g["key"] == key)
 
 
+def _group_annual_benefit(register: pd.DataFrame, key: str) -> str | None:
+    """Another group's total annual_benefit (drag relief), formatted — or None if it
+    claims no register rows. Lets one card cite a sibling card's LIVE tax-relief figure
+    (the Roth-cleanup card weighs which Traditional-IRA claim to drop against the loss-
+    and gain-side relief) without hardcoding a dollar amount."""
+    grp = next(g for g in ACTION_GROUPS if g["key"] == key)
+    reg = filter_register_for_group(register, grp)
+    return _fmt_dollars(float(reg["annual_benefit"].sum())) if not reg.empty else None
+
+
 def assert_full_coverage(register: pd.DataFrame) -> None:
     """Every register row must be claimed by at least one action group. RAISE (at
     render) if any row is orphaned — the authored groups and the computed register
@@ -745,6 +761,11 @@ def resolve_placeholders(
         # A group may reference another group's authored title (group 3 → group 2)
         # without hardcoding it, so a retitle never leaves stale cross-references.
         "group_2_title": _group_title("clear_roth_non_equity"),
+        # Sibling cards' live drag-relief figures, so the Roth-cleanup card can weigh
+        # which shared-capacity claim to drop against the loss-/gain-side tax value
+        # without hardcoding either dollar amount.
+        "loss_side_benefit": _group_annual_benefit(register, "relocate_loss_side"),
+        "gain_side_benefit": _group_annual_benefit(register, "relocate_gain_side"),
         **_household_placeholders(positions_df, accounts_df, securities_df),
     }
     if group["key"] == "deploy_roth_cash":
