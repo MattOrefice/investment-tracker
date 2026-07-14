@@ -32,6 +32,7 @@ from src.db import get_connection
 from src.household_data import load_latest_positions
 from src.household import (
     build_location_register,
+    exclude_non_household_positions,
     sleeve_display_name,
 )
 from src.location_config import (
@@ -93,7 +94,8 @@ with get_connection() as conn:
     # this page or its DataFrames).
     accounts_df   = pd.read_sql_query(
         "SELECT account_id, name, type, custodian, is_active, created_at, "
-        "tax_treatment, pseudonym, display_name, managed_by FROM accounts",
+        "tax_treatment, pseudonym, display_name, managed_by, included_in_household "
+        "FROM accounts",
         conn,
     )
     securities_df = pd.read_sql_query("SELECT * FROM securities", conn)
@@ -106,6 +108,11 @@ with get_connection() as conn:
         "WHERE parent_id IS NOT NULL AND target_weight > 0",
         conn,
     )
+
+# Single source of truth: accounts holding money that isn't a household asset
+# (e.g. unvested/forfeitable employer contributions) are dropped here, once, so
+# the register, deploy sizing, and every dollar figure below agree.
+positions_df = exclude_non_household_positions(positions_df, accounts_df)
 
 # ── Derived frames ──────────────────────────────────────────────────────────────
 register = build_location_register(

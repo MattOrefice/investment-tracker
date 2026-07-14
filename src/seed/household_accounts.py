@@ -23,15 +23,20 @@ _TAX_TO_TYPE: dict[str, str] = {
     "other":           "other",
 }
 
-# (tax_treatment, managed_by, pseudonym, display_name)
-_ACCOUNTS: list[tuple[str, str, str, str]] = [
-    ("taxable",         "self",     "acct_taxable_01",  "Individual Taxable (Self-Directed)"),
-    ("taxable",         "external", "acct_taxable_02",  "Individual Taxable (TOD)"),
-    ("traditional_ira", "external", "acct_trad_ira_01", "Traditional IRA"),
-    ("roth_ira",        "external", "acct_roth_01",     "Roth IRA"),
-    ("workplace_plan",  "external", "acct_wkpl_01",     "Former Employer 401(k) (MissionSquare)"),
-    ("workplace_plan",  "external", "acct_wkpl_02",     "Moody's PPP"),
-    ("hsa",             "external", "acct_hsa_01",      "HSA"),
+# (tax_treatment, managed_by, pseudonym, display_name, included_in_household)
+# included_in_household=0 means the account holds money that is not a household
+# asset — excluded from every total, allocation, and liquidity calc at this one
+# source, never re-filtered per page.
+_ACCOUNTS: list[tuple[str, str, str, str, int]] = [
+    ("taxable",         "self",     "acct_taxable_01",  "Individual Taxable (Self-Directed)", 1),
+    ("taxable",         "external", "acct_taxable_02",  "Individual Taxable (TOD)", 1),
+    ("traditional_ira", "external", "acct_trad_ira_01", "Traditional IRA", 1),
+    ("roth_ira",        "external", "acct_roth_01",     "Roth IRA", 1),
+    ("workplace_plan",  "external", "acct_wkpl_01",     "Former Employer 401(k) (MissionSquare)", 1),
+    # 0% vested at a former employer — forfeitable employer money, not the
+    # user's asset. Excluded from household totals/allocation/liquidity.
+    ("workplace_plan",  "external", "acct_wkpl_02",     "Moody's PPP", 0),
+    ("hsa",             "external", "acct_hsa_01",      "HSA", 1),
 ]
 
 
@@ -41,15 +46,16 @@ def seed_household_accounts(db_path: str | Path) -> None:
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     try:
-        for tax_treat, managed_by, pseudonym, display_name in _ACCOUNTS:
+        for tax_treat, managed_by, pseudonym, display_name, included in _ACCOUNTS:
             acct_type = _TAX_TO_TYPE.get(tax_treat, "other")
             try:
                 conn.execute(
                     """
                     INSERT INTO accounts
                         (name, type, custodian, is_active,
-                         tax_treatment, pseudonym, display_name, managed_by)
-                    VALUES (?, ?, 'Fidelity', 1, ?, ?, ?, ?)
+                         tax_treatment, pseudonym, display_name, managed_by,
+                         included_in_household)
+                    VALUES (?, ?, 'Fidelity', 1, ?, ?, ?, ?, ?)
                     ON CONFLICT(pseudonym) DO UPDATE SET
                         name          = excluded.name,
                         type          = excluded.type,
@@ -57,9 +63,10 @@ def seed_household_accounts(db_path: str | Path) -> None:
                         is_active     = excluded.is_active,
                         tax_treatment = excluded.tax_treatment,
                         display_name  = excluded.display_name,
-                        managed_by    = excluded.managed_by
+                        managed_by    = excluded.managed_by,
+                        included_in_household = excluded.included_in_household
                     """,
-                    (display_name, acct_type, tax_treat, pseudonym, display_name, managed_by),
+                    (display_name, acct_type, tax_treat, pseudonym, display_name, managed_by, included),
                 )
             except Exception:
                 logger.warning("Failed to upsert account %r — skipping", pseudonym, exc_info=True)

@@ -31,6 +31,7 @@ from src.db import get_connection
 from src.household_data import load_latest_positions
 from src.household import (
     compute_household_allocation,
+    exclude_non_household_positions,
     household_summary,
     build_drift_table,
     build_account_breakdown,
@@ -77,7 +78,8 @@ with get_connection() as conn:
     # (raw account numbers must not reach this page or its DataFrames).
     accounts_df     = pd.read_sql_query(
         "SELECT account_id, name, type, custodian, is_active, created_at, "
-        "tax_treatment, pseudonym, display_name, managed_by FROM accounts",
+        "tax_treatment, pseudonym, display_name, managed_by, included_in_household "
+        "FROM accounts",
         conn,
     )
     securities_df   = pd.read_sql_query("SELECT * FROM securities", conn)
@@ -87,6 +89,11 @@ with get_connection() as conn:
         "FROM asset_classes WHERE parent_id IS NOT NULL AND target_weight > 0",
         conn,
     )
+
+# Single source of truth: accounts holding money that isn't a household asset
+# (e.g. unvested/forfeitable employer contributions) are dropped here, once,
+# so every calc below — totals, allocation, per-account tables — agrees.
+positions_df = exclude_non_household_positions(positions_df, accounts_df)
 
 summary = household_summary(positions_df, accounts_df, as_of_date=_as_of_date.isoformat())
 

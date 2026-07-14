@@ -13,6 +13,30 @@ _BENCH_COLS = ["benchmark_name", "period", "return_pct", "as_of_range", "source"
 _PERF_PERIODS = ("1M", "3M", "YTD", "1Y", "3Y", "5Y", "SI")
 
 
+def exclude_non_household_positions(
+    positions_df: pd.DataFrame, accounts_df: pd.DataFrame,
+) -> pd.DataFrame:
+    """Drop positions belonging to accounts flagged ``included_in_household=0``.
+
+    Some accounts hold money that is not a household asset — e.g. unvested,
+    forfeitable employer contributions — and must never enter a total,
+    allocation, or liquidity calc. This is the single point every personal-mode
+    page calls right after loading ``positions_df``/``accounts_df``, so every
+    downstream consumer sees the same, already-filtered household consistently
+    rather than each re-deriving its own exclusion. A DataFrame with no
+    ``included_in_household`` column (e.g. a bare test fixture) is returned
+    unchanged — nothing to exclude.
+    """
+    if "included_in_household" not in accounts_df.columns:
+        return positions_df
+    excluded = set(
+        accounts_df.loc[accounts_df["included_in_household"] == 0, "pseudonym"].dropna()
+    )
+    if not excluded:
+        return positions_df
+    return positions_df[~positions_df["pseudonym"].isin(excluded)].copy()
+
+
 def get_account_display(pseudonym: str, accounts_df: pd.DataFrame) -> dict:
     """Return display metadata for an account pseudonym.
 

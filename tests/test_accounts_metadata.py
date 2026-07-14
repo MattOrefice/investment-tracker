@@ -12,7 +12,7 @@ import pathlib
 import pandas as pd
 import pytest
 
-from src.db import _drop_account_number
+from src.db import _drop_account_number, _add_included_in_household
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
@@ -94,6 +94,7 @@ def base_db(tmp_path):
 def migrated_db(base_db):
     conn = sqlite3.connect(str(base_db))
     _drop_account_number(conn)
+    _add_included_in_household(conn)
     conn.close()
     return base_db
 

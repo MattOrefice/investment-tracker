@@ -111,7 +111,7 @@ def test_parse_fidelity_output_has_no_account_number_column(tmp_path):
 
 def test_fresh_and_migrated_accounts_schema_agree():
     """A DB created from SCHEMA must match one produced by the migration."""
-    from src.db import SCHEMA, _drop_account_number
+    from src.db import SCHEMA, _drop_account_number, _add_included_in_household
 
     fresh = sqlite3.connect(":memory:")
     fresh.executescript(SCHEMA)
@@ -121,6 +121,7 @@ def test_fresh_and_migrated_accounts_schema_agree():
     migrated = sqlite3.connect(":memory:")
     migrated.executescript(_PRE_SHAPE)
     _drop_account_number(migrated)
+    _add_included_in_household(migrated)
     mig_cols, mig_idx = _accounts_schema(migrated)
     migrated.close()
 
