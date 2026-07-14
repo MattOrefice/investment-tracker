@@ -8,8 +8,28 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
-## Pre-public hardening: session-scoped PDF reports and Jinja autoescape
+## Pre-public hardening: synthetic performance seeds
 _2026-07-14_
+
+The two tracked seed files behind the Household View — `household_performance.csv`
+(per-account time- and money-weighted returns by period) and
+`household_benchmarks.csv` (household vs index returns) — held real, manually
+entered Fidelity figures, and the household's real one-year return was also
+hardcoded into the page prose and pinned by a test. All of it shipped in a repo
+about to go public.
+
+Every return value is now synthetic: obviously round demo numbers — the household
+lands a clean 12% between 3–4% bond benchmarks and 15–18% equity benchmarks — that
+keep the page's narrative coherent while reading as plainly illustrative rather
+than a real track record. The per-account file keeps its exact shape (same
+accounts, periods, and not-reported gaps), so the tables and their "not reported"
+story still render; only the numbers changed. The page prose now templates its six
+benchmark figures from the loaded CSV instead of hardcoding them, so the narrative
+can never drift from the data and no return literal is baked into a tracked source
+file. The one test that pinned the real household return now pins the synthetic
+one, with a comment. A grep of the tracked tree for the old figures comes back
+clean — the only remaining matches are public Shiller CAPE data and coincidental
+binary substrings in the synthetic demo database.
 
 Two changes to the quarterly PDF report ahead of the repo going public, both
 about isolating one visitor from another on the shared Streamlit Cloud host.

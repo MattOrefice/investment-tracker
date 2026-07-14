@@ -1,10 +1,12 @@
-# Household-vs-benchmark comparison data from Fidelity's Performance tab.
-# All figures are 1-year trailing returns for the period 2025-06-01 to 2026-05-31.
-# Display-only — entered manually, not computed by this app.
+# SYNTHETIC illustrative household-vs-benchmark figures for the public demo -- NOT
+# real returns. Structure mirrors a Fidelity Performance-tab comparison; every value
+# is a made-up round number, ordered so the household lands between bond and equity
+# benchmarks (the narrative the page tells) without shipping a real track record.
+# All figures are 1-year trailing, period 2025-06-01 to 2026-05-31.
 benchmark_name,period,return_pct,as_of_range,source
-Household (time-weighted),1Y,24.52,2025-06-01 to 2026-05-31,Fidelity
-S&P 500,1Y,29.78,2025-06-01 to 2026-05-31,Fidelity
-Dow Jones US Total Market,1Y,29.84,2025-06-01 to 2026-05-31,Fidelity
-MSCI ACWI ex USA,1Y,32.99,2025-06-01 to 2026-05-31,Fidelity
-Bloomberg US Aggregate Bond,1Y,5.13,2025-06-01 to 2026-05-31,Fidelity
-Bloomberg Municipal Bond,1Y,6.67,2025-06-01 to 2026-05-31,Fidelity
+Household (time-weighted),1Y,12.00,2025-06-01 to 2026-05-31,Illustrative
+S&P 500,1Y,18.00,2025-06-01 to 2026-05-31,Illustrative
+Dow Jones US Total Market,1Y,17.00,2025-06-01 to 2026-05-31,Illustrative
+MSCI ACWI ex USA,1Y,15.00,2025-06-01 to 2026-05-31,Illustrative
+Bloomberg US Aggregate Bond,1Y,4.00,2025-06-01 to 2026-05-31,Illustrative
+Bloomberg Municipal Bond,1Y,3.00,2025-06-01 to 2026-05-31,Illustrative

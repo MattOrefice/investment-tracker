@@ -412,16 +412,27 @@ with col:
     _bench_tbl = build_benchmark_table(_bench_df)
     if not _bench_tbl.empty:
         st.dataframe(_bench_tbl, use_container_width=True, hide_index=True)
-    st.markdown(
-        "The household's +24.52% one-year return trailed US equity benchmarks "
-        "(S&P 500 +29.78%, Dow US Total Market +29.84%) and the international index "
-        "(MSCI ACWI ex USA +32.99%), while exceeding both bond benchmarks "
-        "(US Aggregate +5.13%, Municipal +6.67%). The shortfall versus pure equity "
-        "indices reflects the book's diversification — international, fixed income, "
-        "hedged equity, and real assets — not underperformance against its own mandate. "
-        "A diversified multi-asset household is expected to land between equity and bond "
-        "benchmarks in a strong equity year, and it does."
-    )
+    # Figures are templated from the loaded benchmark CSV — never hardcoded — so the
+    # narrative always matches the data on disk (and no real return literal is baked
+    # into a tracked source file).
+    _bvals   = dict(zip(_bench_df["benchmark_name"], _bench_df["return_pct"]))
+    _b_names = [
+        "Household (time-weighted)", "S&P 500", "Dow Jones US Total Market",
+        "MSCI ACWI ex USA", "Bloomberg US Aggregate Bond", "Bloomberg Municipal Bond",
+    ]
+    if not _bench_tbl.empty and all(n in _bvals and pd.notna(_bvals[n]) for n in _b_names):
+        _b = lambda n: f"+{_bvals[n]:.2f}%"
+        st.markdown(
+            f"The household's {_b('Household (time-weighted)')} one-year return trailed US equity "
+            f"benchmarks (S&P 500 {_b('S&P 500')}, Dow US Total Market {_b('Dow Jones US Total Market')}) "
+            f"and the international index (MSCI ACWI ex USA {_b('MSCI ACWI ex USA')}), while exceeding "
+            f"both bond benchmarks (US Aggregate {_b('Bloomberg US Aggregate Bond')}, "
+            f"Municipal {_b('Bloomberg Municipal Bond')}). The shortfall versus pure equity "
+            "indices reflects the book's diversification — international, fixed income, "
+            "hedged equity, and real assets — not underperformance against its own mandate. "
+            "A diversified multi-asset household is expected to land between equity and bond "
+            "benchmarks in a strong equity year, and it does."
+        )
     st.divider()
 
 # ── Concentration ──────────────────────────────────────────────────────────────
