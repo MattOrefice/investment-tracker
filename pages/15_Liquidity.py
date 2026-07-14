@@ -25,6 +25,7 @@ if IS_DEMO:
 
 from src.db import get_connection
 from src.household_data import load_latest_positions
+from src.household import exclude_non_household_positions
 from src.location_config import TAX_PROFILE
 from src.liquidity import build_liquidity_ladder, TIER_LABEL
 from src.personal_profile import load_roth_profile
@@ -46,9 +47,16 @@ except Exception:
 with get_connection() as conn:
     accounts_df = pd.read_sql_query(
         "SELECT account_id, name, type, custodian, is_active, created_at, "
-        "tax_treatment, pseudonym, display_name, managed_by FROM accounts",
+        "tax_treatment, pseudonym, display_name, managed_by, included_in_household "
+        "FROM accounts",
         conn,
     )
+
+# Single source of truth: accounts holding money that isn't a household asset
+# (e.g. unvested/forfeitable employer contributions) are dropped here, once —
+# such money can't be sold for cash at any price, so it must not appear in the
+# ladder at all, not even as a locked/penalized row.
+positions_df = exclude_non_household_positions(positions_df, accounts_df)
 
 # Roth basis/age profile — synthetic in demo, gitignored private/ file in personal
 # (absent → zero basis, whole Roth stays locked). Drives the Roth contribution-basis

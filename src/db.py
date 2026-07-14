@@ -17,7 +17,8 @@ CREATE TABLE IF NOT EXISTS accounts (
     tax_treatment TEXT DEFAULT 'other',
     pseudonym     TEXT,
     display_name  TEXT,
-    managed_by    TEXT DEFAULT 'self'
+    managed_by    TEXT DEFAULT 'self',
+    included_in_household INTEGER DEFAULT 1
 );
 
 CREATE TABLE IF NOT EXISTS asset_classes (
@@ -165,6 +166,27 @@ def _drop_account_number(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def _add_included_in_household(conn: sqlite3.Connection) -> None:
+    """Add ``included_in_household`` to ``accounts`` (default 1) if missing.
+
+    Some accounts hold money that is not a household asset — e.g. unvested,
+    forfeitable employer contributions — and must be excluded from every
+    total, allocation, and liquidity calc at this one source rather than
+    re-filtered per page. Defaults to 1 (included) so existing rows are
+    unaffected; the seed sets 0 explicitly where it applies. Idempotent.
+    """
+    has_accounts = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='accounts'"
+    ).fetchone()
+    if not has_accounts:
+        return
+    cols = [row[1] for row in conn.execute("PRAGMA table_info(accounts)")]
+    if "included_in_household" not in cols:
+        conn.execute("ALTER TABLE accounts ADD COLUMN included_in_household INTEGER DEFAULT 1")
+        conn.execute("UPDATE accounts SET included_in_household = 1 WHERE included_in_household IS NULL")
+    conn.commit()
+
+
 def _auto_migrate(conn: sqlite3.Connection) -> None:
     """Idempotent schema migrations. Safe to call on every process startup."""
     # Migration: drop FK on prices.ticker so benchmark-only tickers (e.g. AGG)
@@ -214,6 +236,9 @@ def _auto_migrate(conn: sqlite3.Connection) -> None:
 
     # Migration: drop the raw account_number PII column (keyed on pseudonym now).
     _drop_account_number(conn)
+
+    # Migration: add included_in_household (see function docstring).
+    _add_included_in_household(conn)
 
 
 def get_connection():

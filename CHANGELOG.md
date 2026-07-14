@@ -8,6 +8,22 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Unvested employer money excluded from the household at one source
+_2026-07-13_
+
+One workplace account holds unvested, forfeitable employer contributions —
+not a household asset, since it can be lost entirely rather than merely
+penalized to access. It was still counted in the household total, the Deploy
+card's sleeve weights, and — worst — the Liquidity page's sell-order, where it
+rendered as a normal locked retirement holding you could reach for a 10%
+penalty, which was simply false: this money can't be withdrawn at any price.
+A new `included_in_household` flag on the accounts table (default on) lets
+any account be excluded from every total, allocation, and liquidity calc from
+one place, rather than each page re-deriving its own filter. The Deploy
+card's four buys shift by pennies (still the same four tickers, same
+ranking); everything else that touched this account's dollar figure adjusts
+by exactly its value, nothing more.
+
 ## Asset Location — workplace-account labels corrected, rollover card unblocked
 _2026-07-13_
 
