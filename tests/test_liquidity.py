@@ -114,6 +114,34 @@ def test_liquidity_sorted_cheapest_first_and_cumulative():
     assert (lad["cumulative_net_cash"].diff().dropna() >= -0.01).all(), "cumulative must be non-decreasing"
 
 
+def test_liquidity_taxable_ranks_before_roth_basis_at_equal_cost():
+    """Within a cost_to_cash tie in Tier 1, taxable holdings must sort AHEAD of the
+    Roth contribution-basis tranche — not behind it just because the Roth tranche
+    is the larger dollar amount. Tapping Roth basis has a hidden cost (permanently
+    forfeited tax-free space) a same-cost taxable sale does not, so taxable Tier-1
+    capacity should exhaust first. Tier assignment and tier totals are unchanged —
+    only the row order (and therefore the cumulative walk) shifts."""
+    pos, acct = _fixture()
+    # $1,500 basis < LOSS's $1,000 value? No — size the basis LARGER than every
+    # individual taxable Tier-1 row (LOSS=1000, SPAXX=300) so a value-only
+    # tie-break would have wrongly floated it to the very top.
+    lad = build_liquidity_ladder(pos, acct, TAX_PROFILE,
+                                 roth_contribution_basis=1500.0, roth_is_qualified_age=False)
+    t1 = lad[lad["tier"] == 1].reset_index(drop=True)
+    # All of these are $0-cost Tier-1 rows.
+    assert (t1[t1["symbol"].isin(["LOSS", "SPAXX"])]["cost_to_cash"] == 0.0).all()
+    assert (t1[t1["symbol"] == _ROTH_FREE]["cost_to_cash"] == 0.0).all()
+    roth_pos = t1.index[t1["symbol"] == _ROTH_FREE][0]
+    taxable_pos = t1.index[t1["symbol"].isin(["LOSS", "SPAXX"])]
+    assert roth_pos > taxable_pos.max(), (
+        "Roth contribution-basis tranche must sort AFTER every taxable Tier-1 row, "
+        f"got roth at position {roth_pos}, taxable at {list(taxable_pos)}"
+    )
+    # Tier totals must be unchanged by the reorder (same rows, same sum: LOSS,
+    # SMALL, SPAXX, and the Roth basis tranche are all Tier 1 in this fixture).
+    assert lad[lad["tier"] == 1]["value"].sum() == pytest.approx(1000.0 + 1050.0 + 300.0 + 1500.0, abs=0.01)
+
+
 def test_liquidity_is_the_inverse_of_shelter_priority():
     """The core insight: sheltered money (Roth / IRA) is the LEAST liquid (Tier 3),
     even though it's the most valuable to shelter — liquidity inverts asset location."""
