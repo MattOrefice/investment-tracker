@@ -9,7 +9,13 @@ import streamlit as st
 
 st.set_page_config(page_title="Performance & Attribution", layout="wide")
 
-from src.asof import as_of_banner, most_recent_reportable_quarter, reportable_quarter_phrase, NO_COMPLETED_QUARTER
+from src.asof import (
+    as_of_banner_with_inception,
+    format_long_date,
+    most_recent_reportable_quarter,
+    reportable_quarter_phrase,
+    NO_COMPLETED_QUARTER,
+)
 from src.config import get_demo_banner_text, IS_DEMO
 from src.attribution import (
     benchmark_gap_notice,
@@ -43,6 +49,12 @@ TODAY        = date.today().isoformat()
 PERIODS      = ["1M", "3M", "YTD", "1Y", "SI"]
 PERIOD_LABEL = {"1M": "1 Month", "3M": "3 Months", "YTD": "YTD",
                 "1Y": "1 Year", "SI": "Since Inception"}
+# Row labels for the returns table only, where naming the inception date next to
+# the SI figure saves the reader deriving it from the day count. Kept separate
+# from PERIOD_LABEL, which also supplies the attribution window selector and the
+# BF prose — a dated label reads as noise in a radio option and mid-sentence.
+RETURNS_ROW_LABEL = {**PERIOD_LABEL,
+                     "SI": f"Since Inception (from {format_long_date(INCEPTION)})"}
 
 # Increment when a bug fix changes what get_portfolio_value_series returns so
 # that Streamlit's @st.cache_data (keyed on function args) invalidates the old
@@ -168,7 +180,10 @@ with col:
     st.caption(
         "Time-weighted return, benchmarking, and Brinson-Fachler decomposition."
     )
-    st.caption(as_of_banner())
+    # Reserved here so the as-of line keeps its position under the title; its
+    # inception day count is measured to the settled anchor C, which is only
+    # known after the price frontier is resolved below.
+    _asof_slot = st.empty()
 
     # Load data
     with st.spinner("Loading performance data…"):
@@ -185,6 +200,10 @@ with col:
     # unaffected.
     _C    = last_settled_price_date(INCEPTION, TODAY)
     _C_ts = pd.Timestamp(_C)
+    # Portfolio age, measured to C rather than today for the same reason the
+    # returns are: the settled frontier is the last date the figures describe.
+    si_days = (_C_ts - pd.Timestamp(INCEPTION)).days
+    _asof_slot.caption(as_of_banner_with_inception(INCEPTION, si_days))
     pv = pv[pv.index <= _C_ts]
     cf = cf[cf.index <= _C_ts]
 
@@ -297,7 +316,6 @@ with col:
                    + _saa_sleeves.get("Emerging Markets", 0.09 / 0.98))
 
     # Key scalars (Since Inception). Period to the settled frontier C, not today.
-    si_days     = (_C_ts - pd.Timestamp(INCEPTION)).days
     port_si     = period_return("daily", pv, cf, "SI")
     sp500_si    = float(sp.iloc[-1] / sp.iloc[0] - 1)
     blended_si  = float(bl.iloc[-1] / bl.iloc[0] - 1)
@@ -496,7 +514,7 @@ with col:
     for p in PERIODS:
         if period_window_predates_inception(p, _C, INCEPTION):
             _any_suppressed = True
-            display[PERIOD_LABEL[p]] = {
+            display[RETURNS_ROW_LABEL[p]] = {
                 "Portfolio": _EM, "S&P 500": _EM, "Custom Blended": _EM,
                 "vs S&P 500": _EM, "vs Blended": _EM,
             }
@@ -504,7 +522,7 @@ with col:
         pr = period_return(method_key, pv, cf, p)
         sr = _benchmark_period_return(sp, p)
         br = _benchmark_period_return(bl, p)
-        display[PERIOD_LABEL[p]] = {
+        display[RETURNS_ROW_LABEL[p]] = {
             "Portfolio":       _pct(pr),
             "S&P 500":         _pct(sr),
             "Custom Blended":  _pct(br),
@@ -520,10 +538,11 @@ with col:
     )
     st.dataframe(styled, width='stretch')
     if _any_suppressed:
+        # Day count lives in the header banner, and the SI row names its own start
+        # date — so this only has to explain the em-dashes.
         st.caption(
-            f"— indicates a period longer than the portfolio's history "
-            f"({si_days} day{'s' if si_days != 1 else ''} since inception); only periods the "
-            f"portfolio fully spans are shown. Since Inception always reflects the actual history."
+            "— indicates a period longer than the portfolio's history; only periods the "
+            "portfolio fully spans are shown."
         )
 
     st.divider()

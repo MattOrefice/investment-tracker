@@ -81,11 +81,24 @@ def reportable_quarter_phrase(inception: "date | str", today: date | None = None
     return f"({q[2]})" if q else "(no completed quarter yet)"
 
 
-def as_of_live_line() -> str:
-    """Return the live-data line only. e.g. 'Live data as of May 10, 2026.'"""
-    today = date.today()
-    today_str = f"{today.strftime('%B')} {today.day}, {today.year}"
-    return f"Live data as of {today_str}."
+def format_long_date(d: "date | str") -> str:
+    """Long-form date for banner and label copy. e.g. 'June 9, 2026'.
+
+    Composed from strftime('%B') plus the integer day rather than a %-d/%#d
+    directive, which is platform-specific. Accepts a date or an ISO string.
+    """
+    if isinstance(d, str):
+        d = date.fromisoformat(d)
+    return f"{d.strftime('%B')} {d.day}, {d.year}"
+
+
+def as_of_live_line(today: date | None = None) -> str:
+    """Return the live-data line only. e.g. 'Live data as of May 10, 2026.'
+
+    ``today`` defaults to the current date; it is injectable so a composed banner
+    can be pinned in a test without patching the clock.
+    """
+    return f"Live data as of {format_long_date(today or date.today())}."
 
 
 def as_of_report_line(today: date | None = None, inception: "date | str | None" = None) -> str:
@@ -104,8 +117,18 @@ def as_of_report_line(today: date | None = None, inception: "date | str | None" 
     if q is None:
         return NO_COMPLETED_QUARTER
     _, q_end, q_label = q
-    q_end_str = f"{q_end.strftime('%B')} {q_end.day}, {q_end.year}"
-    return f"Latest locked quarterly report: {q_label} ({q_end_str})."
+    return f"Latest locked quarterly report: {q_label} ({format_long_date(q_end)})."
+
+
+def inception_line(inception: "date | str", days: int) -> str:
+    """Return the inception clause. e.g. 'Portfolio inception June 9, 2026 (35 days).'
+
+    ``days`` is supplied by the caller rather than derived from ``date.today()``
+    here: the pages that show a portfolio age measure it to the settled display
+    anchor (the last complete trading day), not to today, so a locally recomputed
+    count would disagree with the figure alongside it by a day or more.
+    """
+    return f"Portfolio inception {format_long_date(inception)} ({days} day{'s' if days != 1 else ''})."
 
 
 def as_of_banner() -> str:
@@ -115,3 +138,22 @@ def as_of_banner() -> str:
     Both dates are computed dynamically — no hardcoded strings.
     """
     return f"{as_of_live_line()} {as_of_report_line()}"
+
+
+def as_of_banner_with_inception(
+    inception: "date | str", days: int, today: date | None = None
+) -> str:
+    """as_of_banner() extended with the portfolio's inception date and age.
+
+    Format: "Live data as of July 14, 2026. Portfolio inception June 9, 2026
+    (35 days). Latest locked quarterly report: Q2 2026 (June 30, 2026)."
+
+    A separate entry point rather than a widened as_of_banner(): the plain banner
+    is rendered by every page, most of which have no inception context to pass and
+    no reason to name it. Every component is computed — no literal dates.
+    """
+    return (
+        f"{as_of_live_line(today)} "
+        f"{inception_line(inception, days)} "
+        f"{as_of_report_line(today, inception)}"
+    )

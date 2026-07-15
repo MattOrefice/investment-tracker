@@ -8,8 +8,42 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
-## Pre-public hardening: synthetic performance seeds
+## Performance page: name the inception date
 _2026-07-14_
+
+The Performance page reported the portfolio's age but never the date it started
+from. The header gave an as-of date, the summary banner and the suppression
+footnote both counted days ("34 days since inception"), and the returns table's
+"Since Inception" row named no window at all — so the one date every figure on
+the page is measured from was the one date the page declined to print, leaving
+the reader to subtract it back out of the as-of date.
+
+The header's as-of line now carries it directly: "Live data as of July 14, 2026.
+Portfolio inception June 9, 2026 (34 days). Latest locked quarterly report: Q2
+2026 (June 30, 2026)." The returns table's row label reads "Since Inception (from
+June 9, 2026)". Both are templated from the same live `MIN(trade_date)` the
+returns themselves use — demo and personal render different dates from their own
+data, and no date literal enters a tracked source file.
+
+The day count is measured to the settled display anchor rather than to today,
+matching the count the summary banner already showed: on a page whose returns
+stop at the last complete trading day, an age counted to the calendar would
+disagree with the figure printed beside it whenever the price frontier lags. With
+the header now carrying the count, the footnote sheds it and keeps only the job
+the header cannot do — explaining the em-dashes. Its closing reassurance that
+"Since Inception always reflects the actual history" also goes: the row label now
+names its own start date, which shows a real bounded window more plainly than a
+sentence about it could. Net rendered copy is 14 characters shorter.
+
+The dated label is scoped to the returns table. The period-label map it derives
+from also drives the attribution window selector and the Brinson-Fachler prose,
+where a parenthesized date reads as noise in a radio option and mid-sentence, so
+those keep the bare label. The every-page as-of banner is likewise untouched —
+the inception clause is a separate entry point, taken only by the page that has
+an inception to name. `as_of_live_line` gained an injectable date so the composed
+banner can be pinned without patching the clock, and six tests cover the copy:
+pluralization at one day, the unpadded day, both call shapes, clause order, and
+the plain banner staying clean.
 
 The two tracked seed files behind the Household View — `household_performance.csv`
 (per-account time- and money-weighted returns by period) and
