@@ -8,6 +8,34 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Asset Location: explain the foreign tax credit where the reader first meets it
+_2026-07-15_
+
+The page explained the foreign tax credit in the wrong place. The Deploy card is
+the first card on the page and the first to invoke the credit — it argued that the
+emerging-markets slice forfeits it inside the Roth, and asked the reader to accept
+a drag it never defined. The mechanism arrived two cards later, in the Evaluate
+card, where a reader who had already accepted the Deploy argument no longer needed
+it. The page taught the concept after charging for it.
+
+The mechanism now sits in the Deploy card, at the point of first encounter:
+foreign governments withhold tax on non-US dividends, which a taxable account
+reclaims as a credit against your US taxes, but a Roth owes no US tax to credit it
+against, so it is simply lost. The existing conclusion is unchanged — a minor drag,
+accepted because this cash is Roth-trapped and never-taxed growth outweighs it. The
+argument now rests on something the reader has been told rather than something they
+were assumed to know.
+
+The Evaluate card keeps only the short application it carried before: holding EM in
+taxable preserves the credit, which an IRA forfeits entirely — so the case for
+moving those positions is weaker than the ranking alone suggests. The explanation
+is not repeated, because by then it is behind the reader.
+
+The trim pays for the addition exactly. The Deploy card's Against prose grows 97 to
+131 words and the Evaluate card's falls 122 to 88, leaving both card faces and the
+page itself net-flat at 362 words. The rendered-length canaries move with the copy
+(deploy_roth_cash cons 577 to 766, predeploy_stranded_equity cons 728 to 530).
+
 ## Performance page: name the inception date
 _2026-07-14_
 
