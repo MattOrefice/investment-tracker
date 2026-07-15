@@ -46,9 +46,12 @@ _DEPLOY_ROTH_CASH_CONS = (
     "equity for most of the 2010s; emerging markets have had worse decades. You "
     "will open this account in some future year and see it trailing the S&P 500, "
     "and that will be the design working, not failing. The emerging-markets slice "
-    "(IEMG) also forfeits the foreign tax credit inside the Roth — a minor drag "
-    "accepted because this cash is Roth-trapped and never-taxed growth outweighs "
-    "it. If you can't hold that, hold less of it."
+    "(IEMG) also forfeits the foreign tax credit inside the Roth: foreign "
+    "governments withhold tax on non-US dividends, which a taxable account "
+    "reclaims as a credit against your US taxes. A Roth owes no US tax to credit "
+    "it against, so it is simply lost — a minor drag, accepted because this cash "
+    "is Roth-trapped and never-taxed growth outweighs it. If you can't hold that, "
+    "hold less of it."
 )
 
 _CLEAR_ROTH_PROS = (
@@ -234,12 +237,10 @@ _STRANDED_EQUITY_CONS = (
     "directly, which is the correct response to the flag — you build the sheltered "
     "position rather than relocating the taxable one. DFAE and XSOE are "
     "emerging-markets exposure inside the frozen TOD book: observed, not "
-    "actionable, and carrying {embedded_gain} of embedded gain. Note also the "
-    "foreign tax credit: foreign governments withhold tax on non-US dividends, "
-    "which a taxable account reclaims as a US credit but an IRA or Roth — with no "
-    "US tax to credit it against — simply loses. That gives international equity a "
-    "real claim on taxable despite the growth-to-Roth default, so the case for "
-    "moving these is weaker than the ranking alone suggests. Evaluate, don't act."
+    "actionable, and carrying {embedded_gain} of embedded gain. Note also that "
+    "holding EM in taxable preserves the foreign tax credit, which an IRA forfeits "
+    "entirely — so the case for moving them is weaker than the ranking alone "
+    "suggests. Evaluate, don't act."
 )
 
 
