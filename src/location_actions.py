@@ -59,10 +59,15 @@ _CLEAR_ROTH_PROS = (
     "misplaced income and non-equity holdings across {count} lots out of your most "
     "valuable account, then puts only the equity portion back to work in the Roth: "
     "the {roth_equity_rebuy} of hedged, covered-call funds is rebought "
-    "one-for-one as VTI — the uncapped total US market they were selling away "
-    "(total-market, not the S&P 500, since the household is already overweight "
-    "large-cap), a location move sized to the equity sold, not an allocation change "
-    "— those are the Deploy card's job, with new cash. The equivalents are bought "
+    "one-for-one as VOO — the uncapped US large-cap they were selling away, a "
+    "location move sized to the equity sold, not an allocation change — those are "
+    "the Deploy card's job, with new cash. VTI is broader and the default in "
+    "isolation, same cost, but VOO is US Large Core's SAA ticker: the rebuy stays "
+    "countable where VTI would sit off-SAA, as these hedged funds do today. The "
+    "mid/small tail VTI adds is already held in its own sleeves, so bundling it in "
+    "would double it where the SAA cannot track. The measured overweight widens "
+    "against the 17.35% target — visibility, not new exposure; only the option "
+    "overlay goes. The equivalents are bought "
     "inside the Traditional IRA to keep household exposure flat: that is where "
     "hedged, covered-call funds belong, not the Roth — their heavy ordinary income "
     "is sheltered for free there (withdrawals are ordinary regardless), while their "
@@ -261,11 +266,13 @@ ACTION_GROUPS: list[dict] = [
         "key": "clear_roth_non_equity", "title": "Clear misplaced holdings from the Roth",
         "score": 9, "status": "act_now",
         "action": "Sell the {count} misplaced income and non-equity holdings in the "
-                  "Roth and rebuy the {roth_equity_rebuy} of hedged equity as VTI "
+                  "Roth and rebuy the {roth_equity_rebuy} of hedged equity as VOO "
                   "there — free, no tax.",
         "symbols": ["JEPI", "JEPQ", "HELO", "JHEQX", "USRT", "IAU", "IDGT"],
         "case_filter": ["C"], "accounts": ["Roth IRA"],
-        # The Roth equity rebuy (VTI) is sized 1:1 to the hedged, covered-call EQUITY
+        # The Roth equity rebuy (VOO — US Large Core's is_in_saa ticker, so the buy
+        # stays inside the SAA; VTI is in no sleeve at all) is sized 1:1 to the
+        # hedged, covered-call EQUITY
         # sold — a location move, not the whole card value; {roth_equity_rebuy} sums
         # these symbols in the Roth from live positions (resolve_placeholders).
         "equity_rebuy_symbols": ["JEPQ", "JEPI", "JHEQX", "HELO"],
@@ -795,7 +802,7 @@ def resolve_placeholders(
     cost_to_realize = _fmt_dollars(_ctr) if not reg.empty else None
     payback = f"{_ctr / _ab:.1f}-year" if (_ctr > 0 and _ab > 0) else None
 
-    # Roth equity-rebuy sizing (clear_roth_non_equity): the VTI buy is 1:1 with the
+    # Roth equity-rebuy sizing (clear_roth_non_equity): the VOO buy is 1:1 with the
     # hedged, covered-call EQUITY sold — a location move, not the whole card value —
     # so it sums current_value over equity_rebuy_symbols ∩ the group's accounts, from
     # live positions. None (→ render raises) if none of those symbols are held.
