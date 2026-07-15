@@ -8,8 +8,42 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
-## Asset Location: explain the foreign tax credit where the reader first meets it
+## Roth cleanup: rebuy the hedged equity as VOO, not VTI
 _2026-07-15_
+
+The Roth-cleanup card named VTI as the fund to rebuy the hedged, covered-call
+equity into. VTI is not in the SAA — it has no row in the securities seed at all,
+so it belongs to no sleeve. The card was routing the largest single buy it
+recommends into a bucket the framework cannot count, which is precisely the
+off-SAA sprawl the rest of the page exists to catalogue. US Large Core's investable
+ticker is VOO, and the rebuy now names it.
+
+The old rationale had to go rather than be extended, because it argued the opposite
+call: it recommended "total-market, not the S&P 500, since the household is already
+overweight large-cap" — the overweight was the stated reason for VTI, and VOO is the
+S&P 500 fund. Appending to that would have left the card arguing both sides of its
+own recommendation.
+
+The replacement weighs the choice honestly instead of asserting it. VTI is the
+broader fund and the default pick in isolation — same cost, and it carries the mid-
+and small-cap tail. What decides it is fit, not quality: VOO is US Large Core's SAA
+ticker, so the rebuy lands in a sleeve the framework counts, where VTI would sit
+off-SAA exactly as the hedged funds do today. The tail VTI would add is already held
+directly in its own mid- and small-cap sleeves, so bundling it into a total-market
+fund would double it somewhere the SAA cannot see. VTI is the better fund generically;
+VOO is the better fund in a book that slices large, mid, and small deliberately.
+
+The overweight is stated as what it is. The swap does widen measured US Large Core
+against its 17.35% target, because the hedged funds sit in an off-SAA `hedged_equity`
+bucket with no look-through composition — none of their US large-cap exposure counts
+toward the sleeve today. The rebuy makes that exposure visible rather than creating
+it: the underlying was US large-cap all along, and only the option overlay is being
+removed. The card says so rather than claiming the swap is free of consequence.
+
+The card's For prose grows 166 to 228 words (card face 426 to 488); the superseded
+VTI rationale pays for most of the new reasoning. The rebuy figure stays templated
+from live positions, and the rendered-length canary moves with the copy (pros 1033 to
+1372).
 
 The page explained the foreign tax credit in the wrong place. The Deploy card is
 the first card on the page and the first to invoke the credit — it argued that the

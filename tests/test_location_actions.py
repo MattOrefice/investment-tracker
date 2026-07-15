@@ -432,7 +432,7 @@ def test_no_rendered_prose_contains_comma_emdash():
 # for silent prose corruption (dropped words render as valid Markdown).
 RENDERED_PROSE_LEN = {
     "deploy_roth_cash":          (514, 766),   # cons: + FTC mechanism, relocated here from predeploy_stranded_equity (first encounter on the page; cons word count 97 -> 131)
-    "clear_roth_non_equity":     (1033, 1441),  # cons: + hedged-ETF composition note + Traditional IRA summary + not-rebuilding-is-the-default note (loss/gain-side relief cited) + {trad_ira_equity} definition (offset by trimming the parenthetical + relief clause; cons word count unchanged at 235)
+    "clear_roth_non_equity":     (1372, 1441),  # pros: rebuy VTI -> VOO (US Large Core's SAA ticker); the pro-VTI "total-market, not the S&P 500" rationale is REPLACED by the honest VTI-vs-VOO tradeoff + the overweight-is-visibility note (pros word count 166 -> 228)
     "relocate_loss_side":        (374, 914),   # cons: + 59½ liquidity-lock tradeoff; capacity restatement -> cross-ref
     "relocate_gain_side":        (339, 361),   # cons: capacity restatement -> cross-ref to clear_roth_non_equity
     "thematic_sprawl":           (217, 503),   # cons: gain rate 15% -> 18.07% (15% fed + 3.07% PA)
@@ -819,24 +819,31 @@ def test_loss_side_cons_references_current_group2_title():
     assert _group_title("clear_roth_non_equity") in cons, "rendered group 3 cons must show group 2's live title"
 
 
-# ── Roth-cleanup card names VTI as the Roth equity rebuy (1:1, not gap-sized) ───
+# ── Roth-cleanup card names VOO as the Roth equity rebuy (1:1, not gap-sized) ───
 
-def test_clear_roth_names_vti_and_templates_the_rebuy_figure():
+def test_clear_roth_names_voo_and_templates_the_rebuy_figure():
     """Config/template guard (runs in CI, no live data): the Roth-cleanup card carries
-    the hedged-equity rebuy subset and both its action and For prose name VTI and
+    the hedged-equity rebuy subset and both its action and For prose name VOO and
     template the {roth_equity_rebuy} figure — never a hardcoded dollar or a ticker-less
-    'broad equity'. The subset is a strict subset of the 7 sold symbols (equity only)."""
+    'broad equity'. The subset is a strict subset of the 7 sold symbols (equity only).
+
+    VOO, not VTI: VOO is US Large Core's is_in_saa ticker, so the rebuy lands in an
+    SAA sleeve the framework can count. VTI is in no sleeve at all, so the same buy
+    would land off-SAA. The card's For prose must weigh that tradeoff rather than
+    carry the old pro-VTI 'total-market, not the S&P 500' rationale, which argued
+    the opposite call."""
     g = next(x for x in ACTION_GROUPS if x["key"] == "clear_roth_non_equity")
     assert g["equity_rebuy_symbols"] == ["JEPQ", "JEPI", "JHEQX", "HELO"]
     assert set(g["equity_rebuy_symbols"]) < set(g["symbols"]), "rebuy subset must be equity-only, a subset of the 7"
     assert "{roth_equity_rebuy}" in g["action"] and "{roth_equity_rebuy}" in g["pros"]
-    assert "VTI" in g["action"] and "VTI" in g["pros"]
+    assert "VOO" in g["action"] and "VOO" in g["pros"]
+    assert "total-market, not the S&P 500" not in g["pros"], "the superseded pro-VTI rationale must be gone"
     assert "broad equity there" not in g["action"], "the ticker-less 'broad equity' clause must be replaced"
     assert not _DOLLAR_LITERAL.search(g["action"]) and not _DOLLAR_LITERAL.search(g["pros"]), "no $ literal"
 
 
 def test_clear_roth_rebuy_sized_1to1_to_hedged_equity_live():
-    """The VTI rebuy is sized 1:1 to the hedged, covered-call equity sold
+    """The VOO rebuy is sized 1:1 to the hedged, covered-call equity sold
     (JEPQ/JEPI/JHEQX/HELO) in the Roth — a location move, the equity portion only,
     NOT the whole card value and NOT gap-sized. The figure templates from live rows."""
     pos, acct, sec, reg = _live()
@@ -850,7 +857,7 @@ def test_clear_roth_rebuy_sized_1to1_to_hedged_equity_live():
     assert r["roth_equity_rebuy"] != r["value"], "rebuy is the equity portion, strictly less than the whole card"
     action = render_prose_md(g["action"], r)
     pros = render_prose_md(g["pros"], r)
-    assert "VTI" in action and "VTI" in pros
+    assert "VOO" in action and "VOO" in pros
     assert r["roth_equity_rebuy"] in action, "action must show the sized figure"
     assert "location move" in pros and "overweight" in pros, "why/location-move framing must render"
 
