@@ -43,21 +43,42 @@
   a tip SHA written here is false the moment the next merge lands, including the
   merge that writes it. For the tip, run `git rev-parse main`.
 - 2026-07-08: a `git filter-repo` rewrite purged raw Fidelity account
-  numbers from history (account-number PII removal). Every commit after
-  fe71234 was rewritten; their pre-rewrite SHAs (including the old tips
-  3d221fd, 554ae5f, and 1f652f5) are now unreachable — do NOT reference
-  any pre-rewrite SHA. b7fa2c3 (v1.0) is UNCHANGED because it predates
-  the leak commit.
+  numbers from history (account-number PII removal). The LEAK COMMIT is
+  431fc8f94ae51c62a752537246f24064ad42103c. It and everything after it were
+  rewritten; the pre-rewrite SHAs (including the old tips 3d221fd, 554ae5f,
+  1f652f5) are unreachable — do NOT reference any pre-rewrite SHA. b7fa2c3
+  (v1.0) is UNCHANGED because it predates the leak; it is the reliable
+  pre-leak landmark, verified an ancestor of main.
+- An earlier version of this note named `fe71234` as the rewrite boundary.
+  That SHA is WRONG — `git rev-list --all` finds zero commits with that
+  prefix (checked 2026-07-16). Use 431fc8f… for the leak and b7fa2c3 for the
+  last known-good pre-leak point. Do not resurrect fe71234.
 - The purge is CONFIRMED and the ticket is CLOSED (2026-07-16). GitHub Support
-  completed it and the owner verified independently: fetching a pre-rewrite SHA
-  returns "not our ref", so the objects are gone from GitHub's object store. The
-  retention condition is discharged and the
-  ../investment-tracker-BACKUP-20260708.git mirror is no longer on disk. Nothing
-  further is owed here — do not re-open this as an open question.
-- A different, older mirror DOES exist at
-  ../investment-tracker-backup-pre-phase26.git (2026-05-14, 210 commits). It is
-  NOT the PII backup and is not a leak: it predates the leak commit fe71234
-  entirely and contains none of the pre-rewrite SHAs. Left in place; no action.
+  completed it; the owner verified `git fetch origin 431fc8f…` returns "not our
+  ref". Independently checked 2026-07-16 that 431fc8f… is absent from this
+  clone's object store (`git cat-file -e` → absent) and that no unreachable
+  object here carries account data (the only `[0-9]{9,}` hits are Fama-French
+  decimal tails in data/cache/*.csv stashes). Do not re-open this.
+- Local mirrors: BOTH ARE GONE, verified 2026-07-16.
+  ../investment-tracker-BACKUP-20260708.git and
+  ../investment-tracker-backup-pre-phase26.git are both absent, and a sweep of
+  C:\Users\jenni found no other bare/mirror repo. The pre-phase26 mirror
+  (created 2026-05-14) DID exist and was deleted 2026-07-16 on the finding that
+  it held the leak commit. Do NOT describe it as clean or as still on disk —
+  both were claimed here before and both were wrong.
+- Caveat on that finding, recorded so it is neither over- nor under-trusted:
+  whether the mirror truly held 431fc8f… is now UNVERIFIABLE. The check used was
+  a bare `git rev-parse <40-hex>`, which echoes ANY well-formed SHA back without
+  testing existence — it returns a freshly-invented SHA identically (demonstrated
+  2026-07-16) — and the mirror no longer exists to re-check. Deletion was correct
+  regardless: a mirror spanning the leak window, unprovable either way, is not
+  worth keeping. Treat it as if it held the commit.
+- To test whether an object EXISTS use `git cat-file -e <sha>` or
+  `git rev-parse --verify <sha>^{commit}`. NEVER bare `git rev-parse <sha>` —
+  it validates the string's shape, not the object's presence, and reading it as
+  proof is what produced the two wrong claims above. Creation dates prove
+  nothing either: a mirror can hold commits authored long after it was made,
+  because fetches keep updating it.
 - v1.0 tag points to b7fa2c3 (the v1.0-launch milestone commit;
   original annotation preserved) — unchanged through both reorgs.
 - All pre-reorg commit SHAs in earlier notes/CHANGELOG history are
