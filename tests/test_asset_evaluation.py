@@ -70,16 +70,70 @@ def _make_sleeve_df(n: int = 1000, n_sleeves: int = 4,
 
 # ── 1. Sleeve weights sum to one ─────────────────────────────────────────────
 
-def test_sleeve_weights_sum_to_one():
-    """SLEEVE_WEIGHTS values must sum to exactly 1.0 (within floating-point tolerance).
+def test_raw_weights_match_db_targets_and_scale():
+    """_RAW_WEIGHTS must BE the SAA's raw weights — not merely proportional to them.
 
-    These weights are used as the baseline portfolio in MV optimization and the
-    marginal Sharpe curve. If they don't sum to 1.0, portfolio arithmetic is wrong.
+    Replaces a vacuous assertion. The old test summed SLEEVE_WEIGHTS and checked
+    it equalled 1.0, but src/asset_evaluation.py:62 *defines* SLEEVE_WEIGHTS as
+    `{k: v / _raw_total}` — so the sum is 1.0 by construction and the assertion
+    only proved that division works. It passed even if every raw weight were
+    doubled, or if all nine were wrong in the same proportion.
+
+    This checks the two things that assertion could not:
+      SHAPE — each raw weight, normalized, equals the DB's strategic target.
+      SCALE — the raw weights sum to the seed's documented ex-cash normalizer,
+              which is what makes them *raw SAA weights* rather than any
+              proportional set. A uniform rescale is invisible downstream but
+              means _RAW_WEIGHTS no longer says what its comment claims.
+
+    Both sides read live. The name map is derived from _RAW_WEIGHTS' own keys, so
+    a new sleeve is carried automatically and an unmappable one fails loudly —
+    rather than being quietly skipped by a hand-maintained list.
     """
-    total = sum(SLEEVE_WEIGHTS.values())
-    assert abs(total - 1.0) < 1e-9, (
-        f"SLEEVE_WEIGHTS sum to {total:.10f}, not 1.0. "
-        f"Weights: {SLEEVE_WEIGHTS}"
+    from src.asset_evaluation import _RAW_WEIGHTS
+    from src.db import get_connection
+    from src.seed_saa import _EXCASH_NORM
+
+    # The benchmark-proxy subsystem abbreviates exactly one sleeve name.
+    _AE_ONLY_ALIAS = {"Intl Developed": "International Developed"}
+    ae_to_db = {ae: _AE_ONLY_ALIAS.get(ae, ae) for ae in _RAW_WEIGHTS}
+
+    with get_connection() as conn:
+        db = {
+            r["name"]: r["target_weight"]
+            for r in conn.execute(
+                "SELECT name, target_weight FROM asset_classes "
+                "WHERE parent_id IS NOT NULL AND target_weight > 0"
+            ).fetchall()
+        }
+
+    raw_total = sum(_RAW_WEIGHTS.values())
+
+    # SCALE
+    assert abs(raw_total - _EXCASH_NORM) < 1e-9, (
+        f"_RAW_WEIGHTS sum to {raw_total:.10f}, but seed_saa._EXCASH_NORM is "
+        f"{_EXCASH_NORM} — the raw weights are no longer the SAA's raw weights. "
+        f"Normalization hides this downstream, so nothing else would catch it."
+    )
+
+    # SHAPE — every AE sleeve must exist in the DB and reconcile once normalized
+    for ae_name, db_name in ae_to_db.items():
+        assert db_name in db, (
+            f"_RAW_WEIGHTS names '{ae_name}' (-> DB '{db_name}'), which is not a "
+            f"strategic sleeve in asset_classes. DB has: {sorted(db)}"
+        )
+        normalized = _RAW_WEIGHTS[ae_name] / raw_total
+        assert abs(normalized - db[db_name]) < 1e-6, (
+            f"_RAW_WEIGHTS['{ae_name}']={_RAW_WEIGHTS[ae_name]} normalizes to "
+            f"{normalized:.6f} but DB '{db_name}' targets {db[db_name]:.6f}. "
+            f"The two SAA target sources diverged."
+        )
+
+    # ...and the DB must not carry a strategic sleeve _RAW_WEIGHTS omits
+    unmapped = set(db) - set(ae_to_db.values())
+    assert not unmapped, (
+        f"asset_classes has strategic sleeves absent from _RAW_WEIGHTS: "
+        f"{sorted(unmapped)}. The MV baseline would silently exclude them."
     )
 
 
