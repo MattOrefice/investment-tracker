@@ -41,10 +41,12 @@ These go in **App settings → Secrets** on share.streamlit.io, not in `.streaml
 ### Secret resolution order in src/config.py
 
 ```
-st.secrets  →  os.getenv / .env  →  hardcoded default ("personal")
+st.secrets  →  os.getenv / .env  →  hardcoded default ("demo")
 ```
 
-The `try/except Exception` wrapper in `src/config.py` ensures any Streamlit version's secrets exception falls back to env vars — the fix applied in Phase 12.2 Section 1+2.
+The default is **demo**, and resolution fails closed: unset, unreadable, and unrecognised values all resolve to demo. Personal mode must be asked for explicitly. This matters most on Cloud, where `TRACKER_MODE` lives only in the Streamlit dashboard's secrets — if it were ever unset there, the old `"personal"` default would have put the Household View in the nav and enabled writes on a public app.
+
+`src/config.py` catches only the expected miss — `StreamlitSecretNotFoundError`, which Streamlit raises (rather than returning the `.get()` default) when no secrets file exists, the normal case for local dev, pytest, and CI. Any other secrets failure propagates: an unexpected error while reading config must not be silently reinterpreted as "no secret set". This replaces the blanket `try/except Exception` from Phase 12.2, which swallowed every failure into the fallback path.
 
 ---
 
