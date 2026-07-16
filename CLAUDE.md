@@ -37,10 +37,11 @@
   first the pre-v1.0 history into 15 prose milestone commits, then
   the post-v1.0 phase work folded into prose product commits
   (34 → 22 commits; tree f16d472… preserved).
-- Main tip as of 2026-07-16: d3f5c7e (the security-audit PRs #118–#122:
+- 2026-07-16: the security-audit work landed at d3f5c7e (PRs #118–#122 —
   fail-closed mode resolution, ticker validation, income moved to the runtime
-  profile, ignore/pin hygiene). This line is a dated snapshot and goes stale on
-  every merge — `git rev-parse main` is the authority, not this note.
+  profile, ignore/pin hygiene). Stated as a landmark, NOT as "the current tip":
+  a tip SHA written here is false the moment the next merge lands, including the
+  merge that writes it. For the tip, run `git rev-parse main`.
 - 2026-07-08: a `git filter-repo` rewrite purged raw Fidelity account
   numbers from history (account-number PII removal). Every commit after
   fe71234 was rewritten; their pre-rewrite SHAs (including the old tips
