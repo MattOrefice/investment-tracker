@@ -10,15 +10,34 @@
 .env.*.local
 .streamlit/secrets.toml
 
-# Local databases
-# tracker.db (real holdings) and any backup variants (.bak etc.) — never committed
-data/tracker.db
-data/tracker.db*
+# Local databases — FAIL-CLOSED: ignore every SQLite file anywhere, then
+# re-admit the single one that is deliberately committed. The old rules listed
+# tracker.db by name, so a timestamped copy (tracker_stale_jul08.db), a scratch
+# DB, or a restored backup was untracked but NOT ignored — one `git add -A` from
+# publishing real holdings. A new personal DB must be ignored on creation, not
+# after someone remembers to add a rule for its filename.
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+# Backup/copy variants: a .bak of a real DB is a real DB. The extension, not the
+# stem, is what a name-based rule misses — so cover the suffixes too.
+*.bak
+*.db.*
 # demo.db is committed intentionally (paper trades for Streamlit Cloud)
+!data/demo.db
 
-# Fidelity exports — personal portfolio data, never committed
+# Fidelity exports — personal portfolio data, never committed.
+# Matched ANYWHERE, not just under data/uploads/: an export dragged to the repo
+# root or a scratch dir is the same leak. The committed seed/cache CSVs live at
+# data/seed/ and data/cache/ and are unaffected by these name-based rules.
 data/uploads/*
 !data/uploads/.gitkeep
+**/Portfolio_Position*.csv
+**/Accounts_History*.csv
+**/Realized_Gain_Loss*.csv
 
 # Generated reports — local artifacts, not committed
 data/reports/
@@ -37,4 +56,12 @@ data/cache/ff_beme_breakpoints.csv
 # Editor / tool dirs
 .cursor/
 .claude/
+
+# Private runtime config — real values only, never committed. Matched anywhere
+# in the tree, not just at the repo root, so a copy under a subdirectory is
+# still ignored. The *.example.json templates ARE committed and stay tracked
+# (these rules match the real filenames only, not the .example variants).
 private/
+**/private/
+**/account_map.json
+**/personal_profile.json
