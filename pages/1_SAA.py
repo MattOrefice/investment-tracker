@@ -75,6 +75,29 @@ def load_saa_data():
 
 parents, sub_classes = load_saa_data()
 
+
+def _require_weight(rows, name: str, *, kind: str = "sleeve") -> float:
+    """Target weight for a sleeve/parent, or raise. Deliberately NO default.
+
+    Every lookup here previously carried a hardcoded fallback (0.78/0.98,
+    0.20/0.98, 0.09/0.98, …) that was EXACTLY the live DB target — bit-identical,
+    not merely close. So a renamed, split, or removed row would have templated the
+    stale weight into the investment-thesis prose with no error and nothing
+    visibly different: the fallback was indistinguishable from a correct lookup by
+    value alone, and only membership told them apart. An unresolvable name must
+    raise rather than render a plausible wrong number.
+    """
+    for r in rows:
+        if r["name"] == name:
+            return float(r["target_weight"])
+    raise ValueError(
+        f"SAA {kind} {name!r} is absent from asset_classes, but this page templates "
+        f"its target weight into the investment-thesis prose below. Present: "
+        f"{sorted(r['name'] for r in rows)}. If it was split or renamed, rewrite the "
+        f"prose to name the new {kind}s — do not restore a default: the old one was "
+        f"bit-identical to the live target and rendered a stale weight silently."
+    )
+
 # ── Header ─────────────────────────────────────────────────────────────────────
 _, col, _ = st.columns([1, 8, 1])
 with col:
@@ -87,28 +110,12 @@ with col:
 _, col, _ = st.columns([1, 8, 1])
 with col:
     st.subheader("Investment Thesis")
-    _equity_wt   = next((p["target_weight"] for p in parents if p["name"] == "Equity"), 0.78 / 0.98)
-    # No default. The prior fallback here was 0.20/0.98 — EXACTLY the live DB
-    # target (0.20408163265306123, bit-identical). So if this sleeve were ever
-    # renamed or split away, the page would template the stale figure into its
-    # investment-thesis prose with no error and no visible change: the fallback was
-    # indistinguishable from a correct lookup. An unresolvable sleeve raises rather
-    # than rendering a plausible wrong number.
-    _intl_dev_row = next((s for s in sub_classes if s["name"] == "International Developed"), None)
-    if _intl_dev_row is None:
-        raise ValueError(
-            "SAA sleeve 'International Developed' is absent from asset_classes, but "
-            "this page templates its target weight into the investment-thesis prose "
-            "below. Sleeves present: "
-            f"{sorted(s['name'] for s in sub_classes)}. If the sleeve was split or "
-            "renamed, rewrite the prose to name the new sleeves — do not restore a "
-            "default: the old one silently rendered a stale weight."
-        )
-    _intl_dev_wt = _intl_dev_row["target_weight"]
-    _em_wt       = next((s["target_weight"] for s in sub_classes if s["name"] == "Emerging Markets"), 0.09 / 0.98)
-    _real_wt     = next((s["target_weight"] for s in sub_classes if s["name"] == "Real Assets"), 0.10 / 0.98)
-    _tips_wt     = next((s["target_weight"] for s in sub_classes if s["name"] == "TIPS"), 0.04 / 0.98)
-    _core_fi_wt  = next((s["target_weight"] for s in sub_classes if s["name"] == "Core Fixed Income"), 0.06 / 0.98)
+    _equity_wt   = _require_weight(parents, "Equity", kind="parent")
+    _intl_dev_wt = _require_weight(sub_classes, "International Developed")
+    _em_wt       = _require_weight(sub_classes, "Emerging Markets")
+    _real_wt     = _require_weight(sub_classes, "Real Assets")
+    _tips_wt     = _require_weight(sub_classes, "TIPS")
+    _core_fi_wt  = _require_weight(sub_classes, "Core Fixed Income")
     _cape_lbl    = _load_cape_label()
     # TODO: Static refs "comparable only to the 1929 and 1999 peaks" and "CAPE readings
     # above 40" should be reviewed if CAPE falls materially below 40 and _cape_lbl no
