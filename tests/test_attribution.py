@@ -857,9 +857,20 @@ def test_bf_per_sleeve_returns_are_total_return():
     if bf_df.empty:
         pytest.skip("No portfolio data — skipped in local/empty-DB mode")
 
+    # HARD ASSERT, never a skip. This test is the tripwire for DRIP shares being
+    # double-counted on top of adj_close. It only works on a single-ticker sleeve,
+    # and it was written against International Developed because VEA is the only
+    # holding. If that sleeve stops existing (renamed, split, or its is_in_saa
+    # carrier moved), a skip would retire the tripwire silently and the
+    # double-counting regression would go uncaught. Fail instead, so whoever
+    # changes the sleeve has to re-point this at another single-ticker sleeve.
     intl_rows = bf_df[bf_df["sleeve"] == "International Developed"]
-    if intl_rows.empty:
-        pytest.skip("International Developed sleeve not in BF result")
+    assert not intl_rows.empty, (
+        "'International Developed' is absent from the BF result, so this test's "
+        f"premise no longer holds. Sleeves present: {sorted(bf_df['sleeve'].tolist())}. "
+        "Do NOT re-skip this — re-point it at a single-ticker sleeve and update the "
+        "VEA price lookup below, or the adj_close/DRIP double-count tripwire is gone."
+    )
 
     r_p_total_return = float(intl_rows["r_p"].iloc[0])
 

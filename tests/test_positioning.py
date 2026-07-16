@@ -97,13 +97,68 @@ def test_effective_duration_empty_portfolio():
 
 # ── ETF_STYLE_BOX and build_style_box_figure ─────────────────────────────────
 
-_EQUITY_ETFS = {"VOO", "SPHQ", "VTV", "AVUV", "VEA", "IEMG"}
+def _saa_equity_tickers() -> set:
+    """SAA equity tickers, DERIVED: the committed household CSV (is_in_saa=true)
+    intersected with the DB's Equity-parent sleeves.
+
+    Previously a hand-maintained literal set. A hand-listed set cannot fail on a
+    ticker it omits — adopt a new equity SAA ticker and ETF_STYLE_BOX simply never
+    gets checked for it, so the style box silently loses a holding. Both sides are
+    read live: the CSV supplies is_in_saa, the DB supplies which sleeves hang off
+    the Equity parent.
+
+    Equity membership is resolved by ASSET_CLASS_ID — the same join
+    compute_household_allocation uses (household.py:155) — not by display-name
+    matching. The display names do not round-trip: sleeve_category
+    'us_small_value' maps to the SAA sleeve 'US Small Cap', so a name-based join
+    silently drops AVUV and the guard would be weaker than the literal it replaced.
+    """
+    import csv
+    import pathlib
+
+    from src.db import get_connection
+
+    with get_connection() as conn:
+        equity_ids = {
+            r["asset_class_id"]
+            for r in conn.execute(
+                "SELECT c.asset_class_id FROM asset_classes c "
+                "JOIN asset_classes p ON c.parent_id = p.asset_class_id "
+                "WHERE p.name = 'Equity' AND c.target_weight > 0"
+            ).fetchall()
+        }
+        ticker_to_class = {
+            r["ticker"]: r["asset_class_id"]
+            for r in conn.execute("SELECT ticker, asset_class_id FROM securities").fetchall()
+        }
+
+    csv_path = (
+        pathlib.Path(__file__).resolve().parent.parent
+        / "data" / "seed" / "securities_household.csv"
+    )
+    with csv_path.open(encoding="utf-8") as fh:
+        rows = [r for r in csv.DictReader(fh) if r["is_in_saa"].strip().lower() == "true"]
+
+    return {
+        r["symbol"].strip()
+        for r in rows
+        if ticker_to_class.get(r["symbol"].strip()) in equity_ids
+    }
 
 
 def test_style_box_contains_all_equity_etfs():
-    """All equity holdings must appear in ETF_STYLE_BOX — fail loud if missing."""
-    missing = _EQUITY_ETFS - set(ETF_STYLE_BOX.keys())
-    assert not missing, f"ETF_STYLE_BOX missing equity ETFs: {missing}"
+    """All SAA equity holdings must appear in ETF_STYLE_BOX — fail loud if missing."""
+    equity_etfs = _saa_equity_tickers()
+    assert equity_etfs, (
+        "Derived no SAA equity tickers — the CSV/DB join broke, which would make "
+        "this test vacuously pass."
+    )
+    missing = equity_etfs - set(ETF_STYLE_BOX.keys())
+    assert not missing, (
+        f"ETF_STYLE_BOX missing equity ETFs: {sorted(missing)}. Derived from "
+        f"data/seed/securities_household.csv x the DB's Equity sleeves, so a newly-"
+        f"adopted equity ticker is caught here rather than silently unlisted."
+    )
 
 
 def test_style_box_valid_categories():

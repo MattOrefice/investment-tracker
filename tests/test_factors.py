@@ -780,7 +780,21 @@ def test_factor_section_values_match_raw_result():
 
     assert section is not None
     assert "sleeves" in section
-    assert len(section["sleeves"]) >= 1
+
+    # EXACT count, not >= 1. Both regressions are mocked to succeed here, so every
+    # sleeve in _SLEEVES must come back. `>= 1` passed even if a sleeve silently
+    # dropped out — which is exactly what happens when a sleeve's spec breaks:
+    # _build_factor_section tolerates partial results by design (it returns None
+    # only if BOTH fail), so a dropped sleeve is invisible to a >= check. Counted
+    # against _SLEEVES rather than a literal so the assertion tracks the config.
+    from src.factors import _SLEEVES
+
+    assert len(section["sleeves"]) == len(_SLEEVES), (
+        f"Expected one section entry per configured factor sleeve "
+        f"({len(_SLEEVES)}: {sorted(_SLEEVES)}), got {len(section['sleeves'])}. "
+        f"With both regressions mocked to succeed, a shortfall means a sleeve was "
+        f"silently dropped — do NOT relax this back to >=."
+    )
 
     # Verify EM disclosure is passed through
     assert section["em_note"] == EM_DISCLOSURE
@@ -857,3 +871,59 @@ def test_fetch_factors_raises_after_all_retries(monkeypatch):
 
     with pytest.raises(RuntimeError, match="Ken French factor download failed"):
         _f._fetch_factors("https://example.com/fake.zip")
+
+
+# ── Factor-sleeve config is tied to live DB data ──────────────────────────────
+# _SLEEVES (src/factors.py) is a hand-maintained config with no DB backing and,
+# until now, no test asserting its shape at all. Nothing stopped it from drifting
+# out of step with the SAA: a sleeve could be added to asset_classes and the factor
+# page would silently keep regressing the old ticker set. These tie the config to
+# the DB so the drift is loud. Both sides are read live.
+
+def test_factor_sleeve_tickers_all_exist_in_securities():
+    """Every ticker named in _SLEEVES must be a real security in the DB.
+
+    Catches a renamed/retired holding leaving a factor sleeve regressing a ticker
+    the portfolio no longer defines — the regression would still run and still
+    render, against the wrong instrument.
+    """
+    import pandas as pd
+    from src.factors import _SLEEVES
+    from src.db import get_connection
+
+    with get_connection() as conn:
+        known = set(pd.read_sql_query("SELECT ticker FROM securities", conn)["ticker"])
+
+    declared = {t for spec in _SLEEVES.values() for t in spec["tickers"]}
+    missing = declared - known
+    assert not missing, (
+        f"_SLEEVES names tickers absent from securities: {sorted(missing)}. "
+        f"A factor sleeve is regressing an instrument the portfolio does not define."
+    )
+
+
+def test_factor_sleeve_weights_cover_their_tickers_exactly():
+    """A weighted sleeve's weight keys must match its ticker list exactly.
+
+    A ticker present in `tickers` but missing from `weights` would be silently
+    dropped from the regression's synthetic series; a weight key with no ticker
+    would be dead config. Neither raises today.
+    """
+    from src.factors import _SLEEVES
+
+    for key, spec in _SLEEVES.items():
+        if "weights" not in spec:
+            continue
+        assert set(spec["weights"]) == set(spec["tickers"]), (
+            f"_SLEEVES['{key}'] weights {sorted(spec['weights'])} do not match its "
+            f"tickers {sorted(spec['tickers'])}."
+        )
+
+
+def test_every_factor_sleeve_declares_at_least_one_ticker():
+    """A sleeve with an empty ticker list would regress nothing and report nothing,
+    without failing — the shape of the silent-coverage-loss bug."""
+    from src.factors import _SLEEVES
+
+    empty = [k for k, spec in _SLEEVES.items() if not spec.get("tickers")]
+    assert not empty, f"_SLEEVES entries declare no tickers: {empty}"

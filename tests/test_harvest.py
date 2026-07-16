@@ -145,16 +145,40 @@ def test_candidates_sorted_descending_by_tax_benefit():
 
 # ── Replacement map ───────────────────────────────────────────────────────────
 
-_SAA_TICKERS = [
-    "VOO", "SPHQ", "VTV", "AVUV", "VEA",
-    "IEMG", "VGIT", "SCHP", "VNQ", "PDBC", "SPAXX",
-]
+def _saa_tickers() -> list[str]:
+    """The SAA tickers, DERIVED from the committed household securities CSV.
+
+    Previously a hand-maintained literal list. That list could never fail on a
+    ticker it didn't mention: swap a sleeve's SAA ticker and the old entry stays
+    listed (and still has a REPLACEMENT_MAP entry, so the test passes), while the
+    NEW ticker is simply never checked. The check has to come from the same source
+    the app reads, or it only guards what someone remembered to type.
+    """
+    import csv
+    import pathlib
+
+    csv_path = (
+        pathlib.Path(__file__).resolve().parent.parent
+        / "data" / "seed" / "securities_household.csv"
+    )
+    with csv_path.open(encoding="utf-8") as fh:
+        return [
+            row["symbol"].strip()
+            for row in csv.DictReader(fh)
+            if row["is_in_saa"].strip().lower() == "true"
+        ]
 
 
 def test_replacement_map_covers_all_saa_tickers():
     """Every SAA holding ticker must have an explicit entry in REPLACEMENT_MAP."""
-    missing = [t for t in _SAA_TICKERS if t not in REPLACEMENT_MAP]
-    assert missing == [], f"Missing REPLACEMENT_MAP entries: {missing}"
+    saa_tickers = _saa_tickers()
+    assert saa_tickers, "Derived no SAA tickers from securities_household.csv"
+    missing = [t for t in saa_tickers if t not in REPLACEMENT_MAP]
+    assert missing == [], (
+        f"Missing REPLACEMENT_MAP entries: {missing}. Derived from "
+        f"data/seed/securities_household.csv (is_in_saa=true), so a newly-adopted "
+        f"SAA ticker is caught here rather than being silently unlisted."
+    )
 
 
 def test_replacement_map_entries_have_correct_structure():
