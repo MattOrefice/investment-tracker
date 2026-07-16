@@ -4,9 +4,11 @@ Uses the v8/chart API directly (not yfinance) so browser User-Agent headers
 are applied to every request, avoiding the 429 rate-limit that yfinance's
 internal timezone-fetch triggers.
 """
+import re
 import time
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
+from urllib.parse import quote
 
 import pandas as pd
 import requests
@@ -29,6 +31,24 @@ _SESSION.headers.update(
 
 _YF_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
 
+# A FORMAT check, deliberately not a symbol registry: letters, digits, and the
+# punctuation Yahoo actually uses — '.' (BRK.B), '-' (BTC-USD), '=' (EURUSD=X),
+# and a leading '^' (^GSPC). Case-insensitive so a lowercase caller behaves
+# exactly as before. Whether a well-formed symbol EXISTS is not knowable here
+# and stays the fetcher's job — this only rejects input that cannot be a symbol
+# at all, before it becomes an outbound request or a URL.
+_TICKER_RE = re.compile(r"^\^?[A-Z0-9][A-Z0-9.=-]{0,14}$", re.IGNORECASE)
+
+
+def is_valid_ticker(ticker) -> bool:
+    """True if ``ticker`` could be an exchange-listed symbol.
+
+    Cheap format/length sanity check. Rejects empty input, over-long strings,
+    non-strings, and anything carrying URL metacharacters ('/', '?', '#', '%',
+    whitespace) that would otherwise be interpolated into the request path.
+    """
+    return isinstance(ticker, str) and bool(_TICKER_RE.match(ticker.strip()))
+
 
 def _to_iso(d) -> str:
     return d.isoformat() if hasattr(d, "isoformat") else str(d)
@@ -50,8 +70,19 @@ def fetch_prices(
     prices table, and return a DataFrame indexed by datetime.date with columns:
     close, adj_close.
 
-    Raises ValueError for delisted / unrecognised tickers.
+    Raises ValueError for malformed, delisted, or unrecognised tickers.
     """
+    # Validate BEFORE the request. This is the choke point every caller shares,
+    # so the check lives here rather than at each entry point: the Candidate
+    # Screen's free-text box is the reachable one today, but the guarantee that
+    # nothing malformed becomes an outbound call or a URL path should not depend
+    # on remembering to re-check at every future call site.
+    if not is_valid_ticker(ticker):
+        raise ValueError(
+            f"{ticker!r} is not a valid ticker format. Use an exchange-listed "
+            "symbol of up to 15 characters — letters, digits, and . - = ^ only."
+        )
+
     end = end_date or date.today().isoformat()
 
     # API period2 is inclusive — add one day to ensure end date is included
@@ -60,7 +91,12 @@ def fetch_prices(
         _to_iso(date.fromisoformat(end) + timedelta(days=1))
     )
 
-    url = _YF_CHART_URL.format(ticker=ticker)
+    # Percent-encode the path segment: the symbol is data, not URL syntax. '^'
+    # and '=' are marked safe so that every symbol the validator admits passes
+    # through byte-identical — this must not change what we ask Yahoo for. It is
+    # therefore a no-op today and exists purely as belt-and-braces should a
+    # future caller reach the URL without going through is_valid_ticker.
+    url = _YF_CHART_URL.format(ticker=quote(ticker.strip(), safe="^="))
     params = {
         "interval": "1d",
         "period1": period1,

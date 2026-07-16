@@ -8,6 +8,41 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Candidate ticker validated before it becomes a request
+_2026-07-16_
+
+The Candidate Correlation Screen puts a free-text box in front of the price
+fetcher, and the demo is public — so any string a visitor types became a live
+Yahoo Finance request. Distinct garbage strings each miss the per-ticker cache
+and fire their own call, through a session shared by the whole app, and a 429
+there degrades every page that needs a price. The symbol was also interpolated
+into the request URL unescaped, with `.strip().upper()` as the only filter, so
+URL metacharacters survived into the path.
+
+Now a format check runs first, at the fetcher rather than the page: letters,
+digits, and the punctuation real symbols actually use (`.` `-` `=` and a leading
+`^`), up to 15 characters. Malformed input raises before any request is made or
+any connection is opened, and the page says so in the box — a format problem
+named as one, rather than the old "couldn't fetch data, check your connection",
+which blamed the network for a string that could never have been a symbol.
+
+Deliberately NOT a symbol registry: whether a well-formed ticker actually exists
+is not knowable locally and remains the fetcher's job, unchanged. The check only
+rejects what cannot be a symbol at all.
+
+Worth recording, since it was the stated worry: the cache was never poisonable.
+`fetch_prices` raises on an empty result well before the INSERT, so a garbage
+symbol could never have written a junk row. The real exposure was the unbounded
+outbound call and the unescaped path, and those are what this closes.
+
+One incidental win: `capture_quarter_snapshot` passes every `benchmark_ticker`
+to the fetcher, including the two composite blend *labels* (`VNQ+DBC` and its
+long form), which are not symbols and never resolve. Those requests were being
+fired and silently swallowed on each snapshot; they are now short-circuited.
+Blends are still priced correctly via their components in `benchmarks.py`.
+
+---
+
 ## Mode resolution fails closed — demo is the default, personal must be asked for
 _2026-07-16_
 
