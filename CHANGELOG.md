@@ -154,10 +154,10 @@ The Asset Location page took three things for granted that a reader might not
 know. Each is now stated, paid for by tightening existing prose so the page does
 not grow meaningfully (net addition ~56 words, and no card face grows).
 
-First, the "$8,553 of room" the Roth-cleanup card weighs three competing moves
-against is now defined where the figure appears: the equity currently in the
-Traditional IRA — the only dollars sellable to make room for relocated income
-assets without new contributions. The figure still templates from live positions;
+First, the "room" the Roth-cleanup card weighs three competing moves against is
+now defined where the figure appears: the equity currently in the Traditional
+IRA — the only dollars sellable to make room for relocated income assets
+without new contributions. The figure still templates from live positions;
 the definition is offset by trimming a redundant parenthetical, so the card's
 word count is unchanged.
 
@@ -181,15 +181,15 @@ _2026-07-14_
 
 The "Clear misplaced holdings from the Roth" card already noted that rebuilding
 the hedged-equity position is blocked on Traditional IRA capacity — one shared
-$8,553 of room claimed by three competing moves — and that keeping the hedge is
+pool of room claimed by three competing moves — and that keeping the hedge is
 a volatility decision, not a tax one. It did not state the practical implication.
 This adds two sentences to the card's Traditional-IRA summary saying it plainly:
 over a multi-decade horizon a return-capped fund fits neither shelter, so the
 honest default is not to rebuild at all, letting household hedged equity fall to
 about zero. And if pre-tax space stays scarce even after the 401(k) rollover, the
 hedge rebuild is the claim to drop of the three — the loss-side bond rebuy and
-gain-side relocation each buy real drag relief ($104/yr and $126/yr), which the
-rebuild has no equivalent of. Both relief figures template from the live loss-
+gain-side relocation each buy real annual drag relief, which the rebuild has no
+equivalent of. Both relief figures template from the live loss-
 and gain-side registers via new cross-group placeholders, never hardcoded; the
 card face gains prose only, no new element.
 
@@ -220,8 +220,8 @@ inside the collapsed expander, so the card face is unchanged.
 _2026-07-14_
 
 The Deploy card was suggesting a fifth buy, VOO (US Large Core), that should
-not have been there: once the $78,410 American Funds 2060 (RFUTX) target-date
-position is decomposed by look-through, the household is already US-large-core
+not have been there: once the American Funds 2060 (RFUTX) target-date position
+is decomposed by look-through, the household is already US-large-core
 *overweight*, so new cash has no gap to fill there. VOO appeared anyway — and
 the cause was not the look-through join (which is correct and applies the
 factsheet composition exactly), but the household-exclusion filter added in the
@@ -231,9 +231,9 @@ That filter was meant to drop one workplace account holding unvested,
 forfeitable employer money. It landed on the wrong account. The two workplace
 plans had their identities swapped: the account actually holding RFUTX is the
 user's own, fully-vested former-employer MissionSquare 401(k) — his single
-largest position — while the small (~$814) Fidelity Freedom 2065 holding is the
+largest position — while the small Fidelity Freedom 2065 holding is the
 0%-vested, forfeitable Moody's profit-sharing plan. The flag excluded the
-$78,410 MissionSquare money and kept the $814 Moody's money, so RFUTX's hidden
+MissionSquare money and kept the Moody's money, so RFUTX's hidden
 US-large exposure never reached the allocation, leaving core artificially
 underweight and VOO on the buy list. This corrects the prior change, which
 excluded the wrong account and silently defeated the target-date look-through.
@@ -244,9 +244,9 @@ the rollover card describes; the Moody's plan is excluded from every total,
 allocation, and the Liquidity ladder, where truly forfeitable money does not
 belong. With RFUTX back in the household the Deploy card drops to its correct
 four buys — SPHQ, AVUV, VTV, IEMG — VOO gone, sized to each sleeve's real
-household gap; the rollover card now names the $78,410 it can actually convert
-to pre-tax space rather than the $814 it referenced before; and the workplace
-account's return history follows it to the right label.
+household gap; the rollover card now names the vested balance it can actually
+convert to pre-tax space rather than the small forfeitable one it referenced
+before; and the workplace account's return history follows it to the right label.
 
 One durability fix underneath: the account seed's conflict-update no longer
 rewrites the internal `NOT NULL UNIQUE` name column, so a display-name *swap*
@@ -257,12 +257,12 @@ display_name is the mutable label the UI actually shows.
 ## Deploy sizing corrected to real target-date data, and shown to work
 _2026-07-13_
 
-The $78,410 target-date fund's look-through split was a generic manual
-estimate with no US-large-*value* sleeve at all — replaced with a breakdown
-sourced from the fund's own factsheet, which does carry a value tilt. That
-shifts the Roth deploy split materially: the value sleeve's share drops by
-about $500 as the fund's real large-core and large-value exposure is counted
-correctly, while the other three buys pick up the difference. Same four
+The target-date fund's look-through split was a generic manual estimate with no
+US-large-*value* sleeve at all — replaced with a breakdown sourced from the
+fund's own factsheet, which does carry a value tilt. That shifts the Roth deploy
+split materially: the value sleeve's share drops as the fund's real large-core
+and large-value exposure is counted correctly, while the other three buys pick
+up the difference. Same four
 tickers, same overweight core sleeve correctly excluded — the ranking holds,
 the sizing is more accurate.
 
@@ -296,13 +296,13 @@ by exactly its value, nothing more.
 ## Asset Location — workplace-account labels corrected, rollover card unblocked
 _2026-07-13_
 
-The two workplace-plan accounts were mislabeled: the one holding a $78,410
+The two workplace-plan accounts were mislabeled: the one holding the
 former-employer target-date fund was tagged with the *other* plan's name, and
 vice versa for the small, unvested current one. The account map itself was
 never wrong — only the display names and the rollover card's source pointer
 were swapped. Both are corrected, and the rollover card no longer reads
 "blocked until your next job": that framing described the small, $0-vested
-plan, not the $78,410 former-employer account, which is rollable today. The
+plan, not the vested former-employer account, which is rollable today. The
 card now says so, while keeping its existing guidance to prefer a future
 employer's plan over a Traditional IRA (to avoid triggering the pro-rata rule
 on a backdoor Roth) — available now doesn't mean rolling it over immediately.
