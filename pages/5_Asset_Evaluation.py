@@ -12,6 +12,7 @@ import plotly.graph_objects as go
 from src import asset_evaluation as ae
 from src.asof import as_of_banner
 from src.macro import get_recession_periods
+from src.prices import is_valid_ticker
 from src.ui_helpers import render_footer, render_page_header
 render_page_header()
 
@@ -248,6 +249,19 @@ with col:
 
     if not cand_ticker:
         st.info("Enter a ticker to screen its correlation to the SAA sleeves.")
+    elif not is_valid_ticker(cand_ticker):
+        # Rejected on FORMAT, before any request. Distinct from the
+        # "fetched but found nothing" case below: this input could not be a
+        # symbol at all, so say that rather than blaming the connection.
+        # The echo is truncated and code-quoted: st.warning escapes HTML, but
+        # this box is on the public demo, so reflecting an arbitrary-length
+        # string back at the page earns nothing.
+        _shown = cand_ticker[:20] + ("…" if len(cand_ticker) > 20 else "")
+        st.warning(
+            f"`{_shown}` isn't a valid ticker format — use an exchange-listed "
+            "symbol of up to 15 characters (e.g. QQQ, TLT, BRK-B). Letters, "
+            "digits, and `.` `-` `=` `^` only."
+        )
     elif _scr_sleeves.empty:
         st.warning("Sleeve benchmark prices unavailable — check connection or API limits.")
     else:

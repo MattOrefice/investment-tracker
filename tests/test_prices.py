@@ -126,3 +126,112 @@ def test_get_prices_returns_dataframe_with_correct_columns(monkeypatch):
 
     assert set(result.columns) >= {"close", "adj_close"}
     assert len(result) == 2
+
+
+# ── Ticker format validation ───────────────────────────────────────────────────
+# The Candidate Screen (pages/5_Asset_Evaluation.py) puts a free-text box in
+# front of the price fetcher, and the demo is public. Validation lives at
+# fetch_prices — the choke point — so nothing malformed becomes an outbound
+# request or a URL path, regardless of which caller supplied it.
+
+@pytest.mark.parametrize("ticker", [
+    "QQQ", "VOO", "SPY", "F",              # plain symbols, incl. single-char
+    "BRK.B",                                # dot class share
+    "BTC-USD",                              # hyphenated pair
+    "EURUSD=X",                             # FX
+    "^GSPC",                                # index
+    "RFUTX", "SPAXX", "GHYIX", "MCO",       # symbols this repo actually holds
+    "qqq",                                  # lowercase — unchanged prior behaviour
+    "  QQQ  ",                              # surrounding whitespace tolerated
+])
+def test_valid_ticker_formats_accepted(ticker):
+    """A format check must not reject real, exchange-listed symbols."""
+    from src.prices import is_valid_ticker
+    assert is_valid_ticker(ticker) is True
+
+
+@pytest.mark.parametrize("ticker", [
+    "",                                      # empty
+    "   ",                                   # whitespace only
+    "A" * 16,                                # over length
+    "../../etc/passwd",                      # path traversal
+    "QQQ/../../v7/finance/quote",            # traversal via a valid-looking stem
+    "QQQ?symbol=EVIL",                       # query injection
+    "QQQ#frag",                              # fragment
+    "QQQ%2F..",                              # pre-encoded metacharacter
+    "QQQ&x=1",
+    "QQQ QQQ",                               # internal whitespace
+    "<script>alert(1)</script>",
+    "DROP TABLE prices;",
+    "VNQ+DBC",                               # a blend LABEL, not a symbol
+    "VNQ (60%) + DBC (40%)",                 # the other blend label
+    ".",                                     # punctuation only
+    "-",
+    "^",
+    None,                                    # wrong type
+    123,
+    ["QQQ"],
+])
+def test_invalid_ticker_formats_rejected(ticker):
+    """Garbage, URL metacharacters, blend labels, and wrong types are rejected."""
+    from src.prices import is_valid_ticker
+    assert is_valid_ticker(ticker) is False
+
+
+@pytest.mark.parametrize("garbage", [
+    "../../etc/passwd", "QQQ?symbol=EVIL", "", "A" * 40, "VNQ+DBC", "<script>",
+])
+def test_fetch_prices_rejects_garbage_without_network_call(garbage, monkeypatch):
+    """Garbage must raise BEFORE any outbound request — the fix for unbounded
+    external calls driven by public free-text input."""
+    import src.prices as prices
+
+    def _boom(*a, **k):
+        raise AssertionError("network call fired for invalid ticker")
+
+    monkeypatch.setattr(prices._SESSION, "get", _boom)
+    with pytest.raises(ValueError, match="not a valid ticker format"):
+        prices.fetch_prices(garbage, "2025-01-01", "2025-02-01")
+
+
+def test_fetch_prices_rejects_garbage_without_db_write(monkeypatch):
+    """Garbage must not reach the prices table."""
+    import src.prices as prices
+
+    def _boom_conn(*a, **k):
+        raise AssertionError("DB connection opened for invalid ticker")
+
+    monkeypatch.setattr(prices._SESSION, "get", lambda *a, **k: (_ for _ in ()).throw(
+        AssertionError("network call fired for invalid ticker")))
+    monkeypatch.setattr(prices, "get_connection", _boom_conn)
+    with pytest.raises(ValueError, match="not a valid ticker format"):
+        prices.fetch_prices("../../evil", "2025-01-01", "2025-02-01")
+
+
+def test_get_prices_surfaces_clear_error_for_garbage(monkeypatch):
+    """The message a caller sees names the problem — a format issue, not a
+    connection failure — so the page can say something true about the input."""
+    import src.prices as prices
+
+    monkeypatch.setattr(prices._SESSION, "get", lambda *a, **k: (_ for _ in ()).throw(
+        AssertionError("network call fired for invalid ticker")))
+    with pytest.raises(ValueError) as exc:
+        prices.get_prices("not a ticker!", "2025-01-01", "2025-02-01")
+    assert "not a valid ticker format" in str(exc.value)
+
+
+def test_valid_ticker_still_reaches_the_fetcher(monkeypatch):
+    """The guard must not block real symbols — a well-formed ticker still calls out."""
+    import src.prices as prices
+    called = {}
+
+    class _Resp:
+        status_code = 200
+        def json(self):
+            called["hit"] = True
+            return {"chart": {"result": None, "error": "stubbed"}}
+
+    monkeypatch.setattr(prices._SESSION, "get", lambda *a, **k: _Resp())
+    with pytest.raises(ValueError, match="No price data returned"):
+        prices.fetch_prices("QQQ", "2025-01-01", "2025-02-01")
+    assert called.get("hit") is True, "valid ticker never reached the request"
