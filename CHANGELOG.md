@@ -8,6 +8,37 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Mode resolution fails closed — demo is the default, personal must be asked for
+_2026-07-16_
+
+The two modes were never symmetric in what they cost when wrong, but the config
+resolved as though they were: `TRACKER_MODE` defaulted to `personal`, so the
+*unsafe* mode was what you got by not deciding. On the public Cloud deployment
+that default is load-bearing in the wrong direction — mode lives only in the
+Streamlit dashboard's secrets, and had it ever been unset or misspelled, the app
+would have resolved to personal, put the Household View in the nav, and flipped
+`is_write_enabled()` to True on an anonymous, publicly-reachable app. No real
+data would have been there (tracker.db is gitignored and never deploys), but a
+personal-only page and public write access would have been.
+
+The default is now demo, and every unsafe input — unset, blank, garbage, wrong
+type, or an unreadable secrets store — resolves to demo. Personal mode has to be
+requested explicitly, which local dev already does via .env. The asymmetry is the
+whole argument: demo on a laptop is a visibly wrong portfolio and an obvious fix;
+personal on the public app is the thing you cannot take back.
+
+Underneath, the blanket `try/except Exception` around the secrets read is gone.
+It was hiding a real detail: Streamlit *raises* when no secrets.toml exists
+rather than returning the `.get()` default, so locally the except fired on every
+single run and the env-var fallback did all the work — invisibly, and only
+correct by luck of the default. Now only that expected miss is caught; any other
+secrets failure raises, because an unexpected error while reading config must
+not be silently reinterpreted as "no secret set". An unrecognised value warns
+rather than raising: demo is a safe, correct render, so taking the app down adds
+no safety, but a silent downgrade would be baffling to debug.
+
+---
+
 ## Roth cleanup: rebuy the hedged equity as VOO, not VTI
 _2026-07-15_
 

@@ -8,8 +8,10 @@ Technical design reference for the investment analytics tracker. Three-minute re
 
 A personal investment analytics system built to mirror an institutional allocator workflow. The application runs in two modes controlled by the `TRACKER_MODE` environment variable:
 
-- **personal** (default): local only, reads from `data/tracker.db` (real holdings, gitignored)
-- **demo**: public deployment on Streamlit Community Cloud, reads from `data/demo.db` (fake paper trades, committed)
+- **personal**: local only, reads from `data/tracker.db` (real holdings, gitignored). Must be requested explicitly.
+- **demo** (default): public deployment on Streamlit Community Cloud, reads from `data/demo.db` (fake paper trades, committed)
+
+Mode resolution fails closed: an unset, unreadable, or unrecognised `TRACKER_MODE` resolves to demo, never personal. The modes are not symmetric in failure cost — demo on a local machine is a visibly wrong portfolio, whereas personal on the public deployment would put the Household View in the nav and enable writes on an anonymous app.
 
 The same codebase handles both modes. `src/config.py` resolves `DB_PATH` and API keys from `st.secrets` first (Cloud), then `.env` (local).
 
