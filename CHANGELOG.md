@@ -8,6 +8,35 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## fredapi pinned, and two audit findings deliberately left alone
+_2026-07-16_
+
+`fredapi` was the one unpinned dependency whose drift could go unnoticed. It is a
+thin wrapper whose releases have changed return shapes before, and the Macro
+page's FRED series feed dated computations — so a Cloud rebuild onto a new
+release could shift those quietly. The tests that would catch it are the
+`live_data` ones, excluded from the default suite, so CI would stay green while
+the deployed page went wrong. Pinned to 0.5.2, matching the working version.
+
+Two findings the audit raised were checked and deliberately not changed, which is
+worth recording so they are not re-litigated:
+
+The **employer name** in tracked files is not a leak. "MissionSquare" appears in
+the README as the author's own professional bio, next to a LinkedIn link — it is
+self-published, not disclosed. "Moody's" is both a former employer and a real
+publicly-traded company whose ticker (MCO) is a genuine single-stock holding, so
+it appears as security metadata regardless. Redacting either would be churn that
+removes accurate, intentionally-public context.
+
+The **test fixtures** are not derived from real values. They are round synthetic
+amounts — 10,000 / 5,000 / 8,000 — and no fixture encodes a real balance, basis,
+or income. The only real-world strings in them are account display labels and a
+public company name, neither of which is a figure.
+
+The `.gitignore` half of this cleanup shipped earlier, ahead of the audit
+sequence, because a real personal database was found untracked and unignored in
+the working tree — a live exposure rather than a hygiene item.
+
 ## Ordinary income moves to the runtime profile, and the 0% bracket stops guessing
 _2026-07-16_
 
