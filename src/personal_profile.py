@@ -1,4 +1,7 @@
-"""Personal profile (date of birth, Roth contribution basis) for the Liquidity page.
+"""Personal profile (date of birth, Roth contribution basis, ordinary income).
+
+Consumed by the Liquidity page (DOB / Roth basis) and the Asset Location page
+(ordinary income, which sizes the 0% long-term-cap-gains budget).
 
 SECURITY — real values live ONLY in ``private/personal_profile.json`` (gitignored,
 user-populated, NEVER committed), the same pattern as ``private/account_map.json``.
@@ -32,6 +35,10 @@ _PROFILE_PATH = _REPO_ROOT / "private" / "personal_profile.json"
 # real values belong only in private/personal_profile.json.
 DEMO_ROTH_CONTRIBUTION_BASIS: float = 15_000.0
 DEMO_DATE_OF_BIRTH: str = "1990-01-01"   # synthetic placeholder; age < 59½
+# A round, obviously-invented salary. Chosen above the single-filer 0%-LTCG
+# ceiling so the demo exercises the exhausted-bracket path (the interesting one),
+# not so it resembles anyone's actual income.
+DEMO_ORDINARY_INCOME: float = 100_000.0
 
 # The age at which Roth earnings become penalty-free (the 5-year account rule is
 # handled by caveat, not computed — see the page).
@@ -91,3 +98,44 @@ def load_roth_profile(is_demo: bool, as_of: date) -> dict:
         "is_qualified_age": False,
         "source": "absent",
     }
+
+
+def load_income_profile(is_demo: bool) -> dict:
+    """Return the ordinary-income profile:
+        {ordinary_income: float|None, source: str}
+
+    Same shape and same graceful degradation as load_roth_profile: demo returns
+    the synthetic constant; personal reads private/personal_profile.json (key
+    ``ordinary_income``); a missing, unparseable, or non-positive value returns
+    None rather than raising.
+
+    None means UNKNOWN, and callers must treat it as such — NOT as zero. Income
+    sizes the 0% long-term-cap-gains budget as (ceiling − income), so a zero
+    stand-in would compute the FULL ceiling as available headroom and advise
+    realizing gains tax-free that are in fact taxed. Unknown income must collapse
+    the budget to nothing, the same way a missing Roth basis leaves the whole
+    Roth locked: the absent-profile default is the one that cannot mislead.
+    """
+    if is_demo:
+        return {
+            "ordinary_income": float(DEMO_ORDINARY_INCOME),
+            "source": "demo-synthetic",
+        }
+
+    if _PROFILE_PATH.exists():
+        try:
+            raw = json.loads(_PROFILE_PATH.read_text(encoding="utf-8"))
+            value = raw.get("ordinary_income")
+            if value is not None:
+                income = float(value)
+                if income > 0:
+                    return {
+                        "ordinary_income": income,
+                        "source": "private/personal_profile.json",
+                    }
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            # Malformed file or value: fall through to the unknown default
+            # rather than raising and taking the whole page down.
+            pass
+
+    return {"ordinary_income": None, "source": "absent"}

@@ -1,5 +1,6 @@
 {
-  "_comment": "TEMPLATE — copy to private/personal_profile.json (gitignored) and fill in your real values. Never commit the real file. date_of_birth: ISO YYYY-MM-DD. roth_contribution_basis: total dollars of direct Roth contributions (verify against Form 8606, Form 5498 box 10, or Fidelity). Converted amounts and their 5-year clocks are not modeled.",
+  "_comment": "TEMPLATE — copy to private/personal_profile.json (gitignored) and fill in your real values. Never commit the real file. date_of_birth: ISO YYYY-MM-DD. roth_contribution_basis: total dollars of direct Roth contributions (verify against Form 8606, Form 5498 box 10, or Fidelity). Converted amounts and their 5-year clocks are not modeled. ordinary_income: expected ordinary income for the tax year — sizes the 0% long-term-cap-gains budget on the Asset Location page, which is (0%-bracket ceiling minus ordinary income). Omit it or leave it at 0 and that budget is treated as exhausted rather than guessed at, since assuming room that is not there would mean realizing gains you expected to be untaxed.",
   "date_of_birth": "1990-01-01",
-  "roth_contribution_basis": 0
+  "roth_contribution_basis": 0,
+  "ordinary_income": 0
 }

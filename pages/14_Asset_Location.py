@@ -40,8 +40,6 @@ from src.location_config import (
     TAX_PROFILE,
     SLEEVE_PRIORITY_BY_ACCOUNT_TYPE,
     ACCOUNT_SHELTER_PRIORITY,
-    LTCG_HEADROOM_2026,
-    ORDINARY_INCOME_2026,
     LTCG_0_BRACKET_CEILING_SINGLE_2026,
     is_directable,
     # IRS 2026 limits — for the ideal-location reference table (2c). Named constants
@@ -476,21 +474,60 @@ with col:
     with st.expander("Assumptions", expanded=False):
         _ord = TAX_PROFILE["federal_marginal"] + TAX_PROFILE["state_marginal"]
         _ltcg = TAX_PROFILE["federal_ltcg"] + TAX_PROFILE["state_ltcg"]
+        # Income comes from the runtime profile, so the headroom prose is stated
+        # conditionally rather than asserting the exhausted-bracket conclusion
+        # that only holds while income sits above the ceiling.
+        _hr = capital_gains_headroom(register)
+        _income = _hr["ordinary_income"]
+
+        if not _hr["income_known"]:
+            _income_line = (
+                "- Federal ordinary marginal: "
+                f"**{TAX_PROFILE['federal_marginal']:.0%}** (2026 single bracket; "
+                "your income is not configured)\n"
+            )
+            _headroom_para = (
+                "**0% capital-gains headroom (2026): not computed.** No "
+                "`ordinary_income` is set in `private/personal_profile.json`, and "
+                "the 0% bracket is sized as (ceiling − income) — so it is treated "
+                "as exhausted rather than guessed at. That is the conservative "
+                "reading: assuming room that isn't there would mean realizing "
+                "gains you expected to be untaxed. Set your income to size it."
+            )
+        else:
+            _income_line = (
+                f"- Federal ordinary marginal: **{TAX_PROFILE['federal_marginal']:.0%}** "
+                f"(2026 single bracket at ~\\${_income:,.0f} income)\n"
+            )
+            if _hr["total"] > 0:
+                _headroom_para = (
+                    f"**0% capital-gains headroom (2026): \\${_hr['total']:,.0f}.** "
+                    f"With 2026 income of ~\\${_income:,.0f} below the "
+                    f"~\\${LTCG_0_BRACKET_CEILING_SINGLE_2026:,.0f} single-filer "
+                    "0%-rate ceiling, that much realized long-term gain is federally "
+                    "untaxed; beyond it, gains are taxed at 15% federal + 3.07% PA."
+                )
+            else:
+                _headroom_para = (
+                    "**0% capital-gains headroom (2026): \\$0.** With 2026 income of "
+                    f"~\\${_income:,.0f} above the "
+                    f"~\\${LTCG_0_BRACKET_CEILING_SINGLE_2026:,.0f} single-filer "
+                    "0%-rate ceiling, the 0% bracket is exhausted — every realized "
+                    "long-term gain is taxed at 15% federal + 3.07% PA."
+                )
+
         st.markdown(
-            "**Tax profile** (user-editable in `src/location_config.py`):\n\n"
-            f"- Federal ordinary marginal: **{TAX_PROFILE['federal_marginal']:.0%}** "
-            f"(2026 single bracket at ~\\${ORDINARY_INCOME_2026:,.0f} income)\n"
-            f"- Federal long-term capital gains: **{TAX_PROFILE['federal_ltcg']:.0%}** — "
-            "the 0% bracket is out of reach at this income, so gains are taxed\n"
+            "**Tax profile** (rates user-editable in `src/location_config.py`; "
+            "income in `private/personal_profile.json`):\n\n"
+            + _income_line
+            + f"- Federal long-term capital gains: **{TAX_PROFILE['federal_ltcg']:.0%}** "
+            "— the rate that applies once the 0% bracket is used up\n"
             f"- State ordinary (PA flat): **{TAX_PROFILE['state_marginal']:.2%}**\n"
             f"- State LTCG (PA — no preferential rate): **{TAX_PROFILE['state_ltcg']:.2%}**\n"
             f"- Combined ordinary rate: **{_ord:.2%}** · combined rate on realized "
             f"gains: **{_ltcg:.2%}** (15% federal + PA)\n\n"
-            f"**0% capital-gains headroom (2026): \\${LTCG_HEADROOM_2026:,.0f}.** With 2026 "
-            f"income of ~\\${ORDINARY_INCOME_2026:,.0f} above the ~\\${LTCG_0_BRACKET_CEILING_SINGLE_2026:,.0f} "
-            "single-filer 0%-rate ceiling, the 0% bracket is exhausted — every realized "
-            "long-term gain is taxed at 15% federal + 3.07% PA.\n\n"
-            "**Scores are authored**, not computed — the owner's priority judgement, "
+            + _headroom_para
+            + "\n\n**Scores are authored**, not computed — the owner's priority judgement, "
             "deliberately without a scoring formula. **Sleeve deploy targets are an "
             "ordinal ranking**, not a return forecast. **Dollar figures in every card "
             "are templated from the live positions CSV**; an unresolvable figure "
