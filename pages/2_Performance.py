@@ -312,7 +312,19 @@ with col:
 
     _saa_parents, _saa_sleeves = _load_sleeve_targets()
     _non_eq_pct = 1.0 - _saa_parents.get("Equity", 0.78 / 0.98)
-    _non_us_eq  = (_saa_sleeves.get("International Developed", 0.20 / 0.98)
+    # No default on the developed sleeve. The prior fallback was 0.20/0.98 —
+    # EXACTLY the live DB target — so a renamed or split sleeve would keep
+    # rendering the stale non-US-equity percentage in the underperformance
+    # explanation, with no error and no visible change.
+    if "International Developed" not in _saa_sleeves:
+        raise ValueError(
+            "SAA sleeve 'International Developed' is absent from asset_classes, but "
+            "this page templates the non-US equity share into its performance prose. "
+            f"Sleeves present: {sorted(_saa_sleeves)}. If the sleeve was split or "
+            "renamed, sum the new sleeves here — do not restore a default: the old "
+            "one silently rendered a stale weight."
+        )
+    _non_us_eq  = (_saa_sleeves["International Developed"]
                    + _saa_sleeves.get("Emerging Markets", 0.09 / 0.98))
 
     # Key scalars (Since Inception). Period to the settled frontier C, not today.

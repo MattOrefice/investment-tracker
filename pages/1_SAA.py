@@ -88,7 +88,23 @@ _, col, _ = st.columns([1, 8, 1])
 with col:
     st.subheader("Investment Thesis")
     _equity_wt   = next((p["target_weight"] for p in parents if p["name"] == "Equity"), 0.78 / 0.98)
-    _intl_dev_wt = next((s["target_weight"] for s in sub_classes if s["name"] == "International Developed"), 0.20 / 0.98)
+    # No default. The prior fallback here was 0.20/0.98 — EXACTLY the live DB
+    # target (0.20408163265306123, bit-identical). So if this sleeve were ever
+    # renamed or split away, the page would template the stale figure into its
+    # investment-thesis prose with no error and no visible change: the fallback was
+    # indistinguishable from a correct lookup. An unresolvable sleeve raises rather
+    # than rendering a plausible wrong number.
+    _intl_dev_row = next((s for s in sub_classes if s["name"] == "International Developed"), None)
+    if _intl_dev_row is None:
+        raise ValueError(
+            "SAA sleeve 'International Developed' is absent from asset_classes, but "
+            "this page templates its target weight into the investment-thesis prose "
+            "below. Sleeves present: "
+            f"{sorted(s['name'] for s in sub_classes)}. If the sleeve was split or "
+            "renamed, rewrite the prose to name the new sleeves — do not restore a "
+            "default: the old one silently rendered a stale weight."
+        )
+    _intl_dev_wt = _intl_dev_row["target_weight"]
     _em_wt       = next((s["target_weight"] for s in sub_classes if s["name"] == "Emerging Markets"), 0.09 / 0.98)
     _real_wt     = next((s["target_weight"] for s in sub_classes if s["name"] == "Real Assets"), 0.10 / 0.98)
     _tips_wt     = next((s["target_weight"] for s in sub_classes if s["name"] == "TIPS"), 0.04 / 0.98)
