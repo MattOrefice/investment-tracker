@@ -37,16 +37,26 @@
   first the pre-v1.0 history into 15 prose milestone commits, then
   the post-v1.0 phase work folded into prose product commits
   (34 → 22 commits; tree f16d472… preserved).
-- Current main tip: 04d2096.
+- Main tip as of 2026-07-16: d3f5c7e (the security-audit PRs #118–#122:
+  fail-closed mode resolution, ticker validation, income moved to the runtime
+  profile, ignore/pin hygiene). This line is a dated snapshot and goes stale on
+  every merge — `git rev-parse main` is the authority, not this note.
 - 2026-07-08: a `git filter-repo` rewrite purged raw Fidelity account
   numbers from history (account-number PII removal). Every commit after
   fe71234 was rewritten; their pre-rewrite SHAs (including the old tips
   3d221fd, 554ae5f, and 1f652f5) are now unreachable — do NOT reference
   any pre-rewrite SHA. b7fa2c3 (v1.0) is UNCHANGED because it predates
   the leak commit.
-- Backup mirror of the pre-rewrite state at
-  ../investment-tracker-BACKUP-20260708.git. Do not delete until GitHub
-  Support confirms the purge of unreachable objects / PR refs.
+- The purge is CONFIRMED and the ticket is CLOSED (2026-07-16). GitHub Support
+  completed it and the owner verified independently: fetching a pre-rewrite SHA
+  returns "not our ref", so the objects are gone from GitHub's object store. The
+  retention condition is discharged and the
+  ../investment-tracker-BACKUP-20260708.git mirror is no longer on disk. Nothing
+  further is owed here — do not re-open this as an open question.
+- A different, older mirror DOES exist at
+  ../investment-tracker-backup-pre-phase26.git (2026-05-14, 210 commits). It is
+  NOT the PII backup and is not a leak: it predates the leak commit fe71234
+  entirely and contains none of the pre-rewrite SHAs. Left in place; no action.
 - v1.0 tag points to b7fa2c3 (the v1.0-launch milestone commit;
   original annotation preserved) — unchanged through both reorgs.
 - All pre-reorg commit SHAs in earlier notes/CHANGELOG history are
