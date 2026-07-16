@@ -259,3 +259,109 @@ def test_liquidity_page_renders_live(monkeypatch):
     assert any("To raise" in s.value and "sell the top" in s.value for s in at.success), (
         "raise-cash summary missing"
     )
+
+
+# ── Ordinary-income runtime profile ────────────────────────────────────────────
+# Income is a real personal figure, so it lives in private/personal_profile.json
+# (gitignored) rather than tracked source. Same loader shape and same graceful
+# degradation as the Roth profile.
+
+def test_demo_income_is_the_synthetic_constant():
+    """Pins the committed demo income to the obviously-invented value.
+
+    Deliberately asserts what the constant IS, not what it isn't: a
+    `!= <real income>` check would bake the real figure into this tracked file,
+    which is the exact leak the runtime profile exists to prevent. The real
+    value is never named anywhere in the tree — it is only in the gitignored
+    profile, so equality against the synthetic constant is the whole check.
+    """
+    from src.personal_profile import DEMO_ORDINARY_INCOME
+    assert DEMO_ORDINARY_INCOME == 100_000.0
+
+
+def test_demo_income_never_reads_the_private_profile(monkeypatch, tmp_path):
+    """Demo must not fall through to a real profile even if one is present."""
+    import src.personal_profile as pp
+    p = tmp_path / "personal_profile.json"
+    p.write_text('{"ordinary_income": 777777}', encoding="utf-8")
+    monkeypatch.setattr(pp, "_PROFILE_PATH", p)
+    prof = pp.load_income_profile(is_demo=True)
+    assert prof["ordinary_income"] == pp.DEMO_ORDINARY_INCOME
+    assert prof["ordinary_income"] != 777777
+    assert prof["source"] == "demo-synthetic"
+
+
+def test_demo_mode_uses_synthetic_income():
+    from src.personal_profile import load_income_profile, DEMO_ORDINARY_INCOME
+    prof = load_income_profile(is_demo=True)
+    assert prof["ordinary_income"] == DEMO_ORDINARY_INCOME
+    assert prof["source"] == "demo-synthetic"
+
+
+def test_absent_profile_yields_unknown_income_not_zero(monkeypatch, tmp_path):
+    """UNKNOWN, never zero. Zero would compute the FULL 0% ceiling as available
+    headroom and advise realizing gains that are in fact taxed."""
+    import src.personal_profile as pp
+    monkeypatch.setattr(pp, "_PROFILE_PATH", tmp_path / "nope.json")
+    prof = pp.load_income_profile(is_demo=False)
+    assert prof["ordinary_income"] is None
+    assert prof["ordinary_income"] != 0
+    assert prof["source"] == "absent"
+
+
+@pytest.mark.parametrize("body", [
+    "{ not json",                       # unparseable
+    '{"ordinary_income": "abc"}',       # non-numeric
+    '{"ordinary_income": null}',        # explicit null
+    '{"ordinary_income": 0}',           # zero == not configured
+    '{"ordinary_income": -5}',          # negative
+    '{}',                               # key absent
+])
+def test_malformed_income_degrades_to_unknown(monkeypatch, tmp_path, body):
+    """A bad profile must not raise and must not fabricate an income."""
+    import src.personal_profile as pp
+    p = tmp_path / "personal_profile.json"
+    p.write_text(body, encoding="utf-8")
+    monkeypatch.setattr(pp, "_PROFILE_PATH", p)
+    assert pp.load_income_profile(is_demo=False)["ordinary_income"] is None
+
+
+def test_personal_profile_income_is_read(monkeypatch, tmp_path):
+    import src.personal_profile as pp
+    p = tmp_path / "personal_profile.json"
+    p.write_text('{"ordinary_income": 123456}', encoding="utf-8")
+    monkeypatch.setattr(pp, "_PROFILE_PATH", p)
+    prof = pp.load_income_profile(is_demo=False)
+    assert prof["ordinary_income"] == 123456.0
+    assert prof["source"] == "private/personal_profile.json"
+
+
+# ── Headroom is a budget, and unknown income must collapse it ──────────────────
+
+def test_ltcg_headroom_unknown_income_returns_none():
+    from src.location_config import ltcg_headroom
+    assert ltcg_headroom(None) is None
+
+
+def test_ltcg_headroom_never_reports_full_ceiling_for_unknown_income():
+    """The specific wrong answer this design exists to prevent."""
+    from src.location_config import ltcg_headroom, LTCG_0_BRACKET_CEILING_SINGLE_2026
+    assert ltcg_headroom(None) != LTCG_0_BRACKET_CEILING_SINGLE_2026
+
+
+@pytest.mark.parametrize("income,expected", [
+    (100_000.0, 0.0),        # above the ceiling — bracket exhausted
+    (48_350.0, 0.0),         # exactly at the ceiling
+    (40_000.0, 8_350.0),     # below — real room
+    (0.5, 48_349.5),
+])
+def test_ltcg_headroom_known_income(income, expected):
+    from src.location_config import ltcg_headroom
+    assert ltcg_headroom(income) == pytest.approx(expected)
+
+
+def test_income_constant_absent_from_tracked_config():
+    """The tracked config must expose no income constant at all."""
+    import src.location_config as lc
+    assert not hasattr(lc, "ORDINARY_INCOME_2026")
+    assert not hasattr(lc, "LTCG_HEADROOM_2026")

@@ -16,13 +16,15 @@ from __future__ import annotations
 # fractions (0.12 == 12%). Sources noted per line; update when your situation
 # or the law changes.
 TAX_PROFILE: dict[str, float] = {
-    # Federal ordinary marginal bracket. Source: 2026 federal single brackets at
-    # ~$89K 2026 ordinary income (post-severance) — the 22% bracket (~$48.5K–$103K).
-    # Drives the income-tax benefit of moving ordinary-income assets into a shelter.
+    # Federal ordinary marginal bracket — the 2026 single 22% bracket
+    # (~$48.5K–$103K). Drives the income-tax benefit of moving ordinary-income
+    # assets into a shelter. Re-check this against your own income when it moves
+    # across a bracket boundary; the income itself is not stored here (see
+    # private/personal_profile.json).
     "federal_marginal": 0.22,
-    # Federal long-term capital-gains rate. Source: 15% LTCG bracket — 2026 income
-    # (~$89K) is above the 0%-rate ceiling (~$48.35K), so the 0% bracket is out of
-    # reach this year and realized gains are federally taxed at 15%.
+    # Federal long-term capital-gains rate: the 15% LTCG bracket, i.e. income sits
+    # above the 0%-rate ceiling (LTCG_0_BRACKET_CEILING_SINGLE_2026), so the 0%
+    # bracket is out of reach and realized gains are federally taxed at 15%.
     "federal_ltcg": 0.15,
     # State ordinary marginal rate. Source: Pennsylvania flat personal income
     # tax, 3.07%.
@@ -84,15 +86,29 @@ FEDERALLY_EXEMPT_SLEEVES: frozenset[str] = frozenset({"high_yield_muni"})
 # sums every row, filtered or not. USER-EDITABLE.
 MIN_ANNUAL_BENEFIT: float = 1.00
 
-# 2026 ordinary income (post-severance) and the single-filer 0% long-term-cap-gains
-# ceiling. The 0% LTCG bracket is a finite BUDGET, not a rate: realized long-term
-# gains are federally untaxed up to (ceiling − ordinary income), then taxed at 15%
-# (TAX_PROFILE['federal_ltcg']). USER-EDITABLE. With ~$89K income above the ~$48.35K
-# ceiling, the remaining headroom is $0 — the 0% bracket is gone this year, so every
-# realized gain is taxed at 15% federal + PA's flat 3.07%.
-ORDINARY_INCOME_2026: float = 89_000.0
+# The single-filer 0% long-term-cap-gains ceiling — TAX LAW, so it belongs here
+# alongside the other IRS figures. The 0% LTCG bracket is a finite BUDGET, not a
+# rate: realized long-term gains are federally untaxed up to
+# (ceiling − ordinary income), then taxed at 15% (TAX_PROFILE['federal_ltcg']).
 LTCG_0_BRACKET_CEILING_SINGLE_2026: float = 48_350.0
-LTCG_HEADROOM_2026: float = max(0.0, LTCG_0_BRACKET_CEILING_SINGLE_2026 - ORDINARY_INCOME_2026)
+
+# Ordinary income is NOT here. It is the owner's real salary, this file is tracked,
+# and the repo is public — so it lives in private/personal_profile.json (gitignored)
+# and is read at runtime via personal_profile.load_income_profile(). See that
+# module for why an absent profile yields UNKNOWN rather than zero.
+
+
+def ltcg_headroom(ordinary_income: float | None) -> float | None:
+    """Remaining 0%-bracket budget: (ceiling − income), floored at zero.
+
+    Returns None when income is unknown — the caller must decide how to present
+    that. Explicitly NOT `max(0, ceiling - 0)`: treating unknown income as zero
+    would report the entire ceiling as free headroom, which is the one wrong
+    answer here with a real cost (realizing gains that are actually taxed).
+    """
+    if ordinary_income is None:
+        return None
+    return max(0.0, LTCG_0_BRACKET_CEILING_SINGLE_2026 - float(ordinary_income))
 
 # ── IRS 2026 figures — verify annually (tax year 2026) ──────────────────────────
 # STATIC tax-law limits — contribution ceilings and income/eligibility phase-outs.

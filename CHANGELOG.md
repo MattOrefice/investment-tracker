@@ -8,6 +8,38 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Ordinary income moves to the runtime profile, and the 0% bracket stops guessing
+_2026-07-16_
+
+The owner's ordinary income was a literal in `src/location_config.py` — a tracked
+file, in a public repo — and it was quoted again in three comments around it. It
+now lives in `private/personal_profile.json` (gitignored) and is read at runtime,
+the same loader shape and the same graceful degradation as the Roth basis and
+date of birth already use. The example template ships a placeholder; the demo
+uses a round, obviously-invented salary. What stays in the tracked config is the
+0%-bracket ceiling, which is tax law rather than anybody's personal figure.
+
+Moving it forced a question the hardcoded value had hidden: what should the page
+say when income is unknown? The tempting answer is to treat it as zero, and that
+is the one genuinely dangerous answer available here. The 0% bracket is sized as
+(ceiling − income), so a zero stand-in reports the entire ceiling as free
+headroom — telling you to realize gains tax-free that are in fact taxed. Unknown
+income therefore collapses the budget to nothing and the page says why, which is
+the same instinct as a missing Roth basis leaving the whole Roth locked: the
+absent-profile default is the one that cannot mislead.
+
+The Assumptions prose is now conditional rather than templated onto a fixed
+conclusion. It previously asserted the 0% bracket was "out of reach" and
+"exhausted" as flat statements — true only while income sat above the ceiling,
+which a hardcoded figure guaranteed and a configurable one does not. It now
+states the exhausted case, the real-headroom case, and the not-configured case
+separately. With income unchanged the rendered page is identical to before.
+
+`capital_gains_headroom` grew a sentinel default so that omitting income ("go
+resolve it") and passing None ("known to be unknown") stay distinct. They are
+genuinely different states and cannot share a default — a test asking for the
+unknown case was silently answered from the real profile until they were split.
+
 ## Candidate ticker validated before it becomes a request
 _2026-07-16_
 

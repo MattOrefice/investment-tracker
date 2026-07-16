@@ -1135,3 +1135,63 @@ def test_loss_side_action_names_only_loss_lots_at_a_loss_live():
     for s in gains:
         assert s not in before, f"gain lot {s} must not be named 'at a loss'"
     assert float(rr["embedded_gain"].sum()) < 0, "group must still net to a loss (net framing preserved)"
+
+
+# ── Capital-gains headroom sourced from the runtime income profile ─────────────
+
+def test_headroom_unknown_income_collapses_budget_to_zero():
+    """No configured income → no assumed room. The conservative default: claiming
+    headroom that isn't there would mean realizing gains expected to be untaxed."""
+    from src.location_actions import capital_gains_headroom
+    from src.household import build_location_register
+    import pandas as pd
+
+    reg = pd.DataFrame(columns=["embedded_gain"])
+    hr = capital_gains_headroom(reg, ordinary_income=None, is_demo=False)
+    assert hr["income_known"] is False
+    assert hr["total"] == 0.0
+    assert hr["remaining"] == 0.0
+
+
+def test_headroom_unknown_income_never_reports_the_full_ceiling():
+    from src.location_actions import capital_gains_headroom
+    from src.location_config import LTCG_0_BRACKET_CEILING_SINGLE_2026
+    import pandas as pd
+
+    hr = capital_gains_headroom(
+        pd.DataFrame(columns=["embedded_gain"]), ordinary_income=None, is_demo=False
+    )
+    assert hr["total"] != LTCG_0_BRACKET_CEILING_SINGLE_2026
+
+
+def test_headroom_income_below_ceiling_reports_real_room():
+    from src.location_actions import capital_gains_headroom
+    import pandas as pd
+
+    hr = capital_gains_headroom(
+        pd.DataFrame(columns=["embedded_gain"]), ordinary_income=40_000.0
+    )
+    assert hr["income_known"] is True
+    assert hr["total"] == pytest.approx(8_350.0)
+
+
+def test_headroom_income_above_ceiling_is_exhausted():
+    from src.location_actions import capital_gains_headroom
+    import pandas as pd
+
+    hr = capital_gains_headroom(
+        pd.DataFrame(columns=["embedded_gain"]), ordinary_income=100_000.0
+    )
+    assert hr["income_known"] is True
+    assert hr["total"] == 0.0
+
+
+def test_headroom_resolves_demo_income_when_not_passed():
+    """With no explicit income, demo mode resolves the synthetic constant."""
+    from src.location_actions import capital_gains_headroom
+    from src.personal_profile import DEMO_ORDINARY_INCOME
+    import pandas as pd
+
+    hr = capital_gains_headroom(pd.DataFrame(columns=["embedded_gain"]), is_demo=True)
+    assert hr["income_known"] is True
+    assert hr["ordinary_income"] == DEMO_ORDINARY_INCOME

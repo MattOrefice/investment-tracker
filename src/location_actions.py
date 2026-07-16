@@ -29,6 +29,11 @@ import pandas as pd
 
 from src.household import compute_embedded_gain, compute_sleeve_by_account
 
+# Distinguishes "argument omitted — resolve it" from an explicit None, which means
+# "known to be unknown". Both are meaningful for ordinary income, so they cannot
+# share a default.
+_UNSET = object()
+
 # ── Authored prose (verbatim; do not edit for style) ───────────────────────────
 
 _DEPLOY_ROTH_CASH_PROS = (
@@ -650,16 +655,48 @@ def deploy_targets_split(deploy_answer: dict) -> dict[str, str | None]:
     return {"deploy_targets": _join_tickers(tickers), "deploy_largest": largest}
 
 
-def capital_gains_headroom(register: pd.DataFrame) -> dict:
+def capital_gains_headroom(
+    register: pd.DataFrame,
+    ordinary_income: float | None = _UNSET,
+    is_demo: bool | None = None,
+) -> dict:
     """The 0% LTCG bracket as a finite budget: total, consumed by the recommended
     gain-side realizations, and remaining. Single source of truth for both the
-    Assumptions block and group 4's prose, so the two can never disagree."""
-    from src.location_config import LTCG_HEADROOM_2026
+    Assumptions block and group 4's prose, so the two can never disagree.
+
+    Income is resolved from the runtime profile unless passed explicitly. Omitting
+    the argument and passing None are DIFFERENT: omitted means "resolve it", None
+    means "known to be unknown" — hence the sentinel, so a caller can state the
+    unknown case without the resolver silently overriding it.
+
+    ``income_known`` is False when no income is configured; the budget then
+    collapses to zero — the conservative reading — and the page says so rather
+    than presenting a computed-looking $0.
+    """
+    from src.location_config import ltcg_headroom
+
+    if ordinary_income is _UNSET:
+        from src.personal_profile import load_income_profile
+        if is_demo is None:
+            from src.config import IS_DEMO
+            is_demo = IS_DEMO
+        ordinary_income = load_income_profile(is_demo)["ordinary_income"]
+
+    headroom = ltcg_headroom(ordinary_income)
+    income_known = headroom is not None
+    total = float(headroom) if income_known else 0.0
+
     gain = next(g for g in ACTION_GROUPS if g["key"] == "relocate_gain_side")
     rows = filter_register_for_group(register, gain)
     consumed = max(0.0, float(rows["embedded_gain"].sum())) if not rows.empty else 0.0
-    remaining = max(0.0, float(LTCG_HEADROOM_2026) - consumed)
-    return {"total": float(LTCG_HEADROOM_2026), "consumed": consumed, "remaining": remaining}
+    remaining = max(0.0, total - consumed)
+    return {
+        "total": total,
+        "consumed": consumed,
+        "remaining": remaining,
+        "income_known": income_known,
+        "ordinary_income": ordinary_income,
+    }
 
 
 def _pop_holdings(
