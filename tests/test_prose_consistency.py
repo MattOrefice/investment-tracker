@@ -314,70 +314,50 @@ def test_prose_saa_us_constants_match_db():
         )
 
 
-def test_prose_methodology_weight_defaults_match_db():
-    """Fallback defaults in the methodology paragraph must match live DB target_weights.
+def test_prose_methodology_has_no_hardcoded_weight_defaults():
+    """pages/2_Performance.py must resolve SAA weights with NO hardcoded fallback.
 
-    pages/2_Performance.py uses _saa_sleeves.get('Sleeve Name', fallback) and
-    _saa_parents.get('Equity', fallback) in the methodology caption — safety nets used
-    only if the DB lookup returns no data. This test EXTRACTS those fallback literals
-    directly from the page source (rather than hand-copying them into a second literal
-    here) and compares them to the live DB target_weight, so an edit to either side that
-    the other doesn't track fails CI.
+    INVERTED (PR #1c). This test previously asserted those fallback defaults MATCHED
+    the live DB target_weight, extracting the literals from the page source. It
+    guarded a mechanism that no longer exists: the page now resolves every SAA weight
+    through _require_saa_weight(), which RAISES on an unresolvable name.
 
-    A prior version of this test hardcoded its own copy of the expected fallback values
-    (EXPECTED_FALLBACKS / EXPECTED_EQUITY_PARENT) and compared THAT copy to the DB,
-    without ever reading pages/2_Performance.py at all — if the page's actual .get()
-    default drifted from the DB, this test would not have noticed, because it was
-    comparing the DB against its own separately-maintained belief, not against the
-    source it claimed to guard.
+    Why the fallbacks went (#127, #1c). Each default was BIT-IDENTICAL to its live
+    target — enforced by the very assertion this replaces — so a renamed, split, or
+    removed sleeve rendered the stale weight into the prose with no error and nothing
+    visibly different. Only membership distinguished a fallback from a correct lookup;
+    the value could not. Keeping them in sync did not make the fallback safe, it made
+    its silence GUARANTEED.
+
+    So do not reintroduce a default as a fix for a KeyError/ValueError here. The
+    lookups raise now, which means a default can no longer be stale — it can only be
+    silent. If a sleeve was split or renamed, update the prose to name the new
+    sleeves. This test fails if the pattern returns.
     """
     import re
-    from src.db import get_connection
 
     perf_page = pathlib.Path(__file__).resolve().parent.parent / "pages" / "2_Performance.py"
     source = perf_page.read_text(encoding="utf-8")
 
+    # Same extraction as before, asserted EMPTY rather than matched against the DB.
     pattern = re.compile(
-        r"_saa_(?:parents|sleeves)\.get\(\s*['\"]([^'\"]+)['\"]\s*,\s*([\d.]+)\s*/\s*([\d.]+)\s*\)"
+        r"_saa_(?:parents|sleeves)\.get\(\s*['\"]([^'\"]+)['\"]\s*,\s*([^)]+)\)"
     )
     matches = pattern.findall(source)
-    assert matches, (
-        "No _saa_parents.get(...)/_saa_sleeves.get(...) fallback literals found in "
-        f"{perf_page} — the .get() call pattern may have changed; update this test's "
-        "extraction regex to match."
+    assert not matches, (
+        "pages/2_Performance.py resolves SAA weights with hardcoded fallback "
+        f"defaults again: {[(n, d.strip()) for n, d in matches]}. Use "
+        "_require_saa_weight(), which raises and names the missing sleeve. A default "
+        "here is bit-identical to the live target, so if it ever fires it renders a "
+        "stale weight with no error and no visible change — see #127 / #1c."
     )
 
-    fallbacks: dict[str, float] = {}
-    for name, num, den in matches:
-        value = float(num) / float(den)
-        if name in fallbacks:
-            assert abs(fallbacks[name] - value) < 1e-9, (
-                f"'{name}' has inconsistent fallback defaults within "
-                f"pages/2_Performance.py itself: {fallbacks[name]:.4f} vs {value:.4f}."
-            )
-        fallbacks[name] = value
-
-    with get_connection() as conn:
-        sleeve_rows = conn.execute(
-            "SELECT name, target_weight FROM asset_classes WHERE parent_id IS NOT NULL"
-        ).fetchall()
-        parent_rows = conn.execute(
-            "SELECT name, target_weight FROM asset_classes WHERE parent_id IS NULL"
-        ).fetchall()
-
-    db_weights = {r["name"]: r["target_weight"] for r in sleeve_rows}
-    db_weights.update({r["name"]: r["target_weight"] for r in parent_rows})
-
-    for name, fallback in fallbacks.items():
-        db_wt = db_weights.get(name)
-        assert db_wt is not None, (
-            f"'{name}' referenced in pages/2_Performance.py not found in asset_classes"
-        )
-        assert abs(db_wt - fallback) < 1e-6, (
-            f"pages/2_Performance.py fallback default for '{name}' is {fallback:.4f} but "
-            f"DB target_weight is {db_wt:.4f}. Update the .get() default in "
-            "pages/2_Performance.py to match, or update the DB/seed if it is stale."
-        )
+    # The sanctioned accessor must still be the one in use, or the guard above passes
+    # vacuously on a page that resolves nothing at all.
+    assert "_require_saa_weight(" in source, (
+        "pages/2_Performance.py no longer calls _require_saa_weight() — the raising "
+        "accessor was removed, so this guard would pass vacuously."
+    )
 
 
 # ── Phase 12.1 additions ───────────────────────────────────────────────────────
@@ -565,70 +545,49 @@ def test_prose_drift_threshold_matches_rule_constant():
 
 # ── Phase 13 additions — SAA investment thesis paragraph ─────────────────────
 
-def test_saa_thesis_sleeve_weights_match_db():
-    """Sleeve weights referenced in the SAA investment thesis paragraph match DB target_weights.
+def test_saa_thesis_has_no_hardcoded_weight_defaults():
+    """pages/1_SAA.py must resolve thesis weights with NO hardcoded fallback.
 
-    pages/1_SAA.py builds the thesis paragraph dynamically via
-    next((... for ... if p["name"] == "X"), fallback), where fallback is a safety net
-    used only if the DB lookup returns no data. This test EXTRACTS those fallback
-    literals directly from the page source (rather than hand-copying them into a second
-    literal here) and compares them to the live DB target_weight, so an edit to either
-    side that the other doesn't track fails CI.
+    INVERTED (PR #1c). This test previously asserted the next(..., fallback) defaults
+    in the investment-thesis paragraph MATCHED the live DB target_weight, extracting
+    the literals from the page source. It guarded a mechanism that no longer exists:
+    the page now resolves every weight through _require_weight(), which RAISES on an
+    unresolvable name.
 
-    A prior version of this test hardcoded its own copy of the expected weights
-    (THESIS_WEIGHTS) and compared THAT copy to the DB, without ever reading
-    pages/1_SAA.py at all — if the page's actual next(...) fallback default drifted from
-    the DB, this test would not have noticed, because it was comparing the DB against
-    its own separately-maintained belief, not against the source it claimed to guard.
+    Why the fallbacks went (#127, #1c). Each default was BIT-IDENTICAL to its live
+    target — enforced by the very assertion this replaces — so a renamed, split, or
+    removed sleeve rendered the stale weight into the thesis prose with no error and
+    nothing visibly different. Only membership distinguished a fallback from a correct
+    lookup; the value could not. Keeping them in sync did not make the fallback safe,
+    it made its silence GUARANTEED.
+
+    So do not reintroduce a default as a fix for a StopIteration/ValueError here. The
+    lookups raise now, which means a default can no longer be stale — it can only be
+    silent. If a sleeve was split or renamed, rewrite the thesis prose to name the new
+    sleeves. This test fails if the pattern returns.
     """
     import re
-    from src.db import get_connection
 
     saa_page = pathlib.Path(__file__).resolve().parent.parent / "pages" / "1_SAA.py"
     source = saa_page.read_text(encoding="utf-8")
 
+    # Same extraction as before, asserted EMPTY rather than matched against the DB.
     pattern = re.compile(
-        r'\[?"name"\]\s*==\s*"([^"]+)"\)\s*,\s*([\d.]+)\s*/\s*([\d.]+)\s*\)'
+        r'\[?"name"\]\s*==\s*"([^"]+)"\)\s*,\s*([\d.]+\s*/\s*[\d.]+|[\d.]+)\s*\)'
     )
     matches = pattern.findall(source)
-    assert matches, (
-        "No next((... == 'X'), default) fallback literals found in "
-        f"{saa_page} — the thesis paragraph's fallback pattern may have changed; "
-        "update this test's extraction regex to match."
+    assert not matches, (
+        "pages/1_SAA.py resolves thesis weights with hardcoded fallback defaults "
+        f"again: {matches}. Use _require_weight(), which raises and names the missing "
+        "sleeve. A default here is bit-identical to the live target, so if it ever "
+        "fires it renders a stale weight with no error and no visible change — see "
+        "#127 / #1c."
     )
 
-    thesis_weights: dict[str, float] = {}
-    for name, num, den in matches:
-        value = float(num) / float(den)
-        if name in thesis_weights:
-            assert abs(thesis_weights[name] - value) < 1e-9, (
-                f"'{name}' has inconsistent fallback defaults within "
-                f"pages/1_SAA.py itself: {thesis_weights[name]:.4f} vs {value:.4f}."
-            )
-        thesis_weights[name] = value
-
-    with get_connection() as conn:
-        sleeve_rows = conn.execute(
-            "SELECT name, target_weight FROM asset_classes WHERE parent_id IS NOT NULL"
-        ).fetchall()
-        parent_rows = conn.execute(
-            "SELECT name, target_weight FROM asset_classes WHERE parent_id IS NULL"
-        ).fetchall()
-
-    all_weights = {r["name"]: r["target_weight"] for r in sleeve_rows}
-    all_weights.update({r["name"]: r["target_weight"] for r in parent_rows})
-
-    for name, expected in thesis_weights.items():
-        actual = all_weights.get(name)
-        assert actual is not None, (
-            f"'{name}' referenced in pages/1_SAA.py thesis paragraph not found in asset_classes."
-        )
-        assert abs(actual - expected) < 1e-6, (
-            f"pages/1_SAA.py thesis paragraph fallback for '{name}' is "
-            f"{round(expected * 100)}% but DB has {actual:.4f} ({round(actual * 100)}%). "
-            "Update the next(...) fallback default in pages/1_SAA.py to match, or "
-            "update the DB/seed if it is stale."
-        )
+    assert "_require_weight(" in source, (
+        "pages/1_SAA.py no longer calls _require_weight() — the raising accessor was "
+        "removed, so this guard would pass vacuously."
+    )
 
 
 def test_saa_thesis_cape_label_matches_computed_percentile():

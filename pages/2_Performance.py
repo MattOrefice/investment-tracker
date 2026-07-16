@@ -136,6 +136,28 @@ def _load_drift():
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
+def _require_saa_weight(weights: dict, name: str, *, kind: str = "sleeve") -> float:
+    """Target weight for a sleeve/parent, or raise. Deliberately NO default.
+
+    Every lookup on these dicts previously carried a hardcoded fallback
+    (0.78/0.98, 0.20/0.98, 0.09/0.98, …) that was EXACTLY the live DB target —
+    bit-identical, not merely close. So a renamed, split, or removed row would
+    have templated the stale weight into this page's prose with no error and
+    nothing visibly different: the fallback was indistinguishable from a correct
+    lookup by value alone, and only membership told them apart. An unresolvable
+    name must raise rather than render a plausible wrong number.
+    """
+    if name not in weights:
+        raise ValueError(
+            f"SAA {kind} {name!r} is absent from asset_classes, but this page "
+            f"templates its target weight into the performance prose. Present: "
+            f"{sorted(weights)}. If it was split or renamed, sum or rename the new "
+            f"{kind}s here — do not restore a default: the old one was bit-identical "
+            f"to the live target and rendered a stale weight silently."
+        )
+    return float(weights[name])
+
+
 def _load_sleeve_targets():
     """Return (parent_weights, sleeve_weights) dicts keyed by name."""
     with get_connection() as conn:
@@ -311,21 +333,9 @@ with col:
         st.warning(benchmark_gap_notice(_bl_gaps))
 
     _saa_parents, _saa_sleeves = _load_sleeve_targets()
-    _non_eq_pct = 1.0 - _saa_parents.get("Equity", 0.78 / 0.98)
-    # No default on the developed sleeve. The prior fallback was 0.20/0.98 —
-    # EXACTLY the live DB target — so a renamed or split sleeve would keep
-    # rendering the stale non-US-equity percentage in the underperformance
-    # explanation, with no error and no visible change.
-    if "International Developed" not in _saa_sleeves:
-        raise ValueError(
-            "SAA sleeve 'International Developed' is absent from asset_classes, but "
-            "this page templates the non-US equity share into its performance prose. "
-            f"Sleeves present: {sorted(_saa_sleeves)}. If the sleeve was split or "
-            "renamed, sum the new sleeves here — do not restore a default: the old "
-            "one silently rendered a stale weight."
-        )
-    _non_us_eq  = (_saa_sleeves["International Developed"]
-                   + _saa_sleeves.get("Emerging Markets", 0.09 / 0.98))
+    _non_eq_pct = 1.0 - _require_saa_weight(_saa_parents, "Equity", kind="parent")
+    _non_us_eq  = (_require_saa_weight(_saa_sleeves, "International Developed")
+                   + _require_saa_weight(_saa_sleeves, "Emerging Markets"))
 
     # Key scalars (Since Inception). Period to the settled frontier C, not today.
     port_si     = period_return("daily", pv, cf, "SI")
@@ -806,12 +816,22 @@ with col:
             "until the underlying benchmark data gap clears."
         )
 
+    # Resolved up front rather than inline in the f-string: each of these carried a
+    # hardcoded fallback bit-identical to its live target, so a missing sleeve
+    # rendered stale prose silently. _require_saa_weight raises instead.
+    _wt_uslv    = _require_saa_weight(_saa_sleeves, "US Large Value")
+    _wt_ussc    = _require_saa_weight(_saa_sleeves, "US Small Cap")
+    _wt_em      = _require_saa_weight(_saa_sleeves, "Emerging Markets")
+    _wt_real    = _require_saa_weight(_saa_sleeves, "Real Assets")
+    _wt_tips    = _require_saa_weight(_saa_sleeves, "TIPS")
+    _wt_equity  = _require_saa_weight(_saa_parents, "Equity", kind="parent")
+
     st.caption(
         "**What the two stages measure.** Stage 1 (SAA design) captures the strategic-tilt "
-        f"contribution of the SAA itself — the value allocation (VTV at {_saa_sleeves.get('US Large Value', 0.09 / 0.98)*100:.0f}%), small-cap value "
-        f"(AVUV at {_saa_sleeves.get('US Small Cap', 0.08 / 0.98)*100:.0f}%), emerging markets ({_saa_sleeves.get('Emerging Markets', 0.09 / 0.98)*100:.0f}%), "
-        f"real assets ({_saa_sleeves.get('Real Assets', 0.10 / 0.98)*100:.0f}%), TIPS ({_saa_sleeves.get('TIPS', 0.04 / 0.98)*100:.0f}%), and the overall "
-        f"~{_saa_parents.get('Equity', 0.78 / 0.98)*100:.0f}/{_non_eq_pct*100:.0f} equity-vs-other-assets risk posture — measured as the SAA-blended benchmark's "
+        f"contribution of the SAA itself — the value allocation (VTV at {_wt_uslv*100:.0f}%), small-cap value "
+        f"(AVUV at {_wt_ussc*100:.0f}%), emerging markets ({_wt_em*100:.0f}%), "
+        f"real assets ({_wt_real*100:.0f}%), TIPS ({_wt_tips*100:.0f}%), and the overall "
+        f"~{_wt_equity*100:.0f}/{_non_eq_pct*100:.0f} equity-vs-other-assets risk posture — measured as the SAA-blended benchmark's "
         f"return spread over a {_naive_label}. This isolates what the "
         "allocation thesis itself contributed, separate from execution. Stage 2 (Implementation, "
         "decomposed via Brinson-Fachler below) captures two effects relative to the SAA's sleeve "
