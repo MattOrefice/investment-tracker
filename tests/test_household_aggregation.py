@@ -323,3 +323,118 @@ def test_cash_routes_to_off_saa_synthetic():
     # Cash is NOT a strategic SAA row.
     saa_rows = alloc[~alloc["is_off_saa"]]
     assert "cash" not in set(saa_rows["sleeve"]), "cash must not appear as a strategic SAA sleeve"
+
+
+# ── SAA sleeve coverage — the personal-mode instrument ─────────────────────────
+# tests/test_saa_sleeve_coverage.py runs this invariant in CI, but has to
+# RECONSTRUCT the securities frame (demo.db carries sleeve_category / is_in_saa
+# as NULL — the household mapping is personal-mode only). Personal mode has the
+# real columns populated, so these run the same invariant against tracker.db
+# through the real path: no reconstruction, no synthetic positions, the actual
+# household book.
+#
+# These do NOT run in CI, deliberately. They are the instrument for verifying the
+# SAA change against real data — the only one that exercises the real securities
+# table, the real look-through compositions, and the real positions together.
+
+def test_personal_every_strategic_sleeve_appears_on_saa():
+    """Every sleeve asset_classes targets must surface on-SAA in the real
+    household allocation.
+
+    compute_household_allocation derives its sleeve set from the securities join
+    (household.py:151-167), not from asset_classes — so a sleeve whose is_in_saa
+    carrier disappears does not become a zero-exposure row. It vanishes: no row,
+    no drift, no error, while its target still sits in the DB. The function's own
+    assertion (household.py:207) compares DOLLAR sums, which still reconcile
+    because the money relabels itself off-SAA.
+    """
+    _skip_if_no_holdings()
+    from src.household import compute_household_allocation, exclude_non_household_positions
+
+    pos, acct, sec, comp, saa = _load_fixtures()
+    pos = exclude_non_household_positions(pos, acct)
+    alloc = compute_household_allocation(pos, acct, sec, comp, saa,
+                                         mode="look_through", scope="total")
+
+    on_saa = set(alloc[~alloc["is_off_saa"]]["sleeve"])
+    expected = set(saa["name"])
+    assert on_saa == expected, (
+        f"On-SAA sleeves in the real household allocation do not match asset_classes.\n"
+        f"  missing from the frame (silently dropped): {sorted(expected - on_saa)}\n"
+        f"  present but not a strategic target:        {sorted(on_saa - expected)}\n"
+        f"A missing sleeve has no is_in_saa carrier in tracker.db's securities table."
+    )
+
+
+def test_personal_on_saa_target_weights_sum_matches_db():
+    """The real allocation's on-SAA targets must sum to the DB's, within 1bp.
+
+    A dropped sleeve shows up here as a shortfall of exactly its target — the
+    frame keeps reconciling on dollars while the TARGETS silently stop adding up
+    to the SAA.
+    """
+    _skip_if_no_holdings()
+    from src.household import compute_household_allocation, exclude_non_household_positions
+
+    pos, acct, sec, comp, saa = _load_fixtures()
+    pos = exclude_non_household_positions(pos, acct)
+    alloc = compute_household_allocation(pos, acct, sec, comp, saa,
+                                         mode="look_through", scope="total")
+
+    frame_sum = float(alloc[~alloc["is_off_saa"]].drop_duplicates("sleeve")["target_weight"].sum())
+    db_sum = float(saa["target_weight"].sum())
+    assert abs(frame_sum - db_sum) < 1e-4, (
+        f"On-SAA target weights sum to {frame_sum:.10f} but asset_classes sums to "
+        f"{db_sum:.10f} (delta {abs(frame_sum - db_sum):.2e}). A shortfall equal to "
+        f"one sleeve's target means that sleeve is unreachable through the securities join."
+    )
+
+
+def test_personal_guard_fails_when_a_sleeve_loses_its_carrier():
+    """Proves the two guards above can FAIL against real data.
+
+    Drops the sole is_in_saa carrier for intl_developed from the real securities
+    frame (in memory — tracker.db is never written) and asserts both invariants
+    break. Without this, the guards could pass forever without ever having been
+    capable of failing.
+    """
+    _skip_if_no_holdings()
+    from src.household import compute_household_allocation, exclude_non_household_positions
+
+    pos, acct, sec, comp, saa = _load_fixtures()
+    pos = exclude_non_household_positions(pos, acct)
+
+    carriers = sec[(sec["sleeve_category"] == "intl_developed") & (sec["is_in_saa"] == 1)]
+    assert not carriers.empty, (
+        "No is_in_saa security carries intl_developed in tracker.db — the mutation "
+        "cannot be applied, so the guards above are already unprotected."
+    )
+
+    mutated = sec.copy()
+    mutated.loc[carriers.index, "is_in_saa"] = 0
+    alloc = compute_household_allocation(pos, acct, mutated, comp, saa,
+                                         mode="look_through", scope="total")
+
+    on_saa = set(alloc[~alloc["is_off_saa"]]["sleeve"])
+    expected = set(saa["name"])
+    assert on_saa != expected, (
+        "Guard did NOT fail under mutation — dropping the sole intl_developed "
+        "carrier left the on-SAA sleeve set intact. The guard is vacuous."
+    )
+    dropped = expected - on_saa
+    assert dropped, "Expected a sleeve to disappear; none did."
+    assert not any(alloc["sleeve"].isin(dropped)), (
+        f"{sorted(dropped)} still has a row — the failure mode is a TOTAL "
+        f"disappearance, not a zero-exposure row."
+    )
+
+    frame_sum = float(alloc[~alloc["is_off_saa"]].drop_duplicates("sleeve")["target_weight"].sum())
+    db_sum = float(saa["target_weight"].sum())
+    assert abs(frame_sum - db_sum) >= 1e-4, (
+        "Target-sum guard did NOT fail under mutation. The guard is vacuous."
+    )
+    lost = float(saa[saa["name"].isin(dropped)]["target_weight"].sum())
+    assert abs((db_sum - frame_sum) - lost) < 1e-9, (
+        f"Shortfall ({db_sum - frame_sum:.10f}) should equal the dropped sleeve's "
+        f"target ({lost:.10f})."
+    )
