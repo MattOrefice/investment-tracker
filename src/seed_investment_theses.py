@@ -162,8 +162,36 @@ SLEEVE_META = {
 }
 
 
+def _require_meta(sleeve_name: str) -> dict:
+    """SLEEVE_META for a DB sleeve, or raise. Deliberately NO {} default.
+
+    SLEEVE_META is a hardcoded map keyed by asset_classes.name, and the name is
+    read from the DB — so a renamed or newly-split sleeve misses every entry and
+    `.get(name, {})` returns an empty dict SILENTLY. The thesis is then seeded
+    with no exit conditions, no invalidation conditions and no themes, and
+    _conviction falls through to its weight-based default (which happens to give
+    the same answer for a >15% sleeve, so nothing even looks different).
+
+    It also ORPHANS: the title is f"{sleeve_name} — Strategic Allocation", so a
+    renamed sleeve produces a NEW title, the already-seeded guard below does not
+    match, and a second thesis is written while the old one stays behind.
+
+    Raising here is the only thing that makes either failure visible.
+    """
+    if sleeve_name not in SLEEVE_META:
+        raise ValueError(
+            f"No SLEEVE_META entry for DB sleeve {sleeve_name!r}. Present: "
+            f"{sorted(SLEEVE_META)}. If a sleeve was renamed or split, add its "
+            "meta (exit_conditions, invalidation_conditions, themes, "
+            "expected_return_scenario) — do NOT fall back to an empty dict: it "
+            "seeds a thesis with no conditions and orphans the old one under its "
+            "previous title."
+        )
+    return SLEEVE_META[sleeve_name]
+
+
 def _conviction(target_weight: float, sleeve_name: str) -> int:
-    meta = SLEEVE_META.get(sleeve_name, {})
+    meta = _require_meta(sleeve_name)
     if "conviction_override" in meta:
         return meta["conviction_override"]
     return 4 if target_weight > 0.15 else 3
@@ -189,7 +217,7 @@ def seed():
             sleeve_name    = sleeve["name"]
             target_weight  = sleeve["target_weight"]
             view_summary   = sleeve["rationale"] or ""
-            meta           = SLEEVE_META.get(sleeve_name, {})
+            meta           = _require_meta(sleeve_name)
             title          = f"{sleeve_name} — Strategic Allocation"
 
             if conn.execute(

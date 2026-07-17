@@ -147,6 +147,48 @@ def get_sp500_series(start_date: str, end_date: str | None = None) -> pd.Series:
     return out
 
 
+def _assert_benchmark_map_matches_db(sleeve_weights: dict[str, float]) -> None:
+    """Fail loudly when _SLEEVE_BENCHMARKS and the DB's sleeves disagree, either way.
+
+    The blend iterates _SLEEVE_BENCHMARKS (a hardcoded map) and resolves each key
+    against DB weights with `.get(sleeve, 0.0)`. That default is only ever reached
+    on configuration drift, and it is SILENT: a stale key resolves to 0.0, its
+    benchmark ticker is fetched but weighted zero, the surviving legs implicitly
+    renormalize to $1, and the blend returns a plausible number with no error and
+    no benchmark_gaps entry.
+
+    Measured on a rename of "International Developed" -> "International Core":
+    weights resolved to 0.795918 instead of 1.0 (the 20.41% international leg
+    silently dropped) and the 2025-05-01..2026-06-30 blend returned +33.23%
+    instead of +32.03% — 120 bps too high, because dropping the laggard sleeve
+    and rescaling the rest inflates the benchmark the portfolio is judged against.
+
+    attribution.py:333 already catches the DB->map direction (a live sleeve with
+    no benchmark column). It cannot catch this one: a rename is map->DB, where the
+    stale key simply resolves to zero and nothing downstream is missing. Same
+    machinery, widened to both directions.
+
+    Cash / SPAXX is expected here: it is a real sub-class carrying target 0.0
+    (Phase 38a, operational float), so the comparison is against every sub-class
+    rather than only the weighted ones.
+    """
+    db_sleeves = set(sleeve_weights)
+    map_sleeves = set(_SLEEVE_BENCHMARKS)
+
+    stale = sorted(map_sleeves - db_sleeves)   # map -> DB: resolves 0.0, SILENT
+    unmapped = sorted(db_sleeves - map_sleeves)  # DB -> map: never priced
+
+    assert not stale and not unmapped, (
+        "_SLEEVE_BENCHMARKS and asset_classes disagree — benchmark configuration "
+        f"drift.\n  in _SLEEVE_BENCHMARKS but NOT in the DB (resolves to weight "
+        f"0.0 and silently drops its leg): {stale}\n  in the DB but NOT in "
+        f"_SLEEVE_BENCHMARKS (never priced): {unmapped}\n"
+        "If a sleeve was renamed or split, update _SLEEVE_BENCHMARKS and "
+        "_SLEEVE_HOLDINGS to match — do not leave the stale key: it does not error, "
+        "it rescales the blend around the missing sleeve."
+    )
+
+
 def get_custom_blended_series(start_date: str, end_date: str | None = None) -> pd.Series:
     """
     Daily value series for a $1-normalized SAA benchmark.
@@ -171,6 +213,7 @@ def get_custom_blended_series(start_date: str, end_date: str | None = None) -> p
                WHERE parent_id IS NOT NULL""",
         ).fetchall()
     sleeve_weights = {r["name"]: r["target_weight"] for r in rows}
+    _assert_benchmark_map_matches_db(sleeve_weights)
 
     # Build price matrix for each component ticker
     price_cols: dict[str, pd.Series] = {}
@@ -178,6 +221,8 @@ def get_custom_blended_series(start_date: str, end_date: str | None = None) -> p
     gaps: list[tuple[str, str, str]] = []
 
     for sleeve, components in _SLEEVE_BENCHMARKS.items():
+        # Guarded above: every key is a live DB sleeve, so this cannot silently
+        # resolve a stale key to 0.0 and drop its leg from the blend.
         sleeve_wt = sleeve_weights.get(sleeve, 0.0)
         for ticker, frac in components:
             effective_wt = sleeve_wt * frac
