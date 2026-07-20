@@ -153,7 +153,9 @@ SUB_CLASSES = [
             "structure to a 20% region, so the weights follow from choices already made. If the US "
             "core weight changes, this one changes with it.\n\n"
             "VEA at 3 bps is the cheapest instrument for the exposure. IEFA is held as a substitute in "
-            "the same sleeve, tracking the same developed universe."
+            "the same sleeve, tracking the same developed universe.\n\n"
+            "**Would revisit if** the US core weight changes, since this sleeve is defined as its "
+            "international mirror rather than sized independently."
         ),
     },
     {
@@ -176,7 +178,10 @@ SUB_CLASSES = [
             "where quality costs 12 bps over VOO and small value costs 22. The benchmark is IQLT, "
             "iShares' MSCI quality index abroad, which reproduces the SPHQ-to-QUAL relationship exactly. "
             "Selection effect therefore measures what it measures at home: the gap between two quality "
-            "methodologies, not the premium itself."
+            "methodologies, not the premium itself.\n\n"
+            "**Would revisit if** the international quality premium diverged materially from the "
+            "domestic one over a full cycle, which would mean the factor is not the region-independent "
+            "phenomenon this position assumes."
         ),
     },
     {
@@ -194,7 +199,10 @@ SUB_CLASSES = [
             "less considered, not this one.\n\n"
             "The benchmark is EFV, MSCI's EAFE value index. Holding and benchmark come from different "
             "index families, exactly as VTV and IWD do, so selection measures implementation rather "
-            "than the premium."
+            "than the premium.\n\n"
+            "**Would revisit if** AVIV's profitability integration proved to be doing the work rather "
+            "than the value screen — in which case the US sleeve moves to AVLV rather than this sleeve "
+            "moving to EFV."
         ),
     },
     {
@@ -214,7 +222,10 @@ SUB_CLASSES = [
             "the US sleeve already makes against IWM, with the same consequence: selection effect here "
             "carries the value premium itself rather than measuring implementation. The factor exhibit "
             "is where that premium is priced. Attribution will show it as selection, and it should not "
-            "be read as skill."
+            "be read as skill.\n\n"
+            "**Would revisit if** the small-value interaction proved materially weaker in developed "
+            "ex-US than domestically; sized at the US mirror, it assumes parity, not a stronger "
+            "foreign premium."
         ),
     },
     {

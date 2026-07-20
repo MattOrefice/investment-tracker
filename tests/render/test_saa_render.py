@@ -47,13 +47,12 @@ def test_all_sleeve_rationales_have_bold_would_conditions() -> None:
     AppTest does not render collapsed expander content, so this checks the DB directly.
     The SAA page renders rationale verbatim from the DB via _safe_md().
 
-    Phase 39 EXCEPTION — the four international sleeves are exempt. Their authored
-    rationales argue the mirror-the-US-structure case and deliberately carry no
-    "Would increase/reduce if" block; the sizing follows from the US weights rather
-    than from sleeve-specific triggers ("If the US core weight changes, this one
-    changes with it"). The exemption is an explicit list, not a predicate, so a
-    NEW sleeve without conditions still fails. Remove entries as exit conditions
-    are authored for them.
+    Phase 39: the four international sleeves carry "**Would revisit if" blocks —
+    a third heading alongside the "**Would increase if" / "**Would reduce if"
+    pairs the other eight use. Their conditions are falsifiers (what would show
+    the mirror-the-US premise wrong) rather than directional sizing triggers, so
+    they do not reduce to increase/reduce without changing meaning. The predicate
+    matches on "**Would", which covers all three headings.
     """
     import os, sys, pathlib
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent.parent))
@@ -66,19 +65,8 @@ def test_all_sleeve_rationales_have_bold_would_conditions() -> None:
             "WHERE parent_id IS NOT NULL AND target_weight > 0"
         ).fetchall()
 
-    _NO_WOULD_CONDITIONS_YET = {
-        "International Core",
-        "International Quality",
-        "International Large Value",
-        "International Small Value",
-    }
-
     assert len(rows) == 12, f"Expected 12 strategic sleeve rows, got {len(rows)}"
-    missing = [
-        r["name"] for r in rows
-        if "**Would" not in (r["rationale"] or "")
-        and r["name"] not in _NO_WOULD_CONDITIONS_YET
-    ]
+    missing = [r["name"] for r in rows if "**Would" not in (r["rationale"] or "")]
     assert not missing, (
         f"Sleeves missing bold Would conditions in DB rationale: {missing} — "
         "Phase 37 restructuring may not have been applied to the database"
