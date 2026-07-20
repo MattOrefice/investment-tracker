@@ -239,7 +239,8 @@ def test_correlations_page_imports_shared_sleeve_mapping():
 
     expected = {
         "US Large Core", "US Large Quality", "US Large Value", "US Small Cap",
-        "Intl Developed", "Emerging Markets", "Core Fixed Income", "TIPS",
+        "Intl Core", "Intl Quality", "Intl Large Value", "Intl Small Value",
+        "Emerging Markets", "Core Fixed Income", "TIPS",
         "Real Assets",
     }
     assert set(ae.SLEEVE_BENCHMARKS) == expected

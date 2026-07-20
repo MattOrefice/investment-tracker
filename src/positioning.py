@@ -50,6 +50,12 @@ ETF_STYLE_BOX: dict[str, tuple[str, str]] = {
     "VTV":  ("Large", "Value"),   # CRSP Large Value   — Large Value
     "AVUV": ("Small", "Value"),   # Avantis US Sm Val  — Small Value
     "VEA":  ("Large", "Blend"),   # FTSE Dev ex-US     — Foreign Large Blend
+    # The international tilts land in the same cells as their US analogues —
+    # IDHQ with SPHQ, AVIV with VTV, AVDV with AVUV — which is the point of
+    # mirroring the US structure abroad.
+    "IDHQ": ("Large", "Blend"),   # S&P Intl Dev Qual  — Foreign Large Blend
+    "AVIV": ("Large", "Value"),   # Avantis Intl Value — Foreign Large Value
+    "AVDV": ("Small", "Value"),   # Avantis Intl Sm Val— Foreign Small/Mid Value
     "IEMG": ("Large", "Blend"),   # MSCI EM            — Diversified Emerging Mkts
 }
 

@@ -284,7 +284,7 @@ class TestUsVsIntlSpreadSnapshot:
             "the spread is 15.0% above its 5-year rolling average of 5.0% — "
             "well into extended US-leadership territory. Historically such extremes "
             "have mean-reverted via valuation convergence and dollar cycle turns, "
-            "supporting the case for the International Developed sleeve."
+            "supporting the case for the international developed sleeves."
         )
         assert result == expected
 
@@ -296,8 +296,8 @@ class TestUsVsIntlSpreadSnapshot:
             "international developed (EFA) by 5.0%. On a 5-year rolling basis, "
             "the spread is 15.0% below its 5-year rolling average of 10.0% — "
             "a strong reversal in international's favor, consistent with the "
-            "valuation mean-reversion thesis underlying the 19% International "
-            "Developed sleeve weight."
+            "valuation mean-reversion thesis underlying the "
+            "developed-international allocation."
         )
         assert result == expected
 

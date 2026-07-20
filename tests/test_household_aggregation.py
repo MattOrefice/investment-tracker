@@ -30,7 +30,13 @@ ALLOWED_RATIONALE = {"no_exposure", "on_target", "underweight", "overweight", "o
 # didn't), the rest by under a point.
 ACTUAL_LT_WEIGHTS = {
     "US Large Core":         24.64,
-    "International Developed": 11.27,
+    # Phase 39: VEA (and IEFA, its off-SAA substitute) keep sleeve_category
+    # 'intl_developed', which now resolves to International Core — so the whole
+    # 11.27 lands there. The three tilt sleeves carry no household position yet.
+    "International Core":      11.27,
+    "International Quality":    0.00,
+    "International Large Value": 0.00,
+    "International Small Value": 0.00,
     "Emerging Markets":       4.80,
     "Core Fixed Income":      3.91,
     "US Large Quality":       2.52,

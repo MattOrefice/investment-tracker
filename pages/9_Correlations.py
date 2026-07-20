@@ -272,7 +272,8 @@ with col:
             _CORE_FI  = "Core Fixed Income"
             _EQ_NAMES = [
                 "US Large Core", "US Large Quality", "US Large Value",
-                "US Small Cap", "Intl Developed", "Emerging Markets",
+                "US Small Cap", "Intl Core", "Intl Quality",
+                "Intl Large Value", "Intl Small Value", "Emerging Markets",
             ]
             if _CORE_FI in corr.columns:
                 _be_curr_pairs = [

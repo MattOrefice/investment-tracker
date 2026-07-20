@@ -95,7 +95,12 @@ def test_raw_weights_match_db_targets_and_scale():
     from src.seed_saa import _EXCASH_NORM
 
     # The benchmark-proxy subsystem abbreviates exactly one sleeve name.
-    _AE_ONLY_ALIAS = {"Intl Developed": "International Developed"}
+    _AE_ONLY_ALIAS = {
+        "Intl Core":        "International Core",
+        "Intl Quality":     "International Quality",
+        "Intl Large Value": "International Large Value",
+        "Intl Small Value": "International Small Value",
+    }
     ae_to_db = {ae: _AE_ONLY_ALIAS.get(ae, ae) for ae in _RAW_WEIGHTS}
 
     with get_connection() as conn:
@@ -555,7 +560,7 @@ def _per_sleeve(d):
 def test_interpret_candidate_doubles_down_with_offset():
     per = _per_sleeve({
         "US Large Core": 0.94, "US Large Quality": 0.92, "US Large Value": 0.76,
-        "US Small Cap": 0.77, "Intl Developed": 0.76, "Emerging Markets": 0.73,
+        "US Small Cap": 0.77, "Intl Core": 0.76, "Emerging Markets": 0.73,
         "Core Fixed Income": -0.07, "TIPS": 0.08, "Real Assets": 0.59,
     })
     txt = ae.interpret_candidate_diversification(float(per.mean()), per, "QQQ")

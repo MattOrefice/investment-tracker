@@ -161,11 +161,15 @@ def test_identity_non_us_equity_fraction_matches_intl_plus_em():
             "SELECT name, target_weight FROM asset_classes WHERE parent_id IS NOT NULL"
         ).fetchall()
 
+    from src.reports import INTERNATIONAL_SLEEVES
+
     sleeves = {r["name"]: r["target_weight"] for r in rows}
-    intl_wt = sleeves.get("International Developed")
+    _missing = [s for s in INTERNATIONAL_SLEEVES if s not in sleeves]
+    assert not _missing, f"international sleeves missing from asset_classes: {_missing}"
+    intl_wt = sum(sleeves[s] for s in INTERNATIONAL_SLEEVES)
     em_wt   = sleeves.get("Emerging Markets")
 
-    assert intl_wt is not None, "'International Developed' sleeve missing from asset_classes"
+    assert intl_wt is not None, "international sleeves missing from asset_classes"
     assert em_wt   is not None, "'Emerging Markets' sleeve missing from asset_classes"
 
     non_us_eq = intl_wt + em_wt
@@ -399,12 +403,14 @@ def test_prose_pdf_methodology_parent_weights_match_db():
 
 
 def test_prose_pdf_methodology_sleeve_count_matches_db():
-    """PDF methodology section sleeve count (9) is DB-derived, not hardcoded.
+    """PDF methodology section sleeve count (12) is DB-derived, not hardcoded.
 
     templates/quarterly_report.html renders {{ methodology_sleeve_count }} from
     _build_methodology_vars(), which counts STRATEGIC sleeves (target_weight > 0).
-    Phase 38a: cash is operational float (target 0), so the strategic count is 9.
-    This test pins the expected count so any SAA taxonomy change triggers review.
+    Phase 38a: cash is operational float (target 0), so cash is excluded.
+    Phase 39: the developed-international sleeve split into four, taking the
+    strategic count from 9 to 12. The template renders the count from the DB, so
+    only this pin moves — it exists so a taxonomy change triggers review.
     """
     from src.db import get_connection
 
@@ -413,8 +419,8 @@ def test_prose_pdf_methodology_sleeve_count_matches_db():
             "SELECT COUNT(*) FROM asset_classes WHERE parent_id IS NOT NULL AND target_weight > 0"
         ).fetchone()[0]
 
-    assert count == 9, (
-        f"Expected 9 strategic SAA sleeves in asset_classes, got {count}. "
+    assert count == 12, (
+        f"Expected 12 strategic SAA sleeves in asset_classes, got {count}. "
         "If the SAA taxonomy changed, update the methodology template and this test."
     )
 
@@ -668,9 +674,8 @@ def test_sleeve_weights_match_db():
 
     src.asset_evaluation.SLEEVE_WEIGHTS (the ex-cash MV-analysis weights) must
     equal the DB strategic targets sleeve-for-sleeve, so a change to one cannot
-    silently diverge from the other. The benchmark-proxy subsystem names the
-    developed-international sleeve 'Intl Developed' where the DB uses
-    'International Developed'.
+    silently diverge from the other. The benchmark-proxy subsystem abbreviates
+    'International ...' to 'Intl ...'; this map is the bridge.
     """
     from src.db import get_connection
     from src.asset_evaluation import SLEEVE_WEIGHTS
@@ -680,7 +685,10 @@ def test_sleeve_weights_match_db():
         "US Large Quality":  "US Large Quality",
         "US Large Value":    "US Large Value",
         "US Small Cap":      "US Small Cap",
-        "Intl Developed":    "International Developed",
+        "Intl Core":         "International Core",
+        "Intl Quality":      "International Quality",
+        "Intl Large Value":  "International Large Value",
+        "Intl Small Value":  "International Small Value",
         "Emerging Markets":  "Emerging Markets",
         "Core Fixed Income": "Core Fixed Income",
         "TIPS":              "TIPS",
@@ -696,8 +704,8 @@ def test_sleeve_weights_match_db():
             ).fetchall()
         }
 
-    assert len(SLEEVE_WEIGHTS) == 9, f"Expected 9 ex-cash sleeve weights, got {len(SLEEVE_WEIGHTS)}"
-    assert len(db) == 9, f"Expected 9 strategic DB sleeves, got {len(db)}"
+    assert len(SLEEVE_WEIGHTS) == 12, f"Expected 12 ex-cash sleeve weights, got {len(SLEEVE_WEIGHTS)}"
+    assert len(db) == 12, f"Expected 12 strategic DB sleeves, got {len(db)}"
     for ae_name, db_name in _AE_TO_DB.items():
         assert db_name in db, f"DB strategic sleeve '{db_name}' missing"
         assert abs(SLEEVE_WEIGHTS[ae_name] - db[db_name]) < 1e-6, (
