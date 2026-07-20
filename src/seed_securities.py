@@ -81,7 +81,7 @@ HOLDINGS = [
     {
         "ticker": "VEA",
         "name": "Vanguard FTSE Developed Markets ETF",
-        "asset_class": "International Developed",
+        "asset_class": "International Core",
         "security_type": "ETF",
         "expense_ratio": 0.0003,
         "holding_rationale": (
@@ -92,6 +92,35 @@ HOLDINGS = [
             "indefensible for passive exposure. Vanguard's structure also produces fewer capital gains "
             "distributions historically."
         ),
+    },
+    # Phase 39 — the three international tilt holdings. holding_rationale is
+    # deliberately left None: the sleeve-level rationale in seed_saa.py already
+    # carries the instrument argument for each, and no holding-level prose has
+    # been authored yet. pages/8_Research.py guards on truthiness, so the block
+    # is omitted rather than rendered empty. Fill these in when the prose exists.
+    {
+        "ticker": "IDHQ",
+        "name": "Invesco S&P International Developed Quality ETF",
+        "asset_class": "International Quality",
+        "security_type": "ETF",
+        "expense_ratio": 0.0029,
+        "holding_rationale": None,
+    },
+    {
+        "ticker": "AVIV",
+        "name": "Avantis International Large Cap Value ETF",
+        "asset_class": "International Large Value",
+        "security_type": "ETF",
+        "expense_ratio": 0.0025,
+        "holding_rationale": None,
+    },
+    {
+        "ticker": "AVDV",
+        "name": "Avantis International Small Cap Value ETF",
+        "asset_class": "International Small Value",
+        "security_type": "ETF",
+        "expense_ratio": 0.0036,
+        "holding_rationale": None,
     },
     {
         "ticker": "IEMG",
@@ -185,7 +214,10 @@ BENCHMARKS = [
     {"ticker": "QUAL", "name": "iShares MSCI USA Quality Factor ETF",               "asset_class": "US Large Quality"},
     {"ticker": "IWD",  "name": "iShares Russell 1000 Value ETF",                    "asset_class": "US Large Value"},
     {"ticker": "IWM",  "name": "iShares Russell 2000 ETF",                          "asset_class": "US Small Cap"},
-    {"ticker": "EFA",  "name": "iShares MSCI EAFE ETF",                             "asset_class": "International Developed"},
+    {"ticker": "EFA",  "name": "iShares MSCI EAFE ETF",                             "asset_class": "International Core"},
+    {"ticker": "IQLT", "name": "iShares MSCI Intl Quality Factor ETF",              "asset_class": "International Quality"},
+    {"ticker": "EFV",  "name": "iShares MSCI EAFE Value ETF",                       "asset_class": "International Large Value"},
+    {"ticker": "SCZ",  "name": "iShares MSCI EAFE Small-Cap ETF",                   "asset_class": "International Small Value"},
     {"ticker": "EEM",  "name": "iShares MSCI Emerging Markets ETF",                 "asset_class": "Emerging Markets"},
     {"ticker": "IEF",  "name": "iShares 7-10 Year Treasury Bond ETF",               "asset_class": "Core Fixed Income"},
     {"ticker": "TIP",  "name": "iShares TIPS Bond ETF",                             "asset_class": "TIPS"},
