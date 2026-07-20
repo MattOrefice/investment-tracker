@@ -34,25 +34,33 @@ SLEEVE_BENCHMARKS: dict[str, list[tuple[str, float]]] = {
     "US Large Quality":  [("QUAL", 1.0)],
     "US Large Value":    [("IWD",  1.0)],
     "US Small Cap":      [("IWM",  1.0)],
-    "Intl Developed":    [("EFA",  1.0)],
+    "Intl Core":         [("EFA",  1.0)],
+    "Intl Quality":      [("IQLT", 1.0)],
+    "Intl Large Value":  [("EFV",  1.0)],
+    "Intl Small Value":  [("SCZ",  1.0)],
     "Emerging Markets":  [("EEM",  1.0)],
     "Core Fixed Income": [("IEF",  1.0)],
     "TIPS":              [("TIP",  1.0)],
     "Real Assets":       [("VNQ",  0.6), ("DBC", 0.4)],
 }
 
-# SAA target weights for the 9 non-cash sleeves (raw, pre-normalization).
+# SAA target weights for the 12 non-cash sleeves (raw, pre-normalization).
 # SLEEVE_WEIGHTS below normalizes these to sum to 1.0 — the canonical ex-cash SAA
-# (Phase 38a): cash is operational float, excluded, and the 9 sleeves rescale to
+# (Phase 38a): cash is operational float, excluded, and the sleeves rescale to
 # 100%. These values MUST equal the DB asset_classes targets sleeve-for-sleeve
-# (the DB uses "International Developed" where this map uses "Intl Developed");
-# test_sleeve_weights_match_db guards that they never silently diverge.
+# (this map abbreviates "International …" to "Intl …"; test_sleeve_weights_match_db
+# holds the name bridge and guards that the two never silently diverge).
+# Phase 39: the single 0.20 developed-international weight splits 17/15/9/8 of 49,
+# mirroring the US structure. The four still sum to 0.20 exactly.
 _RAW_WEIGHTS: dict[str, float] = {
     "US Large Core":     0.17,
     "US Large Quality":  0.15,
     "US Large Value":    0.09,
     "US Small Cap":      0.08,
-    "Intl Developed":    0.20,
+    "Intl Core":         0.20 * 17 / 49,
+    "Intl Quality":      0.20 * 15 / 49,
+    "Intl Large Value":  0.20 *  9 / 49,
+    "Intl Small Value":  0.20 *  8 / 49,
     "Emerging Markets":  0.09,
     "Core Fixed Income": 0.06,
     "TIPS":              0.04,

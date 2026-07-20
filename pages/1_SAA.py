@@ -14,6 +14,7 @@ from src.holdings import get_sleeve_weights_on_date
 from src.macro import percentile as macro_percentile
 from src.prose_helpers import percentile_label
 from src.rebalance import compute_drift, interpret_rebalance_status
+from src.reports import INTERNATIONAL_SLEEVES
 from src.shiller import get_cape_series
 from src.ui_helpers import render_footer, render_page_header
 render_page_header()
@@ -111,7 +112,10 @@ _, col, _ = st.columns([1, 8, 1])
 with col:
     st.subheader("Investment Thesis")
     _equity_wt   = _require_weight(parents, "Equity", kind="parent")
-    _intl_dev_wt = _require_weight(sub_classes, "International Developed")
+    # Summed over the four international sleeves rather than read from a single
+    # sleeve: the rendered figure is unchanged (the split is weight-neutral), but
+    # the derivation now survives the split instead of raising on a missing name.
+    _intl_dev_wt = sum(_require_weight(sub_classes, _s) for _s in INTERNATIONAL_SLEEVES)
     _em_wt       = _require_weight(sub_classes, "Emerging Markets")
     _real_wt     = _require_weight(sub_classes, "Real Assets")
     _tips_wt     = _require_weight(sub_classes, "TIPS")
@@ -130,9 +134,15 @@ with col:
     )
     st.markdown(
         "The framework is designed to deliver returns through factor and geographic diversification "
-        "rather than market-timing calls. Style tilts (quality via SPHQ, value via VTV, small-cap "
-        "value via AVUV) target factors with positive long-run premia and reduced sensitivity to "
-        "multiple compression — particularly relevant given current US large-cap multiples."
+        "rather than market-timing calls. Style tilts target factors with positive long-run premia — "
+        "quality, value, and small-cap value — and they are expressed on both sides of the book: "
+        "SPHQ, VTV, and AVUV in the US; IDHQ, AVIV, and AVDV internationally, in the same "
+        "proportions. The premia these screens target are documented in international data on the "
+        "same terms as domestic. Expressing them only at home would be home bias rather than a view."
+    )
+    st.markdown(
+        "These are structural positions, not a response to current valuations. A tilt whose case "
+        "depended on today's multiples would be a tactical trade in strategic clothing."
     )
     st.markdown(
         f"International Developed ({round(_intl_dev_wt * 100)}%) and Emerging Markets "

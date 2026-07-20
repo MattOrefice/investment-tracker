@@ -556,11 +556,39 @@ else:
     st.info("Enter a cash amount above to see band-breach buy suggestions.")
 
 with st.expander("Methodology", expanded=False):
+    # Bands are RENDERED from asset_classes rather than described in prose. A
+    # hand-written rule ("±3% at or above 10%") was false for Real Assets and
+    # Income, which sit at 10.2% with a deliberate ±2% band, and any restatement
+    # re-stales the moment a sleeve crosses the threshold. This table reads the
+    # same column compute_drift applies, so the two cannot disagree.
     st.markdown(
-        "**Tiered SAA bands** — ±3% for the four largest equity sleeves (US Large Core, "
-        "US Large Quality, US Large Value, International Developed); ±2% for all others. "
-        "Tighter bands on smaller sleeves prevent small absolute drift from compounding "
-        "into meaningful tracking error against the SAA.\n\n"
+        "**Tiered SAA bands** — larger sleeves carry wider tolerance bands. Each band "
+        "below is read from the database alongside its target, so this table cannot "
+        "drift from the bands the rebalancing check actually applies. Tighter bands on "
+        "smaller sleeves prevent small absolute drift from compounding into meaningful "
+        "tracking error against the SAA."
+    )
+    _band_tbl = pd.DataFrame(
+        [
+            {
+                "Sleeve":         _s,
+                "SAA target":     saa_targets[_s] * 100,
+                "Tolerance band": saa_bands[_s] * 100,
+            }
+            for _s in sorted(saa_targets, key=lambda n: -saa_targets[n])
+            if saa_targets.get(_s, 0.0) > 0 and _s in saa_bands
+        ]
+    )
+    st.dataframe(
+        _band_tbl,
+        hide_index=True,
+        use_container_width=True,
+        column_config={
+            "SAA target":     st.column_config.NumberColumn(format="%.2f%%"),
+            "Tolerance band": st.column_config.NumberColumn(format="±%.0f%%"),
+        },
+    )
+    st.markdown(
         "**Contribution priority** — cash flows to below-band sleeves first (close drift), "
         "then to in-band sleeves by SAA target weight (maintain allocation). Above-band "
         "sleeves receive no new cash until they return to band naturally or are "

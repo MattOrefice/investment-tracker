@@ -1623,7 +1623,7 @@ with col:
             "Only the dot-com bubble peak (1999–2001) has sustained CAPE above 40 in the "
             "full 145-year Shiller record. "
             "Periods of extreme valuation have preceded materially below-average decade-ahead "
-            "returns. Most directly relevant to the International Developed and US Large Value "
+            "returns. Most directly relevant to the international developed and US Large Value "
             "sleeves, where the discount-to-US-CAPE thesis depends on US valuations remaining "
             "above historical norms."
         )
@@ -1713,7 +1713,7 @@ with col:
     st.markdown("### Cross-Asset Performance")
     st.caption(
         "Relative performance trends across equity geographies and currency — "
-        "context for the SAA's 19% International Developed and 8% Emerging Markets overweights."
+        "context for the SAA's developed-international and emerging-markets overweights."
     )
 
     # ── US vs. International Equity ───────────────────────────────────────────
@@ -1866,7 +1866,7 @@ with col:
             _dtwex_strength = "historically weak"
             _dtwex_impl = (
                 "A weak dollar is a tailwind for unhedged international and EM equity holdings "
-                "through positive translation — supports the 19% International Developed and 8% EM sleeves."
+                "through positive translation — supports the developed-international and EM sleeves."
             )
 
         st.caption(

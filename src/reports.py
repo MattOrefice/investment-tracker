@@ -67,6 +67,18 @@ _PALETTE = {
     "selection": "#A67B5B",
 }
 
+# Phase 39 — the developed-international book, as four sleeves. Public so the
+# pages that need a combined international figure sum THESE rather than each
+# hardcoding the list. Every consumer resolves each name through a _require_*
+# helper that raises on an unknown sleeve, so a later rename fails loudly here
+# instead of silently dropping a leg from the total.
+INTERNATIONAL_SLEEVES: tuple[str, ...] = (
+    "International Core",
+    "International Quality",
+    "International Large Value",
+    "International Small Value",
+)
+
 # Phase 2 locked picks — holding ticker and benchmark ticker per sleeve.
 # Public so pages/8_Benchmark_Attribution.py can import rather than duplicate.
 SLEEVE_HOLDING_TICKER: dict[str, str] = {
@@ -74,7 +86,10 @@ SLEEVE_HOLDING_TICKER: dict[str, str] = {
     "US Large Quality":        "SPHQ",
     "US Large Value":          "VTV",
     "US Small Cap":            "AVUV",
-    "International Developed": "VEA",
+    "International Core":        "VEA",
+    "International Quality":     "IDHQ",
+    "International Large Value": "AVIV",
+    "International Small Value": "AVDV",
     "Emerging Markets":        "IEMG",
     "Core Fixed Income":       "VGIT",
     "TIPS":                    "SCHP",
@@ -86,7 +101,10 @@ SLEEVE_BENCH_TICKER: dict[str, str] = {
     "US Large Quality":        "QUAL",
     "US Large Value":          "IWD",
     "US Small Cap":            "IWM",
-    "International Developed": "EFA",
+    "International Core":        "EFA",
+    "International Quality":     "IQLT",
+    "International Large Value": "EFV",
+    "International Small Value": "SCZ",
     "Emerging Markets":        "EEM",
     "Core Fixed Income":       "IEF",
     "TIPS":                    "TIP",

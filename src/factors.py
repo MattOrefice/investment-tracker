@@ -130,7 +130,11 @@ _SLEEVES = {
         "weights": {t: w / _SAA_US_TOTAL for t, w in _SAA_US.items()},
     },
     "developed_exus": {
-        "label":   "International Developed Sleeve",
+        # Phase 39: this regression has always been VEA-only, which after the
+        # international split is exactly the International Core sleeve. Relabeled
+        # accordingly. NOTE: the Quality/Large Value/Small Value sleeves do NOT
+        # yet have their own per-sleeve regressions here.
+        "label":   "International Core Sleeve",
         "tickers": ["VEA"],
         "region":  "developed_exus",
         # Single-ticker sleeve: no weights needed.
@@ -829,7 +833,7 @@ def run_sleeve_regressions_mom(inception: str, end_date: str) -> dict:
 
 def run_intl_global_regression(inception: str, end_date: str) -> Optional[dict]:
     """
-    Run FF5 regression for the International Developed sleeve (VEA) against GLOBAL factors.
+    Run FF5 regression for the International Core sleeve (VEA) against GLOBAL factors.
 
     Ken French ceased publication of daily Global 5-factor data in June 2019
     (GLOBAL_DAILY_FACTORS_CUTOFF). Any portfolio whose inception date is after
@@ -845,7 +849,7 @@ def run_intl_global_regression(inception: str, end_date: str) -> Optional[dict]:
     spec = _SLEEVES["developed_exus"]
     try:
         return run_sleeve_regression(
-            sleeve_label="International Developed Sleeve — Global Factors",
+            sleeve_label="International Core Sleeve — Global Factors",
             tickers=spec["tickers"],
             region="global",
             inception=inception,
@@ -1011,7 +1015,7 @@ def build_factor_prose(
         alpha_sig_d = significance_label(t_a_d)
 
         lines.append(
-            f"The International Developed sleeve (VEA, {T_dev} trading days) "
+            f"The International Core sleeve (VEA, {T_dev} trading days) "
             f"loads on Mkt-RF_dev at {b_mkt_d:.2f} (t = {t_mkt_d:.2f}), within the "
             f"expected range for a passive cap-weighted developed-markets ETF. "
             f"The {a_bps_d:+.0f} bps annualized alpha (t = {t_a_d:.2f}) is {alpha_sig_d}, "
@@ -1103,7 +1107,7 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
 
     notes = [
         f"Samples: US equity sleeve {T_us} US trading days ({us_window}), L = {L_us}. "
-        f"International Developed sleeve {T_dev} US trading days ({dev_window}), L = {L_dev}. "
+        f"International Core sleeve {T_dev} US trading days ({dev_window}), L = {L_dev}. "
         "Both sleeves are restricted to US equity market trading days (dates present "
         "in the Ken French US factor calendar). The Developed sleeve applies this "
         "restriction explicitly: VEA trades on US exchanges and has no price observation "
@@ -1148,7 +1152,7 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
         "for tax-efficiency reasons (high turnover → short-term gains), so a near-zero "
         "Mom loading is expected and confirms the construction is tax-aware.",
 
-        "Global factor supplement (International Developed): Ken French ceased publication "
+        "Global factor supplement (International Core): Ken French ceased publication "
         "of the daily Global 5-factor file in June 2019. This portfolio's inception "
         "post-dates that cutoff; no daily-frequency Global FF5 regression can be produced. "
         "The Developed ex-US factor set is the primary decomposition for the international "
