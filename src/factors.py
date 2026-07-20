@@ -132,8 +132,7 @@ _SLEEVES = {
     "developed_exus": {
         # Phase 39: this regression has always been VEA-only, which after the
         # international split is exactly the International Core sleeve. Relabeled
-        # accordingly. NOTE: the Quality/Large Value/Small Value sleeves do NOT
-        # yet have their own per-sleeve regressions here.
+        # accordingly.
         "label":   "International Core Sleeve",
         "tickers": ["VEA"],
         "region":  "developed_exus",
