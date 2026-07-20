@@ -50,7 +50,10 @@ SORT_ORDERS = {
     "US Large Quality":        20,
     "US Large Value":          30,
     "US Small Cap":            40,
-    "International Developed": 50,
+    "International Core":          50,
+    "International Quality":       52,
+    "International Large Value":   54,
+    "International Small Value":   56,
     "Emerging Markets":        60,
     "Core Fixed Income":       70,
     "TIPS":                    80,
@@ -130,21 +133,88 @@ SUB_CLASSES = [
             "is insufficient protection)."
         ),
     },
+    # Phase 39 — the single cap-weighted "International Developed" sleeve is split into
+    # four, mirroring the US structure (17/15/9/8 of 49) across the same 20% region. The
+    # split is weight-neutral: the four targets sum to 0.20 / _EXCASH_NORM exactly.
+    # Bands are set EXPLICITLY to 0.02 — every sleeve here is under 10%, and the column
+    # default is also 0.02, so an omitted band would pass by luck rather than by intent.
     {
-        "name": "International Developed",
+        "name": "International Core",
         "parent_name": "Equity",
-        "target_weight": 0.20 / _EXCASH_NORM,
-        "tolerance_band": 0.03,
+        "target_weight": 0.20 * 17 / 49 / _EXCASH_NORM,
+        "tolerance_band": 0.02,
         "benchmark_ticker": "EFA",
         "rationale": (
-            "Largest non-US sleeve, expressing two distinct views. First, valuation: developed international "
-            "CAPE is materially below US levels (historically 30-50% discount), and starting valuation is the dominant driver of long-run returns "
-            "over 10+ year windows. Second, regime diversification: the dollar has been a 15-year tailwind for "
-            "US-domiciled investors, and historical mean reversion suggests that tailwind isn't permanent. 19% "
-            "is meaningfully overweight typical US-investor home bias (10-15%) but underweight global market "
-            "cap (~40%); it expresses a real view without being a contrarian moonshot.\n\n"
-            "**Would increase if** the valuation gap widens or the dollar weakens materially.\n"
-            "**Would reduce if** European or Japanese structural reform stalls further."
+            "The cap-weighted developed ex-US market, held for the reason any core position is held: "
+            "it is the region absent a view. Every tilt in this book is a deviation from a market "
+            "portfolio, and a deviation is only meaningful if the thing deviated from is also owned.\n\n"
+            "Core is 34.7% of international equity here — the same share it holds in the US book, 17 "
+            "of 49. That proportion is not a separate decision. The international sleeves apply the US "
+            "structure to a 20% region, so the weights follow from choices already made. If the US "
+            "core weight changes, this one changes with it.\n\n"
+            "VEA at 3 bps is the cheapest instrument for the exposure. IEFA is held as a substitute in "
+            "the same sleeve, tracking the same developed universe."
+        ),
+    },
+    {
+        "name": "International Quality",
+        "parent_name": "Equity",
+        "target_weight": 0.20 * 15 / 49 / _EXCASH_NORM,
+        "tolerance_band": 0.02,
+        "benchmark_ticker": "IQLT",
+        "rationale": (
+            "Quality is the largest tilt in the US book at 15 of 49, and it is the largest tilt here "
+            "for the same reason.\n\n"
+            "Nothing in the case for holding SPHQ is US-specific. The screen sorts on return on equity, "
+            "accruals, and leverage; those relationships are documented in international data on the "
+            "same terms. Expressing the view only at home would be a claim that profitability pays in "
+            "Chicago and not in Osaka, which is not the view — it is home bias with a fee schedule "
+            "attached.\n\n"
+            "IDHQ tracks S&P's quality screen of developed ex-US large and mid caps: same issuer as "
+            "SPHQ, same index provider, same three fundamental measures. It costs 26 bps over VEA, less "
+            "than the 33 paid for international small value — the same ordering that holds in the US, "
+            "where quality costs 12 bps over VOO and small value costs 22. The benchmark is IQLT, "
+            "iShares' MSCI quality index abroad, which reproduces the SPHQ-to-QUAL relationship exactly. "
+            "Selection effect therefore measures what it measures at home: the gap between two quality "
+            "methodologies, not the premium itself."
+        ),
+    },
+    {
+        "name": "International Large Value",
+        "parent_name": "Equity",
+        "target_weight": 0.20 * 9 / 49 / _EXCASH_NORM,
+        "tolerance_band": 0.02,
+        "benchmark_ticker": "EFV",
+        "rationale": (
+            "Value abroad, on the same terms VTV expresses it at home.\n\n"
+            "One difference is worth naming rather than hiding. AVIV integrates profitability into its "
+            "value screen; VTV tracks a plain cap-weighted value index and does not. So this sleeve "
+            "holds a more deliberate instrument than its US counterpart. If that asymmetry matters, the "
+            "resolution is AVLV in the US rather than EFV abroad — the US sleeve is the one that is "
+            "less considered, not this one.\n\n"
+            "The benchmark is EFV, MSCI's EAFE value index. Holding and benchmark come from different "
+            "index families, exactly as VTV and IWD do, so selection measures implementation rather "
+            "than the premium."
+        ),
+    },
+    {
+        "name": "International Small Value",
+        "parent_name": "Equity",
+        "target_weight": 0.20 * 8 / 49 / _EXCASH_NORM,
+        "tolerance_band": 0.02,
+        "benchmark_ticker": "SCZ",
+        "rationale": (
+            "The small-value interaction, held abroad for the reason AVUV is held at home.\n\n"
+            "This is the smallest sleeve in the book. It is small because international is 20% of the "
+            "portfolio and small value is 8 of 49 in the US structure — arithmetic, not diminished "
+            "conviction. Sizing it larger than the mirror produces would be a claim that the premium is "
+            "stronger abroad than at home, and that claim is not being made.\n\n"
+            "The benchmark is SCZ, iShares' EAFE small-cap index — small blend, not small value, "
+            "because no passive international small-value index fund exists. This is the same compromise "
+            "the US sleeve already makes against IWM, with the same consequence: selection effect here "
+            "carries the value premium itself rather than measuring implementation. The factor exhibit "
+            "is where that premium is priced. Attribution will show it as selection, and it should not "
+            "be read as skill."
         ),
     },
     {
@@ -160,7 +230,22 @@ SUB_CLASSES = [
             "includes meaningful country-specific governance risk (China especially). Modestly long EM at "
             "attractive valuations is preferable to chasing it after a rally.\n\n"
             "**Would increase if** EM ex-China valuations become exceptionally cheap.\n"
-            "**Would reduce if** China governance risk materially worsens or if EM index construction concentrates further into a single country."
+            "**Would reduce if** China governance risk materially worsens or if EM index construction concentrates further into a single country.\n\n"
+            "Emerging markets is the one equity region held at cap weight. The developed book tilts "
+            "toward quality, value, and small value because those convictions are not US-specific; the "
+            "same logic would extend here, and it is not extended, for two reasons.\n\n"
+            "Verifiability first. Every other tilt in this book is priced by a per-sleeve factor "
+            "regression against Ken French's developed ex-US series, which spans market, size, value, "
+            "profitability, and investment back to 1990. No equivalent daily series exists for emerging "
+            "markets, and the monthly history is too short to regress against this portfolio's "
+            "inception. A tilt here could be asserted but not shown — and an unpriceable factor "
+            "position is indistinguishable, on this page, from a hunch.\n\n"
+            "Materiality second. Mirroring the developed structure into a 9.18% region yields sleeves "
+            "of roughly 3.2%, 2.8%, 1.7%, and 1.5% — enough to add four rows to every exhibit, not "
+            "enough to move a return.\n\n"
+            "This is the position most likely to change. If a daily emerging-markets factor series "
+            "becomes available, or the region's weight grows enough to make sub-sleeves material, the "
+            "case for cap weight weakens."
         ),
     },
     {
