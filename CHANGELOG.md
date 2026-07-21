@@ -8,6 +8,30 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Python pinned to 3.11 so the pandas 2.x pin stays installable on Cloud
+_2026-07-21_
+
+The `pandas==2.2.3` / `numpy==2.2.6` pin (added to hold CI to the tested numeric
+stack) collided with Streamlit Community Cloud's Python: Cloud picked Python 3.14,
+for which pandas 2.2.3 ships no wheel, so `pip` fell back to building pandas from
+source and the deploy hung after resolving packages. pandas 2.2.3 / numpy 2.2.6
+have prebuilt wheels for 3.11–3.13 but not 3.14.
+
+Added a `.python-version` file pinning **3.11** — the version CI already runs
+(`.github/workflows/ci.yml` sets `python-version: "3.11"`), so deploy and CI now
+match. This is a deploy-environment change only: it touches no application code,
+sleeve logic, or tests. CI is unaffected — `actions/setup-python` uses the explicit
+`python-version` input and ignores `.python-version`, and 3.11 is what it used
+anyway.
+
+Caveat for whoever redeploys: Streamlit Community Cloud's authoritative Python
+setting is the deploy-UI "Advanced settings → Python version" dropdown, and Python
+can't be changed on a live app without delete-and-redeploy. The `.python-version`
+file is respected by the newer uv-based Cloud builder, but if a rebuild still grabs
+3.14, set 3.11 explicitly in Advanced settings on redeploy. Do not select 3.14
+while the pandas 2.x pin stands — lifting the pin waits on the pandas-3 migration
+(see the deferred entry below).
+
 ## Four demo-book test fixes CI caught that a single-mode baseline missed
 _2026-07-21_
 
