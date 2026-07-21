@@ -6,6 +6,7 @@ import pandas as pd
 
 from src.db import get_connection
 from src.prices import get_prices
+from src.sleeve_config import sleeve_benchmarks as _derive_benchmarks
 
 # Coverage tolerance for benchmark components, mirroring the portfolio side's
 # _first_adj_price/_last_adj_price 5-day tolerance in src/attribution.py: a
@@ -17,43 +18,24 @@ from src.prices import get_prices
 # cannot return the prior close the portfolio side would back-fill from.
 _COVERAGE_WINDOW_DAYS = 5
 
-# Sleeve → benchmark ticker mapping (from asset_classes.benchmark_ticker).
-# Real Assets benchmark was originally "VNQ+DJP" but DJP (iPath Bloomberg
-# Commodity Index ETN) was delisted in May 2020.  Replaced with DBC (Invesco
-# DB Commodity Index Tracking Fund), which is still active, uses a similar
-# broad-commodity methodology, and has a long pricing history.
-_SLEEVE_BENCHMARKS: dict[str, list[tuple[str, float]]] = {
-    "US Large Core":          [("SPY",  1.0)],
-    "US Large Quality":       [("QUAL", 1.0)],
-    "US Large Value":         [("IWD",  1.0)],
-    "US Small Cap":           [("IWM",  1.0)],
-    "International Core":     [("EFA",  1.0)],
-    "International Quality":  [("IQLT", 1.0)],
-    "International Large Value":  [("EFV", 1.0)],
-    "International Small Value":  [("SCZ", 1.0)],
-    "Emerging Markets":       [("EEM",  1.0)],
-    "Core Fixed Income":      [("IEF",  1.0)],
-    "TIPS":                   [("TIP",  1.0)],
-    "Real Assets":            [("VNQ",  0.6), ("DBC", 0.4)],
-    "Cash / SPAXX":           [("BIL",  1.0)],
-}
+# Sleeve → benchmark mapping is DERIVED from asset_classes.benchmark_ticker at
+# call time (src.sleeve_config), so it describes whatever book this process is
+# pointed at — 9 sleeves in personal mode, 12 in demo — instead of freezing one
+# taxonomy into a module constant. Real Assets' "VNQ (60%) + DBC (40%)" blend is
+# parsed from that column (DJP, the original ETN leg, was delisted May 2020; the
+# seed carries DBC). The parser fails loud on any sleeve whose benchmark_ticker
+# is empty or unparseable — the coherence check that replaced the old hardcoded-
+# map-vs-DB drift assertion.
+def _sleeve_benchmarks() -> dict[str, list[tuple[str, float]]]:
+    """{sleeve -> [(benchmark ticker, weight), …]} for the current book.
 
-# Fallback to holding tickers when benchmark fetch fails
-_SLEEVE_HOLDINGS: dict[str, str] = {
-    "US Large Core":          "VOO",
-    "US Large Quality":       "SPHQ",
-    "US Large Value":         "VTV",
-    "US Small Cap":           "AVUV",
-    "International Core":     "VEA",
-    "International Quality":  "IDHQ",
-    "International Large Value": "AVIV",
-    "International Small Value": "AVDV",
-    "Emerging Markets":       "IEMG",
-    "Core Fixed Income":      "VGIT",
-    "TIPS":                   "SCHP",
-    "Real Assets":            "VNQ",
-    "Cash / SPAXX":           "SPAXX",
-}
+    Every key is a live DB sleeve and every value a parsed benchmark spec, so a
+    stale key can no longer resolve to weight 0.0 and silently drop its leg from
+    the blend (the +120bps drift the old drift-guard existed to catch). Cash /
+    SPAXX is included (BIL) exactly as the hardcoded map had it; it carries
+    target 0.0 so it contributes nothing to the weighted blend.
+    """
+    return _derive_benchmarks(include_cash=True)
 
 
 def _get_price_series(ticker: str, start_date: str, end_date: str,
@@ -153,46 +135,27 @@ def get_sp500_series(start_date: str, end_date: str | None = None) -> pd.Series:
     return out
 
 
-def _assert_benchmark_map_matches_db(sleeve_weights: dict[str, float]) -> None:
-    """Fail loudly when _SLEEVE_BENCHMARKS and the DB's sleeves disagree, either way.
+def _benchmarks_for(sleeve_weights: dict[str, float]) -> dict[str, list[tuple[str, float]]]:
+    """Return the current book's sleeve→benchmark map, asserting coherence.
 
-    The blend iterates _SLEEVE_BENCHMARKS (a hardcoded map) and resolves each key
-    against DB weights with `.get(sleeve, 0.0)`. That default is only ever reached
-    on configuration drift, and it is SILENT: a stale key resolves to 0.0, its
-    benchmark ticker is fetched but weighted zero, the surviving legs implicitly
-    renormalize to $1, and the blend returns a plausible number with no error and
-    no benchmark_gaps entry.
-
-    Measured on a rename of "International Developed" -> "International Core":
-    weights resolved to 0.795918 instead of 1.0 (the 20.41% international leg
-    silently dropped) and the 2025-05-01..2026-06-30 blend returned +33.23%
-    instead of +32.03% — 120 bps too high, because dropping the laggard sleeve
-    and rescaling the rest inflates the benchmark the portfolio is judged against.
-
-    attribution.py:333 already catches the DB->map direction (a live sleeve with
-    no benchmark column). It cannot catch this one: a rename is map->DB, where the
-    stale key simply resolves to zero and nothing downstream is missing. Same
-    machinery, widened to both directions.
-
-    Cash / SPAXX is expected here: it is a real sub-class carrying target 0.0
-    (Phase 38a, operational float), so the comparison is against every sub-class
-    rather than only the weighted ones.
+    The map is DERIVED from asset_classes.benchmark_ticker, so it can no longer
+    drift from the DB the way a hardcoded constant did: the +120bps failure
+    (a renamed sleeve leaving a stale key that resolved to weight 0.0 and
+    silently dropped its 20.41% leg) is structurally impossible when every key
+    is a live DB sleeve. _sleeve_benchmarks() already raises on any sleeve whose
+    benchmark_ticker is empty or unparseable; this adds the reverse coherence
+    check — every WEIGHTED sleeve must appear in the map — so a strategic sleeve
+    can never be priced against nothing. Works on either book: 9 sleeves in
+    personal mode, 12 in demo. Cash / SPAXX carries target 0.0 and is exempt.
     """
-    db_sleeves = set(sleeve_weights)
-    map_sleeves = set(_SLEEVE_BENCHMARKS)
-
-    stale = sorted(map_sleeves - db_sleeves)   # map -> DB: resolves 0.0, SILENT
-    unmapped = sorted(db_sleeves - map_sleeves)  # DB -> map: never priced
-
-    assert not stale and not unmapped, (
-        "_SLEEVE_BENCHMARKS and asset_classes disagree — benchmark configuration "
-        f"drift.\n  in _SLEEVE_BENCHMARKS but NOT in the DB (resolves to weight "
-        f"0.0 and silently drops its leg): {stale}\n  in the DB but NOT in "
-        f"_SLEEVE_BENCHMARKS (never priced): {unmapped}\n"
-        "If a sleeve was renamed or split, update _SLEEVE_BENCHMARKS and "
-        "_SLEEVE_HOLDINGS to match — do not leave the stale key: it does not error, "
-        "it rescales the blend around the missing sleeve."
+    bench = _sleeve_benchmarks()
+    missing = sorted(s for s, w in sleeve_weights.items() if w and s not in bench)
+    assert not missing, (
+        f"Strategic sleeve(s) {missing} carry weight but have no benchmark in "
+        f"asset_classes — benchmark coherence failure: their legs would silently "
+        f"drop from the blend and inflate the benchmark the portfolio is judged against."
     )
+    return bench
 
 
 def get_custom_blended_series(start_date: str, end_date: str | None = None) -> pd.Series:
@@ -219,16 +182,16 @@ def get_custom_blended_series(start_date: str, end_date: str | None = None) -> p
                WHERE parent_id IS NOT NULL""",
         ).fetchall()
     sleeve_weights = {r["name"]: r["target_weight"] for r in rows}
-    _assert_benchmark_map_matches_db(sleeve_weights)
+    _bench_map = _benchmarks_for(sleeve_weights)
 
     # Build price matrix for each component ticker
     price_cols: dict[str, pd.Series] = {}
     weight_map: dict[str, float] = {}   # component ticker → effective weight
     gaps: list[tuple[str, str, str]] = []
 
-    for sleeve, components in _SLEEVE_BENCHMARKS.items():
-        # Guarded above: every key is a live DB sleeve, so this cannot silently
-        # resolve a stale key to 0.0 and drop its leg from the blend.
+    for sleeve, components in _bench_map.items():
+        # _bench_map is derived from the DB, so every key is a live sleeve: this
+        # cannot silently resolve a stale key to 0.0 and drop its leg from the blend.
         sleeve_wt = sleeve_weights.get(sleeve, 0.0)
         for ticker, frac in components:
             effective_wt = sleeve_wt * frac
@@ -302,7 +265,7 @@ def get_sleeve_benchmark_returns(
     result: dict[str, pd.Series] = {}
     benchmark_gaps: list[tuple[str, str, str]] = []
 
-    for sleeve, components in _SLEEVE_BENCHMARKS.items():
+    for sleeve, components in _sleeve_benchmarks().items():
         # Build blended price series for multi-component sleeves
         sleeve_series = pd.Series(0.0, index=date_range)
         total_frac = 0.0

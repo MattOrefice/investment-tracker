@@ -126,7 +126,9 @@ def test_custom_blended_series_hand_calculation(monkeypatch):
     price_a = pd.Series([100.0, 110.0, 121.0], index=dates)
     price_b = pd.Series([50.0, 45.0, 40.5], index=dates)
 
-    monkeypatch.setattr(bm, "_SLEEVE_BENCHMARKS", {
+    # The benchmark map is now DB-derived (bm._sleeve_benchmarks()); patch the
+    # derivation to inject the synthetic two-sleeve basket for the hand calc.
+    monkeypatch.setattr(bm, "_sleeve_benchmarks", lambda: {
         "SleeveA": [("TICKA", 1.0)],
         "SleeveB": [("TICKB", 1.0)],
     })
@@ -668,7 +670,7 @@ def test_custom_blended_total_failure_yields_nan_sentinel(monkeypatch):
 
     assert out.isna().all(), f"expected a NaN sentinel, got:\n{out.tail()}"
     gapped_tickers = {t for _, t, _ in out.attrs.get("benchmark_gaps", [])}
-    all_tickers = {t for comps in bm._SLEEVE_BENCHMARKS.values() for t, _ in comps}
+    all_tickers = {t for comps in bm._sleeve_benchmarks().values() for t, _ in comps}
     assert gapped_tickers == all_tickers, (
         f"expected every component ticker flagged, got: {gapped_tickers} vs {all_tickers}"
     )

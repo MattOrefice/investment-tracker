@@ -14,7 +14,7 @@ from src.holdings import get_sleeve_weights_on_date
 from src.macro import percentile as macro_percentile
 from src.prose_helpers import percentile_label
 from src.rebalance import compute_drift, interpret_rebalance_status
-from src.reports import INTERNATIONAL_SLEEVES
+from src.sleeve_config import international_sleeves, sleeve_holdings
 from src.shiller import get_cape_series
 from src.ui_helpers import render_footer, render_page_header
 render_page_header()
@@ -112,10 +112,12 @@ _, col, _ = st.columns([1, 8, 1])
 with col:
     st.subheader("Investment Thesis")
     _equity_wt   = _require_weight(parents, "Equity", kind="parent")
-    # Summed over the four international sleeves rather than read from a single
-    # sleeve: the rendered figure is unchanged (the split is weight-neutral), but
-    # the derivation now survives the split instead of raising on a missing name.
-    _intl_dev_wt = sum(_require_weight(sub_classes, _s) for _s in INTERNATIONAL_SLEEVES)
+    # Summed over the developed-international sleeves PRESENT IN THIS BOOK, read
+    # from the DB — one sleeve on the personal book, four on the demo book. The
+    # combined figure is identical either way (the split is weight-neutral); the
+    # derivation survives both taxonomies instead of hardcoding a sleeve set.
+    _intl_sleeve_names = international_sleeves()
+    _intl_dev_wt = sum(_require_weight(sub_classes, _s) for _s in _intl_sleeve_names)
     _em_wt       = _require_weight(sub_classes, "Emerging Markets")
     _real_wt     = _require_weight(sub_classes, "Real Assets")
     _tips_wt     = _require_weight(sub_classes, "TIPS")
@@ -132,14 +134,46 @@ with col:
         f"valuation — historical CAPE readings above 40 are associated with low or negative forward "
         f"10-year real returns, but valuation alone has historically been a poor market-timing signal."
     )
-    st.markdown(
-        "The framework is designed to deliver returns through factor and geographic diversification "
-        "rather than market-timing calls. Style tilts target factors with positive long-run premia — "
-        "quality, value, and small-cap value — and they are expressed on both sides of the book: "
-        "SPHQ, VTV, and AVUV in the US; IDHQ, AVIV, and AVDV internationally, in the same "
-        "proportions. The premia these screens target are documented in international data on the "
-        "same terms as domestic. Expressing them only at home would be home bias rather than a view."
-    )
+    # Factor-tilt prose is derived from the sleeves PRESENT IN THIS BOOK, so it
+    # describes what is actually held rather than a frozen taxonomy. On the demo
+    # book the international tilt sleeves (quality/value/small-value) exist and
+    # are named; on the personal book developed international is a single
+    # cap-weighted sleeve, so the prose says exactly that instead of claiming
+    # tilt holdings the household does not own.
+    def _and_join(items: list[str]) -> str:
+        items = list(items)
+        if len(items) <= 1:
+            return items[0] if items else ""
+        if len(items) == 2:
+            return f"{items[0]} and {items[1]}"
+        return ", ".join(items[:-1]) + f", and {items[-1]}"
+
+    _holds = sleeve_holdings()
+    _us_tilts = [t for _s in ("US Large Quality", "US Large Value", "US Small Cap")
+                 for t in _holds.get(_s, [])]
+    _intl_core_names = {"International Core", "International Developed"}
+    _intl_tilt_tickers = [t for _s in _intl_sleeve_names if _s not in _intl_core_names
+                          for t in _holds.get(_s, [])]
+
+    if _intl_tilt_tickers:
+        st.markdown(
+            "The framework is designed to deliver returns through factor and geographic diversification "
+            "rather than market-timing calls. Style tilts target factors with positive long-run premia — "
+            "quality, value, and small-cap value — and they are expressed on both sides of the book: "
+            f"{_and_join(_us_tilts)} in the US; {_and_join(_intl_tilt_tickers)} internationally, in the "
+            "same proportions. The premia these screens target are documented in international data on the "
+            "same terms as domestic. Expressing them only at home would be home bias rather than a view."
+        )
+    else:
+        _intl_core_tickers = [t for _s in _intl_sleeve_names for t in _holds.get(_s, [])]
+        st.markdown(
+            "The framework is designed to deliver returns through factor and geographic diversification "
+            "rather than market-timing calls. Style tilts target factors with positive long-run premia — "
+            "quality, value, and small-cap value — expressed in the US book: "
+            f"{_and_join(_us_tilts)}. Developed international is held as a single cap-weighted sleeve "
+            f"({_and_join(_intl_core_tickers)}); the factor tilts are expressed domestically. The premia "
+            "these screens target are documented in international data on the same terms as domestic."
+        )
     st.markdown(
         "These are structural positions, not a response to current valuations. A tilt whose case "
         "depended on today's multiples would be a tactical trade in strategic clothing."

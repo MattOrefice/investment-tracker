@@ -161,12 +161,15 @@ def test_identity_non_us_equity_fraction_matches_intl_plus_em():
             "SELECT name, target_weight FROM asset_classes WHERE parent_id IS NOT NULL"
         ).fetchall()
 
-    from src.reports import INTERNATIONAL_SLEEVES
+    from src.sleeve_config import international_sleeves
 
     sleeves = {r["name"]: r["target_weight"] for r in rows}
-    _missing = [s for s in INTERNATIONAL_SLEEVES if s not in sleeves]
+    # DB-derived: the developed-international sleeves present in whatever book this
+    # reads (one on personal, four on demo). Their combined weight is invariant.
+    _intl = international_sleeves()
+    _missing = [s for s in _intl if s not in sleeves]
     assert not _missing, f"international sleeves missing from asset_classes: {_missing}"
-    intl_wt = sum(sleeves[s] for s in INTERNATIONAL_SLEEVES)
+    intl_wt = sum(sleeves[s] for s in _intl)
     em_wt   = sleeves.get("Emerging Markets")
 
     assert intl_wt is not None, "international sleeves missing from asset_classes"
@@ -402,8 +405,12 @@ def test_prose_pdf_methodology_parent_weights_match_db():
     )
 
 
-def test_prose_pdf_methodology_sleeve_count_matches_db():
+def test_prose_pdf_methodology_sleeve_count_matches_db(use_demo_db):
     """PDF methodology section sleeve count (12) is DB-derived, not hardcoded.
+
+    Pins the demo book (use_demo_db): the 12-sleeve count is the demo taxonomy;
+    the personal book keeps 9 until the personal restructure lands.
+
 
     templates/quarterly_report.html renders {{ methodology_sleeve_count }} from
     _build_methodology_vars(), which counts STRATEGIC sleeves (target_weight > 0).
@@ -426,18 +433,18 @@ def test_prose_pdf_methodology_sleeve_count_matches_db():
 
 
 def test_prose_pdf_real_assets_benchmark_caption_matches_source():
-    """Real Assets benchmark description in PDF template matches _SLEEVE_BENCHMARKS.
+    """Real Assets benchmark description in PDF template matches _sleeve_benchmarks().
 
     templates/quarterly_report.html renders {{ methodology_ra_bench }} derived
-    from _SLEEVE_BENCHMARKS["Real Assets"] in src/benchmarks.py. This test
+    from _sleeve_benchmarks()["Real Assets"] in src/benchmarks.py. This test
     verifies the benchmark uses VNQ + DBC (not DJP which was delisted 2020)
     and that the 60/40 split is intact. Note: the portfolio holds PDBC (no-K-1);
     DBC is deliberately used as the benchmark for long price history.
     """
-    from src.benchmarks import _SLEEVE_BENCHMARKS
+    from src.benchmarks import _sleeve_benchmarks
 
-    ra = _SLEEVE_BENCHMARKS.get("Real Assets")
-    assert ra is not None, "'Real Assets' key missing from _SLEEVE_BENCHMARKS"
+    ra = _sleeve_benchmarks().get("Real Assets")
+    assert ra is not None, "'Real Assets' key missing from _sleeve_benchmarks()"
     assert len(ra) == 2, (
         f"Expected 2 tickers in Real Assets benchmark, got {len(ra)}: {ra}"
     )
@@ -450,14 +457,14 @@ def test_prose_pdf_real_assets_benchmark_caption_matches_source():
     assert "DBC" in tickers, (
         f"DBC not in Real Assets benchmark tickers: {tickers}. "
         "DJP was delisted 2020; benchmark should use DBC. "
-        "If DBC was also replaced, update _SLEEVE_BENCHMARKS and this test."
+        "If DBC was also replaced, update _sleeve_benchmarks() and this test."
     )
     assert abs(sum(weights) - 1.0) < 1e-9, (
         f"Real Assets benchmark weights don't sum to 1.0: {weights}"
     )
     assert abs(weight_map["VNQ"] - 0.6) < 1e-9 and abs(weight_map["DBC"] - 0.4) < 1e-9, (
         f"Expected 60/40 VNQ/DBC split; got {weight_map}. "
-        "Update _SLEEVE_BENCHMARKS in src/benchmarks.py."
+        "Update _sleeve_benchmarks() in src/benchmarks.py."
     )
 
 
@@ -466,14 +473,14 @@ def test_prose_saa_real_assets_db_label_matches_computed_split():
 
     pages/1_SAA.py renders the sleeve-level (parent_id IS NOT NULL) Real Assets
     row's benchmark_ticker straight from the DB. That label is a separate copy
-    of the same truth as _SLEEVE_BENCHMARKS["Real Assets"] in src/benchmarks.py
+    of the same truth as _sleeve_benchmarks()["Real Assets"] in src/benchmarks.py
     (the actual computation) — a prior migration desynced them, writing a 50/50
     label while the computation stayed 60/40. This test compares the DB label
     against the computed split directly rather than pinning either as a fresh
     literal, so the two sources can't silently diverge again.
     """
     from src.db import get_connection
-    from src.benchmarks import _SLEEVE_BENCHMARKS
+    from src.benchmarks import _sleeve_benchmarks
 
     with get_connection() as conn:
         row = conn.execute(
@@ -484,12 +491,12 @@ def test_prose_saa_real_assets_db_label_matches_computed_split():
     assert row is not None, "No sleeve-level 'Real Assets' row found in asset_classes"
     label = row["benchmark_ticker"]
 
-    computed = _SLEEVE_BENCHMARKS["Real Assets"]
+    computed = _sleeve_benchmarks()["Real Assets"]
     expected_label = " + ".join(f"{t} ({w:.0%})" for t, w in computed)
 
     assert label == expected_label, (
         f"asset_classes.benchmark_ticker for Real Assets is {label!r}, but the "
-        f"computed benchmark split (_SLEEVE_BENCHMARKS['Real Assets']) is "
+        f"computed benchmark split (_sleeve_benchmarks()['Real Assets']) is "
         f"{computed} — expected DB label {expected_label!r}. The DB label has "
         "drifted from the computation; fix the migration in src/db.py, not this test."
     )
@@ -669,16 +676,20 @@ def test_saa_thesis_above_40_cape_reference_still_relevant():
 
 # ── Phase 38a — ex-cash SAA guards ─────────────────────────────────────────────
 
-def test_sleeve_weights_match_db():
+def test_sleeve_weights_match_db(use_demo_db):
     """The two SAA target sources must agree (Phase 38a risk #2).
 
-    src.asset_evaluation.SLEEVE_WEIGHTS (the ex-cash MV-analysis weights) must
-    equal the DB strategic targets sleeve-for-sleeve, so a change to one cannot
-    silently diverge from the other. The benchmark-proxy subsystem abbreviates
-    'International ...' to 'Intl ...'; this map is the bridge.
+    src.asset_evaluation's ex-cash MV-analysis weights must equal the DB strategic
+    targets sleeve-for-sleeve, so a change to one cannot silently diverge from the
+    other. The benchmark-proxy subsystem abbreviates 'International ...' to
+    'Intl ...'; this map is the bridge. Pins the demo book (use_demo_db): it
+    carries the full 12-sleeve taxonomy this asserts. asset_evaluation derives its
+    maps at import (mode-frozen), so we re-derive under the pinned demo DB rather
+    than read the module constant captured under the personal default.
     """
     from src.db import get_connection
-    from src.asset_evaluation import SLEEVE_WEIGHTS
+    import src.asset_evaluation as ae
+    _, SLEEVE_WEIGHTS = ae._derive_sleeve_maps()
 
     _AE_TO_DB = {
         "US Large Core":     "US Large Core",

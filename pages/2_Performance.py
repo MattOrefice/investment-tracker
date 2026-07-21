@@ -36,7 +36,8 @@ from src.holdings import (
     last_settled_price_date,
 )
 from src.performance import compute_risk_metrics
-from src.reports import generate_quarterly_report_bytes, INTERNATIONAL_SLEEVES
+from src.reports import generate_quarterly_report_bytes
+from src.sleeve_config import international_sleeves
 from src.returns import annualize, period_bounds, period_return, period_window_predates_inception, twr_daily_linked
 from src.positioning import get_effective_duration
 from src.rebalance import compute_drift
@@ -335,7 +336,7 @@ with col:
     _saa_parents, _saa_sleeves = _load_sleeve_targets()
     _non_eq_pct = 1.0 - _require_saa_weight(_saa_parents, "Equity", kind="parent")
     _non_us_eq  = (sum(_require_saa_weight(_saa_sleeves, _s)
-                       for _s in INTERNATIONAL_SLEEVES)
+                       for _s in international_sleeves())
                    + _require_saa_weight(_saa_sleeves, "Emerging Markets"))
 
     # Key scalars (Since Inception). Period to the settled frontier C, not today.

@@ -203,8 +203,29 @@ def _patch_db(db_path: Path) -> None:
 
 
 def main() -> None:
-    for name in ("tracker.db", "demo.db"):
-        _patch_db(ROOT / "data" / name)
+    # DEMO ONLY — deliberately not tracker.db.
+    #
+    # This migration writes strategic TARGETS. Targets and the holdings that
+    # fund them have to land together: a sleeve carrying a target with nothing
+    # in it is an unfunded strategic position, and the Suggested-$ invariant in
+    # src/rebalance.py:267 fires on exactly that. It is right to fire.
+    #
+    # An earlier version of this file patched both DBs. That put Intl Quality
+    # (6.25%), Large Value (3.75%) and Small Value (3.33%) into the personal
+    # book with zero holdings behind them, because the funding trades are
+    # paper-only and correctly guarded to demo.db. The invariant then fired
+    # against the real household — the alarm was accurate, the state was not.
+    #
+    # The seam is the DB, not the invariant, because the two databases are at
+    # genuinely different points: the demo book can be rebalanced by fiat in the
+    # same migration, the personal book cannot — it moves when real trades are
+    # placed. Splitting on that boundary keeps each DB internally coherent
+    # rather than making the check tolerate an incoherent one.
+    #
+    # The personal restructure lands as its own migration when the real trades
+    # exist, writing targets and holdings atomically so the invariant never
+    # fires. Until then tracker.db keeps its coherent 9-sleeve book.
+    _patch_db(ROOT / "data" / "demo.db")
 
 
 if __name__ == "__main__":

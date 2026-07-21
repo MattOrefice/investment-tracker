@@ -269,12 +269,14 @@ with col:
                 st.markdown(_corr_interp)
 
             # ── Bond-equity correlation regime block ──────────────────────────
+            # Equity sleeve names DERIVED from ae.SLEEVES (itself DB-derived), so
+            # this resolves to the sleeves THIS book actually has — six on the
+            # personal book (one developed-international sleeve), eleven on demo
+            # (the four-sleeve split) — instead of hardcoding demo's names, which
+            # _load_sleeve_returns cannot resolve against a personal DB.
             _CORE_FI  = "Core Fixed Income"
-            _EQ_NAMES = [
-                "US Large Core", "US Large Quality", "US Large Value",
-                "US Small Cap", "Intl Core", "Intl Quality",
-                "Intl Large Value", "Intl Small Value", "Emerging Markets",
-            ]
+            _NON_EQUITY = {_CORE_FI, "TIPS", "Real Assets"}
+            _EQ_NAMES = [s for s in ae.SLEEVES if s not in _NON_EQUITY]
             if _CORE_FI in corr.columns:
                 _be_curr_pairs = [
                     float(corr.loc[_CORE_FI, eq])

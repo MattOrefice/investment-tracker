@@ -233,9 +233,15 @@ def test_pair_specific_xaxis_range_matches_data_bounds():
 
 # ── Phase 31: sleeve mapping de-duplication ─────────────────────────────────────
 
-def test_correlations_page_imports_shared_sleeve_mapping():
-    """The page must source the sleeve mapping from asset_evaluation, not a local literal."""
+def test_correlations_page_imports_shared_sleeve_mapping(use_demo_db):
+    """The page must source the sleeve mapping from asset_evaluation, not a local literal.
+
+    Pins the demo book (use_demo_db) for the full 12-sleeve set; asset_evaluation
+    derives its maps at import (mode-frozen), so we re-derive under the pinned demo
+    DB rather than read the personal-default module constant.
+    """
     import src.asset_evaluation as ae
+    _sleeve_benchmarks, _ = ae._derive_sleeve_maps()
 
     expected = {
         "US Large Core", "US Large Quality", "US Large Value", "US Small Cap",
@@ -243,9 +249,9 @@ def test_correlations_page_imports_shared_sleeve_mapping():
         "Emerging Markets", "Core Fixed Income", "TIPS",
         "Real Assets",
     }
-    assert set(ae.SLEEVE_BENCHMARKS) == expected
-    assert ae.SLEEVE_BENCHMARKS["US Large Quality"] == [("QUAL", 1.0)]
-    assert ae.SLEEVE_BENCHMARKS["Real Assets"] == [("VNQ", 0.6), ("DBC", 0.4)]
+    assert set(_sleeve_benchmarks) == expected
+    assert _sleeve_benchmarks["US Large Quality"] == [("QUAL", 1.0)]
+    assert _sleeve_benchmarks["Real Assets"] == [("VNQ", 0.6), ("DBC", 0.4)]
 
     page = (pathlib.Path(__file__).resolve().parent.parent
             / "pages" / "9_Correlations.py").read_text(encoding="utf-8")

@@ -14,12 +14,12 @@ VALID_TAX_EFFICIENCY = frozenset({"high", "medium", "low"})
 
 SAA_TICKERS = frozenset({
     "VOO", "SPHQ", "VTV", "AVUV", "VEA", "IEMG",
-    # Phase 39 — the international split added one carrier per new sleeve.
-    # Without these, the three sleeves have no is_in_saa ticker and vanish
-    # from the household allocation frame rather than erroring.
-    "IDHQ", "AVIV", "AVDV",
     "VGIT", "SCHP", "PDBC", "VNQ", "SPAXX",
 })
+# Phase 39: this test reads tracker.db (the personal book), which keeps its
+# coherent 9-sleeve taxonomy — 11 SAA tickers — until the personal restructure
+# lands real trades. The three tilt carriers (IDHQ/AVIV/AVDV) are a demo-only
+# addition; they join this set in the same migration that funds them personally.
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -268,7 +268,7 @@ def test_no_unmapped_sleeve_category_value():
 
 
 def test_exactly_the_saa_tickers_are_flagged():
-    """Exactly the SAA tickers must have is_in_saa=1 (14 after the Phase 39 split)."""
+    """Exactly the 11 SAA tickers must have is_in_saa=1 in the personal book."""
     _skip_if_no_tracker_db()
     conn = sqlite3.connect(str(TRACKER_DB))
     conn.row_factory = sqlite3.Row

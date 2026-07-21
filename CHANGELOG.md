@@ -8,6 +8,55 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## The international sleeve split, and a benchmark map that can no longer drift
+_2026-07-20_
+
+The headline is a bug that is now structurally impossible. The custom SAA
+benchmark was blended from a hardcoded sleeve→ticker map (`_SLEEVE_BENCHMARKS`)
+resolved against DB target weights with `.get(sleeve, 0.0)`. A renamed or split
+sleeve left a stale key that resolved silently to weight 0.0 — its benchmark leg
+dropped, the survivors renormalised to $1, and the blend returned a plausible
+number with no error. Measured once at +120bps: dropping the 20.41% international
+leg inflated the benchmark the portfolio was judged against. The whole
+consumer layer — benchmarks, asset evaluation, reports, factor labels, the SAA
+page — now DERIVES its sleeve maps from `asset_classes.benchmark_ticker` at call
+time (`src/sleeve_config.py`), so the map always describes whatever book it is
+pointed at. A stale key cannot exist when every key is a live DB sleeve; the old
+drift assertion is repurposed into a coherence check (every weighted sleeve has a
+parseable benchmark), and the "VNQ (60%) + DBC (40%)" blend is parsed by a
+fail-loud parser that refuses an empty, partial, or unparseable spec rather than
+letting a benchmark vanish quietly.
+
+The occasion for the refactor was the international restructure: the single
+cap-weighted "International Developed" sleeve splits into four — Core, Quality,
+Large Value, Small Value — mirroring the US 17/15/9/8-of-49 structure across the
+same 20% region. The split is weight-neutral (the four sum to 0.20/_EXCASH_NORM
+bit-for-bit). It lands on the demo book only; the personal tracker keeps its
+coherent 9-sleeve taxonomy until real trades fund the tilts, so a strategic sleeve
+never carries a target with no holding behind it. The SAA thesis prose is derived
+the same way: it enumerates the tilt sleeves the book actually holds — IDHQ/AVIV/
+AVDV on demo, a single cap-weighted VEA sleeve on personal — rather than naming
+instruments a 9-sleeve household does not own.
+
+The demo paper book is rebalanced into the new sleeves by a committed migration
+that trims VEA to fund the three tilt buys, cash-neutral by construction and
+preserving all 49 DRIP lots (the fixture that makes money-weighted-vs-time-
+weighted return testable). The rebalance nets to machine epsilon (~7e-15), not
+literal zero — IEEE754 addition is not associative, so a multi-instrument
+same-date rebalance cannot sum to bit-zero — and the two cross-DB cashflow
+assertions were loosened from `== 0.0` to a 1e-9 tolerance that still catches a
+dollar-scale DRIP double-count while ignoring summation noise.
+
+Two test-infrastructure fixes rode along. The suite resolved its database from the
+repo-root `.env` (`TRACKER_MODE=personal`), and mode freezes at import — so a test
+that "wanted demo" via `os.environ.setdefault` silently read the personal book,
+the ambient state behind several contradictory baselines. A `use_demo_db` conftest
+fixture now overrides the frozen bindings explicitly and restores them, the dead
+`DB_PATH`/`TRACKER_MODE` setdefaults are removed, and the content tests that assert
+the 12-sleeve taxonomy pin demo by fixture. Against the true main-personal baseline
+the branch is net −2 failures with zero introduced; the remainder are pre-existing
+short-history render failures unrelated to sleeves.
+
 ## fredapi pinned, and two audit findings deliberately left alone
 _2026-07-16_
 

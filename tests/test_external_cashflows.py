@@ -24,7 +24,10 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-os.environ.setdefault("TRACKER_MODE", "demo")
+# The two DB-reading tests below pin the demo book via the use_demo_db fixture
+# (tests/conftest.py). A module-level os.environ.setdefault("TRACKER_MODE",...)
+# used to sit here — inert, because .env=personal is already resolved at import,
+# so it silently read the personal book instead. The fixture overrides that.
 
 from src.performance import compute_risk_metrics
 from src.returns import period_return
@@ -63,7 +66,7 @@ def _flow_fixture(flow_index: int = 30):
 
 # ── flow builder on the demo ledger ──────────────────────────────────────────
 
-def test_builder_demo_flows_are_inception_seed_only():
+def test_builder_demo_flows_are_inception_seed_only(use_demo_db):
     """demo.db's only external flow is the ~$1k inception seed on 2025-05-01.
     The 49 DRIP reinvestment rows are internal income (already embedded in
     adj_close) and must be excluded — any nonzero mid-history value here means
@@ -75,7 +78,16 @@ def test_builder_demo_flows_are_inception_seed_only():
     if float(cf.abs().sum()) == 0.0:
         pytest.skip("trades table empty — skipped in empty-DB mode")
     assert float(cf.loc[pd.Timestamp(inception)]) == pytest.approx(1000.0, abs=1.0)
-    assert float(cf.iloc[1:].abs().sum()) == 0.0
+    # Post-inception flow must be ZERO to the DOLLAR, not to the bit. demo.db now
+    # holds a genuinely cash-neutral same-date rebalance (Phase 39 VEA trim funding
+    # the three tilt buys). Its net flow sums the signed shares*price legs, and
+    # IEEE754 addition is not associative — SQLite sums them in a different order
+    # than Python, leaving ~7e-15 of machine epsilon no matter how the shares are
+    # sized. A DRIP row misclassified as a flow would be DOLLAR-scale (~1e0); 1e-9
+    # sits nine orders above that noise and six below a real flow, so it still
+    # catches the double-count this guards against. Do NOT tighten back to == 0.0:
+    # that asserts float-summation determinism, which does not hold for real sums.
+    assert float(cf.iloc[1:].abs().sum()) < 1e-9
 
 
 # ── risk-metrics consistency with the corrected TWR ──────────────────────────
@@ -147,7 +159,7 @@ def test_risk_metrics_flow_outside_window_leaves_window_unchanged():
     )
 
 
-def test_demo_period_returns_unchanged_by_flow_threading():
+def test_demo_period_returns_unchanged_by_flow_threading(use_demo_db):
     """demo.db has no mid-history external flow — its only flow is the
     first-date inception seed, which both TWR methods treat as starting NAV.
     The real flow series must therefore reproduce the old hardcoded-zeros
@@ -163,7 +175,14 @@ def test_demo_period_returns_unchanged_by_flow_threading():
     cf_real = get_external_cashflow_series(inception, today).reindex(pv.index).fillna(0.0)
     cf_zeros = pd.Series(0.0, index=pv.index)
 
+    # Returns must match to well within a basis point, not to the bit. The real
+    # flow series carries ~7e-15 of machine epsilon on the cash-neutral Phase 39
+    # rebalance date (IEEE754 non-associativity — see test_builder_demo_flows),
+    # so threading it vs threading exact zeros differs at ~1e-18 in the return.
+    # 1e-12 is ~1e-10 bps: inert to any decision, while a misclassified flow would
+    # move the return by basis points. Do NOT tighten back to ==: float-summation
+    # equality does not hold across the two summation orders.
     for p in ["1M", "3M", "YTD", "1Y", "SI"]:
         for method in ["daily", "modified_dietz"]:
             assert period_return(method, pv, cf_real, p) == \
-                period_return(method, pv, cf_zeros, p), (method, p)
+                pytest.approx(period_return(method, pv, cf_zeros, p), abs=1e-12), (method, p)
