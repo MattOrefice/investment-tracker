@@ -469,6 +469,7 @@ def test_drip_toggle_off_zero_discretionary_lots():
 def test_discretionary_trade_count_demo_db():
     """discretionary_trade_count() returns 11 against demo DB."""
     import os
+    os.environ.setdefault("TRACKER_MODE", "demo")
     assert discretionary_trade_count() == 11
 
 
@@ -476,4 +477,5 @@ def test_discretionary_trade_count_demo_db():
 def test_drip_lot_count_demo_db():
     """drip_lot_count() returns 49 against demo DB."""
     import os
+    os.environ.setdefault("TRACKER_MODE", "demo")
     assert drip_lot_count() == 49

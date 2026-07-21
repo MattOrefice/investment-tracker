@@ -361,6 +361,7 @@ def test_drip_lots_do_not_inflate_value_series_twr():
     constants had drifted with the calendar regardless of this fix). Uses demo DB.
     """
     import os
+    os.environ.setdefault("TRACKER_MODE", "demo")
 
     from src.holdings import get_portfolio_value_series
     from src.returns import period_return

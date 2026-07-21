@@ -24,10 +24,9 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-# The two DB-reading tests below pin the demo book via the use_demo_db fixture
-# (tests/conftest.py). A module-level os.environ.setdefault("TRACKER_MODE",...)
-# used to sit here — inert, because .env=personal is already resolved at import,
-# so it silently read the personal book instead. The fixture overrides that.
+# PROBE B: module-level setdefault restored. Dead locally (.env=personal already
+# resolved), but LOAD-BEARING on CI (no .env) where it establishes demo mode.
+os.environ.setdefault("TRACKER_MODE", "demo")
 
 from src.performance import compute_risk_metrics
 from src.returns import period_return
