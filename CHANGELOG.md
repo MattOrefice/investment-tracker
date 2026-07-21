@@ -30,6 +30,62 @@ pre-existing frontier-tolerance fragility (a <0.5 bps assertion sensitive to the
 unpinned pandas/numpy versions CI installs and to price-frontier boundary timing),
 filed as a separate concern, not patched here.
 
+## Hedged equity stays off-SAA: decomposition rejected, deliberately
+_2026-07-20_
+
+The four covered-call funds (JEPQ, JEPI, JHEQX, HELO — ~$12.7K, 5.7% of the
+household) stay in the off-SAA `hedged_equity` bucket. They get no
+`fund_compositions` rows, no `sleeve_category` reclassification, and no hedged
+sleeve of their own. Recorded so the look-through question is not re-litigated.
+
+Why decomposition is wrong, not merely imprecise. The composition table expresses
+a fund as a linear combination of sleeve exposures — RFUTX genuinely is one, and
+its factsheet approximation is weight noise on linear building blocks. A buy-write
+is a nonlinear transform of a sleeve: no constant weight vector represents a short
+call, so decomposing one is a category error in that vocabulary. The exposure is
+state-dependent in the worst direction — short-call delta grows as the market
+falls, so these funds hold more equity in drawdowns and less in rallies. Any
+constant weight is wrong; the only question is its size.
+
+It is four different lies, not one approximation. Only JEPI/JEPQ are buy-writes;
+JHEQX and HELO are put-spread collars modifying both tails. JEPQ's underlying is
+the Nasdaq-100 (us_large_growth), which this taxonomy has no sleeve for — so even
+honest decomposition of the largest fund lands a third of the book back off-SAA,
+and only mislabeling growth as core gets it on-SAA. No single transform is right
+across the four.
+
+The schema forecloses the honest middle ground. Per-fund composition weights must
+sum to 1.00 at seed time, and the $1 dollar-conservation assert (household.py:207)
+crashes the page on a partial mapping — so a delta-sized entry would have to invent
+a "cash" remainder that is actually short-vol premium carry. Deltas drift with
+moneyness and vol regime; static seed weights would stale within weeks.
+
+Nothing actionable changes, and reclassification would do harm. Off-SAA dollars
+are already in every denominator; tracker-book drift (pages 1/11) never sees these
+funds. Decomposition only perturbs the display on pages 13/14 — and there it fights
+the live plan: composition rows feed Roth deploy sizing (build_roth_deploy_answer),
+which would read US Large Core as partly filled and shrink the suggested VOO deploy,
+precisely while clear_roth_non_equity (act_now) is selling these funds to rebuy VOO
+into exactly that gap. The plan converts the exposure the honest way, by trading:
+per the VOO-vs-VTI decision, "the rebuy makes that exposure visible rather than
+creating it." Pre-counting it in a composition row leaves dead rows once the trade
+executes. Separately, reclassifying sleeve_category changes the relocation yield
+assumption (SLEEVE_ASSUMED_YIELD["hedged_equity"] 0.060 → EQUITY_DEFAULT_YIELD
+0.018), shrinking modeled relocation benefit ~3.3× and potentially de-surfacing the
+act_now sale cards.
+
+The substitution layer is the correct third option, and already ships.
+`'hedged_equity': ('US Large Core', 'medium')` (household.py:557) discloses the
+approximate equivalence to the reader without asserting it to the drift engine.
+
+Revisit only if the restructure concludes and these funds survive — i.e., the
+no-rebuild default is overturned and the household deliberately keeps a permanent
+hedged allocation. Even then the answer is an explicit sleeve with its own target
+and falsifier (a statement that the truncated payoff is wanted), never silent
+decomposition. The concession worth keeping: while the funds live, a reader looking
+at the sleeve rows alone understates a JEPI-sized position — tolerable at $12.7K and
+shrinking, would not be at $50K and growing.
+
 ## The international sleeve split, and a benchmark map that can no longer drift
 _2026-07-20_
 
