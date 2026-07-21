@@ -22,13 +22,35 @@ All four now pin the demo book explicitly via the `use_demo_db` fixture, so they
 are mode-independent rather than passing by ambient luck. The lesson is recorded
 in the fixture: a test's database must be a property of the test, not of the shell.
 
-The `bf_reconciles_when_wall_clock_past_price_frontier` and cash-drag
-reconciliation failures CI also showed are NOT from the split — the branch and
-main reconcile identically (0.000 bps) under every condition reproduced locally,
-including CI's exact committed demo.db and boundary frontier. They are the
-pre-existing frontier-tolerance fragility (a <0.5 bps assertion sensitive to the
-unpinned pandas/numpy versions CI installs and to price-frontier boundary timing),
-filed as a separate concern, not patched here.
+CI also showed four attribution reconciliation failures
+(`bf_reconciles_when_wall_clock_past_price_frontier[0,1,3]` and the cash-drag
+`test_identity_bf_sum_reconciles_to_stage2`), and the honest record corrects an
+earlier draft of this note that called them pre-existing. They are not. A clean
+snapshot of `main` run through CI at the same date and environment is GREEN, so
+they are branch-caused. But they are also version-triggered: they reproduce only
+under CI's pandas — `requirements.txt` pinned `pandas>=2.2.0`, so CI installed
+pandas 3.0.3, whose groupby/alignment changes shift the 12-sleeve Brinson-Fachler
+reconciliation by ~2-3 bps past the 0.5 bps tolerance. The 9-sleeve path (clean
+main) is unaffected, which is why main stays green. Locally, on pandas 2.2.3, the
+12-sleeve book reconciles to 0.000 bps. Both statements are true: the split
+introduced a computation the pandas-3 change perturbs, and the pin holds CI to the
+tested 2.x environment. Fixed by pinning pandas==2.2.3 / numpy==2.2.6, NOT by
+loosening the reconciliation tolerance — a deterministic 2-3 bps gap is a real
+discrepancy, not summation noise.
+
+## Deferred: the pandas-3 migration must precede any 3.x rebuild
+_2026-07-21_
+
+The numeric stack is pinned to pandas 2.2.3 / numpy 2.2.6 (see requirements.txt),
+which holds CI and Cloud to the tested environment but DEFERS a real migration
+rather than solving it. pandas 3.0 changed groupby/alignment behaviour enough that
+the 12-sleeve Brinson-Fachler decomposition no longer reconciles with the price
+series to 0.5 bps (a deterministic ~2-3 bps gap; the 9-sleeve path is unaffected).
+Before the stack moves to pandas 3.x, `brinson_fachler_period` (and the price-series
+alignment it reconciles against) must be made version-robust and re-verified against
+both pandas lines — otherwise a rebuild onto 3.x ships silently-wrong per-sleeve
+attribution while the pinned tests are bypassed. Filed here so the pin is understood
+as a hold, not a fix.
 
 ## Hedged equity stays off-SAA: decomposition rejected, deliberately
 _2026-07-20_
