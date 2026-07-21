@@ -2,11 +2,13 @@
 # unpinned Cloud rebuild onto a newer Streamlit could silently break styling.
 streamlit==1.57.0
 # Pinned exactly to the tested 2.x line: pandas 3.0 changed groupby/alignment
-# behaviour enough to shift the 12-sleeve Brinson-Fachler reconciliation by ~2-3 bps
-# (the 9-sleeve path is unaffected), so an unpinned CI/Cloud rebuild onto pandas 3
-# silently breaks per-sleeve attribution while local stays green. Holding CI to the
-# environment the branch was tested against. Moving to 3.x is separate future work —
-# the BF decomposition must be made pandas-3-robust first (see CHANGELOG 2026-07-21).
+# behaviour enough to shift the 12-sleeve reconciliation in src/attribution.py
+# brinson_fachler_period() by ~2-3 bps (the 9-sleeve path is unaffected), so an
+# unpinned CI/Cloud rebuild onto pandas 3 silently breaks per-sleeve attribution
+# while local stays green. Holding CI to the environment the branch was tested
+# against. Do NOT lift this pin without first making brinson_fachler_period()
+# pandas-3-robust and re-verifying against both pandas lines — see the
+# "Deferred: the pandas-3 migration" entry in CHANGELOG.md (2026-07-21).
 pandas==2.2.3
 numpy==2.2.6
 yfinance>=0.2.50
