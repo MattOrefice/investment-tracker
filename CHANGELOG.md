@@ -8,6 +8,28 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Four demo-book test fixes CI caught that a single-mode baseline missed
+_2026-07-21_
+
+The first PR validated the branch entirely in personal mode (the local `.env`
+default), but CI runs demo mode (`.env` is gitignored, so `TRACKER_MODE` is unset
+and resolves to demo). Four attribution/benchmark tests read the ambient book and
+asserted against the 9-sleeve personal taxonomy, so they passed locally and failed
+on CI's 12-sleeve demo book: two sleeve-count literals (9 → 12), one hardcoded
+"International Developed" re-pointed to the single-ticker "International Core" (VEA)
+sleeve, and one more `_SLEEVE_BENCHMARKS` reference the derive-refactor missed.
+All four now pin the demo book explicitly via the `use_demo_db` fixture, so they
+are mode-independent rather than passing by ambient luck. The lesson is recorded
+in the fixture: a test's database must be a property of the test, not of the shell.
+
+The `bf_reconciles_when_wall_clock_past_price_frontier` and cash-drag
+reconciliation failures CI also showed are NOT from the split — the branch and
+main reconcile identically (0.000 bps) under every condition reproduced locally,
+including CI's exact committed demo.db and boundary frontier. They are the
+pre-existing frontier-tolerance fragility (a <0.5 bps assertion sensitive to the
+unpinned pandas/numpy versions CI installs and to price-frontier boundary timing),
+filed as a separate concern, not patched here.
+
 ## The international sleeve split, and a benchmark map that can no longer drift
 _2026-07-20_
 
