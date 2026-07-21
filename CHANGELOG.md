@@ -52,6 +52,31 @@ both pandas lines — otherwise a rebuild onto 3.x ships silently-wrong per-slee
 attribution while the pinned tests are bypassed. Filed here so the pin is understood
 as a hold, not a fix.
 
+## Deferred: a from-scratch personal reseed would jump the taxonomy to 12
+_2026-07-21_
+
+`seed_saa.SUB_CLASSES` is now the 12-sleeve list — it is shared code that seeds the
+demo book, and the international split lives there. The existing populated
+`tracker.db` is unaffected: `seed_saa.seed()` skips a non-empty `asset_classes`,
+and the Phase 39 migrations are demo-only (the taxonomy migration exposes only
+`main()`, which the bootstrap skips and which hardcodes demo.db; the restructure
+migration guards on `db_path.name == "demo.db"`). So the real household book stays
+9 sleeves, guarded three ways.
+
+The seam is a from-scratch personal rebuild — an empty `tracker.db` on a new
+machine. Bootstrap would run `seed_saa.seed()`, which seeds all 12 sleeves and the
+IDHQ/AVIV/AVDV securities, but NO trades in them (the personal book has no tilt
+holdings). That is exactly the unfunded-sleeve state the migrations avoid: three
+strategic sleeves carrying a target with nothing behind them, so the Suggested-$
+invariant (`src/rebalance.py:267`) fires on the freshly-rebuilt personal book.
+
+Resolution, when the personal restructure lands as its own migration (at real-trade
+time): it must seed the 12-sleeve taxonomy AND the funding holdings together, OR
+`seed_saa` must be made mode-aware (personal seeds 9 until the restructure, demo
+seeds 12), so taxonomy and holdings never diverge on a clean rebuild. Filed as a
+hold, like the pandas pin — it changes nothing for the existing book, but a fresh
+personal reseed should not be a surprise.
+
 ## Hedged equity stays off-SAA: decomposition rejected, deliberately
 _2026-07-20_
 
