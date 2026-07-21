@@ -27,40 +27,31 @@ SAMPLE_START  = "2018-01-01"
 RF_ANNUAL     = 0.045
 TRADING_DAYS  = 252
 
-# Sleeve benchmark tickers — same mapping as pages/9_Correlations.py.
-# Cash / SPAXX excluded: near-zero variance distorts correlation and optimization.
-SLEEVE_BENCHMARKS: dict[str, list[tuple[str, float]]] = {
-    "US Large Core":     [("SPY",  1.0)],
-    "US Large Quality":  [("QUAL", 1.0)],
-    "US Large Value":    [("IWD",  1.0)],
-    "US Small Cap":      [("IWM",  1.0)],
-    "Intl Developed":    [("EFA",  1.0)],
-    "Emerging Markets":  [("EEM",  1.0)],
-    "Core Fixed Income": [("IEF",  1.0)],
-    "TIPS":              [("TIP",  1.0)],
-    "Real Assets":       [("VNQ",  0.6), ("DBC", 0.4)],
-}
+# Sleeve benchmark tickers + ex-cash MV weights, DERIVED from asset_classes at
+# import so they describe whatever book this process is pointed at (9 sleeves
+# personal, 12 demo) rather than freezing a taxonomy. Cash / SPAXX is excluded:
+# near-zero variance distorts correlation and optimisation. Names are abbreviated
+# ("International …" -> "Intl …") for the correlation-matrix display; the same
+# abbreviation is the name bridge test_sleeve_weights_match_db uses to compare
+# these against the full-name DB targets.
+def _abbrev(name: str) -> str:
+    return name.replace("International ", "Intl ")
 
-# SAA target weights for the 9 non-cash sleeves (raw, pre-normalization).
-# SLEEVE_WEIGHTS below normalizes these to sum to 1.0 — the canonical ex-cash SAA
-# (Phase 38a): cash is operational float, excluded, and the 9 sleeves rescale to
-# 100%. These values MUST equal the DB asset_classes targets sleeve-for-sleeve
-# (the DB uses "International Developed" where this map uses "Intl Developed");
-# test_sleeve_weights_match_db guards that they never silently diverge.
-_RAW_WEIGHTS: dict[str, float] = {
-    "US Large Core":     0.17,
-    "US Large Quality":  0.15,
-    "US Large Value":    0.09,
-    "US Small Cap":      0.08,
-    "Intl Developed":    0.20,
-    "Emerging Markets":  0.09,
-    "Core Fixed Income": 0.06,
-    "TIPS":              0.04,
-    "Real Assets":       0.10,
-}
-_raw_total    = sum(_RAW_WEIGHTS.values())
-SLEEVE_WEIGHTS: dict[str, float] = {k: v / _raw_total for k, v in _RAW_WEIGHTS.items()}
-SLEEVES       = list(SLEEVE_BENCHMARKS.keys())
+
+def _derive_sleeve_maps() -> tuple[dict, dict]:
+    from src.sleeve_config import (
+        sleeve_benchmarks as _sb,
+        strategic_sleeve_weights as _sw,
+    )
+    bench = {_abbrev(k): v for k, v in _sb(include_cash=False).items()}
+    raw = {_abbrev(k): v for k, v in _sw(include_cash=False).items()}
+    total = sum(raw.values())
+    weights = {k: v / total for k, v in raw.items()}
+    return bench, weights
+
+
+SLEEVE_BENCHMARKS, SLEEVE_WEIGHTS = _derive_sleeve_maps()
+SLEEVES = list(SLEEVE_BENCHMARKS.keys())
 
 # Shared conclusion — used by both pages/10_Asset_Evaluation.py and src/reports.py.
 # Excludes the Streamlit-specific "This page will update automatically" sentence.

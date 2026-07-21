@@ -500,7 +500,15 @@ _SLEEVE_DISPLAY_NAMES: dict[str, str] = {
     "us_mid_cap":              "US Mid Cap",
     "us_sector_tech":          "US Sector — Tech",
     "us_sector_healthcare":    "US Sector — Healthcare",
+    # intl_developed is retained deliberately after the Phase 39 SAA split: VEA
+    # keeps this category, so it still resolves to the International Core sleeve
+    # via the asset_class_id join, and IEFA (is_in_saa=0, a clean VEA substitute)
+    # keeps counting toward that sleeve exactly as before. Moving VEA off this
+    # category would silently drop IEFA to off-SAA and change household drift.
     "intl_developed":          "International Developed",
+    "intl_quality":            "International Quality",
+    "intl_large_value":        "International Large Value",
+    "intl_small_value":        "International Small Value",
     "intl_all_exus":           "International (All ex-US)",
     "emerging_markets":        "Emerging Markets",
     "core_fi_treasury":        "Core FI — Treasury",

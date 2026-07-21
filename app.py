@@ -254,7 +254,7 @@ def _landing_page_render():
             <div class="endow-card">
                 <h3 class="endow-card-header">Factor Profile</h3>
                 <p class="endow-card-body endow-card-body-clamp">Per-sleeve Fama-French 5-factor
-                regressions for US Equity and International Developed, TERM/CREDIT decomposition for
+                regressions for US Equity and International Core, TERM/CREDIT decomposition for
                 Fixed Income. Equity Style Profile and FI Duration as supporting risk-characteristic
                 views.</p>
             </div>

@@ -323,7 +323,7 @@ def interpret_excess_cape(value: float, percentile: float) -> str:
         return (
             f"ECY of {value:.2f}% is above average at the {pct_label} percentile, indicating "
             "equities offer a meaningful real-yield premium over bonds. "
-            "The International Developed and US Large Value sleeves, trading at a discount "
+            "The international developed and US Large Value sleeves, trading at a discount "
             "to US CAPE, benefit most from wide ECY readings."
         )
     else:
@@ -452,7 +452,7 @@ def interpret_us_vs_intl_spread(spread_pp: float, rolling_mean_pp: float) -> str
             f"the spread is {delta:.1f}% above its 5-year rolling average of "
             f"{rolling_mean_pp:.1f}% — well into extended US-leadership territory. "
             "Historically such extremes have mean-reverted via valuation convergence "
-            "and dollar cycle turns, supporting the case for the International Developed sleeve."
+            "and dollar cycle turns, supporting the case for the international developed sleeves."
         )
     elif delta > 3:
         mean_context = (
@@ -474,7 +474,7 @@ def interpret_us_vs_intl_spread(spread_pp: float, rolling_mean_pp: float) -> str
             f"the spread is {abs(delta):.1f}% below its 5-year rolling average of "
             f"{rolling_mean_pp:.1f}% — a strong reversal in international's favor, "
             "consistent with the valuation mean-reversion thesis underlying "
-            "the 19% International Developed sleeve weight."
+            "the developed-international allocation."
         )
 
     return (

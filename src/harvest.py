@@ -55,6 +55,27 @@ REPLACEMENT_MAP: dict[str, tuple[str | None, str, str]] = {
         "FTSE Developed All Cap ex-US); comparable country and factor exposure.",
         "clean",
     ),
+    "IDHQ": (
+        "IQLT",
+        "International quality via iShares MSCI Intl Quality Factor. Different index "
+        "provider (MSCI vs S&P) and screen construction — MSCI sorts on ROE, earnings "
+        "variability and leverage without SPHQ's accruals adjustment. Factor overlap is "
+        "partial, the same relationship SPHQ and QUAL have domestically.",
+        "moderate",
+    ),
+    "AVIV": (
+        "DFIV",
+        "International large value via Dimensional. Same value-plus-profitability "
+        "targets, different fund family and portfolio construction — the AVUV/DFSV "
+        "relationship applied abroad.",
+        "clean",
+    ),
+    "AVDV": (
+        "DISV",
+        "International small value via Dimensional. Same size-value-profitability "
+        "targets, different fund family and portfolio construction.",
+        "clean",
+    ),
     "IEMG": (
         "VWO",
         "Emerging markets via Vanguard FTSE EM ETF. Different index provider (FTSE vs "

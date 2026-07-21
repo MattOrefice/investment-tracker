@@ -4,6 +4,9 @@ SPHQ,Invesco S&P 500 Quality ETF,us_large_quality,high,true,SAA target ticker
 VTV,Vanguard Value ETF,us_large_value,high,true,SAA target ticker
 AVUV,Avantis US Small Cap Value ETF,us_small_value,high,true,SAA target ticker
 VEA,Vanguard FTSE Developed Markets ETF,intl_developed,high,true,SAA target ticker
+IDHQ,Invesco S&P International Developed Quality ETF,intl_quality,high,true,SAA target ticker
+AVIV,Avantis International Large Cap Value ETF,intl_large_value,high,true,SAA target ticker
+AVDV,Avantis International Small Cap Value ETF,intl_small_value,high,true,SAA target ticker
 IEMG,iShares Core MSCI Emerging Markets ETF,emerging_markets,high,true,SAA target ticker
 VGIT,Vanguard Intermediate-Term Treasury ETF,core_fi_treasury,low,true,SAA target ticker — Treasury coupons taxed as ordinary income
 SCHP,Schwab US TIPS ETF,tips,low,true,SAA target ticker — phantom income on inflation accruals

@@ -829,7 +829,7 @@ def test_bf_reconciles_when_wall_clock_past_price_frontier(days_past_frontier, _
         )
 
 
-def test_bf_per_sleeve_returns_are_total_return():
+def test_bf_per_sleeve_returns_are_total_return(use_demo_db):
     """BF per-sleeve r_p IS the adj_close total return — dividends embedded once,
     NOT double-counted by adding DRIP shares on top.
 
@@ -837,11 +837,16 @@ def test_bf_per_sleeve_returns_are_total_return():
     embeds dividend reinvestment, so brinson_fachler_period() values the actual
     (non-DRIP) shares at adj_close and must NOT add DRIP-reinvested shares — doing
     so double-counted income (overstating each sleeve by ~its distribution yield,
-    worst on the FI/high-yield sleeves). The single-ticker International Developed
+    worst on the FI/high-yield sleeves). The single-ticker International Core
     sleeve (VEA) r_p must therefore EQUAL VEA's adj_close ratio over the window,
     not exceed it by a dividend premium. _last_adj_price IS adjusted close (total
     return), so the pre-fix "price-only" framing was wrong — that ratio already
     includes dividends.
+
+    Pins the demo book (use_demo_db): the single-ticker developed-international
+    sleeve is "International Core" (VEA) on demo. Phase 39 split "International
+    Developed" into four; VEA is now the cap-weighted Core sleeve, still the only
+    holding, so it remains the correct single-ticker tripwire.
     """
     import datetime
     from src.attribution import brinson_fachler_period, _last_adj_price
@@ -864,9 +869,9 @@ def test_bf_per_sleeve_returns_are_total_return():
     # carrier moved), a skip would retire the tripwire silently and the
     # double-counting regression would go uncaught. Fail instead, so whoever
     # changes the sleeve has to re-point this at another single-ticker sleeve.
-    intl_rows = bf_df[bf_df["sleeve"] == "International Developed"]
+    intl_rows = bf_df[bf_df["sleeve"] == "International Core"]
     assert not intl_rows.empty, (
-        "'International Developed' is absent from the BF result, so this test's "
+        "'International Core' is absent from the BF result, so this test's "
         f"premise no longer holds. Sleeves present: {sorted(bf_df['sleeve'].tolist())}. "
         "Do NOT re-skip this — re-point it at a single-ticker sleeve and update the "
         "VEA price lookup below, or the adj_close/DRIP double-count tripwire is gone."
@@ -875,7 +880,7 @@ def test_bf_per_sleeve_returns_are_total_return():
     r_p_total_return = float(intl_rows["r_p"].iloc[0])
 
     # BF values sleeves at adj_close (total return) using _last_adj_price on both
-    # ends. International Developed is held via VEA only, so its BF r_p must equal
+    # ends. International Core is held via VEA only, so its BF r_p must equal
     # VEA's own adj_close ratio — no DRIP-share inflation layered on top.
     p_start = _last_adj_price("VEA", INCEPTION)
     p_end   = _last_adj_price("VEA", TODAY)
@@ -1087,7 +1092,7 @@ def test_price_gap_excludes_sleeve_end_price(monkeypatch):
     assert abs(bf_df["w_b"].sum() - 1.0) < 1e-6
 
 
-def test_price_gap_bil_guard_handles_missing_period_price(monkeypatch):
+def test_price_gap_bil_guard_handles_missing_period_price(monkeypatch, use_demo_db):
     """The BIL/cash-sleeve guard (originally only bil_inception<=0) must also
     cover bil_period_start/bil_period_end being unavailable — degrading to the
     existing flat-1.0 fallback rather than dividing straight through to a hard,
@@ -1134,8 +1139,8 @@ def test_price_gap_bil_guard_handles_missing_period_price(monkeypatch):
         f"expected the BIL period-price gap to be recorded in .attrs['price_gaps'], "
         f"got: {gaps}"
     )
-    assert len(bf_df) == 9, (
-        "expected all 9 strategic sleeves present despite the BIL gap (cash "
+    assert len(bf_df) == 12, (
+        "expected all 12 strategic sleeves present despite the BIL gap (cash "
         "degrades via the safe-ratio fallback, it doesn't exclude sleeves), "
         f"got {len(bf_df)}: {sorted(bf_df['sleeve'].tolist())}"
     )

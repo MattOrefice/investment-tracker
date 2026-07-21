@@ -70,8 +70,8 @@ def _make_sleeve_df(n: int = 1000, n_sleeves: int = 4,
 
 # ── 1. Sleeve weights sum to one ─────────────────────────────────────────────
 
-def test_raw_weights_match_db_targets_and_scale():
-    """_RAW_WEIGHTS must BE the SAA's raw weights — not merely proportional to them.
+def test_raw_weights_match_db_targets_and_scale(use_demo_db):
+    """The derived ex-cash MV weights must equal the DB targets, normalised.
 
     Replaces a vacuous assertion. The old test summed SLEEVE_WEIGHTS and checked
     it equalled 1.0, but src/asset_evaluation.py:62 *defines* SLEEVE_WEIGHTS as
@@ -90,13 +90,24 @@ def test_raw_weights_match_db_targets_and_scale():
     a new sleeve is carried automatically and an unmappable one fails loudly —
     rather than being quietly skipped by a hand-maintained list.
     """
-    from src.asset_evaluation import _RAW_WEIGHTS
+    import src.asset_evaluation as ae
     from src.db import get_connection
-    from src.seed_saa import _EXCASH_NORM
 
-    # The benchmark-proxy subsystem abbreviates exactly one sleeve name.
-    _AE_ONLY_ALIAS = {"Intl Developed": "International Developed"}
-    ae_to_db = {ae: _AE_ONLY_ALIAS.get(ae, ae) for ae in _RAW_WEIGHTS}
+    # asset_evaluation no longer hardcodes _RAW_WEIGHTS — the ex-cash MV weights
+    # are DERIVED from asset_classes at import (mode-frozen), so re-derive under
+    # the pinned demo DB. "shape == DB" is now largely structural (both read the
+    # same table); this still guards the abbreviation bridge and the ex-cash
+    # normalisation (weights sum to 1.0, every DB sleeve present, none dropped).
+    _, weights = ae._derive_sleeve_maps()
+
+    # The benchmark-proxy subsystem abbreviates exactly one family of sleeve names.
+    _AE_ONLY_ALIAS = {
+        "Intl Core":        "International Core",
+        "Intl Quality":     "International Quality",
+        "Intl Large Value": "International Large Value",
+        "Intl Small Value": "International Small Value",
+    }
+    ae_to_db = {a: _AE_ONLY_ALIAS.get(a, a) for a in weights}
 
     with get_connection() as conn:
         db = {
@@ -106,33 +117,28 @@ def test_raw_weights_match_db_targets_and_scale():
                 "WHERE parent_id IS NOT NULL AND target_weight > 0"
             ).fetchall()
         }
+    db_total = sum(db.values())
 
-    raw_total = sum(_RAW_WEIGHTS.values())
-
-    # SCALE
-    assert abs(raw_total - _EXCASH_NORM) < 1e-9, (
-        f"_RAW_WEIGHTS sum to {raw_total:.10f}, but seed_saa._EXCASH_NORM is "
-        f"{_EXCASH_NORM} — the raw weights are no longer the SAA's raw weights. "
-        f"Normalization hides this downstream, so nothing else would catch it."
+    # SCALE — the ex-cash MV weights normalise to 1.0.
+    assert abs(sum(weights.values()) - 1.0) < 1e-9, (
+        f"derived ex-cash weights sum to {sum(weights.values()):.10f}, not 1.0"
     )
 
-    # SHAPE — every AE sleeve must exist in the DB and reconcile once normalized
+    # SHAPE — every AE sleeve exists in the DB and equals its normalised target.
     for ae_name, db_name in ae_to_db.items():
         assert db_name in db, (
-            f"_RAW_WEIGHTS names '{ae_name}' (-> DB '{db_name}'), which is not a "
+            f"derived weights name '{ae_name}' (-> DB '{db_name}'), which is not a "
             f"strategic sleeve in asset_classes. DB has: {sorted(db)}"
         )
-        normalized = _RAW_WEIGHTS[ae_name] / raw_total
-        assert abs(normalized - db[db_name]) < 1e-6, (
-            f"_RAW_WEIGHTS['{ae_name}']={_RAW_WEIGHTS[ae_name]} normalizes to "
-            f"{normalized:.6f} but DB '{db_name}' targets {db[db_name]:.6f}. "
-            f"The two SAA target sources diverged."
+        assert abs(weights[ae_name] - db[db_name] / db_total) < 1e-6, (
+            f"weights['{ae_name}']={weights[ae_name]:.6f} != DB '{db_name}' "
+            f"normalised {db[db_name] / db_total:.6f}. The two SAA sources diverged."
         )
 
-    # ...and the DB must not carry a strategic sleeve _RAW_WEIGHTS omits
+    # ...and the DB must not carry a strategic sleeve the derivation omits.
     unmapped = set(db) - set(ae_to_db.values())
     assert not unmapped, (
-        f"asset_classes has strategic sleeves absent from _RAW_WEIGHTS: "
+        f"asset_classes has strategic sleeves absent from the derived weights: "
         f"{sorted(unmapped)}. The MV baseline would silently exclude them."
     )
 
@@ -555,7 +561,7 @@ def _per_sleeve(d):
 def test_interpret_candidate_doubles_down_with_offset():
     per = _per_sleeve({
         "US Large Core": 0.94, "US Large Quality": 0.92, "US Large Value": 0.76,
-        "US Small Cap": 0.77, "Intl Developed": 0.76, "Emerging Markets": 0.73,
+        "US Small Cap": 0.77, "Intl Core": 0.76, "Emerging Markets": 0.73,
         "Core Fixed Income": -0.07, "TIPS": 0.08, "Real Assets": 0.59,
     })
     txt = ae.interpret_candidate_diversification(float(per.mean()), per, "QQQ")

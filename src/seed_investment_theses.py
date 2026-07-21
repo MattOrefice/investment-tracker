@@ -68,7 +68,15 @@ SLEEVE_META = {
         ),
         "themes": ["Factor tilt", "Valuation-driven"],
     },
-    "International Developed": {
+    # Phase 39 — the four international sleeves. The exit, invalidation and
+    # expected-return text below is the previously authored "International
+    # Developed" thesis carried forward UNCHANGED: it is a region-level view
+    # (CAPE gap, dollar mean reversion, structural reform) that applies to all
+    # four sleeves equally, so propagating it is faithful rather than invented.
+    # Only `themes` differs, adding the factor overlay each tilt expresses.
+    # The per-sleeve factor arguments live in seed_saa.py; no sleeve-specific
+    # exit or invalidation conditions have been authored for the three tilts yet.
+    "International Core": {
         "exit_conditions": (
             "Would reduce if European or Japanese structural reform stalls further and the "
             "valuation gap with US narrows toward historical median."
@@ -82,6 +90,51 @@ SLEEVE_META = {
             "return over US equities across a 7-10 year horizon."
         ),
         "themes": ["Valuation-driven", "Regime change"],
+    },
+    "International Quality": {
+        "exit_conditions": (
+            "Would reduce if European or Japanese structural reform stalls further and the "
+            "valuation gap with US narrows toward historical median."
+        ),
+        "invalidation_conditions": (
+            "International developed CAPE reaches within 5 points of US CAPE and structural "
+            "dollar support persists indefinitely."
+        ),
+        "expected_return_scenario": (
+            "Valuation gap closure plus potential currency tailwind yields ~3-5% incremental "
+            "return over US equities across a 7-10 year horizon."
+        ),
+        "themes": ["Factor tilt", "Valuation-driven", "Regime change"],
+    },
+    "International Large Value": {
+        "exit_conditions": (
+            "Would reduce if European or Japanese structural reform stalls further and the "
+            "valuation gap with US narrows toward historical median."
+        ),
+        "invalidation_conditions": (
+            "International developed CAPE reaches within 5 points of US CAPE and structural "
+            "dollar support persists indefinitely."
+        ),
+        "expected_return_scenario": (
+            "Valuation gap closure plus potential currency tailwind yields ~3-5% incremental "
+            "return over US equities across a 7-10 year horizon."
+        ),
+        "themes": ["Factor tilt", "Valuation-driven", "Regime change"],
+    },
+    "International Small Value": {
+        "exit_conditions": (
+            "Would reduce if European or Japanese structural reform stalls further and the "
+            "valuation gap with US narrows toward historical median."
+        ),
+        "invalidation_conditions": (
+            "International developed CAPE reaches within 5 points of US CAPE and structural "
+            "dollar support persists indefinitely."
+        ),
+        "expected_return_scenario": (
+            "Valuation gap closure plus potential currency tailwind yields ~3-5% incremental "
+            "return over US equities across a 7-10 year horizon."
+        ),
+        "themes": ["Factor tilt", "Valuation-driven", "Regime change"],
     },
     "Emerging Markets": {
         "exit_conditions": (

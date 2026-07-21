@@ -7,7 +7,7 @@ import pandas as pd
 
 from src.db import get_connection
 from src.prices import get_prices
-from src.benchmarks import get_sleeve_benchmark_returns, _SLEEVE_BENCHMARKS
+from src.benchmarks import get_sleeve_benchmark_returns
 
 _CASH_SLEEVE = "Cash / SPAXX"  # operational float — excluded from ex-cash BF weights
 

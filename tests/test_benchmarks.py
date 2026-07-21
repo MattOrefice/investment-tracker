@@ -126,7 +126,9 @@ def test_custom_blended_series_hand_calculation(monkeypatch):
     price_a = pd.Series([100.0, 110.0, 121.0], index=dates)
     price_b = pd.Series([50.0, 45.0, 40.5], index=dates)
 
-    monkeypatch.setattr(bm, "_SLEEVE_BENCHMARKS", {
+    # The benchmark map is now DB-derived (bm._sleeve_benchmarks()); patch the
+    # derivation to inject the synthetic two-sleeve basket for the hand calc.
+    monkeypatch.setattr(bm, "_sleeve_benchmarks", lambda: {
         "SleeveA": [("TICKA", 1.0)],
         "SleeveB": [("TICKB", 1.0)],
     })
@@ -316,7 +318,7 @@ def test_total_benchmark_outage_yields_sentinels_and_empty_attribution(monkeypat
         f"expected NaN sentinels for a total benchmark outage, got:\n{df.iloc[-1]}"
     )
     gapped_sleeves = {s for s, _, _ in df.attrs.get("benchmark_gaps", [])}
-    assert gapped_sleeves == set(bm._SLEEVE_BENCHMARKS), (
+    assert gapped_sleeves == set(bm._sleeve_benchmarks()), (
         f"expected every sleeve flagged, got: {sorted(gapped_sleeves)}"
     )
 
@@ -440,10 +442,17 @@ def test_unknown_sleeve_retained_with_na_marker(monkeypatch):
     assert abs(float(bf_df["total_effect"].sum()) - active) < 1e-4
 
 
-def test_no_benchmark_gaps_on_committed_demo_windows():
+def test_no_benchmark_gaps_on_committed_demo_windows(use_demo_db):
     """Committed demo data has no benchmark gap and no no-benchmark sleeve on
-    the shared window: the new attrs are present-but-empty and all 9 strategic
+    the shared window: the new attrs are present-but-empty and all 12 strategic
     sleeves attribute normally — the fix is a no-op on the demo's numbers.
+
+    Pins the demo book (use_demo_db) — this test reads the committed demo price
+    cache and asserts against the demo taxonomy; run against the personal book
+    (the ambient default under .env) it would read a different taxonomy and window.
+    Phase 39: the demo taxonomy is now 12 sleeves (the international split), and
+    the new benchmark tickers (IQLT/EFV/SCZ) price cleanly — the gap/no-benchmark
+    asserts still pass, only the sleeve count moved 9 -> 12.
 
     PRE-FIX: the attrs keys did not exist at all, so the equality assertions
     fail against that code (None != []).
@@ -458,7 +467,7 @@ def test_no_benchmark_gaps_on_committed_demo_windows():
         f"unexpected no-benchmark sleeves on committed demo data: "
         f"{bf_df.attrs.get('no_benchmark_sleeves')!r}"
     )
-    assert len(bf_df) == 9
+    assert len(bf_df) == 12
 
 
 def test_real_benchmark_sleeves_never_silently_zero():
@@ -668,7 +677,7 @@ def test_custom_blended_total_failure_yields_nan_sentinel(monkeypatch):
 
     assert out.isna().all(), f"expected a NaN sentinel, got:\n{out.tail()}"
     gapped_tickers = {t for _, t, _ in out.attrs.get("benchmark_gaps", [])}
-    all_tickers = {t for comps in bm._SLEEVE_BENCHMARKS.values() for t, _ in comps}
+    all_tickers = {t for comps in bm._sleeve_benchmarks().values() for t, _ in comps}
     assert gapped_tickers == all_tickers, (
         f"expected every component ticker flagged, got: {gapped_tickers} vs {all_tickers}"
     )

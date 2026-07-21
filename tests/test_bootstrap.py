@@ -29,7 +29,7 @@ def _fresh_db(tmp_path, monkeypatch):
 
 def test_bootstrap_populates_securities_with_tax_efficiency(tmp_path, monkeypatch):
     """A fresh DB ends up with the securities table carrying the tax_efficiency
-    column and the 60 household securities, all classified low/medium/high."""
+    column and the 63 household securities, all classified low/medium/high."""
     fresh = _fresh_db(tmp_path, monkeypatch)
     bootstrap.bootstrap_personal_db()
 
@@ -47,7 +47,7 @@ def test_bootstrap_populates_securities_with_tax_efficiency(tmp_path, monkeypatc
         valid = conn.execute(
             "SELECT COUNT(*) FROM securities WHERE tax_efficiency IN ('low','medium','high')"
         ).fetchone()[0]
-        assert valid == 60, f"expected 60 household securities with valid tax_efficiency, got {valid}"
+        assert valid == 63, f"expected 63 household securities with valid tax_efficiency, got {valid}"
     finally:
         conn.close()
 

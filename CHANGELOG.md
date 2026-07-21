@@ -8,6 +8,180 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Four demo-book test fixes CI caught that a single-mode baseline missed
+_2026-07-21_
+
+The first PR validated the branch entirely in personal mode (the local `.env`
+default), but CI runs demo mode (`.env` is gitignored, so `TRACKER_MODE` is unset
+and resolves to demo). Four attribution/benchmark tests read the ambient book and
+asserted against the 9-sleeve personal taxonomy, so they passed locally and failed
+on CI's 12-sleeve demo book: two sleeve-count literals (9 → 12), one hardcoded
+"International Developed" re-pointed to the single-ticker "International Core" (VEA)
+sleeve, and one more `_SLEEVE_BENCHMARKS` reference the derive-refactor missed.
+All four now pin the demo book explicitly via the `use_demo_db` fixture, so they
+are mode-independent rather than passing by ambient luck. The lesson is recorded
+in the fixture: a test's database must be a property of the test, not of the shell.
+
+CI also showed four attribution reconciliation failures
+(`bf_reconciles_when_wall_clock_past_price_frontier[0,1,3]` and the cash-drag
+`test_identity_bf_sum_reconciles_to_stage2`), and the honest record corrects an
+earlier draft of this note that called them pre-existing. They are not. A clean
+snapshot of `main` run through CI at the same date and environment is GREEN, so
+they are branch-caused. But they are also version-triggered: they reproduce only
+under CI's pandas — `requirements.txt` pinned `pandas>=2.2.0`, so CI installed
+pandas 3.0.3, whose groupby/alignment changes shift the 12-sleeve Brinson-Fachler
+reconciliation by ~2-3 bps past the 0.5 bps tolerance. The 9-sleeve path (clean
+main) is unaffected, which is why main stays green. Locally, on pandas 2.2.3, the
+12-sleeve book reconciles to 0.000 bps. Both statements are true: the split
+introduced a computation the pandas-3 change perturbs, and the pin holds CI to the
+tested 2.x environment. Fixed by pinning pandas==2.2.3 / numpy==2.2.6, NOT by
+loosening the reconciliation tolerance — a deterministic 2-3 bps gap is a real
+discrepancy, not summation noise.
+
+## Deferred: the pandas-3 migration must precede any 3.x rebuild
+_2026-07-21_
+
+The numeric stack is pinned to pandas 2.2.3 / numpy 2.2.6 (see requirements.txt),
+which holds CI and Cloud to the tested environment but DEFERS a real migration
+rather than solving it. pandas 3.0 changed groupby/alignment behaviour enough that
+the 12-sleeve Brinson-Fachler decomposition no longer reconciles with the price
+series to 0.5 bps (a deterministic ~2-3 bps gap; the 9-sleeve path is unaffected).
+Before the stack moves to pandas 3.x, `brinson_fachler_period` (and the price-series
+alignment it reconciles against) must be made version-robust and re-verified against
+both pandas lines — otherwise a rebuild onto 3.x ships silently-wrong per-sleeve
+attribution while the pinned tests are bypassed. Filed here so the pin is understood
+as a hold, not a fix.
+
+## Deferred: a from-scratch personal reseed would jump the taxonomy to 12
+_2026-07-21_
+
+`seed_saa.SUB_CLASSES` is now the 12-sleeve list — it is shared code that seeds the
+demo book, and the international split lives there. The existing populated
+`tracker.db` is unaffected: `seed_saa.seed()` skips a non-empty `asset_classes`,
+and the Phase 39 migrations are demo-only (the taxonomy migration exposes only
+`main()`, which the bootstrap skips and which hardcodes demo.db; the restructure
+migration guards on `db_path.name == "demo.db"`). So the real household book stays
+9 sleeves, guarded three ways.
+
+The seam is a from-scratch personal rebuild — an empty `tracker.db` on a new
+machine. Bootstrap would run `seed_saa.seed()`, which seeds all 12 sleeves and the
+IDHQ/AVIV/AVDV securities, but NO trades in them (the personal book has no tilt
+holdings). That is exactly the unfunded-sleeve state the migrations avoid: three
+strategic sleeves carrying a target with nothing behind them, so the Suggested-$
+invariant (`src/rebalance.py:267`) fires on the freshly-rebuilt personal book.
+
+Resolution, when the personal restructure lands as its own migration (at real-trade
+time): it must seed the 12-sleeve taxonomy AND the funding holdings together, OR
+`seed_saa` must be made mode-aware (personal seeds 9 until the restructure, demo
+seeds 12), so taxonomy and holdings never diverge on a clean rebuild. Filed as a
+hold, like the pandas pin — it changes nothing for the existing book, but a fresh
+personal reseed should not be a surprise.
+
+## Hedged equity stays off-SAA: decomposition rejected, deliberately
+_2026-07-20_
+
+The four covered-call funds (JEPQ, JEPI, JHEQX, HELO — ~$12.7K, 5.7% of the
+household) stay in the off-SAA `hedged_equity` bucket. They get no
+`fund_compositions` rows, no `sleeve_category` reclassification, and no hedged
+sleeve of their own. Recorded so the look-through question is not re-litigated.
+
+Why decomposition is wrong, not merely imprecise. The composition table expresses
+a fund as a linear combination of sleeve exposures — RFUTX genuinely is one, and
+its factsheet approximation is weight noise on linear building blocks. A buy-write
+is a nonlinear transform of a sleeve: no constant weight vector represents a short
+call, so decomposing one is a category error in that vocabulary. The exposure is
+state-dependent in the worst direction — short-call delta grows as the market
+falls, so these funds hold more equity in drawdowns and less in rallies. Any
+constant weight is wrong; the only question is its size.
+
+It is four different lies, not one approximation. Only JEPI/JEPQ are buy-writes;
+JHEQX and HELO are put-spread collars modifying both tails. JEPQ's underlying is
+the Nasdaq-100 (us_large_growth), which this taxonomy has no sleeve for — so even
+honest decomposition of the largest fund lands a third of the book back off-SAA,
+and only mislabeling growth as core gets it on-SAA. No single transform is right
+across the four.
+
+The schema forecloses the honest middle ground. Per-fund composition weights must
+sum to 1.00 at seed time, and the $1 dollar-conservation assert (household.py:207)
+crashes the page on a partial mapping — so a delta-sized entry would have to invent
+a "cash" remainder that is actually short-vol premium carry. Deltas drift with
+moneyness and vol regime; static seed weights would stale within weeks.
+
+Nothing actionable changes, and reclassification would do harm. Off-SAA dollars
+are already in every denominator; tracker-book drift (pages 1/11) never sees these
+funds. Decomposition only perturbs the display on pages 13/14 — and there it fights
+the live plan: composition rows feed Roth deploy sizing (build_roth_deploy_answer),
+which would read US Large Core as partly filled and shrink the suggested VOO deploy,
+precisely while clear_roth_non_equity (act_now) is selling these funds to rebuy VOO
+into exactly that gap. The plan converts the exposure the honest way, by trading:
+per the VOO-vs-VTI decision, "the rebuy makes that exposure visible rather than
+creating it." Pre-counting it in a composition row leaves dead rows once the trade
+executes. Separately, reclassifying sleeve_category changes the relocation yield
+assumption (SLEEVE_ASSUMED_YIELD["hedged_equity"] 0.060 → EQUITY_DEFAULT_YIELD
+0.018), shrinking modeled relocation benefit ~3.3× and potentially de-surfacing the
+act_now sale cards.
+
+The substitution layer is the correct third option, and already ships.
+`'hedged_equity': ('US Large Core', 'medium')` (household.py:557) discloses the
+approximate equivalence to the reader without asserting it to the drift engine.
+
+Revisit only if the restructure concludes and these funds survive — i.e., the
+no-rebuild default is overturned and the household deliberately keeps a permanent
+hedged allocation. Even then the answer is an explicit sleeve with its own target
+and falsifier (a statement that the truncated payoff is wanted), never silent
+decomposition. The concession worth keeping: while the funds live, a reader looking
+at the sleeve rows alone understates a JEPI-sized position — tolerable at $12.7K and
+shrinking, would not be at $50K and growing.
+
+## The international sleeve split, and a benchmark map that can no longer drift
+_2026-07-20_
+
+The headline is a bug that is now structurally impossible. The custom SAA
+benchmark was blended from a hardcoded sleeve→ticker map (`_SLEEVE_BENCHMARKS`)
+resolved against DB target weights with `.get(sleeve, 0.0)`. A renamed or split
+sleeve left a stale key that resolved silently to weight 0.0 — its benchmark leg
+dropped, the survivors renormalised to $1, and the blend returned a plausible
+number with no error. Measured once at +120bps: dropping the 20.41% international
+leg inflated the benchmark the portfolio was judged against. The whole
+consumer layer — benchmarks, asset evaluation, reports, factor labels, the SAA
+page — now DERIVES its sleeve maps from `asset_classes.benchmark_ticker` at call
+time (`src/sleeve_config.py`), so the map always describes whatever book it is
+pointed at. A stale key cannot exist when every key is a live DB sleeve; the old
+drift assertion is repurposed into a coherence check (every weighted sleeve has a
+parseable benchmark), and the "VNQ (60%) + DBC (40%)" blend is parsed by a
+fail-loud parser that refuses an empty, partial, or unparseable spec rather than
+letting a benchmark vanish quietly.
+
+The occasion for the refactor was the international restructure: the single
+cap-weighted "International Developed" sleeve splits into four — Core, Quality,
+Large Value, Small Value — mirroring the US 17/15/9/8-of-49 structure across the
+same 20% region. The split is weight-neutral (the four sum to 0.20/_EXCASH_NORM
+bit-for-bit). It lands on the demo book only; the personal tracker keeps its
+coherent 9-sleeve taxonomy until real trades fund the tilts, so a strategic sleeve
+never carries a target with no holding behind it. The SAA thesis prose is derived
+the same way: it enumerates the tilt sleeves the book actually holds — IDHQ/AVIV/
+AVDV on demo, a single cap-weighted VEA sleeve on personal — rather than naming
+instruments a 9-sleeve household does not own.
+
+The demo paper book is rebalanced into the new sleeves by a committed migration
+that trims VEA to fund the three tilt buys, cash-neutral by construction and
+preserving all 49 DRIP lots (the fixture that makes money-weighted-vs-time-
+weighted return testable). The rebalance nets to machine epsilon (~7e-15), not
+literal zero — IEEE754 addition is not associative, so a multi-instrument
+same-date rebalance cannot sum to bit-zero — and the two cross-DB cashflow
+assertions were loosened from `== 0.0` to a 1e-9 tolerance that still catches a
+dollar-scale DRIP double-count while ignoring summation noise.
+
+Two test-infrastructure fixes rode along. The suite resolved its database from the
+repo-root `.env` (`TRACKER_MODE=personal`), and mode freezes at import — so a test
+that "wanted demo" via `os.environ.setdefault` silently read the personal book,
+the ambient state behind several contradictory baselines. A `use_demo_db` conftest
+fixture now overrides the frozen bindings explicitly and restores them, the dead
+`DB_PATH`/`TRACKER_MODE` setdefaults are removed, and the content tests that assert
+the 12-sleeve taxonomy pin demo by fixture. Against the true main-personal baseline
+the branch is net −2 failures with zero introduced; the remainder are pre-existing
+short-history render failures unrelated to sleeves.
+
 ## fredapi pinned, and two audit findings deliberately left alone
 _2026-07-16_
 

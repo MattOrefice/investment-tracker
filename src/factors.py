@@ -109,6 +109,25 @@ _FI_WEIGHTS = {"VGIT": 6.0 / 10.0, "SCHP": 4.0 / 10.0}
 _SAA_US = {"VOO": 17, "SPHQ": 15, "VTV": 9, "AVUV": 8}
 _SAA_US_TOTAL = sum(_SAA_US.values())  # 49
 
+
+def _intl_core_label() -> str:
+    """Name of the cap-weighted developed-international (VEA) sleeve in this book.
+
+    'International Developed' on the personal 9-sleeve book, 'International Core'
+    on the demo 12-sleeve book — this VEA-only regression is exactly that sleeve
+    either way. Derived from the DB so the factor-exhibit labels stay truthful in
+    both modes instead of hardcoding one taxonomy's name.
+    """
+    from src.sleeve_config import international_sleeves
+    intl = international_sleeves()
+    for name in intl:
+        if name in ("International Core", "International Developed"):
+            return name
+    return intl[0] if intl else "International Developed"
+
+
+_INTL_CORE = _intl_core_label()
+
 _SLEEVES = {
     "us": {
         "label":   "US Equity Sleeve",
@@ -130,7 +149,11 @@ _SLEEVES = {
         "weights": {t: w / _SAA_US_TOTAL for t, w in _SAA_US.items()},
     },
     "developed_exus": {
-        "label":   "International Developed Sleeve",
+        # Phase 39: this regression has always been VEA-only, which is the
+        # cap-weighted developed-international sleeve — International Developed on
+        # the personal book, International Core on the demo book. Label derived
+        # from the DB (_INTL_CORE) so it names the sleeve this book actually has.
+        "label":   f"{_INTL_CORE} Sleeve",
         "tickers": ["VEA"],
         "region":  "developed_exus",
         # Single-ticker sleeve: no weights needed.
@@ -829,7 +852,7 @@ def run_sleeve_regressions_mom(inception: str, end_date: str) -> dict:
 
 def run_intl_global_regression(inception: str, end_date: str) -> Optional[dict]:
     """
-    Run FF5 regression for the International Developed sleeve (VEA) against GLOBAL factors.
+    Run FF5 regression for the International Core sleeve (VEA) against GLOBAL factors.
 
     Ken French ceased publication of daily Global 5-factor data in June 2019
     (GLOBAL_DAILY_FACTORS_CUTOFF). Any portfolio whose inception date is after
@@ -845,7 +868,7 @@ def run_intl_global_regression(inception: str, end_date: str) -> Optional[dict]:
     spec = _SLEEVES["developed_exus"]
     try:
         return run_sleeve_regression(
-            sleeve_label="International Developed Sleeve — Global Factors",
+            sleeve_label=f"{_INTL_CORE} Sleeve — Global Factors",
             tickers=spec["tickers"],
             region="global",
             inception=inception,
@@ -1011,7 +1034,7 @@ def build_factor_prose(
         alpha_sig_d = significance_label(t_a_d)
 
         lines.append(
-            f"The International Developed sleeve (VEA, {T_dev} trading days) "
+            f"The {_INTL_CORE} sleeve (VEA, {T_dev} trading days) "
             f"loads on Mkt-RF_dev at {b_mkt_d:.2f} (t = {t_mkt_d:.2f}), within the "
             f"expected range for a passive cap-weighted developed-markets ETF. "
             f"The {a_bps_d:+.0f} bps annualized alpha (t = {t_a_d:.2f}) is {alpha_sig_d}, "
@@ -1103,7 +1126,7 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
 
     notes = [
         f"Samples: US equity sleeve {T_us} US trading days ({us_window}), L = {L_us}. "
-        f"International Developed sleeve {T_dev} US trading days ({dev_window}), L = {L_dev}. "
+        f"{_INTL_CORE} sleeve {T_dev} US trading days ({dev_window}), L = {L_dev}. "
         "Both sleeves are restricted to US equity market trading days (dates present "
         "in the Ken French US factor calendar). The Developed sleeve applies this "
         "restriction explicitly: VEA trades on US exchanges and has no price observation "
@@ -1148,7 +1171,7 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
         "for tax-efficiency reasons (high turnover → short-term gains), so a near-zero "
         "Mom loading is expected and confirms the construction is tax-aware.",
 
-        "Global factor supplement (International Developed): Ken French ceased publication "
+        f"Global factor supplement ({_INTL_CORE}): Ken French ceased publication "
         "of the daily Global 5-factor file in June 2019. This portfolio's inception "
         "post-dates that cutoff; no daily-frequency Global FF5 regression can be produced. "
         "The Developed ex-US factor set is the primary decomposition for the international "

@@ -31,6 +31,7 @@ from src.benchmarks import get_custom_blended_series, get_sp500_series
 from src.config import IS_DEMO
 from src.db import get_connection
 from src.drip import distribution_gaps_for_holdings, drip_distribution_gap_notice
+from src.sleeve_config import sleeve_holdings as _sleeve_holdings
 from src.factors import (
     EM_DISCLOSURE,
     build_benchmark_methodology, build_benchmark_prose,
@@ -67,32 +68,27 @@ _PALETTE = {
     "selection": "#A67B5B",
 }
 
-# Phase 2 locked picks — holding ticker and benchmark ticker per sleeve.
-# Public so pages/8_Benchmark_Attribution.py can import rather than duplicate.
-SLEEVE_HOLDING_TICKER: dict[str, str] = {
-    "US Large Core":           "VOO",
-    "US Large Quality":        "SPHQ",
-    "US Large Value":          "VTV",
-    "US Small Cap":            "AVUV",
-    "International Developed": "VEA",
-    "Emerging Markets":        "IEMG",
-    "Core Fixed Income":       "VGIT",
-    "TIPS":                    "SCHP",
-    "Real Assets":             "VNQ / PDBC",
-    "Cash / SPAXX":            "SPAXX",
-}
-SLEEVE_BENCH_TICKER: dict[str, str] = {
-    "US Large Core":           "SPY",
-    "US Large Quality":        "QUAL",
-    "US Large Value":          "IWD",
-    "US Small Cap":            "IWM",
-    "International Developed": "EFA",
-    "Emerging Markets":        "EEM",
-    "Core Fixed Income":       "IEF",
-    "TIPS":                    "TIP",
-    "Real Assets":             "VNQ (60%) + DBC (40%)",
-    "Cash / SPAXX":            "BIL",
-}
+# Phase 39 — the developed-international book, as four sleeves. Public so the
+# pages that need a combined international figure sum THESE rather than each
+# hardcoding the list. Every consumer resolves each name through a _require_*
+# helper that raises on an unknown sleeve, so a later rename fails loudly here
+# instead of silently dropping a leg from the total.
+# Holding / benchmark ticker per sleeve, DERIVED from the DB so the maps describe
+# whatever book this process is pointed at (9 sleeves personal, 12 demo) rather
+# than freezing a taxonomy. Benchmark comes straight from asset_classes.
+# benchmark_ticker; holdings from the securities table (see sleeve_holdings —
+# Real Assets resolves to its commodity holding since VNQ is dual-role).
+def sleeve_holding_ticker() -> dict[str, str]:
+    return {s: " / ".join(t) for s, t in _sleeve_holdings().items()}
+
+
+def sleeve_bench_ticker() -> dict[str, str]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT name, benchmark_ticker FROM asset_classes "
+            "WHERE parent_id IS NOT NULL AND benchmark_ticker IS NOT NULL"
+        ).fetchall()
+    return {r["name"]: r["benchmark_ticker"] for r in rows}
 
 def build_bf_cross_reference(bf_df: pd.DataFrame, n: int = 3) -> list[dict]:
     """Top-n Brinson-Fachler selection effects for prose cross-reference.
@@ -112,12 +108,13 @@ def build_bf_cross_reference(bf_df: pd.DataFrame, n: int = 3) -> list[dict]:
         df = df[~df["sleeve"].isin(_no_bm)]
     df["raw_diff"] = df["r_p"] - df["r_b"]
     top = df.nlargest(n, "selection_effect")
+    _hold, _bench = sleeve_holding_ticker(), sleeve_bench_ticker()
     out = []
     for _, row in top.iterrows():
         sleeve = row["sleeve"]
         out.append({
-            "holding": SLEEVE_HOLDING_TICKER.get(sleeve, sleeve),
-            "bench":   SLEEVE_BENCH_TICKER.get(sleeve, sleeve),
+            "holding": _hold.get(sleeve, sleeve),
+            "bench":   _bench.get(sleeve, sleeve),
             "sel_bps": row["raw_diff"] * 10_000,
         })
     return out
@@ -758,10 +755,11 @@ def _build_attribution_section(start_date: str, end_date: str) -> dict:
     sel_sorted = _bf_ranked.reindex(
         _bf_ranked["selection_effect"].abs().sort_values(ascending=False).index
     ).head(3)
+    _hold_map, _bench_map = sleeve_holding_ticker(), sleeve_bench_ticker()
     for _, r in sel_sorted.iterrows():
         sleeve  = r["sleeve"]
-        port_t  = SLEEVE_HOLDING_TICKER.get(sleeve, "—")
-        bench_t = SLEEVE_BENCH_TICKER.get(sleeve, "—")
+        port_t  = _hold_map.get(sleeve, "—")
+        bench_t = _bench_map.get(sleeve, "—")
         sel_bps  = r["selection_effect"] * 10_000
         sel_commentary.append(
             f"{sleeve}: portfolio holding ({port_t}) returned {r['r_p']*100:.1f}% "
@@ -1404,7 +1402,7 @@ def _build_methodology_vars() -> dict:
     Keeps the quarterly_report.html template free of hardcoded SAA numerics.
     Called once per report render; the DB queries are lightweight.
     """
-    from src.benchmarks import _SLEEVE_BENCHMARKS
+    from src.benchmarks import _sleeve_benchmarks
 
     with get_connection() as conn:
         # Phase 38a — strategic SAA only (target_weight > 0). Cash / SPAXX and
@@ -1427,8 +1425,8 @@ def _build_methodology_vars() -> dict:
         for r in parent_rows
     )
 
-    # "60% VNQ + 40% DBC" — derived from _SLEEVE_BENCHMARKS["Real Assets"]
-    ra_bench = _SLEEVE_BENCHMARKS.get("Real Assets", [])
+    # "60% VNQ + 40% DBC" — derived from the DB benchmark for Real Assets
+    ra_bench = _sleeve_benchmarks().get("Real Assets", [])
     ra_bench_str = " + ".join(f"{round(w * 100):.0f}% {t}" for t, w in ra_bench)
 
     # Drift band tiers: smallest band (200 bps) and largest (300 bps)

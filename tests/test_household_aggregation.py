@@ -30,6 +30,9 @@ ALLOWED_RATIONALE = {"no_exposure", "on_target", "underweight", "overweight", "o
 # didn't), the rest by under a point.
 ACTUAL_LT_WEIGHTS = {
     "US Large Core":         24.64,
+    # Phase 39: this reads the personal book (tracker.db), which keeps its
+    # 9-sleeve taxonomy — developed international is the single "International
+    # Developed" sleeve (VEA + IEFA) — until the personal restructure lands.
     "International Developed": 11.27,
     "Emerging Markets":       4.80,
     "Core Fixed Income":      3.91,

@@ -41,15 +41,25 @@ def test_endowment_context_illiquidity_premium(saa_app: AppTest) -> None:
     )
 
 
-def test_all_sleeve_rationales_have_bold_would_conditions() -> None:
-    """All 10 sleeve rationales in the DB must contain bold '**Would' condition blocks. Pinned: Phase 37.
+def test_all_sleeve_rationales_have_bold_would_conditions(use_demo_db) -> None:
+    """Sleeve rationales in the DB must contain bold '**Would' condition blocks. Pinned: Phase 37.
+
+    Pins the demo book (use_demo_db) — this asserts the full 12-sleeve taxonomy,
+    which only the demo book carries; the personal book keeps its coherent
+    9-sleeve taxonomy until the personal restructure lands.
 
     AppTest does not render collapsed expander content, so this checks the DB directly.
     The SAA page renders rationale verbatim from the DB via _safe_md().
+
+    Phase 39: the four international sleeves carry "**Would revisit if" blocks —
+    a third heading alongside the "**Would increase if" / "**Would reduce if"
+    pairs the other eight use. Their conditions are falsifiers (what would show
+    the mirror-the-US premise wrong) rather than directional sizing triggers, so
+    they do not reduce to increase/reduce without changing meaning. The predicate
+    matches on "**Would", which covers all three headings.
     """
-    import os, sys, pathlib
+    import sys, pathlib
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent.parent))
-    os.environ.setdefault("DB_PATH", "data/demo.db")
     from src.db import get_connection
 
     with get_connection() as conn:
@@ -58,7 +68,7 @@ def test_all_sleeve_rationales_have_bold_would_conditions() -> None:
             "WHERE parent_id IS NOT NULL AND target_weight > 0"
         ).fetchall()
 
-    assert len(rows) == 9, f"Expected 9 strategic sleeve rows, got {len(rows)}"
+    assert len(rows) == 12, f"Expected 12 strategic sleeve rows, got {len(rows)}"
     missing = [r["name"] for r in rows if "**Would" not in (r["rationale"] or "")]
     assert not missing, (
         f"Sleeves missing bold Would conditions in DB rationale: {missing} — "
@@ -108,7 +118,6 @@ def test_us_large_core_anchor_sentence_leads() -> None:
     """
     import os, sys, pathlib
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent.parent))
-    os.environ.setdefault("DB_PATH", "data/demo.db")
     from src.db import get_connection
 
     with get_connection() as conn:
@@ -129,7 +138,6 @@ def test_us_small_cap_has_both_triggers() -> None:
     """US Small Cap must have both Would increase and Would reduce triggers. Pinned: Phase 42 Item 7."""
     import os, sys, pathlib
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent.parent))
-    os.environ.setdefault("DB_PATH", "data/demo.db")
     from src.db import get_connection
 
     with get_connection() as conn:
@@ -155,7 +163,6 @@ def test_tips_no_personal_age_reference() -> None:
     """TIPS rationale must not reference personal age ('at 27'). Pinned: Phase 42 Item 9."""
     import os, sys, pathlib
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent.parent))
-    os.environ.setdefault("DB_PATH", "data/demo.db")
     from src.db import get_connection
 
     with get_connection() as conn:
