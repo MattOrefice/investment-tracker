@@ -42,9 +42,10 @@ with col:
 
     with st.expander("How to read this page", expanded=False):
         st.markdown(
-            "Each equity sleeve is regressed against its **region-appropriate Fama-French factor "
+            "Each regressed sleeve uses its **region-appropriate Fama-French factor "
             "set**: US factors (Ken French Data Library) for the US equity sleeves (VOO, SPHQ, "
-            "VTV, AVUV), and Developed ex-US factors for the international sleeve (VEA). "
+            "VTV, AVUV), and Developed ex-US factors for the cap-weighted developed-international "
+            "sleeve (VEA). "
             "Per-sleeve regressions avoid the model misspecification that arises when non-US "
             "returns flow into a single US-factor model.\n\n"
             "**Alpha (α):** the excess return not explained by factor exposures. Positive alpha "
@@ -301,7 +302,7 @@ with col:
         )
 
         if non_us:
-            st.markdown("**Non-US Equity Sleeve**")
+            st.markdown("**Non-US Equity Sleeves**")
             for item in non_us:
                 st.markdown(
                     f"- **{item['ticker']}** ({item['region_label']}) — "
@@ -312,6 +313,18 @@ with col:
                 "market-cap distributions. See Morningstar regional style boxes for "
                 "international placement methodology."
             )
+            if len(non_us) > 2:
+                # Tilted (12-sleeve) book only — on the personal book the two
+                # rows are exactly the regressed sleeve plus EM, so the
+                # coverage note would state the obvious.
+                st.caption(
+                    "Regression coverage: of these, only the cap-weighted core "
+                    "sleeve (VEA) carries a per-sleeve factor regression above, "
+                    "against the developed ex-US FF5 series. The international "
+                    "quality/value tilt sleeves are not yet separately "
+                    "regressed, and Emerging Markets has no regression by "
+                    "design (see disclosure above)."
+                )
     else:
         st.info("No equity holdings found.")
 

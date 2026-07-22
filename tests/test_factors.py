@@ -757,6 +757,43 @@ def test_em_disclosure_is_non_empty_string():
     assert isinstance(EM_DISCLOSURE, str) and len(EM_DISCLOSURE) > 50
 
 
+def test_em_disclosure_untilted_book_keeps_iemg_composition_framing():
+    """Single developed sleeve (personal book) → the original IEMG framing."""
+    from src.factors import _em_disclosure
+
+    with patch(
+        "src.sleeve_config.international_sleeves",
+        return_value=("International Developed",),
+    ):
+        text = _em_disclosure()
+    assert "IEMG" in text
+    assert "~27% China" in text
+    assert "held at cap weight" not in text  # no cap-weight-exception framing
+
+
+def test_em_disclosure_tilted_book_uses_cap_weight_exception_framing():
+    """Four developed sleeves (demo book) → the SAA cap-weight-exception framing."""
+    from src.factors import _em_disclosure
+
+    with patch(
+        "src.sleeve_config.international_sleeves",
+        return_value=(
+            "International Core", "International Quality",
+            "International Large Value", "International Small Value",
+        ),
+    ):
+        text = _em_disclosure()
+    assert "IEMG" in text
+    assert "cap weight" in text
+    assert "by design" in text
+    # The China-weight line is the holding rationale's job (Research page);
+    # the factor page's demo framing is about verifiability, not composition.
+    assert "~27% China" not in text
+    # PDF/template prefix rule (test_phase11_integrity d): must not start with
+    # "Emerging Markets" in either branch.
+    assert not text.strip().startswith("Emerging Markets")
+
+
 # ── Factor section values match regression object ─────────────────────────────
 
 def test_factor_section_values_match_raw_result():

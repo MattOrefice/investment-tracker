@@ -87,8 +87,8 @@ HOLDINGS = [
         "holding_rationale": (
             "VEA delivers developed-ex-US exposure at 0.03% versus EFA's 0.32% — ten times more expensive "
             "for substantially the same asset class. VEA tracks FTSE Developed All Cap ex US, which includes "
-            "Canada (MSCI EAFE excludes it), giving modestly broader coverage. The valuation thesis driving "
-            "this sleeve's 19% weight holds regardless of the Canada distinction; the fee difference is "
+            "Canada (MSCI EAFE excludes it), giving modestly broader coverage. The valuation thesis behind "
+            "this sleeve's weight holds regardless of the Canada distinction; the fee difference is "
             "indefensible for passive exposure. Vanguard's structure also produces fewer capital gains "
             "distributions historically."
         ),

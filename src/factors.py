@@ -161,14 +161,46 @@ _SLEEVES = {
 }
 
 # Qualitative disclosure for the EM sleeve (no daily FF5 data available)
-EM_DISCLOSURE = (
-    "Ken French does not publish daily EM factor data. "
-    "Monthly EM factors would yield approximately 12 observations over the current "
-    "1-year window — below the threshold for stable inference. "
-    "IEMG provides passive cap-weighted broad EM exposure (~27% China weight at current "
-    "index composition). Factor decomposition for this sleeve will be added when the "
-    "portfolio accumulates sufficient history (target: 3+ years of monthly data)."
-)
+def _em_disclosure() -> str:
+    """EM-sleeve disclosure for the book this process is pointed at.
+
+    Personal (single cap-weighted developed sleeve): the original framing —
+    IEMG's composition plus the no-daily-EM-factor-data point.
+    Demo (tilted international book): the SAA page's cap-weight-exception
+    framing — the developed tilts are verifiable against Ken French's daily
+    developed ex-US series, EM has no equivalent series, so the sleeve stays
+    cap-weighted and carries no per-sleeve regression by design.
+    Derived at import like _INTL_CORE; falls back to the untilted framing if
+    the DB is unavailable (it is factually safe in either book).
+    """
+    try:
+        from src.sleeve_config import international_sleeves
+        tilted = len(international_sleeves()) > 1
+    except Exception:
+        tilted = False
+    if not tilted:
+        return (
+            "Ken French does not publish daily EM factor data. "
+            "Monthly EM factors would yield approximately 12 observations over the current "
+            "1-year window — below the threshold for stable inference. "
+            "IEMG provides passive cap-weighted broad EM exposure (~27% China weight at current "
+            "index composition). Factor decomposition for this sleeve will be added when the "
+            "portfolio accumulates sufficient history (target: 3+ years of monthly data)."
+        )
+    return (
+        "This is the one equity region held at cap weight, and the only equity sleeve "
+        "with no per-sleeve factor regression — by design, not omission. The developed "
+        "book tilts toward quality, value, and small value because those exposures can "
+        "be verified against Ken French's daily developed ex-US factor series; no "
+        "equivalent daily series exists for emerging markets, and the monthly history "
+        "is too short against this portfolio's inception for stable inference. A tilt "
+        "here could be asserted but not shown, so the sleeve stays passive: IEMG "
+        "provides cap-weighted broad EM exposure. The full cap-weight-exception "
+        "argument is in the SAA sleeve rationale."
+    )
+
+
+EM_DISCLOSURE = _em_disclosure()
 
 
 # ── Utilities ─────────────────────────────────────────────────────────────────
