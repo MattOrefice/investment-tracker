@@ -29,6 +29,12 @@ _COLORS = {
 
 _LONG_HISTORY_START = "2007-01-01"   # DBC inception 2006; gives ~15-year overlap
 
+# Sleeves whose benchmark series starts after this date constrain the common
+# window well short of 2008; the Extended-history option drops them. On the
+# personal book that is US Large Quality (QUAL, 2013); on the demo book also
+# Intl Quality (IQLT, 2015). Derived at render time — never a hardcoded list.
+_RECENT_CUTOFF = "2010-01-01"
+
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def _load_daily_returns(start_date: str) -> pd.DataFrame:
@@ -78,7 +84,7 @@ def _load_sleeve_returns(sleeve_name: str) -> pd.Series:
     Fetches from the ticker's earliest available date (requesting from 1990-01-01
     so get_prices returns data from the ticker's actual inception). Used by the
     pair time-series view so each pair uses its own date intersection, not the
-    9-sleeve common intersection that _load_daily_returns produces.
+    all-sleeve common intersection that _load_daily_returns produces.
     """
     _PAIR_HISTORY_START = "1990-01-01"
     end = TODAY
@@ -97,6 +103,24 @@ def _load_sleeve_returns(sleeve_name: str) -> pd.Series:
         return pd.Series(dtype=float)
     # Filter out non-trading-day zeros (ffill artefacts)
     return blended[blended != 0]
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _sleeve_first_dates() -> dict[str, str]:
+    """{sleeve -> ISO first date of its benchmark return series}.
+
+    The empirical inception of each sleeve's benchmark, from the same
+    full-history loader the pair view uses. Drives the derived history prose:
+    which sleeve constrains the common window, and how far the window reaches
+    once the late-inception sleeves are dropped. Sleeves whose series fails to
+    load are omitted rather than guessed.
+    """
+    out: dict[str, str] = {}
+    for s in _SLEEVES:
+        r = _load_sleeve_returns(s)
+        if not r.empty:
+            out[s] = r.index.min().date().isoformat()
+    return out
 
 
 def _rolling_corr_matrix(returns: pd.DataFrame, window: int) -> pd.DataFrame:
@@ -340,8 +364,8 @@ with col:
             st.info("Select two different sleeves to compare.")
         else:
             # Load each sleeve independently to use their pair-specific date
-            # intersection (not the 9-sleeve common intersection from returns_df,
-            # which is constrained by QUAL's 2013-07-18 inception).
+            # intersection (not the all-sleeve common intersection from
+            # returns_df, which is constrained by the youngest benchmark).
             with st.spinner("Loading pair history…"):
                 ret_a = _load_sleeve_returns(sleeve_a)
                 ret_b = _load_sleeve_returns(sleeve_b)
@@ -431,14 +455,41 @@ with col:
     # ── Average-over-time view ────────────────────────────────────────────────
 
     else:
-        extended = st.checkbox(
-            "Extended history (8 sleeves, excludes Quality → reaches ~2007)",
-            value=False, key="corr_avg_extended",
-            help="Drops US Large Quality (QUAL, 2013 inception) so the common "
-                 "history extends back to ~2007 and the 2008 crisis becomes visible.",
+        # History structure is a property of THIS book's benchmarks — the
+        # personal book's window is pinned by QUAL (2013), the demo book's by
+        # IQLT (2015) — so the constraining sleeves, the counts, and the
+        # reachable start dates are all derived from the price data.
+        _firsts       = _sleeve_first_dates()
+        _n_total      = len(_firsts)
+        _recent       = sorted(
+            (s for s, d in _firsts.items() if d > _RECENT_CUTOFF),
+            key=lambda s: _firsts[s],
         )
-        _exclude   = ["US Large Quality"] if extended else None
-        _set_label = "8 sleeves (excludes Quality)" if extended else "9 sleeves"
+        _constraining = max(_firsts, key=_firsts.get) if _firsts else None
+        _full_start   = _firsts.get(_constraining, "")
+        _kept_starts  = [d for s, d in _firsts.items() if s not in set(_recent)]
+        _ext_start    = max(max(_kept_starts), _LONG_HISTORY_START) if _kept_starts else _LONG_HISTORY_START
+        _excl_names   = ", ".join(_recent)
+
+        if _recent:
+            extended = st.checkbox(
+                f"Extended history ({_n_total - len(_recent)} sleeves, excludes "
+                f"{_excl_names} → reaches ~{_ext_start[:4]})",
+                value=False, key="corr_avg_extended",
+                help=(
+                    f"Drops {_excl_names} (benchmark series starting "
+                    f"{', '.join(_firsts[s] for s in _recent)}) so the common "
+                    f"history extends back to {_ext_start} and the 2008 crisis "
+                    "becomes visible."
+                ),
+            )
+        else:
+            extended = False
+        _exclude   = list(_recent) if extended else None
+        _set_label = (
+            f"{_n_total - len(_recent)} sleeves (excludes {_excl_names})"
+            if extended else f"{_n_total} sleeves"
+        )
 
         with st.spinner("Computing average pairwise correlation…"):
             avg_df = ae.average_pairwise_rolling_correlation(
@@ -540,29 +591,43 @@ with col:
                     legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0, font_size=11),
                 )
                 st.plotly_chart(fig_dec, width="stretch")
+                _n_eq_dec = len([c for c in sleeve_ret.columns if c in ae.EQUITY_SLEEVES])
                 st.caption(
-                    "Intra-equity ρ = average correlation among the six equity sleeves; "
-                    "bond–equity ρ = average correlation between the bond sleeves (Core "
-                    "Fixed Income, TIPS) and the equity sleeves. The post-2020 rise in "
+                    f"Intra-equity ρ = average correlation among the {_n_eq_dec} equity "
+                    "sleeves; bond–equity ρ = average correlation between the bond sleeves "
+                    "(Core Fixed Income, TIPS) and the equity sleeves. The post-2020 rise in "
                     "bond–equity correlation — bonds no longer offsetting equity drawdowns — "
                     "is the 60/40-relevant regime shift (the 2022 joint drawdown)."
                 )
 
-            st.caption(
-                "**History constraint:** the full 9-sleeve common window starts ~2013 "
-                "(QUAL inception), so the default view covers the 2020 and 2022 stress "
-                "episodes but not 2008. Enable *Extended history* to drop Quality and reach "
-                "~2007, making the 2008 crisis visible. Correlations are non-stationary — "
-                "the trailing window reflects only recent co-movement."
-            )
+            if _firsts and _recent:
+                st.caption(
+                    f"**History constraint:** the full {_n_total}-sleeve common window "
+                    f"starts {_full_start} ({_constraining} benchmark series start), so the "
+                    "default view covers the 2020 and 2022 stress episodes but not 2008. "
+                    f"Enable *Extended history* to drop {_excl_names} and reach "
+                    f"~{_ext_start[:4]}, making the 2008 crisis visible. Correlations are "
+                    "non-stationary — the trailing window reflects only recent co-movement."
+                )
 
     st.divider()
 
     with st.expander("Methodology", expanded=False):
+        # Benchmark enumeration derived from the same DB-derived map the page
+        # computes on, so the list names whatever book this is — the old
+        # hardcoded nine-ticker list omitted the demo book's IQLT/EFV/SCZ.
+        _bare_legs  = [legs[0][0] for legs in _SLEEVES.values() if len(legs) == 1]
+        _blend_legs = [
+            " + ".join(f"{int(round(w * 100))}% {t}" for t, w in legs)
+            + f" blend for {name}"
+            for name, legs in _SLEEVES.items() if len(legs) > 1
+        ]
+        _bench_enum = ", ".join(_bare_legs) + (
+            ", and a " + "; a ".join(_blend_legs) if _blend_legs else ""
+        )
         st.markdown(
             "**Tickers used:** Each sleeve's SAA benchmark ticker is used for the return "
-            "series (SPY, QUAL, IWD, IWM, EFA, EEM, IEF, TIP, and a 60% VNQ + 40% DBC blend "
-            "for Real Assets). Cash / SPAXX is excluded — its near-zero daily variance "
+            f"series ({_bench_enum}). Cash / SPAXX is excluded — its near-zero daily variance "
             "makes correlation estimates unstable.  \n\n"
             "**Return computation:** Daily log-approximate returns via `adj_close.pct_change()`. "
             "Weekend and holiday rows (zero-return days on all series simultaneously) are "

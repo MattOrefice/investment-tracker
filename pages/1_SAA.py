@@ -309,7 +309,11 @@ with col:
             "Band (±%)":  st.column_config.NumberColumn(format="%.0f", width="small"),
         },
     )
-    total = df["Target (%)"].sum()
+    # Sum the UNROUNDED policy weights, not the display-rounded column: twelve
+    # 1dp-rounded values summed to exactly 99.9 and sat on the tolerance
+    # boundary, flagging a book whose true targets sum to 100.0000%. Red now
+    # means genuinely mis-seeded, not an unlucky sleeve count.
+    total = sum(sc["target_weight"] for sc in sub_classes) * 100
     if abs(total - 100) < 0.1:
         st.markdown(
             f'<span style="color:#2d6a4f; font-size:0.875rem">✓ Allocated: <b>{total:.1f}%</b></span>',

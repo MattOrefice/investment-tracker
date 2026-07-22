@@ -178,3 +178,22 @@ def test_tips_no_personal_age_reference() -> None:
     assert "long-horizon investor" in rationale, (
         "TIPS rationale missing 'long-horizon investor' — Phase 42 Item 9 regression."
     )
+
+
+def test_allocated_badge_sums_unrounded_weights(saa_app: AppTest) -> None:
+    """Allocated badge must read green 100.0% on a well-seeded book.
+
+    The old check summed the display-rounded Target (%) column; twelve
+    1dp-rounded demo values summed to exactly 99.9 and sat on the < 0.1
+    tolerance boundary, flagging red a book whose true policy weights sum to
+    100.0000%. The badge now sums the unrounded weights, so red means
+    genuinely mis-seeded.
+    """
+    all_md = " ".join(m.value for m in saa_app.markdown)
+    assert "does not sum to 100%" not in all_md, (
+        "Allocated badge is red — either the book is genuinely mis-seeded or "
+        "the badge regressed to summing the display-rounded column."
+    )
+    assert "Allocated: <b>100.0%" in all_md, (
+        "Green Allocated badge with unrounded 100.0% total not found."
+    )

@@ -587,11 +587,12 @@ def compute_regime_conditional_correlation(
 
 # Sleeve-name groups for the equity-vs-bond-equity decomposition. Real Assets is
 # intentionally in neither group (a diversifier that is neither equity nor bond).
-EQUITY_SLEEVES = [
-    "US Large Core", "US Large Quality", "US Large Value",
-    "US Small Cap", "Intl Developed", "Emerging Markets",
-]
+# EQUITY_SLEEVES is derived from the book's own sleeve set (SLEEVES is
+# DB-derived): the old hardcoded list froze the personal book's names, so on
+# the demo book the four international sleeves silently vanished from the
+# intra-equity line (the `c in cols` filter dropped them without error).
 BOND_SLEEVES = ["Core Fixed Income", "TIPS"]
+EQUITY_SLEEVES = [s for s in SLEEVES if s not in BOND_SLEEVES and s != "Real Assets"]
 
 
 def _ordinal(n: float) -> str:
