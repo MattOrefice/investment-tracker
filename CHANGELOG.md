@@ -8,6 +8,44 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Valuation triptych: trailing and forward P/E beside CAPE
+_2026-07-21_
+
+The Macro Valuation section now shows three lenses on the same market: trailing
+P/E (backward, unsmoothed), forward P/E (consensus expectations), and CAPE
+(ten-year real average), each with its own as-of date, source, and stated
+weakness. ECY is untouched.
+
+**Trailing P/E** is live: multpl.com's monthly S&P 500 TTM P/E table, fetched
+with the same parser pattern and 30-day disk-cache policy as the Shiller CAPE
+loader (`data/trailing_pe.csv` beside `data/shiller_cape.csv`). One parser
+difference matters: multpl marks recent months with an estimate dagger
+("† 28.89") while quarterly earnings are preliminary; the CAPE loader's strict
+`float()` would have silently dropped exactly the rows the page displays, so
+the P/E parser strips the marker, keeps the reading, and the caption discloses
+the provisional status. The teaching content is the contrast — current earnings
+running ~40% above their ten-year real average is precisely what CAPE smooths
+away, and the structural reason CAPE has read "extreme" for a decade of
+compounding.
+
+**Forward P/E is a deliberately manual seam.** Next-12-month consensus EPS has
+no free, stable, machine-readable source: FRED carries no forward-estimate
+series (verified by API search), Yahoo's endpoints return no forward fields for
+`^GSPC` or SPY, and S&P DJI's official estimates workbook
+(`sp-500-eps-est.xlsx`, the canonical public source) is bot-blocked to
+automated fetch — it downloads fine in a browser. So the estimate is entered by
+hand into `data/forward_eps.json` WITH its own as-of date, and the page renders
+the division explicitly (price, EPS, both as-of dates) so the number can be
+followed and checked. The staleness ladder is the honest reflection of a
+genuinely manual source: a warning past 45 days, and past 90 days the figure is
+suppressed outright — a ratio computed from a months-old consensus is a
+fabricated-current number wearing a real one's clothes, the same principle
+(post-Phase-39 benchmark-ER lesson) as refusing to invent the estimate. A
+malformed file fails loud rather than degrading to "not entered", so a typo'd
+estimate cannot silently vanish.
+
+---
+
 ## Python pinned to 3.11 so the pandas 2.x pin stays installable on Cloud
 _2026-07-21_
 

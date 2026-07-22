@@ -1746,6 +1746,111 @@ with col:
 
     st.divider()
 
+    # ── Forward P/E — live price over a manually-maintained consensus EPS ─────
+
+    st.markdown("#### S&P 500 Forward P/E (next-12-month consensus)")
+
+    from src.forward_pe import (
+        PRICE_TICKER, STALE_SUPPRESS_DAYS, STALE_WARN_DAYS,
+        compute_forward_pe, forward_pe_state, load_forward_eps, staleness_days,
+    )
+
+    try:
+        _fwd_info = load_forward_eps()
+        _fwd_file_err = None
+    except Exception as _e:  # malformed file must render an error, not crash the page
+        _fwd_info, _fwd_file_err = None, str(_e)
+
+    if _fwd_file_err:
+        st.error(
+            f"`data/forward_eps.json` is present but unusable: {_fwd_file_err}. "
+            "Fix the file to restore this panel — it is not silently skipped, "
+            "because a vanished estimate would be indistinguishable from one "
+            "never entered."
+        )
+    elif _fwd_info is None:
+        st.info(
+            "**No forward EPS estimate on file.** The denominator — next-12-month "
+            "consensus EPS — has no free machine-readable source (FRED carries no "
+            "estimate series; S&P DJI's official workbook is bot-blocked to "
+            "automated fetch), so it is entered manually: download "
+            "`sp-500-eps-est.xlsx` from S&P DJI in a browser, then set "
+            "`forward_eps` and its `as_of` date in `data/forward_eps.json`. "
+            "The panel activates once an estimate is on file, warns when it ages "
+            f"past {STALE_WARN_DAYS} days, and suppresses itself past "
+            f"{STALE_SUPPRESS_DAYS} days rather than render a misleading number."
+        )
+    else:
+        _fwd_days  = staleness_days(_fwd_info)
+        _fwd_state = forward_pe_state(_fwd_info)
+        if _fwd_state == "suppressed":
+            st.warning(
+                f"Forward P/E is **suppressed**: the EPS estimate on file is "
+                f"{_fwd_days} days old (estimate as of {_fwd_info['as_of']}, "
+                f"threshold {STALE_SUPPRESS_DAYS} days). A ratio computed from a "
+                "months-old consensus is a stale number dressed as a current one — "
+                "the same principle as refusing to fabricate the estimate. Refresh "
+                "`data/forward_eps.json` from the S&P DJI workbook to restore it."
+            )
+        else:
+            try:
+                _spx = get_prices(
+                    PRICE_TICKER,
+                    (date.today() - timedelta(days=14)).isoformat(),
+                    date.today().isoformat(),
+                )
+                _spx_price = float(_spx["close"].iloc[-1])
+                _spx_date  = str(_spx.index[-1])[:10]
+                _fwd_ok = True
+            except Exception:
+                _fwd_ok = False
+                logging.exception("S&P 500 price load failed for forward P/E")
+                st.error("S&P 500 price unavailable — forward P/E cannot be computed.")
+
+            if _fwd_ok:
+                _fwd_pe = compute_forward_pe(_spx_price, _fwd_info)
+                st.metric("Forward P/E", f"{_fwd_pe:.1f}×")
+                st.caption(
+                    "The division, explicitly: Forward P/E = S&P 500 price ÷ forward "
+                    f"12-mo EPS = {_spx_price:,.2f} (close, {_spx_date}) ÷ "
+                    f"{_fwd_info['eps']:,.2f} (estimate as of {_fwd_info['as_of']}) "
+                    f"= {_fwd_pe:.1f}×."
+                )
+                st.caption(
+                    f"EPS source: {_fwd_info['source']} — manual download (the "
+                    "workbook is bot-blocked to automated fetch); price source: "
+                    "the tracker's live price pipeline. Two inputs, two as-of dates, "
+                    "by design."
+                )
+                if _fwd_state == "stale_warn":
+                    st.warning(
+                        f"The EPS estimate is {_fwd_days} days old (warning "
+                        f"threshold {STALE_WARN_DAYS} days). Consensus drifts with "
+                        "revisions — refresh `data/forward_eps.json` from the S&P "
+                        "DJI workbook."
+                    )
+                st.markdown(
+                    "**What forward P/E hides.** The denominator is what analysts "
+                    "*expect* — and consensus estimates run systematically optimistic, "
+                    "then get revised down as the year approaches. Forward P/E "
+                    "therefore understates expensiveness roughly as reliably as CAPE "
+                    "overstates it."
+                )
+                if ttm_ok and cape_ok:
+                    st.markdown(
+                        f"**Three lenses, one market.** Trailing {ttm_val:.1f}× (what "
+                        f"was earned), forward {_fwd_pe:.1f}× (what analysts expect), "
+                        f"CAPE {cape_val:.1f}× (ten-year real average). Forward sits "
+                        "lowest because its denominator is the largest and most "
+                        "optimistic; CAPE sits highest because its denominator "
+                        "averages away the recent earnings surge. When the three "
+                        "disagree, the disagreement is the information: the market is "
+                        "priced for the earnings analysts expect, not the earnings it "
+                        "has averaged."
+                    )
+
+    st.divider()
+
     # ── Excess CAPE Yield ─────────────────────────────────────────────────────
 
     if cape_ok and (dgs10 is not None) and (t10yie is not None):
