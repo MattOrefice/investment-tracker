@@ -160,6 +160,74 @@ _SLEEVES = {
     },
 }
 
+# ── International tilt-sleeve regressions (Phase 40) ────────────────────────────
+#
+# The tilted (demo) book splits developed-international into four sleeves. VEA
+# (International Core) is regressed above via _SLEEVES; this adds the three TILT
+# sleeves — IDHQ (Quality), AVIV (Large Value), AVDV (Small Value) — each against
+# the SAME Developed ex-US FF5 factor set, exactly like VEA, and each paired with
+# a passive CONTROL fund so the residual can be read against an investable
+# yardstick instead of the (un-investable) academic factors.
+#
+# CONTROL ROSTER — Canada-matched, deliberately NOT the SAA benchmarks.
+# The Large/Small Value SAA benchmarks (EFV, SCZ) both track MSCI EAFE, which
+# excludes BOTH Canada and Korea. The Ken French Developed ex-US factor universe
+# excludes Korea but INCLUDES Canada, and the tilt funds hold Canada (~11-13%).
+# Over the 2025-05 -> 2026-05 window Canada (EWC, +37.8%/yr) beat developed-ex-US
+# (+27.7%/yr) by ~10 pts, so a Canada-holed control's residual is understated by
+# ~90-250 bps (measured directly: EFV residual +23 bps vs the Canada-matched IVLU
+# +267 bps, same large-value style, same window). Presenting EFV/SCZ as clean
+# gauges would smuggle the missing-Canada return into the fund-vs-control gap.
+# IQLT / IVLU / ISVL all match the factor universe on BOTH counts — Canada in,
+# Korea out — so a fund-minus-control residual is Canada- and Korea-neutral by
+# construction:
+#   IDHQ (Quality)     <- IQLT  MSCI World ex USA Sector-Neutral Quality
+#   AVIV (Large Value) <- IVLU  MSCI World ex USA Enhanced Value
+#   AVDV (Small Value) <- ISVL  FTSE Developed ex US ex Korea Small Cap Focused Value
+# ISVL + IQLT alone do NOT cover the roster: they match Quality and Small Value
+# but leave AVIV (Large Value) with no style-matched Canada-matched comparator,
+# which is why IVLU is added. Controls are NOT held securities and intentionally
+# carry no `securities` row (one would make sleeve_holdings() treat them as
+# holdings); they are priced on demand via get_prices, exactly like VEA.
+#
+# N-PORT as-of: the affirmative "no Korea position" clearance for the two Avantis
+# funds is an OBSERVED snapshot from the most recent public holdings filing, not a
+# mandate constraint. Refresh this date when a newer Avantis N-PORT is filed.
+_NPORT_ASOF = "March 31, 2026"
+
+_INTL_TILT_SLEEVES = [
+    {
+        "sleeve":        "International Quality",
+        "fund":          "IDHQ",
+        "fund_name":     "Invesco S&P International Developed Quality ETF",
+        "control":       "IQLT",
+        "control_name":  "iShares MSCI Intl Quality Factor ETF",
+        "control_index": "MSCI World ex USA Sector-Neutral Quality",
+        "disclosure":    "idhq",
+    },
+    {
+        "sleeve":        "International Large Value",
+        "fund":          "AVIV",
+        "fund_name":     "Avantis International Large Cap Value ETF",
+        "control":       "IVLU",
+        "control_name":  "iShares MSCI Intl Value Factor ETF",
+        "control_index": "MSCI World ex USA Enhanced Value",
+        "disclosure":    "avantis",
+        "israel_pct":    "1",
+    },
+    {
+        "sleeve":        "International Small Value",
+        "fund":          "AVDV",
+        "fund_name":     "Avantis International Small Cap Value ETF",
+        "control":       "ISVL",
+        "control_name":  "iShares International Developed Small Cap Value Factor ETF",
+        "control_index": "FTSE Developed ex US ex Korea Small Cap Focused Value",
+        "disclosure":    "avantis",
+        "israel_pct":    "4.5",
+    },
+]
+
+
 # Qualitative disclosure for the EM sleeve (no daily FF5 data available)
 def _em_disclosure() -> str:
     """EM-sleeve disclosure for the book this process is pointed at.
@@ -910,6 +978,74 @@ def run_intl_global_regression(inception: str, end_date: str) -> Optional[dict]:
         return None
 
 
+def run_intl_tilt_regressions(inception: str, end_date: str) -> dict:
+    """Per-fund FF5 regressions for the international TILT sleeves + their controls.
+
+    Runs only on the tilted (demo) book — the one that splits developed-
+    international into Quality / Large Value / Small Value tilt sleeves. On the
+    untilted (personal) book there is a single VEA sleeve, already regressed via
+    run_sleeve_regressions, and this returns an empty dict.
+
+    Each tilt fund (IDHQ, AVIV, AVDV) and its Canada-matched control (IQLT, IVLU,
+    ISVL) is regressed against the Developed ex-US FF5 factors through the same
+    run_sleeve_regression path VEA uses, so it inherits the US-trading-day
+    reindex and the full result-key set. See _INTL_TILT_SLEEVES for the roster
+    rationale (why the controls are Canada-matched and NOT the SAA benchmarks).
+
+    Returns an ordered dict keyed by fund ticker; each value carries the fund and
+    control result dicts (either may be None on insufficient data) plus the
+    metadata the page needs to render and caption the pair.
+    """
+    try:
+        from src.sleeve_config import international_sleeves
+        book_sleeves = set(international_sleeves())
+    except Exception:
+        return {}
+
+    # Untilted book: a single developed-international sleeve. Nothing to add.
+    if len(book_sleeves) <= 1:
+        return {}
+
+    out: dict[str, dict] = {}
+    for spec in _INTL_TILT_SLEEVES:
+        if spec["sleeve"] not in book_sleeves:
+            continue
+        try:
+            fund_res = run_sleeve_regression(
+                sleeve_label=f"{spec['sleeve']} — {spec['fund']}",
+                tickers=[spec["fund"]],
+                region="developed_exus",
+                inception=inception,
+                end_date=end_date,
+            )
+        except Exception:
+            fund_res = None
+        try:
+            control_res = run_sleeve_regression(
+                sleeve_label=f"{spec['sleeve']} control — {spec['control']}",
+                tickers=[spec["control"]],
+                region="developed_exus",
+                inception=inception,
+                end_date=end_date,
+            )
+        except Exception:
+            control_res = None
+
+        out[spec["fund"]] = {
+            "sleeve":         spec["sleeve"],
+            "fund":           spec["fund"],
+            "fund_name":      spec["fund_name"],
+            "control":        spec["control"],
+            "control_name":   spec["control_name"],
+            "control_index":  spec["control_index"],
+            "disclosure":     spec["disclosure"],
+            "israel_pct":     spec.get("israel_pct"),
+            "fund_result":    fund_res,
+            "control_result": control_res,
+        }
+    return out
+
+
 # ── FI sleeve TERM/CREDIT factor model ────────────────────────────────────────
 
 def regress_fi_sleeve(inception: str, end_date: str) -> Optional[dict]:
@@ -1127,6 +1263,120 @@ def build_factor_prose(
     )
 
     return lines
+
+
+# ── International tilt-sleeve residual reading + per-fund disclosures ───────────
+
+def intl_residual_reading_order() -> str:
+    """The explicit order in which a tilt-sleeve residual should be read.
+
+    Skill is last and least: a non-zero residual is fully expected before any
+    question of skill arises. This is the interpretation contract for the whole
+    international tilt section and mirrors the 'How to read this page' expander.
+    """
+    return (
+        "**Read a residual in this order — skill last, and least.** "
+        "**(1) Sampling noise.** At about one year of daily data the 95% confidence "
+        "interval spans hundreds of basis points; most of any single residual estimate "
+        "is noise, and the interval shown with each number says so. "
+        "**(2) Universe / classification mismatch.** The fund's index and the Ken French "
+        "factor universe classify countries differently — South Korea is developed to "
+        "S&P and FTSE-for-VEA but emerging to Ken French; Canada is in the factor "
+        "universe but out of MSCI EAFE. Returns that fall outside the factor span "
+        "accumulate in the residual with no skill involved. "
+        "**(3) Construction differences** between an investable fund and the academic "
+        "factors: the factors are computed gross of foreign dividend withholding while a "
+        "fund reports net-of-withholding NAV; the factors rebalance costlessly and are "
+        "long-short; the fund is long-only, reaches a microcap tail the NYSE-style "
+        "breakpoints smooth over, and prices across time zones that close before the US "
+        "tape (stale pricing). "
+        "**(4) Skill** — considered last, and weighted least, because every item above "
+        "produces a non-zero residual without it. Each fund is shown beside a passive, "
+        "Canada-matched control so the residual has an investable yardstick: a control "
+        "that carries a large residual too is measuring construction, not selection."
+    )
+
+
+def build_intl_tilt_disclosure(entry: dict) -> list[str]:
+    """Per-fund disclosure paragraphs for one international tilt sleeve.
+
+    ASYMMETRIC by design (`entry['disclosure']`):
+      - IDHQ ('idhq') guards against reading the residual as skill — its residual
+        is largely a Korea universe artifact. The Korea mechanism is stated
+        STRUCTURALLY (reconstitution-varying), never as a pinned weight.
+      - AVDV / AVIV ('avantis') guard against OVER-applying the Korea excuse —
+        they are actively managed and observed Korea-clear, so the residual is
+        construction (Israel, costs, withholding, a window-specific materials /
+        gold-miner tilt Avantis flags as unrepeatable), not universe.
+    """
+    fund    = entry["fund"]
+    control = entry["control"]
+    cidx    = entry["control_index"]
+    kind    = entry["disclosure"]
+
+    paras: list[str] = []
+
+    if kind == "idhq":
+        paras.append(
+            f"**Do not read {fund}'s residual as skill — it is largely a universe "
+            f"artifact.** {fund} tracks S&P's Developed ex-US quality universe, which "
+            "classifies South Korea as **developed** and holds it; the Ken French "
+            "Developed ex-US factor universe (and the "
+            f"{control} control) classify Korea as emerging and exclude it entirely. "
+            "Korean equities' return therefore falls outside the factor span and "
+            f"lands in {fund}'s residual with no selection involved."
+        )
+        paras.append(
+            "The exposure driving this is **reconstitution-varying, not a fixed "
+            "weight**: the S&P screen's Korea weight stood near 9.5% in the first "
+            "half of 2026 and steps down to roughly 2% after the June "
+            "reconstitution. A residual channel that rises and falls with an index "
+            "rebalance is the signature of a universe mismatch, not persistent "
+            "skill — which is exactly why the weight is described as a mechanism "
+            "here rather than pinned as a number the residual could be 'corrected' by."
+        )
+        paras.append(
+            "One residual channel is genuinely about the screen, not the universe: "
+            "S&P's quality score and the Fama-French **RMW** (profitability) factor "
+            "are cousins, not the same construct, so the part of the quality "
+            f"selection that RMW does not span also accrues to the residual. The "
+            f"{control} control ({cidx}) — Canada-included, Korea-excluded on the "
+            "same terms as the factors — removes the Korea channel, so its residual "
+            "is the cleaner read on what an international quality screen actually "
+            "costs against these factors."
+        )
+        return paras
+
+    # Avantis funds (AVDV, AVIV) — the "not-Korea" side of the asymmetry.
+    israel = entry.get("israel_pct") or "a few"
+    paras.append(
+        f"**The Korea excuse does not apply to {fund} — do not over-extend it here.** "
+        f"Unlike IDHQ, the universe channel does not explain this residual. As of the "
+        f"most recent Avantis N-PORT holdings disclosure (period ending {_NPORT_ASOF}), "
+        f"{fund} held **no South Korea position** — an absence *observed* in the filing, "
+        f"not one the mandate prohibits: {fund} is actively managed and could add Korea "
+        f"at a future reconstitution. The {control} control ({cidx}) carves Korea out on "
+        "the same terms as the factors, so the fund-minus-control residual is "
+        "Korea-neutral by construction."
+    )
+    paras.append(
+        f"What remains is **construction, not universe**: an Israel weight of roughly "
+        f"{israel}% (developed in the factor universe, so spanned — but a source of "
+        f"idiosyncratic country return), the fund's expense ratio and unrecovered "
+        f"foreign dividend-withholding drag on a net-NAV basis, and — specific to this "
+        f"window — an overweight to materials and gold miners that contributed "
+        f"disproportionately and that Avantis characterizes as a cyclical, "
+        f"**not-repeatable** driver rather than a persistent edge."
+    )
+    paras.append(
+        f"Finally, a joint-metric caveat: Avantis integrates value and profitability "
+        f"into a **single** selection metric, so {fund}'s **HML** and **RMW** loadings "
+        "are not the separable, one-factor-at-a-time exposures a pure sort would show. "
+        "The residual absorbs the part of that joint screen the two standalone factors "
+        "do not span — again a construction property, read well before any question of "
+        "skill."
+    )
+    return paras
 
 
 def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = None) -> list[str]:
