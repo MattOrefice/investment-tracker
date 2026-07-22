@@ -250,3 +250,32 @@ def test_sector_leadership_section_renders(macro_app: AppTest) -> None:
     assert any(lbl == "Window" for lbl in radio_labels), (
         "Sector Leadership window radio not found"
     )
+
+
+@pytest.mark.live_data
+def test_trailing_pe_panel_renders(macro_app: AppTest) -> None:
+    """Trailing P/E panel renders beside CAPE. Pinned: valuation-lenses batch."""
+    headings = [m.value for m in macro_app.markdown]
+    assert any("Trailing P/E" in h for h in headings), (
+        "Trailing P/E panel heading not found in rendered markdown"
+    )
+
+
+@pytest.mark.live_data
+def test_trailing_pe_source_and_asof_caption(macro_app: AppTest) -> None:
+    """Trailing P/E must credit its source and carry an as-of date."""
+    caps = " ".join(c.value for c in macro_app.caption if getattr(c, "value", None))
+    assert "multpl.com, S&P 500 trailing-twelve-month P/E" in caps, (
+        "Trailing P/E source caption missing"
+    )
+    assert "Recent months are provisional" in caps, (
+        "Provisional-estimate disclosure missing from trailing P/E caption"
+    )
+
+
+@pytest.mark.live_data
+def test_cape_vs_trailing_contrast_prose(macro_app: AppTest) -> None:
+    """The teaching contrast between trailing P/E and CAPE must render."""
+    md = " ".join(m.value for m in macro_app.markdown)
+    assert "Reading the gap." in md, "trailing-vs-CAPE contrast prose missing"
+    assert "Each lens's weakness." in md, "per-lens weakness prose missing"

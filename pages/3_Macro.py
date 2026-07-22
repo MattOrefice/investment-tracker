@@ -206,6 +206,12 @@ def _load_cape_series() -> pd.Series:
     return shiller.get_cape_series()
 
 
+@st.cache_data(ttl=86400, show_spinner=False)
+def _load_trailing_pe() -> pd.DataFrame:
+    from src.trailing_pe import get_trailing_pe
+    return get_trailing_pe()
+
+
 @st.cache_data(ttl=3600, show_spinner=False)
 def _load_fred(series_id: str, start_date: str) -> pd.Series:
     return macro.get_series(series_id, start_date)
@@ -1634,7 +1640,8 @@ with col:
         st.caption(
             f"{_ordinal(cape_pctile_w)} percentile of {cape_window} window "
             f"· full history: {_ordinal(cape_pctile)} pct since 1881 "
-            f"· data as of {cape_as_of}  \n"
+            f"· data as of {cape_as_of} "
+            "· Source: Shiller dataset via multpl.com, monthly  \n"
             f"Implied 10Y real return at this CAPE is approximately {cape_implied:+.2%} "
             "based on the long-run historical relationship between starting CAPE and forward "
             "10-year returns. The relationship is empirically robust over the full 145-year "
@@ -1651,6 +1658,91 @@ with col:
             "sleeves, where the discount-to-US-CAPE thesis depends on US valuations remaining "
             "above historical norms."
         )
+
+    st.divider()
+
+    # ── Trailing P/E (TTM) — second valuation lens beside CAPE ────────────────
+
+    st.markdown("#### S&P 500 Trailing P/E (TTM)")
+
+    try:
+        with st.spinner("Loading trailing P/E data…"):
+            _ttm_df = _load_trailing_pe()
+        ttm_series = pd.Series(
+            _ttm_df["pe"].values, index=pd.DatetimeIndex(_ttm_df["date"])
+        ).sort_index()
+        ttm_val    = float(ttm_series.iloc[-1])
+        ttm_asof   = pd.Timestamp(_ttm_df["obs_date"].iloc[-1]).strftime("%b %d, %Y")
+        ttm_median = float(ttm_series.median())
+        ttm_ok = True
+    except Exception:
+        ttm_ok = False
+        logging.exception("Trailing P/E data load failed")
+        st.error("Trailing P/E data unavailable — please try again later.")
+
+    if ttm_ok:
+        # Same window selection as the CAPE chart above, so the two lenses are
+        # compared over the same span rather than each picking its own frame.
+        _ttm_window  = cape_window if cape_ok else "Max"
+        w_start_ttm  = _window_start(_ttm_window)
+        ttm_filtered = ttm_series[ttm_series.index >= w_start_ttm].dropna()
+        ttm_pctile_w = _window_pctile(ttm_series, ttm_val, w_start_ttm)
+        ttm_pctile   = macro.percentile(ttm_series, ttm_val)
+
+        fig_ttm = go.Figure()
+        fig_ttm.add_trace(go.Scatter(
+            x=ttm_filtered.index, y=ttm_filtered.values,
+            mode="lines", name="P/E (TTM)",
+            line=dict(color=_C["primary"], width=2),
+        ))
+        fig_ttm.add_hline(
+            y=ttm_median,
+            line_dash="dash", line_color=_C["ref"], line_width=1,
+            annotation_text=f"Median {ttm_median:.0f}×",
+            annotation_position="right", annotation_font_size=10,
+        )
+        _add_current_annotation(
+            fig_ttm, ttm_val,
+            f"Current {ttm_val:.1f}× ({_ordinal(ttm_pctile_w)} pct, {_ttm_window})",
+        )
+        _apply_style(fig_ttm, height=_CHART_H)
+        fig_ttm.update_yaxes(title_text="P/E (TTM)")
+        _yr_ttm = _tight_yrange(ttm_filtered, [ttm_val, ttm_median])
+        if _yr_ttm:
+            fig_ttm.update_yaxes(range=_yr_ttm)
+        st.plotly_chart(fig_ttm, width='stretch')
+        st.metric("Trailing P/E (TTM)", f"{ttm_val:.1f}×")
+        st.caption(
+            f"{_ordinal(ttm_pctile_w)} percentile of {_ttm_window} window "
+            f"· full history: {_ordinal(ttm_pctile)} pct since 1871 "
+            f"· data as of {ttm_asof} "
+            "· Source: multpl.com, S&P 500 trailing-twelve-month P/E, monthly. "
+            "Recent months are provisional until the underlying quarterly "
+            "earnings finalize (multpl flags them as estimates)."
+        )
+
+        if cape_ok:
+            _earn_gap = cape_val / ttm_val - 1.0
+            st.markdown(
+                f"**Reading the gap.** The same market prices at {ttm_val:.1f}× trailing "
+                f"twelve-month earnings but {cape_val:.1f}× its ten-year average of real "
+                f"earnings (CAPE) — algebraically, current S&P 500 earnings are running "
+                f"≈{_earn_gap:.0%} above their inflation-adjusted ten-year average. That "
+                "elevated-earnings base is exactly what CAPE smooths away, and it is the "
+                "structural reason CAPE has read \"extreme\" for a decade while the market "
+                "compounded: when earnings grow persistently, the ten-year average lags "
+                "behind, and the ratio stays high even when prices are not unusually high "
+                "relative to *current* profits."
+            )
+            st.markdown(
+                "**Each lens's weakness.** CAPE drifts upward across decades — accounting-"
+                "standard changes, buyback-driven per-share growth, and sector mix have all "
+                "raised the \"normal\" level — so an elevated reading is context, not a sell "
+                "signal, and it has been a poor timing tool. Trailing P/E is backward-"
+                "looking: it says nothing about whether the current earnings level is "
+                "sustainable — margin compression would raise the ratio with prices "
+                "unchanged. The rates leg of the comparison lives in the ECY panel below."
+            )
 
     st.divider()
 
