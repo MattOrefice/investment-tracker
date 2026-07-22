@@ -64,6 +64,30 @@ def _ordinal(n: float) -> str:
     return f"{n}{['th','st','nd','rd','th'][min(n % 10, 4)]}"
 
 
+def _non_us_equity_pct() -> str:
+    """Whole-percent non-US equity target (international sleeves + EM), DB-derived.
+
+    The USD prose used to hardcode a 27% figure and the old two-ticker
+    parenthetical — both frozen from the pre-restructure book (the current
+    target is ~30% in both books, and the demo book holds five non-US tickers).
+    Falls back to a numberless phrase if the DB is unavailable rather than
+    resurrecting a stale figure.
+    """
+    try:
+        from src.sleeve_config import strategic_sleeve_weights
+        w = strategic_sleeve_weights()
+        pct = sum(
+            v for k, v in w.items()
+            if k.startswith("International") or k == "Emerging Markets"
+        )
+        return f"{round(pct * 100):.0f}%"
+    except Exception:
+        return "sizable"
+
+
+_NON_US_PCT = _non_us_equity_pct()
+
+
 def _window_pctile(series: pd.Series, current_val: float, w_start: str) -> float:
     return macro.window_pctile(series, current_val, w_start)
 
@@ -1854,7 +1878,7 @@ with col:
             _dtwex_strength = "historically strong"
             _dtwex_impl = (
                 "A strong dollar is a headwind for unhedged international and EM equity holdings "
-                "through translation losses — meaningful for the 27% non-US equity allocation."
+                f"through translation losses — meaningful for the {_NON_US_PCT} non-US equity allocation."
             )
         elif dtwex_pctile_w > 30:
             _dtwex_strength = "near its historical median"
@@ -1881,8 +1905,9 @@ with col:
             f"Current value of {current_dtwex:.1f} is at the {_ordinal(dtwex_pctile_w)} percentile "
             f"of the {dtwex_window} window ({_dtwex_strength}). "
             + _dtwex_impl + " "
-            "Dollar direction is a meaningful translation factor on the 27% non-US equity allocation "
-            "(VEA + IEMG). FRED DTWEXBGS: Nominal Broad U.S. Dollar Index (goods and services)."
+            f"Dollar direction is a meaningful translation factor on the {_NON_US_PCT} non-US equity "
+            "allocation (developed and emerging sleeves). "
+            "FRED DTWEXBGS: Nominal Broad U.S. Dollar Index (goods and services)."
         )
         st.divider()
     else:

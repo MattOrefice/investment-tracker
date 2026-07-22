@@ -71,6 +71,22 @@ def _inject_global_styles():
     )
 
 
+def _sleeve_phrase() -> str:
+    """'12-sleeve' / '9-sleeve' from the book this process is pointed at.
+
+    The landing page renders in both modes, so the count must come from the DB
+    (like the sleeve maps) rather than hardcoding either taxonomy's number.
+    Falls back to 'multi-sleeve' if the DB is unavailable — a degraded phrase
+    beats a wrong number.
+    """
+    try:
+        from src.sleeve_config import strategic_sleeve_weights
+        n = len(strategic_sleeve_weights())
+        return f"{n}-sleeve" if n else "multi-sleeve"
+    except Exception:
+        return "multi-sleeve"
+
+
 def _landing_page_render():
     st.markdown(
         """
@@ -187,9 +203,10 @@ def _landing_page_render():
         unsafe_allow_html=True,
     )
 
+    _sleeves = _sleeve_phrase()
     st.markdown(
-        """
-        <p class="endow-intro">This system maintains a 10-sleeve strategic asset allocation as policy,
+        f"""
+        <p class="endow-intro">This system maintains a {_sleeves} strategic asset allocation as policy,
         then measures deviation, attribution, and factor exposure against that policy.
         Performance is tracked time-weighted against a SAA-target-weighted blended benchmark.
         Per-sleeve Fama-French 5-factor regressions with Newey-West HAC standard errors decompose
@@ -205,10 +222,10 @@ def _landing_page_render():
 
     with r1c1:
         st.markdown(
-            """
+            f"""
             <div class="endow-card">
                 <h3 class="endow-card-header">Strategic Asset Allocation</h3>
-                <p class="endow-card-body endow-card-body-clamp">10-sleeve SAA policy with target weights
+                <p class="endow-card-body endow-card-body-clamp">{_sleeves} SAA policy with target weights
                 and tolerance bands. Drift thresholds define when rebalancing is warranted; SAA is treated
                 as policy, not a starting point for tactical tilts.</p>
             </div>

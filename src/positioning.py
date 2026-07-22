@@ -121,7 +121,7 @@ def get_style_box_data(date_str: str) -> list[dict]:
     """
     Return continuous-coordinate style entries for US equity ETFs.
     Each dict: ticker, x, y, weight_pct (with x, y as grid coordinates).
-    Non-US equity (VEA, IEMG) excluded — see get_non_us_equity_data().
+    Non-US equity excluded — see get_non_us_equity_data().
     """
     ticker_mv, total_mv = _portfolio_market_values(date_str)
     if total_mv == 0:
@@ -144,17 +144,40 @@ def get_style_box_data(date_str: str) -> list[dict]:
     return sorted(result, key=lambda d: -d["weight_pct"])
 
 
+def _non_us_equity_map() -> dict[str, str]:
+    """{ticker -> sleeve label} for non-US equity holdings, derived from the DB.
+
+    Covers whatever international structure the current book has — the single
+    developed sleeve on the personal book; the Core/Quality/Large Value/Small
+    Value split on the demo book — plus Emerging Markets. The hardcoded
+    NON_US_EQUITY_MAP froze the two-ticker (VEA/IEMG) world and silently
+    dropped the tilt holdings from the callout on the 12-sleeve book; it
+    remains only as the fallback when the DB is unavailable.
+    """
+    try:
+        from src.sleeve_config import international_sleeves, sleeve_holdings
+        held = sleeve_holdings()
+        derived = {
+            ticker: sleeve
+            for sleeve in (*international_sleeves(), "Emerging Markets")
+            for ticker in held.get(sleeve, [])
+        }
+        return derived or dict(NON_US_EQUITY_MAP)
+    except Exception:
+        return dict(NON_US_EQUITY_MAP)
+
+
 def get_non_us_equity_data(date_str: str) -> list[dict]:
     """
-    Return weight data for non-US equity ETFs (VEA, IEMG) for the callout section.
-    Each dict: ticker, region_label, weight_pct.
+    Return weight data for non-US equity ETFs for the callout section.
+    Each dict: ticker, region_label (the sleeve name), weight_pct.
     """
     ticker_mv, total_mv = _portfolio_market_values(date_str)
     if total_mv == 0:
         return []
 
     result = []
-    for ticker, region_label in NON_US_EQUITY_MAP.items():
+    for ticker, region_label in _non_us_equity_map().items():
         mv = ticker_mv.get(ticker, 0.0)
         if mv == 0.0:
             continue

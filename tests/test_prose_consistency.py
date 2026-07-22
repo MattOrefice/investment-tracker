@@ -747,3 +747,58 @@ def test_ex_cash_denominator_drops_cash_and_sums_to_one():
     for key in ("total_value", "cash_mv", "invested_value", "cash_weight_of_total"):
         assert key in sw.attrs, f"operational-cash attr '{key}' missing from sleeve frame"
     assert abs(sw.attrs["invested_value"] - (sw.attrs["total_value"] - sw.attrs["cash_mv"])) < 0.01
+
+
+# ── Stale nine/ten-sleeve strings must not return to rendered prose ────────────
+# The 2026-07 sweep removed hardcoded pre-restructure strings ("10-sleeve",
+# "9 strategic sleeves", "27% ... (VEA + IEMG)", "19% weight") from prose that
+# renders on the 12-sleeve demo book. These are source-text guards: the numbers
+# are DB-derived now, and a literal reappearing means a regression to a frozen
+# taxonomy.
+
+_PAGES_DIR = pathlib.Path(__file__).resolve().parent.parent / "pages"
+_ROOT_DIR  = pathlib.Path(__file__).resolve().parent.parent
+
+
+def test_macro_usd_prose_has_no_frozen_non_us_figures():
+    src = (_PAGES_DIR / "3_Macro.py").read_text(encoding="utf-8")
+    assert "VEA + IEMG" not in src, (
+        "Macro page re-hardcodes the old two-ticker non-US book (VEA + IEMG)"
+    )
+    assert "27% non-US" not in src, (
+        "Macro page re-hardcodes the pre-restructure 27% non-US figure — "
+        "derive it via _non_us_equity_pct()"
+    )
+
+
+def test_saa_cash_note_sleeve_count_is_derived():
+    src = (_PAGES_DIR / "1_SAA.py").read_text(encoding="utf-8")
+    assert "the 9 strategic" not in src, (
+        "SAA cash note re-hardcodes the personal book's sleeve count — "
+        "derive it from sub_classes"
+    )
+
+
+def test_seed_vea_rationale_has_no_frozen_weight():
+    src = (_ROOT_DIR / "src" / "seed_securities.py").read_text(encoding="utf-8")
+    assert "19% weight" not in src, (
+        "VEA holding rationale re-hardcodes the old undivided International "
+        "Developed weight"
+    )
+
+
+def test_demo_db_vea_rationale_matches_seed():
+    """The committed demo.db must carry the seed's VEA rationale (no stale 19%)."""
+    import sqlite3
+
+    conn = sqlite3.connect(_ROOT_DIR / "data" / "demo.db")
+    try:
+        row = conn.execute(
+            "SELECT holding_rationale FROM securities WHERE ticker = 'VEA'"
+        ).fetchone()
+    finally:
+        conn.close()
+    assert row is not None
+    assert "19% weight" not in row[0], (
+        "demo.db VEA rationale is stale — run tools/migrate_demo_vea_rationale.py"
+    )

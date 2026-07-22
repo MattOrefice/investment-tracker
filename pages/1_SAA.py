@@ -261,10 +261,13 @@ with col:
             _cash_mv  = _sw.attrs.get("cash_mv", 0.0)
             _cash_pct = _sw.attrs.get("cash_weight_of_total", 0.0) * 100
             if _cash_mv > 0:
+                # Sleeve count from the book itself (12 demo / 9 personal) —
+                # the hardcoded "9" was stale on the demo render.
+                _n_strategic = sum(1 for sc in sub_classes if sc["target_weight"] > 0)
                 _cash_note = (
                     f"Operational cash: **${_cash_mv:,.0f}** · {_cash_pct:.1f}% of total — "
-                    "SPAXX float, untargeted and held outside the ex-cash SAA (the 9 strategic "
-                    "sleeves above are measured as a share of invested value)."
+                    f"SPAXX float, untargeted and held outside the ex-cash SAA (the {_n_strategic} "
+                    "strategic sleeves above are measured as a share of invested value)."
                 )
     except Exception:
         _band_line = ""

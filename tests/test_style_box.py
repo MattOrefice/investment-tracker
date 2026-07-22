@@ -205,6 +205,30 @@ def test_build_style_box_continuous_single_trace():
 
 # ── get_non_us_equity_data ────────────────────────────────────────────────────
 
+def test_non_us_equity_map_derives_from_current_book(use_demo_db):
+    """The callout map must come from the DB, not the frozen two-ticker constant.
+
+    Pinned to the demo book (12 sleeves): the map must carry all five non-US
+    holdings labelled with their sleeve names. The static NON_US_EQUITY_MAP froze
+    the VEA/IEMG world and silently dropped the tilt holdings from the callout.
+    """
+    from src.positioning import _non_us_equity_map
+
+    m = _non_us_equity_map()
+    assert set(m) == {"VEA", "IDHQ", "AVIV", "AVDV", "IEMG"}
+    assert m["VEA"] == "International Core"
+    assert m["IEMG"] == "Emerging Markets"
+
+
+def test_non_us_equity_map_falls_back_to_static_when_db_unavailable():
+    """DB failure degrades to the static VEA/IEMG map rather than raising."""
+    from src.positioning import _non_us_equity_map
+
+    with patch("src.sleeve_config.sleeve_holdings", side_effect=RuntimeError("db down")):
+        m = _non_us_equity_map()
+    assert m == NON_US_EQUITY_MAP
+
+
 def test_get_non_us_equity_data_empty_portfolio():
     """Empty portfolio must return [] without raising."""
     empty_df = pd.DataFrame(columns=["net_shares"])

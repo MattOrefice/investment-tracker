@@ -89,6 +89,34 @@ def test_card_descriptions_unchanged():
     )
 
 
+# ── Sleeve count derived, not hardcoded ───────────────────────────────────────
+
+def test_landing_sleeve_count_is_derived_not_hardcoded():
+    """The intro and SAA card must not hardcode a sleeve count.
+
+    '10-sleeve' froze the pre-restructure taxonomy into landing prose that
+    renders in BOTH modes (the demo book has 12 sleeves, the personal book 9).
+    The count is derived from the DB via _sleeve_phrase().
+    """
+    src = _app_text()
+    assert "10-sleeve" not in src, (
+        "Hardcoded '10-sleeve' found in app.py — the sleeve count must be "
+        "derived from the DB (see _sleeve_phrase)"
+    )
+    assert "_sleeve_phrase" in src, (
+        "_sleeve_phrase() missing from app.py — landing sleeve count is no "
+        "longer DB-derived"
+    )
+
+
+def test_sleeve_phrase_matches_book(use_demo_db):
+    """_sleeve_phrase logic must yield '12-sleeve' against the demo book."""
+    from src.sleeve_config import strategic_sleeve_weights
+
+    n = len(strategic_sleeve_weights())
+    assert n == 12, f"Demo book expected 12 strategic sleeves, got {n}"
+
+
 # ── Test 5: sidebar footer call still present ─────────────────────────────────
 
 def test_sidebar_footer_call_still_present():
