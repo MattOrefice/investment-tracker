@@ -119,3 +119,45 @@ def test_pair_reference_line_phrasing(corr_pair_app: AppTest) -> None:
         "'values above zero co-move' reference-line phrasing not found — "
         "Phase 45A Item A3 regression."
     )
+
+
+@pytest.fixture(scope="module")
+def corr_avg_app() -> AppTest:
+    """Run the Correlations page switched to the Average-over-time view."""
+    at = AppTest.from_file("pages/9_Correlations.py", default_timeout=180)
+    at.run()
+    at.radio[1].set_value("Average over time")
+    at.run()
+    return at
+
+
+def test_history_constraint_caption_is_derived(corr_avg_app: AppTest) -> None:
+    """History caption must carry the derived window start, not '~2013 (QUAL)'.
+
+    Derived: sleeve count, common-window start date, and constraining
+    benchmark all come from the per-benchmark price histories (QUAL 2013-07-18
+    pins the personal book; IQLT 2015-01-21 pins the demo book).
+    """
+    if corr_avg_app.exception:
+        pytest.skip("Page raised an exception — data-dependent test skipped.")
+    all_text = " ".join(
+        c.value for c in corr_avg_app.caption
+        if hasattr(c, "value") and c.value
+    )
+    # A rendered '9-sleeve' can be the CORRECT derived count on the personal
+    # book, so the hardcoded-literal guard lives in test_prose_consistency
+    # (source text). Here: the caption must carry the derived phrasing — an
+    # ISO start date plus the constraining benchmark's series-start credit —
+    # and must not resurrect the frozen '~2013 (QUAL inception)' form.
+    assert "~2013 (QUAL inception)" not in all_text, (
+        "Frozen '~2013 (QUAL inception)' caption returned."
+    )
+    if "History constraint:" in all_text:
+        assert "benchmark series start" in all_text, (
+            "History caption present but missing the derived constraining-"
+            "benchmark phrasing."
+        )
+        import re
+        assert re.search(r"window starts \d{4}-\d{2}-\d{2}", all_text), (
+            "History caption missing a derived ISO window-start date."
+        )

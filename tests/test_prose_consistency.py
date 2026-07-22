@@ -802,3 +802,29 @@ def test_demo_db_vea_rationale_matches_seed():
     assert "19% weight" not in row[0], (
         "demo.db VEA rationale is stale — run tools/migrate_demo_vea_rationale.py"
     )
+
+
+def test_readme_has_no_hardcoded_sleeve_count():
+    """README prose is count-free by design — it cannot be DB-derived, so any
+    literal sleeve count in it goes stale on the next restructure."""
+    src = (_ROOT_DIR / "README.md").read_text(encoding="utf-8")
+    assert "10-sleeve" not in src, "README re-hardcodes a sleeve count"
+    assert "12-sleeve" not in src, (
+        "README hardcodes the demo book's count — reword count-free instead"
+    )
+
+
+def test_correlations_history_prose_is_derived():
+    """The Correlations page derives its history/universe prose from the data;
+    these literals froze the personal 9-sleeve world into demo renders."""
+    src = (_PAGES_DIR / "9_Correlations.py").read_text(encoding="utf-8")
+    assert "9-sleeve common window" not in src, (
+        "Correlations page re-hardcodes the 9-sleeve history caption"
+    )
+    assert "the six equity sleeves" not in src, (
+        "Correlations page re-hardcodes the personal book's equity-sleeve count"
+    )
+    assert "SPY, QUAL, IWD, IWM, EFA, EEM, IEF, TIP" not in src, (
+        "Correlations methodology re-hardcodes the nine-benchmark ticker list — "
+        "derive it from _SLEEVES"
+    )

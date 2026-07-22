@@ -35,7 +35,7 @@ The primary benchmark is the custom SAA-blended basket, not the S&P 500. A small
 
 ## Methodology
 
-- **SAA as policy.** 10-sleeve strategic asset allocation serves as the policy benchmark; deviations are measured as drift and corrected via the Capital Deployment workflow.
+- **SAA as policy.** A multi-sleeve strategic asset allocation serves as the policy benchmark; deviations are measured as drift and corrected via the Capital Deployment workflow.
 
 - **Performance attribution.** Brinson-Fachler decomposition partitioning excess return into allocation and selection effects against a SAA-target-weighted blended benchmark.
 
@@ -75,7 +75,7 @@ The style box approximates Morningstar's factor placement using four trailing va
 
 ### Asset Evaluation Framework
 
-Evaluates prospective asset additions using marginal Sharpe contribution, drawdown sensitivity, and correlation analysis relative to the existing 10-sleeve SAA. The framework separates sample-period arithmetic (unreliable for volatile, regime-shifting assets) from forward-looking properties, and produces a structured decision conclusion with explicit arguments for and against inclusion. Bitcoin is the current case study.
+Evaluates prospective asset additions using marginal Sharpe contribution, drawdown sensitivity, and correlation analysis relative to the existing SAA sleeves. The framework separates sample-period arithmetic (unreliable for volatile, regime-shifting assets) from forward-looking properties, and produces a structured decision conclusion with explicit arguments for and against inclusion. Bitcoin is the current case study.
 
 ### Macro Panel
 

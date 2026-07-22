@@ -596,3 +596,22 @@ def test_candidate_screen_qqq_doubles_down_live():
     assert float(per.mean()) > 0.4
     roll = ae.rolling_correlation_to_set(cand, slv, window=60)
     assert not roll.empty and -1.0 <= float(roll.iloc[-1]) <= 1.0
+
+
+# ── EQUITY_SLEEVES derives from the book (Phase: derived-prose batch) ─────────
+
+def test_equity_sleeves_derived_from_book():
+    """EQUITY_SLEEVES must cover every equity sleeve of the CURRENT book.
+
+    The old hardcoded list froze the personal names ('Intl Developed'), so on
+    the demo book the four international sleeves silently vanished from the
+    intra-equity decomposition (the `c in cols` filter dropped them without
+    error). Property-tested against SLEEVES so it holds in both modes.
+    """
+    intl = [s for s in ae.SLEEVES if s.startswith("Intl")]
+    assert intl, "expected at least one international sleeve in the book"
+    missing = [s for s in intl if s not in ae.EQUITY_SLEEVES]
+    assert not missing, f"international sleeves missing from EQUITY_SLEEVES: {missing}"
+    assert ae.EQUITY_SLEEVES == [
+        s for s in ae.SLEEVES if s not in ae.BOND_SLEEVES and s != "Real Assets"
+    ], "EQUITY_SLEEVES diverged from the SLEEVES-derived definition"
