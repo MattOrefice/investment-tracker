@@ -206,6 +206,12 @@ def _load_cape_series() -> pd.Series:
     return shiller.get_cape_series()
 
 
+@st.cache_data(ttl=86400, show_spinner=False)
+def _load_trailing_pe() -> pd.DataFrame:
+    from src.trailing_pe import get_trailing_pe
+    return get_trailing_pe()
+
+
 @st.cache_data(ttl=3600, show_spinner=False)
 def _load_fred(series_id: str, start_date: str) -> pd.Series:
     return macro.get_series(series_id, start_date)
@@ -1634,7 +1640,8 @@ with col:
         st.caption(
             f"{_ordinal(cape_pctile_w)} percentile of {cape_window} window "
             f"· full history: {_ordinal(cape_pctile)} pct since 1881 "
-            f"· data as of {cape_as_of}  \n"
+            f"· data as of {cape_as_of} "
+            "· Source: Shiller dataset via multpl.com, monthly  \n"
             f"Implied 10Y real return at this CAPE is approximately {cape_implied:+.2%} "
             "based on the long-run historical relationship between starting CAPE and forward "
             "10-year returns. The relationship is empirically robust over the full 145-year "
@@ -1651,6 +1658,196 @@ with col:
             "sleeves, where the discount-to-US-CAPE thesis depends on US valuations remaining "
             "above historical norms."
         )
+
+    st.divider()
+
+    # ── Trailing P/E (TTM) — second valuation lens beside CAPE ────────────────
+
+    st.markdown("#### S&P 500 Trailing P/E (TTM)")
+
+    try:
+        with st.spinner("Loading trailing P/E data…"):
+            _ttm_df = _load_trailing_pe()
+        ttm_series = pd.Series(
+            _ttm_df["pe"].values, index=pd.DatetimeIndex(_ttm_df["date"])
+        ).sort_index()
+        ttm_val    = float(ttm_series.iloc[-1])
+        ttm_asof   = pd.Timestamp(_ttm_df["obs_date"].iloc[-1]).strftime("%b %d, %Y")
+        ttm_median = float(ttm_series.median())
+        ttm_ok = True
+    except Exception:
+        ttm_ok = False
+        logging.exception("Trailing P/E data load failed")
+        st.error("Trailing P/E data unavailable — please try again later.")
+
+    if ttm_ok:
+        # Same window selection as the CAPE chart above, so the two lenses are
+        # compared over the same span rather than each picking its own frame.
+        _ttm_window  = cape_window if cape_ok else "Max"
+        w_start_ttm  = _window_start(_ttm_window)
+        ttm_filtered = ttm_series[ttm_series.index >= w_start_ttm].dropna()
+        ttm_pctile_w = _window_pctile(ttm_series, ttm_val, w_start_ttm)
+        ttm_pctile   = macro.percentile(ttm_series, ttm_val)
+
+        fig_ttm = go.Figure()
+        fig_ttm.add_trace(go.Scatter(
+            x=ttm_filtered.index, y=ttm_filtered.values,
+            mode="lines", name="P/E (TTM)",
+            line=dict(color=_C["primary"], width=2),
+        ))
+        fig_ttm.add_hline(
+            y=ttm_median,
+            line_dash="dash", line_color=_C["ref"], line_width=1,
+            annotation_text=f"Median {ttm_median:.0f}×",
+            annotation_position="right", annotation_font_size=10,
+        )
+        _add_current_annotation(
+            fig_ttm, ttm_val,
+            f"Current {ttm_val:.1f}× ({_ordinal(ttm_pctile_w)} pct, {_ttm_window})",
+        )
+        _apply_style(fig_ttm, height=_CHART_H)
+        fig_ttm.update_yaxes(title_text="P/E (TTM)")
+        _yr_ttm = _tight_yrange(ttm_filtered, [ttm_val, ttm_median])
+        if _yr_ttm:
+            fig_ttm.update_yaxes(range=_yr_ttm)
+        st.plotly_chart(fig_ttm, width='stretch')
+        st.metric("Trailing P/E (TTM)", f"{ttm_val:.1f}×")
+        st.caption(
+            f"{_ordinal(ttm_pctile_w)} percentile of {_ttm_window} window "
+            f"· full history: {_ordinal(ttm_pctile)} pct since 1871 "
+            f"· data as of {ttm_asof} "
+            "· Source: multpl.com, S&P 500 trailing-twelve-month P/E, monthly. "
+            "Recent months are provisional until the underlying quarterly "
+            "earnings finalize (multpl flags them as estimates)."
+        )
+
+        if cape_ok:
+            _earn_gap = cape_val / ttm_val - 1.0
+            st.markdown(
+                f"**Reading the gap.** The same market prices at {ttm_val:.1f}× trailing "
+                f"twelve-month earnings but {cape_val:.1f}× its ten-year average of real "
+                f"earnings (CAPE) — algebraically, current S&P 500 earnings are running "
+                f"≈{_earn_gap:.0%} above their inflation-adjusted ten-year average. That "
+                "elevated-earnings base is exactly what CAPE smooths away, and it is the "
+                "structural reason CAPE has read \"extreme\" for a decade while the market "
+                "compounded: when earnings grow persistently, the ten-year average lags "
+                "behind, and the ratio stays high even when prices are not unusually high "
+                "relative to *current* profits."
+            )
+            st.markdown(
+                "**Each lens's weakness.** CAPE drifts upward across decades — accounting-"
+                "standard changes, buyback-driven per-share growth, and sector mix have all "
+                "raised the \"normal\" level — so an elevated reading is context, not a sell "
+                "signal, and it has been a poor timing tool. Trailing P/E is backward-"
+                "looking: it says nothing about whether the current earnings level is "
+                "sustainable — margin compression would raise the ratio with prices "
+                "unchanged. The rates leg of the comparison lives in the ECY panel below."
+            )
+
+    st.divider()
+
+    # ── Forward P/E — live price over a manually-maintained consensus EPS ─────
+
+    st.markdown("#### S&P 500 Forward P/E (next-12-month consensus)")
+
+    from src.forward_pe import (
+        PRICE_TICKER, STALE_SUPPRESS_DAYS, STALE_WARN_DAYS,
+        compute_forward_pe, forward_pe_state, load_forward_eps, staleness_days,
+    )
+
+    try:
+        _fwd_info = load_forward_eps()
+        _fwd_file_err = None
+    except Exception as _e:  # malformed file must render an error, not crash the page
+        _fwd_info, _fwd_file_err = None, str(_e)
+
+    if _fwd_file_err:
+        st.error(
+            f"`data/forward_eps.json` is present but unusable: {_fwd_file_err}. "
+            "Fix the file to restore this panel — it is not silently skipped, "
+            "because a vanished estimate would be indistinguishable from one "
+            "never entered."
+        )
+    elif _fwd_info is None:
+        st.info(
+            "**No forward EPS estimate on file.** The denominator — next-12-month "
+            "consensus EPS — has no free machine-readable source (FRED carries no "
+            "estimate series; S&P DJI's official workbook is bot-blocked to "
+            "automated fetch), so it is entered manually: download "
+            "`sp-500-eps-est.xlsx` from S&P DJI in a browser, then set "
+            "`forward_eps` and its `as_of` date in `data/forward_eps.json`. "
+            "The panel activates once an estimate is on file, warns when it ages "
+            f"past {STALE_WARN_DAYS} days, and suppresses itself past "
+            f"{STALE_SUPPRESS_DAYS} days rather than render a misleading number."
+        )
+    else:
+        _fwd_days  = staleness_days(_fwd_info)
+        _fwd_state = forward_pe_state(_fwd_info)
+        if _fwd_state == "suppressed":
+            st.warning(
+                f"Forward P/E is **suppressed**: the EPS estimate on file is "
+                f"{_fwd_days} days old (estimate as of {_fwd_info['as_of']}, "
+                f"threshold {STALE_SUPPRESS_DAYS} days). A ratio computed from a "
+                "months-old consensus is a stale number dressed as a current one — "
+                "the same principle as refusing to fabricate the estimate. Refresh "
+                "`data/forward_eps.json` from the S&P DJI workbook to restore it."
+            )
+        else:
+            try:
+                _spx = get_prices(
+                    PRICE_TICKER,
+                    (date.today() - timedelta(days=14)).isoformat(),
+                    date.today().isoformat(),
+                )
+                _spx_price = float(_spx["close"].iloc[-1])
+                _spx_date  = str(_spx.index[-1])[:10]
+                _fwd_ok = True
+            except Exception:
+                _fwd_ok = False
+                logging.exception("S&P 500 price load failed for forward P/E")
+                st.error("S&P 500 price unavailable — forward P/E cannot be computed.")
+
+            if _fwd_ok:
+                _fwd_pe = compute_forward_pe(_spx_price, _fwd_info)
+                st.metric("Forward P/E", f"{_fwd_pe:.1f}×")
+                st.caption(
+                    "The division, explicitly: Forward P/E = S&P 500 price ÷ forward "
+                    f"12-mo EPS = {_spx_price:,.2f} (close, {_spx_date}) ÷ "
+                    f"{_fwd_info['eps']:,.2f} (estimate as of {_fwd_info['as_of']}) "
+                    f"= {_fwd_pe:.1f}×."
+                )
+                st.caption(
+                    f"EPS source: {_fwd_info['source']} — manual download (the "
+                    "workbook is bot-blocked to automated fetch); price source: "
+                    "the tracker's live price pipeline. Two inputs, two as-of dates, "
+                    "by design."
+                )
+                if _fwd_state == "stale_warn":
+                    st.warning(
+                        f"The EPS estimate is {_fwd_days} days old (warning "
+                        f"threshold {STALE_WARN_DAYS} days). Consensus drifts with "
+                        "revisions — refresh `data/forward_eps.json` from the S&P "
+                        "DJI workbook."
+                    )
+                st.markdown(
+                    "**What forward P/E hides.** The denominator is what analysts "
+                    "*expect* — and consensus estimates run systematically optimistic, "
+                    "then get revised down as the year approaches. Forward P/E "
+                    "therefore understates expensiveness roughly as reliably as CAPE "
+                    "overstates it."
+                )
+                if ttm_ok and cape_ok:
+                    st.markdown(
+                        f"**Three lenses, one market.** Trailing {ttm_val:.1f}× (what "
+                        f"was earned), forward {_fwd_pe:.1f}× (what analysts expect), "
+                        f"CAPE {cape_val:.1f}× (ten-year real average). Forward sits "
+                        "lowest because its denominator is the largest and most "
+                        "optimistic; CAPE sits highest because its denominator "
+                        "averages away the recent earnings surge. When the three "
+                        "disagree, the disagreement is the information: the market is "
+                        "priced for the earnings analysts expect, not the earnings it "
+                        "has averaged."
+                    )
 
     st.divider()
 

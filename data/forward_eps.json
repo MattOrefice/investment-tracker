@@ -1,0 +1,6 @@
+{
+  "forward_eps": null,
+  "as_of": null,
+  "source": "S&P Dow Jones Indices, sp-500-eps-est.xlsx — 'ESTIMATES & PEs' sheet, next-12-month operating EPS estimate",
+  "_instructions": "Manual seam, by design: the workbook URL (https://www.spglobal.com/spdji/en/documents/additional-material/sp-500-eps-est.xlsx) is bot-blocked to automated fetch, and no free machine-readable source for S&P 500 forward consensus EPS exists. Download it in a browser, set forward_eps to the next-12-month operating EPS estimate (index dollars, e.g. 305.0) and as_of to the workbook's estimate date (YYYY-MM-DD). The Macro Valuation page warns when this is >45 days old and suppresses forward P/E entirely when >90 days old rather than rendering a misleading number."
+}
