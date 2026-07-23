@@ -63,9 +63,15 @@ def migrate_db(db_path: Path) -> None:
         ).fetchall()
         for account_id, name in rows:
             pseudonym = f"acct_{account_id:02d}"
+            # included_in_household=1 is set explicitly: this back-fills the single
+            # pre-existing generic account (the self-directed taxable base), which
+            # IS a household asset. Under the fail-conservative schema default
+            # (included_in_household 0) it would otherwise be excluded — the placeholder
+            # metadata must assert inclusion, not lean on the default.
             conn.execute(
                 "UPDATE accounts "
                 "SET tax_treatment='taxable', managed_by='self', "
+                "    included_in_household=1, "
                 "    pseudonym=?, display_name=? "
                 "WHERE account_id=?",
                 (pseudonym, name, account_id),

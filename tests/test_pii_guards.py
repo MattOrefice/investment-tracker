@@ -109,19 +109,39 @@ def test_parse_fidelity_output_has_no_account_number_column(tmp_path):
     assert "account_number" not in df.columns
 
 
-def test_fresh_and_migrated_accounts_schema_agree():
-    """A DB created from SCHEMA must match one produced by the migration."""
+def test_fresh_and_migrated_accounts_schema_agree(tmp_path):
+    """A DB created from SCHEMA must match one produced by the migration.
+
+    The full healing path is the in-db.py migrations (_drop_account_number,
+    _add_included_in_household) FOLLOWED BY the phase-42 flag-default flip that
+    run_pending_migrations applies. Since SCHEMA now ships the fail-conservative
+    defaults (managed_by 'external', included_in_household 0), the migrated DB
+    only reaches the same schema once phase-42 has recreated its accounts table —
+    so this asserts the whole sequence converges, not just the first two steps.
+    (phase-42 needs a real path, so the migrated DB is a temp file, not :memory:.)
+    """
     from src.db import SCHEMA, _drop_account_number, _add_included_in_household
+
+    _spec = importlib.util.spec_from_file_location(
+        "m42", ROOT / "tools" / "migrate_accounts_phase42_flags.py")
+    m42 = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(m42)
 
     fresh = sqlite3.connect(":memory:")
     fresh.executescript(SCHEMA)
     fresh_cols, fresh_idx = _accounts_schema(fresh)
     fresh.close()
 
-    migrated = sqlite3.connect(":memory:")
+    mig_path = tmp_path / "migrated.db"
+    migrated = sqlite3.connect(str(mig_path))
     migrated.executescript(_PRE_SHAPE)
     _drop_account_number(migrated)
     _add_included_in_household(migrated)
+    migrated.commit()
+    migrated.close()
+    assert m42.migrate_db(mig_path) == 1, "phase-42 should recreate a pre-flip accounts table"
+
+    migrated = sqlite3.connect(str(mig_path))
     mig_cols, mig_idx = _accounts_schema(migrated)
     migrated.close()
 

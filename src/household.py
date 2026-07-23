@@ -23,12 +23,22 @@ def exclude_non_household_positions(
     allocation, or liquidity calc. This is the single point every personal-mode
     page calls right after loading ``positions_df``/``accounts_df``, so every
     downstream consumer sees the same, already-filtered household consistently
-    rather than each re-deriving its own exclusion. A DataFrame with no
-    ``included_in_household`` column (e.g. a bare test fixture) is returned
-    unchanged — nothing to exclude.
+    rather than each re-deriving its own exclusion.
+
+    An ``accounts_df`` with no ``included_in_household`` column RAISES: it means
+    the accounts frame was loaded from a schema that predates the exclusion flag,
+    and silently returning every position would fail OPEN — pulling forfeitable /
+    non-household money into totals with no signal. That is a schema error to fix
+    at the source, not a state to paper over by including everything.
     """
     if "included_in_household" not in accounts_df.columns:
-        return positions_df
+        raise ValueError(
+            "exclude_non_household_positions: accounts_df has no "
+            "'included_in_household' column. The accounts table predates the "
+            "household-exclusion flag; migrate it (add the column) rather than "
+            "aggregating every account — a missing flag must not silently "
+            "include forfeitable/non-household money."
+        )
     excluded = set(
         accounts_df.loc[accounts_df["included_in_household"] == 0, "pseudonym"].dropna()
     )

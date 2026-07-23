@@ -17,8 +17,8 @@ CREATE TABLE IF NOT EXISTS accounts (
     tax_treatment TEXT DEFAULT 'other',
     pseudonym     TEXT,
     display_name  TEXT,
-    managed_by    TEXT DEFAULT 'self',
-    included_in_household INTEGER DEFAULT 1
+    managed_by    TEXT DEFAULT 'external',
+    included_in_household INTEGER DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS asset_classes (
@@ -172,8 +172,14 @@ def _add_included_in_household(conn: sqlite3.Connection) -> None:
     Some accounts hold money that is not a household asset — e.g. unvested,
     forfeitable employer contributions — and must be excluded from every
     total, allocation, and liquidity calc at this one source rather than
-    re-filtered per page. Defaults to 1 (included) so existing rows are
-    unaffected; the seed sets 0 explicitly where it applies. Idempotent.
+    re-filtered per page.
+
+    This is the RETROFIT path for a legacy DB that predates the column: every
+    row already present is a genuine, pre-flag account, so it back-fills them to
+    1 (included). The GO-FORWARD default for new inserts is fail-conservative
+    (0), set by the CREATE TABLE schema and, on already-built DBs, flipped from
+    the old permissive 1 by tools/migrate_accounts_phase42_flags.py. Keeping this
+    back-fill at 1 is deliberate — an old genuine account must not vanish. Idempotent.
     """
     has_accounts = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='accounts'"
@@ -276,9 +282,18 @@ def initialize_db():
             ("Personal Fidelity",),
         ).fetchone()
         if existing is None:
+            # The base self-directed taxable account: it carries the trade ledger,
+            # is the row get_portfolio_account() resolves via
+            # tax_treatment='taxable' AND managed_by='self', and is a genuine
+            # household asset. Under the fail-conservative schema defaults
+            # (managed_by 'external', included_in_household 0) all three flags MUST
+            # be set explicitly here — otherwise this account would be excluded
+            # from the household AND the portfolio resolver would raise (no
+            # self-directed taxable account). Do not fall back to the defaults.
             conn.execute(
-                "INSERT INTO accounts (name, type, custodian) VALUES (?, ?, ?)",
-                ("Personal Fidelity", "taxable", "Fidelity"),
+                "INSERT INTO accounts (name, type, custodian, tax_treatment,"
+                " managed_by, included_in_household) VALUES (?, ?, ?, ?, ?, ?)",
+                ("Personal Fidelity", "taxable", "Fidelity", "taxable", "self", 1),
             )
 
 if __name__ == "__main__":
