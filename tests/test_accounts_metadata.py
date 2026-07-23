@@ -21,8 +21,11 @@ ALLOWED_TAX_TREATMENTS = frozenset({
 })
 
 # The 7 seeded household pseudonyms — the only identifiers that reach the schema.
+# The 7 household accounts. The self-directed taxable book is acct_01 (the db.py
+# base account carrying the ledger) after the Phase 45 identity merge — the
+# household_accounts seed no longer creates a separate acct_taxable_01.
 HOUSEHOLD_PSEUDONYMS = frozenset({
-    "acct_taxable_01", "acct_taxable_02", "acct_trad_ira_01", "acct_roth_01",
+    "acct_01", "acct_taxable_02", "acct_trad_ira_01", "acct_roth_01",
     "acct_wkpl_01", "acct_wkpl_02", "acct_hsa_01",
 })
 
@@ -44,8 +47,10 @@ _PRE_MIGRATION_SCHEMA = """
     );
     CREATE UNIQUE INDEX ux_accounts_account_number ON accounts (account_number);
     CREATE UNIQUE INDEX ux_accounts_pseudonym      ON accounts (pseudonym);
-    INSERT INTO accounts (name, type, custodian, pseudonym, display_name)
-    VALUES ('Personal Fidelity', 'taxable', 'Fidelity', 'acct_01', 'Personal Fidelity');
+    INSERT INTO accounts (name, type, custodian, pseudonym, display_name,
+                          tax_treatment, managed_by)
+    VALUES ('Personal Fidelity', 'taxable', 'Fidelity', 'acct_01',
+            'Personal Fidelity', 'taxable', 'self');
 """
 
 
@@ -140,8 +145,16 @@ def test_migration_preserves_legacy_row(migrated_db):
 
 # ── Seed tests ─────────────────────────────────────────────────────────────────
 
-def test_seed_creates_7_household_accounts(seeded_db):
-    assert len(_household_rows(seeded_db)) == 7
+def test_household_has_7_accounts_acct01_plus_6_seeded(seeded_db):
+    # 7 household accounts = acct_01 (the self-directed taxable base account, from
+    # db.py, carrying the ledger) + the 6 accounts household_accounts seeds. The
+    # self-directed book is NOT a separately-seeded acct_taxable_01 (Phase 45 merge).
+    rows = _household_rows(seeded_db)
+    assert len(rows) == 7
+    assert {r["pseudonym"] for r in rows} - {"acct_01"} == {
+        "acct_taxable_02", "acct_trad_ira_01", "acct_roth_01",
+        "acct_wkpl_01", "acct_wkpl_02", "acct_hsa_01",
+    }
 
 
 def test_all_household_accounts_have_metadata(seeded_db):
@@ -153,7 +166,7 @@ def test_all_household_accounts_have_metadata(seeded_db):
 def test_exactly_one_self_managed(seeded_db):
     self_managed = [r for r in _household_rows(seeded_db) if r.get("managed_by") == "self"]
     assert len(self_managed) == 1, f"Expected 1 self-managed household account, got {len(self_managed)}"
-    assert self_managed[0]["pseudonym"] == "acct_taxable_01"
+    assert self_managed[0]["pseudonym"] == "acct_01"
 
 
 def test_pseudonyms_unique(seeded_db):
@@ -199,15 +212,15 @@ def _accounts_df(db_path):
 
 def test_get_account_display_no_account_number_key(seeded_db):
     from src.household import get_account_display
-    result = get_account_display("acct_taxable_01", _accounts_df(seeded_db))
+    result = get_account_display("acct_01", _accounts_df(seeded_db))
     assert "account_number" not in result
 
 
 def test_get_account_display_correct_keys_and_values(seeded_db):
     from src.household import get_account_display
-    result = get_account_display("acct_taxable_01", _accounts_df(seeded_db))
+    result = get_account_display("acct_01", _accounts_df(seeded_db))
     assert set(result.keys()) == {"pseudonym", "display_name", "tax_treatment", "managed_by"}
-    assert result["pseudonym"] == "acct_taxable_01"
+    assert result["pseudonym"] == "acct_01"
     assert result["managed_by"] == "self"
     assert result["tax_treatment"] == "taxable"
 

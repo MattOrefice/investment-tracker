@@ -28,9 +28,11 @@ def get_portfolio_account() -> dict:
     on the PDF path, a document that gets sent to someone. A retirement/external
     account that later carries trades (a Roth, an IRA) is excluded by the
     tax_treatment/managed_by predicate — which is exactly what keeps it out of the
-    taxable-book totals. More than one candidate (the acct_01/acct_taxable_01
-    identity duplication, once both carry trades) also raises: identity must be
-    disambiguated, not guessed.
+    taxable-book totals. More than one candidate also raises: identity must be
+    disambiguated, not guessed. (The historical acct_01/acct_taxable_01 duplication
+    — the same real account under two ids, trades on acct_01 and positions on
+    acct_taxable_01 — was merged into acct_01; see
+    tools/migrate_accounts_phase45_merge.py.)
 
     ``display_name`` is read from the DB so labels are correct in demo too (the
     demo book's own account name), never a hardcoded "Self-Directed Taxable".

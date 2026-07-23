@@ -160,12 +160,12 @@ def _positions(pseudonym_qty):
 
 def test_reconciliation_balances_when_ledger_matches_positions(two_account_db):
     positions = _positions({
-        ("acct_taxable_01", "VOO"): 10.0,
-        ("acct_taxable_01", "VEA"): 5.0,
+        ("acct_01", "VOO"): 10.0,
+        ("acct_01", "VEA"): 5.0,
     })
-    mismatches = reconcile_account_shares(1, positions, "acct_taxable_01", as_of="2026-01-01")
+    mismatches = reconcile_account_shares(1, positions, "acct_01", as_of="2026-01-01")
     assert mismatches.empty, f"expected reconciled, got:\n{mismatches}"
-    assert account_shares_reconciled(1, positions, "acct_taxable_01", as_of="2026-01-01")
+    assert account_shares_reconciled(1, positions, "acct_01", as_of="2026-01-01")
 
 
 def test_reconciliation_is_per_account_roth_does_not_break_the_taxable_book(two_account_db):
@@ -173,19 +173,19 @@ def test_reconciliation_is_per_account_roth_does_not_break_the_taxable_book(two_
     # — the Roth's 3 VOO are in a DIFFERENT account and must not make it diverge.
     # (Pre-Part-B, the account-blind read would have shown 13 and this would FAIL.)
     positions = _positions({
-        ("acct_taxable_01", "VOO"): 10.0,
-        ("acct_taxable_01", "VEA"): 5.0,
+        ("acct_01", "VOO"): 10.0,
+        ("acct_01", "VEA"): 5.0,
     })
-    assert account_shares_reconciled(1, positions, "acct_taxable_01", as_of="2026-01-01")
+    assert account_shares_reconciled(1, positions, "acct_01", as_of="2026-01-01")
 
 
 def test_reconciliation_flags_a_mismatch(two_account_db):
     # Broker reports 12 VOO for the taxable book; the ledger says 10 -> flagged.
     positions = _positions({
-        ("acct_taxable_01", "VOO"): 12.0,
-        ("acct_taxable_01", "VEA"): 5.0,
+        ("acct_01", "VOO"): 12.0,
+        ("acct_01", "VEA"): 5.0,
     })
-    mismatches = reconcile_account_shares(1, positions, "acct_taxable_01", as_of="2026-01-01")
+    mismatches = reconcile_account_shares(1, positions, "acct_01", as_of="2026-01-01")
     assert not mismatches.empty
     voo = mismatches.set_index("ticker").loc["VOO"]
     assert voo["trade_shares"] == 10.0 and voo["position_qty"] == 12.0

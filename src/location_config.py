@@ -152,7 +152,7 @@ EQUITY_SLEEVES: frozenset[str] = frozenset({
 # differ) or managed_by (the IRAs are externally managed yet directable), so it
 # is enumerated explicitly. USER-EDITABLE.
 DIRECTABLE_PSEUDONYMS: frozenset[str] = frozenset({
-    "acct_taxable_01",   # self-directed taxable
+    "acct_01",           # self-directed taxable — the trade-ledger base account
     "acct_roth_01",      # Roth IRA
     "acct_trad_ira_01",  # Traditional IRA
 })

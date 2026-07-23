@@ -25,9 +25,15 @@ from __future__ import annotations
 
 import importlib.util
 import logging
+import sqlite3
 from pathlib import Path
 
 import src.db as _db
+
+# The self-directed taxable book's household-facing label. acct_01's `name` stays
+# "Personal Fidelity" (db.py's idempotency key); only the rendered display_name
+# changes, and only in personal (this module is never run for demo).
+_SELF_DIRECTED_DISPLAY_NAME = "Individual Taxable (Self-Directed)"
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +108,25 @@ def bootstrap_personal_db() -> dict:
     seed_securities.seed()                             # SAA ETFs -> real asset_class_id
     load_household_securities(path, _HOUSEHOLD_CSV)    # enrich + household rows (UPSERT)
     seed_fund_compositions(path)                       # compositions (UPSERT)
-    seed_household_accounts(path)                      # 7 household accounts (UPSERT)
+    seed_household_accounts(path)                      # 6 household accounts (UPSERT)
+
+    # 5. Label acct_01 (the db.py base account = the self-directed taxable book,
+    #    carrying the trade ledger) with its household-facing display_name. Done
+    #    HERE, in the personal bootstrap, rather than in a migration: demo never
+    #    runs this path (so demo's acct_01 keeps "Personal Fidelity"), and it
+    #    re-applies on every personal bootstrap including a fresh reseed — which a
+    #    one-time migration gated on the now-removed acct_taxable_01 row would miss.
+    #    Only display_name changes; `name` stays "Personal Fidelity" (db.py's key).
+    _conn = sqlite3.connect(str(path))
+    try:
+        _conn.execute(
+            "UPDATE accounts SET display_name = ? "
+            "WHERE pseudonym = 'acct_01' AND display_name IS NOT ?",
+            (_SELF_DIRECTED_DISPLAY_NAME, _SELF_DIRECTED_DISPLAY_NAME),
+        )
+        _conn.commit()
+    finally:
+        _conn.close()
 
     _bootstrapped.add(str(path))
     logger.info("Personal-mode bootstrap complete (migrations: %s)", migrations)

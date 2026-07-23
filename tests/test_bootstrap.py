@@ -72,9 +72,9 @@ def test_bootstrap_lets_build_location_register_run(tmp_path, monkeypatch):
     conn.close()
 
     positions_df = pd.DataFrame([
-        {"pseudonym": "acct_taxable_01", "symbol": "VOO",  "current_value": 10000.0,
+        {"pseudonym": "acct_01", "symbol": "VOO",  "current_value": 10000.0,
          "total_gain_loss": 0.0, "cost_basis_total": 10000.0},
-        {"pseudonym": "acct_taxable_01", "symbol": "VGIT", "current_value": 5000.0,
+        {"pseudonym": "acct_01", "symbol": "VGIT", "current_value": 5000.0,
          "total_gain_loss": 0.0, "cost_basis_total": 5000.0},
     ])
 
