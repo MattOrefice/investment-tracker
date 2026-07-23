@@ -28,7 +28,7 @@ from src.factors import (
     run_sleeve_regressions_mom,
     sig_marker,
 )
-from src.holdings import get_inception_date
+from src.holdings import get_inception_date, get_portfolio_account_id
 
 if IS_DEMO:
     st.info(get_demo_banner_text())
@@ -77,7 +77,7 @@ with col:
         )
 
     end_date  = date.today().isoformat()
-    inception = get_inception_date()
+    inception = get_inception_date(account_id=get_portfolio_account_id())
 
     @st.cache_data(ttl=3600)
     def _get_factor_results(inception_date: str, end: str) -> dict:

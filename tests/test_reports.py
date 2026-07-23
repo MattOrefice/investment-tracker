@@ -182,8 +182,9 @@ def test_cover_twr_uses_inception_slice_not_period_scoped():
     bl_flat = _flat_series(inception, end_date)
 
     with patch.object(rpt, "get_portfolio_value_series", return_value=pv_full), \
+         patch.object(rpt, "get_portfolio_account_id", return_value=1), \
          patch.object(rpt, "get_external_cashflow_series",
-                      side_effect=lambda s, e: pd.Series(dtype=float)), \
+                      side_effect=lambda s, e, account_id=None: pd.Series(dtype=float)), \
          patch.object(rpt, "get_inception_date", return_value=inception), \
          patch.object(rpt, "get_sp500_series", return_value=sp_flat), \
          patch.object(rpt, "get_custom_blended_series", return_value=bl_flat), \
@@ -223,8 +224,9 @@ def test_cover_twr_nets_external_contribution_not_counted_as_return():
     bl_flat = _flat_series(inception, end_date)
 
     with patch.object(rpt, "get_portfolio_value_series", return_value=pv_full), \
+         patch.object(rpt, "get_portfolio_account_id", return_value=1), \
          patch.object(rpt, "get_external_cashflow_series",
-                      side_effect=lambda s, e: cf_full), \
+                      side_effect=lambda s, e, account_id=None: cf_full), \
          patch.object(rpt, "get_current_market_value", return_value=1200.0), \
          patch.object(rpt, "get_inception_date", return_value=inception), \
          patch.object(rpt, "get_sp500_series", return_value=sp_flat), \
@@ -260,8 +262,9 @@ def test_cover_current_value_is_true_mv_not_return_series_endpoint():
     bl_flat = _flat_series(inception, end_date)
 
     with patch.object(rpt, "get_portfolio_value_series", return_value=pv_full), \
+         patch.object(rpt, "get_portfolio_account_id", return_value=1), \
          patch.object(rpt, "get_external_cashflow_series",
-                      side_effect=lambda s, e: pd.Series(dtype=float)), \
+                      side_effect=lambda s, e, account_id=None: pd.Series(dtype=float)), \
          patch.object(rpt, "get_current_market_value", return_value=1234.0), \
          patch.object(rpt, "get_inception_date", return_value=inception), \
          patch.object(rpt, "get_sp500_series", return_value=sp_flat), \
@@ -291,8 +294,9 @@ def _make_exec_summary_mocks(inception: str, start_date: str, end_date: str,
         return bl_full[bl_full.index >= pd.Timestamp(start)]
 
     with patch.object(rpt, "get_portfolio_value_series", return_value=pv_full), \
+         patch.object(rpt, "get_portfolio_account_id", return_value=1), \
          patch.object(rpt, "get_external_cashflow_series",
-                      side_effect=lambda s, e: pd.Series(dtype=float)), \
+                      side_effect=lambda s, e, account_id=None: pd.Series(dtype=float)), \
          patch.object(rpt, "get_inception_date", return_value=inception), \
          patch.object(rpt, "get_sp500_series", return_value=sp_full), \
          patch.object(rpt, "get_custom_blended_series", side_effect=_blended_side_effect), \
@@ -327,8 +331,9 @@ def test_cover_narrative_degrades_on_total_reference_benchmark_gap():
     nan_bl.attrs["benchmark_gaps"] = [("US Large Core", "SPY", "2026-03-31")]
 
     with patch.object(rpt, "get_portfolio_value_series", return_value=pv_full), \
+         patch.object(rpt, "get_portfolio_account_id", return_value=1), \
          patch.object(rpt, "get_external_cashflow_series",
-                      side_effect=lambda s, e: pd.Series(dtype=float)), \
+                      side_effect=lambda s, e, account_id=None: pd.Series(dtype=float)), \
          patch.object(rpt, "get_current_market_value", return_value=1200.0), \
          patch.object(rpt, "get_inception_date", return_value=inception), \
          patch.object(rpt, "get_sp500_series", return_value=nan_sp), \

@@ -10,7 +10,7 @@ st.set_page_config(page_title="Benchmark Attribution", layout="wide")
 from src.asof import as_of_banner
 from src.attribution import benchmark_gap_notice, brinson_fachler_period, price_gap_notice
 from src.config import get_demo_banner_text, IS_DEMO
-from src.holdings import get_inception_date
+from src.holdings import get_inception_date, get_portfolio_account, get_portfolio_account_id
 from src.factors import (
     alpha_ci_str,
     build_benchmark_methodology,
@@ -34,6 +34,11 @@ with col:
         "Portfolio vs Custom Blended SAA Benchmark · "
         "Newey-West HAC standard errors, daily excess returns since inception."
     )
+    st.caption(
+        f"Scope: **{get_portfolio_account()['display_name']}** — the self-directed "
+        "taxable book (traded ledger); retirement and externally-managed accounts "
+        "are excluded."
+    )
     st.caption(as_of_banner())
     st.divider()
 
@@ -53,7 +58,7 @@ with col:
         )
 
     end_date  = date.today().isoformat()
-    inception = get_inception_date()
+    inception = get_inception_date(account_id=get_portfolio_account_id())
 
     @st.cache_data(ttl=3600)
     def _get_benchmark_result(inception_date: str, end: str) -> dict | None:

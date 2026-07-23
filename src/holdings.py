@@ -1,4 +1,12 @@
-"""Derive holdings and portfolio value from the trades ledger."""
+"""Derive holdings and portfolio value from the trades ledger.
+
+Every trade-derived read is SCOPED to an explicit account. The trade-derived
+"portfolio" is one account — the self-directed taxable book — and reading across
+all accounts (the pre-Part-B defect) silently folds a Roth or IRA trade into a
+figure labelled "Portfolio". The base reads therefore REQUIRE a keyword-only
+``account_id`` and raise on None; the account identity itself is resolved in
+exactly one place, ``get_portfolio_account()``, which raises rather than guessing.
+"""
 from datetime import date, timedelta
 from typing import Optional
 
@@ -8,21 +16,93 @@ from src.db import get_connection
 from src.prices import get_prices, _to_iso
 
 
-def get_holdings_on_date(date_str: str) -> pd.DataFrame:
+def get_portfolio_account() -> dict:
+    """Resolve THE portfolio account — the single source of truth for the
+    account identity behind every trade-derived "Portfolio" view.
+
+    It is the active, self-directed, TAXABLE account that carries the
+    discretionary trade ledger. Returns ``{"account_id", "display_name", "name"}``.
+
+    RAISES (never falls back) when it cannot resolve EXACTLY ONE such account: a
+    wrong or silently-defaulted scope here mis-states every headline number and,
+    on the PDF path, a document that gets sent to someone. A retirement/external
+    account that later carries trades (a Roth, an IRA) is excluded by the
+    tax_treatment/managed_by predicate — which is exactly what keeps it out of the
+    taxable-book totals. More than one candidate (the acct_01/acct_taxable_01
+    identity duplication, once both carry trades) also raises: identity must be
+    disambiguated, not guessed.
+
+    ``display_name`` is read from the DB so labels are correct in demo too (the
+    demo book's own account name), never a hardcoded "Self-Directed Taxable".
     """
-    Return net shares per ticker as of date_str (inclusive).
+    with get_connection() as conn:
+        rows = conn.execute(
+            """SELECT a.account_id, a.display_name, a.name
+                 FROM accounts a
+                WHERE a.is_active = 1
+                  AND a.tax_treatment = 'taxable'
+                  AND a.managed_by = 'self'
+                  AND EXISTS (SELECT 1 FROM trades t WHERE t.account_id = a.account_id)
+                ORDER BY a.account_id""",
+        ).fetchall()
+
+    if len(rows) == 1:
+        r = rows[0]
+        return {
+            "account_id":   int(r["account_id"]),
+            "display_name": r["display_name"] or r["name"],
+            "name":         r["name"],
+        }
+    if not rows:
+        raise ValueError(
+            "cannot resolve the portfolio account: no active self-directed taxable "
+            "account carries a trade ledger. Refusing to guess a scope for the "
+            "trade-derived 'Portfolio' views."
+        )
+    raise ValueError(
+        "cannot resolve the portfolio account uniquely: "
+        f"{len(rows)} self-directed taxable accounts carry trades "
+        f"(ids {[int(r['account_id']) for r in rows]}). Disambiguate the "
+        "account-identity duplication before scoping the reads."
+    )
+
+
+def get_portfolio_account_id() -> int:
+    """account_id of THE portfolio account (see ``get_portfolio_account``)."""
+    return get_portfolio_account()["account_id"]
+
+
+def _require_account_id(account_id) -> int:
+    """Reject a missing scope loudly — a None account_id would otherwise read as
+    'no filter' (account-blind), the exact defect these reads exist to remove."""
+    if account_id is None:
+        raise ValueError(
+            "account_id is required — this read is account-scoped and will not "
+            "silently fall back to reading across every account. Pass the account "
+            "to scope to (typically get_portfolio_account_id())."
+        )
+    return int(account_id)
+
+
+def get_holdings_on_date(date_str: str, *, account_id: int) -> pd.DataFrame:
+    """
+    Return net shares per ticker as of date_str (inclusive), for ONE account.
     Index: ticker. Column: net_shares.
     SPAXX 'shares' represent dollar amount (NAV is always $1).
+
+    ``account_id`` is required (keyword-only) and never defaulted — see the module
+    docstring. Pass get_portfolio_account_id() for the trade-derived portfolio.
     """
+    account_id = _require_account_id(account_id)
     with get_connection() as conn:
         rows = conn.execute(
             """SELECT ticker,
                       SUM(CASE WHEN LOWER(action) = 'buy'
                                THEN shares ELSE -shares END) AS net_shares
                FROM trades
-               WHERE trade_date <= ?
+               WHERE trade_date <= ? AND account_id = ?
                GROUP BY ticker""",
-            (date_str,),
+            (date_str, account_id),
         ).fetchall()
 
     if not rows:
@@ -47,7 +127,9 @@ def last_real_price_date(start_date: str, end_date: Optional[str] = None) -> str
     Returns an ISO date string; falls back to end_date when no holdings/prices exist.
     """
     end = end_date or date.today().isoformat()
-    holdings = get_holdings_on_date(end)
+    # Wrapper: resolves the portfolio account itself and passes it through, so its
+    # callers stay unchanged while the underlying read is account-scoped.
+    holdings = get_holdings_on_date(end, account_id=get_portfolio_account_id())
     max_date = None
     for ticker in holdings.index:
         price_ticker = "BIL" if ticker == "SPAXX" else ticker  # SPAXX proxied via BIL
@@ -87,9 +169,12 @@ def last_settled_price_date(start_date: str, end_date: Optional[str] = None) -> 
 def get_portfolio_value_series(
     start_date: str,
     end_date: Optional[str] = None,
+    *,
+    account_id: int,
 ) -> pd.Series:
     """
-    Return daily total portfolio market value over [start_date, end_date].
+    Return daily total portfolio market value over [start_date, end_date], for
+    ONE account (keyword-only ``account_id``, required — see the module docstring).
     Uses adj_close for ETF prices (total-return basis).
     SPAXX is valued at $1/share.
     Weekends / holidays are forward-filled from the previous trading day.
@@ -103,6 +188,7 @@ def get_portfolio_value_series(
     displays (see src/tax_lots.py); only this value series excludes them.
     Personal mode holds no DRIP lots (pay-to-cash), so it is unaffected.
     """
+    account_id = _require_account_id(account_id)
     end = end_date or date.today().isoformat()
     date_range = pd.date_range(start=start_date, end=end, freq="D")
 
@@ -110,10 +196,10 @@ def get_portfolio_value_series(
         trade_rows = conn.execute(
             """SELECT trade_date, ticker, action, shares
                FROM trades
-               WHERE trade_date <= ?
+               WHERE trade_date <= ? AND account_id = ?
                  AND (lot_source IS NULL OR lot_source != 'drip')
                ORDER BY trade_date, trade_id""",
-            (end,),
+            (end, account_id),
         ).fetchall()
 
     if not trade_rows:
@@ -190,6 +276,8 @@ def get_portfolio_value_series(
 def get_external_cashflow_series(
     start_date: str,
     end_date: Optional[str] = None,
+    *,
+    account_id: int,
 ) -> pd.Series:
     """
     Return the daily net EXTERNAL cash flow into the portfolio (signed dollars:
@@ -213,6 +301,7 @@ def get_external_cashflow_series(
     TWR methods treat as the starting NAV, so seeding stays inert while any
     post-inception deployment counts as a real flow.
     """
+    account_id = _require_account_id(account_id)
     end = end_date or date.today().isoformat()
     date_range = pd.date_range(start=start_date, end=end, freq="D")
 
@@ -223,10 +312,10 @@ def get_external_cashflow_series(
                                THEN shares * price ELSE -shares * price END
                           + COALESCE(fees, 0)) AS flow
                FROM trades
-               WHERE trade_date >= ? AND trade_date <= ?
+               WHERE trade_date >= ? AND trade_date <= ? AND account_id = ?
                  AND (lot_source IS NULL OR lot_source != 'drip')
                GROUP BY trade_date""",
-            (start_date, end),
+            (start_date, end, account_id),
         ).fetchall()
 
     flows = pd.Series(0.0, index=date_range)
@@ -254,7 +343,8 @@ def get_sleeve_weights_on_date(date_str: str) -> pd.DataFrame:
     on the DataFrame's ``.attrs`` for callers that display them:
         total_value, cash_mv, invested_value, cash_weight_of_total.
     """
-    holdings = get_holdings_on_date(date_str)
+    # Wrapper: resolves the portfolio account and passes it through.
+    holdings = get_holdings_on_date(date_str, account_id=get_portfolio_account_id())
     if holdings.empty:
         return pd.DataFrame()
 
@@ -353,7 +443,8 @@ def get_current_market_value(date_str: Optional[str] = None) -> float:
     BIL adj_close normalized to $1 at inception).
     """
     d = date_str or date.today().isoformat()
-    holdings = get_holdings_on_date(d)          # all shares, incl DRIP lots
+    # Wrapper: resolves the portfolio account and passes it through.
+    holdings = get_holdings_on_date(d, account_id=get_portfolio_account_id())  # all shares, incl DRIP lots
     if holdings.empty:
         return 0.0
 
@@ -384,11 +475,20 @@ def get_current_market_value(date_str: Optional[str] = None) -> float:
     return round(total, 2)
 
 
-def get_inception_date() -> str:
-    """Return ISO date of the first recorded trade, falling back to '2025-05-01'."""
+def get_inception_date(*, account_id: int) -> str:
+    """Return ISO date of the first recorded trade FOR ``account_id`` (the
+    portfolio window start), falling back to '2025-05-01'.
+
+    ``account_id`` is required (keyword-only): an unscoped MIN(trade_date) would
+    move the whole analysis window if a second account's earlier trade landed.
+    """
+    account_id = _require_account_id(account_id)
     try:
         with get_connection() as conn:
-            row = conn.execute("SELECT MIN(trade_date) FROM trades").fetchone()
+            row = conn.execute(
+                "SELECT MIN(trade_date) FROM trades WHERE account_id = ?",
+                (account_id,),
+            ).fetchone()
         return row[0] if row and row[0] else "2025-05-01"
     except Exception:
         return "2025-05-01"

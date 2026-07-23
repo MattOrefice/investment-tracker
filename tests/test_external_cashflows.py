@@ -74,7 +74,7 @@ def test_builder_demo_flows_are_inception_seed_only(use_demo_db):
     from src.holdings import get_external_cashflow_series
 
     inception = "2025-05-01"
-    cf = get_external_cashflow_series(inception, date.today().isoformat())
+    cf = get_external_cashflow_series(inception, date.today().isoformat(), account_id=1)
     if float(cf.abs().sum()) == 0.0:
         pytest.skip("trades table empty — skipped in empty-DB mode")
     assert float(cf.loc[pd.Timestamp(inception)]) == pytest.approx(1000.0, abs=1.0)
@@ -169,10 +169,10 @@ def test_demo_period_returns_unchanged_by_flow_threading(use_demo_db):
 
     inception = "2025-05-01"
     today = date.today().isoformat()
-    pv = get_portfolio_value_series(inception, today)
+    pv = get_portfolio_value_series(inception, today, account_id=1)
     if pv.dropna().empty or float(pv.max()) == 0.0:
         pytest.skip("Portfolio data empty — skipped in empty-DB mode")
-    cf_real = get_external_cashflow_series(inception, today).reindex(pv.index).fillna(0.0)
+    cf_real = get_external_cashflow_series(inception, today, account_id=1).reindex(pv.index).fillna(0.0)
     cf_zeros = pd.Series(0.0, index=pv.index)
 
     # Returns must match to well within a basis point, not to the bit. The real

@@ -11,7 +11,7 @@ from datetime import date, timedelta
 
 import plotly.graph_objects as go
 
-from src.holdings import get_holdings_on_date, get_sleeve_weights_on_date
+from src.holdings import get_holdings_on_date, get_portfolio_account_id, get_sleeve_weights_on_date
 from src.prices import get_prices
 from src.style_box import (
     US_EQUITY_TICKERS, NON_US_EQUITY_MAP,
@@ -92,7 +92,7 @@ _CELL_MAX_SIZE: dict[int, float] = {1: 50.0, 2: 38.0, 3: 30.0, 4: 24.0}
 
 def _portfolio_market_values(date_str: str) -> tuple[dict[str, float], float]:
     """Shared helper: returns (ticker→market_value, total_mv) for all holdings."""
-    holdings = get_holdings_on_date(date_str)
+    holdings = get_holdings_on_date(date_str, account_id=get_portfolio_account_id())
     if holdings.empty:
         return {}, 0.0
 

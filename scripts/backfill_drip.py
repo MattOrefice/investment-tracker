@@ -20,7 +20,11 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from src.db import get_connection
 from src.drip import backfill_all_drip_lots
-from src.holdings import get_external_cashflow_series, get_portfolio_value_series
+from src.holdings import (
+    get_external_cashflow_series,
+    get_portfolio_account_id,
+    get_portfolio_value_series,
+)
 from src.prices import get_prices
 from src.returns import period_return
 
@@ -29,8 +33,9 @@ TODAY     = date.today().isoformat()
 
 
 def _twr_summary(label: str) -> None:
-    values = get_portfolio_value_series(INCEPTION, TODAY)
-    cf     = get_external_cashflow_series(INCEPTION, TODAY).reindex(values.index).fillna(0.0)
+    _acct  = get_portfolio_account_id()
+    values = get_portfolio_value_series(INCEPTION, TODAY, account_id=_acct)
+    cf     = get_external_cashflow_series(INCEPTION, TODAY, account_id=_acct).reindex(values.index).fillna(0.0)
 
     print(f"\n  TWR — {label} ({TODAY})")
     print(f"  {'Period':<8} {'Return':>10}")

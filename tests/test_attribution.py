@@ -468,7 +468,7 @@ def _holdings_common_frontier() -> str:
     from src.db import get_connection
     from src.holdings import get_holdings_on_date
     today = datetime.date.today().isoformat()
-    holdings = get_holdings_on_date(today)
+    holdings = get_holdings_on_date(today, account_id=1)
     frontiers: list[str] = []
     with get_connection() as conn:
         for ticker in holdings.index:
@@ -533,7 +533,7 @@ def test_identity_ps_two_stage_si_60_40():
     TODAY = datetime.date.today().isoformat()
 
     try:
-        pv = get_portfolio_value_series(INCEPTION, TODAY)
+        pv = get_portfolio_value_series(INCEPTION, TODAY, account_id=1)
         bl = get_custom_blended_series(INCEPTION, TODAY)
         naive = get_naive_series("60_40", INCEPTION, TODAY)
         bf_df = brinson_fachler_period(INCEPTION, TODAY)
@@ -579,7 +579,7 @@ def test_identity_ps_two_stage_1y_60_40():
     TODAY = datetime.date.today().isoformat()
 
     try:
-        pv = get_portfolio_value_series(INCEPTION, TODAY)
+        pv = get_portfolio_value_series(INCEPTION, TODAY, account_id=1)
         bl = get_custom_blended_series(INCEPTION, TODAY)
         naive = get_naive_series("60_40", INCEPTION, TODAY)
         bf_df = brinson_fachler_period(INCEPTION, TODAY)
@@ -628,7 +628,7 @@ def test_identity_ps_two_stage_si_spy():
     TODAY = datetime.date.today().isoformat()
 
     try:
-        pv = get_portfolio_value_series(INCEPTION, TODAY)
+        pv = get_portfolio_value_series(INCEPTION, TODAY, account_id=1)
         bl = get_custom_blended_series(INCEPTION, TODAY)
         naive = get_naive_series("spy", INCEPTION, TODAY)
         bf_df = brinson_fachler_period(INCEPTION, TODAY)
@@ -690,7 +690,7 @@ def test_identity_bf_sum_reconciles_to_stage2(_no_live_fetch):
     TODAY = _HOLDINGS_FRONTIER
 
     try:
-        pv_full = get_portfolio_value_series(INCEPTION, TODAY)
+        pv_full = get_portfolio_value_series(INCEPTION, TODAY, account_id=1)
     except Exception as exc:
         pytest.skip(f"Portfolio data unavailable: {exc}")
 
@@ -798,7 +798,7 @@ def test_bf_reconciles_when_wall_clock_past_price_frontier(days_past_frontier, _
     real_end_d = datetime.date.fromisoformat(real_end)
 
     # Cached through the frontier only — no future-date fetch, so this stays offline.
-    pv_real = get_portfolio_value_series(INCEPTION, real_end)
+    pv_real = get_portfolio_value_series(INCEPTION, real_end, account_id=1)
     if pv_real.dropna().empty:
         pytest.skip("Portfolio data empty — skipped in local/empty-DB mode")
 

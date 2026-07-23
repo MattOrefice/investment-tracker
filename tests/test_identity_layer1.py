@@ -299,7 +299,7 @@ def test_identity_inception_matches_db_min_trade_date():
         pytest.skip("Trades table empty — skipped in local/empty-DB mode")
 
     from src.holdings import get_inception_date
-    reported = get_inception_date()
+    reported = get_inception_date(account_id=1)
 
     assert reported == row["inception"], (
         f"get_inception_date() returned '{reported}' but MIN(trade_date) = '{row['inception']}'. "

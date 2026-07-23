@@ -43,6 +43,7 @@ from src.holdings import (
     get_current_market_value,
     get_external_cashflow_series,
     get_inception_date,
+    get_portfolio_account_id,
     get_portfolio_value_series,
     get_sleeve_weights_on_date,
 )
@@ -358,9 +359,9 @@ def _build_executive_summary(start_date: str, end_date: str) -> dict:
     # (buy-and-hold from inception drifts weights and produces a different result).
     # start_date is always a trading day (Dec-31 for Q1, Mar-31 for Q2, etc.) so
     # no holiday-bfill risk exists for the fresh blended series.
-    inception = get_inception_date()
+    inception = get_inception_date(account_id=get_portfolio_account_id())
 
-    pv_since_inception = get_portfolio_value_series(inception, end_date)
+    pv_since_inception = get_portfolio_value_series(inception, end_date, account_id=get_portfolio_account_id())
     # Displayed dollar value = true current MV (all shares incl DRIP × raw close).
     # The total-return series (pv, adj_close × non-DRIP) is used only for the TWR
     # below — the dollar figure must not come from the return series, which omits
@@ -371,7 +372,7 @@ def _build_executive_summary(start_date: str, end_date: str) -> dict:
     # Real external flows (contributions/withdrawals), aligned to the period
     # slice — flows before the slice drop out; one on its first date is the
     # starting NAV. End-of-day netting inside twr_daily_linked.
-    cf = get_external_cashflow_series(inception, end_date).reindex(pv.index).fillna(0.0)
+    cf = get_external_cashflow_series(inception, end_date, account_id=get_portfolio_account_id()).reindex(pv.index).fillna(0.0)
     portfolio_twr = twr_daily_linked(pv, cf) if len(pv) >= 2 else 0.0
 
     sp_full   = get_sp500_series(inception, end_date)
@@ -603,12 +604,12 @@ def _build_cumulative_chart(
 
 
 def _build_performance_section(start_date: str, end_date: str) -> dict:
-    inception = get_inception_date()
-    pv = get_portfolio_value_series(inception, end_date)
+    inception = get_inception_date(account_id=get_portfolio_account_id())
+    pv = get_portfolio_value_series(inception, end_date, account_id=get_portfolio_account_id())
     if pv.empty or float(pv.max()) == 0.0:
         return {"period_rows": [], "chart_b64": None, "benchmark_gaps": []}
 
-    cf        = get_external_cashflow_series(inception, end_date).reindex(pv.index).fillna(0.0)
+    cf        = get_external_cashflow_series(inception, end_date, account_id=get_portfolio_account_id()).reindex(pv.index).fillna(0.0)
     start_val = float(pv.iloc[0])
     sp_raw = get_sp500_series(inception, end_date)
     bl_raw = get_custom_blended_series(inception, end_date)
@@ -804,7 +805,7 @@ def _build_factor_section(end_date: str) -> Optional[dict]:
     the template.  Returns None only if both sleeves fail; partial results (one
     sleeve None) are still returned so the template can render what it has.
     """
-    inception = get_inception_date()
+    inception = get_inception_date(account_id=get_portfolio_account_id())
     try:
         results = run_sleeve_regressions(inception, end_date)
     except Exception:
@@ -890,7 +891,7 @@ def _build_benchmark_section(start_date: str, end_date: str) -> Optional[dict]:
     differential (r_p − r_b) so prose reads "AVUV outperformed IWM by 768 bps"
     rather than the portfolio-weighted selection effect.
     """
-    inception = get_inception_date()
+    inception = get_inception_date(account_id=get_portfolio_account_id())
     try:
         result = run_benchmark_attribution_regression(inception, end_date)
     except Exception:
@@ -1524,7 +1525,7 @@ def generate_quarterly_report_bytes(
         snap_dt = datetime.fromisoformat(snapshot_captured_at)
         snapshot_display = f"{snap_dt.strftime('%B')} {snap_dt.day}, {snap_dt.year}"
 
-    inception_str   = get_inception_date()
+    inception_str   = get_inception_date(account_id=get_portfolio_account_id())
     si_days_report  = (date.fromisoformat(end_date) - date.fromisoformat(inception_str)).days
 
     html_content = tmpl.render(

@@ -8,7 +8,7 @@ from datetime import date, timedelta
 
 from src.config import is_write_enabled
 from src.db import get_connection
-from src.holdings import get_sleeve_weights_on_date, get_holdings_on_date
+from src.holdings import get_sleeve_weights_on_date, get_holdings_on_date, get_portfolio_account, get_portfolio_account_id
 from src.prices import get_prices
 from src.rebalance import (
     compute_drift,
@@ -68,7 +68,7 @@ def _load_data(as_of: str) -> dict:
             "spaxx_value": 0.0,
         }
 
-    holdings = get_holdings_on_date(as_of)
+    holdings = get_holdings_on_date(as_of, account_id=get_portfolio_account_id())
     look_back = (date.fromisoformat(as_of) - timedelta(days=7)).isoformat()
 
     prices: dict[str, float] = {}
@@ -109,6 +109,11 @@ st.title("Capital Deployment")
 st.caption(
     "Deploy new contributions to maintain SAA policy · "
     "Correct band-breach drift · Execute via your broker"
+)
+st.caption(
+    f"Current allocation and drift are the **{get_portfolio_account()['display_name']}** "
+    "self-directed taxable book. The account each deployment is *logged to* is chosen "
+    "in the Deploy section below and may differ."
 )
 
 with st.expander("How to read this page", expanded=False):

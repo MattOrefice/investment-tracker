@@ -57,6 +57,7 @@ from statsmodels.tools import add_constant
 from src.factors import _nw_lags, load_factors
 from src.holdings import (
     get_inception_date,
+    get_portfolio_account_id,
     get_portfolio_value_series,
     last_settled_price_date,
 )
@@ -207,12 +208,12 @@ def run_portfolio_factor_regression(
     portfolio series, Ken French factors/RF, and IEF/HYG price path as the rest
     of the app.
     """
-    inception = inception or get_inception_date()
+    inception = inception or get_inception_date(account_id=get_portfolio_account_id())
     end_date  = end_date or date.today().isoformat()
 
     # ── Portfolio return: the settled-frontier-anchored Performance series ──────
     if pv is None:
-        pv = get_portfolio_value_series(inception, end_date)
+        pv = get_portfolio_value_series(inception, end_date, account_id=get_portfolio_account_id())
         # Clip the partial intraday today-bar exactly as the Performance page
         # does — the displayed series anchors on the last SETTLED trading day.
         c = last_settled_price_date(inception, end_date)
@@ -666,7 +667,7 @@ def run_risk_contribution(
 
     if sleeve_returns is None:
         from src import asset_evaluation as ae
-        inception   = inception or get_inception_date()
+        inception   = inception or get_inception_date(account_id=get_portfolio_account_id())
         end_settled = last_settled_price_date(inception, end_date or date.today().isoformat())
         sleeve_returns = ae.get_sleeve_returns(inception, end_settled)
 
