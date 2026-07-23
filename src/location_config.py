@@ -208,6 +208,15 @@ _TAXABLE_PRIORITY: dict[str, int] = {
     "us_large_core":    1,
     "intl_all_exus":    1,
     "intl_developed":   1,
+    # The international tilt sleeves belong in taxable for the same reason broad
+    # international does — a taxable holder can generally credit the foreign tax
+    # withheld, which a shelter cannot. Deliberately NOT added to _PRETAX_PRIORITY:
+    # deploying them into a shelter forfeits that credit, a cost the Asset Location
+    # page states explicitly in the fund_intl_tilts action group rather than
+    # silently allowing here.
+    "intl_quality":     1,
+    "intl_large_value": 1,
+    "intl_small_value": 1,
     "us_large_quality": 2,
     "us_large_value":   2,
     "us_small_value":   2,

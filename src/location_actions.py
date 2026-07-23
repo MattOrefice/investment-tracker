@@ -254,6 +254,52 @@ _STRANDED_EQUITY_CONS = (
 )
 
 
+# ── International tilt funding: taxable is the tax-home, capacity lives pre-tax ──
+# Target share of the household: the 15/9/8-of-49 US-structure proportions applied to
+# the 20% ex-cash international region (matches seed_saa's Intl Quality/LV/SV targets).
+_INTL_TILT_TARGET_FRACTION = 0.20 * (15 + 9 + 8) / 49 / 0.98
+# Estimated annual drag of sheltering the tilts instead of holding them in taxable —
+# the forgone foreign tax credit, ~3% intl dividend yield x ~15% effective foreign
+# withholding. Both terms vary by country mix and year, so this is one editable
+# assumption and {intl_tilt_ftc_cost} scales off it live — never a hardcoded dollar.
+_INTL_FTC_DRAG = 0.0045
+# The self-directed taxable book (post-Phase-45 single account identity).
+_SELF_DIRECTED_PSEUDONYM = "acct_01"
+
+_FUND_INTL_TILTS_PROS = (
+    "The split completes the factor structure abroad: Quality (IDHQ), Large Value "
+    "(AVIV) and Small Value (AVDV) apply the US structure's proportions to the 20% "
+    "international region — the 15-, 9- and 8-of-49 weights the domestic tilts carry — "
+    "so the sizing follows from choices already made, not a separate decision. Together "
+    "they target {intl_tilt_target_value} against the household. The capacity to fund "
+    "them exists in exactly one place: the {workplace_plan_value} MissionSquare "
+    "rollover. The self-directed taxable book — international's tax-home, the only "
+    "wrapper that can credit the foreign tax withheld — holds {self_directed_value}, so "
+    "it cannot fund a {intl_tilt_target_value} sleeve. The counterfactual to funding "
+    "these from pre-tax is therefore not 'hold them in taxable' — there is no taxable "
+    "capacity — it is 'do not hold them at all,' which forfeits the whole factor "
+    "structure to save a credit worth a fraction of it."
+)
+_FUND_INTL_TILTS_CONS = (
+    "Pre-tax forfeits the foreign tax credit. In a taxable account the ~15% foreign tax "
+    "withheld on international dividends can generally be credited against US tax on "
+    "that income; a shelter cannot claim it at all — and the credit is itself limited, "
+    "capped by US liability on the foreign income and not combinable with the "
+    "deduction, so a low-income year can leave part of it unused. On current "
+    "assumptions the loss is roughly 45 bps a year on the sleeve — about a 3% dividend "
+    "yield times that ~15% effective withholding, both of which move with country mix "
+    "and year — an estimated {intl_tilt_ftc_cost} a year on the {intl_tilt_target_value} "
+    "target. And the two shelters are not equal homes for it: the Traditional IRA is "
+    "the worse one — it loses the credit AND converts these funds' qualified dividends "
+    "into ordinary income at withdrawal, taxed at your marginal rate — while a Roth "
+    "loses the same credit but never taxes the growth again. If the tilts must sit in a "
+    "shelter, the Roth is the less-bad one, a live input to where the rollover lands. "
+    "That estimated {intl_tilt_ftc_cost} is priced, not hidden: the standing cost of "
+    "running the abroad factor structure without the taxable capacity to house it "
+    "correctly."
+)
+
+
 # ── Authored group config (scores/statuses are fixed, never computed) ──────────
 # status order for the page: act_now, evaluate, blocked, accepted.
 STATUS_ORDER = ["act_now", "evaluate", "blocked", "accepted"]
@@ -380,10 +426,26 @@ ACTION_GROUPS: list[dict] = [
         "accounts": ["Individual Taxable (Self-Directed)", "Individual Taxable (TOD)"],
         "pros": _STRANDED_EQUITY_PROS, "cons": _STRANDED_EQUITY_CONS,
     },
+    {
+        "key": "fund_intl_tilts", "title": "Fund the international tilts",
+        "score": 4, "status": "evaluate",
+        "action": "Fund IDHQ / AVIV / AVDV — {intl_tilt_target_value} against the "
+                  "household — from the {workplace_plan_value} rollover once it lands in "
+                  "a shelter. Taxable is their tax-home but holds {self_directed_value}, "
+                  "so pre-tax is the only capacity; price the foreign-tax-credit cost in "
+                  "when choosing the shelter.",
+        # No holdings yet, so informational (no register rows). The forgone foreign
+        # tax credit is stated and quantified ({intl_tilt_ftc_cost}) rather than
+        # silently allowed by adding the sleeves to _PRETAX_PRIORITY. The mirror of
+        # saa_sleeves_taxable: there the SAA sleeves belong in a shelter that is full;
+        # here they belong in taxable, which has no capacity.
+        "symbols": None, "case_filter": None, "accounts": None,
+        "pros": _FUND_INTL_TILTS_PROS, "cons": _FUND_INTL_TILTS_CONS,
+    },
 ]
 
 # Groups rendered without an "Underlying positions" expander (no register rows).
-INFORMATIONAL_KEYS = frozenset({"deploy_roth_cash", "rollover_401k"})
+INFORMATIONAL_KEYS = frozenset({"deploy_roth_cash", "rollover_401k", "fund_intl_tilts"})
 
 
 # ── Roth deploy answer ─────────────────────────────────────────────────────────
@@ -774,6 +836,15 @@ def _household_placeholders(
     _PRETAX_BOOK_SHARE = 0.25
     threshold = None if pretax_capacity is None else pretax_capacity / _PRETAX_BOOK_SHARE
 
+    # International tilt sizing + the forgone-FTC cost of sheltering it (fund_intl_tilts).
+    # The tilt target is a household share; the FTC drag scales off it live, so no
+    # dollar figure is hardcoded.
+    household_total = float(positions_df["current_value"].sum()) if not positions_df.empty else None
+    sd = positions_df[positions_df["pseudonym"] == _SELF_DIRECTED_PSEUDONYM]
+    self_directed_value = float(sd["current_value"].sum()) if not sd.empty else None
+    intl_tilt_target = None if household_total is None else household_total * _INTL_TILT_TARGET_FRACTION
+    intl_tilt_ftc = None if intl_tilt_target is None else intl_tilt_target * _INTL_FTC_DRAG
+
     def _fmt(x): return None if x is None else _fmt_dollars(x)
     return {
         "trad_ira_equity":           _fmt(trad_ira_equity),
@@ -781,6 +852,9 @@ def _household_placeholders(
         "workplace_plan_value":      _fmt(workplace_plan_value),
         "pretax_capacity_after":     _fmt(after),
         "pretax_capacity_threshold": _fmt(threshold),
+        "self_directed_value":       _fmt(self_directed_value),
+        "intl_tilt_target_value":    _fmt(intl_tilt_target),
+        "intl_tilt_ftc_cost":        _fmt(intl_tilt_ftc),
     }
 
 
