@@ -289,6 +289,29 @@ def suggest_contributions(
     return pd.DataFrame(rows) if rows else _EMPTY
 
 
+def unfunded_target_sleeves(
+    saa_targets: dict[str, float],
+    ticker_to_sleeve: dict[str, str],
+    prices: dict[str, float],
+) -> list[str]:
+    """SAA-targeted sleeves (target > 0) with no priced-held ticker.
+
+    These are exactly the sleeves ``suggest_contributions`` would allocate cash to
+    and then be unable to place — the condition that trips its Suggested-$ invariant.
+    A caller guards on this BEFORE calling ``suggest_contributions`` (naming what to
+    buy) rather than relaxing the invariant, which is deliberately left to fire.
+    Returns a sorted list of sleeve names, empty when every targeted sleeve is
+    covered. ``prices`` holds only tickers the account actually HOLDS (the page
+    fetches prices per held ticker), so a sleeve is "unfunded" precisely when it
+    holds nothing priceable.
+    """
+    priced = {
+        ticker_to_sleeve[t] for t, p in prices.items()
+        if p and p > 0 and t in ticker_to_sleeve
+    }
+    return sorted(s for s, tgt in saa_targets.items() if tgt > 0 and s not in priced)
+
+
 # ── Band-status surfacing (Phase 33) — tax-aware, buy-only philosophy ──────────
 #
 # These read compute_drift() output and produce status prose. They deliberately

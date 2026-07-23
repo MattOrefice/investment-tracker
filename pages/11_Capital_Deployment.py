@@ -16,6 +16,7 @@ from src.rebalance import (
     rebalance_action_text,
     suggest_buys,
     suggest_contributions,
+    unfunded_target_sleeves,
     SUM_INVARIANT_TOLERANCE,
 )
 from src.trade_writer import build_thesis_lookup, write_trades_batch
@@ -46,6 +47,17 @@ def _load_data(as_of: str) -> dict:
         ).fetchall()
         ticker_to_sleeve = {r["ticker"]: r["sleeve"] for r in sec_rows}
 
+        # SAA carrier ticker(s) per sleeve (is_in_saa=1) — used to name what to buy
+        # when a targeted sleeve has no holdings yet. Derived from the DB so a
+        # sleeve/ticker change can never stale the message.
+        carrier_by_sleeve: dict[str, list[str]] = {}
+        for r in conn.execute(
+            "SELECT ac.name AS sleeve, s.ticker FROM securities s "
+            "JOIN asset_classes ac ON s.asset_class_id = ac.asset_class_id "
+            "WHERE s.is_in_saa = 1 ORDER BY s.ticker"
+        ).fetchall():
+            carrier_by_sleeve.setdefault(r["sleeve"], []).append(r["ticker"])
+
         pos_theses = [dict(r) for r in conn.execute("""
             SELECT pt.thesis_id, pt.title, pt.conviction, pt.status,
                    it.title AS parent_title
@@ -61,6 +73,7 @@ def _load_data(as_of: str) -> dict:
             "saa_bands": saa_bands,
             "saa_targets_full": saa_targets_full,
             "ticker_to_sleeve": ticker_to_sleeve,
+            "carrier_by_sleeve": carrier_by_sleeve,
             "pos_theses": pos_theses,
             "prices": {},
             "portfolio_value": 0.0,
@@ -95,6 +108,7 @@ def _load_data(as_of: str) -> dict:
         "saa_bands": saa_bands,
         "saa_targets_full": saa_targets_full,
         "ticker_to_sleeve": ticker_to_sleeve,
+        "carrier_by_sleeve": carrier_by_sleeve,
         "pos_theses": pos_theses,
         "prices": prices,
         "portfolio_value": portfolio_value,
@@ -151,6 +165,7 @@ sleeve_weights   = dict(zip(sleeve_df.index, sleeve_df["Actual Weight"].values))
 saa_targets      = data["saa_targets_full"]
 saa_bands        = data["saa_bands"]
 ticker_to_sleeve = data["ticker_to_sleeve"]
+carrier_by_sleeve = data["carrier_by_sleeve"]
 portfolio_value  = data["portfolio_value"]
 invested_value   = data["invested_value"]
 spaxx_value      = data["spaxx_value"]
@@ -283,7 +298,17 @@ _dep_acct_name = st.selectbox(
 ) if _dep_accounts else None
 _dep_acct = next((a for a in _dep_accounts if a["name"] == _dep_acct_name), None)
 
-if contrib_cash > 0:
+# A sleeve carrying an SAA target but no priced-held ticker in the self-directed
+# book would have its cash allocation skipped by suggest_contributions, and the
+# Suggested-$ invariant (src/rebalance.py:267) would fire. Detect that HERE, before
+# calling the function, and name what to buy — the invariant stays armed exactly
+# as-is; we simply stop handing it an impossible input. Mirrors the sleeve_df.empty
+# guard above. Sleeve names and carrier tickers are both derived from the DB, so
+# neither can go stale.
+_unfunded = unfunded_target_sleeves(saa_targets, ticker_to_sleeve, prices)
+_unfunded_tickers = [t for s in _unfunded for t in carrier_by_sleeve.get(s, [])]
+
+if contrib_cash > 0 and not _unfunded:
     orig_suggestions = suggest_contributions(
         portfolio_value=invested_value,
         cash_to_deploy=float(contrib_cash),
@@ -465,6 +490,15 @@ if contrib_cash > 0:
             "Per-contribution overrides are appropriate for one-off tactical views; "
             "document rationale in the Trade Log."
         )
+elif contrib_cash > 0:
+    _verb = "have" if len(_unfunded) != 1 else "has"
+    _obj  = "them" if len(_unfunded) != 1 else "it"
+    st.warning(
+        f"**{', '.join(_unfunded)}** {_verb} an SAA target but no holdings yet, so "
+        f"new cash cannot be allocated to {_obj} — deploying now would leave part of "
+        f"the contribution unplaced. Buy **{', '.join(_unfunded_tickers)}** (one share "
+        "each is enough), re-import, then deploy. The rest of this page works normally."
+    )
 else:
     st.info("Enter a cash amount above to see contribution suggestions.")
 
