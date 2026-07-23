@@ -7,7 +7,9 @@ import pandas as pd
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from src.rebalance import compute_drift, suggest_buys, suggest_contributions
+from src.rebalance import (
+    compute_drift, suggest_buys, suggest_contributions, unfunded_target_sleeves,
+)
 
 
 _TARGETS = {
@@ -569,3 +571,41 @@ def test_closest_to_breach_excludes_zero_target_residual():
     c = closest_to_breach(compute_drift(weights, targets, bands))
     assert c is not None
     assert c["sleeve"] == "US Small Cap"   # not "Other / Non-SAA"
+
+
+# ── unfunded_target_sleeves — the Capital Deployment page-level guard ───────────
+# Detects targeted sleeves with no priced-held ticker BEFORE suggest_contributions
+# is called, so the page shows an actionable message instead of tripping the
+# Suggested-$ invariant. The invariant itself is unchanged.
+
+def test_unfunded_target_sleeves_empty_when_all_covered():
+    targets = {"US Large Core": 0.5, "International Quality": 0.5}
+    t2s = {"VOO": "US Large Core", "IDHQ": "International Quality"}
+    prices = {"VOO": 100.0, "IDHQ": 40.0}          # both held + priced
+    assert unfunded_target_sleeves(targets, t2s, prices) == []
+
+
+def test_unfunded_target_sleeves_flags_unpriced_sorted():
+    targets = {"US Large Core": 0.4, "International Quality": 0.3, "International Small Value": 0.3}
+    t2s = {"VOO": "US Large Core", "IDHQ": "International Quality", "AVDV": "International Small Value"}
+    prices = {"VOO": 100.0}                          # only VOO held; the two tilts unheld
+    assert unfunded_target_sleeves(targets, t2s, prices) == [
+        "International Quality", "International Small Value",
+    ]
+
+
+def test_unfunded_target_sleeves_ignores_zero_target_cash():
+    # Cash / SPAXX carries a 0 target and is never a deploy target — even unpriced it
+    # must not be flagged.
+    targets = {"US Large Core": 1.0, "Cash / SPAXX": 0.0}
+    t2s = {"VOO": "US Large Core", "SPAXX": "Cash / SPAXX"}
+    prices = {"VOO": 100.0}
+    assert unfunded_target_sleeves(targets, t2s, prices) == []
+
+
+def test_unfunded_target_sleeves_zero_price_is_not_covered():
+    # A held ticker with a 0 price does not "fund" its sleeve.
+    targets = {"US Large Core": 0.5, "International Quality": 0.5}
+    t2s = {"VOO": "US Large Core", "IDHQ": "International Quality"}
+    prices = {"VOO": 100.0, "IDHQ": 0.0}
+    assert unfunded_target_sleeves(targets, t2s, prices) == ["International Quality"]
