@@ -171,9 +171,12 @@ def _execute_confirm_dialog(
     trades_for_confirm: list[dict],
     expected_total: float,
     today_str: str,
+    account_id: int,
+    account_name: str,
 ) -> None:
     st.caption(
-        f"These trades will be written to your Trade Log dated **{today_str}**. "
+        f"These trades will be written to your Trade Log dated **{today_str}**, "
+        f"in account **{account_name}**. "
         "Edit prices or shares above before confirming if your actual fills differ "
         "from suggestions."
     )
@@ -213,7 +216,7 @@ def _execute_confirm_dialog(
     col_ok, col_cancel = st.columns(2)
     with col_ok:
         if st.button("Confirm and log", type="primary", use_container_width=True):
-            ok = write_trades_batch(trades_for_confirm, expected_total)
+            ok = write_trades_batch(trades_for_confirm, expected_total, account_id)
             if ok:
                 n = len(trades_for_confirm)
                 st.session_state["exec_success"] = (
@@ -247,6 +250,33 @@ contrib_cash = st.number_input(
     key="contrib_cash",
     help="New money being added to the portfolio. Does not include existing SPAXX balance.",
 )
+
+# Which account these deployment trades are logged to. write_trades_batch no
+# longer guesses — the account is chosen here (visibly), defaulting to the book
+# that currently holds the trades so the common taxable-rebalance flow is one
+# click, but shown and changeable so a deployment is never silently mis-filed.
+with get_connection() as _conn:
+    _dep_accounts = [dict(r) for r in _conn.execute(
+        "SELECT account_id, name FROM accounts WHERE is_active=1 ORDER BY name"
+    ).fetchall()]
+    _trades_acct_row = _conn.execute(
+        "SELECT account_id FROM trades GROUP BY account_id ORDER BY COUNT(*) DESC LIMIT 1"
+    ).fetchone()
+_default_acct_id = _trades_acct_row["account_id"] if _trades_acct_row else (
+    _dep_accounts[0]["account_id"] if _dep_accounts else None
+)
+_default_idx = next(
+    (i for i, a in enumerate(_dep_accounts) if a["account_id"] == _default_acct_id), 0
+)
+_dep_acct_name = st.selectbox(
+    "Deploy into account",
+    [a["name"] for a in _dep_accounts],
+    index=_default_idx,
+    key="deploy_account",
+    help="The account these trades are logged to. Defaults to the book that holds "
+         "your existing trades; change it to deploy into a different account.",
+) if _dep_accounts else None
+_dep_acct = next((a for a in _dep_accounts if a["name"] == _dep_acct_name), None)
 
 if contrib_cash > 0:
     orig_suggestions = suggest_contributions(
@@ -358,11 +388,16 @@ if contrib_cash > 0:
                     "thesis_id":   _thesis_id_lookup.get(_ticker),
                     "lot_source":  "Manual",
                 })
-            _execute_confirm_dialog(
-                _trades_for_confirm,
-                float(contrib_cash),
-                _today.strftime("%B %d, %Y"),
-            )
+            if _dep_acct is None:
+                st.warning("No active account available to log trades into.")
+            else:
+                _execute_confirm_dialog(
+                    _trades_for_confirm,
+                    float(contrib_cash),
+                    _today.strftime("%B %d, %Y"),
+                    int(_dep_acct["account_id"]),
+                    _dep_acct["name"],
+                )
 
         st.caption(
             "Trades are dated today and written to the Trade Log. "

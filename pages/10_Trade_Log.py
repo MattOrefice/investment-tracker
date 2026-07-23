@@ -63,7 +63,7 @@ def _pills(names_csv: str) -> str:
 def load_all():
     with get_connection() as conn:
         trades = [dict(r) for r in conn.execute("""
-            SELECT tr.trade_id, tr.trade_date, tr.action, tr.ticker,
+            SELECT tr.trade_id, tr.account_id, tr.trade_date, tr.action, tr.ticker,
                    tr.shares, tr.price, tr.fees, tr.notes,
                    COALESCE(tr.lot_source, 'initial') AS lot_source,
                    pt.title  AS position_thesis,
@@ -439,6 +439,36 @@ def render_fidelity_import():
         st.error(f"Could not parse the CSV: {exc}")
         return
 
+    # Fidelity's account-history export does NOT name the account (it is a
+    # single-account export — the columns are Run Date / Action / Symbol / … with
+    # no Account field), so the account cannot be read per row. It must be chosen
+    # explicitly here: every lot in this file is filed under the selected account,
+    # and there is no silent default — importing to the wrong account cannot be
+    # undone (a lot carries no other account marker afterward).
+    _ACCT_PLACEHOLDER = "— Select the account this file was exported from —"
+    _acct_choice = st.selectbox(
+        "Account this history belongs to",
+        [_ACCT_PLACEHOLDER] + [a["name"] for a in data["accounts"]],
+        key="fidelity_import_account",
+        help="Fidelity's account-history CSV does not include the account, so name "
+             "it here. Every lot in this file is logged to this account. Export one "
+             "account's history at a time.",
+    )
+    _sel_acct = next((a for a in data["accounts"] if a["name"] == _acct_choice), None)
+    if _sel_acct is None:
+        st.info(
+            "Choose the account this file was exported from to continue — importing "
+            "to the wrong account cannot be undone."
+        )
+        return
+    account_id = int(_sel_acct["account_id"])
+
+    # Stamp every parsed lot with the chosen account BEFORE dedup, so the dedup key
+    # is account-scoped: an identical lot in a different account (a cross-account
+    # rebalance) is not mistaken for a duplicate of one already logged elsewhere.
+    for _lot in parsed["trades"]:
+        _lot["account_id"] = account_id
+
     known_set = {s["ticker"] for s in data["securities"]}
     known_lots, unknown_lots = split_known_tickers(parsed["trades"], known_set)
     to_import, already = dedupe_against_existing(known_lots, data["trades"])
@@ -486,7 +516,8 @@ def render_fidelity_import():
     )
 
     if st.button(
-        f"Confirm import — {len(to_import)} lot{'s' if len(to_import) != 1 else ''}",
+        f"Confirm import — {len(to_import)} lot{'s' if len(to_import) != 1 else ''} "
+        f"→ {_sel_acct['name']}",
         type="primary",
         disabled=not is_write_enabled(),
         key="fidelity_confirm",
@@ -508,8 +539,11 @@ def render_fidelity_import():
             "notes":       f"Imported from Fidelity CSV {today} | fp: {l['fingerprint']}",
         } for l in to_import]
         expected = round(sum(l["total_value"] for l in to_import), 2)
-        if write_trades_batch(trades_list, expected):
-            st.session_state["trade_success"] = f"Imported {len(trades_list)} trade lots from Fidelity CSV."
+        if write_trades_batch(trades_list, expected, account_id):
+            st.session_state["trade_success"] = (
+                f"Imported {len(trades_list)} trade lots from Fidelity CSV "
+                f"into {_sel_acct['name']}."
+            )
             st.rerun()
         else:
             st.error("Import failed — no trades were written (check the write guard).")

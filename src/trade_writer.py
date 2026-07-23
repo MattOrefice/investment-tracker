@@ -26,13 +26,24 @@ def build_thesis_lookup(pos_theses: list[dict]) -> dict[str, int | None]:
     return lookup
 
 
-def write_trades_batch(trades_list: list[dict], expected_total: float) -> bool:
+def write_trades_batch(
+    trades_list: list[dict], expected_total: float, account_id: int
+) -> bool:
     """Write a batch of trades to the trades table in a single transaction.
 
     Each dict in trades_list must contain:
         ticker, trade_date, shares, price, total_value
     Optional keys: thesis_id, action (default "Buy"), lot_source (default "Manual"),
                    notes.
+
+    ``account_id`` is REQUIRED and is the account every lot in this batch belongs
+    to. It is NEVER guessed: a wrong-account write is unrecoverable — trades carry
+    no other account marker, and once a Roth lot is written under the taxable
+    account there is nothing left to distinguish it from a taxable trade. So a
+    missing/None account_id RAISES (ValueError) rather than resolving to a
+    plausible default, and an account_id that is not an active account RAISES too.
+    (The old behaviour — SELECT the lowest active account_id — is exactly the
+    silent-misattribution defect this signature removes.)
 
     Guard:
         Returns False immediately if is_write_enabled() is False.
@@ -42,13 +53,35 @@ def write_trades_batch(trades_list: list[dict], expected_total: float) -> bool:
 
     Returns True on success, False on guard/failure.
     Empty list returns True without writing anything.
+    Raises ValueError if account_id is None or not an active account.
     """
+    if account_id is None:
+        raise ValueError(
+            "write_trades_batch requires an explicit account_id — it will not guess. "
+            "A wrong-account write is unrecoverable (a lot carries no other account "
+            "marker), so the caller must name the account this batch belongs to."
+        )
+
     if not is_write_enabled():
         write_guard_toast()
         return False
 
     if not trades_list:
         return True
+
+    # Fail loud on an account_id that is not a real, active account — writing to a
+    # non-existent/inactive account is as unrecoverable as writing to the wrong one.
+    with get_connection() as conn:
+        exists = conn.execute(
+            "SELECT 1 FROM accounts WHERE account_id = ? AND is_active = 1",
+            (int(account_id),),
+        ).fetchone()
+    if exists is None:
+        raise ValueError(
+            f"write_trades_batch: account_id {account_id!r} is not an active account; "
+            "refusing to write rather than silently mis-file the batch."
+        )
+    account_id = int(account_id)
 
     total = sum(float(t.get("total_value", 0.0)) for t in trades_list)
     assert abs(total - expected_total) < 0.10, (
@@ -57,13 +90,6 @@ def write_trades_batch(trades_list: list[dict], expected_total: float) -> bool:
 
     try:
         with get_connection() as conn:
-            row = conn.execute(
-                "SELECT account_id FROM accounts WHERE is_active=1 ORDER BY account_id LIMIT 1"
-            ).fetchone()
-            if row is None:
-                return False
-            account_id = int(row["account_id"])
-
             for t in trades_list:
                 if not t.get("ticker") or float(t.get("shares", 0)) <= 0:
                     return False
