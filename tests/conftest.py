@@ -51,3 +51,30 @@ def use_personal_db(monkeypatch):
     """Pin this test to the personal tracker book explicitly."""
     _pin_mode(monkeypatch, "personal")
     yield
+
+
+@pytest.fixture
+def no_ambient_db(tmp_path, monkeypatch):
+    """Repoint src.db.DB_PATH at an EMPTY sqlite file for this test.
+
+    OPT-IN, never autouse: request it in a test's signature to assert that the
+    test reaches NO database. The ~50 honest DB-backed tests that legitimately
+    read data are untouched — pinning this autouse would break every one of them.
+
+    Why it exists: production scopes reads with the inline idiom
+    ``f(..., account_id=get_portfolio_account_id())``. The resolver argument
+    evaluates BEFORE a mock intercepts the wrapped call, so patching only the data
+    function (``get_holdings_on_date`` / ``get_portfolio_value_series`` / …) does
+    NOT stop the DB hit — and against the ambient DB it silently resolves to
+    account 1 and the test passes, masking the coupling. Under this fixture the
+    resolver instead opens an empty DB with no ``accounts`` table and RAISES,
+    turning that silent coupling into a hard failure. Keep it on any unit test that
+    mocks its data layer and must not touch a database, so the next instance of the
+    same shape fails loudly instead of passing by accident. Pairs with patching the
+    resolver at the module boundary (e.g. ``src.factors.get_portfolio_account_id``).
+    """
+    import src.db as db
+    empty = tmp_path / "no_ambient_db.db"          # created on first connect; no schema
+    monkeypatch.setattr(db, "DB_PATH", empty)
+    monkeypatch.setattr(db, "_migrated_paths", set(), raising=False)
+    return empty
