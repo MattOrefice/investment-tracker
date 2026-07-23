@@ -19,7 +19,8 @@ from src.seed_securities import BENCHMARKS, HOLDINGS
 
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
 _TEN = {"SPY", "QUAL", "IWD", "IWM", "EFA", "EEM", "IEF", "TIP", "BIL", "DBC"}
-_INTL_NULL = {"IQLT", "EFV", "SCZ"}
+_INTL = {"IQLT", "EFV", "SCZ"}   # now sourced too (exhibit completeness)
+_ALL_BENCH = _TEN | _INTL
 
 
 def _m41():
@@ -40,16 +41,23 @@ def test_djp_retired_dbc_is_the_real_assets_benchmark():
     assert dbc["asset_class"] == "Real Assets"
 
 
-def test_ten_benchmarks_carry_sourced_er_with_provenance():
+def test_every_benchmark_carries_sourced_er_with_provenance():
+    """All 13 benchmarks — including the three international-split ones (now
+    sourced for exhibit completeness) — carry a positive ER + issuer source + date."""
     by = {b["ticker"]: b for b in BENCHMARKS}
-    for t in _TEN:
+    for t in _ALL_BENCH:
         b = by[t]
         assert isinstance(b["expense_ratio"], float) and b["expense_ratio"] > 0, f"{t} ER missing"
         assert b.get("er_source"), f"{t} has no er_source"
         assert b.get("er_as_of"), f"{t} has no er_as_of (date recorded next to the value)"
-    # The three international-split benchmarks stay NULL by deliberate choice.
-    for t in _INTL_NULL:
-        assert by[t]["expense_ratio"] is None
+
+
+def test_intl_benchmarks_pair_against_their_holdings():
+    """The exhibit now has a benchmark ER for every international tilt sleeve, so
+    each shows a real holding-vs-benchmark comparison rather than a blank."""
+    by = {b["ticker"]: b for b in BENCHMARKS}
+    for t in _INTL:
+        assert isinstance(by[t]["expense_ratio"], float) and by[t]["expense_ratio"] > 0
 
 
 def test_dbc_er_is_corrected_value_not_the_wrong_binary_one():
@@ -83,7 +91,7 @@ def test_fresh_reseed_regenerates_benchmark_ers(tmp_path, monkeypatch):
     ers = dict(conn.execute(
         "SELECT ticker, expense_ratio FROM securities WHERE security_type='benchmark'"))
     conn.close()
-    for t in _TEN:
+    for t in _ALL_BENCH:
         assert ers.get(t) is not None, f"{t} came back NULL on reseed — not regenerable"
     assert ers.get("DBC") == 0.0085 and "DJP" not in ers
 
@@ -105,7 +113,7 @@ def test_migration_heals_legacy_state_and_is_idempotent(tmp_path, monkeypatch):
     conn = sqlite3.connect(str(db)); conn.row_factory = sqlite3.Row
     dbc = conn.execute("SELECT expense_ratio, security_type FROM securities WHERE ticker='DBC'").fetchone()
     assert dbc["expense_ratio"] == 0.0085 and dbc["security_type"] == "benchmark"
-    for t in _INTL_NULL:
+    for t in _INTL:
         st = conn.execute("SELECT security_type FROM securities WHERE ticker=?", (t,)).fetchone()["security_type"]
         assert st == "benchmark", f"{t} security_type not healed"
     conn.close()
