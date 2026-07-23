@@ -1151,89 +1151,99 @@ with col:
     if sw.empty:
         st.info("No holdings found.")
     else:
-        # Actual vs. target allocation bar chart
-        _sleeves_ch = sw.index.tolist()
-        _fig_alloc = go.Figure()
-        # Trace order matches legend and z-order: Band (bottom) → Target → Actual (top)
-        _fig_alloc.add_trace(go.Bar(
-            name="Tolerance Band",
-            y=_sleeves_ch,
-            x=[band_map.get(s, 0.03) * 2 * 100 for s in _sleeves_ch],
-            base=[(sw.loc[s, "Target Weight"] - band_map.get(s, 0.03)) * 100
-                  for s in _sleeves_ch],
-            orientation="h",
-            marker_color="rgba(91, 127, 166, 0.15)",
-            marker_line=dict(width=0),
-            showlegend=True,
-        ))
-        _fig_alloc.add_trace(go.Bar(
-            name="Target",
-            y=_sleeves_ch,
-            x=(sw["Target Weight"] * 100).tolist(),
-            orientation="h",
-            marker_color=_PALETTE["sp500"],
-            opacity=0.65,
-        ))
-        _fig_alloc.add_trace(go.Bar(
-            name="Actual",
-            y=_sleeves_ch,
-            x=(sw["Actual Weight"] * 100).tolist(),
-            orientation="h",
-            marker_color=_PALETTE["portfolio"],
-        ))
-        _fig_alloc.update_layout(
-            barmode="overlay",
-            xaxis_title="Weight (%)",
-            yaxis_title=None,
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
-            margin=dict(l=0, r=0, t=40, b=0),
-            height=380,
-            plot_bgcolor="white",
-            paper_bgcolor="white",
-            font=dict(family="sans-serif", size=11, color="#333"),
-            xaxis=dict(gridcolor="#E8E8E8"),
-        )
-        st.plotly_chart(_fig_alloc, width='stretch')
+        # compute_drift is the single authority on each sleeve's tolerance band and
+        # RAISES on a missing one, so this drift table and the chart's band bars read
+        # the SAME band and cannot disagree. (Previously the chart fell back to ±0.03
+        # and compute_drift to ±0.02 for a sleeve with no band — a silent split.) It
+        # is computed first, then wrapped so a missing band fails LOUD for THIS
+        # section only: the methodology-validation and FI-duration sections below
+        # still render rather than being blanked by an uncaught raise here.
+        try:
+            drift_df = compute_drift(
+                sw["Actual Weight"].to_dict(),
+                sw["Target Weight"].to_dict(),
+                band_map,
+            )
+        except ValueError as _drift_err:
+            drift_df = None
+            st.error(f"Drift analysis unavailable — {_drift_err}")
 
-        # Source drift from the canonical compute_drift helper (shared with the
-        # Capital Deployment page) instead of recomputing inline. The display
-        # layer below — ✓/⚠ status, abs-drift sort, bps/%% formatting — is
-        # derived from its output and is unchanged.
-        drift_df = compute_drift(
-            sw["Actual Weight"].to_dict(),
-            sw["Target Weight"].to_dict(),
-            band_map,
-        )
-        outside_band_count = int((~drift_df["In Band"]).sum())
+        if drift_df is not None:
+            # Actual vs. target allocation bar chart — band bars read drift_df["Band"]
+            # (the same value compute_drift used for the table's in/out verdict).
+            _sleeves_ch = sw.index.tolist()
+            _fig_alloc = go.Figure()
+            # Trace order matches legend and z-order: Band (bottom) → Target → Actual (top)
+            _fig_alloc.add_trace(go.Bar(
+                name="Tolerance Band",
+                y=_sleeves_ch,
+                x=[drift_df.loc[s, "Band"] * 2 * 100 for s in _sleeves_ch],
+                base=[(sw.loc[s, "Target Weight"] - drift_df.loc[s, "Band"]) * 100
+                      for s in _sleeves_ch],
+                orientation="h",
+                marker_color="rgba(91, 127, 166, 0.15)",
+                marker_line=dict(width=0),
+                showlegend=True,
+            ))
+            _fig_alloc.add_trace(go.Bar(
+                name="Target",
+                y=_sleeves_ch,
+                x=(sw["Target Weight"] * 100).tolist(),
+                orientation="h",
+                marker_color=_PALETTE["sp500"],
+                opacity=0.65,
+            ))
+            _fig_alloc.add_trace(go.Bar(
+                name="Actual",
+                y=_sleeves_ch,
+                x=(sw["Actual Weight"] * 100).tolist(),
+                orientation="h",
+                marker_color=_PALETTE["portfolio"],
+            ))
+            _fig_alloc.update_layout(
+                barmode="overlay",
+                xaxis_title="Weight (%)",
+                yaxis_title=None,
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+                margin=dict(l=0, r=0, t=40, b=0),
+                height=380,
+                plot_bgcolor="white",
+                paper_bgcolor="white",
+                font=dict(family="sans-serif", size=11, color="#333"),
+                xaxis=dict(gridcolor="#E8E8E8"),
+            )
+            st.plotly_chart(_fig_alloc, width='stretch')
 
-        drift_rows = []
-        for sleeve, row in drift_df.iterrows():
-            band = row["Band"]
-            drift_rows.append({
-                "Sleeve":        sleeve,
-                "Target":        row["Target Weight"] * 100,
-                "Actual":        row["Actual Weight"] * 100,
-                "Drift (bps)":   row["Drift"] * 10_000,
-                "Band (±bps)":   f"±{band*10000:.0f}",
-                "Status":        "✓ Within" if row["In Band"] else "⚠ Outside",
-            })
+            outside_band_count = int((~drift_df["In Band"]).sum())
 
-        # Sort by absolute drift descending
-        drift_rows.sort(key=lambda r: abs(r["Drift (bps)"]), reverse=True)
-        st.dataframe(
-            pd.DataFrame(drift_rows),
-            hide_index=True,
-            width='stretch',
-            column_config={
-                "Target":      st.column_config.NumberColumn("Target",      format="%.1f%%"),
-                "Actual":      st.column_config.NumberColumn("Actual",      format="%.1f%%"),
-                "Drift (bps)": st.column_config.NumberColumn("Drift (bps)", format="%+.0f"),
-            },
-        )
-        st.caption(
-            f"Rebalance candidates: **{outside_band_count}** sleeve"
-            f"{'s' if outside_band_count != 1 else ''} outside tolerance band"
-        )
+            drift_rows = []
+            for sleeve, row in drift_df.iterrows():
+                band = row["Band"]
+                drift_rows.append({
+                    "Sleeve":        sleeve,
+                    "Target":        row["Target Weight"] * 100,
+                    "Actual":        row["Actual Weight"] * 100,
+                    "Drift (bps)":   row["Drift"] * 10_000,
+                    "Band (±bps)":   f"±{band*10000:.0f}",
+                    "Status":        "✓ Within" if row["In Band"] else "⚠ Outside",
+                })
+
+            # Sort by absolute drift descending
+            drift_rows.sort(key=lambda r: abs(r["Drift (bps)"]), reverse=True)
+            st.dataframe(
+                pd.DataFrame(drift_rows),
+                hide_index=True,
+                width='stretch',
+                column_config={
+                    "Target":      st.column_config.NumberColumn("Target",      format="%.1f%%"),
+                    "Actual":      st.column_config.NumberColumn("Actual",      format="%.1f%%"),
+                    "Drift (bps)": st.column_config.NumberColumn("Drift (bps)", format="%+.0f"),
+                },
+            )
+            st.caption(
+                f"Rebalance candidates: **{outside_band_count}** sleeve"
+                f"{'s' if outside_band_count != 1 else ''} outside tolerance band"
+            )
 
     st.divider()
 

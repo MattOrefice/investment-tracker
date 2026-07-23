@@ -261,11 +261,30 @@ def account_shelter_priority(tax_treatment: str) -> int | None:
     return ACCOUNT_SHELTER_PRIORITY.get(tax_treatment)
 
 
+def _require_rate(tax_profile: dict[str, float], key: str) -> float:
+    """One component of a combined rate, or raise. Deliberately NO default.
+
+    A missing key previously read as 0.0, silently DROPPING that component: an
+    absent ``state_ltcg`` turned a 15%+3.07% LTCG rate into a bare 15%, understating
+    every tax-drag and payback figure downstream with nothing visibly wrong. The
+    zero was indistinguishable from a real 0% rate. An incomplete tax_profile is a
+    configuration error to fix at the source, not a rate to quietly halve."""
+    if key not in tax_profile:
+        raise KeyError(
+            f"tax_profile is missing {key!r}; a combined rate must not silently drop "
+            f"a component to 0 (it would understate tax drag). Present: "
+            f"{sorted(tax_profile)}."
+        )
+    return float(tax_profile[key])
+
+
 def ltcg_rate(tax_profile: dict[str, float]) -> float:
-    """Combined long-term capital-gains rate (federal + state)."""
-    return float(tax_profile.get("federal_ltcg", 0.0)) + float(tax_profile.get("state_ltcg", 0.0))
+    """Combined long-term capital-gains rate (federal + state). Raises on a missing
+    component (see _require_rate) rather than understating the rate."""
+    return _require_rate(tax_profile, "federal_ltcg") + _require_rate(tax_profile, "state_ltcg")
 
 
 def ordinary_rate(tax_profile: dict[str, float]) -> float:
-    """Combined ordinary marginal rate (federal + state)."""
-    return float(tax_profile.get("federal_marginal", 0.0)) + float(tax_profile.get("state_marginal", 0.0))
+    """Combined ordinary marginal rate (federal + state). Raises on a missing
+    component (see _require_rate) rather than understating the rate."""
+    return _require_rate(tax_profile, "federal_marginal") + _require_rate(tax_profile, "state_marginal")

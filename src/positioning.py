@@ -369,7 +369,20 @@ def get_effective_duration(end_date: str) -> dict:
         if sleeve not in sw.index:
             continue
         actual_wt = float(sw.loc[sleeve, "Actual Weight"])
-        duration  = ETF_DURATION.get(ticker, 0.0)
+        # A held FI-sleeve holding with no duration would silently contribute 0 to
+        # the weighted sleeve duration — understating "FI Sleeve Duration" with no
+        # signal. _FI_SLEEVE_HOLDING and ETF_DURATION live side by side in this
+        # module, so a missing entry means a holding was added without its duration:
+        # raise rather than default to 0.
+        if ticker not in ETF_DURATION:
+            raise ValueError(
+                f"get_effective_duration: FI-sleeve holding {ticker!r} (sleeve "
+                f"{sleeve!r}) has no entry in ETF_DURATION. A held FI fund with no "
+                f"duration silently understates the FI sleeve duration metric — add "
+                f"{ticker}'s effective duration from the provider fact sheet. "
+                f"Known: {sorted(ETF_DURATION)}."
+            )
+        duration  = ETF_DURATION[ticker]
         fi_wt_incl_cash += actual_wt
         if sleeve == "Cash / SPAXX":
             cash_wt += actual_wt

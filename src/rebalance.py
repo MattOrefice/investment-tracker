@@ -31,8 +31,26 @@ def compute_drift(
     """
     rows = []
     for sleeve, actual in sleeve_weights.items():
+        # target: a held sleeve with no SAA target reads as fully overweight vs 0%.
+        # That is a defensible, DISPLAY-ONLY reading of an untargeted holding (no
+        # consumer sizes a trade from it — suggest_buys is underweight-only,
+        # suggest_contributions/closest_to_breach are target-driven), so it keeps
+        # the 0.0 fallback rather than raising and blanking the whole drift table.
         target = saa_targets.get(sleeve, 0.0)
-        band = saa_bands.get(sleeve, 0.02)
+        # band: a missing band is NOT display-only — it decides the In-Band verdict.
+        # A silent fallback here fabricated that verdict (and split 0.02 here vs 0.03
+        # in the Performance chart for the SAME sleeve). Every held sleeve maps to a
+        # strategic asset_classes row whose band is NOT NULL, so a sleeve reaching
+        # here without one is an unmapped/mis-mapped holding — raise, don't guess.
+        if sleeve not in saa_bands:
+            raise ValueError(
+                f"compute_drift: sleeve {sleeve!r} has no tolerance band. Every held "
+                f"sleeve must resolve to a strategic asset_classes row with a band; a "
+                f"sleeve here without one is an unmapped/mis-mapped holding, and a "
+                f"fallback band would fabricate its in/out-of-band verdict. "
+                f"Bands present for: {sorted(saa_bands)}."
+            )
+        band = saa_bands[sleeve]
         drift = round(actual - target, 6)
         rows.append(
             {
