@@ -8,6 +8,38 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Account identity merged: one self-directed taxable book, not two
+_2026-07-23_
+
+The self-directed taxable account existed as two rows — the same real account
+modelled twice. `acct_01` (the `db.py` base account) carried the entire 32-trade
+ledger; `acct_taxable_01` (seeded by `household_accounts`) carried the positions
+CSV, the `account_map` entry, and the household-page identity, with no trades. They
+were provably identical (every ticker's trade-derived net share count equalled the
+positions-CSV quantity) and reconciled only by coincidence — a latent landmine,
+since `get_portfolio_account()` raises on more than one taxable+self candidate and
+would have stopped the whole trade-derived app the moment `acct_taxable_01` acquired
+a trade.
+
+Merged into `acct_01` (the survivor keeps the ledger — which never moves — and is
+the base account shared with demo). The `household_accounts` seed no longer creates
+the duplicate; `acct_01` gains the household `display_name` "Individual Taxable
+(Self-Directed)" in the personal bootstrap (demo keeps "Personal Fidelity"); and
+`migrate_accounts_phase45_merge` deletes the redundant row from an existing DB,
+aborting rather than deleting a ledger if it ever finds trades on it.
+
+**Two personal-mode inputs must move together.** The positions↔account link runs
+through `private/account_map.json` (raw account number → pseudonym), now mapped to
+`acct_01`. Repointing that value WITHOUT healing the account row — renaming
+`acct_01` and deleting `acct_taxable_01`, which the bootstrap does — leaves the
+household register keyed on the wrong name (positions under `acct_01`, but `acct_01`
+still labelled "Personal Fidelity") and the SAA-sleeve tables render empty. Both are
+gitignored and carried by hand between machines: **syncing `account_map.json` to a
+second machine is not enough on its own — that machine's `tracker.db` must also take
+the bootstrap heal.** The map value and the account row are one change in two files.
+
+---
+
 ## International benchmark ERs sourced too: complete the fee exhibit
 _2026-07-23_
 
