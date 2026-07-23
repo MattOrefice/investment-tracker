@@ -389,9 +389,9 @@ def test_escape_md_leaves_non_dollar_markdown_intact():
 # ── Account directability (bug 5) ──────────────────────────────────────────────
 
 def test_directable_accounts_enumerated():
-    assert DIRECTABLE_PSEUDONYMS == frozenset({"acct_taxable_01", "acct_roth_01", "acct_trad_ira_01"})
-    # Directable: self-directed taxable + both IRAs.
-    assert is_directable("acct_taxable_01") is True
+    assert DIRECTABLE_PSEUDONYMS == frozenset({"acct_01", "acct_roth_01", "acct_trad_ira_01"})
+    # Directable: self-directed taxable (acct_01) + both IRAs.
+    assert is_directable("acct_01") is True
     assert is_directable("acct_roth_01") is True
     assert is_directable("acct_trad_ira_01") is True
     # Needs coordination: TOD taxable, workplace plans, HSA.

@@ -423,20 +423,20 @@ def test_load_performance_seed_file_row_count():
 def test_load_performance_empty_return_is_nan_not_zero():
     from src.household import load_household_performance
     df = load_household_performance(_PERF_CSV)
-    # acct_taxable_01 TWR 3M is empty in the seed file — must be NaN, not 0.0
+    # acct_01 TWR 3M is empty in the seed file — must be NaN, not 0.0
     row = df[
-        (df["account_pseudonym"] == "acct_taxable_01")
+        (df["account_pseudonym"] == "acct_01")
         & (df["return_type"] == "TWR")
         & (df["period"] == "3M")
     ]
-    assert not row.empty, "Expected acct_taxable_01 TWR 3M row to exist"
+    assert not row.empty, "Expected acct_01 TWR 3M row to exist"
     assert pd.isna(row.iloc[0]["return_pct"]), "Empty return_pct must be NaN, not 0.0"
 
 
 def _make_accounts_df_7():
     return pd.DataFrame({
         "pseudonym": [
-            "acct_taxable_01", "acct_taxable_02", "acct_roth_01", "acct_wkpl_01",
+            "acct_01", "acct_taxable_02", "acct_roth_01", "acct_wkpl_01",
             "acct_trad_ira_01", "acct_hsa_01", "acct_wkpl_02",
         ],
         "display_name": [
@@ -453,7 +453,7 @@ def _make_accounts_df_7():
 def _make_perf_df_twr():
     """4 accounts with TWR data; 3 absent accounts should show '—'."""
     rows = []
-    for pseudo in ["acct_taxable_01", "acct_taxable_02", "acct_roth_01", "acct_wkpl_01"]:
+    for pseudo in ["acct_01", "acct_taxable_02", "acct_roth_01", "acct_wkpl_01"]:
         for period in ["1M", "3M", "YTD", "1Y", "3Y", "5Y", "SI"]:
             rows.append({
                 "account_pseudonym": pseudo,
@@ -469,7 +469,7 @@ def _make_perf_df_twr():
 def _make_perf_df_mwr():
     """3 accounts with MWR data; 4 absent accounts should show '—'."""
     rows = []
-    for pseudo in ["acct_taxable_01", "acct_taxable_02", "acct_roth_01"]:
+    for pseudo in ["acct_01", "acct_taxable_02", "acct_roth_01"]:
         for period in ["1M", "3M", "YTD", "1Y", "3Y", "5Y", "SI"]:
             rows.append({
                 "account_pseudonym": pseudo,
@@ -510,7 +510,7 @@ def test_build_performance_table_no_pseudonym_leak():
     from src.household import build_performance_table
     tbl = build_performance_table(_make_perf_df_twr(), _make_accounts_df_7(), return_type="TWR")
     tbl_str = tbl.to_string()
-    assert "acct_taxable_01" not in tbl_str, "Pseudonym join key leaked into performance table"
+    assert "acct_01" not in tbl_str, "Pseudonym join key leaked into performance table"
 
 
 def test_build_performance_table_self_directed_sorts_first():

@@ -1,18 +1,22 @@
 """Per-account share reconciliation: trade-derived holdings vs broker positions.
 
-This is the guard that did not exist. The account-identity duplication
-(acct_01 carries the trade ledger; acct_taxable_01 carries the positions CSV)
-reconciled today ONLY because the trade-derived reads were account-blind — they
-summed every account, so the taxable book's trade-derived shares happened to
-equal the taxable positions. The moment a second account's trades landed, the
-blind sum diverged from the per-account positions with nothing to catch it.
+This is the guard that did not exist. The account-identity duplication that
+motivated it — acct_01 carrying the trade ledger while acct_taxable_01 carried
+the positions CSV, the SAME real account under two ids — has since been merged
+into acct_01 (tools/migrate_accounts_phase45_merge.py). Before the reads were
+account-scoped, that split reconciled ONLY by coincidence: the trade-derived
+reads were account-blind, summing every account, so the taxable book's shares
+happened to equal the taxable positions. The moment a second account's trades
+landed, the blind sum diverged from the per-account positions with nothing to
+catch it.
 
-Now that the reads are account-scoped (src/holdings.py), the reconciliation is
-meaningful per account: for a given account, the net shares implied by its trade
-ledger must equal the quantities the broker reports for that same account
-(matched by pseudonym). A divergence means a trade was booked to the wrong
-account, a fill was missed, or a corporate action is unrecorded — all things a
-silent account-blind sum used to hide.
+Now that the reads are account-scoped (src/holdings.py) and the identity is
+single, the reconciliation is a true per-account check: for a given account, the
+net shares implied by its trade ledger must equal the quantities the broker
+reports for that same account (matched by pseudonym — now the same pseudonym on
+both sides). A divergence means a trade was booked to the wrong account, a fill
+was missed, or a corporate action is unrecorded — all things a silent
+account-blind sum used to hide.
 """
 from __future__ import annotations
 

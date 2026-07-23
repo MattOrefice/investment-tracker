@@ -27,8 +27,17 @@ _TAX_TO_TYPE: dict[str, str] = {
 # included_in_household=0 means the account holds money that is not a household
 # asset — excluded from every total, allocation, and liquidity calc at this one
 # source, never re-filtered per page.
+# The self-directed taxable book is NOT seeded here. It is acct_01 — the base
+# account db.py creates (id 1), which carries the trade ledger and is what
+# get_portfolio_account() resolves. Seeding a second self-directed taxable account
+# ("acct_taxable_01") duplicated that identity: the SAME real account under two ids
+# (trades booked to acct_01, positions/CSV mapped to acct_taxable_01), which only
+# ever reconciled by coincidence. acct_01 now carries the household identity too —
+# the positions CSV maps to it via account_map.json, and its household-facing
+# display_name ("Individual Taxable (Self-Directed)") is set in
+# bootstrap_personal_db (personal-only, so demo's acct_01 keeps "Personal
+# Fidelity"). See tools/migrate_accounts_phase45_merge.py.
 _ACCOUNTS: list[tuple[str, str, str, str, int]] = [
-    ("taxable",         "self",     "acct_taxable_01",  "Individual Taxable (Self-Directed)", 1),
     ("taxable",         "external", "acct_taxable_02",  "Individual Taxable (TOD)", 1),
     ("traditional_ira", "external", "acct_trad_ira_01", "Traditional IRA", 1),
     ("roth_ira",        "external", "acct_roth_01",     "Roth IRA", 1),
@@ -47,7 +56,10 @@ _ACCOUNTS: list[tuple[str, str, str, str, int]] = [
 
 
 def seed_household_accounts(db_path: str | Path) -> None:
-    """UPSERT the 7 household accounts into the accounts table, keyed on pseudonym."""
+    """UPSERT the 6 household accounts into the accounts table, keyed on pseudonym.
+
+    The 7th household account — the self-directed taxable book — is acct_01, the
+    db.py base account, NOT seeded here (see the _ACCOUNTS note above)."""
     db_path = Path(db_path)
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
