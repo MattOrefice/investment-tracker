@@ -91,6 +91,7 @@ def test_scores_are_read_from_config_verbatim():
         "frozen_tod_income": 5,
         "saa_sleeves_taxable": 1,
         "predeploy_stranded_equity": 4,
+        "fund_intl_tilts": 4,
     }
 
 
@@ -106,6 +107,7 @@ def test_statuses_are_read_from_config_verbatim():
         "frozen_tod_income": "accepted",
         "saa_sleeves_taxable": "accepted",
         "predeploy_stranded_equity": "evaluate",
+        "fund_intl_tilts": "evaluate",
     }
 
 
@@ -183,6 +185,53 @@ def test_resolved_zero_is_not_confused_with_unresolvable():
     reg = pd.DataFrame(columns=_REGISTER_COLS)
     resolved = resolve_placeholders(bad_group, pos, acct, sec, reg)
     assert render_prose(bad_group["pros"], resolved) == "value is $100"
+
+
+# ── fund_intl_tilts: no dollar literal, all placeholders resolve ────────────────
+
+def test_fund_intl_tilts_prose_no_literal_and_placeholders_resolve():
+    """The FTC cost is a live placeholder, never a hardcoded dollar; the group's
+    pros/cons/action carry no $-literal (rates only), and every placeholder it
+    references resolves against a household with a self-directed book + the rollable
+    401(k)."""
+    from src.location_actions import (
+        ACTION_GROUPS, _INTL_TILT_TARGET_FRACTION, _INTL_FTC_DRAG)
+    from src.location_config import ROLLOVER_SOURCE_PSEUDONYM
+
+    g = next(x for x in ACTION_GROUPS if x["key"] == "fund_intl_tilts")
+    assert not _DOLLAR_LITERAL.search(g["pros"] + g["cons"] + g["action"]), \
+        "fund_intl_tilts prose must carry no hardcoded dollar literal (FTC cost is a placeholder)"
+
+    pos = pd.DataFrame([
+        {"pseudonym": "acct_01", "symbol": "VEA", "current_value": 2000.0,
+         "total_gain_loss": 0.0, "cost_basis_total": 2000.0},
+        {"pseudonym": ROLLOVER_SOURCE_PSEUDONYM, "symbol": "RFUTX", "current_value": 78000.0,
+         "total_gain_loss": 0.0, "cost_basis_total": 78000.0},
+        {"pseudonym": "acct_taxable_02", "symbol": "IXUS", "current_value": 140000.0,
+         "total_gain_loss": 0.0, "cost_basis_total": 140000.0},
+    ])
+    acct = pd.DataFrame([
+        {"pseudonym": "acct_01", "display_name": "Individual Taxable (Self-Directed)", "tax_treatment": "taxable"},
+        {"pseudonym": ROLLOVER_SOURCE_PSEUDONYM, "display_name": "MissionSquare 401(k)", "tax_treatment": "workplace_plan"},
+        {"pseudonym": "acct_taxable_02", "display_name": "Individual Taxable (TOD)", "tax_treatment": "taxable"},
+    ])
+    sec = pd.DataFrame(columns=["ticker", "sleeve_category"])
+    reg = pd.DataFrame(columns=_REGISTER_COLS)
+
+    resolved = resolve_placeholders(g, pos, acct, sec, reg)
+    for ph in ("intl_tilt_target_value", "workplace_plan_value", "self_directed_value", "intl_tilt_ftc_cost"):
+        assert resolved[ph] is not None, f"{ph} did not resolve"
+    # renders fully (render_prose raises on any None-valued referenced placeholder)
+    for text in (g["pros"], g["cons"], g["action"]):
+        out = render_prose(text, resolved)
+        assert "{" not in out and "}" not in out, "an placeholder was left unsubstituted"
+
+    # the dollar figures are computed live off the household + the two assumptions
+    household = float(pos["current_value"].sum())
+    assert resolved["intl_tilt_target_value"] == _fmt_dollars(household * _INTL_TILT_TARGET_FRACTION)
+    assert resolved["intl_tilt_ftc_cost"] == _fmt_dollars(
+        household * _INTL_TILT_TARGET_FRACTION * _INTL_FTC_DRAG)
+    assert resolved["self_directed_value"] == _fmt_dollars(2000.0)
 
 
 # ── Roth deploy answer excludes ineligible sleeves (synthetic + live) ──────────
@@ -440,6 +489,7 @@ RENDERED_PROSE_LEN = {
     "frozen_tod_income":         (382, 523),   # cons: capacity restatement -> cross-ref to clear_roth_non_equity
     "saa_sleeves_taxable":       (261, 648),   # cons: capacity restatement -> cross-ref to clear_roth_non_equity
     "predeploy_stranded_equity": (328, 530),   # cons: FTC mechanism moved up to deploy_roth_cash; only the short application stays here (cons word count 122 -> 88, offsetting deploy's +34)
+    "fund_intl_tilts":           (864, 1163),  # new evaluate group: fund the intl tilts from the rollover, FTC cost stated ({intl_tilt_ftc_cost} live off household x tilt share x 45bps)
 }
 
 
