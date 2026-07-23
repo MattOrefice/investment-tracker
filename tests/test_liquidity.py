@@ -11,6 +11,29 @@ import pytest
 from src.liquidity import build_liquidity_ladder, EARLY_WITHDRAWAL_PENALTY
 from src.location_config import TAX_PROFILE, ordinary_rate, ltcg_rate
 
+
+# ── Combined-rate helpers must fail loud on an incomplete tax_profile ──────────
+
+def test_full_tax_profile_yields_the_expected_combined_rates():
+    assert ltcg_rate(TAX_PROFILE) == pytest.approx(
+        TAX_PROFILE["federal_ltcg"] + TAX_PROFILE["state_ltcg"])
+    assert ordinary_rate(TAX_PROFILE) == pytest.approx(
+        TAX_PROFILE["federal_marginal"] + TAX_PROFILE["state_marginal"])
+
+
+@pytest.mark.parametrize("fn, drop", [
+    (ltcg_rate,     "state_ltcg"),
+    (ltcg_rate,     "federal_ltcg"),
+    (ordinary_rate, "state_marginal"),
+    (ordinary_rate, "federal_marginal"),
+])
+def test_combined_rate_raises_on_missing_component(fn, drop):
+    """A missing component must RAISE, not silently drop to 0 and halve the rate
+    (which would understate every tax-drag / payback figure downstream)."""
+    partial = {k: v for k, v in TAX_PROFILE.items() if k != drop}
+    with pytest.raises(KeyError, match=drop):
+        fn(partial)
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 TRACKER_DB = ROOT / "data" / "tracker.db"
 

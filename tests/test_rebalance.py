@@ -77,6 +77,30 @@ def test_compute_drift_one_overweight():
     assert df.loc["US Large Core", "Drift"] == pytest.approx(0.06)
 
 
+def test_compute_drift_raises_on_missing_band():
+    """A held sleeve with no tolerance band must RAISE — a fallback band would
+    fabricate its in/out-of-band verdict (and split ±0.02 here vs ±0.03 in the
+    Performance chart for the same sleeve)."""
+    weights = {"US Large Core": 0.16, "Off-SAA Thing": 0.05}
+    targets = {"US Large Core": 0.16}                       # off-SAA has no target
+    bands   = {"US Large Core": 0.03}                       # ...and no band → raise
+    with pytest.raises(ValueError, match="tolerance band"):
+        compute_drift(weights, targets, bands)
+
+
+def test_compute_drift_untargeted_sleeve_is_overweight_not_raised():
+    """The target lookup deliberately keeps its 0.0 fallback: a held sleeve with a
+    band but no target reads as fully overweight vs a 0% target — a display-only,
+    semantically-defensible reading, NOT a raise (contrast the band above)."""
+    weights = {"US Large Core": 0.16, "Off-SAA": 0.05}
+    targets = {"US Large Core": 0.16}                       # Off-SAA absent → target 0.0
+    bands   = {"US Large Core": 0.03, "Off-SAA": 0.02}      # ...but band present
+    df = compute_drift(weights, targets, bands)
+    assert df.loc["Off-SAA", "Target Weight"] == 0.0
+    assert df.loc["Off-SAA", "Drift"] == pytest.approx(0.05)
+    assert not df.loc["Off-SAA", "In Band"]                 # 5pp drift > 2pp band
+
+
 # ── suggest_buys ──────────────────────────────────────────────────────────────
 
 def test_suggest_buys_no_cash():

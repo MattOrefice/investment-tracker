@@ -4,6 +4,7 @@ import pathlib
 from unittest.mock import patch
 
 import pandas as pd
+import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
@@ -93,6 +94,18 @@ def test_effective_duration_empty_portfolio():
         result = get_effective_duration("2026-03-31")
     assert result["duration"] == 0.0
     assert result["fi_weight_pct"] == 0.0
+
+
+def test_effective_duration_raises_on_unmapped_fi_holding():
+    """A held FI-sleeve holding with no ETF_DURATION entry must RAISE — a silent 0
+    would understate the FI sleeve duration with nothing visibly wrong."""
+    sw = _make_sw(dict(_BASELINE_ROWS))
+    # Core FI's holding (VGIT) loses its duration entry.
+    patched = {k: v for k, v in ETF_DURATION.items() if k != _FI_SLEEVE_HOLDING["Core Fixed Income"]}
+    with patch("src.positioning.get_sleeve_weights_on_date", return_value=sw), \
+         patch("src.positioning.ETF_DURATION", patched):
+        with pytest.raises(ValueError, match="ETF_DURATION"):
+            get_effective_duration("2026-03-31")
 
 
 # ── ETF_STYLE_BOX and build_style_box_figure ─────────────────────────────────
