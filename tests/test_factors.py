@@ -413,7 +413,7 @@ def test_developed_sleeve_prose_contains_korea_disclosure():
 
 # ── Benchmark attribution regression ─────────────────────────────────────────
 
-def test_run_benchmark_attribution_regression_returns_expected_structure():
+def test_run_benchmark_attribution_regression_returns_expected_structure(no_ambient_db):
     """
     With mocked portfolio/benchmark series and FF factors,
     run_benchmark_attribution_regression must return a dict with all required keys
@@ -435,6 +435,7 @@ def test_run_benchmark_attribution_regression_returns_expected_structure():
 
     with patch("src.factors.get_portfolio_value_series", return_value=pv_series), \
          patch("src.factors.get_custom_blended_series", return_value=bl_series), \
+         patch("src.factors.get_portfolio_account_id", return_value=1), \
          patch("src.factors.load_factors", return_value=mock_ff):
         result = run_benchmark_attribution_regression("2025-05-01", "2025-09-30")
 
@@ -453,7 +454,7 @@ def test_run_benchmark_attribution_regression_returns_expected_structure():
         assert f in result["p_values"],f"Missing p-value for factor '{f}'"
 
 
-def test_benchmark_regression_recovers_synthetic_bench_beta():
+def test_benchmark_regression_recovers_synthetic_bench_beta(no_ambient_db):
     """
     When R_p = R_b + small noise (β_bench ≈ 1.0, alpha ≈ 0), the regression
     must recover β_bench close to 1.0 and a near-zero daily alpha.
@@ -474,6 +475,7 @@ def test_benchmark_regression_recovers_synthetic_bench_beta():
 
     with patch("src.factors.get_portfolio_value_series", return_value=pv_series), \
          patch("src.factors.get_custom_blended_series", return_value=bl_series), \
+         patch("src.factors.get_portfolio_account_id", return_value=1), \
          patch("src.factors.load_factors", return_value=mock_ff):
         result = run_benchmark_attribution_regression("2025-01-01", "2025-10-31")
 
@@ -486,7 +488,7 @@ def test_benchmark_regression_recovers_synthetic_bench_beta():
     )
 
 
-def test_benchmark_regression_returns_none_on_insufficient_data():
+def test_benchmark_regression_returns_none_on_insufficient_data(no_ambient_db):
     """Fewer than 30 aligned observations → result must be None."""
     T = 5
     short_bdays = pd.bdate_range("2025-05-01", periods=T)
@@ -500,13 +502,14 @@ def test_benchmark_regression_returns_none_on_insufficient_data():
 
     with patch("src.factors.get_portfolio_value_series", return_value=short_pv), \
          patch("src.factors.get_custom_blended_series", return_value=short_bl), \
+         patch("src.factors.get_portfolio_account_id", return_value=1), \
          patch("src.factors.load_factors", return_value=short_ff):
         result = run_benchmark_attribution_regression("2025-05-01", "2025-05-10")
 
     assert result is None
 
 
-def test_benchmark_regression_returns_none_on_total_blended_gap():
+def test_benchmark_regression_returns_none_on_total_blended_gap(no_ambient_db):
     """A totally-unpriceable custom blended benchmark (PR A: get_custom_blended_series
     now yields an explicit NaN sentinel on a total reference-benchmark data gap,
     src/benchmarks.py) must degrade this regression to None (same as insufficient
@@ -528,6 +531,7 @@ def test_benchmark_regression_returns_none_on_total_blended_gap():
 
     with patch("src.factors.get_portfolio_value_series", return_value=pv_series), \
          patch("src.factors.get_custom_blended_series", return_value=nan_bl), \
+         patch("src.factors.get_portfolio_account_id", return_value=1), \
          patch("src.factors.load_factors", return_value=mock_ff):
         result = run_benchmark_attribution_regression("2025-05-01", "2025-09-30")
 
@@ -801,7 +805,7 @@ def test_em_disclosure_tilted_book_uses_cap_weight_exception_framing():
 
 # ── Factor section values match regression object ─────────────────────────────
 
-def test_factor_section_values_match_raw_result():
+def test_factor_section_values_match_raw_result(no_ambient_db):
     """
     _build_factor_section must format values from run_sleeve_regressions results
     without recomputing or silently transforming them.
@@ -817,7 +821,8 @@ def test_factor_section_values_match_raw_result():
 
     with patch("src.factors._get_sleeve_return_series", return_value=mock_ret), \
          patch("src.factors.load_factors", return_value=mock_ff), \
-         patch("src.reports.get_inception_date", return_value="2025-05-01"):
+         patch("src.reports.get_inception_date", return_value="2025-05-01"), \
+         patch("src.reports.get_portfolio_account_id", return_value=1):
         section = _build_factor_section("2025-09-30")
 
     assert section is not None

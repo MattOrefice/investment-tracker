@@ -279,9 +279,10 @@ def test_build_style_box_figure_4dot_cell_distinct_coordinates():
         assert 1.5 <= y <= 2.5, f"y={y} out of Large/Blend cell y-range [1.5, 2.5]"
 
 
-def test_get_style_box_data_empty_portfolio():
+def test_get_style_box_data_empty_portfolio(no_ambient_db):
     """get_style_box_data returns [] when portfolio is empty."""
     empty_df = pd.DataFrame(columns=["net_shares"])
-    with patch("src.positioning.get_holdings_on_date", return_value=empty_df):
+    with patch("src.positioning.get_holdings_on_date", return_value=empty_df), \
+         patch("src.positioning.get_portfolio_account_id", return_value=1):
         result = get_style_box_data("2026-03-31")
     assert result == []

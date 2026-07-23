@@ -229,15 +229,16 @@ def test_non_us_equity_map_falls_back_to_static_when_db_unavailable():
     assert m == NON_US_EQUITY_MAP
 
 
-def test_get_non_us_equity_data_empty_portfolio():
+def test_get_non_us_equity_data_empty_portfolio(no_ambient_db):
     """Empty portfolio must return [] without raising."""
     empty_df = pd.DataFrame(columns=["net_shares"])
-    with patch("src.positioning.get_holdings_on_date", return_value=empty_df):
+    with patch("src.positioning.get_holdings_on_date", return_value=empty_df), \
+         patch("src.positioning.get_portfolio_account_id", return_value=1):
         result = get_non_us_equity_data("2026-03-31")
     assert result == []
 
 
-def test_get_non_us_equity_data_contains_vea_iemg():
+def test_get_non_us_equity_data_contains_vea_iemg(no_ambient_db):
     """Non-US callout must include VEA and IEMG when portfolio holds them."""
     import numpy as np
     holdings_df = pd.DataFrame(
@@ -246,7 +247,8 @@ def test_get_non_us_equity_data_contains_vea_iemg():
     mock_prices = pd.DataFrame({"close": [100.0]})
 
     with patch("src.positioning.get_holdings_on_date", return_value=holdings_df), \
-         patch("src.positioning.get_prices", return_value=mock_prices):
+         patch("src.positioning.get_prices", return_value=mock_prices), \
+         patch("src.positioning.get_portfolio_account_id", return_value=1):
         result = get_non_us_equity_data("2026-03-31")
 
     tickers = [r["ticker"] for r in result]
