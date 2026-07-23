@@ -18,6 +18,8 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from src.factors import (
     EM_DISCLOSURE,
+    _INTL_TILT_SLEEVES,
+    _NPORT_ASOF,
     _nw_lags,
     _ols_ff5,
     _parse_ff_csv_text,
@@ -26,8 +28,11 @@ from src.factors import (
     build_benchmark_prose,
     build_factor_methodology_notes,
     build_factor_prose,
+    build_intl_tilt_disclosure,
+    intl_residual_reading_order,
     regress_fi_sleeve,
     run_benchmark_attribution_regression,
+    run_intl_tilt_regressions,
     run_sleeve_regressions,
     run_sleeve_regressions_mom,
     sig_marker,
@@ -964,3 +969,144 @@ def test_every_factor_sleeve_declares_at_least_one_ticker():
 
     empty = [k for k, spec in _SLEEVES.items() if not spec.get("tickers")]
     assert not empty, f"_SLEEVES entries declare no tickers: {empty}"
+
+
+# ── International tilt-sleeve regressions (Phase 40) ───────────────────────────
+
+def _canned_result(alpha_bps: float = 500.0, ticker: str = "X") -> dict:
+    """A minimal regression-result dict with the keys the tilt renderer reads."""
+    factors = ["Mkt-RF", "SMB", "HML", "RMW", "CMA"]
+    return {
+        "alpha_daily": alpha_bps / 252 / 10_000,
+        "alpha_annual": alpha_bps / 10_000,
+        "alpha_annual_bps": alpha_bps,
+        "t_alpha": 1.2, "p_alpha": 0.23,
+        "betas": {f: 0.5 for f in factors},
+        "t_stats": {f: 2.0 for f in factors},
+        "p_values": {f: 0.04 for f in factors},
+        "r_squared": 0.7, "adj_r_squared": 0.68,
+        "T": 270, "nw_lags": 5,
+        "_ols_bse": {"const": 0.0001}, "_hac_bse": {"const": 0.0001},
+        "sleeve_label": ticker, "tickers": [ticker], "region": "developed_exus",
+        "sample_start": "2025-05-02", "sample_end": "2026-05-29",
+    }
+
+
+def test_intl_tilt_roster_is_canada_matched_not_the_eafe_benchmarks():
+    """The tilt controls must be the Canada-matched roster, never EFV/SCZ.
+
+    EFV and SCZ (the Large/Small Value SAA benchmarks) track MSCI EAFE, which
+    excludes Canada while the FF Developed ex-US factor universe and the funds
+    hold it. Using them as controls would understate the control residual and
+    present a Canada-holed gauge as clean — the exact defect this roster fixes.
+    """
+    funds    = {s["fund"] for s in _INTL_TILT_SLEEVES}
+    controls = {s["control"] for s in _INTL_TILT_SLEEVES}
+    assert funds == {"IDHQ", "AVIV", "AVDV"}
+    assert controls == {"IQLT", "IVLU", "ISVL"}
+    assert not (controls & {"EFV", "SCZ", "EFA"}), (
+        "A Canada-holed MSCI-EAFE benchmark is being used as a factor control — "
+        "its residual mixes fund implementation with the control's missing Canada."
+    )
+    # Each entry carries what the page needs to render and caption the pair.
+    for s in _INTL_TILT_SLEEVES:
+        for key in ("sleeve", "fund_name", "control_index", "disclosure"):
+            assert s.get(key), f"tilt spec for {s['fund']} missing {key!r}"
+
+
+def test_run_intl_tilt_regressions_empty_on_untilted_book():
+    """On the untilted (personal) book — a single developed-international sleeve —
+    the function must return an empty dict, adding no tilt exhibit."""
+    with patch("src.sleeve_config.international_sleeves",
+               return_value=("International Developed",)):
+        out = run_intl_tilt_regressions("2025-05-01", "2026-05-29")
+    assert out == {}
+
+
+def test_run_intl_tilt_regressions_pairs_fund_with_control():
+    """On the tilted book each fund key must carry a fund_result AND a control_result,
+    produced by regressing the fund and its control against developed-ex-US factors."""
+    tilted = ("International Core", "International Quality",
+              "International Large Value", "International Small Value")
+
+    def _fake_regress(sleeve_label, tickers, region, inception, end_date, **kw):
+        assert region == "developed_exus", "tilt funds must use the developed-ex-US factors"
+        return _canned_result(ticker=tickers[0])
+
+    with patch("src.sleeve_config.international_sleeves", return_value=tilted), \
+         patch("src.factors.run_sleeve_regression", side_effect=_fake_regress):
+        out = run_intl_tilt_regressions("2025-05-01", "2026-05-29")
+
+    assert set(out) == {"IDHQ", "AVIV", "AVDV"}
+    for fund, entry in out.items():
+        assert entry["fund_result"] is not None
+        assert entry["control_result"] is not None
+        assert entry["fund_result"]["tickers"] == [fund]
+        assert entry["control_result"]["tickers"] == [entry["control"]]
+        assert entry["control"] in {"IQLT", "IVLU", "ISVL"}
+
+
+def test_intl_tilt_disclosure_idhq_states_korea_structurally():
+    """IDHQ disclosure guards against reading the residual as skill: the Korea
+    mechanism is stated STRUCTURALLY (reconstitution-varying), not as a pinned
+    weight, with the RMW-cousin note and a pointer to the IQLT control."""
+    entry = next(s for s in _INTL_TILT_SLEEVES if s["fund"] == "IDHQ")
+    entry = {**entry, "fund_result": None, "control_result": None}
+    text = " ".join(build_intl_tilt_disclosure(entry))
+    assert "reconstitution" in text.lower(), "Korea weight must be framed as reconstitution-varying"
+    assert "9.5%" in text and "2%" in text, "the H1-2026→post-June range must appear as a mechanism"
+    assert "RMW" in text, "the quality-score / RMW cousin note must be present"
+    assert "IQLT" in text, "must point the reader to the Canada-matched IQLT control"
+    assert "skill" in text.lower()
+
+
+def test_intl_tilt_disclosure_avantis_guards_against_korea_overreach():
+    """AVDV/AVIV disclosure must guard against OVER-applying the Korea excuse:
+    affirmative N-PORT clearance with an as-of date and 'observed not prohibited'
+    framing, then name the real drivers (Israel, costs/withholding, the window's
+    materials/gold tilt Avantis flags as unrepeatable) and the HML/RMW joint caveat.
+    """
+    for fund in ("AVDV", "AVIV"):
+        entry = next(s for s in _INTL_TILT_SLEEVES if s["fund"] == fund)
+        entry = {**entry, "fund_result": None, "control_result": None}
+        text = " ".join(build_intl_tilt_disclosure(entry))
+        assert "N-PORT" in text, f"{fund}: affirmative N-PORT clearance must be stated"
+        assert _NPORT_ASOF in text, f"{fund}: the N-PORT clearance must carry an as-of date"
+        assert "observed" in text.lower() and "prohibit" in text.lower(), (
+            f"{fund}: clearance must be framed 'observed, not prohibited' (actively managed)"
+        )
+        assert "Israel" in text, f"{fund}: must name Israel as a real driver"
+        assert "repeatable" in text.lower(), (
+            f"{fund}: the materials/gold-miner overweight must be flagged as unrepeatable"
+        )
+        # The fund-minus-control gap must be framed as NOT a persistent edge, so a
+        # reader can't read the raw bps as a recurring advantage (the flattering
+        # misattribution this disclosure exists to prevent).
+        assert "not a persistent edge" in text.lower() or "not be read as a repeatable" in text.lower(), (
+            f"{fund}: the gap must be explicitly framed as not a persistent/recurring edge"
+        )
+        assert "this window" in text.lower(), (
+            f"{fund}: the sector-tilt inflation must be tied to THIS window, not presented as structural"
+        )
+        assert "HML" in text and "RMW" in text, f"{fund}: HML/RMW joint-metric caveat required"
+    # The Israel weight is asymmetric across the two funds (≈4.5% AVDV vs ≈1% AVIV).
+    avdv = next(s for s in _INTL_TILT_SLEEVES if s["fund"] == "AVDV")
+    aviv = next(s for s in _INTL_TILT_SLEEVES if s["fund"] == "AVIV")
+    assert "4.5" in " ".join(build_intl_tilt_disclosure({**avdv})), "AVDV Israel ≈4.5% expected"
+    assert "1%" in " ".join(build_intl_tilt_disclosure({**aviv})), "AVIV Israel ≈1% expected"
+
+
+def test_intl_residual_reading_order_puts_skill_last():
+    """The reading order must run sampling noise → universe/classification mismatch
+    → construction differences → skill last, naming the construction mechanisms."""
+    ro = intl_residual_reading_order()
+    low = ro.lower()
+    for needle in ("sampling noise", "universe", "construction",
+                   "withholding", "long-short", "microcap", "stale"):
+        assert needle in low, f"reading order missing {needle!r}"
+    # The four numbered steps must appear in order, skill being step (4).
+    p1, p2, p3, p4 = (low.index(f"({n})") for n in (1, 2, 3, 4))
+    assert p1 < p2 < p3 < p4, "reading-order steps are not in 1→2→3→4 order"
+    assert low.index("sampling noise") < p2, "step (1) must be sampling noise"
+    assert "skill" in low[p4:], "step (4) must be skill (last)"
+    assert "last" in low and "least" in low
