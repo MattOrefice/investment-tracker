@@ -8,6 +8,50 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Benchmark expense ratios: sourced in-code, not baked in a binary
+_2026-07-23_
+
+The committed `demo.db` carried expense-ratio values for the 10 benchmark ETFs
+(SPY 0.0945%, EFA 0.32%, EEM 0.70%, …) that existed **nowhere in source** —
+`seed_securities.py` inserted every benchmark with `expense_ratio=None`. A fresh
+reseed produced NULL for all of them, which dropped the Research page's fee-savings
+headline from a real figure to **0.00**. The public demo was showing a number that
+could not be regenerated from the repo. Personal mode had the same NULLs, so its
+fee exhibit already read 0.00.
+
+**Why these are hardcoded, deliberately.** No source the app already fetches
+carries fund expense ratios: the Yahoo v8 chart API (prices) returns no ER field,
+and FRED is macro-only. Yahoo's `quoteSummary` module does carry
+`annualReportExpenseRatio`, but now returns 401 "Invalid Crumb" without a
+cookie/crumb handshake this repo does not perform — and daily-fetching a value
+that changes **~annually** is the wrong trade. So each ER is recorded in
+`seed_securities.BENCHMARKS`/`HOLDINGS` **inline with its issuer source and an
+`er_as_of` date**, next to the value — not in a block header, so a reader checking
+one number sees its provenance without inferring it. **Do not "fix" this by adding
+a live fetch**; re-verify against the issuer fund page and bump `er_as_of` when an
+issuer changes a fee.
+
+Sourcing the values also **corrected one that was simply wrong**: the binary's DBC
+ER was 0.70%; Invesco's is 0.85% (management fee; ~0.87–0.89% including futures
+brokerage). The stale **DJP** benchmark row (iPath Bloomberg Commodity ETN,
+delisted May 2020) is replaced by **DBC**, so source and a reseed now agree with
+`src/benchmarks.py`, which already parses the Real Assets blend as `VNQ (60%) +
+DBC (40%)`. And the three international-split benchmarks (IQLT/EFV/SCZ), whose rows
+carried a NULL `security_type` in demo.db, are set to `'benchmark'` — latent
+hygiene (no code filters `security_type='benchmark'` today) that stops the first
+such filter from silently dropping them, the same silent-drop class as the earlier
+sleeve-map bugs.
+
+`tools/migrate_benchmark_ers_phase41.py` carries the sourced ERs, the DBC row, and
+the `security_type` fix into an existing database — importing the values from
+`seed_securities` so there is one source of truth. It is idempotent (every write
+is guarded on a value actually differing; a second run is a no-op) and is picked
+up by `run_pending_migrations`, so a fresh personal boot heals `tracker.db`
+automatically. `demo.db`, a committed artifact, was rebuilt with the migration and
+committed.
+
+---
+
 ## Valuation triptych: trailing and forward P/E beside CAPE
 _2026-07-21_
 
