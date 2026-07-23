@@ -7,6 +7,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.db import get_connection, initialize_db
 
+# Expense ratios are hardcoded WITH provenance: no price/data source the app
+# already fetches carries them (the chart price API returns no fee field; the
+# free fund-fee endpoints require a per-request auth handshake the app does not
+# perform), and ETF ERs change ~annually — a daily fetch for an annual value is
+# the wrong trade. So each ER records its issuer source and the date it was
+# verified, INLINE next to the value. Re-verify against the issuer fund page and
+# bump er_as_of when an issuer changes a fee. (See CHANGELOG 2026-07-23.)
+_ER_AS_OF = "2026-07-23"
+
 HOLDINGS = [
     {
         "ticker": "VOO",
@@ -14,6 +23,7 @@ HOLDINGS = [
         "asset_class": "US Large Core",
         "security_type": "ETF",
         "expense_ratio": 0.0003,
+        "er_source": 'Vanguard fund page', "er_as_of": _ER_AS_OF,
         "holding_rationale": (
             "VOO delivers S&P 500 exposure at 0.03% with the best tax efficiency of any large-cap passive "
             "fund. The benchmark is SPY — used for attribution because it's the institutional standard — but "
@@ -30,6 +40,7 @@ HOLDINGS = [
         "asset_class": "US Large Quality",
         "security_type": "ETF",
         "expense_ratio": 0.0015,
+        "er_source": 'Invesco fund page', "er_as_of": _ER_AS_OF,
         "holding_rationale": (
             "SPHQ over QUAL was a deliberate methodology choice rooted in accounting quality. QUAL screens on "
             "ROE, earnings variability, and debt-to-equity. SPHQ adds an accruals ratio screen, which filters "
@@ -50,6 +61,7 @@ HOLDINGS = [
         "asset_class": "US Large Value",
         "security_type": "ETF",
         "expense_ratio": 0.0004,
+        "er_source": 'Vanguard fund page', "er_as_of": _ER_AS_OF,
         "holding_rationale": (
             "VTV captures the value factor through CRSP's multi-metric methodology — P/B, P/E, P/S, P/CF, "
             "and dividend yield — rather than Russell's P/B-heavy single metric used in IWD (the benchmark). "
@@ -65,6 +77,7 @@ HOLDINGS = [
         "asset_class": "US Small Cap",
         "security_type": "ETF",
         "expense_ratio": 0.0025,
+        "er_source": 'Avantis fund page', "er_as_of": _ER_AS_OF,
         "holding_rationale": (
             "AVUV is the highest-conviction factor pick in the portfolio. Avantis (founded by former DFA "
             "researchers) targets the size, value, and profitability factors simultaneously — empirically, "
@@ -84,6 +97,7 @@ HOLDINGS = [
         "asset_class": "International Core",
         "security_type": "ETF",
         "expense_ratio": 0.0003,
+        "er_source": 'Vanguard fund page', "er_as_of": _ER_AS_OF,
         "holding_rationale": (
             "VEA delivers developed-ex-US exposure at 0.03% versus EFA's 0.32% — ten times more expensive "
             "for substantially the same asset class. VEA tracks FTSE Developed All Cap ex US, which includes "
@@ -104,6 +118,7 @@ HOLDINGS = [
         "asset_class": "International Quality",
         "security_type": "ETF",
         "expense_ratio": 0.0029,
+        "er_source": 'Invesco fund page', "er_as_of": _ER_AS_OF,
         "holding_rationale": None,
     },
     {
@@ -112,6 +127,7 @@ HOLDINGS = [
         "asset_class": "International Large Value",
         "security_type": "ETF",
         "expense_ratio": 0.0025,
+        "er_source": 'Avantis fund page', "er_as_of": _ER_AS_OF,
         "holding_rationale": None,
     },
     {
@@ -120,6 +136,7 @@ HOLDINGS = [
         "asset_class": "International Small Value",
         "security_type": "ETF",
         "expense_ratio": 0.0036,
+        "er_source": 'Avantis fund page', "er_as_of": _ER_AS_OF,
         "holding_rationale": None,
     },
     {
@@ -128,6 +145,7 @@ HOLDINGS = [
         "asset_class": "Emerging Markets",
         "security_type": "ETF",
         "expense_ratio": 0.0009,
+        "er_source": 'iShares fund page', "er_as_of": _ER_AS_OF,
         "holding_rationale": (
             "IEMG is the holding because EEM costs 0.70% for identical exposure — seven times more expensive "
             "and the most egregious benchmark-vs-holding gap in the portfolio. IEMG at 0.09% tracks the same "
@@ -145,6 +163,7 @@ HOLDINGS = [
         "asset_class": "Core Fixed Income",
         "security_type": "ETF",
         "expense_ratio": 0.0004,
+        "er_source": 'Vanguard fund page', "er_as_of": _ER_AS_OF,
         "holding_rationale": (
             "VGIT delivers intermediate-term US Treasury exposure at 0.04% versus IEF's 0.15%. Duration is "
             "modestly shorter (~5.5 years vs IEF's ~7.5 years), appropriate for a 6% sleeve inside a 78% "
@@ -163,6 +182,7 @@ HOLDINGS = [
         "asset_class": "TIPS",
         "security_type": "ETF",
         "expense_ratio": 0.0003,
+        "er_source": 'Schwab fund page', "er_as_of": _ER_AS_OF,
         "holding_rationale": (
             "SCHP delivers broad TIPS exposure at 0.03% versus TIP's 0.19% for identical exposure. The "
             "choice of broad TIPS over short-term alternatives (VTIP, STIP) reflects the long-horizon "
@@ -180,6 +200,7 @@ HOLDINGS = [
         "asset_class": "Real Assets",
         "security_type": "ETF",
         "expense_ratio": 0.0012,
+        "er_source": 'Vanguard fund page', "er_as_of": _ER_AS_OF,
         "holding_rationale": (
             "VNQ is the standard for US REIT exposure: $35B AUM, 0.12% ER, broad diversification across "
             "property types. Primary risk accepted knowingly: REIT distributions are predominantly "
@@ -195,6 +216,7 @@ HOLDINGS = [
         "asset_class": "Real Assets",
         "security_type": "ETF",
         "expense_ratio": 0.0059,
+        "er_source": 'Invesco fund page', "er_as_of": _ER_AS_OF,
         "holding_rationale": (
             "PDBC is the only broad commodity ETF worth owning in a taxable account because it avoids "
             "issuing a K-1 tax form. Nearly all commodity futures funds are organized as partnerships and "
@@ -210,19 +232,34 @@ HOLDINGS = [
 
 # VNQ is already inserted as a holding; skip it in the benchmarks list
 BENCHMARKS = [
-    {"ticker": "SPY",  "name": "SPDR S&P 500 ETF Trust",                           "asset_class": "US Large Core"},
-    {"ticker": "QUAL", "name": "iShares MSCI USA Quality Factor ETF",               "asset_class": "US Large Quality"},
-    {"ticker": "IWD",  "name": "iShares Russell 1000 Value ETF",                    "asset_class": "US Large Value"},
-    {"ticker": "IWM",  "name": "iShares Russell 2000 ETF",                          "asset_class": "US Small Cap"},
-    {"ticker": "EFA",  "name": "iShares MSCI EAFE ETF",                             "asset_class": "International Core"},
-    {"ticker": "IQLT", "name": "iShares MSCI Intl Quality Factor ETF",              "asset_class": "International Quality"},
-    {"ticker": "EFV",  "name": "iShares MSCI EAFE Value ETF",                       "asset_class": "International Large Value"},
-    {"ticker": "SCZ",  "name": "iShares MSCI EAFE Small-Cap ETF",                   "asset_class": "International Small Value"},
-    {"ticker": "EEM",  "name": "iShares MSCI Emerging Markets ETF",                 "asset_class": "Emerging Markets"},
-    {"ticker": "IEF",  "name": "iShares 7-10 Year Treasury Bond ETF",               "asset_class": "Core Fixed Income"},
-    {"ticker": "TIP",  "name": "iShares TIPS Bond ETF",                             "asset_class": "TIPS"},
-    {"ticker": "DJP",  "name": "iPath Bloomberg Commodity Index Total Return ETN",  "asset_class": "Real Assets"},
-    {"ticker": "BIL",  "name": "SPDR Bloomberg 1-3 Month T-Bill ETF",               "asset_class": "Cash / SPAXX"},
+    {"ticker": "SPY",  "name": "SPDR S&P 500 ETF Trust",                           "asset_class": "US Large Core",
+     "expense_ratio": 0.000945, "er_source": "SSGA SPY fund page",  "er_as_of": _ER_AS_OF},
+    {"ticker": "QUAL", "name": "iShares MSCI USA Quality Factor ETF",               "asset_class": "US Large Quality",
+     "expense_ratio": 0.0015,   "er_source": "iShares QUAL fund page", "er_as_of": _ER_AS_OF},
+    {"ticker": "IWD",  "name": "iShares Russell 1000 Value ETF",                    "asset_class": "US Large Value",
+     "expense_ratio": 0.0019,   "er_source": "iShares IWD fund page",  "er_as_of": _ER_AS_OF},
+    {"ticker": "IWM",  "name": "iShares Russell 2000 ETF",                          "asset_class": "US Small Cap",
+     "expense_ratio": 0.0019,   "er_source": "iShares IWM fund page",  "er_as_of": _ER_AS_OF},
+    {"ticker": "EFA",  "name": "iShares MSCI EAFE ETF",                             "asset_class": "International Core",
+     "expense_ratio": 0.0032,   "er_source": "iShares EFA fund page (net ER)", "er_as_of": _ER_AS_OF},
+    {"ticker": "IQLT", "name": "iShares MSCI Intl Quality Factor ETF",              "asset_class": "International Quality",
+     "expense_ratio": None,     "er_source": "deliberately NULL — intl-split benchmark ER not sourced", "er_as_of": None},
+    {"ticker": "EFV",  "name": "iShares MSCI EAFE Value ETF",                       "asset_class": "International Large Value",
+     "expense_ratio": None,     "er_source": "deliberately NULL — intl-split benchmark ER not sourced", "er_as_of": None},
+    {"ticker": "SCZ",  "name": "iShares MSCI EAFE Small-Cap ETF",                   "asset_class": "International Small Value",
+     "expense_ratio": None,     "er_source": "deliberately NULL — intl-split benchmark ER not sourced", "er_as_of": None},
+    {"ticker": "EEM",  "name": "iShares MSCI Emerging Markets ETF",                 "asset_class": "Emerging Markets",
+     "expense_ratio": 0.007,    "er_source": "iShares EEM fund page (net ER)", "er_as_of": _ER_AS_OF},
+    {"ticker": "IEF",  "name": "iShares 7-10 Year Treasury Bond ETF",               "asset_class": "Core Fixed Income",
+     "expense_ratio": 0.0015,   "er_source": "iShares IEF fund page",  "er_as_of": _ER_AS_OF},
+    {"ticker": "TIP",  "name": "iShares TIPS Bond ETF",                             "asset_class": "TIPS",
+     "expense_ratio": 0.0019,   "er_source": "iShares TIP fund page",  "er_as_of": _ER_AS_OF},
+    # DJP (iPath Bloomberg Commodity ETN) delisted May 2020; the Real Assets
+    # benchmark is DBC (see src/benchmarks.py). Source + reseed now agree on DBC.
+    {"ticker": "DBC",  "name": "Invesco DB Commodity Index Tracking Fund",          "asset_class": "Real Assets",
+     "expense_ratio": 0.0085,   "er_source": "Invesco DBC fund page (0.85% mgmt fee; total incl. futures brokerage ~0.87-0.89%)", "er_as_of": _ER_AS_OF},
+    {"ticker": "BIL",  "name": "SPDR Bloomberg 1-3 Month T-Bill ETF",               "asset_class": "Cash / SPAXX",
+     "expense_ratio": 0.001356, "er_source": "SSGA BIL fund page",     "er_as_of": _ER_AS_OF},
 ]
 
 
@@ -273,7 +310,7 @@ def seed():
                     """INSERT INTO securities
                        (ticker, name, asset_class_id, security_type, expense_ratio)
                        VALUES (?, ?, ?, ?, ?)""",
-                    (b["ticker"], b["name"], ac_id, "benchmark", None),
+                    (b["ticker"], b["name"], ac_id, "benchmark", b.get("expense_ratio")),
                 )
                 benchmarks_seeded += 1
 
