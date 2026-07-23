@@ -17,7 +17,7 @@ st.set_page_config(page_title="Risk", layout="wide")
 from src.asof import as_of_banner
 from src.config import get_demo_banner_text, IS_DEMO
 from src.factors import sig_marker
-from src.holdings import get_current_market_value, get_inception_date
+from src.holdings import get_current_market_value, get_inception_date, get_portfolio_account, get_portfolio_account_id
 from src.risk import (
     CREDIT_PROXY_DISCLOSURE,
     FACTORS,
@@ -59,6 +59,11 @@ with col:
         "Portfolio factor-risk decomposition · five-factor simultaneous "
         "regression, daily excess returns since inception."
     )
+    st.caption(
+        f"Scope: **{get_portfolio_account()['display_name']}** — the self-directed "
+        "taxable book (traded ledger); retirement and externally-managed accounts "
+        "are excluded (see Household View)."
+    )
     st.caption(as_of_banner())
     st.divider()
 
@@ -87,7 +92,7 @@ with col:
 
     st.subheader("Factor decomposition")
 
-    inception = get_inception_date()
+    inception = get_inception_date(account_id=get_portfolio_account_id())
     end_date  = date.today().isoformat()
 
     @st.cache_data(ttl=3600, show_spinner=False)

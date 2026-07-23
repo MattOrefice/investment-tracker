@@ -309,8 +309,8 @@ def distribution_gaps_for_holdings(
     adds no new distribution-fetching logic beyond what backfill already runs.
     """
     if start_date is None:
-        from src.holdings import get_inception_date
-        start_date = get_inception_date()
+        from src.holdings import get_inception_date, get_portfolio_account_id
+        start_date = get_inception_date(account_id=get_portfolio_account_id())
     end = end_date or date.today().isoformat()
 
     with get_connection() as conn:

@@ -41,7 +41,7 @@ from statsmodels.regression.linear_model import OLS
 from statsmodels.tools import add_constant
 
 from src.benchmarks import get_custom_blended_series
-from src.holdings import get_holdings_on_date, get_portfolio_value_series
+from src.holdings import get_holdings_on_date, get_portfolio_account_id, get_portfolio_value_series
 from src.prices import get_prices
 from src.prose_helpers import significance_label
 
@@ -688,7 +688,7 @@ def _get_sleeve_return_series(
     if weights is not None:
         effective_weights = weights
     else:
-        holdings = get_holdings_on_date(inception)
+        holdings = get_holdings_on_date(inception, account_id=get_portfolio_account_id())
         sleeve_values: dict[str, float] = {}
         for ticker in tickers:
             if ticker not in holdings.index:
@@ -1566,7 +1566,7 @@ def run_benchmark_attribution_regression(
     """
     date_range = pd.date_range(start=inception, end=end_date, freq="D")
 
-    pv = get_portfolio_value_series(inception, end_date)
+    pv = get_portfolio_value_series(inception, end_date, account_id=get_portfolio_account_id())
     if pv.empty or float(pv.max()) == 0.0:
         return None
     pv = pv.reindex(date_range).ffill()

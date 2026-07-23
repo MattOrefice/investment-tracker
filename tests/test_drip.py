@@ -35,9 +35,15 @@ def minimal_db(tmp_path, monkeypatch):
             account_id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             type TEXT NOT NULL,
-            is_active INTEGER DEFAULT 1
+            is_active INTEGER DEFAULT 1,
+            tax_treatment TEXT,
+            managed_by TEXT,
+            display_name TEXT
         );
-        INSERT INTO accounts (name, type) VALUES ('Test Account', 'taxable');
+        -- Self-directed taxable book so get_portfolio_account() resolves (the
+        -- wrappers now scope through it).
+        INSERT INTO accounts (name, type, tax_treatment, managed_by, display_name)
+        VALUES ('Test Account', 'taxable', 'taxable', 'self', 'Test Account');
 
         CREATE TABLE trades (
             trade_id   INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -295,7 +301,7 @@ def test_drip_excluded_from_value_series_but_kept_in_holdings(minimal_db, monkey
         )
     monkeypatch.setattr(H, "get_prices", _fake_prices)
 
-    pv = get_portfolio_value_series("2025-05-01", "2025-07-01")
+    pv = get_portfolio_value_series("2025-05-01", "2025-07-01", account_id=1)
 
     # Actual (non-DRIP) shares = 10 → flat 10 × 98 = 980 throughout. If the 0.5 DRIP
     # shares leaked into the value series it would jump to 10.5 × 98 = 1029.
@@ -306,7 +312,7 @@ def test_drip_excluded_from_value_series_but_kept_in_holdings(minimal_db, monkey
     assert (pv.iloc[-1] / pv.iloc[0] - 1) == pytest.approx(0.0, abs=1e-9)  # correct TR
 
     # The DRIP shares ARE retained for position / cost-basis / tax-lot displays.
-    holdings = get_holdings_on_date("2025-07-01")
+    holdings = get_holdings_on_date("2025-07-01", account_id=1)
     assert holdings.loc["VOO", "net_shares"] == pytest.approx(10.5)   # 10 + 0.5 DRIP
 
 
@@ -338,7 +344,7 @@ def test_current_market_value_is_all_shares_raw_close_not_return_series(minimal_
     monkeypatch.setattr(H, "get_prices", _fake_prices)
 
     mv     = get_current_market_value("2025-07-01")
-    pv_end = float(get_portfolio_value_series("2025-05-01", "2025-07-01").iloc[-1])
+    pv_end = float(get_portfolio_value_series("2025-05-01", "2025-07-01", account_id=1).iloc[-1])
 
     assert mv == pytest.approx(1050.0)      # 10.5 shares (incl DRIP) × 100 RAW close
     assert pv_end == pytest.approx(980.0)   # 10 non-DRIP shares × 98 adj_close (return series)
@@ -370,7 +376,7 @@ def test_drip_lots_do_not_inflate_value_series_twr():
     INCEPTION = "2025-05-01"
     TODAY     = date.today().isoformat()
 
-    prod = get_portfolio_value_series(INCEPTION, TODAY)   # DRIP-excluded (fixed)
+    prod = get_portfolio_value_series(INCEPTION, TODAY, account_id=1)   # DRIP-excluded (fixed)
     if prod.dropna().empty:
         pytest.skip("Portfolio data empty — skipped in local/empty-DB mode")
 

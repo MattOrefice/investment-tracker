@@ -8,21 +8,30 @@ from __future__ import annotations
 from collections import Counter
 
 
-def fingerprint(trade_date: str, ticker: str, action: str, shares, price) -> str:
-    """Deterministic composite key for one trade lot.
+def fingerprint(trade_date: str, ticker: str, action: str, shares, price, account_id) -> str:
+    """Deterministic composite key for one trade lot, SCOPED TO ITS ACCOUNT.
 
     Fixed precision (6dp shares, 4dp price — finer than Fidelity reports) so a
     re-exported lot hashes to the same key as the already-logged one. Amount is
     not stored in the trades table, so it cannot participate in the key.
+
+    ``account_id`` leads the key so that the SAME lot in two different accounts —
+    e.g. buy 10 VOO in the taxable book and 10 VOO in the Roth on the same day at
+    the same price (the exact shape of a cross-account rebalance) — hashes to two
+    DISTINCT keys and both survive dedup. An account-blind key would silently drop
+    the second one as a "duplicate", losing a real trade.
     """
     return (
-        f"{trade_date}|{str(ticker).upper()}|{str(action).title()}|"
+        f"{int(account_id)}|{trade_date}|{str(ticker).upper()}|{str(action).title()}|"
         f"{float(shares):.6f}|{float(price):.4f}"
     )
 
 
 def _existing_key(t: dict) -> str:
-    return fingerprint(t["trade_date"], t["ticker"], t.get("action", ""), t["shares"], t["price"])
+    return fingerprint(
+        t["trade_date"], t["ticker"], t.get("action", ""), t["shares"], t["price"],
+        t["account_id"],
+    )
 
 
 def dedupe_against_existing(
@@ -35,13 +44,18 @@ def dedupe_against_existing(
     and a genuinely-new (N+1)th identical lot is still imported. A plain set
     would wrongly drop real duplicate lots; the multiset preserves them.
 
-    Each returned lot gains a ``fingerprint`` key (the composite key string).
+    Both ``parsed_lots`` and ``existing_trades`` MUST carry an ``account_id`` —
+    the key is account-scoped, so the same lot in different accounts does not
+    collide. Each returned lot gains a ``fingerprint`` key (the composite string).
     """
     counts = Counter(_existing_key(t) for t in existing_trades)
     to_import: list[dict] = []
     already: list[dict] = []
     for lot in parsed_lots:
-        key = fingerprint(lot["trade_date"], lot["ticker"], lot["action"], lot["shares"], lot["price"])
+        key = fingerprint(
+            lot["trade_date"], lot["ticker"], lot["action"], lot["shares"],
+            lot["price"], lot["account_id"],
+        )
         tagged = {**lot, "fingerprint": key}
         if counts.get(key, 0) > 0:
             counts[key] -= 1

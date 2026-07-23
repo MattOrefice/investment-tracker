@@ -10,7 +10,7 @@ import plotly.graph_objects as go
 from src.asof import as_of_banner
 from src.db import get_connection
 from src.endowment_benchmarks import CATEGORIES, ENTITIES, get_endowment_data
-from src.holdings import get_sleeve_weights_on_date
+from src.holdings import get_portfolio_account, get_sleeve_weights_on_date
 from src.macro import percentile as macro_percentile
 from src.prose_helpers import percentile_label
 from src.rebalance import compute_drift, interpret_rebalance_status
@@ -248,6 +248,11 @@ with col:
 _, col, _ = st.columns([1, 8, 1])
 with col:
     st.subheader("Sleeve Allocation")
+    st.caption(
+        f"Actual weights are the **{get_portfolio_account()['display_name']}** "
+        "self-directed taxable book (traded ledger); targets are SAA policy. "
+        "Retirement and externally-managed accounts are on the Household View."
+    )
 
     _band_line = ""
     _cash_note = ""

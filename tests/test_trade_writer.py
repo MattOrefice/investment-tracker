@@ -78,7 +78,7 @@ def _valid_trade(**overrides) -> dict:
 def test_write_guard_blocks_when_disabled(minimal_db):
     with patch("src.trade_writer.is_write_enabled", return_value=False), \
          patch("src.trade_writer.write_guard_toast") as mock_toast:
-        result = write_trades_batch([_valid_trade()], 100.0)
+        result = write_trades_batch([_valid_trade()], 100.0, account_id=1)
 
     assert result is False
     mock_toast.assert_called_once()
@@ -91,7 +91,7 @@ def test_write_trades_batch_success(minimal_db):
     trades = [_valid_trade(ticker="VOO"), _valid_trade(ticker="VEA")]
     with patch("src.trade_writer.is_write_enabled", return_value=True), \
          patch("src.trade_writer.write_guard_toast"):
-        result = write_trades_batch(trades, 200.0)
+        result = write_trades_batch(trades, 200.0, account_id=1)
 
     assert result is True
     assert _count_trades(minimal_db) == 2
@@ -101,7 +101,7 @@ def test_write_trades_batch_success(minimal_db):
 
 def test_write_trades_batch_empty_list(minimal_db):
     with patch("src.trade_writer.is_write_enabled", return_value=True):
-        result = write_trades_batch([], 0.0)
+        result = write_trades_batch([], 0.0, account_id=1)
 
     assert result is True
     assert _count_trades(minimal_db) == 0
@@ -113,7 +113,7 @@ def test_action_normalized_to_title_case(minimal_db):
     for raw_action in ("buy", "BUY", "Buy"):
         with patch("src.trade_writer.is_write_enabled", return_value=True), \
              patch("src.trade_writer.write_guard_toast"):
-            write_trades_batch([_valid_trade(action=raw_action)], 100.0)
+            write_trades_batch([_valid_trade(action=raw_action)], 100.0, account_id=1)
 
     conn = sqlite3.connect(str(minimal_db))
     actions = [r[0] for r in conn.execute("SELECT action FROM trades").fetchall()]
@@ -127,7 +127,7 @@ def test_missing_required_field_returns_false(minimal_db):
     bad_trade = _valid_trade(ticker="")   # empty ticker → invalid
     with patch("src.trade_writer.is_write_enabled", return_value=True), \
          patch("src.trade_writer.write_guard_toast"):
-        result = write_trades_batch([bad_trade], 100.0)
+        result = write_trades_batch([bad_trade], 100.0, account_id=1)
 
     assert result is False
     assert _count_trades(minimal_db) == 0
@@ -140,7 +140,7 @@ def test_integrity_assertion_fires_on_divergence(minimal_db):
     with patch("src.trade_writer.is_write_enabled", return_value=True), \
          patch("src.trade_writer.write_guard_toast"):
         with pytest.raises(AssertionError, match="write_trades_batch"):
-            write_trades_batch(trades, 200.0)   # 100 vs 200 → $100 divergence
+            write_trades_batch(trades, 200.0, account_id=1)   # 100 vs 200 → $100 divergence
 
     assert _count_trades(minimal_db) == 0
 
@@ -151,7 +151,7 @@ def test_lot_source_defaults_to_manual(minimal_db):
     trade = _valid_trade()   # no lot_source key
     with patch("src.trade_writer.is_write_enabled", return_value=True), \
          patch("src.trade_writer.write_guard_toast"):
-        write_trades_batch([trade], 100.0)
+        write_trades_batch([trade], 100.0, account_id=1)
 
     conn = sqlite3.connect(str(minimal_db))
     row = conn.execute("SELECT lot_source FROM trades LIMIT 1").fetchone()
@@ -185,7 +185,7 @@ def test_write_trades_batch_carries_thesis_id(minimal_db):
     trade = _valid_trade(thesis_id=42)
     with patch("src.trade_writer.is_write_enabled", return_value=True), \
          patch("src.trade_writer.write_guard_toast"):
-        write_trades_batch([trade], 100.0)
+        write_trades_batch([trade], 100.0, account_id=1)
 
     conn = sqlite3.connect(str(minimal_db))
     row = conn.execute("SELECT thesis_id FROM trades LIMIT 1").fetchone()
@@ -197,9 +197,56 @@ def test_write_trades_batch_no_thesis_id_when_missing(minimal_db):
     trade = _valid_trade()   # no thesis_id
     with patch("src.trade_writer.is_write_enabled", return_value=True), \
          patch("src.trade_writer.write_guard_toast"):
-        write_trades_batch([trade], 100.0)
+        write_trades_batch([trade], 100.0, account_id=1)
 
     conn = sqlite3.connect(str(minimal_db))
     row = conn.execute("SELECT thesis_id FROM trades LIMIT 1").fetchone()
     conn.close()
     assert row[0] is None
+
+
+# ── Part C: account_id is REQUIRED and never guessed ─────────────────────────
+
+def test_write_trades_batch_raises_when_account_id_none(minimal_db):
+    """A None account_id must RAISE — not resolve to a plausible default. A
+    wrong-account write is unrecoverable, so refusing to guess is the point."""
+    with patch("src.trade_writer.is_write_enabled", return_value=True), \
+         patch("src.trade_writer.write_guard_toast"):
+        with pytest.raises(ValueError, match="explicit account_id"):
+            write_trades_batch([_valid_trade()], 100.0, account_id=None)
+    assert _count_trades(minimal_db) == 0
+
+
+def test_write_trades_batch_raises_on_unspecified_account(minimal_db):
+    """Omitting account_id entirely is a hard error (no positional default)."""
+    with pytest.raises(TypeError):
+        write_trades_batch([_valid_trade()], 100.0)  # type: ignore[call-arg]
+
+
+def test_write_trades_batch_raises_on_inactive_or_unknown_account(minimal_db):
+    """An account_id that is not an active account must RAISE rather than write —
+    a non-existent account is as unrecoverable a mis-file as the wrong one."""
+    with patch("src.trade_writer.is_write_enabled", return_value=True), \
+         patch("src.trade_writer.write_guard_toast"):
+        with pytest.raises(ValueError, match="not an active account"):
+            write_trades_batch([_valid_trade()], 100.0, account_id=999)
+    assert _count_trades(minimal_db) == 0
+
+
+def test_write_trades_batch_writes_to_the_named_account(minimal_db):
+    """The batch lands under the account the caller named — nothing else."""
+    # Add a second account so 'lowest active id' and 'the named one' can differ.
+    conn = sqlite3.connect(str(minimal_db))
+    conn.execute("INSERT INTO accounts (name, type) VALUES ('Roth', 'retirement')")
+    conn.commit()
+    roth_id = conn.execute("SELECT account_id FROM accounts WHERE name='Roth'").fetchone()[0]
+    conn.close()
+
+    with patch("src.trade_writer.is_write_enabled", return_value=True), \
+         patch("src.trade_writer.write_guard_toast"):
+        assert write_trades_batch([_valid_trade()], 100.0, account_id=roth_id) is True
+
+    conn = sqlite3.connect(str(minimal_db))
+    rows = [r[0] for r in conn.execute("SELECT account_id FROM trades").fetchall()]
+    conn.close()
+    assert rows == [roth_id], f"expected the named account {roth_id}, got {rows}"

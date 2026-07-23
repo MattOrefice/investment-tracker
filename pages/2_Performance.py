@@ -31,6 +31,7 @@ from src.holdings import (
     get_current_market_value,
     get_external_cashflow_series,
     get_inception_date,
+    get_portfolio_account,
     get_portfolio_value_series,
     get_sleeve_weights_on_date,
     last_settled_price_date,
@@ -45,7 +46,9 @@ from src.ui_helpers import render_footer, render_page_header
 render_page_header()
 
 
-INCEPTION    = get_inception_date()
+_PORTFOLIO_ACCT = get_portfolio_account()   # single source of truth for scope + label
+_ACCT_ID        = _PORTFOLIO_ACCT["account_id"]
+INCEPTION    = get_inception_date(account_id=_ACCT_ID)
 TODAY        = date.today().isoformat()
 PERIODS      = ["1M", "3M", "YTD", "1Y", "SI"]
 PERIOD_LABEL = {"1M": "1 Month", "3M": "3 Months", "YTD": "YTD",
@@ -76,8 +79,8 @@ _PALETTE = {
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def _load_portfolio(_v: int = _PORTFOLIO_CACHE_V):
-    pv = get_portfolio_value_series(INCEPTION, TODAY)
-    cf = get_external_cashflow_series(INCEPTION, TODAY).reindex(pv.index).fillna(0.0)
+    pv = get_portfolio_value_series(INCEPTION, TODAY, account_id=_ACCT_ID)
+    cf = get_external_cashflow_series(INCEPTION, TODAY, account_id=_ACCT_ID).reindex(pv.index).fillna(0.0)
     return pv, cf
 
 
@@ -406,10 +409,15 @@ with col:
     # Section 1b — Since inception headline metrics
     # ──────────────────────────────────────────────────────────────────────
     st.markdown("### Since inception")
+    st.caption(
+        f"Scope: **{_PORTFOLIO_ACCT['display_name']}** — the self-directed taxable "
+        "book (the traded ledger). Retirement and externally-managed accounts are "
+        "not included here; see the Household View for the whole household."
+    )
     m1, m2, m3, m4 = st.columns(4)
 
     inception_delta_pct = f"{port_si*100:+.1f}% since inception"
-    m1.metric("Portfolio value",              f"${current_mv:,.0f}", inception_delta_pct)
+    m1.metric(f"{_PORTFOLIO_ACCT['display_name']} value", f"${current_mv:,.0f}", inception_delta_pct)
     m2.metric("vs. S&P 500 (since inception)",    _bps(alpha_sp),
               f"S&P 500: {_pct(sp500_si)} SI",
               delta_color="off")

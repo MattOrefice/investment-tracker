@@ -69,7 +69,7 @@ def test_drip_increases_portfolio_value():
         INCEPTION = "2025-05-01"
         END       = "2025-12-31"
 
-        pv = get_portfolio_value_series(INCEPTION, END)
+        pv = get_portfolio_value_series(INCEPTION, END, account_id=1)
         pv_clean = pv.dropna()
         if pv_clean.empty:
             import pytest

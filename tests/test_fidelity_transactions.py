@@ -57,6 +57,12 @@ def _parse():
     return parse_fidelity_transactions(io.StringIO(SAMPLE_CSV))
 
 
+def _with_acct(lots, account_id=1):
+    """Stamp lots with an account_id, mirroring what the import UI does before
+    dedup now that the dedup key is account-scoped."""
+    return [{**l, "account_id": account_id} for l in lots]
+
+
 # ── 1. Real-format parse: BOM / Brokerage / header / footer handling ──────────
 
 def test_parse_extracts_only_trade_rows_ignoring_footer():
@@ -120,7 +126,7 @@ def test_quoted_descriptions_do_not_bleed_fields():
 
 def test_dedup_skips_already_logged_on_reimport():
     res = _parse()
-    known, _unknown = split_known_tickers(res["trades"], KNOWN_TICKERS)
+    known, _unknown = split_known_tickers(_with_acct(res["trades"]), KNOWN_TICKERS)
     # First import: nothing logged yet -> all known lots import
     to_import, already = dedupe_against_existing(known, existing_trades=[])
     assert len(to_import) == len(known) and not already
@@ -128,7 +134,8 @@ def test_dedup_skips_already_logged_on_reimport():
     # Simulate they were logged (mirror trades-table rows), then re-import the same file
     existing = [
         {"trade_date": l["trade_date"], "ticker": l["ticker"],
-         "action": l["action"], "shares": l["shares"], "price": l["price"]}
+         "action": l["action"], "shares": l["shares"], "price": l["price"],
+         "account_id": l["account_id"]}
         for l in known
     ]
     to_import2, already2 = dedupe_against_existing(known, existing)
@@ -138,13 +145,40 @@ def test_dedup_skips_already_logged_on_reimport():
 def test_dedup_multiset_preserves_genuine_duplicate_lot():
     # Two identical lots logged; a later export contains THREE identical lots.
     lot = {"trade_date": "2026-06-02", "ticker": "VEA", "action": "Buy",
-           "shares": 1.0, "price": 70.61}
+           "shares": 1.0, "price": 70.61, "account_id": 1}
     existing = [dict(lot), dict(lot)]               # N = 2 already logged
     parsed = [dict(lot), dict(lot), dict(lot)]      # N+1 = 3 in the new export
     to_import, already = dedupe_against_existing(parsed, existing)
     assert len(already) == 2 and len(to_import) == 1  # multiset: skip 2, import exactly 1
     # A plain set would have dropped all 3 — prove the distinction
-    assert len({fingerprint(**{k: l[k] for k in ("trade_date", "ticker", "action", "shares", "price")}) for l in parsed}) == 1
+    assert len({fingerprint(**{k: l[k] for k in ("trade_date", "ticker", "action", "shares", "price", "account_id")}) for l in parsed}) == 1
+
+
+def test_dedup_is_account_scoped_cross_account_pair_both_land():
+    """The SAME lot in two different accounts (a cross-account rebalance: buy 10
+    VOO in taxable and 10 VOO in Roth, same day, same price) must BOTH import —
+    an account-blind key would silently drop the second as a duplicate."""
+    base = {"trade_date": "2026-06-02", "ticker": "VOO", "action": "Buy",
+            "shares": 10.0, "price": 500.00}
+    taxable = {**base, "account_id": 1}
+    roth    = {**base, "account_id": 5}
+
+    # Taxable already logged; the Roth lot arrives in a later import.
+    to_import, already = dedupe_against_existing([roth], existing_trades=[taxable])
+    assert len(to_import) == 1 and len(already) == 0, (
+        "the Roth lot was dropped as a duplicate of the taxable lot — the dedup key "
+        "is not account-scoped"
+    )
+    assert to_import[0]["account_id"] == 5
+
+    # And the two fingerprints must differ.
+    fp_tax = fingerprint("2026-06-02", "VOO", "Buy", 10.0, 500.00, 1)
+    fp_roth = fingerprint("2026-06-02", "VOO", "Buy", 10.0, 500.00, 5)
+    assert fp_tax != fp_roth
+
+    # Same account, identical lot: still deduped (regression guard).
+    to_import2, already2 = dedupe_against_existing([dict(taxable)], existing_trades=[dict(taxable)])
+    assert to_import2 == [] and len(already2) == 1
 
 
 # ── 7. Unknown ticker pre-filter (FK-safe) ────────────────────────────────────
@@ -163,7 +197,7 @@ def test_write_path_respects_guard(monkeypatch):
     monkeypatch.setattr(tw, "is_write_enabled", lambda: False)
     monkeypatch.setattr(tw, "write_guard_toast", lambda: None)
     res = _parse()
-    known, _ = split_known_tickers(res["trades"], KNOWN_TICKERS)
+    known, _ = split_known_tickers(_with_acct(res["trades"]), KNOWN_TICKERS)
     to_import, _ = dedupe_against_existing(known, [])
     trades_list = [{
         "ticker": l["ticker"], "trade_date": l["trade_date"], "shares": l["shares"],
@@ -171,25 +205,28 @@ def test_write_path_respects_guard(monkeypatch):
         "lot_source": "Fidelity CSV",
     } for l in to_import]
     expected = round(sum(t["total_value"] for t in trades_list), 2)
-    # Guard disabled -> no write, returns False
-    assert tw.write_trades_batch(trades_list, expected) is False
+    # Guard disabled -> no write, returns False (account_id is still required)
+    assert tw.write_trades_batch(trades_list, expected, account_id=1) is False
 
 
 # ── 9. Notes fingerprint matches the dedup key ────────────────────────────────
 
 def test_fingerprint_is_deterministic_and_composite():
-    fp = fingerprint("2026-06-02", "vea", "buy", 0.738, 70.61)
-    assert fp == "2026-06-02|VEA|Buy|0.738000|70.6100"
+    fp = fingerprint("2026-06-02", "vea", "buy", 0.738, 70.61, 1)
+    assert fp == "1|2026-06-02|VEA|Buy|0.738000|70.6100"
     # The same lot re-fingerprinted (e.g. from a re-export) is identical
-    assert fp == fingerprint("2026-06-02", "VEA", "Buy", 0.738, 70.6100)
+    assert fp == fingerprint("2026-06-02", "VEA", "Buy", 0.738, 70.6100, 1)
+    # The account leads the key: same lot, different account -> different key
+    assert fp != fingerprint("2026-06-02", "VEA", "Buy", 0.738, 70.6100, 5)
 
 
 def test_dedup_attaches_fingerprint_for_notes():
     res = _parse()
-    known, _ = split_known_tickers(res["trades"], KNOWN_TICKERS)
+    known, _ = split_known_tickers(_with_acct(res["trades"]), KNOWN_TICKERS)
     to_import, _ = dedupe_against_existing(known, [])
     for lot in to_import:
         assert "fingerprint" in lot
         assert lot["fingerprint"] == fingerprint(
-            lot["trade_date"], lot["ticker"], lot["action"], lot["shares"], lot["price"]
+            lot["trade_date"], lot["ticker"], lot["action"], lot["shares"], lot["price"],
+            lot["account_id"],
         )

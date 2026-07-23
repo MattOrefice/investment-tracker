@@ -111,8 +111,8 @@ def as_of_report_line(today: date | None = None, inception: "date | str | None" 
     """
     today = today or date.today()
     if inception is None:
-        from src.holdings import get_inception_date
-        inception = get_inception_date()
+        from src.holdings import get_inception_date, get_portfolio_account_id
+        inception = get_inception_date(account_id=get_portfolio_account_id())
     q = most_recent_reportable_quarter(inception, today)
     if q is None:
         return NO_COMPLETED_QUARTER
