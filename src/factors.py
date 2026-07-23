@@ -1360,13 +1360,17 @@ def build_intl_tilt_disclosure(entry: dict) -> list[str]:
         "Korea-neutral by construction."
     )
     paras.append(
-        f"What remains is **construction, not universe**: an Israel weight of roughly "
-        f"{israel}% (developed in the factor universe, so spanned — but a source of "
-        f"idiosyncratic country return), the fund's expense ratio and unrecovered "
-        f"foreign dividend-withholding drag on a net-NAV basis, and — specific to this "
-        f"window — an overweight to materials and gold miners that contributed "
-        f"disproportionately and that Avantis characterizes as a cyclical, "
-        f"**not-repeatable** driver rather than a persistent edge."
+        f"What remains is **construction, not universe — and it is not a persistent "
+        f"edge.** The fund-minus-control gap should not be read as a repeatable "
+        f"{fund}-over-control advantage of this size. A material part of it in this "
+        f"window is a sector bet: an overweight to materials and gold miners that "
+        f"contributed disproportionately and that Avantis characterizes as cyclical "
+        f"and **not repeatable** — as that tilt normalizes the gap should compress, "
+        f"not compound. What is left is persistent but still not skill: an Israel "
+        f"weight of roughly {israel}% (developed, so spanned by the factors, but a "
+        f"source of idiosyncratic country return), the fund's expense ratio and "
+        f"unrecovered foreign dividend-withholding drag on a net-NAV basis, and the "
+        f"deeper microcap tail the NYSE-style breakpoints smooth over."
     )
     paras.append(
         f"Finally, a joint-metric caveat: Avantis integrates value and profitability "

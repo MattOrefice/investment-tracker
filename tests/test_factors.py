@@ -1079,6 +1079,15 @@ def test_intl_tilt_disclosure_avantis_guards_against_korea_overreach():
         assert "repeatable" in text.lower(), (
             f"{fund}: the materials/gold-miner overweight must be flagged as unrepeatable"
         )
+        # The fund-minus-control gap must be framed as NOT a persistent edge, so a
+        # reader can't read the raw bps as a recurring advantage (the flattering
+        # misattribution this disclosure exists to prevent).
+        assert "not a persistent edge" in text.lower() or "not be read as a repeatable" in text.lower(), (
+            f"{fund}: the gap must be explicitly framed as not a persistent/recurring edge"
+        )
+        assert "this window" in text.lower(), (
+            f"{fund}: the sector-tilt inflation must be tied to THIS window, not presented as structural"
+        )
         assert "HML" in text and "RMW" in text, f"{fund}: HML/RMW joint-metric caveat required"
     # The Israel weight is asymmetric across the two funds (≈4.5% AVDV vs ≈1% AVIV).
     avdv = next(s for s in _INTL_TILT_SLEEVES if s["fund"] == "AVDV")
