@@ -441,3 +441,37 @@ def test_personal_guard_fails_when_a_sleeve_loses_its_carrier():
         f"Shortfall ({db_sum - frame_sum:.10f}) should equal the dropped sleeve's "
         f"target ({lost:.10f})."
     )
+
+
+# ── exclude_non_household_positions: fail-conservative on a missing flag ────────
+# Self-contained (no live holdings): the single exclusion gate every personal-mode
+# page passes positions through must fail LOUD, not fail OPEN.
+
+def test_exclude_drops_positions_flagged_out_of_household():
+    from src.household import exclude_non_household_positions
+
+    accts = pd.DataFrame({
+        "pseudonym":             ["acct_01", "acct_wkpl_01"],
+        "included_in_household": [1, 0],
+    })
+    pos = pd.DataFrame({
+        "pseudonym":     ["acct_01", "acct_wkpl_01"],
+        "current_value": [100_000.0, 250_000.0],
+    })
+    kept = exclude_non_household_positions(pos, accts)
+    assert set(kept["pseudonym"]) == {"acct_01"}
+    assert kept["current_value"].sum() == 100_000.0, (
+        "The included_in_household=0 account's money must not enter the total."
+    )
+
+
+def test_exclude_raises_when_flag_column_absent():
+    """An accounts frame with no included_in_household column is a SCHEMA error,
+    not an instruction to include every account. Returning positions unchanged
+    would fail OPEN — the exact fail-conservative regression this guards."""
+    from src.household import exclude_non_household_positions
+
+    accts_no_flag = pd.DataFrame({"pseudonym": ["acct_01"]})   # column missing
+    pos = pd.DataFrame({"pseudonym": ["acct_01"], "current_value": [100_000.0]})
+    with pytest.raises(ValueError, match="included_in_household"):
+        exclude_non_household_positions(pos, accts_no_flag)
