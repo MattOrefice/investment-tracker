@@ -8,6 +8,28 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## International benchmark ERs sourced too: complete the fee exhibit
+_2026-07-23_
+
+The three international-split benchmarks (IQLT 0.30%, EFV 0.33%, SCZ 0.40%) were
+left NULL when the benchmark ERs were first sourced. That left the Research fee
+exhibit making a holding-vs-benchmark comparison for every sleeve **except the
+four international tilts it had just added** — three of them showed a holding ER
+against a blank. These are now sourced with the same inline issuer-source +
+`er_as_of` provenance, carried into existing databases by the same idempotent
+`migrate_benchmark_ers_phase41.py` (its values are imported from
+`seed_securities`, so adding the three ERs there is all it takes).
+
+This is a **completeness** fix, not a headline target. What it reveals is worth
+stating plainly, because it corrects a claim in the SAA prose: against their
+*benchmarks* the tilts are marginally **cheaper**, not more expensive — IDHQ
+0.29% vs IQLT 0.30%, AVIV 0.25% vs EFV 0.33%, AVDV 0.36% vs SCZ 0.40%. The "tilts
+cost more" story in the sleeve rationales is true only against the cap-weighted
+*core* (VEA at 0.03%), which is not what the exhibit benchmarks against. The
+portfolio headline moves only slightly as a result; it was never the point.
+
+---
+
 ## Benchmark expense ratios: sourced in-code, not baked in a binary
 _2026-07-23_
 
