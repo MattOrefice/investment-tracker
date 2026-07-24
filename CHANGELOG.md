@@ -8,7 +8,7 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
-## Quarterly PDF: demo book funded across its whole reportable history
+## Quarterly PDF: demo book funded across its history, and four stale strings derived
 _2026-07-23_
 
 An audit of the PDF report path found the public quarterly report showing an
@@ -37,6 +37,19 @@ residue: the committed VEA DRIP lots were sized for the untrimmed holding, so th
 DRIP-inclusive holdings weight carries ~0.12 sh of over-reinvestment (Core reads ~7.7%
 vs the DRIP-excluded 7.1% used by returns/attribution) — immaterial and returns-clean,
 left as-is rather than rewrite the unique DRIP test fixture.
+
+The same audit found four statements that were correct when written and silently wrong
+later, all now derived rather than hardcoded. The Brinson-Fachler caption's "nine
+strategic sleeves" (a 12-row table sat directly above it) reads the DB sleeve count.
+The benchmark-attribution note's hardcoded "Q1 2026 … on the Performance page" derives
+the report quarter and names no rendering surface — and is emitted only when the BF
+cross-reference is a report-period window (the PDF), and suppressed on the Streamlit
+page, where that cross-reference is itself since-inception, so the "differ by design"
+claim was doubly wrong there. The methodology benchmark basket (a hardcoded 9-sleeve
+ticker list that omitted the IQLT/EFV/SCZ international tilts) derives from the DB
+benchmark map. And the Asset-Evaluation conclusion's "Section 5c/5f/5h" cross-references
+— which dangle in the prose-titled PDF — now name the analyses descriptively, correct on
+both the page and the PDF.
 
 ## pandas/numpy unpinned — the "pandas-3 breaks BF" pin was a misdiagnosis
 _2026-07-23_

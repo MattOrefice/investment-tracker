@@ -1609,6 +1609,8 @@ def run_benchmark_attribution_regression(
 def build_benchmark_prose(
     result: Optional[dict],
     bhb_top_selection: Optional[list] = None,
+    bhb_period_label: Optional[str] = None,
+    bhb_location: str = "on the Performance page",
 ) -> list[str]:
     """
     Generate institutional-register prose interpreting the benchmark attribution regression.
@@ -1706,13 +1708,7 @@ def build_benchmark_prose(
         f"and persistence of the active return cannot be established without a longer history."
     )
 
-    cross_page_note = (
-        "Note: this regression covers the since-inception window; the Brinson-Fachler "
-        "attribution on the Performance page reports Q1 2026. The top selection drivers "
-        "differ by design, reflecting the longer window captured here."
-    )
-
-    return [
+    out = [
         f"Portfolio benchmark-relative regression ({T} trading days, {s_start} to {s_end}): "
         f"the portfolio loads on the custom blended benchmark at β = {b_bench:.3f} "
         f"(t = {t_bench:.2f}), {bench_note}. "
@@ -1722,9 +1718,29 @@ def build_benchmark_prose(
         f"R² = {r2:.3f}.",
 
         second_para,
-
-        cross_page_note,
     ]
+
+    # Cross-window disclosure: this regression is since-inception, whereas the
+    # Brinson-Fachler attribution uses a shorter report-period window, so their top
+    # selection drivers differ. The quarter is DERIVED when the caller knows it (the
+    # PDF passes its report label); the Streamlit page leaves it generic because the
+    # Performance page's BF window is user-selectable. `bhb_location` names where that
+    # attribution lives — "on the Performance page" (default, the page) or "in this
+    # report" (the PDF) — so neither surface names the wrong one, and the quarter is
+    # never hardcoded ("Q1 2026" was both stale and, in PDF output, on the wrong page).
+    if bhb_period_label:
+        _bf_clause = f"the Brinson-Fachler attribution {bhb_location} covers {bhb_period_label}"
+    else:
+        _bf_clause = (
+            f"the Brinson-Fachler attribution {bhb_location} uses a report-period "
+            f"(single-quarter) window"
+        )
+    out.append(
+        f"Note: this regression covers the since-inception window; {_bf_clause}. "
+        f"The top selection drivers differ by design, reflecting the longer window captured here."
+    )
+
+    return out
 
 
 def build_benchmark_methodology(result: Optional[dict]) -> list[str]:
