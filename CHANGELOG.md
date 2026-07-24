@@ -35,8 +35,13 @@ invariant (the rebalance nets to zero on the seed date; the $1,000 inception see
 the only external flow) and the factor section (the tilts aren't regressed) are unchanged. One display-only
 residue: the committed VEA DRIP lots were sized for the untrimmed holding, so the
 DRIP-inclusive holdings weight carries ~0.12 sh of over-reinvestment (Core reads ~7.7%
-vs the DRIP-excluded 7.1% used by returns/attribution) — immaterial and returns-clean,
-left as-is rather than rewrite the unique DRIP test fixture.
+on the DRIP-inclusive holdings basis vs the DRIP-excluded 7.1% that returns and
+attribution use). This is the EXPECTED DRIP-inclusive-vs-excluded basis difference, not
+a bug — do not "fix" it. Chasing it would mean rewriting the demo's DRIP lots, which are
+the only dividend-reinvestment transactions in either database and the single fixture
+that makes money-weighted-vs-time-weighted return testable at all (`test_bf_reconciles_*`);
+that fixture is worth far more than closing a ~0.6% display-only gap, so it is left as-is
+deliberately.
 
 The same audit found four statements that were correct when written and silently wrong
 later, all now derived rather than hardcoded. The Brinson-Fachler caption's "nine
