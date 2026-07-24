@@ -669,3 +669,68 @@ def test_performance_page_serves_reports_from_session_not_shared_dir():
     assert "_REPORTS_DIR" not in page, "the shared reports dir must be gone from the page"
     assert ".glob(" not in page, "no directory globbing to serve another visitor's file"
     assert "st.session_state" in page and "generated_report" in page
+
+
+# ── CAPE regime: exec reports, Macro concludes, one derivation (PDF #5) ──────────
+# Pre-fix the exec summary appended "supporting the diversification rationale" at EVERY
+# CAPE level while the Macro section derived a percentile-conditional stance — a same-PDF
+# contradiction below the 60th percentile (soft) and reversed below the 40th (opposite).
+# Nothing pinned either section's regime logic before; this is the durable guard.
+
+def test_cape_regime_band_boundaries():
+    """The single derivation both sections consume. Bands: >=80 / >=60 / >=40 / else."""
+    from src.reports import _cape_regime
+    assert _cape_regime(80)[0] == "Elevated"
+    assert _cape_regime(79)[0] == "Above-average"
+    assert _cape_regime(60)[0] == "Above-average"
+    assert _cape_regime(59)[0] == "Moderate"
+    assert _cape_regime(40)[0] == "Moderate"
+    assert _cape_regime(39)[0] == "Below-average"
+    assert _cape_regime(0)[0] == "Below-average"
+
+
+def test_exec_cape_sentence_reports_regime_not_allocation():
+    """The exec line reports the reading + derived regime label and draws NO allocation
+    conclusion (that is the Macro section's job), and reads naturally at both extremes."""
+    from src.reports import _cape_reading_sentence
+    for cape, pct, label in [(40.9, 99.0, "Elevated"), (18.0, 62.0, "Above-average"),
+                             (16.0, 50.0, "Moderate"), (13.0, 20.0, "Below-average")]:
+        s = _cape_reading_sentence(cape, pct)
+        assert f"{label} versus history" in s, s
+        assert f"in the {pct:.0f}th percentile" in s, s
+        low = s.lower()
+        # no allocation verb — never the old unconditional conclusion, in either direction
+        for banned in ("supporting the diversification", "diversif", "us equity",
+                       "us large-cap", "tilt", "overweight", "underweight"):
+            assert banned not in low, f"exec drew an allocation conclusion ({banned!r}): {s}"
+
+
+def test_exec_and_macro_cape_stances_never_contradict(monkeypatch):
+    """Across constructed low/mid/high CAPE regimes, the Macro section's stance is the
+    shared _cape_regime action and the exec reports the SAME regime label without carrying
+    that action — so the two can never state opposite conclusions from one percentile."""
+    import pandas as pd
+    import src.reports as rpt
+    from src.reports import _cape_regime, _cape_reading_sentence
+
+    # Isolate CAPE: block FRED (yield curve / fed funds / HY go to N/A, no percentile call)
+    monkeypatch.setattr(rpt, "get_series", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no fred")))
+    monkeypatch.setattr(rpt, "compute_cape_implied_return", lambda cv: 0.0)
+    monkeypatch.setattr(rpt, "get_cape_series", lambda: pd.Series([10.0, 20.0, 30.0]))
+
+    for cape_val, pct in [(40.9, 99), (24.0, 85), (18.0, 62), (16.0, 50), (14.0, 25), (11.0, 8)]:
+        monkeypatch.setattr(rpt, "current_cape", lambda cv=cape_val: cv)
+        monkeypatch.setattr(rpt, "percentile", lambda series, val, p=pct: float(p))
+
+        macro = rpt._build_macro_section()["cape"]
+        exp_label, exp_action = _cape_regime(pct)
+
+        # Macro consumes the shared derivation (not re-inlined bands)
+        assert macro["regime"] == exp_label, (pct, macro["regime"])
+        assert macro["regime_action"] == exp_action, (pct, macro["regime_action"])
+
+        # Exec reports the same label and does NOT carry the action → cannot contradict it
+        exec_s = _cape_reading_sentence(cape_val, float(pct))
+        assert exp_label in exec_s, exec_s
+        assert exp_action not in exec_s, f"exec carried the Macro stance: {exec_s}"
+        assert "diversif" not in exec_s.lower() and "us equity" not in exec_s.lower()
