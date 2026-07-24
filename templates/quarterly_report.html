@@ -258,6 +258,13 @@
   are unaffected (its benchmark is informational only).</p>
   {% endif %}
 
+  {% if attr.suppressed_drivers %}
+  <p class="muted"><strong>Selection-driver commentary omitted for:</strong>
+  {% for s in attr.suppressed_drivers %}{{ s }}{% if not loop.last %}; {% endif %}{% endfor %}
+  &mdash; no holding ticker is mapped to the sleeve (a benchmark-only or unconfigured sleeve),
+  so no per-holding return could be stated. The sleeve&rsquo;s attribution row above is unaffected.</p>
+  {% endif %}
+
   {% if attr.sel_commentary %}
   <div class="bf-commentary">
     <p class="bf-comm-title">Top Selection Effect Drivers</p>
@@ -447,6 +454,13 @@
     <p style="margin: 4px 0;">{{ sentence }}</p>
     {% endfor %}
   </div>
+
+  {% if bench_attr.suppressed_drivers %}
+  <p class="muted" style="margin-top: 6px;">Cross-reference omitted for:
+  {% for s in bench_attr.suppressed_drivers %}{{ s }}{% if not loop.last %}; {% endif %}{% endfor %}
+  &mdash; no holding ticker is mapped to the sleeve, so no holding-vs-benchmark cross-reference
+  could be stated for it.</p>
+  {% endif %}
 
   <p class="muted" style="margin-top: 6px; font-size: 0.80em;">
     * p &lt; 0.10 &nbsp;&nbsp; ** p &lt; 0.05 &nbsp;&nbsp; *** p &lt; 0.01 &nbsp;&middot;&nbsp;

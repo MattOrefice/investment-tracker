@@ -8,6 +8,31 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Quarterly PDF: a selection driver with no mapped holding is suppressed, not placeholder-filled
+_2026-07-24_
+
+The Brinson-Fachler selection-driver prose had two in-domain defaults that rendered a
+plausible-looking value instead of announcing absence. `sel_commentary`'s
+`_hold_map.get(sleeve, "—")` produced *"portfolio holding (**—**) returned X%…"* — a dash
+where a ticker belongs. `build_bf_cross_reference`'s `.get(sleeve, sleeve)` echoed the
+**sleeve name** into the ticker slot — *"Real Assets outperformed IQLT by…"*, reading as
+if the sleeve were a ticker (worse in kind). Both latent (every sleeve maps today), but
+the holding default is one config change from firing on Real Assets: `sleeve_holdings()`
+drops any sleeve whose only securities are its own benchmark legs, and VNQ is both a held
+REIT and a benchmark leg, so Real Assets survives on PDBC alone. (The benchmark default is
+dead — `attribution.py`'s `w_b>0` assertion raises before a benchmark-less sleeve reaches
+the prose.)
+
+Both sites now resolve tickers through one helper (`_sleeve_driver_tickers`) that returns
+`None` — **suppressing** the driver — when either ticker is unmapped, uniform across both
+maps. Because a server-log warning is invisible in a Cloud render, the omission is also
+made **visible**: the suppressed sleeve is surfaced as a section notice ("Selection-driver
+commentary omitted for {sleeve} — no holding ticker is mapped… the attribution row above is
+unaffected"), so a driver never silently vanishes from a shorter list. Proven by
+constructing the Real Assets gap in a scratch DB and showing both sites suppress-and-note
+rather than emit the dash or the sleeve-name echo. Suppress, not raise: this is prose, the
+BF numbers are correct, and the sleeve still shows in the table.
+
 ## Quarterly PDF: the executive summary reports the CAPE regime, doesn't conclude the allocation
 _2026-07-24_
 

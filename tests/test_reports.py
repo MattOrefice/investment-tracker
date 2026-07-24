@@ -734,3 +734,69 @@ def test_exec_and_macro_cape_stances_never_contradict(monkeypatch):
         assert exp_label in exec_s, exec_s
         assert exp_action not in exec_s, f"exec carried the Macro stance: {exec_s}"
         assert "diversif" not in exec_s.lower() and "us equity" not in exec_s.lower()
+
+
+# ── selection-driver suppression (PDF #7) ───────────────────────────────────────
+# A sleeve with no mapped holding ticker (its only securities are its own benchmark
+# legs — Real Assets is one PDBC-removal away) must be SUPPRESSED, not rendered with a
+# dash ("holding (—)") or the sleeve name in the ticker slot ("Real Assets outperformed
+# …"). Suppression is surfaced (suppressed_drivers + a section notice) so a driver never
+# silently vanishes.
+
+def test_sleeve_driver_tickers_suppresses_on_missing_ticker():
+    from src.reports import _sleeve_driver_tickers
+    hold = {"US Large Core": "VOO"}
+    bench = {"US Large Core": "SPY", "Real Assets": "VNQ (60%) + DBC (40%)"}
+    assert _sleeve_driver_tickers("US Large Core", hold, bench) == ("VOO", "SPY")
+    assert _sleeve_driver_tickers("Real Assets", hold, bench) is None     # no holding ticker
+    assert _sleeve_driver_tickers("Emerging Markets", hold, bench) is None  # neither mapped
+
+
+def test_build_bf_cross_reference_suppresses_unmapped_holding(monkeypatch):
+    """The sleeve-name echo (worse-in-kind): a no-holding sleeve must be dropped from the
+    cross-reference and recorded, never emitted with its name in the ticker slot."""
+    import src.reports as rpt
+    from src.reports import build_bf_cross_reference
+    monkeypatch.setattr(rpt, "sleeve_holding_ticker", lambda: {"US Large Core": "VOO"})
+    monkeypatch.setattr(rpt, "sleeve_bench_ticker",
+                        lambda: {"US Large Core": "SPY", "Real Assets": "VNQ (60%) + DBC (40%)"})
+    bf = pd.DataFrame([
+        {"sleeve": "Real Assets",   "r_p": 0.20, "r_b": 0.05, "selection_effect": 0.015},
+        {"sleeve": "US Large Core", "r_p": 0.15, "r_b": 0.148, "selection_effect": 0.0003},
+    ])
+    bf.attrs["no_benchmark_sleeves"] = []
+    supp: list = []
+    items = build_bf_cross_reference(bf, suppressed=supp)
+    assert supp == ["Real Assets"]
+    assert all(it["holding"] != "Real Assets" for it in items), items
+    assert [it["holding"] for it in items] == ["VOO"]
+
+
+def test_sel_commentary_suppresses_unmapped_holding(monkeypatch):
+    """The dash default: a ranked no-holding sleeve is suppressed (no 'holding (—)'
+    sentence) and recorded in suppressed_drivers for the section notice."""
+    import src.reports as rpt
+    monkeypatch.setattr(rpt, "sleeve_holding_ticker",
+                        lambda: {"US Large Core": "VOO", "US Small Cap": "AVUV"})  # Real Assets absent
+    monkeypatch.setattr(rpt, "sleeve_bench_ticker",
+                        lambda: {"US Large Core": "SPY", "US Small Cap": "IWM",
+                                 "Real Assets": "VNQ (60%) + DBC (40%)"})
+    monkeypatch.setattr(rpt, "_chart_b64", lambda *a, **k: None)
+    bf = pd.DataFrame([
+        {"sleeve": "Real Assets",   "w_p": 0.10, "w_b": 0.10, "r_p": 0.20, "r_b": 0.05,
+         "allocation_effect": 0.0, "selection_effect": 0.015, "total_effect": 0.015},
+        {"sleeve": "US Small Cap",  "w_p": 0.09, "w_b": 0.08, "r_p": 0.13, "r_b": 0.21,
+         "allocation_effect": 0.0, "selection_effect": -0.007, "total_effect": -0.007},
+        {"sleeve": "US Large Core", "w_p": 0.17, "w_b": 0.17, "r_p": 0.15, "r_b": 0.148,
+         "allocation_effect": 0.0, "selection_effect": 0.0003, "total_effect": 0.0003},
+    ])
+    for k in ("no_benchmark_sleeves", "price_gaps", "benchmark_gaps"):
+        bf.attrs[k] = []
+    bf.attrs["cash_drag"] = 0.0
+    monkeypatch.setattr(rpt, "brinson_fachler_period", lambda *a, **k: bf)
+
+    attr = rpt._build_attribution_section("2026-03-31", "2026-06-30")
+    assert attr["suppressed_drivers"] == ["Real Assets"]
+    assert len(attr["sel_commentary"]) == 2, attr["sel_commentary"]
+    assert not any("(—)" in s or "holding (Real Assets)" in s for s in attr["sel_commentary"])
+    assert all("Real Assets:" not in s for s in attr["sel_commentary"])

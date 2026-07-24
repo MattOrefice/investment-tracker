@@ -91,7 +91,38 @@ def sleeve_bench_ticker() -> dict[str, str]:
         ).fetchall()
     return {r["name"]: r["benchmark_ticker"] for r in rows}
 
-def build_bf_cross_reference(bf_df: pd.DataFrame, n: int = 3) -> list[dict]:
+
+def _sleeve_driver_tickers(
+    sleeve: str, hold_map: dict[str, str], bench_map: dict[str, str]
+) -> Optional[tuple[str, str]]:
+    """Resolve (holding ticker, benchmark ticker) for a selection-driver sentence, or
+    ``None`` when EITHER is unmapped — the caller then SUPPRESSES the driver rather than
+    emitting a dash or the sleeve name where a ticker belongs (PDF #7: the in-domain
+    default that renders a plausible-looking value instead of announcing absence).
+
+    A sleeve is absent from ``sleeve_holding_ticker()`` when it has no distinct holding
+    security — every security mapped to it is one of its own benchmark legs (Real Assets
+    survives only because PDBC is not one) or none is mapped. Logs a warning; because a
+    server log is invisible in a Cloud render, callers ALSO surface the omission in the
+    report so a driver never silently vanishes.
+    """
+    holding = hold_map.get(sleeve)
+    bench = bench_map.get(sleeve)
+    if holding is None or bench is None:
+        missing = " and ".join(
+            name for name, val in (("holding", holding), ("benchmark", bench)) if val is None
+        )
+        logging.warning(
+            "Selection driver suppressed for sleeve %r: no %s ticker mapped — "
+            "no per-holding return sentence emitted.", sleeve, missing,
+        )
+        return None
+    return holding, bench
+
+
+def build_bf_cross_reference(
+    bf_df: pd.DataFrame, n: int = 3, *, suppressed: Optional[list] = None
+) -> list[dict]:
     """Top-n Brinson-Fachler selection effects for prose cross-reference.
 
     Ranked by selection_effect (portfolio-weighted, w_p * (r_p - r_b)) but
@@ -113,9 +144,17 @@ def build_bf_cross_reference(bf_df: pd.DataFrame, n: int = 3) -> list[dict]:
     out = []
     for _, row in top.iterrows():
         sleeve = row["sleeve"]
+        tickers = _sleeve_driver_tickers(sleeve, _hold, _bench)
+        if tickers is None:
+            # No mapped holding/benchmark ticker — suppress rather than echo the sleeve
+            # name into the ticker slot. Record it so the caller can surface the omission.
+            if suppressed is not None:
+                suppressed.append(sleeve)
+            continue
+        holding, bench = tickers
         out.append({
-            "holding": _hold.get(sleeve, sleeve),
-            "bench":   _bench.get(sleeve, sleeve),
+            "holding": holding,
+            "bench":   bench,
             "sel_bps": row["raw_diff"] * 10_000,
         })
     return out
@@ -708,6 +747,7 @@ def _build_attribution_section(start_date: str, end_date: str) -> dict:
         "rows": [], "chart_b64": None,
         "total_alloc": "+0.0", "total_sel": "+0.0", "total_total": "+0.0",
         "sel_commentary": [], "alloc_commentary": None,
+        "suppressed_drivers": [],
         "price_gaps": [],
         "benchmark_gaps": [],
     }
@@ -791,10 +831,16 @@ def _build_attribution_section(start_date: str, end_date: str) -> dict:
         _bf_ranked["selection_effect"].abs().sort_values(ascending=False).index
     ).head(3)
     _hold_map, _bench_map = sleeve_holding_ticker(), sleeve_bench_ticker()
+    _sel_suppressed: list[str] = []
     for _, r in sel_sorted.iterrows():
         sleeve  = r["sleeve"]
-        port_t  = _hold_map.get(sleeve, "—")
-        bench_t = _bench_map.get(sleeve, "—")
+        tickers = _sleeve_driver_tickers(sleeve, _hold_map, _bench_map)
+        if tickers is None:
+            # No mapped ticker for the subject — suppress the sentence (a driver claim
+            # about an unnamed holding is a sentence with no subject) and surface it below.
+            _sel_suppressed.append(sleeve)
+            continue
+        port_t, bench_t = tickers
         sel_bps  = r["selection_effect"] * 10_000
         sel_commentary.append(
             f"{sleeve}: portfolio holding ({port_t}) returned {r['r_p']*100:.1f}% "
@@ -825,6 +871,7 @@ def _build_attribution_section(start_date: str, end_date: str) -> dict:
         "total_total":      f"{bf_df['total_effect'].sum()*10000:+.1f}",
         "sel_commentary":   sel_commentary,
         "alloc_commentary": alloc_commentary,
+        "suppressed_drivers": _sel_suppressed,
         # Phase 38b-2 — operational cash drag, broken out so the ex-cash strategic
         # attribution reconciles to the actual (incl-cash) total active return.
         "cash_drag_bps":    f"{bf_df.attrs.get('cash_drag', 0.0)*10000:+.1f}",
@@ -962,14 +1009,16 @@ def _build_benchmark_section(start_date: str, end_date: str) -> Optional[dict]:
 
     # Top-3 Brinson-Fachler cross-reference — use report period (Q1) window.
     bhb_top = None
+    _xref_suppressed: list[str] = []
     try:
         bf_df = brinson_fachler_period(start_date, end_date, account_id=get_portfolio_account_id())
-        bhb_top = build_bf_cross_reference(bf_df) or None
+        bhb_top = build_bf_cross_reference(bf_df, suppressed=_xref_suppressed) or None
     except Exception:
         pass
 
     return {
         "rows":              rows,
+        "suppressed_drivers": _xref_suppressed,
         "r_squared":         f"{result['r_squared']:.3f}",
         "adj_r_squared":     f"{result['adj_r_squared']:.3f}",
         "T":                 result["T"],
