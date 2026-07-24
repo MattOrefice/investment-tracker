@@ -8,6 +8,27 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Quarterly PDF: the executive summary reports the CAPE regime, doesn't conclude the allocation
+_2026-07-24_
+
+The exec summary appended "…supporting the diversification rationale across non-US and real
+asset sleeves" whenever CAPE data existed, regardless of level — while the Macro Context section
+derives a percentile-conditional stance from the SAME CAPE percentile. Aligned at today's 99th-
+percentile reading, but contradictory below the 60th (Macro: "no strong tilt signal") and
+reversed below the 40th (Macro: "support increased US equity exposure relative to SAA targets").
+Since CAPE's long-run median is ~16 — below the ~17.7 that marks the 60th percentile — that
+contradiction is the historical default, not an edge case; today's 99th-percentile reading is
+the anomaly.
+
+Both sections now consume ONE derivation (`_cape_regime`: percentile → regime label + stance).
+The exec REPORTS the reading and the derived regime label and draws no allocation conclusion —
+"CAPE stands at 40.9x, in the 99th percentile — Elevated versus history" — leaving the allocation
+stance to the Macro section, whose output is byte-identical at the current CAPE. Single-source
+derivation prevents the two from diverging; single-location conclusion prevents the reader
+wondering which section is authoritative. A cross-regime test pins that the two never state
+opposite stances across constructed low/mid/high CAPE — net-new coverage, since nothing pinned
+either section's regime logic before.
+
 ## Quarterly PDF: attribution and trade log are account-scoped, not ledger-blind
 _2026-07-23_
 

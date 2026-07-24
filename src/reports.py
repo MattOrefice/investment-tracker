@@ -349,6 +349,41 @@ def _fmt_bps(v: float) -> str:
     return f"{sign}{v:.0f} bps"
 
 
+# ── CAPE valuation regime — single source for two sections ─────────────────────
+# The executive summary REPORTS the regime label; the Macro Context section draws the
+# allocation stance. Both derive from this one function, so they can never state
+# opposite conclusions from the same CAPE percentile (the pre-fix bug: the exec asserted
+# "supporting the diversification rationale" unconditionally while Macro said "increase
+# US equity exposure" below the 40th percentile — a same-PDF contradiction).
+
+def _cape_regime(pct_int: int) -> tuple[str, str]:
+    """Map a CAPE percentile rank (0-100, rounded) to (regime label, allocation stance).
+
+    Bands: >=80 Elevated, >=60 Above-average, >=40 Moderate, else Below-average. The
+    label reports what the reading IS ("Elevated versus history"); the stance is the
+    allocation conclusion the Macro Context section renders.
+    """
+    if pct_int >= 80:
+        return "Elevated", "support the SAA's diversification across non-US equity and real asset sleeves"
+    if pct_int >= 60:
+        return "Above-average", "support modest diversification away from US large-cap"
+    if pct_int >= 40:
+        return "Moderate", "are consistent with the long-run average; no strong tilt signal"
+    return "Below-average", "support increased US equity exposure relative to SAA targets"
+
+
+def _cape_reading_sentence(cape_val: float, cape_pct: float) -> str:
+    """Executive-summary CAPE line: reports the reading and the derived regime label and
+    draws NO allocation conclusion — that stance belongs to the Macro Context section.
+    Reads naturally at both extremes ("Elevated versus history" at the 99th, "Below-average
+    versus history" at the 20th)."""
+    label, _ = _cape_regime(int(round(cape_pct)))
+    return (
+        f"CAPE stands at {cape_val:.1f}x, in the {cape_pct:.0f}th percentile — "
+        f"{label} versus history."
+    )
+
+
 # ── Section builders ──────────────────────────────────────────────────────────
 
 def _build_executive_summary(start_date: str, end_date: str) -> dict:
@@ -462,10 +497,8 @@ def _build_executive_summary(start_date: str, end_date: str) -> dict:
             f"Top detractor: {top_detractor[0]} ({top_detractor[1]:+.0f} bps total effect)."
         )
     if cape_val is not None and cape_pct is not None:
-        narrative.append(
-            f"CAPE stands at {cape_val:.1f}x, in the {cape_pct:.0f}th historical percentile, "
-            f"supporting the diversification rationale across non-US and real asset sleeves."
-        )
+        # Reports the regime; the allocation stance is drawn once, in the Macro section.
+        narrative.append(_cape_reading_sentence(cape_val, cape_pct))
     if _bf_price_gap_note:
         narrative.append(_bf_price_gap_note)
     if _bf_benchmark_gap_note:
@@ -973,18 +1006,7 @@ def _build_macro_section() -> dict:
         except Exception:
             pct_str  = "N/A"
             pct_int  = 50
-        if pct_int >= 80:
-            _regime        = "Elevated"
-            _regime_action = "support the SAA's diversification across non-US equity and real asset sleeves"
-        elif pct_int >= 60:
-            _regime        = "Above-average"
-            _regime_action = "support modest diversification away from US large-cap"
-        elif pct_int >= 40:
-            _regime        = "Moderate"
-            _regime_action = "are consistent with the long-run average; no strong tilt signal"
-        else:
-            _regime        = "Below-average"
-            _regime_action = "support increased US equity exposure relative to SAA targets"
+        _regime, _regime_action = _cape_regime(pct_int)
         cape_implied = compute_cape_implied_return(cape_val)
         macro["cape"] = {
             "value":          f"{cape_val:.1f}x",
