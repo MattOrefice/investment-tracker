@@ -8,6 +8,45 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## pandas/numpy unpinned — the "pandas-3 breaks BF" pin was a misdiagnosis
+_2026-07-23_
+
+The `pandas==2.2.3 / numpy==2.2.6` pin (commit fe99c40, 2026-07-21) is lifted;
+`requirements.txt` is back to `pandas>=2.2.0 / numpy>=2.1.0`. The pin was added to
+stop BF reconciliation test failures attributed to a pandas-3 groupby/alignment
+change shifting the 12-sleeve Brinson-Fachler numbers ~2-3 bps. **That divergence is
+not real.** Run under isolated venvs on identical Python 3.11.9 differing only in the
+numeric stack, the entire BF pipeline is byte-identical (sha256 of every
+intermediate) across pandas 2.2.3, 3.0.3, and 3.0.5 — on the committed demo book, on
+demo.db exactly as committed at the pin commit, and even with the one
+alignment-sensitive path that full coverage hides (the `get_sleeve_benchmark_returns`
+coverage-gap renormalization) deliberately forced into a state that changes the
+numbers (Real Assets benchmark return 0.28341 → 0.16754, identical to the last float
+digit under all three builds). The pin guarded nothing.
+
+What it most likely caught was the Phase-44 demo.db price-cache-leak symptom — a
+render run gap-filling the price frontier, which shifted the reconciliation 3.2–4.3
+bps — misread as a pandas difference because CI installed pandas 3.0.3 (requirements
+pinned only `>=2.2.0`) while local ran 2.2.3, and nobody ran both lines against the
+same book. Two variables moved at once and the wrong one got blamed.
+
+**The `.venv` had drifted to pandas 3.0.3, not the pinned 2.2.3**, so local has been
+running pandas 3 the whole time with bit-identical results — which is why this went
+unfalsified across several phases. The 16 "local failures" on the BF reconciliation
+tests are personal-mode (`.env`=personal → tracker.db) DATA artifacts — a degenerate
+value-series reconciliation on that book, identical under every pandas version — not
+a numeric-stack problem.
+
+`.python-version` stays at 3.11: the equivalence was proven there, and unpinning
+(3.0.x ships cp314 wheels) relieves the earlier 3.11-vs-3.14 tension rather than
+deepening it, but Cloud on 3.14 pulls transitive deps this was not A/B'd against —
+one variable at a time. The gap-branch value is now golden-pinned by
+`test_benchmark_gap_renormalization_is_numeric_stack_invariant`, so a genuine
+numeric-stack regression fails loudly instead of being rediscovered — or re-pinned
+blind — by accident.
+
+---
+
 ## Account identity merged: one self-directed taxable book, not two
 _2026-07-23_
 
@@ -198,19 +237,21 @@ tested 2.x environment. Fixed by pinning pandas==2.2.3 / numpy==2.2.6, NOT by
 loosening the reconciliation tolerance — a deterministic 2-3 bps gap is a real
 discrepancy, not summation noise.
 
+**[Corrected 2026-07-23]** The "version-triggered ~2-3 bps" diagnosis above is wrong,
+and the pin it justified is lifted. The gap was never reproducible on either pandas
+line against the same book — it was the Phase-44 demo.db price-cache-leak symptom,
+misread as a pandas difference because CI ran 3.0.3 and local ran 2.2.3 and nobody
+ran both against one book. See the 2026-07-23 correction at the top of this file.
+
 ## Deferred: the pandas-3 migration must precede any 3.x rebuild
 _2026-07-21_
 
-The numeric stack is pinned to pandas 2.2.3 / numpy 2.2.6 (see requirements.txt),
-which holds CI and Cloud to the tested environment but DEFERS a real migration
-rather than solving it. pandas 3.0 changed groupby/alignment behaviour enough that
-the 12-sleeve Brinson-Fachler decomposition no longer reconciles with the price
-series to 0.5 bps (a deterministic ~2-3 bps gap; the 9-sleeve path is unaffected).
-Before the stack moves to pandas 3.x, `brinson_fachler_period` (and the price-series
-alignment it reconciles against) must be made version-robust and re-verified against
-both pandas lines — otherwise a rebuild onto 3.x ships silently-wrong per-sleeve
-attribution while the pinned tests are bypassed. Filed here so the pin is understood
-as a hold, not a fix.
+**SUPERSEDED 2026-07-23 — there was no migration to do.** This entry filed pandas-3
+robustness work as a prerequisite for lifting the numeric-stack pin. The premise was
+wrong: the BF decomposition was already bit-identical across pandas 2.2.3 / 3.0.3 /
+3.0.5 (including the coverage-gap renormalization branch, deliberately forced), so
+there was nothing to make robust. The pin is lifted; see the 2026-07-23 correction at
+the top. Do NOT re-file this or re-add the pin on the original reasoning.
 
 ## Deferred: a from-scratch personal reseed would jump the taxonomy to 12
 _2026-07-21_

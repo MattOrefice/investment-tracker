@@ -1145,3 +1145,127 @@ def test_price_gap_bil_guard_handles_missing_period_price(monkeypatch, use_demo_
         f"got {len(bf_df)}: {sorted(bf_df['sleeve'].tolist())}"
     )
     assert "cash_weight" in bf_df.attrs
+
+
+# ── benchmark-coverage-gap branch: the one alignment-sensitive path ─────────────
+# get_sleeve_benchmark_returns has two branches that only run when a benchmark
+# component is unpriceable — the renormalization of a multi-component blend that
+# lost a leg, and the all-components-gapped NaN sentinel. Full price coverage never
+# enters either, which is exactly why the pandas 2.2.3 pin's premise (a pandas-3
+# groupby/alignment shift in the 12-sleeve BF numbers) went unfalsified for several
+# phases: nobody ran both pandas lines against a book that forces this path. It was
+# forced here (2026-07-23) and proven bit-identical across pandas 2.2.3 / 3.0.3 /
+# 3.0.5 — which is why the pin was lifted. These two tests keep that path pinned.
+
+def _demo_copy_with_deletions(tmp_path, monkeypatch, *delete_statements):
+    """Copy the committed demo.db to a temp file, apply DELETE statements to gap out
+    benchmark prices, and pin src.db.DB_PATH at the copy with live fetch blocked.
+
+    Hermetic and safe: the real demo.db is never opened for writing (the price-cache
+    trap — demo-mode fetches append rows — cannot fire because fetch_prices raises),
+    and the mutation lands only on the throwaway copy.
+    """
+    import shutil, sqlite3, pathlib
+    import src.db as db
+    import src.prices as prices
+
+    demo = pathlib.Path(__file__).resolve().parent.parent / "data" / "demo.db"
+    if not demo.exists():
+        pytest.skip("demo.db unavailable — skipped in local/empty-DB mode")
+    work = tmp_path / "demo_gap.db"
+    shutil.copy(demo, work)
+    conn = sqlite3.connect(work)
+    for stmt in delete_statements:
+        conn.execute(stmt)
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setattr(db, "DB_PATH", work)
+    monkeypatch.setattr(db, "_migrated_paths", set(), raising=False)
+
+    def _blocked(*a, **k):
+        raise RuntimeError("live price fetch disabled (hermetic coverage-gap fixture)")
+    monkeypatch.setattr(prices, "fetch_prices", _blocked)
+    return work
+
+
+@pytest.mark.snapshot
+def test_benchmark_gap_renormalization_is_numeric_stack_invariant(tmp_path, monkeypatch):
+    """Golden-pin the renormalized Real Assets benchmark return when its multi-component
+    blend (VNQ 60% + DBC 40%) loses the DBC leg to a price-coverage gap and renormalizes
+    to VNQ-only. This is the single alignment-sensitive operation in
+    get_sleeve_benchmark_returns (`sleeve_series += (p/p0)*frac` then `/= total_frac`)
+    that full price coverage hides — the exact place the lifted pandas 2.2.3 pin claimed
+    a pandas-3 divergence lived.
+
+    Verified 2026-07-23 bit-identical across pandas 2.2.3 / 3.0.3 / 3.0.5 (the branch
+    genuinely changes the number — full-coverage Real Assets r_b is 0.28341, VNQ-only is
+    0.16754 — so this is not a no-op). The golden freezes that number so a future
+    numeric-stack change that moves it fails loudly instead of being rediscovered by
+    accident.
+
+    If this fails: the renormalized value equals VNQ's own adj_close total return over
+    the window, so a demo.db price refresh of VNQ within [2025-05-01, 2026-07-20] is the
+    ONLY legitimate reason to update the golden (a later dividend does not move a fixed
+    window's total-return ratio). A pandas/numpy change must NOT move it — if the stack
+    changed and this drifted, that is the real regression the old pin feared. Investigate;
+    do NOT re-pin pandas on the strength of it.
+    """
+    from src.benchmarks import get_sleeve_benchmark_returns
+
+    _demo_copy_with_deletions(
+        tmp_path, monkeypatch,
+        # DBC (Real Assets' 40% leg) tail truncated to 2026-07-08 → a 12-day gap past
+        # the 5-day coverage window at the 2026-07-20 end bound → DBC dropped, blend
+        # renormalizes to VNQ.
+        "DELETE FROM prices WHERE ticker='DBC' AND price_date > '2026-07-08'",
+    )
+
+    bm = get_sleeve_benchmark_returns("2025-05-01", "2026-07-20")
+    gaps = [tuple(g) for g in bm.attrs.get("benchmark_gaps", [])]
+    assert ("Real Assets", "DBC", "2026-07-20") in gaps, (
+        "the DBC coverage gap must fire so the renormalization branch actually runs; "
+        f"benchmark_gaps={gaps}"
+    )
+    real_assets_rb = float(bm.iloc[-1]["Real Assets"])
+    assert real_assets_rb == pytest.approx(0.16753992876945456, abs=1e-12), (
+        f"renormalized Real Assets benchmark return is {real_assets_rb!r}, expected "
+        "0.16753992876945456. See this test's docstring — a demo.db VNQ refresh updates "
+        "the golden; a numeric-stack change that moves it is the regression, not a reason "
+        "to re-pin pandas."
+    )
+
+
+def test_benchmark_gap_full_sentinel_is_nan_not_zero(tmp_path, monkeypatch):
+    """A sleeve whose sole benchmark component is entirely unpriceable must carry an
+    explicit NaN sentinel — never a fabricated flat 0.0 return that would read as real
+    market data — and brinson_fachler_period must PURGE it from the period rather than
+    book its benchmark move as skill. Forces the all-components-gapped branch (the other
+    half of the coverage-gap path) by deleting International Quality's only benchmark
+    (IQLT) in-window. Kept alongside the renormalization golden as the second gap-branch
+    regression guard.
+    """
+    import numpy as np
+    from src.benchmarks import get_sleeve_benchmark_returns
+    from src.attribution import brinson_fachler_period
+
+    _demo_copy_with_deletions(
+        tmp_path, monkeypatch,
+        "DELETE FROM prices WHERE ticker='IQLT' AND price_date >= '2025-05-01'",
+    )
+
+    bm = get_sleeve_benchmark_returns("2025-05-01", "2026-07-20")
+    assert np.isnan(bm.iloc[-1]["International Quality"]), (
+        "a fully-gapped sleeve's benchmark must be a NaN sentinel, never a flat 0.0"
+    )
+
+    bf_df = brinson_fachler_period("2025-05-01", "2026-07-20")
+    sleeves = sorted(bf_df["sleeve"].tolist())
+    assert "International Quality" not in sleeves, (
+        "International Quality must be purged when its benchmark is fully gapped; "
+        f"present sleeves: {sleeves}"
+    )
+    assert len(bf_df) == 11, f"expected 11 surviving sleeves after the purge, got {len(bf_df)}"
+    assert ("International Quality", "IQLT", "2026-07-20") in [
+        tuple(g) for g in bf_df.attrs.get("benchmark_gaps", [])
+    ]
