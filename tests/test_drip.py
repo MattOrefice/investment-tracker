@@ -527,7 +527,7 @@ def test_distribution_gaps_for_holdings_flags_ticker_with_no_distributions(minim
     """
     import logging
     with caplog.at_level(logging.WARNING):
-        gaps = distribution_gaps_for_holdings("2025-05-01", "2025-05-10")
+        gaps = distribution_gaps_for_holdings("2025-05-01", "2025-05-10", account_id=1)
 
     assert gaps == ["VOO"]
     assert any("VOO" in rec.message for rec in caplog.records), (
@@ -547,7 +547,7 @@ def test_distribution_gaps_for_holdings_empty_when_distribution_present(minimal_
     conn.commit()
     conn.close()
 
-    gaps = distribution_gaps_for_holdings("2025-05-01", "2025-05-10")
+    gaps = distribution_gaps_for_holdings("2025-05-01", "2025-05-10", account_id=1)
     assert gaps == []
 
 
@@ -564,7 +564,7 @@ def test_distribution_gaps_for_holdings_excludes_spaxx(minimal_db):
     conn.commit()
     conn.close()
 
-    gaps = distribution_gaps_for_holdings("2025-05-01", "2025-05-10")
+    gaps = distribution_gaps_for_holdings("2025-05-01", "2025-05-10", account_id=1)
     assert "SPAXX" not in gaps
     assert gaps == ["VOO"]  # VOO still flagged; SPAXX correctly excluded
 

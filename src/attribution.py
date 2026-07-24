@@ -231,6 +231,8 @@ def benchmark_gap_notice(benchmark_gaps: list[tuple[str, str, str]]) -> str:
 def brinson_fachler_period(
     start_date: str,
     end_date: str | None = None,
+    *,
+    account_id: int,
 ) -> pd.DataFrame:
     """
     Full Brinson-Fachler attribution over a calendar period.
@@ -238,6 +240,13 @@ def brinson_fachler_period(
     Uses beginning-of-period portfolio weights and sleeve-level returns.
     Benchmark weights = target weights from asset_classes table.
     Benchmark sleeve returns = from get_sleeve_benchmark_returns().
+
+    Account scope: ``account_id`` is required (keyword-only). Both trade reads below
+    — beginning-of-period holdings and the portfolio inception date — are filtered to
+    it. Reading the ledger account-blind folded every account's trades (a Roth, an
+    IRA) into one "Portfolio" attribution while the Holdings/Performance sections
+    stayed scoped, so a single PDF contradicted itself. Same contract as
+    ``get_holdings_on_date``: raises on None rather than silently reading every account.
 
     Price gaps: if a held ticker's price cannot be found within the lookback window
     (see _first_adj_price/_last_adj_price), that sleeve is EXCLUDED from this
@@ -260,6 +269,12 @@ def brinson_fachler_period(
     ``.attrs["no_benchmark_sleeves"]`` so render surfaces show N/A instead of a
     fabricated 0.00%.
     """
+    if account_id is None:
+        raise ValueError(
+            "account_id is required — brinson_fachler_period reads the trade ledger "
+            "account-scoped and will not silently fall back to reading across every "
+            "account. Pass the portfolio account (get_portfolio_account_id())."
+        )
     end = end_date or date.today().isoformat()
     price_gaps: list[tuple[str, str]] = []
     benchmark_gaps: list[tuple[str, str, str]] = []
@@ -290,15 +305,17 @@ def brinson_fachler_period(
                       SUM(CASE WHEN LOWER(action)='buy' THEN shares ELSE -shares END) AS net_shares
                FROM trades
                WHERE trade_date <= ?
+                 AND account_id = ?
                  AND (lot_source IS NULL OR lot_source != 'drip')
                GROUP BY ticker
                HAVING net_shares > 0""",
-            (start_date,),
+            (start_date, account_id),
         ).fetchall()
 
         # Portfolio inception date (for historical DRIP accumulation before window)
         inception_row = conn.execute(
-            "SELECT MIN(trade_date) AS inception FROM trades"
+            "SELECT MIN(trade_date) AS inception FROM trades WHERE account_id = ?",
+            (account_id,),
         ).fetchone()
         portfolio_inception = (
             inception_row["inception"]

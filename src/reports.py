@@ -359,9 +359,10 @@ def _build_executive_summary(start_date: str, end_date: str) -> dict:
     # (buy-and-hold from inception drifts weights and produces a different result).
     # start_date is always a trading day (Dec-31 for Q1, Mar-31 for Q2, etc.) so
     # no holiday-bfill risk exists for the fresh blended series.
-    inception = get_inception_date(account_id=get_portfolio_account_id())
+    acct = get_portfolio_account_id()   # scope every trade-derived read to the portfolio account
+    inception = get_inception_date(account_id=acct)
 
-    pv_since_inception = get_portfolio_value_series(inception, end_date, account_id=get_portfolio_account_id())
+    pv_since_inception = get_portfolio_value_series(inception, end_date, account_id=acct)
     # Displayed dollar value = true current MV (all shares incl DRIP × raw close).
     # The total-return series (pv, adj_close × non-DRIP) is used only for the TWR
     # below — the dollar figure must not come from the return series, which omits
@@ -372,7 +373,7 @@ def _build_executive_summary(start_date: str, end_date: str) -> dict:
     # Real external flows (contributions/withdrawals), aligned to the period
     # slice — flows before the slice drop out; one on its first date is the
     # starting NAV. End-of-day netting inside twr_daily_linked.
-    cf = get_external_cashflow_series(inception, end_date, account_id=get_portfolio_account_id()).reindex(pv.index).fillna(0.0)
+    cf = get_external_cashflow_series(inception, end_date, account_id=acct).reindex(pv.index).fillna(0.0)
     portfolio_twr = twr_daily_linked(pv, cf) if len(pv) >= 2 else 0.0
 
     sp_full   = get_sp500_series(inception, end_date)
@@ -395,13 +396,13 @@ def _build_executive_summary(start_date: str, end_date: str) -> dict:
     _bf_benchmark_gap_note = None
     _drip_gap_note = None
     try:
-        _drip_gaps = distribution_gaps_for_holdings(inception, end_date)
+        _drip_gaps = distribution_gaps_for_holdings(inception, end_date, account_id=acct)
         if _drip_gaps:
             _drip_gap_note = drip_distribution_gap_notice(_drip_gaps)
     except Exception:
         pass
     try:
-        bf_df = brinson_fachler_period(start_date, end_date)
+        bf_df = brinson_fachler_period(start_date, end_date, account_id=acct)
         if bf_df.attrs.get("price_gaps"):
             _bf_price_gap_note = price_gap_notice(bf_df.attrs["price_gaps"])
         if bf_df.attrs.get("benchmark_gaps"):
@@ -678,7 +679,7 @@ def _build_attribution_section(start_date: str, end_date: str) -> dict:
         "benchmark_gaps": [],
     }
     try:
-        bf_df = brinson_fachler_period(start_date, end_date)
+        bf_df = brinson_fachler_period(start_date, end_date, account_id=get_portfolio_account_id())
     except Exception:
         return _empty
     _price_gaps = [
@@ -929,7 +930,7 @@ def _build_benchmark_section(start_date: str, end_date: str) -> Optional[dict]:
     # Top-3 Brinson-Fachler cross-reference — use report period (Q1) window.
     bhb_top = None
     try:
-        bf_df = brinson_fachler_period(start_date, end_date)
+        bf_df = brinson_fachler_period(start_date, end_date, account_id=get_portfolio_account_id())
         bhb_top = build_bf_cross_reference(bf_df) or None
     except Exception:
         pass
@@ -1040,7 +1041,16 @@ def _build_macro_section() -> dict:
     return macro
 
 
-def _build_thesis_section(start_date: str, end_date: str) -> dict:
+def _build_thesis_section(start_date: str, end_date: str, *, account_id: int) -> dict:
+    """Theses (portfolio-wide) plus the period's Trades During Period.
+
+    The trade log is scoped to ``account_id`` — the same self-directed portfolio
+    account the Holdings/Performance sections report — not because of uniformity but
+    because the report documents one owned book: a differently-managed account's
+    trades (an advisor-placed Roth) would report trades the owner did not make beside
+    holdings the owner does own. A cross-account trade log is a separate, explicitly
+    labelled section, not this query loosened.
+    """
     with get_connection() as conn:
         th_rows = conn.execute(
             """SELECT title, conviction, horizon_months, target_sleeves
@@ -1052,9 +1062,10 @@ def _build_thesis_section(start_date: str, end_date: str) -> dict:
         tr_rows = conn.execute(
             """SELECT trade_date, ticker, action, shares, price, lot_source
                FROM trades
-               WHERE trade_date BETWEEN ? AND ?
+               WHERE account_id = ?
+                 AND trade_date BETWEEN ? AND ?
                ORDER BY trade_date""",
-            (start_date, end_date),
+            (account_id, start_date, end_date),
         ).fetchall()
 
     theses = []
@@ -1507,8 +1518,17 @@ def generate_quarterly_report_bytes(
     """
     if is_demo is None:
         is_demo = IS_DEMO
+    # The report documents ONE account (the self-directed taxable book); scope the
+    # has-trades gate to it. Global (any account has any trade) would render the
+    # scoped Performance/Attribution/Holdings sections as empty banners when only a
+    # non-portfolio account carries trades; scoped, they are skipped instead (a
+    # structural report). Scoped ⊆ global, so this can only flip True→False — it can
+    # never make a currently-skipped section appear.
+    report_acct = get_portfolio_account_id()
     with get_connection() as conn:
-        trade_count = conn.execute("SELECT COUNT(*) FROM trades").fetchone()[0]
+        trade_count = conn.execute(
+            "SELECT COUNT(*) FROM trades WHERE account_id = ?", (report_acct,)
+        ).fetchone()[0]
     has_trades = trade_count > 0
 
     period_label = _format_period_label(start_date, end_date)
@@ -1533,7 +1553,7 @@ def generate_quarterly_report_bytes(
         factor_data      = _build_factor_section(end_date)                 if has_trades else None
         bench_attr_data  = _build_benchmark_section(start_date, end_date)  if has_trades else None
         macro_data       = _build_macro_section()
-        thesis_data      = _build_thesis_section(start_date, end_date)
+        thesis_data      = _build_thesis_section(start_date, end_date, account_id=report_acct)
         asset_eval_data  = _build_asset_eval_section()
 
     css_content = (TEMPLATES_DIR / "report_styles.css").read_text(encoding="utf-8")
@@ -1550,7 +1570,7 @@ def generate_quarterly_report_bytes(
         snap_dt = datetime.fromisoformat(snapshot_captured_at)
         snapshot_display = f"{snap_dt.strftime('%B')} {snap_dt.day}, {snap_dt.year}"
 
-    inception_str   = get_inception_date(account_id=get_portfolio_account_id())
+    inception_str   = get_inception_date(account_id=report_acct)
     si_days_report  = (date.fromisoformat(end_date) - date.fromisoformat(inception_str)).days
 
     html_content = tmpl.render(
