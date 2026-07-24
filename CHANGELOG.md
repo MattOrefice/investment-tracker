@@ -8,6 +8,36 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Quarterly PDF: demo book funded across its whole reportable history
+_2026-07-23_
+
+An audit of the PDF report path found the public quarterly report showing an
+incoherent portfolio. The demo's Q2 2026 report — the most recent *completed* quarter
+— rendered International Core ~14% overweight (+1398 bps drift), the three tilt sleeves
+(IDHQ/AVIV/AVDV) at 0% holdings, and a Brinson-Fachler table *crediting allocation
+effect* for being underweight the sleeves the SAA argues for. The cause was neither a
+missing migration nor a lost one: `migrate_demo_restructure_phase39` had run and the
+book was funded and on-target — but it dated the rebalance at `min(MAX(price_date))`,
+the price frontier (2026-07-20), which always lands in the current *incomplete* quarter,
+so no completed-quarter report ever included it.
+
+The migration now dates the rebalance on the inception seed date itself
+(`MIN(trade_date)`, not hardcoded), so the funded 12-sleeve allocation is the
+beginning-of-period state for every window. It has to be the seed date, not merely
+near it: a rebalance even one day later is intra-period for the since-inception
+window, where single-period Brinson-Fachler (beginning-of-period weights) diverges
+from the multi-period price-series TWR and breaks the cash-drag-bridge reconciliation
+(`test_identity_bf_sum_reconciles_to_stage2`) by ~80 bps. Every completed quarter
+(Q3'25–Q2'26) now renders Core near its 7.1% target and each tilt held with a real
+return, and the since-inception bridge reconciles to 0.0 bps. The table-diff vs the
+prior demo.db is exactly the four restructure rows and nothing else; the cashflow
+invariant (the rebalance nets to zero on the seed date; the $1,000 inception seed is
+the only external flow) and the factor section (the tilts aren't regressed) are unchanged. One display-only
+residue: the committed VEA DRIP lots were sized for the untrimmed holding, so the
+DRIP-inclusive holdings weight carries ~0.12 sh of over-reinvestment (Core reads ~7.7%
+vs the DRIP-excluded 7.1% used by returns/attribution) — immaterial and returns-clean,
+left as-is rather than rewrite the unique DRIP test fixture.
+
 ## pandas/numpy unpinned — the "pandas-3 breaks BF" pin was a misdiagnosis
 _2026-07-23_
 

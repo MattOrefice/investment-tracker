@@ -21,31 +21,42 @@ def _conn():
 
 def test_demo_inception_trades_sum_to_1000():
     """
-    All inception trades (2025-05-01) in demo.db must sum to $1000 ± $1.
-    Fractional share rounding is the only tolerated source of deviation.
+    The initial inception SEED (2025-05-01, lot_source='initial') must sum to
+    $1000 ± $1. Fractional share rounding is the only tolerated source of deviation.
+
+    Scoped to the initial seed: the Phase 39 international restructure is a
+    cash-neutral rebalance dated on the same seed date (lot_source='Manual') so the
+    demo holds the funded 12-sleeve book from inception (see
+    migrate_demo_restructure_phase39); it moves money between sleeves, not into the
+    account, so it is not part of the $1000 seed.
     """
     with _conn() as conn:
         row = conn.execute(
             "SELECT COALESCE(SUM(shares * price), 0) AS total "
             "FROM trades "
-            "WHERE trade_date = '2025-05-01'"
+            "WHERE trade_date = '2025-05-01' AND lot_source = 'initial'"
         ).fetchone()
 
     total = float(row["total"])
     assert abs(total - 1000.0) < 1.0, (
-        f"Inception trade total ${total:.2f} deviates from $1000 by more than $1. "
+        f"Inception seed total ${total:.2f} deviates from $1000 by more than $1. "
         "Re-run: python src/seed_paper_trades.py --force"
     )
 
 
 def test_demo_has_eleven_inception_trades():
-    """10 ETFs + SPAXX = 11 trades on 2025-05-01."""
+    """10 ETFs + SPAXX = 11 initial-seed trades on 2025-05-01.
+
+    Scoped to lot_source='initial': the same-date Phase 39 restructure rebalance
+    (lot_source='Manual') is a separate, cash-neutral event, excluded here.
+    """
     with _conn() as conn:
         count = conn.execute(
-            "SELECT COUNT(*) FROM trades WHERE trade_date = '2025-05-01'"
+            "SELECT COUNT(*) FROM trades "
+            "WHERE trade_date = '2025-05-01' AND lot_source = 'initial'"
         ).fetchone()[0]
 
-    assert count == 11, f"Expected 11 inception trades, found {count}."
+    assert count == 11, f"Expected 11 initial-seed inception trades, found {count}."
 
 
 def test_drip_increases_portfolio_value():
