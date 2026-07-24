@@ -79,11 +79,11 @@ HOLDINGS = [
         "expense_ratio": 0.0025,
         "er_source": 'Avantis fund page', "er_as_of": _ER_AS_OF,
         "holding_rationale": (
-            "AVUV is the highest-conviction factor pick in the portfolio. Avantis (founded by former DFA "
+            "AVUV is the highest-conviction factor pick in the US book. Avantis (founded by former DFA "
             "researchers) targets the size, value, and profitability factors simultaneously — empirically, "
             "the size premium is concentrated almost entirely in profitable small-value firms; unprofitable "
             "small-caps drag index returns and explain why naive small-cap exposure has looked weak for 15 "
-            "years. The 0.25% ER is the highest in the portfolio but buys genuine factor exposure. Current "
+            "years. The 0.25% ER is a real cost but buys genuine factor exposure rather than index replication. Current "
             "large-cap valuations structurally improve the relative opportunity in cheap, profitable small "
             "companies. Attribution is tracked against IWM to test whether the factor tilt earns its fee "
             "over time. Would revisit if size + value + profitability factor returns underperform "
@@ -107,11 +107,11 @@ HOLDINGS = [
             "distributions historically."
         ),
     },
-    # Phase 39 — the three international tilt holdings. holding_rationale is
-    # deliberately left None: the sleeve-level rationale in seed_saa.py already
-    # carries the instrument argument for each, and no holding-level prose has
-    # been authored yet. pages/8_Research.py guards on truthiness, so the block
-    # is omitted rather than rendered empty. Fill these in when the prose exists.
+    # The three international tilt holdings (added Phase 39). Holding-level
+    # rationales were authored after the fact; a fresh seed inserts them directly
+    # from the fields below, and the existing demo.db / tracker.db pick them up via
+    # tools/migrate_{demo,personal}_intl_rationales.py (pages/8_Research.py guards
+    # on truthiness, so an un-migrated DB simply omits the expander).
     {
         "ticker": "IDHQ",
         "name": "Invesco S&P International Developed Quality ETF",
@@ -119,7 +119,24 @@ HOLDINGS = [
         "security_type": "ETF",
         "expense_ratio": 0.0029,
         "er_source": 'Invesco fund page', "er_as_of": _ER_AS_OF,
-        "holding_rationale": None,
+        "holding_rationale": (
+            "IDHQ tracks S&P's quality screen of developed ex-US large and mid caps: the same issuer as "
+            "SPHQ, the same index provider, the same three fundamental measures — return on equity, "
+            "accruals, and leverage. That symmetry is the point. The US quality sleeve and the "
+            "international one are the same screen applied to different regions, so a divergence in their "
+            "results is a fact about the regions rather than about two vendors' definitions of quality.\n\n"
+            "The benchmark is IQLT, iShares' MSCI quality index abroad, which reproduces the SPHQ-to-QUAL "
+            "relationship exactly. Cost is a wash — 0.29% against IQLT's 0.30% — so this is not a fee "
+            "decision; it is a methodology one, and it is the same methodology decision already made "
+            "domestically.\n\n"
+            "The known asymmetry: S&P classifies South Korea as developed where MSCI does not, so IDHQ "
+            "holds Korea and IQLT doesn't. That is a real universe difference, disclosed on the Factor "
+            "Profile page, and it moves with each semi-annual reconstitution rather than sitting at a "
+            "fixed weight.\n\n"
+            "**Would revisit if** S&P's quality screen diverged materially from MSCI's over a full cycle, "
+            "which would mean the two are measuring different things and the SPHQ-IDHQ symmetry is "
+            "cosmetic."
+        ),
     },
     {
         "ticker": "AVIV",
@@ -128,7 +145,23 @@ HOLDINGS = [
         "security_type": "ETF",
         "expense_ratio": 0.0025,
         "er_source": 'Avantis fund page', "er_as_of": _ER_AS_OF,
-        "holding_rationale": None,
+        "holding_rationale": (
+            "Value abroad, from the same shop that runs the US small-value sleeve. Avantis integrates "
+            "profitability into its value screen rather than sorting on price alone — the same "
+            "construction as AVUV, applied to international large caps.\n\n"
+            "That is worth naming as an asymmetry rather than hiding: VTV, the US large-value holding, "
+            "tracks a plain cap-weighted value index and does not integrate profitability. So the "
+            "international sleeve holds the more deliberate instrument. If that asymmetry matters, the "
+            "resolution is AVLV in the US rather than EFV abroad — the domestic sleeve is the less "
+            "considered one, not this one.\n\n"
+            "The benchmark is EFV, MSCI's EAFE value index. Holding and benchmark come from different "
+            "index families, exactly as VTV and IWD do, so selection effect measures implementation "
+            "rather than the value premium itself. At 0.25% against EFV's 0.33%, the profitability "
+            "integration costs nothing relative to the passive alternative.\n\n"
+            "**Would revisit if** the profitability integration proved to be doing the work rather than "
+            "the value screen — in which case the US sleeve moves to AVLV rather than this one moving to "
+            "EFV."
+        ),
     },
     {
         "ticker": "AVDV",
@@ -137,7 +170,25 @@ HOLDINGS = [
         "security_type": "ETF",
         "expense_ratio": 0.0036,
         "er_source": 'Avantis fund page', "er_as_of": _ER_AS_OF,
-        "holding_rationale": None,
+        "holding_rationale": (
+            "The small-value interaction abroad, held for the reason AVUV is held at home: the size "
+            "premium concentrates almost entirely in profitable small-value firms, and unprofitable small "
+            "caps are what made naive small-cap exposure look weak for fifteen years.\n\n"
+            "The benchmark comparison here is weaker than the other two, deliberately. SCZ is iShares' "
+            "EAFE small-cap index — small blend, not small value — because no passive international "
+            "small-value index fund exists at acceptable cost. So the benchmark captures the size "
+            "dimension and not the value tilt, and selection effect for this sleeve carries the value "
+            "premium itself rather than measuring implementation. This is the same compromise the US "
+            "sleeve already makes against IWM, with the same consequence: read the factor exhibit, not "
+            "attribution, for whether the tilt is being paid.\n\n"
+            "At 0.36% it is among the portfolio's costliest positions, and its highest-conviction one — "
+            "the fee buys genuine factor exposure rather than index replication. AVDV holds no South "
+            "Korea — verified at the position level — so the universe mismatch that inflates the "
+            "developed-core residual doesn't apply here.\n\n"
+            "**Would revisit if** the small-value interaction proved materially weaker in developed ex-US "
+            "than domestically, or if a passive international small-value fund appeared at materially "
+            "lower cost."
+        ),
     },
     {
         "ticker": "IEMG",
@@ -147,8 +198,8 @@ HOLDINGS = [
         "expense_ratio": 0.0009,
         "er_source": 'iShares fund page', "er_as_of": _ER_AS_OF,
         "holding_rationale": (
-            "IEMG is the holding because EEM costs 0.70% for identical exposure — seven times more expensive "
-            "and the most egregious benchmark-vs-holding gap in the portfolio. IEMG at 0.09% tracks the same "
+            "IEMG is the holding because EEM costs 0.70% for identical exposure — seven times more expensive, "
+            "and the largest same-index fee gap in the portfolio at 61 bps. IEMG at 0.09% tracks the same "
             "MSCI Emerging Markets index with the same ~27% China weight. China inclusion was deliberate: the "
             "SAA rationale flags governance risk as a watch item but not yet a reason to exit — China trades "
             "at ~10x P/E and the EM valuation thesis meaningfully includes Chinese equities. Excluding China "
