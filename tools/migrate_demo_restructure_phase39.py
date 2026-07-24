@@ -93,15 +93,33 @@ def migrate_db(db_path) -> None:
         if conn.execute("SELECT 1 FROM trades WHERE notes = ?", (NOTE,)).fetchone():
             return  # already applied
 
-        # Trade date: the latest date every participating ticker can be priced on.
-        as_of = min(
-            conn.execute(
-                "SELECT MAX(price_date) FROM prices WHERE ticker = ?", (t,)
-            ).fetchone()[0]
-            for t in [FUNDER, *BUYS]
-        )
+        # Trade date: the inception seed date ITSELF, so the funded 12-sleeve
+        # allocation is the beginning-of-period state for every reporting window,
+        # since-inception included. The original behaviour dated the rebalance at the
+        # price frontier (min(MAX(price_date))), which always lands in the current,
+        # still-incomplete quarter — so no completed-quarter report ever included it,
+        # and every quarterly PDF rendered the pre-restructure book (International Core
+        # ~14% overweight, the three tilt sleeves at 0% holdings, and Brinson-Fachler
+        # crediting allocation effect for holding none of the sleeves the SAA argues
+        # for). It must be the seed date, not merely near it: a rebalance even ONE DAY
+        # after inception is intra-period for the since-inception window, where
+        # single-period Brinson-Fachler (beginning-of-period weights) then diverges
+        # from the multi-period price-series TWR and breaks the cash-drag bridge
+        # reconciliation (test_identity_bf_sum_reconciles_to_stage2) by ~80 bps.
+        # Same-date as the seed keeps the rebalance cash-neutral and the only external
+        # flow the inception seed. Derived (MIN(trade_date)), not hardcoded, so a
+        # re-seeded demo re-dates itself.
+        as_of = conn.execute("SELECT MIN(trade_date) FROM trades").fetchone()[0]
         if as_of is None:
             return
+        # Every participating ticker must be priceable on/before as_of (IDHQ/AVIV/AVDV
+        # all have price history predating the seed in the demo book); bail otherwise.
+        for _t in [FUNDER, *BUYS]:
+            if conn.execute(
+                "SELECT 1 FROM prices WHERE ticker = ? AND price_date <= ? LIMIT 1",
+                (_t, as_of),
+            ).fetchone() is None:
+                return
 
         targets = {
             r["name"]: r["target_weight"]

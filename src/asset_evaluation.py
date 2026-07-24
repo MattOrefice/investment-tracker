@@ -69,13 +69,14 @@ CONCLUSION = (
     "The framework would re-evaluate inclusion if any of the following "
     "observable conditions are met:\n"
     "- Rolling 5-year correlation with US Large Core falls below 0.20 "
-    "(the pre-2020 baseline established in Section 5c), indicating a return "
-    "to genuine diversification behavior.\n"
+    "(the pre-2020 baseline established in the rolling BTC–SPY correlation), "
+    "indicating a return to genuine diversification behavior.\n"
     "- A 5–10% allocation produces a positive Sharpe contribution after "
-    "explicit tax-drag adjustment (the analytical gap in Section 5f).\n"
+    "explicit tax-drag adjustment (the analytical gap in the constrained "
+    "mean-variance analysis).\n"
     "- A negative-correlation episode is observed during a defined equity "
-    "stress period (the 2022 joint drawdown in Section 5h is the relevant "
-    "counter-example)."
+    "stress period (the 2022 joint drawdown in the drawdown-sensitivity "
+    "analysis is the relevant counter-example)."
 )
 
 

@@ -944,7 +944,10 @@ def _build_benchmark_section(start_date: str, end_date: str) -> Optional[dict]:
             f"{_fmt_date_local(result['sample_start'])} — "
             f"{_fmt_date_local(result['sample_end'])}"
         ),
-        "prose":             build_benchmark_prose(result, bhb_top_selection=bhb_top),
+        "prose":             build_benchmark_prose(
+            result, bhb_top_selection=bhb_top,
+            bhb_period_label=_format_period_label(start_date, end_date),
+            bhb_location="in this report"),
         "methodology_notes": build_benchmark_methodology(result),
         "_raw":              result,
     }
@@ -1419,6 +1422,12 @@ def _build_methodology_vars() -> dict:
             "SELECT DISTINCT CAST(ROUND(tolerance_band * 10000) AS INTEGER) AS band_bps "
             "FROM asset_classes WHERE parent_id IS NOT NULL AND target_weight > 0 ORDER BY band_bps"
         ).fetchall()
+        strategic_order = [
+            r["name"] for r in conn.execute(
+                "SELECT name FROM asset_classes WHERE parent_id IS NOT NULL "
+                "AND target_weight > 0 ORDER BY COALESCE(sort_order, asset_class_id)"
+            ).fetchall()
+        ]
 
     # "Equity 80% / Income 10% / Real Assets 10%" (ex-cash strategic parents)
     parent_weight_str = " / ".join(
@@ -1426,9 +1435,24 @@ def _build_methodology_vars() -> dict:
         for r in parent_rows
     )
 
-    # "60% VNQ + 40% DBC" — derived from the DB benchmark for Real Assets
-    ra_bench = _sleeve_benchmarks().get("Real Assets", [])
-    ra_bench_str = " + ".join(f"{round(w * 100):.0f}% {t}" for t, w in ra_bench)
+    # Benchmark tickers, DERIVED from the DB benchmark map — never a hardcoded list, so
+    # a taxonomy change (e.g. the international split) can't leave a stale basket that
+    # silently omits sleeves. Single-component sleeves show their ticker; a blend
+    # (Real Assets) shows its weighted parts.
+    sb = _sleeve_benchmarks()
+
+    def _fmt_bench(comps: list) -> str:
+        return (comps[0][0] if len(comps) == 1
+                else " + ".join(f"{round(w * 100):.0f}% {t}" for t, w in comps))
+
+    # "60% VNQ + 40% DBC" — the Real Assets blend, still surfaced on its own.
+    ra_bench_str = _fmt_bench(sb.get("Real Assets", []))
+    # Full basket in SAA display order, with the cash benchmark (BIL) appended last.
+    basket_parts = [_fmt_bench(sb[s]) for s in strategic_order if sb.get(s)]
+    for _s, _comps in sb.items():
+        if _s not in strategic_order and _comps:
+            basket_parts.append(_fmt_bench(_comps))
+    methodology_benchmark_basket = ", ".join(basket_parts)
 
     # Drift band tiers: smallest band (200 bps) and largest (300 bps)
     band_bps_vals = [int(r["band_bps"]) for r in band_rows]
@@ -1442,6 +1466,7 @@ def _build_methodology_vars() -> dict:
         "methodology_parent_weights":      parent_weight_str,
         "methodology_sleeve_count":        sleeve_count,
         "methodology_ra_bench":            ra_bench_str,
+        "methodology_benchmark_basket":    methodology_benchmark_basket,
         "methodology_drift_large_bps":     drift_large_bps,
         "methodology_drift_small_bps":     drift_small_bps,
         "methodology_drift_large_min_pct": _TOLERANCE_BAND_LARGE_CUTOFF_PCT,

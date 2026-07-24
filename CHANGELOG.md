@@ -8,6 +8,54 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Quarterly PDF: demo book funded across its history, and four stale strings derived
+_2026-07-23_
+
+An audit of the PDF report path found the public quarterly report showing an
+incoherent portfolio. The demo's Q2 2026 report — the most recent *completed* quarter
+— rendered International Core ~14% overweight (+1398 bps drift), the three tilt sleeves
+(IDHQ/AVIV/AVDV) at 0% holdings, and a Brinson-Fachler table *crediting allocation
+effect* for being underweight the sleeves the SAA argues for. The cause was neither a
+missing migration nor a lost one: `migrate_demo_restructure_phase39` had run and the
+book was funded and on-target — but it dated the rebalance at `min(MAX(price_date))`,
+the price frontier (2026-07-20), which always lands in the current *incomplete* quarter,
+so no completed-quarter report ever included it.
+
+The migration now dates the rebalance on the inception seed date itself
+(`MIN(trade_date)`, not hardcoded), so the funded 12-sleeve allocation is the
+beginning-of-period state for every window. It has to be the seed date, not merely
+near it: a rebalance even one day later is intra-period for the since-inception
+window, where single-period Brinson-Fachler (beginning-of-period weights) diverges
+from the multi-period price-series TWR and breaks the cash-drag-bridge reconciliation
+(`test_identity_bf_sum_reconciles_to_stage2`) by ~80 bps. Every completed quarter
+(Q3'25–Q2'26) now renders Core near its 7.1% target and each tilt held with a real
+return, and the since-inception bridge reconciles to 0.0 bps. The table-diff vs the
+prior demo.db is exactly the four restructure rows and nothing else; the cashflow
+invariant (the rebalance nets to zero on the seed date; the $1,000 inception seed is
+the only external flow) and the factor section (the tilts aren't regressed) are unchanged. One display-only
+residue: the committed VEA DRIP lots were sized for the untrimmed holding, so the
+DRIP-inclusive holdings weight carries ~0.12 sh of over-reinvestment (Core reads ~7.7%
+on the DRIP-inclusive holdings basis vs the DRIP-excluded 7.1% that returns and
+attribution use). This is the EXPECTED DRIP-inclusive-vs-excluded basis difference, not
+a bug — do not "fix" it. Chasing it would mean rewriting the demo's DRIP lots, which are
+the only dividend-reinvestment transactions in either database and the single fixture
+that makes money-weighted-vs-time-weighted return testable at all (`test_bf_reconciles_*`);
+that fixture is worth far more than closing a ~0.6% display-only gap, so it is left as-is
+deliberately.
+
+The same audit found four statements that were correct when written and silently wrong
+later, all now derived rather than hardcoded. The Brinson-Fachler caption's "nine
+strategic sleeves" (a 12-row table sat directly above it) reads the DB sleeve count.
+The benchmark-attribution note's hardcoded "Q1 2026 … on the Performance page" derives
+the report quarter and names no rendering surface — and is emitted only when the BF
+cross-reference is a report-period window (the PDF), and suppressed on the Streamlit
+page, where that cross-reference is itself since-inception, so the "differ by design"
+claim was doubly wrong there. The methodology benchmark basket (a hardcoded 9-sleeve
+ticker list that omitted the IQLT/EFV/SCZ international tilts) derives from the DB
+benchmark map. And the Asset-Evaluation conclusion's "Section 5c/5f/5h" cross-references
+— which dangle in the prose-titled PDF — now name the analyses descriptively, correct on
+both the page and the PDF.
+
 ## pandas/numpy unpinned — the "pandas-3 breaks BF" pin was a misdiagnosis
 _2026-07-23_
 
