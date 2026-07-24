@@ -8,6 +8,40 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Quarterly PDF: attribution and trade log are account-scoped, not ledger-blind
+_2026-07-23_
+
+The PDF audit's deferred finding #6, fixed. `brinson_fachler_period` read the trade
+ledger with no account filter, and it drives the Attribution section, the executive
+summary's top-contributor/detractor, and the benchmark cross-reference; the thesis
+"Trades During Period" log, the has-trades gate, and `distribution_gaps_for_holdings`
+were unscoped too — while Holdings, Performance, Portfolio Value and inception all
+resolve the portfolio account. Latent today (one trade-bearing account), live the
+moment a second account carries trades. Proven on a scratch copy: a single 5-share VOO
+buy in a Roth (account 5) made one PDF report **US Large Core at 17.3% on the Holdings
+page and 76.8% on the Attribution page**, log a **$2,988 trade against a $1,352
+portfolio**, and flip the top contributor — a document contradicting itself, which is
+worse than any single wrong number.
+
+`brinson_fachler_period` now takes a **required keyword-only `account_id`** (raises on
+None, the same contract as `get_holdings_on_date`) and scopes both of its trade reads
+(beginning-of-period holdings and the inception date). Threaded from all five production
+call sites — three in `reports.py`, the `@st.cache_data _load_attribution` wrapper on the
+Performance page (its cache key gains `account_id`, so a cache warmed for one account can
+never serve another a wrong attribution), and the Benchmark Attribution page. The three
+siblings are scoped in place: the thesis trade log (a differently-managed account's trades
+would report trades the owner did not make beside holdings the owner does own — a
+cross-account log is a separate labelled section, not this query loosened), the has-trades
+gate, and `distribution_gaps_for_holdings`. A two-account fixture now guards it in CI
+(demo.db has one account, so nothing caught this before — CLAUDE.md Known Issues).
+
+The has-trades gate scoping is defensive, not a behaviour change: the report requires a
+resolvable portfolio account, which requires it to have trades, so the scoped and global
+gates agree in every generable report. The degenerate case — trades only in a non-portfolio
+account — is caught earlier and louder: `get_portfolio_account_id()` raises rather than
+render account 5's positions as "the Portfolio". Demo and personal (one account) render
+byte-identically to before: `WHERE account_id = 1` is a no-op when every trade is account 1.
+
 ## Quarterly PDF: demo book funded across its history, and four stale strings derived
 _2026-07-23_
 

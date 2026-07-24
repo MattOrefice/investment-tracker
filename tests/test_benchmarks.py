@@ -91,7 +91,7 @@ def _bf_or_skip(*window):
     from src.attribution import brinson_fachler_period
 
     try:
-        bf_df = brinson_fachler_period(*window)
+        bf_df = brinson_fachler_period(*window, account_id=1)
     except Exception as exc:
         pytest.skip(f"BF data unavailable: {exc}")
     if bf_df.empty:
@@ -198,7 +198,7 @@ def test_benchmark_gap_excludes_sleeve_and_flags(monkeypatch):
     _bf_or_skip(*_W)  # probe: committed data present before injecting
     _fail_fetch_for(monkeypatch, "QUAL")
 
-    bf_df = brinson_fachler_period(*_W)   # bare: a failure here IS the bug
+    bf_df = brinson_fachler_period(*_W, account_id=1)   # bare: a failure here IS the bug
 
     assert "US Large Quality" not in bf_df["sleeve"].tolist(), (
         "expected the benchmark-gapped sleeve to be excluded from the period, "
@@ -247,7 +247,7 @@ def test_partial_component_gap_degrades_and_flags(monkeypatch):
 
     from src.attribution import brinson_fachler_period
 
-    bf_df = brinson_fachler_period(*_W)   # bare: a failure here IS the bug
+    bf_df = brinson_fachler_period(*_W, account_id=1)   # bare: a failure here IS the bug
     assert "Real Assets" in bf_df["sleeve"].tolist(), (
         "a partially-priceable benchmark blend must not exclude the sleeve"
     )
@@ -280,7 +280,7 @@ def test_bil_benchmark_gap_degrades_without_exclusion(monkeypatch):
 
     from src.attribution import brinson_fachler_period
 
-    bf_df = brinson_fachler_period(*_W)   # bare: a failure here IS the bug
+    bf_df = brinson_fachler_period(*_W, account_id=1)   # bare: a failure here IS the bug
     assert len(bf_df) == len(baseline), (
         "a cash-benchmark gap must not exclude any sleeve: expected "
         f"{len(baseline)} sleeves, got {len(bf_df)}: {sorted(bf_df['sleeve'])}"
@@ -324,7 +324,7 @@ def test_total_benchmark_outage_yields_sentinels_and_empty_attribution(monkeypat
 
     from src.attribution import brinson_fachler_period
 
-    bf_df = brinson_fachler_period(*_W)
+    bf_df = brinson_fachler_period(*_W, account_id=1)
     assert bf_df.empty, (
         "with every strategic sleeve benchmark-gapped there is nothing to "
         f"attribute — expected an empty frame, got {len(bf_df)} rows"
@@ -355,7 +355,7 @@ def test_missing_benchmark_mapping_for_weighted_sleeve_asserts(monkeypatch):
     monkeypatch.setattr(attr_mod, "get_sleeve_benchmark_returns", _drop_column)
 
     with pytest.raises(AssertionError, match="_SLEEVE_BENCHMARKS"):
-        attr_mod.brinson_fachler_period(*_W)
+        attr_mod.brinson_fachler_period(*_W, account_id=1)
 
 
 def test_unknown_sleeve_retained_with_na_marker(monkeypatch):
@@ -421,7 +421,7 @@ def test_unknown_sleeve_retained_with_na_marker(monkeypatch):
         attr_mod, "get_connection", lambda: _OrphanConn(real_get_connection())
     )
 
-    bf_df = attr_mod.brinson_fachler_period(*_W)   # bare: a failure here IS the bug
+    bf_df = attr_mod.brinson_fachler_period(*_W, account_id=1)   # bare: a failure here IS the bug
 
     assert "Unknown" in bf_df["sleeve"].tolist(), (
         "a no-benchmark sleeve must be retained, not excluded"
@@ -488,7 +488,7 @@ def test_real_benchmark_sleeves_never_silently_zero():
     from src.attribution import brinson_fachler_period
 
     try:
-        bf_df = brinson_fachler_period("2025-05-01", "2026-06-10")
+        bf_df = brinson_fachler_period("2025-05-01", "2026-06-10", account_id=1)
     except Exception as exc:
         pytest.skip(f"BF data unavailable: {exc}")
 

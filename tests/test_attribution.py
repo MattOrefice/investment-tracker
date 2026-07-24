@@ -536,7 +536,7 @@ def test_identity_ps_two_stage_si_60_40():
         pv = get_portfolio_value_series(INCEPTION, TODAY, account_id=1)
         bl = get_custom_blended_series(INCEPTION, TODAY)
         naive = get_naive_series("60_40", INCEPTION, TODAY)
-        bf_df = brinson_fachler_period(INCEPTION, TODAY)
+        bf_df = brinson_fachler_period(INCEPTION, TODAY, account_id=1)
     except Exception as exc:
         pytest.skip(f"Data unavailable: {exc}")
 
@@ -582,7 +582,7 @@ def test_identity_ps_two_stage_1y_60_40():
         pv = get_portfolio_value_series(INCEPTION, TODAY, account_id=1)
         bl = get_custom_blended_series(INCEPTION, TODAY)
         naive = get_naive_series("60_40", INCEPTION, TODAY)
-        bf_df = brinson_fachler_period(INCEPTION, TODAY)
+        bf_df = brinson_fachler_period(INCEPTION, TODAY, account_id=1)
     except Exception as exc:
         pytest.skip(f"Data unavailable: {exc}")
 
@@ -631,7 +631,7 @@ def test_identity_ps_two_stage_si_spy():
         pv = get_portfolio_value_series(INCEPTION, TODAY, account_id=1)
         bl = get_custom_blended_series(INCEPTION, TODAY)
         naive = get_naive_series("spy", INCEPTION, TODAY)
-        bf_df = brinson_fachler_period(INCEPTION, TODAY)
+        bf_df = brinson_fachler_period(INCEPTION, TODAY, account_id=1)
     except Exception as exc:
         pytest.skip(f"Data unavailable: {exc}")
 
@@ -711,7 +711,7 @@ def test_identity_bf_sum_reconciles_to_stage2(_no_live_fetch):
     for label in ("SI", "1Y", "YTD", "3M", "1M"):
         start, end = period_bounds(label, real_end_d, INCEPTION)
         try:
-            bf_df = brinson_fachler_period(start, end)
+            bf_df = brinson_fachler_period(start, end, account_id=1)
         except Exception as exc:
             pytest.skip(f"BF data unavailable for {label}: {exc}")
 
@@ -815,7 +815,7 @@ def test_bf_reconciles_when_wall_clock_past_price_frontier(days_past_frontier, _
 
     for label in ("1M", "3M"):
         start, end = period_bounds(label, real_end_d, INCEPTION)
-        bf_df = brinson_fachler_period(start, end)
+        bf_df = brinson_fachler_period(start, end, account_id=1)
         if bf_df.empty:
             pytest.skip(f"BF result empty for {label}")
         bf = float((bf_df["w_p"] * bf_df["r_p"]).sum()) + float(bf_df.attrs.get("cash_drag", 0.0))
@@ -855,7 +855,7 @@ def test_bf_per_sleeve_returns_are_total_return(use_demo_db):
     TODAY = datetime.date.today().isoformat()
 
     try:
-        bf_df = brinson_fachler_period(INCEPTION, TODAY)
+        bf_df = brinson_fachler_period(INCEPTION, TODAY, account_id=1)
     except Exception as exc:
         pytest.skip(f"Data unavailable: {exc}")
 
@@ -910,7 +910,7 @@ def test_bf_ex_cash_weights_and_cash_drag_attr():
     TODAY = datetime.date.today().isoformat()
 
     try:
-        bf_df = brinson_fachler_period(INCEPTION, TODAY)
+        bf_df = brinson_fachler_period(INCEPTION, TODAY, account_id=1)
     except Exception as exc:
         pytest.skip(f"Data unavailable: {exc}")
     if bf_df.empty:
@@ -1017,7 +1017,7 @@ def test_price_gap_excludes_sleeve_start_price(monkeypatch):
     monkeypatch.setattr(attr_mod, "get_prices", _gap_start)
 
     try:
-        bf_df = brinson_fachler_period(INCEPTION, TODAY)
+        bf_df = brinson_fachler_period(INCEPTION, TODAY, account_id=1)
     except Exception as exc:
         pytest.skip(f"Data unavailable: {exc}")
     if bf_df.empty:
@@ -1070,7 +1070,7 @@ def test_price_gap_excludes_sleeve_end_price(monkeypatch):
     monkeypatch.setattr(attr_mod, "get_prices", _gap_end)
 
     try:
-        bf_df = brinson_fachler_period(INCEPTION, TODAY)
+        bf_df = brinson_fachler_period(INCEPTION, TODAY, account_id=1)
     except Exception as exc:
         pytest.skip(f"Data unavailable: {exc}")
     if bf_df.empty:
@@ -1128,7 +1128,7 @@ def test_price_gap_bil_guard_handles_missing_period_price(monkeypatch, use_demo_
     monkeypatch.setattr(attr_mod, "get_prices", _gap_bil_period_start)
 
     try:
-        bf_df = brinson_fachler_period(INCEPTION, TODAY)
+        bf_df = brinson_fachler_period(INCEPTION, TODAY, account_id=1)
     except Exception as exc:
         pytest.skip(f"Data unavailable: {exc}")
     if bf_df.empty:
@@ -1259,7 +1259,7 @@ def test_benchmark_gap_full_sentinel_is_nan_not_zero(tmp_path, monkeypatch):
         "a fully-gapped sleeve's benchmark must be a NaN sentinel, never a flat 0.0"
     )
 
-    bf_df = brinson_fachler_period("2025-05-01", "2026-07-20")
+    bf_df = brinson_fachler_period("2025-05-01", "2026-07-20", account_id=1)
     sleeves = sorted(bf_df["sleeve"].tolist())
     assert "International Quality" not in sleeves, (
         "International Quality must be purged when its benchmark is fully gapped; "
@@ -1269,3 +1269,61 @@ def test_benchmark_gap_full_sentinel_is_nan_not_zero(tmp_path, monkeypatch):
     assert ("International Quality", "IQLT", "2026-07-20") in [
         tuple(g) for g in bf_df.attrs.get("benchmark_gaps", [])
     ]
+
+
+# ── account scoping (PDF #6) ────────────────────────────────────────────────────
+# brinson_fachler_period reads the trade ledger; a trade in a NON-portfolio account
+# (an advisor-placed Roth) must not leak into the portfolio account's attribution.
+# demo.db has one account, so CI cannot catch a regression to the account-blind read
+# without a two-account fixture — this is that fixture (CLAUDE.md Known Issues).
+
+def test_brinson_fachler_period_requires_account_id():
+    """account_id is keyword-only and required — same contract as get_holdings_on_date;
+    no silent account-blind fallback."""
+    from src.attribution import brinson_fachler_period
+    with pytest.raises(TypeError):                       # omitted entirely
+        brinson_fachler_period("2025-05-01", "2026-06-30")
+    with pytest.raises(ValueError):                      # explicit None
+        brinson_fachler_period("2025-05-01", "2026-06-30", account_id=None)
+
+
+def test_brinson_fachler_period_excludes_non_portfolio_account(tmp_path, monkeypatch):
+    """A 5-share VOO buy in a Roth (account 5) must NOT inflate the portfolio account's
+    US Large Core weight. Pre-fix the blind read ballooned it from ~17% to ~77%."""
+    import shutil, sqlite3, pathlib
+    import src.db as db
+    import src.prices as prices
+    from src.attribution import brinson_fachler_period
+
+    demo = pathlib.Path(__file__).resolve().parent.parent / "data" / "demo.db"
+    if not demo.exists():
+        pytest.skip("demo.db unavailable — skipped in empty-DB mode")
+    work = tmp_path / "demo_two_account.db"
+    shutil.copy(demo, work)
+    conn = sqlite3.connect(work)
+    conn.execute(
+        "INSERT INTO accounts (account_id,name,type,custodian,tax_treatment,managed_by,"
+        "included_in_household) VALUES (5,'Roth (test)','retirement','Fidelity','roth_ira',"
+        "'external',1)"
+    )
+    conn.execute(
+        "INSERT INTO trades (account_id,ticker,trade_date,action,shares,price,fees,notes,"
+        "lot_source) VALUES (5,'VOO','2026-03-31','Buy',5,597.55,0,'test roth','initial')"
+    )
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(db, "DB_PATH", work)
+    monkeypatch.setattr(db, "_migrated_paths", set(), raising=False)
+    monkeypatch.setattr(prices, "fetch_prices",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no live fetch")))
+
+    S, E = "2026-03-31", "2026-06-30"
+    bf1 = brinson_fachler_period(S, E, account_id=1)      # the portfolio account
+    ulc1 = float(bf1[bf1["sleeve"] == "US Large Core"]["w_p"].iloc[0])
+    assert ulc1 < 0.30, (
+        f"account-1 US Large Core weight is {ulc1:.1%} — the Roth (account 5) VOO leaked "
+        f"into the portfolio attribution; brinson_fachler_period is not account-scoped"
+    )
+    bf5 = brinson_fachler_period(S, E, account_id=5)      # the Roth in isolation (VOO only)
+    ulc5 = float(bf5[bf5["sleeve"] == "US Large Core"]["w_p"].iloc[0])
+    assert ulc5 > 0.90, f"account-5 (VOO-only) US Large Core weight {ulc5:.1%} — expected ~100%"

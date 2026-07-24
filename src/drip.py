@@ -293,11 +293,17 @@ def backfill_all_drip_lots(
 def distribution_gaps_for_holdings(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
+    *,
+    account_id: int,
 ) -> list[str]:
-    """Currently-held tickers (excluding SPAXX) with NO distribution history on
-    record over [start_date, end_date] — the same condition backfill_all_drip_lots
+    """Tickers traded in ``account_id`` (excluding SPAXX) with NO distribution history
+    on record over [start_date, end_date] — the same condition backfill_all_drip_lots
     warns and skips on (see above), detected live so it can be surfaced in-app
     rather than only in that CLI script's console output.
+
+    Account-scoped (keyword-only, required): reads only the portfolio account's
+    traded tickers, so a differently-scoped account's holdings never trigger a
+    distribution-gap notice on a report whose value figure is this account's alone.
 
     A ticker in the returned list means its DRIP lots could not be computed, so
     the displayed current-market-value figure (get_current_market_value, which
@@ -308,15 +314,20 @@ def distribution_gaps_for_holdings(
     on record (the common case). Reuses fetch_distributions verbatim, so this
     adds no new distribution-fetching logic beyond what backfill already runs.
     """
+    if account_id is None:
+        raise ValueError(
+            "account_id is required — distribution_gaps_for_holdings reads the trade "
+            "ledger account-scoped and will not read across every account."
+        )
     if start_date is None:
-        from src.holdings import get_inception_date, get_portfolio_account_id
-        start_date = get_inception_date(account_id=get_portfolio_account_id())
+        from src.holdings import get_inception_date
+        start_date = get_inception_date(account_id=account_id)
     end = end_date or date.today().isoformat()
 
     with get_connection() as conn:
         rows = conn.execute(
-            "SELECT DISTINCT ticker FROM trades WHERE ticker != ? ORDER BY ticker",
-            (_SPAXX_TICKER,),
+            "SELECT DISTINCT ticker FROM trades WHERE account_id = ? AND ticker != ? ORDER BY ticker",
+            (account_id, _SPAXX_TICKER),
         ).fetchall()
     tickers = [r["ticker"] for r in rows]
 

@@ -108,16 +108,20 @@ def _load_naive_benchmark(start_val: float, kind: str = "60_40"):
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def _load_attribution(period_key: str, anchor_end: str):
+def _load_attribution(period_key: str, anchor_end: str, account_id: int):
     """Run BF attribution over a window anchored on ``anchor_end`` — the value
     series' last data date — NOT date.today(). This must match the anchor
     _benchmark_period_return uses (series.index[-1]); otherwise the BF window and
     the price-series window it reconciles against diverge whenever the price
     cache lags the calendar (today > last_date), skewing 1M/3M attribution by
     15-42 bps. Single source of truth: src.returns.period_bounds.
+
+    ``account_id`` is a cache-key argument on purpose: brinson_fachler_period is now
+    account-scoped, so the memoized result MUST be keyed by account — otherwise a
+    cache warmed for one account would serve a silently wrong attribution to another.
     """
     start, end = period_bounds(period_key, anchor_end, INCEPTION)
-    return brinson_fachler_period(start, end)
+    return brinson_fachler_period(start, end, account_id=account_id)
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -366,7 +370,7 @@ with col:
         unsafe_allow_html=False,
     )
 
-    _drip_gaps = distribution_gaps_for_holdings(INCEPTION, TODAY)
+    _drip_gaps = distribution_gaps_for_holdings(INCEPTION, TODAY, account_id=_ACCT_ID)
     if _drip_gaps:
         st.warning(drip_distribution_gap_notice(_drip_gaps))
 
@@ -863,7 +867,7 @@ with col:
     # the displayed active return matches the 1M/3M numbers shown elsewhere — no
     # forward-filled / partial-intraday tail in any window endpoint.
     with st.spinner("Computing attribution…"):
-        bf_df = _load_attribution(bf_period, _C)
+        bf_df = _load_attribution(bf_period, _C, _ACCT_ID)
 
     if bf_df.attrs.get("price_gaps"):
         st.warning(price_gap_notice(bf_df.attrs["price_gaps"]))

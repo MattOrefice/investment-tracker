@@ -421,8 +421,8 @@ def test_stage_reconciliation_gap_caption_appears_under_gap(monkeypatch) -> None
     st.cache_data.clear()
     real_bf_period = attr_mod.brinson_fachler_period
 
-    def _inject_gap(start, end):
-        bf_df = real_bf_period(start, end)
+    def _inject_gap(start, end, *, account_id):
+        bf_df = real_bf_period(start, end, account_id=account_id)
         if bf_df.empty:
             return bf_df
         bf_df = bf_df.copy()

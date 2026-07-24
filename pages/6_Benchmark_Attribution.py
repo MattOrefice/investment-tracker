@@ -58,7 +58,8 @@ with col:
         )
 
     end_date  = date.today().isoformat()
-    inception = get_inception_date(account_id=get_portfolio_account_id())
+    _acct_id  = get_portfolio_account_id()
+    inception = get_inception_date(account_id=_acct_id)
 
     @st.cache_data(ttl=3600)
     def _get_benchmark_result(inception_date: str, end: str) -> dict | None:
@@ -162,7 +163,7 @@ with col:
     _bf_price_gaps = None
     _bf_benchmark_gaps = None
     try:
-        _bf_df = brinson_fachler_period(inception, end_date)
+        _bf_df = brinson_fachler_period(inception, end_date, account_id=_acct_id)
         _bhb_top = build_bf_cross_reference(_bf_df) or None
         _bf_price_gaps = _bf_df.attrs.get("price_gaps")
         _bf_benchmark_gaps = _bf_df.attrs.get("benchmark_gaps")
