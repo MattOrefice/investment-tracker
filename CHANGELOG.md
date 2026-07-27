@@ -8,6 +8,39 @@ The live demo is at https://mattorefice-investment.streamlit.app/.
 
 ---
 
+## Personal prose migrations get one entry point: `tools/sync_personal_prose.py`
+_2026-07-27_
+
+Four personal-book prose syncs had accumulated — `migrate_personal_vea_rationale`,
+`_intl_rationales`, `_revisit_clause_bold`, `_missing_falsifiers` — each a `main()`-only
+script that updates `holding_rationale` text in the gitignored `tracker.db` in place, and
+each documented "run this once on another machine after pulling." Four separate notes for
+one recurring chore.
+
+`tools/sync_personal_prose.py` replaces the four notes with one command. It runs the four in
+CHRONOLOGICAL order (vea → intl → revisit → missing), **not** the filename-sorted order
+`run_pending_migrations` would use — today's per-ticker swaps are order-independent by
+coincidence, so the real order is encoded to stay correct if a future one isn't. It
+propagates aborts: on any migration's text-mismatch abort it stops, names the step, and
+reports what did and didn't run — never catch-and-continue, because a half-applied prose sync
+is the state those aborts exist to prevent. Idempotent by construction; on a synced DB every
+step reports "already-applied" and nothing is written.
+
+Recorded so the next person doesn't re-derive it — these stay manual, **not** auto-discovered
+by `bootstrap.run_pending_migrations`, on purpose. That discovery runs migrations exposing
+`migrate_db(db_path)`; these expose only `main()`, the same deliberate signal the SAA
+migrations use. Three reasons auto-running is wrong: (1) discovery fires at bootstrap step 3,
+before `seed_securities.seed()` adds the `holding_rationale` column and rows at step 4, so a
+prose swap on a fresh DB hits "no such column"; (2) a fresh boot seeds the current prose
+directly and never needs them; (3) each aborts hard on mismatch — correct for a manual run,
+but folded into bootstrap it would have to degrade to a caught or silent skip, turning a loud,
+correct failure into a quiet one on exactly the drifted-prose DB you'd want it loud for.
+
+The four migration docstrings now point at the runner instead of each repeating the carry-over
+note. No behavior change to the migrations themselves; `tracker.db` is untouched by this change.
+
+---
+
 ## Quarterly PDF: a selection driver with no mapped holding is suppressed, not placeholder-filled
 _2026-07-24_
 

@@ -16,8 +16,10 @@ tilt rationales are set from the seed (authored prose, identical in both books).
 
 Targets data/tracker.db EXPLICITLY (never get_db_path) so it cannot touch
 demo.db regardless of TRACKER_MODE. Idempotent: re-running after the sync reports
-"already migrated" and writes nothing. tracker.db is gitignored — run this once
-per machine that carries a personal DB.
+"already migrated" and writes nothing. tracker.db is gitignored, so this sync does
+not travel with the repo. Run it together with the other three personal prose
+migrations via `python tools/sync_personal_prose.py`, which sequences all four in
+order and documents why they are manual, not auto-discovered on bootstrap.
 """
 import sqlite3
 import sys
