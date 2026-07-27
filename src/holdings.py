@@ -146,6 +146,66 @@ def last_real_price_date(start_date: str, end_date: Optional[str] = None) -> str
     return max_date.isoformat() if max_date is not None else end
 
 
+def committed_price_frontier(
+    today: "date | str | None" = None, *, account_id: Optional[int] = None
+) -> Optional[str]:
+    """The holdings' COMMON committed price frontier — DB only, NEVER a fetch.
+
+    ``MIN`` over the portfolio's holdings of each holding's ``MAX(price_date)``
+    strictly before ``today``: the latest date on which EVERY holding the report
+    consumes has a real, already-stored price. Returns an ISO date string, or
+    ``None`` when no holding has any committed price.
+
+    Three deliberate choices, each load-bearing:
+
+    - **MIN, not MAX.** ``last_real_price_date`` returns the max, which
+      over-promises: one ticker reaching a later date does not make the portfolio
+      priceable there. The report consumes every holding, so the honest frontier
+      is the one they all clear.
+    - **``price_date < today``**, so a partial same-day bar written by a live
+      mid-session fetch can never present itself as a settled frontier (the same
+      reasoning as ``last_settled_price_date``).
+    - **No fetch.** This answers "what does the committed data already support",
+      which is precisely the question a gap-filling read would destroy by going
+      and filling the gap. It is also called on every page render, so it must
+      stay a couple of indexed ``MAX()`` lookups.
+
+    Returns ``None`` — read by callers as "no opinion", not as "nothing is
+    supported" — when the account or its holdings cannot be resolved. That keeps
+    a cap built on this from being the thing that takes down a report: a DB with
+    no holdings or no prices has no figures to misdate in the first place.
+    """
+    ref = today or date.today()
+    if isinstance(ref, str):
+        ref = date.fromisoformat(ref)
+    ref_iso = ref.isoformat()
+
+    try:
+        if account_id is None:
+            account_id = get_portfolio_account_id()
+        holdings = get_holdings_on_date(ref_iso, account_id=account_id)
+    except Exception:
+        # No resolvable portfolio account / no ledger — see the docstring.
+        return None
+    if holdings.empty:
+        return None
+
+    frontiers: list[str] = []
+    with get_connection() as conn:
+        for ticker in holdings.index:
+            price_ticker = "BIL" if ticker == "SPAXX" else ticker  # SPAXX proxied via BIL
+            row = conn.execute(
+                "SELECT MAX(price_date) FROM prices WHERE ticker = ? AND price_date < ?",
+                (price_ticker, ref_iso),
+            ).fetchone()
+            # A holding with no committed price at all is an already-surfaced
+            # price gap (see brinson_fachler_period's price_gaps), not a frontier
+            # signal — skip it rather than collapsing the frontier to nothing.
+            if row and row[0]:
+                frontiers.append(row[0])
+    return min(frontiers) if frontiers else None
+
+
 def last_settled_price_date(start_date: str, end_date: Optional[str] = None) -> str:
     """Last COMPLETE settled trading day — the anchor for DISPLAYED period returns.
 

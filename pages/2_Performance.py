@@ -13,6 +13,7 @@ from src.asof import (
     as_of_banner_with_inception,
     format_long_date,
     most_recent_reportable_quarter,
+    quarter_staleness_note,
     reportable_quarter_phrase,
     NO_COMPLETED_QUARTER,
 )
@@ -280,6 +281,11 @@ with col:
                 _r_start_d, _r_end_d, _r_qlabel = _q_rep
                 _r_start, _r_end = _r_start_d.isoformat(), _r_end_d.isoformat()
                 st.caption(f"Period: **{_r_qlabel}** &nbsp;({_r_start} to {_r_end})")
+                # Same disclosure the PDF cover carries, shown before generation so
+                # the step-back is visible at the point of choosing, not only after.
+                _stale = quarter_staleness_note(INCEPTION, date.fromisoformat(TODAY))
+                if _stale:
+                    st.info(_stale)
                 _report_filename = (
                     f"Orefice_Portfolio_{_r_qlabel.replace(' ', '')[2:]}"
                     f"{_r_qlabel.split()[0]}.pdf"
@@ -388,6 +394,9 @@ with col:
         st.info(NO_COMPLETED_QUARTER)
     else:
         _q_start, _q_end, _q_label = _q_rep
+        _q_stale = quarter_staleness_note(INCEPTION, date.fromisoformat(TODAY))
+        if _q_stale:
+            st.caption(_q_stale)
         _q_ts_start = pd.Timestamp(_q_start)
         _q_ts_end   = pd.Timestamp(_q_end)
 

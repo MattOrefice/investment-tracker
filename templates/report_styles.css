@@ -220,6 +220,20 @@ section.no-break { page-break-before: auto; }
     letter-spacing: 0.04em;
     margin-top: 0.4em;
 }
+/* Data-frontier step-back disclosure. Darker and boxed rather than muted like the
+   rest of the cover furniture: it states that this is NOT the calendar's current
+   quarter, which a reader must not skim past. */
+.cover-staleness {
+    font-size: 9pt;
+    color: #444;
+    font-family: Helvetica, Arial, sans-serif;
+    margin: 1.1em auto 0 auto;
+    max-width: 30em;
+    padding: 0.5em 0.8em;
+    border: 0.5pt solid #ccc;
+    background: #f7f7f5;
+    line-height: 1.45;
+}
 
 /* ── Narrative / prose blocks ────────────────────────────────────────────── */
 .narrative { margin: 1em 0; }

@@ -18,6 +18,9 @@
     <p class="cover-sub-id">{{ cover_sub_id }}</p>
     <p class="cover-tagline">Personal Investment Analytics &middot; Thesis-Driven Allocation</p>
     <p class="cover-date">Generated {{ generation_date }}{% if snapshot_captured_at %} &middot; Prices locked {{ snapshot_captured_at }}{% endif %}</p>
+    {% if staleness_note %}
+    <p class="cover-staleness">{{ staleness_note }}</p>
+    {% endif %}
   </div>
 
   <h2>Executive Summary</h2>
