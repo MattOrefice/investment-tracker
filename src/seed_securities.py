@@ -49,7 +49,8 @@ HOLDINGS = [
             "this: accruals manipulation is real and persistent, and a quality screen that ignores it is "
             "incomplete. The tradeoff is smaller AUM ($6B vs QUAL's $40B), acceptable given SPHQ isn't at "
             "closure-risk scale. Benchmarking against QUAL creates a natural attribution question over time: "
-            "did the accruals screen add or cost value? Would revisit if SPHQ's accruals screen "
+            "did the accruals screen add or cost value?\n\n"
+            "**Would revisit if** SPHQ's accruals screen "
             "fails to demonstrate additive return versus QUAL over a full market cycle (5+ years), "
             "directly testing whether the Sloan (1996) accounting quality premium persists in a "
             "live portfolio."
@@ -86,7 +87,8 @@ HOLDINGS = [
             "years. The 0.25% ER is a real cost but buys genuine factor exposure rather than index replication. Current "
             "large-cap valuations structurally improve the relative opportunity in cheap, profitable small "
             "companies. Attribution is tracked against IWM to test whether the factor tilt earns its fee "
-            "over time. Would revisit if size + value + profitability factor returns underperform "
+            "over time.\n\n"
+            "**Would revisit if** size + value + profitability factor returns underperform "
             "large-cap blend on a rolling 5-year basis, suggesting factor premium decay rather "
             "than temporary cyclical lag."
         ),
@@ -203,7 +205,8 @@ HOLDINGS = [
             "MSCI Emerging Markets index with the same ~27% China weight. China inclusion was deliberate: the "
             "SAA rationale flags governance risk as a watch item but not yet a reason to exit — China trades "
             "at ~10x P/E and the EM valuation thesis meaningfully includes Chinese equities. Excluding China "
-            "via EMXC would be a larger active bet than appropriate at current prices; would revisit if ADR "
+            "via EMXC would be a larger active bet than appropriate at current prices.\n\n"
+            "**Would revisit if** ADR "
             "delisting risk materializes legislatively or if another sector-level government intervention "
             "occurs."
         ),
@@ -240,8 +243,8 @@ HOLDINGS = [
             "inflation thesis: at 27, the risk being hedged is not near-term inflation volatility but a "
             "decade of sustained real return erosion. Short-term TIPS protect against current inflation but "
             "have less sensitivity to unexpected long-run inflation regimes. Broad TIPS held for decades are "
-            "the more appropriate vehicle. SCHP at 0.03% makes this hedge essentially free to carry. "
-            "Would revisit if 5-year TIPS breakeven inflation falls persistently below 1.5%, indicating "
+            "the more appropriate vehicle. SCHP at 0.03% makes this hedge essentially free to carry.\n\n"
+            "**Would revisit if** 5-year TIPS breakeven inflation falls persistently below 1.5%, indicating "
             "a deflationary regime shift that reduces the case for holding real return protection."
         ),
     },
@@ -257,8 +260,8 @@ HOLDINGS = [
             "property types. Primary risk accepted knowingly: REIT distributions are predominantly "
             "non-qualified income taxed at ordinary rates. In a perfect construction this sleeve would sit "
             "in a tax-advantaged account; working with a taxable account only, the drag is accepted with "
-            "eyes open. The real assets diversification benefit justifies carrying the tax friction. Would "
-            "revisit if tax-advantaged space becomes available."
+            "eyes open. The real assets diversification benefit justifies carrying the tax friction.\n\n"
+            "**Would revisit if** tax-advantaged space becomes available."
         ),
     },
     {
