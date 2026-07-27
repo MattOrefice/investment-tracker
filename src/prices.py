@@ -54,6 +54,68 @@ def _to_iso(d) -> str:
     return d.isoformat() if hasattr(d, "isoformat") else str(d)
 
 
+def unsettled_bar_date(result: dict) -> Optional[date]:
+    """The date of the bar still forming in the CURRENT trading session, or None.
+
+    A bar fetched while its session is open carries an intraday quote, not a close.
+    Persisting it writes a permanent wrong mark: ``get_prices`` only gap-fills
+    *beyond* ``cached_end``, so that row is never revisited and the error is frozen
+    into the cache. demo.db carries ~96 such rows from ~10 mid-session runs (VOO
+    off 0.51% on 2026-07-20, QQQ 0.79%) — that is the defect this prevents.
+
+    Read from the response's own ``meta``, so it is per-request and per-ticker for
+    free: an equity's 09:30–16:00 session and BTC-USD's 24/7 one each answer for
+    themselves, with no exchange calendar, holiday table, or timezone arithmetic
+    here. A bar is unsettled when the current regular session has NOT yet ended
+    (``now < regular.end``); its date is taken from ``regular.start``, which is the
+    session's own opening timestamp rather than a local-clock guess at "today".
+
+    DEGRADES TOWARD NOT PERSISTING. Returns ``regularMarketTime``'s date — i.e.
+    "treat the newest bar as unsettled" — whenever the response does not let us
+    prove settlement: ``currentTradingPeriod`` absent, ``regular`` absent, a
+    non-numeric or missing ``end``/``start``. The two failure directions are not
+    symmetric. Defaulting to "settled" silently reintroduces permanent partial
+    rows and makes this whole function inert — the exact failure it exists to stop,
+    and undetectable once written. Defaulting to "unsettled" costs one skipped row
+    that the next run writes correctly, because a bar absent from the cache is
+    re-fetched while a wrong bar in the cache is forever. Missing data is a reason
+    to write less, not to write confidently.
+
+    Returns None only when settlement is affirmatively established (the session has
+    ended) or when there is no newest-bar timestamp to be unsure about.
+    """
+    meta = result.get("meta") or {}
+
+    def _newest_bar_date() -> Optional[date]:
+        """Fallback anchor: the date of the latest quote, treated as in-flight."""
+        rmt = meta.get("regularMarketTime")
+        if isinstance(rmt, (int, float)) and rmt > 0:
+            return datetime.fromtimestamp(rmt, tz=timezone.utc).date()
+        # No quote timestamp either. Fall back to the last bar in the payload —
+        # still the conservative answer, since it is the only row that can be
+        # mid-session.
+        ts = result.get("timestamp") or []
+        if ts and isinstance(ts[-1], (int, float)):
+            return datetime.fromtimestamp(ts[-1], tz=timezone.utc).date()
+        return None
+
+    period = meta.get("currentTradingPeriod")
+    if not isinstance(period, dict):
+        return _newest_bar_date()
+    regular = period.get("regular")
+    if not isinstance(regular, dict):
+        return _newest_bar_date()
+
+    start, end_ts = regular.get("start"), regular.get("end")
+    if not isinstance(end_ts, (int, float)) or not isinstance(start, (int, float)):
+        return _newest_bar_date()
+
+    now = datetime.now(tz=timezone.utc).timestamp()
+    if now >= end_ts:
+        return None  # session closed — the bar is a settled close, persist it
+    return datetime.fromtimestamp(start, tz=timezone.utc).date()
+
+
 def _date_to_unix(date_str: str) -> int:
     """Convert ISO date string to UTC midnight Unix timestamp."""
     dt = datetime.fromisoformat(date_str).replace(tzinfo=timezone.utc)
@@ -168,6 +230,13 @@ def fetch_prices(
         except (ValueError, TypeError, KeyError):
             pass
 
+    # The bar still forming in an open session is RETURNED but never CACHED — see
+    # unsettled_bar_date(). Callers get the live mark (get_prices concatenates this
+    # frame into its result), while the cache holds settled closes only. Skipping
+    # it costs a re-fetch until the session closes; writing it costs a permanently
+    # wrong row, because nothing ever re-reads a date at or below cached_end.
+    skip_date = unsettled_bar_date(result)
+
     with get_connection() as conn:
         # Auto-migrate: ensure dividends table exists in pre-existing DBs
         conn.execute(
@@ -176,6 +245,8 @@ def fetch_prices(
                 PRIMARY KEY (ticker, ex_date))"""
         )
         for dt, row in df.iterrows():
+            if skip_date is not None and dt >= skip_date:
+                continue
             conn.execute(
                 """INSERT OR REPLACE INTO prices (ticker, price_date, close, adj_close)
                    VALUES (?, ?, ?, ?)""",
@@ -186,12 +257,50 @@ def fetch_prices(
                     float(row["adj_close"]) if pd.notna(row["adj_close"]) else None,
                 ),
             )
+        # Dividends are ex-date events, not intraday quotes — an ex-date announced
+        # during an open session is already final, so they are not gated here.
         for ex_date, amount in div_rows:
             conn.execute(
                 "INSERT OR REPLACE INTO dividends (ticker, ex_date, amount) VALUES (?, ?, ?)",
                 (ticker, ex_date, amount),
             )
 
+    return df
+
+
+# Process-local memo for the TRAILING gap fetch only, keyed on (ticker, start, end).
+# Once the in-flight bar stopped being cached, `cached_end < end` stays true for the
+# rest of an open session, so every get_prices call re-issued the same request — 14
+# per last_real_price_date() call, repeated per call, measured. The DB cache cannot
+# absorb this by design (that is the fix), so it is absorbed here instead.
+#
+# Deliberately unbounded in time and cleared only by process exit: entries are keyed
+# on an explicit end date, so a later date is a different key and a new fetch. It
+# holds one small frame per (ticker, window) touched — bounded by the ~47-ticker
+# universe — and a Streamlit rerun reuses the process, which is exactly the repeat
+# this exists to stop. Reset it in tests via _reset_trailing_memo().
+_TRAILING_MEMO: dict[tuple[str, str, str], pd.DataFrame] = {}
+
+
+def _reset_trailing_memo() -> None:
+    """Clear the trailing-fetch memo (tests; also useful in a long-lived REPL)."""
+    _TRAILING_MEMO.clear()
+
+
+def _fetch_trailing_memoized(ticker: str, start: str, end: str) -> pd.DataFrame:
+    """fetch_prices for a trailing gap, memoized per process.
+
+    A miss still calls fetch_prices, so the settled rows land in the DB exactly as
+    before; only the repeated network round-trip for the unsettled tail is avoided.
+    Failures are NOT memoized — a transient 429 must not pin an empty result for the
+    life of the process.
+    """
+    key = (ticker, start, end)
+    hit = _TRAILING_MEMO.get(key)
+    if hit is not None:
+        return hit.copy()
+    df = fetch_prices(ticker, start, end)
+    _TRAILING_MEMO[key] = df.copy()
     return df
 
 
@@ -203,6 +312,10 @@ def get_prices(
     """
     Return cached prices, fetching only gaps from yfinance.
     Returns DataFrame indexed by datetime.date with columns: close, adj_close.
+
+    The bar of a currently-open session is served but never cached (see
+    fetch_prices / unsettled_bar_date), so a live mark still reaches the caller
+    while the DB holds settled closes only.
     """
     end = end_date or date.today().isoformat()
 
@@ -241,7 +354,7 @@ def get_prices(
     if cached_end < end:
         post_start = _to_iso(cached.index.max() + timedelta(days=1))
         try:
-            post = fetch_prices(ticker, post_start, end)
+            post = _fetch_trailing_memoized(ticker, post_start, end)
             cached = pd.concat([cached, post]).sort_index()
         except Exception:
             pass
