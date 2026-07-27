@@ -77,13 +77,21 @@ EQUITY_DEFAULT_YIELD: float = 0.018
 # never a symbol list. USER-EDITABLE.
 FEDERALLY_EXEMPT_SLEEVES: frozenset[str] = frozenset({"high_yield_muni"})
 
-# Minimum annual income-shelter benefit for a register row to be SURFACED as an
-# individual action. This is a PRESENTATION THRESHOLD, not a modeling claim: a row
-# below it is real drag — it still counts in the aggregate drag KPI and in every
-# group's own totals — but a sub-dollar "relocation" (e.g. a $0.43/yr row) is a
-# rounding error, not a decision, so build_location_register tags it surfaced=False
-# and the page omits it from the per-group action tables. Every dollar figure still
-# sums every row, filtered or not. USER-EDITABLE.
+# The annual income-shelter benefit below which a "relocation" is a rounding error
+# rather than a decision (e.g. a $0.43/yr row). A PRESENTATION THRESHOLD, never a
+# modeling claim — a row below it is real drag and always counted in the aggregate
+# drag KPI and in every group's total.
+#
+# NO CODE READS THIS TODAY; it documents a judgement, not a behaviour. The register
+# used to carry a `surfaced` flag computed from it and the page filtered on that
+# flag, which produced the "count 4, table empty" contradiction: a group header
+# claiming four rows above a table showing none. That was fixed by rendering EVERY
+# backing row with a Value column, so a small drag reads as small instead of as a
+# missing row (see the expander comment in pages/14_Asset_Location.py, and the
+# regression test in tests/test_asset_location.py). The flag then had no consumer
+# and was removed. Kept as the stated threshold so the judgement survives its
+# mechanism, and because any future surfacing rule should start from this number
+# rather than reinventing one. USER-EDITABLE.
 MIN_ANNUAL_BENEFIT: float = 1.00
 
 # The single-filer 0% long-term-cap-gains ceiling — TAX LAW, so it belongs here

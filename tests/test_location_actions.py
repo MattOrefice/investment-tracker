@@ -583,9 +583,11 @@ def test_saa_sleeves_count_equals_row_count_live():
     )
     assert set(rows["case"]) == {"A"}, f"SAA sleeves are case A, got {sorted(set(rows['case']))}"
     assert len(pop) == len(rows) == 4, f"count {len(pop)} must equal row_count {len(rows)} == 4"
-    # count == row_count holds regardless of the MIN_ANNUAL_BENEFIT surfacing flag: the
-    # expander shows every backing row whether or not it clears the threshold (at higher
-    # ordinary rates some of these sub-$1 sleeves now cross it — the invariant is unaffected).
+    # count == row_count holds regardless of where each row sits relative to
+    # MIN_ANNUAL_BENEFIT: the expander shows every backing row whether or not it clears
+    # the threshold (at higher ordinary rates some of these sub-$1 sleeves now cross it —
+    # the invariant is unaffected). There is no longer a `surfaced` flag to be robust to;
+    # the register carries no presentation column at all.
 
 
 def test_only_matched_symbols_groups_have_a_population_gap_live():

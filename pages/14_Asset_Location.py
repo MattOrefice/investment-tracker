@@ -424,7 +424,7 @@ for group in _ordered_groups:
             # group totals above (count == row_count); the only legitimate count≠rows
             # gap is the matched_symbols groups, which carry a caption for it.
             with st.expander(f"Underlying positions ({len(reg_rows)})", expanded=False):
-                show = reg_rows.drop(columns=["surfaced"], errors="ignore").copy()
+                show = reg_rows.copy()
                 show["case"] = show["case"].map(_CASE_LABEL).fillna(show["case"])
                 show["sleeve"] = show["sleeve"].map(sleeve_display_name)
                 show = show.rename(columns={

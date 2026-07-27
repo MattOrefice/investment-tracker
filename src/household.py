@@ -804,15 +804,12 @@ def build_location_register(
             "payback_months":  payback_months,
         })
 
-    base_cols = ["holding", "symbol", "account", "sleeve", "case", "current_value",
-                 "annual_benefit", "embedded_gain", "cost_to_realize", "is_free", "payback_months"]
-    # `surfaced` is a PRESENTATION flag, not a modeling one: sub-threshold rows stay
-    # in the register (so every aggregate sums them) but are not shown as actions.
-    cols = base_cols + ["surfaced"]
+    cols = ["holding", "symbol", "account", "sleeve", "case", "current_value",
+            "annual_benefit", "embedded_gain", "cost_to_realize", "is_free", "payback_months"]
     if not rows:
         return pd.DataFrame(columns=cols)
 
-    out = pd.DataFrame(rows, columns=base_cols)
+    out = pd.DataFrame(rows, columns=cols)
 
     def _paykey(r):
         if pd.notna(r["payback_months"]):
@@ -827,11 +824,6 @@ def build_location_register(
         .drop(columns=["_free_rank", "_pay"])
         .reset_index(drop=True)
     )
-    # Presentation threshold (MIN_ANNUAL_BENEFIT): flag rounding-error rows so the
-    # page can omit them from the action tables WITHOUT dropping them from the
-    # register — the drag KPI and each group's totals must still sum every row.
-    from src.location_config import MIN_ANNUAL_BENEFIT
-    out["surfaced"] = out["annual_benefit"] >= MIN_ANNUAL_BENEFIT
     return out
 
 

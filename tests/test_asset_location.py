@@ -24,6 +24,7 @@ from src.location_config import (
     SLEEVE_PRIORITY_BY_ACCOUNT_TYPE,
     ACCOUNT_SHELTER_PRIORITY,
     SLEEVE_ASSUMED_YIELD,
+    MIN_ANNUAL_BENEFIT,
     sleeve_priority,
 )
 
@@ -437,9 +438,16 @@ def test_register_carries_position_market_value():
 # ── Fix 1: a register_rows group shows ALL backing rows, sub-threshold included ──
 # Regression for the SAA-sleeves "count 4, table empty, no caption" bug. A
 # register_rows group whose rows are ALL below MIN_ANNUAL_BENEFIT still has
-# count == row_count; the page now renders reg_rows (not reg_rows[surfaced]), so the
-# tiny-drag rows appear with their Value rather than as an empty table under a
-# non-zero header. There is no filter-based gap to caption — count == row_count.
+# count == row_count; the page renders every reg_row, so the tiny-drag rows appear
+# with their Value rather than as an empty table under a non-zero header. There is
+# no filter-based gap to caption — count == row_count.
+#
+# The register used to carry a `surfaced` boolean (annual_benefit >= threshold) that
+# this test asserted against. Once the page stopped filtering on it, nothing read it,
+# and it was removed. The invariant below is now stated in terms of the threshold
+# itself rather than the dropped column — which is the stronger form anyway: it pins
+# the BEHAVIOUR (sub-threshold rows are still returned and still counted) instead of
+# the presence of a particular column.
 
 def test_register_rows_group_shows_all_backing_rows_including_subthreshold():
     from src.location_actions import _pop_holdings, filter_register_for_group
@@ -460,8 +468,15 @@ def test_register_rows_group_shows_all_backing_rows_including_subthreshold():
              "accounts": ["SynthTax"], "population": "register_rows"}
     reg_rows = filter_register_for_group(reg, group)
     assert len(reg_rows) == 1 and reg_rows.iloc[0]["case"] == "A"
-    assert not reg_rows["surfaced"].any(), "fixture must be sub-threshold (surfaced=False)"
-    # The OLD expander filtered reg_rows[surfaced] -> 0 rows under a count of 1 (the bug).
-    assert len(reg_rows[reg_rows["surfaced"]]) == 0
+    assert (reg_rows["annual_benefit"] < MIN_ANNUAL_BENEFIT).all(), (
+        "fixture must be sub-threshold, or this proves nothing"
+    )
+    # The OLD expander filtered to rows at/above the threshold -> 0 rows under a
+    # count of 1 (the bug). The register must still RETURN that row.
+    assert len(reg_rows[reg_rows["annual_benefit"] >= MIN_ANNUAL_BENEFIT]) == 0
+    # The presentation threshold must not have leaked back into the model.
+    assert "surfaced" not in reg_rows.columns, (
+        "the register is canonical — a presentation flag must not live on it"
+    )
     # count (population) == row_count, and the page now shows every reg_row.
     assert len(_pop_holdings(group, pos, acct, reg)) == len(reg_rows) == 1
