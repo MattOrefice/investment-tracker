@@ -31,7 +31,11 @@ HOLDINGS = [
             "and incremental tax events that accumulate over decades. Vanguard's ETF share class structure "
             "historically produces fewer capital gains distributions. The difference between VOO and SPY "
             "compounds quietly; at a 30-year horizon I'm not willing to pay three times the fee for intraday "
-            "liquidity I don't need."
+            "liquidity I don't need.\n\n"
+            "**Would revisit if** the SEC grants ETF share-class relief to competing issuers and a materially "
+            "cheaper or more tax-efficient S&P 500 vehicle results. Vanguard's patent expired in May 2023, but "
+            "no competitor has launched under the structure because no relief has been granted — the edge is "
+            "intact until that changes, and it is a regulatory question rather than a permanent moat."
         ),
     },
     {
@@ -69,7 +73,11 @@ HOLDINGS = [
             "Multi-metric is academically superior: relying solely on P/B overweights asset-heavy industries "
             "and underweights intangible-rich businesses where book value poorly proxies intrinsic value. "
             "VTV also costs 0.04% vs IWD's 0.19%. The holding deliberately differs from the benchmark; the "
-            "methodology difference is intentional and defensible."
+            "methodology difference is intentional and defensible.\n\n"
+            "**Would revisit if** the multi-metric value definition stopped distinguishing itself from "
+            "single-metric value over a full cycle, or if profitability-integrated construction proved "
+            "materially better — in which case this sleeve moves to AVLV, the domestic half of the same "
+            "asymmetry AVIV's rationale names."
         ),
     },
     {
@@ -106,7 +114,10 @@ HOLDINGS = [
             "Canada (MSCI EAFE excludes it), giving modestly broader coverage. The valuation thesis behind "
             "this sleeve's weight holds regardless of the Canada distinction; the fee difference is "
             "indefensible for passive exposure. Vanguard's structure also produces fewer capital gains "
-            "distributions historically."
+            "distributions historically.\n\n"
+            "**Would revisit if** a cheaper or more tax-efficient developed ex-US core appeared. At 3 bps "
+            "against a cap-weighted benchmark there is little else to falsify — the position is a cost choice, "
+            "not a view, and the only thing that unseats it is a better instrument for the same exposure."
         ),
     },
     # The three international tilt holdings (added Phase 39). Holding-level
@@ -227,7 +238,12 @@ HOLDINGS = [
             "and local taxes — a "
             "real after-tax advantage in a high-income-tax jurisdiction like DC over investment-grade corporate "
             "bond funds with similar yield. Cost minimization is the dominant selection criterion for a sleeve "
-            "that exists for drawdown buffering and rebalancing optionality, not return."
+            "that exists for drawdown buffering and rebalancing optionality, not return.\n\n"
+            "**Would revisit if** nominal Treasuries stopped hedging equity drawdowns across successive "
+            "inflationary episodes. 2022 was one such failure; this sleeve's case rests on it being the "
+            "exception rather than the regime.\n\n"
+            "**Would also revisit if** real yields rose enough to make longer duration compensated for its "
+            "additional volatility."
         ),
     },
     {
@@ -272,14 +288,17 @@ HOLDINGS = [
         "expense_ratio": 0.0059,
         "er_source": 'Invesco fund page', "er_as_of": _ER_AS_OF,
         "holding_rationale": (
-            "PDBC is the only broad commodity ETF worth owning in a taxable account because it avoids "
-            "issuing a K-1 tax form. Nearly all commodity futures funds are organized as partnerships and "
+            "Among the few broad commodity ETFs that avoid a K-1 (COMT, BCI), PDBC is the one I hold for "
+            "its liquidity and track record. Nearly all commodity futures funds are organized as partnerships and "
             "issue K-1s annually — complicating filing, often arriving late, and potentially triggering "
             "estimated tax requirements. PDBC uses a C-corporation structure instead, eliminating K-1 at "
             "the cost of a higher ER (0.59%). For a 5% position in a taxable account, tax simplicity is "
             "worth materially more than the fee difference versus K-1-issuing alternatives. DJP (the "
             "benchmark) is an exchange-traded note with counterparty risk — used for attribution only, "
-            "never as a holding."
+            "never as a holding.\n\n"
+            "**Would revisit if** a broad no-K-1 commodity fund appeared at materially lower cost or with "
+            "better liquidity. The 0.59% is paid for tax structure rather than strategy, so a cheaper "
+            "equivalent would make this holding indefensible on its own terms."
         ),
     },
 ]
