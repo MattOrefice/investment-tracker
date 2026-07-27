@@ -19,6 +19,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import plotly.io as pio
 
+from src.asof import most_recent_reportable_quarter, quarter_staleness_note
 from src.attribution import benchmark_gap_notice, brinson_fachler_period, price_gap_notice
 from src.cache import (
     capture_quarter_snapshot,
@@ -1644,12 +1645,23 @@ def generate_quarterly_report_bytes(
     inception_str   = get_inception_date(account_id=report_acct)
     si_days_report  = (date.fromisoformat(end_date) - date.fromisoformat(inception_str)).days
 
+    # Data-frontier disclosure. Rendered ONLY when this report is the auto-selected
+    # quarter AND that quarter was stepped back from the calendar's most recent one
+    # because committed prices cannot reach its close. A custom date range is the
+    # caller's explicit choice and gets no step-back explanation — the note would be
+    # describing a decision the caller did not make.
+    staleness_note: Optional[str] = None
+    _capped = most_recent_reportable_quarter(inception_str)
+    if _capped is not None and period_label == _capped[2]:
+        staleness_note = quarter_staleness_note(inception_str)
+
     html_content = tmpl.render(
         css_content          = css_content,
         period_label         = period_label,
         recipient_name       = recipient_name,
         generation_date      = gen_date,
         snapshot_captured_at = snapshot_display,
+        staleness_note       = staleness_note,
         has_trades           = has_trades,
         inception_date       = inception_str,
         si_days              = si_days_report,
