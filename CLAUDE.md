@@ -102,3 +102,30 @@
   rendering a mix of old and new module state. Restart it after any PR
   before trusting a personal-mode render. A visual "bug" in a long-running
   session is a stale-cache artifact until proven otherwise.
+- The SAME staleness applies to the deployed Streamlit Cloud demo, and there
+  it presents as a page-level ImportError. Streamlit re-executes a page
+  script from disk on every rerun but does NOT re-import modules already in
+  sys.modules, so a process warm from before a merge runs the NEW page file
+  against the OLD module object. Fired 2026-07-27 on the Performance page:
+  `ImportError: cannot import name 'quarter_staleness_note' from 'src.asof'`
+  at pages/2_Performance.py:12, because PR #159 (f07cfce) added that function
+  to src/asof.py and to the page's import list in ONE commit — so only a
+  split-brain process can see the name missing. Reboot the app from the
+  Cloud dashboard; there is nothing to fix in the code. Before bisecting a
+  reported page-import bug, first confirm the names actually fail to resolve
+  at HEAD — `tests/test_page_imports_resolve.py` answers that in 0.24s.
+- pages/14_Asset_Location.py and 13_Household_View.py raise
+  `look_through_position: no composition or sleeve_category for symbol 'VEA'`
+  when executed in demo mode. This is NOT a demo-data gap and must NOT be
+  "fixed" by populating demo.db. Verified 2026-07-27: demo.db has no
+  household tables at all, fund_compositions is empty (0 rows for any fund),
+  and EVERY securities row has sleeve_category NULL (all 27 tickers) — VEA is
+  merely the first symbol the iteration reaches, not a missing row. The raise
+  is the fail-loud guard from b915f09 working correctly on a publicly
+  unreachable path: app.py gates 13/14/15 behind `if not IS_DEMO`, so the
+  error only appears when a page module is executed directly, bypassing the
+  router's mode gate. Seeding that reference data into demo.db would violate
+  both "personal-mode data must NEVER deploy publicly" and "demo.db schema
+  changes stay additive and inert". If 13/14/15 ever need executing CI
+  coverage, build a personal-mode fixture DB. This is also why the page
+  import guard is static/AST-based rather than execute-every-page.
