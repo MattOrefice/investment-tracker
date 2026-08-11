@@ -150,3 +150,73 @@ def test_no_dual_import_fallback_in_src():
         + ", ".join(violations)
         + "\nUse 'from src.X import Y' everywhere — no bare fallbacks."
     )
+
+
+# ── Import-time DB isolation: importing a module must not touch the database ──
+#
+# A module-level constant computed through get_connection() makes `import`
+# itself a DB access: get_connection() runs _auto_migrate on the first
+# connection per process, whose UPDATE statement demands write access even when
+# it matches zero rows — so importing such a module WRITE-ATTEMPTS the
+# committed demo.db (in demo mode) or the personal tracker.db (locally, where
+# .env resolves personal) from pytest collection, a bare REPL import, or any
+# subprocess. It also freezes DB-derived values at import, which goes stale
+# across an in-process migration (the phase-46 international split renames the
+# sleeve these constants label).
+#
+# These tests are the UNCONDITIONAL form of that guarantee. The importability
+# tests above only catch an import-time DB touch when the DB file happens to be
+# unwritable — on a writable checkout the write lands silently and the import
+# "succeeds". Here the spawned interpreter replaces sqlite3.connect with a trap
+# that raises BEFORE the target is imported, so any import-time connection —
+# read or write, any DB path, any OS, any file permissions — fails the test
+# with the offending import chain in the traceback. Parametrized over the same
+# _SRC_MODULES glob as the importability tests, so a future module enrolls
+# automatically; the extra case runs tests/render/conftest.py itself, whose
+# module-level imports execute during pytest's initial conftest loading —
+# before any plugin hook can intervene — and must therefore be DB-free.
+
+_DB_TRAP_PREAMBLE = (
+    "import sqlite3, sys\n"
+    "def _trap(*a, **k):\n"
+    "    raise AssertionError('import-time DB access: sqlite3.connect() called during import')\n"
+    "sqlite3.connect = _trap\n"
+    "sys.path.insert(0, {root!r})\n"
+)
+
+
+def _run_with_db_trap(code: str) -> tuple[bool, str]:
+    """Run `code` in a fresh interpreter whose sqlite3.connect raises."""
+    script = _DB_TRAP_PREAMBLE.format(root=str(_ROOT)) + code
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        cwd=str(_ROOT),
+    )
+    return result.returncode == 0, result.stderr.strip()
+
+
+@pytest.mark.parametrize("module", _SRC_MODULES)
+def test_src_module_import_touches_no_db(module):
+    ok, err = _run_with_db_trap(f"import src.{module}")
+    assert ok, f"src.{module} opened a database connection at import time:\n{err}"
+
+
+def test_render_conftest_chain_touches_no_db():
+    """tests/render/conftest.py's module-level imports load during pytest's
+    initial conftest phase, before any plugin hook can patch DB paths — so this
+    exact chain must never reach the database."""
+    conftest_path = _ROOT / "tests" / "render" / "conftest.py"
+    code = (
+        "import importlib.util\n"
+        f"spec = importlib.util.spec_from_file_location('_render_conftest_probe', {str(conftest_path)!r})\n"
+        "mod = importlib.util.module_from_spec(spec)\n"
+        "spec.loader.exec_module(mod)\n"
+    )
+    ok, err = _run_with_db_trap(code)
+    assert ok, (
+        "tests/render/conftest.py's import chain opened a database connection "
+        f"during initial conftest loading:\n{err}"
+    )
