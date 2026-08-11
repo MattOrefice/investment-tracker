@@ -121,7 +121,7 @@ def _load_marginal_sharpe_curve() -> pd.DataFrame:
         slv = _load_sleeve_returns()
         if btc.empty or slv.empty:
             return pd.DataFrame()
-        return ae.compute_marginal_sharpe_curve(btc, slv, ae.SLEEVE_WEIGHTS, ae.RF_ANNUAL)
+        return ae.compute_marginal_sharpe_curve(btc, slv, ae.sleeve_weights(), ae.RF_ANNUAL)
     except Exception:
         return pd.DataFrame()
 
@@ -133,7 +133,7 @@ def _load_drawdown_sensitivity() -> pd.DataFrame:
         slv = _load_sleeve_returns()
         if btc.empty or slv.empty:
             return pd.DataFrame()
-        return ae.compute_drawdown_sensitivity(btc, slv, ae.SLEEVE_WEIGHTS, rf_annual=ae.RF_ANNUAL)
+        return ae.compute_drawdown_sensitivity(btc, slv, ae.sleeve_weights(), rf_annual=ae.RF_ANNUAL)
     except Exception:
         return pd.DataFrame()
 
@@ -275,7 +275,7 @@ with col:
             )
         else:
             per_sleeve = ae.compute_full_sample_correlations(cand_ret, _scr_sleeves)
-            per_sleeve = per_sleeve.reindex(ae.SLEEVES).dropna()
+            per_sleeve = per_sleeve.reindex(ae.sleeve_names()).dropna()
 
             if per_sleeve.empty:
                 st.warning(f"Not enough overlapping history to correlate {cand_ticker}.")
@@ -472,15 +472,16 @@ with col:
     if corr.empty:
         st.info("Correlation data unavailable.")
     else:
+        _hm_names = ae.sleeve_names()
         fig_heat = go.Figure(go.Heatmap(
-            z=[[corr[s] for s in ae.SLEEVES]],
-            x=ae.SLEEVES,
+            z=[[corr[s] for s in _hm_names]],
+            x=_hm_names,
             y=["BTC"],
             colorscale="RdYlGn",
             zmid=0,
             zmin=-0.5,
             zmax=0.5,
-            text=[[f"{corr[s]:.2f}" for s in ae.SLEEVES]],
+            text=[[f"{corr[s]:.2f}" for s in _hm_names]],
             texttemplate="%{text}",
             showscale=True,
         ))
@@ -624,12 +625,13 @@ with col:
     if corr.empty or weekly_corr.empty:
         st.info("Correlation data unavailable.")
     else:
-        daily_corr  = corr.reindex(ae.SLEEVES)
-        weekly_corr_aligned = weekly_corr.reindex(ae.SLEEVES)
+        _rb_names = ae.sleeve_names()
+        daily_corr  = corr.reindex(_rb_names)
+        weekly_corr_aligned = weekly_corr.reindex(_rb_names)
         diff_corr   = weekly_corr_aligned - daily_corr
 
         robust_tbl = pd.DataFrame({
-            "Sleeve":           ae.SLEEVES,
+            "Sleeve":           _rb_names,
             "Daily Corr":       daily_corr.values,
             "Weekly Corr":      weekly_corr_aligned.values,
             "Difference":       diff_corr.values,
@@ -1013,7 +1015,7 @@ with col:
                 )
 
     if not corr.empty:
-        low_corr_sleeves = [s for s in ae.SLEEVES if not np.isnan(corr.get(s, float("nan"))) and corr[s] < 0.1]
+        low_corr_sleeves = [s for s in ae.sleeve_names() if not np.isnan(corr.get(s, float("nan"))) and corr[s] < 0.1]
         for s in low_corr_sleeves:
             args_for.append(f"Low correlation ({corr[s]:.2f}) with {s}")
 
@@ -1079,7 +1081,7 @@ with col:
             "**Data source:** Daily adjusted-close prices retrieved via "
             "`src/prices.py` (SQLite-cached; refreshes on cache miss). "
             "Sleeve benchmark prices use the same fetcher and the tickers defined "
-            "in `src/asset_evaluation.SLEEVE_BENCHMARKS`.\n\n"
+            "in `src/asset_evaluation.sleeve_benchmarks()`.\n\n"
             f"**Date range:** {ae.SAMPLE_START} to present. BTC-USD data available "
             "from approximately 2014; 2018-01-01 is used as the start date because "
             "it precedes the first major post-ICO bear market (2018) and provides a "

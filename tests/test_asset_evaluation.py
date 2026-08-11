@@ -41,8 +41,6 @@ from src.asset_evaluation import (
     compute_weekly_correlations,
     TRADING_DAYS,
     RF_ANNUAL,
-    SLEEVE_WEIGHTS,
-    SLEEVES,
 )
 
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -572,13 +570,13 @@ def test_interpret_candidate_doubles_down_with_offset():
 
 
 def test_interpret_candidate_genuine_diversifier():
-    per = _per_sleeve({k: 0.10 for k in ae.SLEEVES})
+    per = _per_sleeve({k: 0.10 for k in ae.sleeve_names()})
     txt = ae.interpret_candidate_diversification(float(per.mean()), per, "GLD")
     assert "genuine diversifier" in txt
 
 
 def test_interpret_candidate_redundant_including_bonds():
-    per = _per_sleeve({k: 0.70 for k in ae.SLEEVES})
+    per = _per_sleeve({k: 0.70 for k in ae.sleeve_names()})
     txt = ae.interpret_candidate_diversification(float(per.mean()), per, "XYZ")
     assert "redundant" in txt
 
@@ -598,20 +596,35 @@ def test_candidate_screen_qqq_doubles_down_live():
     assert not roll.empty and -1.0 <= float(roll.iloc[-1]) <= 1.0
 
 
-# ── EQUITY_SLEEVES derives from the book (Phase: derived-prose batch) ─────────
+# ── equity_sleeve_names() derives from the book (Phase: derived-prose batch) ──
 
 def test_equity_sleeves_derived_from_book():
-    """EQUITY_SLEEVES must cover every equity sleeve of the CURRENT book.
+    """equity_sleeve_names() must cover every equity sleeve of the CURRENT book.
 
     The old hardcoded list froze the personal names ('Intl Developed'), so on
     the demo book the four international sleeves silently vanished from the
     intra-equity decomposition (the `c in cols` filter dropped them without
-    error). Property-tested against SLEEVES so it holds in both modes.
+    error).
+
+    The expectation is INDEPENDENT of the implementation: the non-equity
+    exclusion set is spelled out as literals here, not read back from
+    BOND_SLEEVES — an assertion built from the module's own constants would
+    compare the function against a restatement of itself and pass vacuously,
+    and would silently self-update if someone edited BOND_SLEEVES.
     """
-    intl = [s for s in ae.SLEEVES if s.startswith("Intl")]
+    names = ae.sleeve_names()
+    equity = ae.equity_sleeve_names()
+
+    intl = [s for s in names if s.startswith("Intl")]
     assert intl, "expected at least one international sleeve in the book"
-    missing = [s for s in intl if s not in ae.EQUITY_SLEEVES]
-    assert not missing, f"international sleeves missing from EQUITY_SLEEVES: {missing}"
-    assert ae.EQUITY_SLEEVES == [
-        s for s in ae.SLEEVES if s not in ae.BOND_SLEEVES and s != "Real Assets"
-    ], "EQUITY_SLEEVES diverged from the SLEEVES-derived definition"
+    missing = [s for s in intl if s not in equity]
+    assert not missing, f"international sleeves missing from equity_sleeve_names(): {missing}"
+
+    # The test's own knowledge of which book sleeves are non-equity — literals,
+    # deliberately not ae.BOND_SLEEVES.
+    _NON_EQUITY = {"Core Fixed Income", "TIPS", "Real Assets"}
+    assert _NON_EQUITY <= set(names), "the book no longer carries the non-equity sleeves"
+    assert equity == [s for s in names if s not in _NON_EQUITY], (
+        "equity_sleeve_names() must be exactly the book's sleeves minus "
+        f"{sorted(_NON_EQUITY)}, in book order"
+    )

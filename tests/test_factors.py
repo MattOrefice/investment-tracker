@@ -17,7 +17,7 @@ from statsmodels.tools import add_constant
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from src.factors import (
-    EM_DISCLOSURE,
+    em_disclosure,
     _INTL_TILT_SLEEVES,
     _NPORT_ASOF,
     _nw_lags,
@@ -763,18 +763,17 @@ def test_regress_fi_sleeve_returns_none_on_insufficient_data():
 
 
 def test_em_disclosure_is_non_empty_string():
-    assert isinstance(EM_DISCLOSURE, str) and len(EM_DISCLOSURE) > 50
+    text = em_disclosure()
+    assert isinstance(text, str) and len(text) > 50
 
 
 def test_em_disclosure_untilted_book_keeps_iemg_composition_framing():
     """Single developed sleeve (personal book) → the original IEMG framing."""
-    from src.factors import _em_disclosure
-
     with patch(
         "src.sleeve_config.international_sleeves",
         return_value=("International Developed",),
     ):
-        text = _em_disclosure()
+        text = em_disclosure()
     assert "IEMG" in text
     assert "~27% China" in text
     assert "held at cap weight" not in text  # no cap-weight-exception framing
@@ -782,8 +781,6 @@ def test_em_disclosure_untilted_book_keeps_iemg_composition_framing():
 
 def test_em_disclosure_tilted_book_uses_cap_weight_exception_framing():
     """Four developed sleeves (demo book) → the SAA cap-weight-exception framing."""
-    from src.factors import _em_disclosure
-
     with patch(
         "src.sleeve_config.international_sleeves",
         return_value=(
@@ -791,7 +788,7 @@ def test_em_disclosure_tilted_book_uses_cap_weight_exception_framing():
             "International Large Value", "International Small Value",
         ),
     ):
-        text = _em_disclosure()
+        text = em_disclosure()
     assert "IEMG" in text
     assert "cap weight" in text
     assert "by design" in text
@@ -819,10 +816,16 @@ def test_factor_section_values_match_raw_result(no_ambient_db):
     mock_ret = pd.Series(rng.standard_normal(T) * 0.008, index=dates)
     mock_ff  = _make_mock_ff(T, rng, dates)
 
+    # international_sleeves is mocked with the rest of the data layer: the sleeve
+    # label and EM disclosure are resolved from the DB at CALL time now (they were
+    # import-frozen constants before), so under no_ambient_db they must be
+    # intercepted at the module boundary like every other data dependency.
     with patch("src.factors._get_sleeve_return_series", return_value=mock_ret), \
          patch("src.factors.load_factors", return_value=mock_ff), \
          patch("src.reports.get_inception_date", return_value="2025-05-01"), \
-         patch("src.reports.get_portfolio_account_id", return_value=1):
+         patch("src.reports.get_portfolio_account_id", return_value=1), \
+         patch("src.sleeve_config.international_sleeves",
+               return_value=("International Developed",)):
         section = _build_factor_section("2025-09-30")
 
     assert section is not None
@@ -844,7 +847,7 @@ def test_factor_section_values_match_raw_result(no_ambient_db):
     )
 
     # Verify EM disclosure is passed through
-    assert section["em_note"] == EM_DISCLOSURE
+    assert section["em_note"] == em_disclosure()
 
     # Check US sleeve (first entry)
     us_sleeve = section["sleeves"][0]

@@ -34,8 +34,8 @@ from src.db import get_connection
 from src.drip import distribution_gaps_for_holdings, drip_distribution_gap_notice
 from src.sleeve_config import sleeve_holdings as _sleeve_holdings
 from src.factors import (
-    EM_DISCLOSURE,
     build_benchmark_methodology, build_benchmark_prose,
+    em_disclosure,
     build_factor_methodology_notes, build_factor_prose,
     regress_fi_sleeve, run_benchmark_attribution_regression,
     run_intl_global_regression, run_sleeve_regressions, sig_marker,
@@ -956,7 +956,7 @@ def _build_factor_section(end_date: str) -> Optional[dict]:
 
     return {
         "sleeves":           sleeves,
-        "em_note":           EM_DISCLOSURE,
+        "em_note":           em_disclosure(),
         "prose":             build_factor_prose(results, fi_result=fi_result, global_result=global_result),
         "methodology_notes": build_factor_methodology_notes(results, fi_result=fi_result),
     }
@@ -1267,13 +1267,14 @@ def _build_asset_eval_section() -> dict:
     try:
         corr = ae.compute_full_sample_correlations(btc_ret, slv_ret)
         if not corr.empty:
+            _names = ae.sleeve_names()
             fig_heat = go.Figure(go.Heatmap(
-                z=[[corr[s] for s in ae.SLEEVES]],
-                x=ae.SLEEVES,
+                z=[[corr[s] for s in _names]],
+                x=_names,
                 y=["BTC"],
                 colorscale="RdYlGn",
                 zmid=0, zmin=-1, zmax=1,
-                text=[[f"{corr[s]:.2f}" for s in ae.SLEEVES]],
+                text=[[f"{corr[s]:.2f}" for s in _names]],
                 texttemplate="%{text}",
                 showscale=True,
             ))
@@ -1382,7 +1383,7 @@ def _build_asset_eval_section() -> dict:
 
     # 5g: Marginal Sharpe curve
     try:
-        msc = ae.compute_marginal_sharpe_curve(btc_ret, slv_ret, ae.SLEEVE_WEIGHTS, ae.RF_ANNUAL)
+        msc = ae.compute_marginal_sharpe_curve(btc_ret, slv_ret, ae.sleeve_weights(), ae.RF_ANNUAL)
         if not msc.empty:
             fig_msc = go.Figure()
             fig_msc.add_trace(go.Scatter(
@@ -1409,7 +1410,7 @@ def _build_asset_eval_section() -> dict:
     # 5h: Drawdown sensitivity
     try:
         dd_sens = ae.compute_drawdown_sensitivity(
-            btc_ret, slv_ret, ae.SLEEVE_WEIGHTS, rf_annual=ae.RF_ANNUAL
+            btc_ret, slv_ret, ae.sleeve_weights(), rf_annual=ae.RF_ANNUAL
         )
         if not dd_sens.empty:
             for _, row in dd_sens.iterrows():
