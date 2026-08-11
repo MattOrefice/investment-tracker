@@ -87,12 +87,19 @@
 - origin has only: main + the v1.0 tag (nothing else).
 
 ## Known Issues
-- holdings.py reads trades with no account_id filter; account_id is
-  write-only metadata. Verified 2026-07-08: tracker.db has 1 account
-  with trades, so the bug is latent, not active. It becomes live the
-  moment a second account has trades. Any multi-account work must fix
-  read-time scoping first. demo.db has one account, so CI cannot catch
-  this — a two-account fixture with overlapping tickers is required.
+- holdings.py is account-scoped since PR #139 (0b2a26d, 2026-07-23): base
+  reads take a required keyword-only account_id (raise on None), and
+  get_portfolio_account() resolves exactly one active taxable+self
+  trade-bearing account or raises. Two-account CI fixtures exist
+  (tests/test_account_scoping.py; tests/test_attribution.py:1276). An
+  earlier version of this bullet called holdings.py account-blind and
+  demanded read-time scoping before multi-account work — both fixed by
+  #139 (note: #152 scoped the PDF on top of it; #139 itself has no
+  CHANGELOG entry, which is why the paper trail misleads). Surviving
+  multi-account risks are UI defaults: pages/11 Execute-and-Log defaults
+  to the most-trades account, pages/10's manual form to the
+  first-alphabetical account, and page 10's trade table shows all
+  accounts with no Account column.
 - Fidelity rotates workplace-plan account identifiers. The Jul-2026 export
   changed the plan UUID vs May-2026. private/account_map.json must be
   updated when this happens; parse_fidelity_csv raises on an unmapped

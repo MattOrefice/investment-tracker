@@ -150,11 +150,9 @@ for _, _r in _case_c.iterrows():
     _m = _pos_disp[(_pos_disp["symbol"] == _r["symbol"]) & (_pos_disp["display_name"] == _r["account"])]
     _kpi_repositionable += float(_m["current_value"].sum())
 
-# Loss-side total value for the Act-now summary — the relocate_loss_side group's
-# position value, computed from the register (not hardcoded). This is a VALUE total
-# (parallel to _kpi_repositionable), not the net embedded loss.
-_loss_group = next(g for g in ACTION_GROUPS if g["key"] == "relocate_loss_side")
-_loss_side_total = float(filter_register_for_group(register, _loss_group)["current_value"].sum())
+# The loss-side total that used to feed the Act-now summary left with its card:
+# relocate_loss_side moved to evaluate (Aug-2026) when the advisor's HLIPX sale
+# removed the deduction premise, so the summary names only the two act-now moves.
 
 # Directability — which accounts (present in the export) can be traded jointly today.
 _present_accts = accounts_df[accounts_df["pseudonym"].isin(positions_df["pseudonym"])]
@@ -282,13 +280,11 @@ for group in _ordered_groups:
             st.caption(f"{_n} {'decision' if _n == 1 else 'decisions'} · {_BUCKET_BLURB[group['status']]}")
             if group["status"] == "act_now":
                 # Actionable dollar weight in one glance — every figure computed from
-                # the register above. loss-side is a VALUE total (relocated free); its
-                # net embedded loss is tiny, so this is deliberately not "$X in losses".
+                # the register above.
                 st.markdown(
                     f"Deploy **{escape_md(_fmt_dollars(_kpi_idle_roth))}** · "
                     f"reposition **{escape_md(_fmt_dollars(_kpi_repositionable))}** "
-                    f"in-shelter (free) · harvest the loss side "
-                    f"(**{escape_md(_fmt_dollars(_loss_side_total))}**, free)"
+                    f"in-shelter (free)"
                 )
             _prev_status = group["status"]
         st.subheader(f"{group['title']}  ·  {group['score']}/10")

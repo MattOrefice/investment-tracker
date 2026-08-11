@@ -17,6 +17,9 @@ Placeholder resolution (per group, against the newest positions CSV):
   {embedded_gain}  Σ embedded_gain of those holdings (compute_embedded_gain)
   {annual_benefit} Σ annual_benefit of the group's matching REGISTER rows
                    (symbols ∩ case_filter ∩ accounts)
+  {register_count} number of those register rows — the holdings actually driving
+                   {annual_benefit}; differs from {count} for matched_symbols
+                   groups (frozen_tod_income counts GHYIX, which is never a row)
 value/count/embedded_gain are position-based (the whole holding); annual_benefit
 is register-based (only the mislocated rows). This asymmetry is intentional and
 matches the authored prose.
@@ -104,8 +107,9 @@ _CLEAR_ROTH_CONS = (
 )
 
 _LOSS_SIDE_PROS = (
-    "These {count} holdings sit at a net embedded gain of {embedded_gain} — a "
-    "loss. Selling owes nothing and harvests a small deduction. It removes "
+    "These {count} holdings sit at a net embedded gain of {embedded_gain} — "
+    "effectively flat. Selling owes almost nothing (BFRIX's harvested loss offsets "
+    "JEPI's small gain). It removes "
     "{annual_benefit} of recurring annual drag on {value} of assets, and removes "
     "credit risk from holdings treated as a safety buffer. Floating-rate bank "
     "loans and multisector income are equity-correlated in exactly the drawdowns "
@@ -117,7 +121,7 @@ _LOSS_SIDE_CONS = (
     "inside an IRA. Rebuy the exposure with a broad total-bond-market fund — BND, "
     "AGG, or FXNAX — in the Traditional IRA, not the same ticker: different enough "
     "to clear the wash-sale rule, and it restores investment-grade bond ballast. "
-    "Note the change in kind, not just location: this trades BFRIX/HLIPX's credit "
+    "Note the change in kind, not just location: this trades BFRIX's credit "
     "and floating-rate risk for a bond index's duration (rate) risk. This is what "
     "the SAA's Treasury-ballast intent wants — an improvement, but a change in "
     "character, not like-for-like. Relocating into the Traditional IRA also means "
@@ -188,9 +192,10 @@ _ROLLOVER_CONS = (
 # {annual_benefit}/{embedded_gain}/{trad_ira_equity}/{pretax_capacity}/
 # {pretax_capacity_threshold}); render_prose raises on any unresolvable one.
 _TOD_INCOME_PROS = (
-    "{count} ordinary-income holdings worth {value} sit in the TOD account. Three "
-    "of them — a hedged-equity mutual fund, a liquid-alternatives fund, and a global "
-    "allocation fund — throw ordinary income into your highest-taxed wrapper, at a "
+    "{count} ordinary-income holdings worth {value} sit in the TOD account. "
+    "{register_count} of them — a hedged-equity mutual fund, a liquid-alternatives "
+    "fund, a global allocation fund, and a core-plus bond ETF — throw ordinary "
+    "income into your highest-taxed wrapper, at a "
     "cost of {annual_benefit} a year. None of which you selected, none of which you "
     "would buy today. Relocating them to pre-tax space would eliminate that drag "
     "entirely."
@@ -331,16 +336,26 @@ ACTION_GROUPS: list[dict] = [
     },
     {
         "key": "relocate_loss_side", "title": "Relocate the loss side (free)",
-        "score": 9, "status": "act_now",
+        # Re-scored Aug-2026 (9/act_now -> 4/evaluate): the 9 rested on "harvests a
+        # deduction at zero cost", and that premise left with HLIPX — the advisor
+        # took the loss, and the remaining BFRIX+JEPI block nets to a small GAIN.
+        # What survives is the credit-risk argument (BFRIX's floating-rate/credit
+        # exposure vs the Treasury duration the SAA wants): real but structural —
+        # nothing expires, no window closes. That is evaluate, not act_now.
+        "score": 4, "status": "evaluate",
         # JEPI in this group is a small GAIN lot (a distinct account-lot that stays
         # here); naming it individually "at a loss" was false. The block still NETS to
         # a loss ({embedded_gain}), so the group-level framing holds — only JEPI's
         # per-holding label is corrected. {embedded_gain} is templated (never a literal).
-        "action": "Sell BFRIX and HLIPX at a loss, and JEPI in taxable; the block "
-                  "nets to a small loss ({embedded_gain}), so selling harvests a "
-                  "deduction. Rebuy the exposure in the Traditional IRA with a broad "
-                  "total-bond fund (BND/AGG/FXNAX).",
-        "symbols": ["BFRIX", "HLIPX", "JEPI"],
+        # HLIPX left this block in Aug 2026: the advisor sold it and rebought the same
+        # Core Plus strategy as JCPB (ETF wrapper) in taxable — so the harvest this
+        # card proposed for HLIPX was executed externally, and JCPB is claimed by the
+        # frozen_tod_income card, not here.
+        "action": "Sell BFRIX at a loss, and JEPI in taxable; the block "
+                  "nets to roughly zero ({embedded_gain} embedded gain), so selling "
+                  "costs almost nothing. Rebuy the exposure in the Traditional IRA "
+                  "with a broad total-bond fund (BND/AGG/FXNAX).",
+        "symbols": ["BFRIX", "JEPI"],
         "case_filter": ["A", "B"], "accounts": ["Individual Taxable (TOD)"],
         "pros": _LOSS_SIDE_PROS, "cons": _LOSS_SIDE_CONS,
     },
@@ -395,7 +410,10 @@ ACTION_GROUPS: list[dict] = [
         # GHYIX is a federally-exempt muni: build_location_register drops it from
         # cases A/B, so it stays in the population ({count}/{value}, via
         # matched_symbols) but is NOT a register row — the caption states that gap.
-        "symbols": ["BILPX", "GAOSX", "GHYIX", "JHEQX"],
+        # JCPB (Aug-2026): the advisor's core-plus bond ETF replacing HLIPX — an
+        # ordinary-income holding placed by the frozen book's manager, so it is
+        # claimed here (accepted), not by a sell-side group.
+        "symbols": ["BILPX", "GAOSX", "GHYIX", "JHEQX", "JCPB"],
         "case_filter": ["A", "B"], "accounts": ["Individual Taxable (TOD)"],
         "pros": _TOD_INCOME_PROS, "cons": _TOD_INCOME_CONS,
         "population": "matched_symbols", "caption": _TOD_INCOME_CAPTION,
@@ -906,6 +924,10 @@ def resolve_placeholders(
 
     reg = filter_register_for_group(register, group)
     annual_benefit = _fmt_dollars(reg["annual_benefit"].sum()) if not reg.empty else None
+    # The count of register rows (the holdings driving {annual_benefit}) — derived,
+    # never a literal in prose, so a symbols-list change can't strand a spelled-out
+    # number (the "Three of them" staleness JCPB's arrival exposed).
+    register_count = str(len(reg)) if not reg.empty else None
     # Cost to realize the group's gains (<=0 for a net-loss / free move) and the
     # payback in years (cost / annual relief) — used by the gain-side defer prose.
     _ctr = float(reg["cost_to_realize"].sum()) if not reg.empty else 0.0
@@ -929,6 +951,7 @@ def resolve_placeholders(
 
     return {**base, "value": value, "count": count,
             "embedded_gain": embedded_gain, "annual_benefit": annual_benefit,
+            "register_count": register_count,
             "cost_to_realize": cost_to_realize, "payback": payback,
             "roth_equity_rebuy": roth_equity_rebuy}
 

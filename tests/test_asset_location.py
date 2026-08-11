@@ -345,8 +345,10 @@ def test_yield_table_does_not_encode_tax_status():
 # still see zero orphans — GHYIX's vanished row must not orphan anything.
 
 def _group7_fixture():
-    """The four real frozen_tod_income symbols in the TOD account, sleeves and
-    efficiencies mirroring data/seed/securities_household.csv."""
+    """Four of the five frozen_tod_income symbols in the TOD account, sleeves and
+    efficiencies mirroring data/seed/securities_household.csv. JCPB (the Aug-2026
+    advisor addition) is deliberately absent: this fixture pins GHYIX's
+    vanished-row behavior, which is independent of the book's fifth holding."""
     acct = pd.DataFrame([
         {"pseudonym": "tod", "display_name": "Individual Taxable (TOD)", "tax_treatment": "taxable"},
     ])

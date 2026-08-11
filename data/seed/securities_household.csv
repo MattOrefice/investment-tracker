@@ -14,6 +14,7 @@ PDBC,Invesco Optimum Yield Diversified Commodity Strategy No K-1,real_assets_com
 VNQ,Vanguard Real Estate ETF,real_assets_reit,low,true,SAA target ticker — non-qualified REIT distributions
 SPAXX,Fidelity Government Money Market Fund,cash,low,true,SAA cash sleeve
 FDRXX,Fidelity Government Cash Reserves,cash,low,false,Money market sweep
+FCASH,Fidelity FCASH (taxable core cash),cash,low,false,Core sweep / free credit balance — cash not a fund; no ER by design
 IWB,iShares Russell 1000 ETF,us_large_core,high,false,Broad US large cap — overlaps VOO
 ITOT,iShares Core S&P Total US Stock Market ETF,us_large_core,high,false,Total US market — overlaps VOO
 VONE,Vanguard Russell 1000 ETF,us_large_core,high,false,Russell 1000 — overlaps VOO
@@ -34,7 +35,8 @@ DFAE,Dimensional Emerging Core Equity Market ETF,emerging_markets,high,false,EM 
 EMQQ,EMQQ Emerging Markets Internet & Ecommerce ETF,thematic,high,false,Thematic EM tech
 USRT,iShares Core US REIT ETF,real_assets_reit,low,false,REIT — overlaps VNQ
 IAU,iShares Gold Trust,real_assets_gold,low,false,Gold — collectibles tax treatment in taxable
-HLIPX,JPMorgan Core Plus Bond Fund I,core_fi_credit,low,false,Core plus credit
+HLIPX,JPMorgan Core Plus Bond Fund I,core_fi_credit,low,false,Core plus credit — sold by advisor Aug-2026; kept as reference data for historical positions
+JCPB,JPMorgan Core Plus Bond ETF,core_fi_credit,low,false,Advisor swap Aug-2026 replacing HLIPX — same Core Plus strategy in the ETF wrapper; ER 0.40% lives in tracker.db securities.expense_ratio only (this CSV carries no ER — a from-scratch rebuild seeds the row without it)
 BFRIX,Blackstone Floating Rate Income Fund I,floating_rate,low,false,Floating rate loan fund
 FAGIX,Fidelity Capital & Income Fund,high_yield_fi,low,false,High yield credit
 FIWDX,Fidelity Total Bond Fund,multi_sector_fi,low,false,Multi-sector bond
