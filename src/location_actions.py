@@ -336,7 +336,13 @@ ACTION_GROUPS: list[dict] = [
     },
     {
         "key": "relocate_loss_side", "title": "Relocate the loss side (free)",
-        "score": 9, "status": "act_now",
+        # Re-scored Aug-2026 (9/act_now -> 4/evaluate): the 9 rested on "harvests a
+        # deduction at zero cost", and that premise left with HLIPX — the advisor
+        # took the loss, and the remaining BFRIX+JEPI block nets to a small GAIN.
+        # What survives is the credit-risk argument (BFRIX's floating-rate/credit
+        # exposure vs the Treasury duration the SAA wants): real but structural —
+        # nothing expires, no window closes. That is evaluate, not act_now.
+        "score": 4, "status": "evaluate",
         # JEPI in this group is a small GAIN lot (a distinct account-lot that stays
         # here); naming it individually "at a loss" was false. The block still NETS to
         # a loss ({embedded_gain}), so the group-level framing holds — only JEPI's
