@@ -237,8 +237,8 @@ def test_correlations_page_imports_shared_sleeve_mapping(use_demo_db):
     """The page must source the sleeve mapping from asset_evaluation, not a local literal.
 
     Pins the demo book (use_demo_db) for the full 12-sleeve set; asset_evaluation
-    derives its maps at import (mode-frozen), so we re-derive under the pinned demo
-    DB rather than read the personal-default module constant.
+    derives its maps at call time, so deriving under the pinned demo DB reads
+    the demo taxonomy directly.
     """
     import src.asset_evaluation as ae
     _sleeve_benchmarks, _ = ae._derive_sleeve_maps()
@@ -256,5 +256,5 @@ def test_correlations_page_imports_shared_sleeve_mapping(use_demo_db):
     page = (pathlib.Path(__file__).resolve().parent.parent
             / "pages" / "9_Correlations.py").read_text(encoding="utf-8")
     # De-dup: page references the shared mapping and no longer hardcodes the dict.
-    assert "ae.SLEEVE_BENCHMARKS" in page
+    assert "ae.sleeve_benchmarks()" in page
     assert '"US Large Core":          [("SPY",  1.0)]' not in page

@@ -604,7 +604,7 @@ def scenario_methodology_notes(durations: Optional[dict] = None) -> list[str]:
 #  return source the Correlations / Asset Evaluation pages use
 #  (asset_evaluation.get_sleeve_returns), anchored on the settled frontier; the
 #  weight vector is the canonical normalized ex-cash SAA weight map
-#  (asset_evaluation.SLEEVE_WEIGHTS), whose keys match the return columns. The
+#  (asset_evaluation.sleeve_weights()), whose keys match the return columns. The
 #  covariance is the sample covariance of those returns over the since-inception
 #  window — the Correlations page computes a rolling CORRELATION on a long
 #  history, a different statistic over a different window, so only the return
@@ -663,7 +663,7 @@ def run_risk_contribution(
     """
     if weights is None:
         from src import asset_evaluation as ae
-        weights = dict(ae.SLEEVE_WEIGHTS)
+        weights = dict(ae.sleeve_weights())
 
     if sleeve_returns is None:
         from src import asset_evaluation as ae
@@ -673,7 +673,7 @@ def run_risk_contribution(
 
     R = sleeve_returns.dropna()
     # Align on sleeves present in BOTH returns and weights (clean in production —
-    # SLEEVE_WEIGHTS keys equal the return columns).
+    # sleeve_weights() keys equal the return columns).
     sleeves = [s for s in R.columns if s in weights]
     R = R[sleeves]
     n, k = len(R), len(sleeves)

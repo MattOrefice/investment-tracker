@@ -19,8 +19,9 @@ render_page_header()
 TODAY = date.today().isoformat()
 
 # Canonical sleeve→benchmark mapping (single source of truth in asset_evaluation;
-# excludes Cash — near-zero variance distorts correlations).
-_SLEEVES: dict[str, list[tuple[str, float]]] = ae.SLEEVE_BENCHMARKS
+# excludes Cash — near-zero variance distorts correlations). Resolved per page
+# run — a page executes top-to-bottom on every rerun, so this stays current.
+_SLEEVES: dict[str, list[tuple[str, float]]] = ae.sleeve_benchmarks()
 
 _COLORS = {
     "primary": "#2E4057",
@@ -293,14 +294,14 @@ with col:
                 st.markdown(_corr_interp)
 
             # ── Bond-equity correlation regime block ──────────────────────────
-            # Equity sleeve names DERIVED from ae.SLEEVES (itself DB-derived), so
-            # this resolves to the sleeves THIS book actually has — six on the
-            # personal book (one developed-international sleeve), eleven on demo
-            # (the four-sleeve split) — instead of hardcoding demo's names, which
-            # _load_sleeve_returns cannot resolve against a personal DB.
+            # Equity sleeve names DERIVED from ae.sleeve_names() (DB-derived at
+            # call time), so this resolves to the sleeves THIS book actually has —
+            # six on the personal book (one developed-international sleeve), eleven
+            # on demo (the four-sleeve split) — instead of hardcoding demo's names,
+            # which _load_sleeve_returns cannot resolve against a personal DB.
             _CORE_FI  = "Core Fixed Income"
             _NON_EQUITY = {_CORE_FI, "TIPS", "Real Assets"}
-            _EQ_NAMES = [s for s in ae.SLEEVES if s not in _NON_EQUITY]
+            _EQ_NAMES = [s for s in ae.sleeve_names() if s not in _NON_EQUITY]
             if _CORE_FI in corr.columns:
                 _be_curr_pairs = [
                     float(corr.loc[_CORE_FI, eq])
@@ -591,7 +592,7 @@ with col:
                     legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0, font_size=11),
                 )
                 st.plotly_chart(fig_dec, width="stretch")
-                _n_eq_dec = len([c for c in sleeve_ret.columns if c in ae.EQUITY_SLEEVES])
+                _n_eq_dec = len([c for c in sleeve_ret.columns if c in ae.equity_sleeve_names()])
                 st.caption(
                     f"Intra-equity ρ = average correlation among the {_n_eq_dec} equity "
                     "sleeves; bond–equity ρ = average correlation between the bond sleeves "

@@ -252,10 +252,10 @@ def test_low_confidence_caveat_copy_pinned():
 def test_weights_default_to_saa_map_when_injected_returns_match():
     """When weights are omitted, the SAA weight map is used; with matching sleeve
     columns the decomposition runs and the Euler property still holds."""
-    from src.asset_evaluation import SLEEVE_WEIGHTS
-    cols = list(SLEEVE_WEIGHTS.keys())
+    from src.asset_evaluation import sleeve_weights
+    cols = list(sleeve_weights().keys())
     R = _returns(200, cols=cols, vols={c: 0.01 for c in cols})
-    res = run_risk_contribution(sleeve_returns=R)  # weights default to SLEEVE_WEIGHTS
+    res = run_risk_contribution(sleeve_returns=R)  # weights default to sleeve_weights()
     assert res["status"] == "ok"
     assert res["k"] == len(cols)
     assert sum(s["risk_pct"] for s in res["sleeves"]) == pytest.approx(1.0, abs=1e-9)

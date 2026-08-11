@@ -16,7 +16,7 @@ render_page_header()
 
 from src.factors import (
     _FI_WEIGHTS,
-    EM_DISCLOSURE,
+    em_disclosure,
     alpha_ci_str,
     build_factor_methodology_notes,
     build_factor_prose,
@@ -379,7 +379,7 @@ with col:
         st.divider()
 
     # ── Emerging Markets disclosure ───────────────────────────────────────────
-    st.info(f"**Emerging Markets (IEMG):** {EM_DISCLOSURE}")
+    st.info(f"**Emerging Markets (IEMG):** {em_disclosure()}")
 
     st.divider()
 

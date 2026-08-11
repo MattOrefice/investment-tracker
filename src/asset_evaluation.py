@@ -28,12 +28,15 @@ RF_ANNUAL     = 0.045
 TRADING_DAYS  = 252
 
 # Sleeve benchmark tickers + ex-cash MV weights, DERIVED from asset_classes at
-# import so they describe whatever book this process is pointed at (9 sleeves
-# personal, 12 demo) rather than freezing a taxonomy. Cash / SPAXX is excluded:
-# near-zero variance distorts correlation and optimisation. Names are abbreviated
+# CALL time so they describe whatever book this process is pointed at (9 sleeves
+# personal, 12 demo) rather than freezing a taxonomy. Never derived at import:
+# an import-time derivation opens the database from `import` itself (pytest
+# collection, a bare REPL import) and freezes the sleeve set before the phase-46
+# international split can rename it. Cash / SPAXX is excluded: near-zero
+# variance distorts correlation and optimisation. Names are abbreviated
 # ("International …" -> "Intl …") for the correlation-matrix display; the same
-# abbreviation is the name bridge test_sleeve_weights_match_db uses to compare
-# these against the full-name DB targets.
+# abbreviation is the name bridge test_raw_weights_match_db_targets_and_scale
+# uses to compare these against the full-name DB targets.
 def _abbrev(name: str) -> str:
     return name.replace("International ", "Intl ")
 
@@ -50,8 +53,19 @@ def _derive_sleeve_maps() -> tuple[dict, dict]:
     return bench, weights
 
 
-SLEEVE_BENCHMARKS, SLEEVE_WEIGHTS = _derive_sleeve_maps()
-SLEEVES = list(SLEEVE_BENCHMARKS.keys())
+def sleeve_benchmarks() -> dict[str, list[tuple[str, float]]]:
+    """Sleeve → benchmark legs for the CURRENT book, resolved at call time."""
+    return _derive_sleeve_maps()[0]
+
+
+def sleeve_weights() -> dict[str, float]:
+    """Ex-cash MV weights for the CURRENT book, resolved at call time."""
+    return _derive_sleeve_maps()[1]
+
+
+def sleeve_names() -> list[str]:
+    """Sleeve display names (abbreviated) for the CURRENT book, in DB order."""
+    return list(_derive_sleeve_maps()[0].keys())
 
 # Shared conclusion — used by both pages/10_Asset_Evaluation.py and src/reports.py.
 # Excludes the Streamlit-specific "This page will update automatically" sentence.
@@ -127,7 +141,7 @@ def get_sleeve_returns(
     skip = set(exclude or [])
     ret_dict: dict[str, pd.Series] = {}
 
-    for sleeve_name, components in SLEEVE_BENCHMARKS.items():
+    for sleeve_name, components in sleeve_benchmarks().items():
         if sleeve_name in skip:
             continue
         blended: pd.Series | None = None
@@ -418,13 +432,15 @@ def compute_marginal_sharpe_curve(
     Portfolio Sharpe at each candidate allocation.
 
     For each α, the remaining (1−α) is distributed proportionally across
-    existing sleeves using sleeve_weights (defaults to SLEEVE_WEIGHTS).
+    existing sleeves using sleeve_weights (defaults to the book's derived
+    ex-cash MV weights).
     Returns DataFrame with columns: btc_alloc, sharpe.
     """
     if allocations is None:
         allocations = [0.00, 0.01, 0.02, 0.03, 0.05, 0.07, 0.10]
     if sleeve_weights is None:
-        sleeve_weights = SLEEVE_WEIGHTS
+        # The module function sleeve_weights() is shadowed by this parameter.
+        sleeve_weights = _derive_sleeve_maps()[1]
 
     cand_a, slv_a = align_to_equity_days(candidate_ret, sleeve_rets)
     sleeves_list  = [s for s in slv_a.columns if s in sleeve_weights]
@@ -468,7 +484,8 @@ def compute_drawdown_sensitivity(
     if allocations is None:
         allocations = [0.00, 0.02, 0.05, 0.10]
     if sleeve_weights is None:
-        sleeve_weights = SLEEVE_WEIGHTS
+        # The module function sleeve_weights() is shadowed by this parameter.
+        sleeve_weights = _derive_sleeve_maps()[1]
 
     cand_a, slv_a = align_to_equity_days(candidate_ret, sleeve_rets)
     sleeves_list  = [s for s in slv_a.columns if s in sleeve_weights]
@@ -588,12 +605,21 @@ def compute_regime_conditional_correlation(
 
 # Sleeve-name groups for the equity-vs-bond-equity decomposition. Real Assets is
 # intentionally in neither group (a diversifier that is neither equity nor bond).
-# EQUITY_SLEEVES is derived from the book's own sleeve set (SLEEVES is
-# DB-derived): the old hardcoded list froze the personal book's names, so on
-# the demo book the four international sleeves silently vanished from the
-# intra-equity line (the `c in cols` filter dropped them without error).
 BOND_SLEEVES = ["Core Fixed Income", "TIPS"]
-EQUITY_SLEEVES = [s for s in SLEEVES if s not in BOND_SLEEVES and s != "Real Assets"]
+
+
+def equity_sleeve_names() -> list[str]:
+    """Equity sleeves of the CURRENT book, resolved at call time.
+
+    Derived from the book's own sleeve set rather than hardcoded: the old
+    frozen list carried the personal book's names, so on the demo book the
+    four international sleeves silently vanished from the intra-equity line
+    (the `c in cols` filter dropped them without error). Call-time (not
+    import-time) so importing this module never opens the database and the
+    set tracks the phase-46 split within a warm process. Distinct on purpose
+    from location_config.EQUITY_SLEEVES, which is a frozenset of sleeve
+    *category keys* — this returns display names for the correlation views."""
+    return [s for s in sleeve_names() if s not in BOND_SLEEVES and s != "Real Assets"]
 
 
 def _ordinal(n: float) -> str:
@@ -679,11 +705,12 @@ def rolling_equity_vs_bondequity(returns_df: pd.DataFrame, window: int) -> pd.Da
       - ``bond_equity``:  mean correlation BETWEEN the bond sleeves
         (Core Fixed Income, TIPS) and the equity sleeves.
 
-    Sleeves are classified by name via EQUITY_SLEEVES / BOND_SLEEVES; Real Assets
-    is excluded from both groups. Columns absent from ``returns_df`` are skipped.
+    Sleeves are classified by name via equity_sleeve_names() / BOND_SLEEVES;
+    Real Assets is excluded from both groups. Columns absent from ``returns_df``
+    are skipped.
     """
     cols = list(returns_df.columns)
-    eq = [c for c in EQUITY_SLEEVES if c in cols]
+    eq = [c for c in equity_sleeve_names() if c in cols]
     bd = [c for c in BOND_SLEEVES if c in cols]
 
     intra_eq = (

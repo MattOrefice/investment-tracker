@@ -234,25 +234,26 @@ def test_identity_tracking_error_calendar_bday_consistent():
 # ── (d) EM_DISCLOSURE has no duplicate "Emerging Markets (IEMG):" prefix ──────
 
 def test_em_disclosure_no_duplicate_label_prefix():
-    """EM_DISCLOSURE must not start with 'Emerging Markets' — the PDF template
+    """em_disclosure() must not start with 'Emerging Markets' — the PDF template
     already renders that label as a <strong> heading. A duplicate prefix in the
-    constant caused doubled text on page 7 of the quarterly report.
+    disclosure caused doubled text on page 7 of the quarterly report.
 
     Pins Phase 11 follow-up (2).
     """
-    from src.factors import EM_DISCLOSURE
-    assert not EM_DISCLOSURE.strip().startswith("Emerging Markets"), (
-        "EM_DISCLOSURE starts with 'Emerging Markets', which duplicates the "
+    from src.factors import em_disclosure
+    text = em_disclosure()
+    assert not text.strip().startswith("Emerging Markets"), (
+        "em_disclosure() starts with 'Emerging Markets', which duplicates the "
         "<strong>Emerging Markets (IEMG):</strong> label in quarterly_report.html. "
-        "Remove the prefix from the constant."
+        "Remove the prefix from the disclosure text."
     )
 
 
 def test_em_disclosure_still_mentions_iemg():
-    """EM_DISCLOSURE must still reference IEMG by ticker to remain informative."""
-    from src.factors import EM_DISCLOSURE
-    assert "IEMG" in EM_DISCLOSURE, (
-        "EM_DISCLOSURE no longer mentions IEMG — may have over-trimmed."
+    """em_disclosure() must still reference IEMG by ticker to remain informative."""
+    from src.factors import em_disclosure
+    assert "IEMG" in em_disclosure(), (
+        "em_disclosure() no longer mentions IEMG — may have over-trimmed."
     )
 
 

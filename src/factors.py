@@ -126,8 +126,6 @@ def _intl_core_label() -> str:
     return intl[0] if intl else "International Developed"
 
 
-_INTL_CORE = _intl_core_label()
-
 _SLEEVES = {
     "us": {
         "label":   "US Equity Sleeve",
@@ -151,14 +149,27 @@ _SLEEVES = {
     "developed_exus": {
         # Phase 39: this regression has always been VEA-only, which is the
         # cap-weighted developed-international sleeve — International Developed on
-        # the personal book, International Core on the demo book. Label derived
-        # from the DB (_INTL_CORE) so it names the sleeve this book actually has.
-        "label":   f"{_INTL_CORE} Sleeve",
+        # the personal book, International Core on the demo book. No static label:
+        # the name is DB-derived and resolved at CALL time via _sleeve_label(), so
+        # importing this module never opens the database and a warm process picks
+        # up the phase-46 rename on its next call instead of freezing the old name.
         "tickers": ["VEA"],
         "region":  "developed_exus",
         # Single-ticker sleeve: no weights needed.
     },
 }
+
+
+def _sleeve_label(spec: dict) -> str:
+    """A sleeve's display label, resolved at call time.
+
+    The developed_exus entry deliberately carries no static label — its sleeve
+    name comes from the DB ('International Developed' on the personal 9-sleeve
+    book, 'International Core' post-split) and must never be frozen at import:
+    a module-level constant computed before the phase-46 migration applies
+    would keep labelling exhibits with the pre-split name for the life of the
+    process."""
+    return spec.get("label") or f"{_intl_core_label()} Sleeve"
 
 # ── International tilt-sleeve regressions (Phase 40) ────────────────────────────
 #
@@ -229,7 +240,7 @@ _INTL_TILT_SLEEVES = [
 
 
 # Qualitative disclosure for the EM sleeve (no daily FF5 data available)
-def _em_disclosure() -> str:
+def em_disclosure() -> str:
     """EM-sleeve disclosure for the book this process is pointed at.
 
     Personal (single cap-weighted developed sleeve): the original framing —
@@ -238,8 +249,10 @@ def _em_disclosure() -> str:
     framing — the developed tilts are verifiable against Ken French's daily
     developed ex-US series, EM has no equivalent series, so the sleeve stays
     cap-weighted and carries no per-sleeve regression by design.
-    Derived at import like _INTL_CORE; falls back to the untilted framing if
-    the DB is unavailable (it is factually safe in either book).
+    Resolved at CALL time (never at import — importing this module must not
+    touch the database, and a frozen value would go stale across the phase-46
+    split); falls back to the untilted framing if the DB is unavailable (it is
+    factually safe in either book).
     """
     try:
         from src.sleeve_config import international_sleeves
@@ -266,9 +279,6 @@ def _em_disclosure() -> str:
         "provides cap-weighted broad EM exposure. The full cap-weight-exception "
         "argument is in the SAA sleeve rationale."
     )
-
-
-EM_DISCLOSURE = _em_disclosure()
 
 
 # ── Utilities ─────────────────────────────────────────────────────────────────
@@ -831,7 +841,7 @@ def run_sleeve_regressions(inception: str, end_date: str) -> dict:
 
     EM sleeve is excluded: Ken French does not publish daily EM factor data.
     Monthly EM factors would yield ~12 observations over a 1-year window,
-    insufficient for stable inference.  See EM_DISCLOSURE for the qualitative
+    insufficient for stable inference.  See em_disclosure() for the qualitative
     note included in the PDF and Streamlit output.
 
     Returns a dict with keys 'us' and 'developed_exus'; each value is either
@@ -841,7 +851,7 @@ def run_sleeve_regressions(inception: str, end_date: str) -> dict:
     for key, spec in _SLEEVES.items():
         try:
             results[key] = run_sleeve_regression(
-                sleeve_label=spec["label"],
+                sleeve_label=_sleeve_label(spec),
                 tickers=spec["tickers"],
                 region=spec["region"],
                 inception=inception,
@@ -938,7 +948,7 @@ def run_sleeve_regressions_mom(inception: str, end_date: str) -> dict:
 
             R_excess = merged["R_sleeve"] - merged["RF"]
             result = _ols_ff5_mom(R_excess, merged)
-            result["sleeve_label"]  = spec["label"]
+            result["sleeve_label"]  = _sleeve_label(spec)
             result["tickers"]       = spec["tickers"]
             result["region"]        = spec["region"]
             result["sample_start"]  = merged.index[0].date().isoformat()
@@ -968,7 +978,7 @@ def run_intl_global_regression(inception: str, end_date: str) -> Optional[dict]:
     spec = _SLEEVES["developed_exus"]
     try:
         return run_sleeve_regression(
-            sleeve_label=f"{_INTL_CORE} Sleeve — Global Factors",
+            sleeve_label=f"{_intl_core_label()} Sleeve — Global Factors",
             tickers=spec["tickers"],
             region="global",
             inception=inception,
@@ -1202,7 +1212,7 @@ def build_factor_prose(
         alpha_sig_d = significance_label(t_a_d)
 
         lines.append(
-            f"The {_INTL_CORE} sleeve (VEA, {T_dev} trading days) "
+            f"The {_intl_core_label()} sleeve (VEA, {T_dev} trading days) "
             f"loads on Mkt-RF_dev at {b_mkt_d:.2f} (t = {t_mkt_d:.2f}), within the "
             f"expected range for a passive cap-weighted developed-markets ETF. "
             f"The {a_bps_d:+.0f} bps annualized alpha (t = {t_a_d:.2f}) is {alpha_sig_d}, "
@@ -1412,7 +1422,7 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
 
     notes = [
         f"Samples: US equity sleeve {T_us} US trading days ({us_window}), L = {L_us}. "
-        f"{_INTL_CORE} sleeve {T_dev} US trading days ({dev_window}), L = {L_dev}. "
+        f"{_intl_core_label()} sleeve {T_dev} US trading days ({dev_window}), L = {L_dev}. "
         "Both sleeves are restricted to US equity market trading days (dates present "
         "in the Ken French US factor calendar). The Developed sleeve applies this "
         "restriction explicitly: VEA trades on US exchanges and has no price observation "
@@ -1457,7 +1467,7 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
         "for tax-efficiency reasons (high turnover → short-term gains), so a near-zero "
         "Mom loading is expected and confirms the construction is tax-aware.",
 
-        f"Global factor supplement ({_INTL_CORE}): Ken French ceased publication "
+        f"Global factor supplement ({_intl_core_label()}): Ken French ceased publication "
         "of the daily Global 5-factor file in June 2019. This portfolio's inception "
         "post-dates that cutoff; no daily-frequency Global FF5 regression can be produced. "
         "The Developed ex-US factor set is the primary decomposition for the international "
