@@ -477,16 +477,16 @@ def test_no_rendered_prose_contains_comma_emdash():
         assert ", —" not in cons, f"{key} cons contains ', —' (dropped clause): {cons!r}"
 
 
-# Exact rendered lengths against the live Jul-08 CSV — a brittle-on-purpose canary
+# Exact rendered lengths against the live Aug-10 CSV — a brittle-on-purpose canary
 # for silent prose corruption (dropped words render as valid Markdown).
 RENDERED_PROSE_LEN = {
     "deploy_roth_cash":          (514, 766),   # cons: + FTC mechanism, relocated here from predeploy_stranded_equity (first encounter on the page; cons word count 97 -> 131)
-    "clear_roth_non_equity":     (1372, 1441),  # pros: rebuy VTI -> VOO (US Large Core's SAA ticker); the pro-VTI "total-market, not the S&P 500" rationale is REPLACED by the honest VTI-vs-VOO tradeoff + the overweight-is-visibility note (pros word count 166 -> 228)
-    "relocate_loss_side":        (374, 914),   # cons: + 59½ liquidity-lock tradeoff; capacity restatement -> cross-ref
+    "clear_roth_non_equity":     (1372, 1440),  # pros: rebuy VTI -> VOO (US Large Core's SAA ticker); the pro-VTI "total-market, not the S&P 500" rationale is REPLACED by the honest VTI-vs-VOO tradeoff + the overweight-is-visibility note (pros word count 166 -> 228). Cons -1 char: Aug-10 data drift in a templated figure.
+    "relocate_loss_side":        (408, 908),   # Aug-2026: HLIPX sold by the advisor (rebought as JCPB) — action/pros rewritten sign-safe ("nets to roughly zero"), cons drops the HLIPX mention
     "relocate_gain_side":        (339, 361),   # cons: capacity restatement -> cross-ref to clear_roth_non_equity
     "thematic_sprawl":           (217, 503),   # cons: gain rate 15% -> 18.07% (15% fed + 3.07% PA)
     "rollover_401k":             (486, 353),   # available now (MissionSquare 401(k), acct_wkpl_02 — holds RFUTX), not blocked on the next job
-    "frozen_tod_income":         (382, 523),   # cons: capacity restatement -> cross-ref to clear_roth_non_equity
+    "frozen_tod_income":         (400, 523),   # pros: literal "Three of them" -> derived {register_count} + JCPB joins the enumeration (Aug-2026 advisor swap)
     "saa_sleeves_taxable":       (261, 648),   # cons: capacity restatement -> cross-ref to clear_roth_non_equity
     "predeploy_stranded_equity": (328, 530),   # cons: FTC mechanism moved up to deploy_roth_cash; only the short application stays here (cons word count 122 -> 88, offsetting deploy's +34)
     "fund_intl_tilts":           (864, 1163),  # new evaluate group: fund the intl tilts from the rollover, FTC cost stated ({intl_tilt_ftc_cost} live off household x tilt share x 45bps)
