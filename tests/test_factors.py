@@ -651,11 +651,24 @@ def test_umd_vintage_note_renders_the_committed_frontier_date(monkeypatch):
     vintage = [n for n in notes if n.startswith("Momentum (UMD) vintage:")]
     assert len(vintage) == 1
     assert "(data through 2031-01-15)" in vintage[0]
-    # One refresh cited as evidence for vintage-specificity — not a claim
-    # about the source's general practice.
+    # One refresh cited as evidence — not a claim about the source's
+    # general practice.
     assert "the 2026-08 refresh, for example" in vintage[0]
-    assert "source restatement, not portfolio changes" in vintage[0]
+    assert "Neither reflects portfolio changes" in vintage[0]
     assert "restates" not in vintage[0]
+
+
+def test_umd_vintage_note_names_extension_before_revision():
+    """Attribution ordering guard. The 2026-08 measurement INVERTED the note's
+    original claim: a source rewrite of 70% of daily UMD history moved the
+    rendered loadings by less than 0.001, while the added quarter moved them
+    by 0.02-0.07. Sample extension must be named before source revision —
+    a re-inversion is precisely the failure mode this pins."""
+    notes = build_factor_methodology_notes({})
+    v = next(n for n in notes if n.startswith("Momentum (UMD) vintage:"))
+    assert v.index("sample extends") < v.index("source revises history")
+    assert "less than 0.001" in v
+    assert "0.02" in v and "0.07" in v
 
 
 def test_umd_vintage_note_degrades_to_na_without_a_frontier(monkeypatch):
