@@ -154,16 +154,27 @@ def _drop_account_number(conn: sqlite3.Connection) -> None:
             )
         conn.execute("DROP INDEX IF EXISTS ux_accounts_account_number")
         conn.execute("ALTER TABLE accounts DROP COLUMN account_number")
+        conn.commit()
 
     # The seed's ON CONFLICT(pseudonym) upsert depends on this uniqueness; ensure
     # it exists whenever the column is present. Minimal/legacy accounts tables
     # (bare test DBs) have no pseudonym column — skip the index there rather than
     # error, keeping the migration a safe no-op on incomplete schemas.
-    if "pseudonym" in cols:
+    #
+    # Pre-gated on sqlite_master rather than left to IF NOT EXISTS. The statement
+    # is write-free on a book that already has the index only because SQLite
+    # elides CREATE ... IF NOT EXISTS for an existing object — an implementation
+    # detail, and one no test can observe (it is elided below the authorizer as
+    # well as below the write lock, measured 2026-08-12). The gate makes "issues
+    # no write when there is nothing to do" a property of this code instead.
+    if "pseudonym" in cols and not conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='index' "
+        "AND name='ux_accounts_pseudonym'"
+    ).fetchone():
         conn.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS ux_accounts_pseudonym ON accounts (pseudonym)"
         )
-    conn.commit()
+        conn.commit()
 
 
 def _add_included_in_household(conn: sqlite3.Connection) -> None:
@@ -190,11 +201,29 @@ def _add_included_in_household(conn: sqlite3.Connection) -> None:
     if "included_in_household" not in cols:
         conn.execute("ALTER TABLE accounts ADD COLUMN included_in_household INTEGER DEFAULT 1")
         conn.execute("UPDATE accounts SET included_in_household = 1 WHERE included_in_household IS NULL")
-    conn.commit()
+        conn.commit()
+
+
+# Rows the Real-Assets label migration heals. Shared verbatim between the gate
+# that decides whether to run it and the UPDATE that does the work — if the two
+# were written out separately they could drift, and a gate that stopped matching
+# what it guards would silently disable the migration rather than fail.
+_REAL_ASSETS_LEGACY_WHERE = (
+    "WHERE name = 'Real Assets' AND parent_id IS NOT NULL "
+    "AND benchmark_ticker IN ('VNQ+DBC', 'VNQ+DJP', 'VNQ (50%) + DBC (50%)')"
+)
 
 
 def _auto_migrate(conn: sqlite3.Connection) -> None:
-    """Idempotent schema migrations. Safe to call on every process startup."""
+    """Idempotent schema migrations. Safe to call on every process startup.
+
+    Every write here sits behind a condition check that is itself a pure read, so
+    connecting to a database that needs no migration issues no write statement at
+    all. That is what makes ``get_connection()`` safe to call against a read-only
+    DB — a guarantee ``tests/test_db_no_write_on_touch.py`` enforces, and one the
+    unconditional statements this function used to issue quietly broke: they
+    demanded write access at statement start even when they matched zero rows.
+    """
     # Migration: drop FK on prices.ticker so benchmark-only tickers (e.g. AGG)
     # can be cached without needing a securities table entry.
     info = conn.execute(
@@ -229,14 +258,22 @@ def _auto_migrate(conn: sqlite3.Connection) -> None:
         conn.commit()
 
     # Migration: surface VNQ/DBC split in Real Assets benchmark label (60/40 policy).
+    #
+    # The heal is kept, not retired: of the three legacy labels, 'VNQ+DBC' and
+    # 'VNQ+DJP' fail loud downstream (parse_benchmark_spec rejects weights summing
+    # to 2.0), but 'VNQ (50%) + DBC (50%)' PARSES — an unhealed book would feed a
+    # silent 50/50 Real-Assets benchmark into attribution and the PDF with no
+    # error anywhere. Nothing else in the stack catches that, so the migration
+    # earns its place; only its unconditional execution had to go.
     has_ac = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='asset_classes'"
     ).fetchone()
-    if has_ac:
+    if has_ac and conn.execute(
+        f"SELECT COUNT(*) FROM asset_classes {_REAL_ASSETS_LEGACY_WHERE}"
+    ).fetchone()[0]:
         conn.execute(
             "UPDATE asset_classes SET benchmark_ticker = 'VNQ (60%) + DBC (40%)' "
-            "WHERE name = 'Real Assets' AND parent_id IS NOT NULL "
-            "AND benchmark_ticker IN ('VNQ+DBC', 'VNQ+DJP', 'VNQ (50%) + DBC (50%)')"
+            f"{_REAL_ASSETS_LEGACY_WHERE}"
         )
         conn.commit()
 
