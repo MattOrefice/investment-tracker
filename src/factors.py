@@ -1371,6 +1371,10 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
         "Ken French factor", factor_frontier("us"), MARKET_DATA_STALE_DAYS_FACTORS
     )
 
+    # Committed-vintage disclosure: N/A only when the momentum file is missing
+    # entirely, a state the loaders and staleness surfaces already fail loudly on.
+    _umd_f = umd_frontier()
+
     notes = [
         f"Samples: US equity sleeve {T_us} US trading days ({us_window}), L = {L_us}. "
         f"{_intl_core_label()} sleeve {T_dev} US trading days ({dev_window}), L = {L_dev}. "
@@ -1417,6 +1421,13 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
         "is authoritative. Momentum exposure is structurally avoided in this portfolio "
         "for tax-efficiency reasons (high turnover → short-term gains), so a near-zero "
         "Mom loading is expected and confirms the construction is tax-aware.",
+
+        "Momentum (UMD) vintage: Mom loadings are computed against the Ken French "
+        "momentum series as committed in this repository (data through "
+        f"{_umd_f.isoformat() if _umd_f else 'N/A'}). Loadings are vintage-specific — "
+        "the 2026-08 refresh, for example, revised 70% of daily UMD history back to "
+        "1926 — so small shifts between refreshes reflect source restatement, not "
+        "portfolio changes.",
 
         f"Global factor supplement ({_intl_core_label()}): Ken French ceased publication "
         "of the daily Global 5-factor file in June 2019. This portfolio's inception "
