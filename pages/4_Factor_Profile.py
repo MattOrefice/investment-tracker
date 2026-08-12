@@ -41,6 +41,22 @@ with col:
         "Daily excess returns since inception · Newey-West HAC standard errors"
     )
     st.caption(as_of_banner())
+
+    # Committed factor-data staleness surface: the tracked Ken French files are
+    # inputs refreshed only by tools/refresh_market_data.py; when a refresh
+    # cycle is missed, every regression on this page quietly ends at the data
+    # frontier — say so where the regressions are read, not in a changelog.
+    from src.asof import MARKET_DATA_STALE_DAYS_FACTORS, staleness_note
+    from src.factors import factor_frontier, umd_frontier
+    _frontiers = [f for f in (factor_frontier("us"), factor_frontier("developed_exus"),
+                              umd_frontier()) if f is not None]
+    _ff_note = staleness_note(
+        "Ken French factor",
+        min(_frontiers) if _frontiers else None,
+        MARKET_DATA_STALE_DAYS_FACTORS,
+    )
+    if _ff_note:
+        st.warning(f"{_ff_note} Regressions below end at the factor-data frontier.")
     st.divider()
 
     with st.expander("How to read this page", expanded=False):

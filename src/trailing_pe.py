@@ -11,12 +11,13 @@ Primary source: https://www.multpl.com/s-p-500-pe-ratio/table/by-month
     value kept — the recent, provisional readings are exactly the ones the
     Valuation page displays, flagged as provisional in the caption.
 
-Local disk cache: data/trailing_pe.csv, refreshed every 30 days (the
-shiller_cape.csv pattern). Force-invalidate via clear_trailing_pe_cache().
-
-No fallback source: unlike CAPE there is no secondary publisher worth
-trusting, so on a failed refresh the loader serves the stale cache (age
-visible to the caller via the obs_date column) or raises if none exists.
+data/trailing_pe.csv is a COMMITTED INPUT (the shiller_cape.csv pattern):
+get_trailing_pe() reads it and never fetches or writes;
+tools/refresh_market_data.py is the only writer (fetch_trailing_pe_dataframe()
+is its fetch half). No fallback source: unlike CAPE there is no secondary
+publisher worth trusting, so the tool's fetch raises on failure and the
+committed file stays as-is. Staleness is surfaced via trailing_pe_frontier() +
+asof.staleness_note, never silently repaired at read time.
 """
 import io
 import re
@@ -30,8 +31,6 @@ _ROOT      = Path(__file__).resolve().parent.parent
 _CACHE_CSV = _ROOT / "data" / "trailing_pe.csv"
 
 _MULTPL_URL = "https://www.multpl.com/s-p-500-pe-ratio/table/by-month"
-
-_REFRESH_DAYS = 30
 
 # A P/E cell is "28.89", "† 28.89", or similar marker + number. Extract the
 # first decimal number; reject cells with none.
@@ -91,47 +90,49 @@ def _parse_multpl_pe(html_content: str) -> pd.DataFrame:
     return df.sort_values("date").reset_index(drop=True)
 
 
-def download_trailing_pe() -> pd.DataFrame:
-    """Download the trailing P/E table and cache as CSV.
+def fetch_trailing_pe_dataframe() -> pd.DataFrame:
+    """Fetch and parse the trailing P/E table. TOOL-ONLY — never writes.
 
-    On failure serves the existing disk cache (staleness is the caller's to
-    surface via obs_date); raises only when there is nothing to serve.
+    Raises on failure; tools/refresh_market_data.py owns the write and reports
+    fetch and write outcomes separately, so a blocked write can never
+    masquerade as a network failure (the old combined path did exactly that).
     """
-    try:
-        resp = requests.get(
-            _MULTPL_URL,
-            timeout=20,
-            headers={"User-Agent": "Mozilla/5.0 (compatible; investment-tracker/1.0)"},
-        )
-        resp.raise_for_status()
-        df = _parse_multpl_pe(resp.text)
-        _CACHE_CSV.parent.mkdir(parents=True, exist_ok=True)
-        df.to_csv(_CACHE_CSV, index=False)
-        return df
-    except Exception:
-        if _CACHE_CSV.exists():
-            return pd.read_csv(_CACHE_CSV, parse_dates=["date", "obs_date"])
-        raise
+    resp = requests.get(
+        _MULTPL_URL,
+        timeout=20,
+        headers={"User-Agent": "Mozilla/5.0 (compatible; investment-tracker/1.0)"},
+    )
+    resp.raise_for_status()
+    return _parse_multpl_pe(resp.text)
 
 
 def get_trailing_pe() -> pd.DataFrame:
     """Full-history trailing P/E DataFrame (date, pe, obs_date), ascending.
 
-    Refreshes from multpl.com when the local cache is >= 30 days old,
-    mirroring get_cape_series() in src/shiller.py.
+    Reads the COMMITTED CSV only — never fetches, never writes (same policy as
+    get_cape_series in src/shiller.py; tools/refresh_market_data.py is the
+    only writer).
     """
-    needs_refresh = True
-    if _CACHE_CSV.exists():
-        mtime_date = date.fromtimestamp(_CACHE_CSV.stat().st_mtime)
-        needs_refresh = (date.today() - mtime_date).days >= _REFRESH_DAYS
-
-    if needs_refresh:
-        df = download_trailing_pe()
-    else:
-        df = pd.read_csv(_CACHE_CSV, parse_dates=["date", "obs_date"])
-
+    if not _CACHE_CSV.exists():
+        raise FileNotFoundError(
+            f"Committed trailing-P/E data missing: {_CACHE_CSV}. Restore it "
+            "from git, or regenerate it with tools/refresh_market_data.py."
+        )
+    df = pd.read_csv(_CACHE_CSV, parse_dates=["date", "obs_date"])
     df = df.dropna(subset=["pe"])
     return df.sort_values("date").reset_index(drop=True)
+
+
+def trailing_pe_frontier() -> "date | None":
+    """Last committed P/E month (the ``date`` column's max — month-start basis,
+    matching cape_frontier so the two valuation lenses read alike; the fresher
+    intra-month ``obs_date`` is still shown on the panel itself). None if
+    unreadable."""
+    try:
+        df = get_trailing_pe()
+        return pd.Timestamp(df["date"].iloc[-1]).date() if len(df) else None
+    except Exception:
+        return None
 
 
 def get_trailing_pe_series() -> pd.Series:
@@ -148,7 +149,6 @@ def current_trailing_pe() -> tuple[float, str]:
     return float(last["pe"]), pd.Timestamp(last["obs_date"]).date().isoformat()
 
 
-def clear_trailing_pe_cache() -> None:
-    """Delete the local CSV cache so the next load forces a fresh download."""
-    if _CACHE_CSV.exists():
-        _CACHE_CSV.unlink()
+# clear_trailing_pe_cache was removed with the auto-refresh: deleting a
+# COMMITTED input so "the next load re-downloads" is exactly the write-from-
+# runtime pattern this module no longer permits.

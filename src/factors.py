@@ -53,6 +53,12 @@ _BASE_URL = "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/"
 
 _CACHE_DIR = _ROOT / "data" / "cache"
 
+# The tracked factor caches are COMMITTED INPUTS: loaders below read them and
+# never fetch or write; tools/refresh_market_data.py is the only writer.
+# ("global" was removed with its file: Ken French ceased daily Global 5-factor
+# publication in June 2019, before this portfolio's inception, so the gated
+# regression that once used it could never return data for this book — the
+# entry survived only as a dormant fetch-and-write path.)
 _FACTOR_CONFIG: dict[str, dict] = {
     "us": {
         "url":   _BASE_URL + "F-F_Research_Data_5_Factors_2x3_daily_CSV.zip",
@@ -61,10 +67,6 @@ _FACTOR_CONFIG: dict[str, dict] = {
     "developed_exus": {
         "url":   _BASE_URL + "Developed_ex_US_5_Factors_Daily_CSV.zip",
         "cache": _CACHE_DIR / "ff_factors_developed_exus.csv",
-    },
-    "global": {
-        "url":   _BASE_URL + "Global_5_Factors_Daily_CSV.zip",
-        "cache": _CACHE_DIR / "ff_factors_global.csv",
     },
 }
 
@@ -79,17 +81,15 @@ _BEME_CACHE        = _CACHE_DIR / "ff_beme_breakpoints.csv"
 _BEME_PCTILES      = list(range(5, 101, 5))  # 20 columns: p5, p10, …, p100
 _BEME_REFRESH_DAYS = 30  # annual data; refetch monthly at most
 
+# HYG adjusted price history — a PINNED committed input, not a cache: no code
+# path writes it (the writer was removed long ago) and adjusted closes re-derive
+# on every distribution, so the snapshot is not reproducible from the network.
+# Documented in data/cache/README.md. Do not add a refresh path for it.
 _HYG_CACHE = _CACHE_DIR / "prices_hyg.parquet"
 
 _CACHE_PATH = _FACTOR_CONFIG["us"]["cache"]  # backward-compatible alias
 
-_REFRESH_CACHE_DAYS = 7   # re-fetch if cache mtime exceeds this many days
-_LAG_THRESHOLD_DAYS = 35  # re-fetch if most recent factor date is this far behind today
-_FF_RETRY_DELAYS    = (1, 3, 9)  # seconds between Ken French download retry attempts
-
-# Ken French ceased publication of daily Global 5-factor data after this date.
-# Any portfolio started after it has zero factor-data overlap and cannot be regressed.
-GLOBAL_DAILY_FACTORS_CUTOFF = date(2019, 6, 28)
+_FF_RETRY_DELAYS = (1, 3, 9)  # seconds between Ken French download retry attempts (tool-only)
 
 _FF5_FACTORS     = ["Mkt-RF", "SMB", "HML", "RMW", "CMA"]
 _FF5_MOM_FACTORS = ["Mkt-RF", "SMB", "HML", "RMW", "CMA", "Mom"]
@@ -409,61 +409,44 @@ def _fetch_factors(url: str) -> pd.DataFrame:
     )
 
 
-def _cache_stale(config: dict) -> bool:
-    """Return True if the cache for this region config needs refreshing."""
-    cache: Path = config["cache"]
-    if not cache.exists():
-        return True
-    mtime = date.fromtimestamp(cache.stat().st_mtime)
-    if (date.today() - mtime).days > _REFRESH_CACHE_DAYS:
-        return True
-    try:
-        cached = pd.read_csv(cache, index_col=0, parse_dates=True)
-        if cached.empty:
-            return True
-        most_recent = cached.index[-1].date()
-        if (date.today() - most_recent).days > _LAG_THRESHOLD_DAYS:
-            return True
-    except Exception:
-        return True
-    return False
-
-
-def load_factors(region: str, force_refresh: bool = False) -> pd.DataFrame:
+def load_factors(region: str) -> pd.DataFrame:
     """
     Return Ken French daily 5-factor data for the specified region.
 
     region: 'us' | 'developed_exus'
 
-    Refreshes the local cache when stale (file absent, mtime > 7 days, or
-    most recent factor date > 35 days behind today).  On fetch failure the
-    stale cache is returned with a warning rather than crashing.
+    Reads the COMMITTED cache only — never fetches, never writes. The tracked
+    factor files are inputs, refreshed exclusively by
+    tools/refresh_market_data.py as a deliberate, committed step: the old
+    auto-refresh here rewrote tracked files from test runs and page renders,
+    which made a clean working tree unverifiable, and its failure path
+    discarded a successfully fetched frame whenever only the write was
+    blocked. Staleness is surfaced to the reader (factor_frontier() +
+    asof.staleness_note), not silently "fixed" at read time.
     """
     if region not in _FACTOR_CONFIG:
         raise ValueError(
             f"Unknown factor region '{region}'. "
             f"Valid regions: {list(_FACTOR_CONFIG)}"
         )
-    config = _FACTOR_CONFIG[region]
-    cache: Path = config["cache"]
-
-    if force_refresh or _cache_stale(config):
-        try:
-            df = _fetch_factors(config["url"])
-            cache.parent.mkdir(parents=True, exist_ok=True)
-            df.to_csv(cache)
-            return df
-        except Exception as exc:
-            if cache.exists():
-                warnings.warn(
-                    f"FF factor refresh failed for region '{region}' ({exc}); "
-                    "using cached data.",
-                    stacklevel=2,
-                )
-            else:
-                raise
-
+    cache: Path = _FACTOR_CONFIG[region]["cache"]
+    if not cache.exists():
+        raise FileNotFoundError(
+            f"Committed factor data missing: {cache}. Restore it from git, or "
+            "regenerate it with tools/refresh_market_data.py."
+        )
     return pd.read_csv(cache, index_col=0, parse_dates=True)
+
+
+def factor_frontier(region: str) -> Optional[date]:
+    """Last committed factor date for a region — the DATA frontier, never file
+    mtime (a checkout resets mtime, so mtime says nothing about content age).
+    None when the file is missing or unreadable."""
+    try:
+        df = load_factors(region)
+        return df.index[-1].date() if len(df) else None
+    except Exception:
+        return None
 
 
 # ── Momentum (UMD) factor data ────────────────────────────────────────────────
@@ -510,45 +493,38 @@ def _parse_momentum_csv_text(text: str) -> pd.Series:
     return df["Mom"].dropna()
 
 
-def _umd_cache_stale() -> bool:
+def _fetch_umd() -> pd.Series:
+    """Download and parse the Ken French daily momentum factor. Tool-only:
+    returns the parsed series and never writes — tools/refresh_market_data.py
+    owns the write and reports fetch and write outcomes separately."""
+    resp = requests.get(_UMD_URL, timeout=30)
+    resp.raise_for_status()
+    with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
+        csv_name = next(n for n in zf.namelist() if n.upper().endswith(".CSV"))
+        raw_text = zf.read(csv_name).decode("utf-8", errors="replace")
+    return _parse_momentum_csv_text(raw_text)
+
+
+def load_umd_factor() -> pd.Series:
+    """Return Ken French daily Momentum (UMD / Mom) factor as a decimal Series.
+
+    Reads the COMMITTED cache only — same policy as load_factors: refresh is
+    tools/refresh_market_data.py's job, never the loader's."""
     if not _UMD_CACHE.exists():
-        return True
-    mtime = date.fromtimestamp(_UMD_CACHE.stat().st_mtime)
-    if (date.today() - mtime).days > _REFRESH_CACHE_DAYS:
-        return True
-    try:
-        cached = pd.read_csv(_UMD_CACHE, index_col=0, parse_dates=True)
-        if cached.empty:
-            return True
-        if (date.today() - cached.index[-1].date()).days > _LAG_THRESHOLD_DAYS:
-            return True
-    except Exception:
-        return True
-    return False
-
-
-def load_umd_factor(force_refresh: bool = False) -> pd.Series:
-    """Return Ken French daily Momentum (UMD / Mom) factor as a decimal Series."""
-    if force_refresh or _umd_cache_stale():
-        try:
-            resp = requests.get(_UMD_URL, timeout=30)
-            resp.raise_for_status()
-            with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
-                csv_name = next(n for n in zf.namelist() if n.upper().endswith(".CSV"))
-                raw_text = zf.read(csv_name).decode("utf-8", errors="replace")
-            s = _parse_momentum_csv_text(raw_text)
-            _UMD_CACHE.parent.mkdir(parents=True, exist_ok=True)
-            s.to_csv(_UMD_CACHE)
-            return s
-        except Exception as exc:
-            if _UMD_CACHE.exists():
-                warnings.warn(
-                    f"UMD factor refresh failed ({exc}); using cached data.", stacklevel=2
-                )
-            else:
-                raise
-
+        raise FileNotFoundError(
+            f"Committed momentum data missing: {_UMD_CACHE}. Restore it from "
+            "git, or regenerate it with tools/refresh_market_data.py."
+        )
     return pd.read_csv(_UMD_CACHE, index_col=0, parse_dates=True).squeeze("columns")
+
+
+def umd_frontier() -> Optional[date]:
+    """Last committed momentum-factor date (data frontier, never mtime)."""
+    try:
+        s = load_umd_factor()
+        return s.index[-1].date() if len(s) else None
+    except Exception:
+        return None
 
 
 # ── BE/ME breakpoints (value-spread valuation, Phase 30) ───────────────────────
@@ -960,32 +936,12 @@ def run_sleeve_regressions_mom(inception: str, end_date: str) -> dict:
     return results
 
 
-def run_intl_global_regression(inception: str, end_date: str) -> Optional[dict]:
-    """
-    Run FF5 regression for the International Core sleeve (VEA) against GLOBAL factors.
-
-    Ken French ceased publication of daily Global 5-factor data in June 2019
-    (GLOBAL_DAILY_FACTORS_CUTOFF). Any portfolio whose inception date is after
-    that cutoff has zero factor-data overlap; this function returns None immediately
-    without downloading the (permanently outdated) file from Dartmouth.
-
-    Returns None if inception is after GLOBAL_DAILY_FACTORS_CUTOFF or if fewer
-    than 30 aligned observations are available.
-    """
-    if date.fromisoformat(inception) > GLOBAL_DAILY_FACTORS_CUTOFF:
-        return None
-
-    spec = _SLEEVES["developed_exus"]
-    try:
-        return run_sleeve_regression(
-            sleeve_label=f"{_intl_core_label()} Sleeve — Global Factors",
-            tickers=spec["tickers"],
-            region="global",
-            inception=inception,
-            end_date=end_date,
-        )
-    except Exception:
-        return None
+# run_intl_global_regression was removed along with the "global" factor file
+# and config entry: Ken French ceased daily Global 5-factor publication in June
+# 2019, before this portfolio's inception, so the cutoff gate returned None on
+# every call — the function's only reachable behavior was a dormant
+# fetch-and-write path that would have resurfaced if an inception date ever
+# changed. The methodology note explaining the discontinuation (below) stays.
 
 
 def run_intl_tilt_regressions(inception: str, end_date: str) -> dict:
@@ -1160,14 +1116,12 @@ def regress_fi_sleeve(inception: str, end_date: str) -> Optional[dict]:
 def build_factor_prose(
     results: dict,
     fi_result: Optional[dict] = None,
-    global_result: Optional[dict] = None,
 ) -> list[str]:
     """
     Generate institutional-register prose interpreting the sleeve regressions.
 
     results       : dict with keys 'us' and 'developed_exus' (each a result dict or None).
     fi_result     : optional TERM/CREDIT result dict from regress_fi_sleeve.
-    global_result : optional Global FF5 result dict from run_intl_global_regression.
     Called by both the PDF section builder and the Streamlit page to guarantee
     identical output.
     """
@@ -1208,11 +1162,14 @@ def build_factor_prose(
         a_bps_d = dev["alpha_annual_bps"]
         t_a_d   = dev["t_alpha"]
         T_dev   = dev["T"]
+        s_start_d = _fmt_date(dev["sample_start"])
+        s_end_d   = _fmt_date(dev["sample_end"])
 
         alpha_sig_d = significance_label(t_a_d)
 
         lines.append(
-            f"The {_intl_core_label()} sleeve (VEA, {T_dev} trading days) "
+            f"The {_intl_core_label()} sleeve (VEA, {T_dev} trading days, "
+            f"{s_start_d} to {s_end_d}) "
             f"loads on Mkt-RF_dev at {b_mkt_d:.2f} (t = {t_mkt_d:.2f}), within the "
             f"expected range for a passive cap-weighted developed-markets ETF. "
             f"The {a_bps_d:+.0f} bps annualized alpha (t = {t_a_d:.2f}) is {alpha_sig_d}, "
@@ -1228,20 +1185,6 @@ def build_factor_prose(
             f'"unexplained-by-Developed-ex-US-factors return attributable to universe mismatch," '
             f"not risk-adjusted excess return."
         )
-
-        if global_result:
-            a_bps_g = global_result["alpha_annual_bps"]
-            t_a_g   = global_result["t_alpha"]
-            lines.append(
-                f"The Global FF5 supplementary regression yields {a_bps_g:+.0f} bps alpha "
-                f"(t = {t_a_g:.2f}), providing a cross-check against the Developed-ex-US result. "
-                "The Global factor set includes US exposure in Mkt-RF, making it less precise "
-                "for a developed-ex-US holding, but it helps bound the alpha estimate: "
-                "if both factor sets produce elevated alpha, the Korea universe mismatch "
-                "likely explains the bulk of the gap in both models. "
-                "Alpha estimates at this sample length carry wide confidence intervals "
-                "and should not be read as evidence of skill or persistent outperformance."
-            )
 
     if fi_result:
         b_term   = fi_result["betas"]["TERM"]
@@ -1420,6 +1363,14 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
         except Exception:
             pass
 
+    # Committed-data staleness (threshold-gated): the frontier is the DATA's
+    # last row, never file mtime. Auto-refresh was removed — age is surfaced
+    # here (and on the Factor Profile banner), not silently "fixed" at read.
+    from src.asof import MARKET_DATA_STALE_DAYS_FACTORS, staleness_note
+    _stale_note = staleness_note(
+        "Ken French factor", factor_frontier("us"), MARKET_DATA_STALE_DAYS_FACTORS
+    )
+
     notes = [
         f"Samples: US equity sleeve {T_us} US trading days ({us_window}), L = {L_us}. "
         f"{_intl_core_label()} sleeve {T_dev} US trading days ({dev_window}), L = {L_dev}. "
@@ -1475,6 +1426,9 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
         "for a developed-ex-US ETF — the Korea universe mismatch is better bounded via the "
         "Developed ex-US result alone.",
     ]
+
+    if _stale_note:
+        notes.insert(0, _stale_note)
 
     if fi_result:
         T_fi  = fi_result["T"]

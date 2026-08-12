@@ -77,7 +77,7 @@ def _blocked(*args, **kwargs):
 
 _prices.fetch_prices = _blocked
 _macro.fetch_fred_series = _blocked
-_shiller.download_shiller_data = _blocked
+_shiller.fetch_cape_dataframe = _blocked
 
 from streamlit.testing.v1 import AppTest
 at = AppTest.from_file({page_relpath!r}, default_timeout=60)

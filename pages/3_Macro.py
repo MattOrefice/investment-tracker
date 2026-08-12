@@ -285,9 +285,10 @@ with col:
         )
     with hdr_r:
         if not IS_DEMO and st.button("Force refresh", type="secondary",
-                     help="Bypass the disk cache and re-fetch macro data from FRED and Shiller."):
+                     help="Bypass the cache and re-fetch macro data from FRED. "
+                          "CAPE and trailing P/E are committed inputs refreshed "
+                          "by tools/refresh_market_data.py, not from here."):
             macro.clear_macro_cache()
-            shiller.clear_shiller_cache()
             st.cache_data.clear()
             st.rerun()
 
@@ -1584,13 +1585,15 @@ with col:
 
     if cape_ok:
         cape_last_date = cape_series.dropna().index[-1]
-        staleness_days = (pd.Timestamp.today() - cape_last_date).days
-        if staleness_days > 95:
-            st.warning(
-                f"Shiller data is {staleness_days} days stale "
-                f"(last observation: {cape_last_date.strftime('%Y-%m')}). "
-                "Force refresh below to pull the latest data."
-            )
+        # Committed-data staleness surface (shared thresholds/prose with the
+        # SAA label and the PDF): data frontier, never mtime; the old ad-hoc
+        # 95-day warning pointed at the removed Force-refresh path.
+        from src.asof import MARKET_DATA_STALE_DAYS_VALUATION, staleness_note
+        _cape_stale = staleness_note(
+            "Shiller CAPE", cape_last_date.date(), MARKET_DATA_STALE_DAYS_VALUATION
+        )
+        if _cape_stale:
+            st.warning(_cape_stale)
 
         cape_window = st.radio(
             "Window", ["20Y", "50Y", "Max"],
@@ -1681,6 +1684,16 @@ with col:
         st.error("Trailing P/E data unavailable — please try again later.")
 
     if ttm_ok:
+        # Committed-data staleness surface (same shared prose as CAPE above;
+        # frontier = the series' last month row, so CAPE and P/E read alike).
+        from src.asof import MARKET_DATA_STALE_DAYS_VALUATION as _VAL_STALE
+        from src.asof import staleness_note as _stale_note_fn
+        _ttm_stale = _stale_note_fn(
+            "Trailing P/E", ttm_series.index[-1].date(), _VAL_STALE
+        )
+        if _ttm_stale:
+            st.warning(_ttm_stale)
+
         # Same window selection as the CAPE chart above, so the two lenses are
         # compared over the same span rather than each picking its own frame.
         _ttm_window  = cape_window if cape_ok else "Max"
@@ -2177,6 +2190,13 @@ with col:
     # ═══════════════════════════════════════════════════════════════════════════
 
     st.markdown("### Factor Regime")
+    # Committed factor-data staleness surface (shared with Factor Profile / PDF).
+    from src.asof import MARKET_DATA_STALE_DAYS_FACTORS as _FF_STALE
+    from src.asof import staleness_note as _ff_stale_note_fn
+    from src.factors import factor_frontier as _ff_frontier
+    _ff_stale = _ff_stale_note_fn("Ken French factor", _ff_frontier("us"), _FF_STALE)
+    if _ff_stale:
+        st.warning(_ff_stale)
     st.caption(
         "Trailing 12-month relative performance of the size and style factors. "
         "The SAA tilts toward small-cap and value; these charts show whether those "
