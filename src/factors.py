@@ -1424,10 +1424,12 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
 
         "Momentum (UMD) vintage: Mom loadings are computed against the Ken French "
         "momentum series as committed in this repository (data through "
-        f"{_umd_f.isoformat() if _umd_f else 'N/A'}). Loadings are vintage-specific — "
-        "the 2026-08 refresh, for example, revised 70% of daily UMD history back to "
-        "1926 — so small shifts between refreshes reflect source restatement, not "
-        "portfolio changes.",
+        f"{_umd_f.isoformat() if _umd_f else 'N/A'}). Loadings shift between "
+        "refreshes chiefly because the sample extends and only secondarily because "
+        "the source revises history — at the 2026-08 refresh, for example, the "
+        "added quarter moved the rendered Mom loadings by 0.02–0.07 while a source "
+        "revision touching 70% of daily UMD history back to 1926 moved them by "
+        "less than 0.001. Neither reflects portfolio changes.",
 
         f"Global factor supplement ({_intl_core_label()}): Ken French ceased publication "
         "of the daily Global 5-factor file in June 2019. This portfolio's inception "
