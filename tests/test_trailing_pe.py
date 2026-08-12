@@ -85,9 +85,9 @@ def test_parse_pe_raises_on_tableless_html():
 
 @pytest.mark.live_data
 def test_live_trailing_pe_fetch_is_current():
-    from src.trailing_pe import download_trailing_pe
+    from src.trailing_pe import fetch_trailing_pe_dataframe
 
-    df = download_trailing_pe()
+    df = fetch_trailing_pe_dataframe()
     assert len(df) > 1500  # monthly since 1871
     last = df.iloc[-1]
     assert 5.0 < float(last["pe"]) < 100.0

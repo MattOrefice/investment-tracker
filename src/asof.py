@@ -10,6 +10,47 @@ from datetime import date, timedelta
 # the last real trading day legitimately precedes the calendar quarter-end.
 QUARTER_END_COVERAGE_DAYS = 5
 
+# ── Committed market-data staleness (factor / valuation inputs) ────────────────
+# The tracked market-data files (Ken French factor caches, Shiller CAPE,
+# trailing P/E) are refreshed ONLY by tools/refresh_market_data.py — loaders
+# never fetch or write. These thresholds decide when a file's age is SURFACED
+# to the reader; they are read against the DATA frontier (the series' last
+# row), never file mtime, because a git checkout resets mtime to checkout time
+# and says nothing about content age.
+#
+# They are deliberately NOT the old auto-refresh trigger (35 days): the repo's
+# one historical refresh (2026-05-06) fetched Ken French data already 36 days
+# behind — the source's own publication lag breaches 35 — so a 35-day banner
+# would fire on day-one-fresh data and train the reader to ignore it. 35 was
+# tuned as a REFETCH trigger, not a staleness alarm. These are sized so that
+# firing means a refresh CYCLE was missed, not merely that the source lags:
+#   factors:   ~4-6 week Ken French publication lag + a monthly cadence ≈ 70d
+#   valuation: multpl carries current-month rows (fresh ≈ ≤31d) + a month ≈ 45d
+MARKET_DATA_STALE_DAYS_FACTORS = 70
+MARKET_DATA_STALE_DAYS_VALUATION = 45
+
+
+def staleness_note(label: str, frontier: "date | None", threshold_days: int) -> "str | None":
+    """Rendered staleness sentence for a committed market-data series.
+
+    Returns None while the data is within ``threshold_days`` of today — fresh
+    data renders nothing. A missing frontier (unreadable/absent file) returns a
+    loud sentence rather than None: absence must never present as freshness.
+    """
+    if frontier is None:
+        return (
+            f"{label} data is unavailable — the committed file is missing or "
+            "unreadable. Restore it from git or run tools/refresh_market_data.py."
+        )
+    days = (date.today() - frontier).days
+    if days <= threshold_days:
+        return None
+    return (
+        f"{label} data ends {frontier.isoformat()} — {days} days behind; a "
+        "refresh cycle has been missed. Run tools/refresh_market_data.py and "
+        "commit the result."
+    )
+
 
 def _quarters_for_year(year: int) -> list[tuple[date, date, str]]:
     """The four (quarter_start, quarter_end, label) triples for ``year``.

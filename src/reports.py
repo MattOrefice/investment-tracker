@@ -38,7 +38,7 @@ from src.factors import (
     em_disclosure,
     build_factor_methodology_notes, build_factor_prose,
     regress_fi_sleeve, run_benchmark_attribution_regression,
-    run_intl_global_regression, run_sleeve_regressions, sig_marker,
+    run_sleeve_regressions, sig_marker,
 )
 from src.holdings import (
     get_current_market_value,
@@ -416,12 +416,20 @@ def _cape_reading_sentence(cape_val: float, cape_pct: float) -> str:
     """Executive-summary CAPE line: reports the reading and the derived regime label and
     draws NO allocation conclusion — that stance belongs to the Macro Context section.
     Reads naturally at both extremes ("Elevated versus history" at the 99th, "Below-average
-    versus history" at the 20th)."""
+    versus history" at the 20th). Carries an as-of clause whenever the committed
+    CAPE series is stale (data frontier past the valuation threshold) — the
+    stance must not read as current when its input is months old."""
     label, _ = _cape_regime(int(round(cape_pct)))
-    return (
+    sentence = (
         f"CAPE stands at {cape_val:.1f}x, in the {cape_pct:.0f}th percentile — "
         f"{label} versus history."
     )
+    from src.asof import MARKET_DATA_STALE_DAYS_VALUATION, staleness_note
+    from src.shiller import cape_frontier
+    frontier = cape_frontier()
+    if staleness_note("Shiller CAPE", frontier, MARKET_DATA_STALE_DAYS_VALUATION):
+        sentence += f" (CAPE data through {frontier.isoformat()}.)"
+    return sentence
 
 
 # ── Section builders ──────────────────────────────────────────────────────────
@@ -903,12 +911,6 @@ def _build_factor_section(end_date: str) -> Optional[dict]:
     except Exception:
         pass
 
-    global_result: Optional[dict] = None
-    try:
-        global_result = run_intl_global_regression(inception, end_date)
-    except Exception:
-        pass
-
     def _fmt_date_local(iso: str) -> str:
         d = date.fromisoformat(iso)
         return f"{d.strftime('%B')} {d.day}, {d.year}"
@@ -957,7 +959,7 @@ def _build_factor_section(end_date: str) -> Optional[dict]:
     return {
         "sleeves":           sleeves,
         "em_note":           em_disclosure(),
-        "prose":             build_factor_prose(results, fi_result=fi_result, global_result=global_result),
+        "prose":             build_factor_prose(results, fi_result=fi_result),
         "methodology_notes": build_factor_methodology_notes(results, fi_result=fi_result),
     }
 

@@ -46,7 +46,16 @@ def _load_cape_label() -> str:
         s = get_cape_series()
         cv = float(s.dropna().iloc[-1])
         pct = macro_percentile(s.dropna(), cv)
-        return percentile_label(pct)
+        label = percentile_label(pct)
+        # Committed-data staleness surface: the CAPE file is refreshed only by
+        # tools/refresh_market_data.py, so a stale series must not read as a
+        # current valuation stance — the label carries its own as-of.
+        from src.asof import MARKET_DATA_STALE_DAYS_VALUATION, staleness_note
+        from src.shiller import cape_frontier
+        frontier = cape_frontier()
+        if staleness_note("Shiller CAPE", frontier, MARKET_DATA_STALE_DAYS_VALUATION):
+            label += f" (CAPE data through {frontier.isoformat()})"
+        return label
     except Exception:
         return "elevated historically"
 

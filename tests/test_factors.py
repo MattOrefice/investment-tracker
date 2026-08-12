@@ -668,13 +668,17 @@ def test_run_sleeve_regressions_mom_returns_expected_structure():
         assert "Mom" in r["p_values"]
 
 
-def test_global_region_in_factor_config():
-    """'global' must be a valid region key in _FACTOR_CONFIG."""
+def test_global_region_stays_removed():
+    """'global' must NOT return to _FACTOR_CONFIG.
+
+    Ken French ceased daily Global 5-factor publication in June 2019, before
+    this portfolio's inception — the entry's only reachable behavior was a
+    dormant fetch-and-write path against a deleted tracked file, removed with
+    the file. Every live region must still carry a url + cache pair."""
     from src.factors import _FACTOR_CONFIG
-    assert "global" in _FACTOR_CONFIG
-    assert "url" in _FACTOR_CONFIG["global"]
-    assert "cache" in _FACTOR_CONFIG["global"]
-    assert "Global" in _FACTOR_CONFIG["global"]["url"]
+    assert "global" not in _FACTOR_CONFIG
+    for region, cfg in _FACTOR_CONFIG.items():
+        assert "url" in cfg and "cache" in cfg, f"region {region!r} misconfigured"
 
 
 # ── FI TERM/CREDIT regression ─────────────────────────────────────────────────

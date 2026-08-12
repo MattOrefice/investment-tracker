@@ -8,8 +8,10 @@ Primary source: https://www.multpl.com/shiller-pe/table/by-month
 Fallback: http://www.econ.yale.edu/~shiller/data/ie_data.xls
   - Used only if multpl.com is unreachable; last reliable through Sep 2023.
 
-Local disk cache: data/shiller_cape.csv, refreshed every 30 days.
-Force-invalidate by calling clear_shiller_cache() or deleting the file.
+data/shiller_cape.csv is a COMMITTED INPUT: get_cape_series() reads it and
+never fetches or writes; tools/refresh_market_data.py is the only writer
+(fetch_cape_dataframe() below is its fetch half). Staleness is surfaced via
+cape_frontier() + asof.staleness_note, never silently repaired at read time.
 """
 import io
 from datetime import date
@@ -24,8 +26,6 @@ _CACHE_CSV = _ROOT / "data" / "shiller_cape.csv"
 
 _MULTPL_URL = "https://www.multpl.com/shiller-pe/table/by-month"
 _YALE_URL   = "http://www.econ.yale.edu/~shiller/data/ie_data.xls"
-
-_REFRESH_DAYS = 30
 
 
 # ── date parsing (Shiller fractional-year format) ─────────────────────────────
@@ -158,15 +158,15 @@ def _parse_excel_bytes(content: bytes) -> pd.DataFrame:
 
 # ── public API ────────────────────────────────────────────────────────────────
 
-def download_shiller_data() -> pd.DataFrame:
-    """
-    Download CAPE data and cache as CSV.
+def fetch_cape_dataframe() -> pd.DataFrame:
+    """Fetch and parse the CAPE series. TOOL-ONLY — never writes.
 
     Primary:  multpl.com HTML table (full history 1871-present, monthly updates).
     Fallback: Yale ie_data.xls (known stale at Sep 2023 as of May 2026).
-    Last resort: existing local CSV cache.
+    Raises when both fail; tools/refresh_market_data.py owns the write and
+    reports fetch and write outcomes separately, so a blocked write can never
+    masquerade as a network failure (the old combined path did exactly that).
     """
-    # Primary: multpl.com
     try:
         resp = requests.get(
             _MULTPL_URL,
@@ -174,64 +174,44 @@ def download_shiller_data() -> pd.DataFrame:
             headers={"User-Agent": "Mozilla/5.0 (compatible; investment-tracker/1.0)"},
         )
         resp.raise_for_status()
-        df = _parse_multpl(resp.text)
-        _CACHE_CSV.parent.mkdir(parents=True, exist_ok=True)
-        df.to_csv(_CACHE_CSV, index=False)
-        return df
-    except Exception as multpl_exc:
-        pass
-
-    # Fallback: Yale XLS
-    try:
-        resp = requests.get(_YALE_URL, timeout=30)
-        resp.raise_for_status()
-        df = _parse_excel_bytes(resp.content)
-        _CACHE_CSV.parent.mkdir(parents=True, exist_ok=True)
-        df.to_csv(_CACHE_CSV, index=False)
-        return df
+        return _parse_multpl(resp.text)
     except Exception:
         pass
 
-    # Last resort: disk cache
-    if _CACHE_CSV.exists():
-        return pd.read_csv(_CACHE_CSV, parse_dates=["date"])
-
-    raise RuntimeError(
-        "Shiller CAPE data unavailable. multpl.com and Yale XLS both failed, "
-        "and no local cache exists."
-    )
+    resp = requests.get(_YALE_URL, timeout=30)
+    resp.raise_for_status()
+    return _parse_excel_bytes(resp.content)
 
 
 def get_cape_series() -> pd.Series:
     """
-    Date-indexed Series of CAPE values from 1881 to present.
-    Refreshes from multpl.com when the local cache is ≥30 days old.
+    Date-indexed Series of CAPE values from 1881 through the committed frontier.
+
+    Reads the COMMITTED CSV only — never fetches, never writes. The tracked
+    file is an input, refreshed exclusively by tools/refresh_market_data.py;
+    the old mtime-triggered auto-refresh rewrote a tracked file from ordinary
+    renders, and its Force-refresh companion (clear_shiller_cache, removed)
+    deleted it outright. Staleness is surfaced via cape_frontier() +
+    asof.staleness_note on every consumer, not silently repaired here.
     """
-    needs_refresh = True
-    if _CACHE_CSV.exists():
-        mtime_date = date.fromtimestamp(_CACHE_CSV.stat().st_mtime)
-        needs_refresh = (date.today() - mtime_date).days >= _REFRESH_DAYS
-
-    if needs_refresh:
-        try:
-            df = download_shiller_data()
-        except Exception:
-            if _CACHE_CSV.exists():
-                df = pd.read_csv(_CACHE_CSV, parse_dates=["date"])
-            else:
-                raise
-    else:
-        df = pd.read_csv(_CACHE_CSV, parse_dates=["date"])
-
+    if not _CACHE_CSV.exists():
+        raise FileNotFoundError(
+            f"Committed CAPE data missing: {_CACHE_CSV}. Restore it from git, "
+            "or regenerate it with tools/refresh_market_data.py."
+        )
+    df = pd.read_csv(_CACHE_CSV, parse_dates=["date"])
     df = df.dropna(subset=["cape"])
     s = pd.Series(df["cape"].values, index=pd.DatetimeIndex(df["date"]), name="CAPE")
     return s.sort_index()
 
 
-def clear_shiller_cache() -> None:
-    """Delete the local CSV cache so the next load forces a fresh download."""
-    if _CACHE_CSV.exists():
-        _CACHE_CSV.unlink()
+def cape_frontier() -> "date | None":
+    """Last committed CAPE month (data frontier, never mtime). None if unreadable."""
+    try:
+        s = get_cape_series()
+        return s.index[-1].date() if len(s) else None
+    except Exception:
+        return None
 
 
 def current_cape() -> float:
