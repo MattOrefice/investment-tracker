@@ -639,6 +639,45 @@ def test_parse_momentum_excludes_annual_footer():
     assert len(s) == 3
 
 
+# ── UMD vintage disclosure ────────────────────────────────────────────────────
+# The committed momentum file is a vintage: Dartmouth can revise deep history
+# between refreshes (2026-08: 18,324 of 26,111 rows). The methodology note must
+# say what the loadings are computed against, dated from the committed frontier.
+
+def test_umd_vintage_note_renders_the_committed_frontier_date(monkeypatch):
+    import src.factors as factors
+    monkeypatch.setattr(factors, "umd_frontier", lambda: date(2031, 1, 15))
+    notes = build_factor_methodology_notes({})
+    vintage = [n for n in notes if n.startswith("Momentum (UMD) vintage:")]
+    assert len(vintage) == 1
+    assert "(data through 2031-01-15)" in vintage[0]
+    # One refresh cited as evidence for vintage-specificity — not a claim
+    # about the source's general practice.
+    assert "the 2026-08 refresh, for example" in vintage[0]
+    assert "source restatement, not portfolio changes" in vintage[0]
+    assert "restates" not in vintage[0]
+
+
+def test_umd_vintage_note_degrades_to_na_without_a_frontier(monkeypatch):
+    import src.factors as factors
+    monkeypatch.setattr(factors, "umd_frontier", lambda: None)
+    notes = build_factor_methodology_notes({})
+    vintage = next(n for n in notes if n.startswith("Momentum (UMD) vintage:"))
+    assert "(data through N/A)" in vintage
+
+
+def test_umd_vintage_note_follows_the_carhart_note_and_tracks_the_data():
+    from src.factors import load_umd_factor
+    notes = build_factor_methodology_notes({})
+    carhart = next(i for i, n in enumerate(notes)
+                   if n.startswith("Carhart Momentum supplement"))
+    vintage = next(i for i, n in enumerate(notes)
+                   if n.startswith("Momentum (UMD) vintage:"))
+    assert vintage == carhart + 1
+    committed = load_umd_factor().index[-1].date().isoformat()
+    assert f"(data through {committed})" in notes[vintage]
+
+
 def test_run_sleeve_regressions_mom_returns_expected_structure():
     """
     With mocked _get_sleeve_return_series, load_factors, and load_umd_factor,
