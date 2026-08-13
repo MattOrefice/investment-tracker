@@ -162,12 +162,23 @@ _THEMATIC_PROS = (
     "than a broad index fund. Most are slivers you could not state a "
     "forward thesis for. The intellectual case for cleaning it up is real."
 )
+# The "11.8% of your equity" this cons paragraph used to assert was an authored
+# literal with no source and no stated denominator — six readings of "equity" were
+# available and none of them produced 11.8 on the live book (look-through household
+# equity reads ~11.5; as-held reads ~19.8). It also sat next to a TOD-scoped {value},
+# so a reader dividing the figures the card displays could not reach it by any route.
+# All three figures are templated now, on the basis household.py's methodology
+# decision 1 commits the household to, and the sentence states its own scope.
 _THEMATIC_CONS = (
     "Unwinding realizes {embedded_gain} of "
     "gain, costing several hundred dollars in 18.07% capital-gains tax (15% federal + "
     "3.07% PA) now that the 0% bracket is gone — for no location benefit. You have decided to keep the sector bets. "
-    "Household-wide the thematic book is 11.8% of your equity — a real allocation, "
-    "though each position is a rounding error. The correct action is to log "
+    "{value} of that book sits in the taxable TOD account; household-wide the same "
+    "symbols hold {thematic_equity_value} of equity against the household's "
+    "{lookthrough_equity_value} of look-through equity — {thematic_equity_share}, a "
+    "real allocation, though each position is a rounding error. That share counts "
+    "equity only: IBIT is crypto, so it sits inside the {count} positions this card "
+    "lists and outside the percentage. The correct action is to log "
     "this as accepted, capped at its current weight — not to fix it. A logged "
     "decision is not drift."
 )
@@ -397,8 +408,8 @@ ACTION_GROUPS: list[dict] = [
     {
         "key": "thematic_sprawl", "title": "Thematic sprawl",
         "score": 2, "status": "accepted",
-        "action": "Leave as-is — logged as an accepted 11.8% thematic tilt, capped "
-                  "at its current weight.",
+        "action": "Leave as-is — logged as an accepted {thematic_equity_share} "
+                  "thematic tilt, capped at its current weight.",
         "symbols": ["ARKK", "BOTZ", "CIBR", "EMQQ", "FINX", "FRNW", "IBB", "ICLN",
                     "IDGT", "PAVE", "ROBO", "IWC", "QQQJ", "XLK", "XLV", "UFO",
                     "JTEK", "QQQ", "IBIT"],
@@ -896,6 +907,82 @@ def _household_placeholders(
     }
 
 
+def _thematic_equity_figures(
+    positions_df: pd.DataFrame,
+    securities_df: pd.DataFrame,
+    compositions_df: pd.DataFrame | None,
+) -> dict[str, str | None]:
+    """The thematic book's household weight, as the three figures its prose needs:
+
+      lookthrough_equity_value  Σ EQUITY_SLEEVES dollars across the household, every
+                                fund-of-funds decomposed into its underlying sleeves
+      thematic_equity_value     the same sum restricted to the thematic card's own
+                                authored symbol list
+      thematic_equity_share     the second as a percent of the first
+
+    LOOK-THROUGH, not as-held, because household.py's methodology decision 1 makes
+    look-through the household's stated basis and the Household View defaults to it.
+    As-held reads ~19.8% against look-through's ~11.5% on the same data, so as-held
+    would put this card in contradiction with the methodology note it sits behind.
+    Decomposition goes through look_through_position — the same function the Household
+    View aggregates with — rather than a second local implementation, because one
+    quantity meaning two things on two pages is the defect this figure exists to fix.
+
+    The numerator is the CARD's symbol list, not sleeve_category == 'thematic'. Seven
+    of the card's symbols (QQQ, QQQJ, JTEK, XLK, XLV, IWC, IBIT) live in other
+    sleeves, so the sleeve filter would describe a $10K population the card does not
+    display while the card enumerates the one it does.
+
+    Numerator and denominator are filtered out of the SAME decomposed frame, which
+    makes the numerator a strict subset of the denominator by construction — a share
+    of equity has to be a share of something. That is what excludes IBIT: it is
+    crypto, so it counts in the card's {count}/{value} and not in a percentage of
+    equity. The cons prose names that exclusion rather than dropping it silently, and
+    test_thematic_non_equity_holdings_are_named_in_the_cons_prose fails if the symbol
+    list gains another non-equity name (or loses this one).
+
+    Returns None values when there is no compositions frame — the caller did not ask
+    for household look-through, and a share computed on some other basis is worse than
+    no share, so render_prose raises. Same contract as roth_idle_cash.
+    """
+    none = {"lookthrough_equity_value": None, "thematic_equity_value": None,
+            "thematic_equity_share": None}
+    if compositions_df is None or positions_df.empty:
+        return none
+
+    from src.household import look_through_position
+    from src.location_config import EQUITY_SLEEVES
+
+    symbols = set(next(
+        (g["symbols"] for g in ACTION_GROUPS if g["key"] == "thematic_sprawl"), None) or [])
+    if not symbols:
+        return none
+
+    parts: list[pd.DataFrame] = []
+    for _, p in positions_df.iterrows():
+        sym = str(p["symbol"])
+        part = look_through_position(sym, float(p["current_value"]),
+                                     compositions_df, securities_df)
+        part["symbol"] = sym
+        parts.append(part)
+    decomposed = pd.concat(parts, ignore_index=True)
+
+    equity = decomposed[decomposed["sleeve"].isin(EQUITY_SLEEVES)]
+    denominator = float(equity["dollar_value"].sum())
+    numerator = float(equity[equity["symbol"].isin(symbols)]["dollar_value"].sum())
+    if denominator <= 0 or numerator <= 0:
+        return none
+
+    return {
+        "lookthrough_equity_value": _fmt_dollars(denominator),
+        "thematic_equity_value":    _fmt_dollars(numerator),
+        # One decimal, matching household.single_stock_exposure_line's household
+        # share and the precision the authored "11.8%" claimed — enough to show the
+        # drift this placeholder exists to track, no more than daily prices support.
+        "thematic_equity_share":    f"{numerator / denominator * 100:.1f}%",
+    }
+
+
 def resolve_placeholders(
     group: dict,
     positions_df: pd.DataFrame,
@@ -903,6 +990,7 @@ def resolve_placeholders(
     securities_df: pd.DataFrame,
     register: pd.DataFrame,
     roth_idle_cash: float | None = None,
+    compositions_df: pd.DataFrame | None = None,
 ) -> dict[str, str | None]:
     """Resolve every placeholder for a group. A key maps to a formatted string, or
     None if it cannot resolve (empty subset) — render_prose raises if the prose
@@ -911,6 +999,10 @@ def resolve_placeholders(
     value/count/embedded_gain measure over the group's `population` holdings;
     annual_benefit is register-based; headroom_* and the account-level values
     (trad_ira_equity, workplace_plan_value, …) are household-wide.
+
+    compositions_df (the fund_compositions table) is needed only for the thematic
+    card's household look-through figures; omit it and those resolve to None, which
+    makes render_prose raise rather than render a share on the wrong basis.
     """
     hr = capital_gains_headroom(register)
     base = {
@@ -926,6 +1018,11 @@ def resolve_placeholders(
         "loss_side_benefit": _group_annual_benefit(register, "relocate_loss_side"),
         "gain_side_benefit": _group_annual_benefit(register, "relocate_gain_side"),
         **_household_placeholders(positions_df, accounts_df, securities_df),
+        # Keyed off the thematic card by name, like group_2_title and the sibling
+        # benefit figures above — so the household thematic weight means the same
+        # thing whichever card cites it, rather than following whichever group is
+        # being resolved.
+        **_thematic_equity_figures(positions_df, securities_df, compositions_df),
     }
     if group["key"] == "deploy_roth_cash":
         v = None if roth_idle_cash is None else _fmt_dollars(roth_idle_cash)
