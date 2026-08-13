@@ -58,10 +58,60 @@ def _write_map(tmp_path, mapping) -> str:
 
 # ── Real-export tests (skip when the personal CSV is absent) ──────────────────
 
-def test_row_count():
-    # 97 holdings across the 7 household accounts in the current export.
-    df = _df()
-    assert len(df) == 97, f"Expected 97 rows, got {len(df)}"
+def test_every_source_position_survives_the_parse():
+    """Invariant, not a pinned count: the parsed frame carries exactly the source
+    CSV's position rows — same number, same symbols.
+
+    Replaces `len(df) == 97`. That pin encoded a fact about EXTERNALLY MANAGED
+    holdings, so it went stale with no visible trigger: the advisor's Aug-2026
+    HLIPX-to-JCPB swap (JCPB in, an FCASH residual in, HLIPX out) moved the export
+    from 97 rows to 98, and nothing in this repo caused or saw it. The count had
+    already been bumped 85 -> 97 for the same reason. aeeb5c8 established the right
+    principle — "invariants instead of real dollar figures" — and applied it to the
+    value sum three tests below while leaving this one pinned.
+
+    Both sides are computed independently: the left through the full parser (header
+    normalization, account-map resolution, numeric cleaning), the right by reading
+    the CSV directly and applying only the row-selection rule. A parser bug that
+    drops a row moves one side and not the other. `len(df) > 0` would verify
+    nothing, having no independent right-hand side at all.
+
+    SYMBOL-SET equality as well as count: a swap — one row dropped, one invented —
+    leaves the count identical and the set different. Given that a ticker swap is
+    exactly what made the old pin stale, that is the likeliest recurrence here.
+
+    Honest limit: this is more DURABLE than the pin but slightly LESS SENSITIVE. If
+    the row-selection rule itself is wrong in the same way on both sides — say a
+    pending-activity row that should be excluded and is not — the test agrees with
+    the bug, where a pinned count would have broken once and caught it. The
+    value-sum invariant below covers value-level mis-routing this cannot see.
+    """
+    from src.ingestion.fidelity import _normalize_header
+    df = _df()  # parsed (skips when the personal CSV is absent)
+    raw = pd.read_csv(SAMPLE_CSV, encoding="utf-8-sig", index_col=False, dtype=str)
+    raw = raw.rename(columns={c: _normalize_header(c) for c in raw.columns})
+    # Same row-selection rule the parser applies (src/ingestion/fidelity.py:127) —
+    # keep only rows carrying a symbol, dropping footer paragraphs and blanks.
+    expected = raw[raw["symbol"].notna() & (raw["symbol"].str.strip() != "")]
+
+    assert len(df) == len(expected), (
+        f"parsed {len(df)} rows from a source CSV carrying {len(expected)} "
+        "position rows — ingestion dropped or invented rows"
+    )
+    # Compared as sorted LISTS, not sets: a symbol legitimately recurs across
+    # accounts (SPAXX in several), so multiset equality also catches a duplicated
+    # or de-duplicated row. The source side strips Fidelity's money-market '*'
+    # suffix exactly as the parser does at src/ingestion/fidelity.py:130
+    # ("SPAXX**" -> "SPAXX"); without it every sweep position reads as a mismatch.
+    parsed_syms = sorted(df["symbol"].astype(str).str.strip())
+    source_syms = sorted(
+        expected["symbol"].astype(str).str.replace(r"\*+$", "", regex=True).str.strip()
+    )
+    assert parsed_syms == source_syms, (
+        "parsed symbols differ from the source CSV's symbols (a swap keeps the "
+        f"count identical): missing={sorted(set(source_syms) - set(parsed_syms))}, "
+        f"invented={sorted(set(parsed_syms) - set(source_syms))}"
+    )
 
 
 def test_total_current_value_matches_source_sum():
