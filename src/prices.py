@@ -370,6 +370,55 @@ def get_prices(
     return cached
 
 
+def _cached_row_count(ticker: str, start_date: str, end: str) -> int:
+    """How many settled rows the cache already holds for this window.
+
+    Returns 0 when the prices table does not exist (a minimal fixture DB, a
+    freshly created file): "no cached rows" is the honest answer to the question
+    asked, not a swallowed error — it is also exactly what the caller would
+    conclude from an empty table.
+    """
+    try:
+        with get_connection() as conn:
+            return int(conn.execute(
+                "SELECT COUNT(*) FROM prices WHERE ticker = ? AND price_date >= ? "
+                "AND price_date <= ?",
+                (ticker, start_date, end),
+            ).fetchone()[0])
+    except Exception:                                            # noqa: BLE001
+        return 0
+
+
+def classify_miss(
+    ticker: str,
+    start_date: str,
+    end_date: Optional[str] = None,
+    *,
+    error: Optional[BaseException] = None,
+) -> str:
+    """Why a price lookup produced nothing usable, as a coverage reason code.
+
+    THIS IS THE WHOLE REASON COVERAGE IS BUILT IN TWO LAYERS. ``get_prices``
+    raises on every failure path, so from a caller's ``except`` clause a blocked
+    network and an empty cache arrive as the same ValueError. Only the price layer
+    can consult its own cache first and tell them apart. A caller that classified
+    misses from its own except clause would report every one of them as
+    ``fetch_failed``, and the reason code is not decoration — it decides whether a
+    gap is a legitimate degradation (a delisted holding) or a defect (#188).
+
+    Deliberately a classifier rather than a fetching wrapper: the fetch stays on
+    whichever ``get_prices`` the caller resolves, so a test that monkeypatches it
+    keeps working and there is still exactly one fetch implementation.
+    """
+    end = end_date or date.today().isoformat()
+    if _cached_row_count(ticker, start_date, end) > 0:
+        # Rows exist for the window, so the gap fetches inside get_prices already
+        # swallowed their own failures; an error reaching the caller past that is
+        # a genuine fetch failure rather than a cold cache.
+        return "fetch_failed" if error is not None else "empty_window"
+    return "no_cached_rows"
+
+
 def get_dividends(ticker: str, start_date: str, end_date: str) -> pd.Series:
     """
     Return dividend-per-share amounts indexed by ex_date for ticker in [start_date, end_date].
