@@ -575,7 +575,7 @@ RENDERED_PROSE_LEN = {
     "clear_roth_non_equity":     (1372, 1440),  # pros: rebuy VTI -> VOO (US Large Core's SAA ticker); the pro-VTI "total-market, not the S&P 500" rationale is REPLACED by the honest VTI-vs-VOO tradeoff + the overweight-is-visibility note (pros word count 166 -> 228). Cons -1 char: Aug-10 data drift in a templated figure.
     "relocate_loss_side":        (408, 908),   # Aug-2026: HLIPX sold by the advisor (rebought as JCPB) — action/pros rewritten sign-safe ("nets to roughly zero"), cons drops the HLIPX mention
     "relocate_gain_side":        (339, 361),   # cons: capacity restatement -> cross-ref to clear_roth_non_equity
-    "thematic_sprawl":           (217, 503),   # cons: gain rate 15% -> 18.07% (15% fed + 3.07% PA)
+    "thematic_sprawl":           (204, 466),   # pros -13 / cons -37: unsourceable fee precision deleted ("roughly 0.45% ... against 0.07%", "The excess fee is about $76 a year") — expense_ratio is NULL for all 16 thematic tickers, and $76 was wrong by its own arithmetic (~$58). Qualitative claim kept; allow_literals exemption retired with it. Earlier: gain rate 15% -> 18.07% (15% fed + 3.07% PA)
     "rollover_401k":             (486, 353),   # available now (MissionSquare 401(k), acct_wkpl_02 — holds RFUTX), not blocked on the next job
     "frozen_tod_income":         (400, 523),   # pros: literal "Three of them" -> derived {register_count} + JCPB joins the enumeration (Aug-2026 advisor swap)
     "saa_sleeves_taxable":       (340, 648),   # pros +79: phantom income attributed to the TIPS sleeve (inflation accruals paying no cash until maturity) instead of applied to all four holdings — only SCHP throws it; VGIT/VNQ/PDBC generate ordinary income, PDBC being the no-K-1 1099 wrapper. Cons: capacity restatement -> cross-ref to clear_roth_non_equity
@@ -772,23 +772,30 @@ def test_no_dollar_literals_except_allow_literals_groups():
         assert not has_lit, f"group {g['key']!r} has an un-allowed dollar literal in its prose"
 
 
-def test_exactly_one_allow_literals_group_and_all_commented():
-    """After templating the five live literals, exactly one group keeps
-    allow_literals (thematic's $76 fee estimate). A second one cannot be added
-    without an explanatory comment on the same config line."""
-    import src.location_actions as la
-    allowed = [g for g in ACTION_GROUPS if g.get("allow_literals")]
-    assert len(allowed) == 1, f"exactly one allow_literals group expected; got {[g['key'] for g in allowed]}"
-    assert allowed[0]["key"] == "thematic_sprawl"
+def test_no_group_carries_allow_literals():
+    """No group is exempt from the dollar-literal guard any more.
 
+    thematic_sprawl was the last holdout, exempted for its "$76 a year" excess-fee
+    estimate. That figure had no source — securities.expense_ratio is NULL for all
+    16 thematic tickers, so neither it nor the 0.45%/0.07% rates it derived from
+    could be computed — and it was wrong by its own arithmetic besides (38 bps on
+    the live book is ~$58). Deleting the false precision retired the exemption
+    with it, so every group's prose is now covered by
+    test_no_dollar_literals_except_allow_literals_groups.
+
+    Re-adding the flag is a deliberate act: it silently removes a card from that
+    guard, which is how "$76" survived long enough to go stale unnoticed.
+    """
+    import src.location_actions as la
+    allowed = [g["key"] for g in ACTION_GROUPS if g.get("allow_literals")]
+    assert not allowed, (
+        f"groups exempt from the dollar-literal guard: {allowed}. Prefer a "
+        "placeholder; if a literal is genuinely unavoidable, say why it cannot be "
+        "computed rather than exempting the card."
+    )
     src = pathlib.Path(la.__file__).read_text(encoding="utf-8")
     lit_lines = [ln for ln in src.splitlines() if re.search(r'"allow_literals":\s*True', ln)]
-    assert len(lit_lines) == 1, f"expected exactly one allow_literals line in config, got {len(lit_lines)}"
-    for ln in lit_lines:
-        after_true = ln.split("True", 1)[1]
-        assert "#" in after_true, (
-            f"allow_literals must carry an explanatory comment on the same line: {ln.strip()!r}"
-        )
+    assert not lit_lines, f"allow_literals reintroduced in config: {lit_lines}"
 
 
 # ── Templated account-level literals (this PR) ─────────────────────────────────

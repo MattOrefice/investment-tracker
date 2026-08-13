@@ -145,13 +145,20 @@ _GAIN_SIDE_CONS = (
     "that rollover the household's largest lever."
 )
 
+# The fee figures this card used to carry ("roughly 0.45% in average fees against
+# 0.07% for broad index", "the excess fee is about $76 a year") were authored
+# literals with no source: securities.expense_ratio is NULL for all 16 thematic
+# tickers, so neither can be computed. They were also wrong by their own
+# arithmetic — 38 bps on the live book is ~$58, not $76 — and $76 implies a
+# $20,000 position set the card does not hold. The qualitative claim survives;
+# the false precision does not.
 _THEMATIC_PROS = (
-    "{count} unmanaged positions worth {value}, carrying roughly 0.45% in average "
-    "fees against 0.07% for broad index. Most are slivers you could not state a "
+    "{count} unmanaged positions worth {value}, carrying materially higher fees "
+    "than a broad index fund. Most are slivers you could not state a "
     "forward thesis for. The intellectual case for cleaning it up is real."
 )
 _THEMATIC_CONS = (
-    "The excess fee is about $76 a year. Unwinding realizes {embedded_gain} of "
+    "Unwinding realizes {embedded_gain} of "
     "gain, costing several hundred dollars in 18.07% capital-gains tax (15% federal + "
     "3.07% PA) now that the 0% bracket is gone — for no location benefit. You have decided to keep the sector bets. "
     "Household-wide the thematic book is 11.8% of your equity — a real allocation, "
@@ -395,7 +402,6 @@ ACTION_GROUPS: list[dict] = [
         # {count}/{value} measure the whole sprawl (matched symbols), but the
         # expander lists only the 2 mislocation rows — so a caption is required.
         "population": "matched_symbols", "caption": _THEMATIC_CAPTION,
-        "allow_literals": True,   # "$76" excess-fee estimate, not computed
     },
     {
         "key": "rollover_401k", "title": "401(k) rollover",
