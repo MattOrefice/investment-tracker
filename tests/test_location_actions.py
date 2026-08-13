@@ -214,6 +214,31 @@ def test_resolved_zero_is_not_confused_with_unresolvable():
     assert render_prose(bad_group["pros"], resolved) == "value is $100"
 
 
+def test_roth_cash_prose_does_not_claim_the_balance_is_a_contribution():
+    """{value} on the deploy card is a CASH BALANCE, and the prose must not assert
+    what put it there.
+
+    It resolves from _roth_idle_cash, which takes the largest cash-sleeve balance
+    in any Roth account — a position, not a provenance. Calling it "this year's
+    contribution" asserts an identity nothing can check: the repository holds no
+    contribution ledger. tracker.db has no contribution column in any table,
+    trades.action carries only 'Buy', and there is no contributions seed or CSV.
+    The one related field, roth_contribution_basis, is a runtime-profile INPUT
+    (pages/15_Liquidity.py), not a record of deposits.
+
+    An idle Roth balance can be a contribution, a dividend that swept to cash, a
+    sale awaiting redeployment, or any mixture, and the card cannot tell which. The
+    argument for deploying it does not need to know — every day it sits is
+    uninvested either way — so the honest sentence says what the number is.
+    """
+    from src.location_actions import _DEPLOY_ROTH_CASH_PROS
+    assert "this year's contribution" not in _DEPLOY_ROTH_CASH_PROS, (
+        "the deploy card asserts the idle Roth balance IS this year's contribution; "
+        "no contribution record exists anywhere in the repo to support it"
+    )
+    assert "{value}" in _DEPLOY_ROTH_CASH_PROS, "the balance itself is still stated"
+
+
 def test_phantom_income_is_attributed_to_tips_not_the_whole_group():
     """Phantom income belongs to the TIPS sleeve, not to all four taxable-SAA holdings.
 
@@ -571,7 +596,7 @@ def test_no_rendered_prose_contains_comma_emdash():
 # Exact rendered lengths against the live Aug-10 CSV — a brittle-on-purpose canary
 # for silent prose corruption (dropped words render as valid Markdown).
 RENDERED_PROSE_LEN = {
-    "deploy_roth_cash":          (514, 766),   # cons: + FTC mechanism, relocated here from predeploy_stranded_equity (first encounter on the page; cons word count 97 -> 131)
+    "deploy_roth_cash":          (500, 766),   # pros -14: "{value} is this year's contribution" -> "{value} is sitting uninvested" — the balance's provenance is unknowable (no contribution ledger exists anywhere in the repo) and the deploy argument does not need it. Cons: + FTC mechanism, relocated here from predeploy_stranded_equity (first encounter on the page; cons word count 97 -> 131)
     "clear_roth_non_equity":     (1372, 1440),  # pros: rebuy VTI -> VOO (US Large Core's SAA ticker); the pro-VTI "total-market, not the S&P 500" rationale is REPLACED by the honest VTI-vs-VOO tradeoff + the overweight-is-visibility note (pros word count 166 -> 228). Cons -1 char: Aug-10 data drift in a templated figure.
     "relocate_loss_side":        (408, 908),   # Aug-2026: HLIPX sold by the advisor (rebought as JCPB) — action/pros rewritten sign-safe ("nets to roughly zero"), cons drops the HLIPX mention
     "relocate_gain_side":        (339, 361),   # cons: capacity restatement -> cross-ref to clear_roth_non_equity

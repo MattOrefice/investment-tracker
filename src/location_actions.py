@@ -39,9 +39,14 @@ _UNSET = object()
 
 # ── Authored prose (verbatim; do not edit for style) ───────────────────────────
 
+# {value} is a cash BALANCE (largest cash sleeve in any Roth, see _roth_idle_cash),
+# not a provenance. It used to be called "this year's contribution", which asserts
+# an identity nothing here can check — the repo holds no contribution ledger, and
+# an idle Roth balance can equally be a swept dividend or a sale awaiting
+# redeployment. The deploy argument does not depend on how it got there.
 _DEPLOY_ROTH_CASH_PROS = (
-    "Zero tax, zero friction, one session. {value} is this year's contribution "
-    "sitting in a money market inside your most valuable account. Every day it "
+    "Zero tax, zero friction, one session. {value} is sitting uninvested "
+    "in a money market inside your most valuable account. Every day it "
     "sits is compounding you don't get back, in the one wrapper where growth is "
     "never taxed. Every target sleeve is household-underweight against your own "
     "revealed targets, and the buys are sized to each sleeve's dollar gap, so the "
