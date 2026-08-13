@@ -142,10 +142,12 @@ def test_no_card_title_asserts_free_or_costly():
 
 def test_no_two_groups_render_identical_prose():
     pos, acct, sec, reg = _live()
+    comps, _targets = _live_saa()
     deploy = build_roth_deploy_answer(pos, acct, sec)
     rendered = []
     for g in ACTION_GROUPS:
-        resolved = resolve_placeholders(g, pos, acct, sec, reg, roth_idle_cash=deploy["idle_cash"])
+        resolved = resolve_placeholders(g, pos, acct, sec, reg, roth_idle_cash=deploy["idle_cash"],
+                                        compositions_df=comps)
         rendered.append(render_prose(g["pros"], resolved))
         rendered.append(render_prose(g["cons"], resolved))
     assert len(set(rendered)) == len(rendered), (
@@ -577,10 +579,12 @@ def test_directability_is_not_managed_by_or_tax_treatment():
 
 def _rendered_all():
     pos, acct, sec, reg = _live()
+    comps, _targets = _live_saa()
     dep = build_roth_deploy_answer(pos, acct, sec)
     out = {}
     for g in ACTION_GROUPS:
-        r = resolve_placeholders(g, pos, acct, sec, reg, roth_idle_cash=dep["idle_cash"])
+        r = resolve_placeholders(g, pos, acct, sec, reg, roth_idle_cash=dep["idle_cash"],
+                                 compositions_df=comps)
         out[g["key"]] = (render_prose_md(g["pros"], r), render_prose_md(g["cons"], r), r, g)
     return out
 
@@ -600,7 +604,7 @@ RENDERED_PROSE_LEN = {
     "clear_roth_non_equity":     (1372, 1440),  # pros: rebuy VTI -> VOO (US Large Core's SAA ticker); the pro-VTI "total-market, not the S&P 500" rationale is REPLACED by the honest VTI-vs-VOO tradeoff + the overweight-is-visibility note (pros word count 166 -> 228). Cons -1 char: Aug-10 data drift in a templated figure.
     "relocate_loss_side":        (408, 908),   # Aug-2026: HLIPX sold by the advisor (rebought as JCPB) — action/pros rewritten sign-safe ("nets to roughly zero"), cons drops the HLIPX mention
     "relocate_gain_side":        (339, 361),   # cons: capacity restatement -> cross-ref to clear_roth_non_equity
-    "thematic_sprawl":           (204, 466),   # pros -13 / cons -37: unsourceable fee precision deleted ("roughly 0.45% ... against 0.07%", "The excess fee is about $76 a year") — expense_ratio is NULL for all 16 thematic tickers, and $76 was wrong by its own arithmetic (~$58). Qualitative claim kept; allow_literals exemption retired with it. Earlier: gain rate 15% -> 18.07% (15% fed + 3.07% PA)
+    "thematic_sprawl":           (204, 710),   # cons +244: the authored "11.8% of your equity" -> three templated figures ({value} TOD subtotal, {thematic_equity_value} household numerator, {lookthrough_equity_value} denominator) + {thematic_equity_share}, so the arithmetic closes on the page, plus the one clause naming what the equity share excludes (IBIT, crypto). Earlier: pros -13 / cons -37: unsourceable fee precision deleted ("roughly 0.45% ... against 0.07%", "The excess fee is about $76 a year") — expense_ratio is NULL for all 16 thematic tickers, and $76 was wrong by its own arithmetic (~$58). Qualitative claim kept; allow_literals exemption retired with it. Earlier: gain rate 15% -> 18.07% (15% fed + 3.07% PA)
     "rollover_401k":             (486, 353),   # available now (MissionSquare 401(k), acct_wkpl_02 — holds RFUTX), not blocked on the next job
     "frozen_tod_income":         (400, 523),   # pros: literal "Three of them" -> derived {register_count} + JCPB joins the enumeration (Aug-2026 advisor swap)
     "saa_sleeves_taxable":       (340, 648),   # pros +79: phantom income attributed to the TIPS sleeve (inflation accruals paying no cash until maturity) instead of applied to all four holdings — only SCHP throws it; VGIT/VNQ/PDBC generate ordinary income, PDBC being the no-K-1 1099 wrapper. Cons: capacity restatement -> cross-ref to clear_roth_non_equity
@@ -821,6 +825,83 @@ def test_no_group_carries_allow_literals():
     src = pathlib.Path(la.__file__).read_text(encoding="utf-8")
     lit_lines = [ln for ln in src.splitlines() if re.search(r'"allow_literals":\s*True', ln)]
     assert not lit_lines, f"allow_literals reintroduced in config: {lit_lines}"
+
+
+# ── Percent literals: rates may be authored, portfolio shares may not ──────────
+#
+# The dollar guard above can be blanket (no card needs to author a dollar figure).
+# Percents cannot: eight cards carry legitimate RATE literals — tax rates from
+# TAX_PROFILE, an SAA target weight, the international structural assumptions —
+# and a blanket regex would fire on every one of them, which is how you end up
+# deleting the guard instead of the defect.
+#
+# The distinguishing property is not the value, it is what the number measures.
+# A rate, target, or assumption is authored config and may be a literal. A
+# MEASUREMENT OF THE LIVE BOOK may not: it goes stale the moment prices move,
+# which is exactly what "11.8% of your equity" did (it read 11.5% by the time
+# anyone checked, and nothing in the repo could recompute it).
+#
+# So the guard is an inventory pin, brittle-on-purpose in the same way
+# RENDERED_PROSE_LEN is: every percent literal in every card's pros/cons/action,
+# enumerated with what sources it. A new percent literal fails this test until
+# someone writes down which of the two kinds it is — and a portfolio share has
+# no honest entry to write, because it has to be a placeholder instead.
+_PERCENT_LITERAL = re.compile(r"\d+(?:\.\d+)?\s?%")
+
+PERCENT_LITERALS = {
+    # TAX_PROFILE: federal_ltcg 0.15 + state_ltcg 0.0307 = 18.07%; "0%" is the
+    # LTCG_0_BRACKET_CEILING_SINGLE_2026 bracket the card says is out of reach.
+    "relocate_gain_side":         {"18.07%", "15%", "3.07%", "0%"},
+    "frozen_tod_income":          {"18.07%", "15%", "3.07%", "0%"},
+    # Same tax rates. The 11.8% book share that used to sit here is now
+    # {thematic_equity_share} — computed household-wide over look-through equity.
+    "thematic_sprawl":            {"18.07%", "15%", "3.07%", "0%"},
+    # US Large Core's SAA target weight (asset_classes.target_weight), which the
+    # rebuy widens the measured overweight against.
+    "clear_roth_non_equity":      {"17.35%"},
+    # 20%: the ex-cash international region behind _INTL_TILT_TARGET_FRACTION.
+    # ~3% intl dividend yield x ~15% effective foreign withholding: the two
+    # structural assumptions _INTL_FTC_DRAG is built from.
+    "fund_intl_tilts":            {"20%", "15%", "3%"},
+    "deploy_roth_cash":           set(),
+    "relocate_loss_side":         set(),
+    "rollover_401k":              set(),
+    "saa_sleeves_taxable":        set(),
+    "predeploy_stranded_equity":  set(),
+}
+
+
+def test_percent_literals_pinned_to_rates_never_portfolio_shares():
+    for g in ACTION_GROUPS:
+        found = set()
+        for field in ("pros", "cons", "action"):
+            if g.get(field):
+                found |= set(_PERCENT_LITERAL.findall(g[field]))
+        assert found == PERCENT_LITERALS[g["key"]], (
+            f"{g['key']}: percent literals drifted from the pin — got {sorted(found)}, "
+            f"pinned {sorted(PERCENT_LITERALS[g['key']])}. A rate/target/assumption "
+            "belongs in the pin with its source named; a figure measuring the live "
+            "book belongs in a placeholder, not in prose."
+        )
+
+
+def test_thematic_book_share_is_a_placeholder_in_prose_and_action():
+    """The card's own weight is measured, not authored — in BOTH the cons paragraph
+    and the one-line action, which is the copy most likely to be skimmed and the
+    place the stale 11.8% survived longest."""
+    g = next(x for x in ACTION_GROUPS if x["key"] == "thematic_sprawl")
+    assert "{thematic_equity_share}" in g["cons"], "cons must template the book share"
+    assert "{thematic_equity_share}" in g["action"], "the action line must template it too"
+    for field in ("pros", "cons", "action"):
+        assert "11.8" not in g[field], f"the authored book share is back in {field}"
+    # Module-wide, excluding comments: the note explaining WHY 11.8% was deleted has
+    # to be able to quote it, but no prose string may carry it again.
+    import src.location_actions as la
+    src = pathlib.Path(la.__file__).read_text(encoding="utf-8")
+    code = [ln for ln in src.splitlines() if not ln.lstrip().startswith("#")]
+    assert not any("11.8%" in ln for ln in code), (
+        "the authored 11.8% book share is back in a prose string"
+    )
 
 
 # ── Templated account-level literals (this PR) ─────────────────────────────────
@@ -1128,7 +1209,8 @@ def test_every_group_action_line_renders_live():
     comp, tgt = _live_saa()
     dep = build_roth_deploy_answer(pos, acct, sec, comp, tgt)
     for g in ACTION_GROUPS:
-        r = resolve_placeholders(g, pos, acct, sec, reg, roth_idle_cash=dep["idle_cash"])
+        r = resolve_placeholders(g, pos, acct, sec, reg, roth_idle_cash=dep["idle_cash"],
+                                 compositions_df=comp)
         if g["key"] == "deploy_roth_cash":
             r = {**r, **deploy_targets_split(dep)}
         rendered = render_prose_md(g["action"], r)   # raises on any unresolved placeholder
@@ -1427,3 +1509,179 @@ def test_headroom_resolves_demo_income_when_not_passed():
     hr = capital_gains_headroom(pd.DataFrame(columns=["embedded_gain"]), is_demo=True)
     assert hr["income_known"] is True
     assert hr["ordinary_income"] == DEMO_ORDINARY_INCOME
+
+
+# ── The thematic book's household weight (computed, not authored) ───────────────
+#
+# This is the only figure in the prose-defect batch that is COMPUTED rather than
+# deleted or reworded, so it is the only one where a test can satisfy itself by
+# calling the implementation's own expression and asserting it equals itself. The
+# right-hand side below is therefore derived by a different algorithm — a merge
+# against fund_compositions — never by calling look_through_position or the
+# resolver. If the resolver's filter, scope, or sleeve set is wrong, these fail.
+
+
+def _independent_lookthrough_equity(pos, sec, comps, symbols=None):
+    """Household look-through equity dollars, derived by merge.
+
+    A holding with rows in fund_compositions contributes one row per underlying
+    sleeve at that sleeve's weight; anything else contributes its own
+    securities.sleeve_category at weight 1. Then keep EQUITY_SLEEVES only, and
+    optionally restrict to a symbol list (the card's numerator).
+    """
+    from src.location_config import EQUITY_SLEEVES
+    sleeve_of = sec.set_index("ticker")["sleeve_category"].to_dict()
+    w = comps[["fund_symbol", "underlying_sleeve", "weight"]].rename(
+        columns={"fund_symbol": "symbol"})
+    m = pos[["symbol", "current_value"]].merge(w, on="symbol", how="left")
+    m["sleeve"] = m["underlying_sleeve"].where(
+        m["underlying_sleeve"].notna(), m["symbol"].map(sleeve_of))
+    m["dollars"] = m["current_value"] * m["weight"].fillna(1.0)
+    assert m["sleeve"].notna().all(), (
+        f"unclassified symbols: {sorted(set(m[m['sleeve'].isna()]['symbol']))}"
+    )
+    # The decomposition must conserve dollars, or the denominator is meaningless.
+    assert abs(float(m["dollars"].sum()) - float(pos["current_value"].sum())) < 1.0
+    eq = m[m["sleeve"].isin(EQUITY_SLEEVES)]
+    if symbols is not None:
+        eq = eq[eq["symbol"].isin(symbols)]
+    return float(eq["dollars"].sum())
+
+
+def _thematic_live_frames():
+    """The frames pages/14 actually resolves against — including
+    exclude_non_household_positions, which the page applies at line 115 before any
+    figure is computed. It drops the unvested/forfeitable employer contribution;
+    leaving it in inflates the look-through equity denominator by its equity share
+    and moves the card's weight by ~0.05pp, so the frame is part of the figure's
+    definition, not an incidental detail."""
+    from src.household import exclude_non_household_positions
+    pos, acct, sec, reg = _live()
+    comps, _targets = _live_saa()
+    return exclude_non_household_positions(pos, acct), acct, sec, reg, comps
+
+
+def test_thematic_equity_share_matches_independent_derivation_live():
+    pos, acct, sec, reg, comps = _thematic_live_frames()
+    g = next(x for x in ACTION_GROUPS if x["key"] == "thematic_sprawl")
+    r = resolve_placeholders(g, pos, acct, sec, reg, compositions_df=comps)
+
+    denom = _independent_lookthrough_equity(pos, sec, comps)
+    numer = _independent_lookthrough_equity(pos, sec, comps, symbols=set(g["symbols"]))
+    assert r["lookthrough_equity_value"] == _fmt_dollars(denom), "denominator drifted"
+    assert r["thematic_equity_value"] == _fmt_dollars(numer), "numerator drifted"
+    assert r["thematic_equity_share"] == f"{numer / denom * 100:.1f}%", "share drifted"
+
+
+def test_thematic_share_denominator_is_look_through_not_as_held():
+    """household.py's methodology decision 1 makes look-through the household's
+    stated basis, and the Household View defaults to it. As-held would read ~19.8%
+    against look-through's ~11.5% — an 8pp gap, and a card contradicting the
+    methodology note on the same data."""
+    from src.location_config import EQUITY_SLEEVES
+    pos, acct, sec, reg, comps = _thematic_live_frames()
+    g = next(x for x in ACTION_GROUPS if x["key"] == "thematic_sprawl")
+    r = resolve_placeholders(g, pos, acct, sec, reg, compositions_df=comps)
+
+    as_held = pos.merge(sec[["ticker", "sleeve_category"]], left_on="symbol",
+                        right_on="ticker", how="left")
+    as_held_equity = float(
+        as_held[as_held["sleeve_category"].isin(EQUITY_SLEEVES)]["current_value"].sum())
+    lt_equity = _independent_lookthrough_equity(pos, sec, comps)
+    assert lt_equity > as_held_equity, (
+        "fixture assumption: the household holds funds-of-funds whose equity is "
+        "invisible as-held"
+    )
+    assert r["lookthrough_equity_value"] == _fmt_dollars(lt_equity)
+    assert r["lookthrough_equity_value"] != _fmt_dollars(as_held_equity)
+
+
+def test_thematic_share_numerator_is_a_strict_subset_of_its_denominator():
+    """A share of equity has to be a share OF something: every dollar on top must
+    also be counted underneath. That is what excludes IBIT — crypto is not an equity
+    sleeve, so it stays in the card's {count}/{value} and out of the percentage.
+    Without this the figure would put $238 of crypto over an equity base and stop
+    being a proportion at all."""
+    from src.location_config import EQUITY_SLEEVES
+    pos, acct, sec, reg, comps = _thematic_live_frames()
+    g = next(x for x in ACTION_GROUPS if x["key"] == "thematic_sprawl")
+    syms = set(g["symbols"])
+
+    numer = _independent_lookthrough_equity(pos, sec, comps, symbols=syms)
+    denom = _independent_lookthrough_equity(pos, sec, comps)
+    assert 0 < numer < denom
+
+    card_all = float(pos[pos["symbol"].isin(syms)]["current_value"].sum())
+    sleeve_of = sec.set_index("ticker")["sleeve_category"].to_dict()
+    non_equity = float(
+        pos[pos["symbol"].isin(syms)
+            & ~pos["symbol"].map(sleeve_of).isin(EQUITY_SLEEVES)]["current_value"].sum())
+    assert non_equity > 0, (
+        "fixture assumption: the card holds at least one non-equity symbol — if this "
+        "is now false, the cons clause naming the exclusion is false too"
+    )
+    # The numerator is the card's book MINUS its non-equity holdings, exactly.
+    assert numer == pytest.approx(card_all - non_equity, abs=0.01)
+
+
+def test_thematic_non_equity_holdings_are_named_in_the_cons_prose():
+    """The exclusion must be stated, not silent. A reader adding up the card's own
+    table cannot reach the share unless the prose says which holdings the equity
+    percentage leaves out — and if the advisor buys another non-equity name into
+    this list, this fails until the prose accounts for it."""
+    from src.location_config import EQUITY_SLEEVES
+    pos, _acct, sec, _reg, _comps = _thematic_live_frames()
+    g = next(x for x in ACTION_GROUPS if x["key"] == "thematic_sprawl")
+    sleeve_of = sec.set_index("ticker")["sleeve_category"].to_dict()
+    held = pos[pos["symbol"].isin(set(g["symbols"]))]
+    non_equity = sorted({
+        s for s in set(held["symbol"]) if sleeve_of.get(s) not in EQUITY_SLEEVES
+    })
+    assert non_equity, (
+        "no card symbol is outside the equity sleeves any more — the cons clause "
+        "naming an excluded holding is now false and must be deleted"
+    )
+    for sym in non_equity:
+        assert sym in g["cons"], (
+            f"{sym} is in the card's symbol list but outside EQUITY_SLEEVES, so it is "
+            f"excluded from {{thematic_equity_share}} — the cons prose must name it"
+        )
+
+
+def test_thematic_cons_states_both_scopes_so_the_arithmetic_closes():
+    """The card shows a TOD-scoped {value} and a household-wide share. A reader
+    dividing the displayed dollars by anything cannot reach the percentage, so the
+    cons must render all three figures: the TOD subtotal, the household-wide
+    numerator, and the denominator it is a share of."""
+    pos, acct, sec, reg, comps = _thematic_live_frames()
+    g = next(x for x in ACTION_GROUPS if x["key"] == "thematic_sprawl")
+    r = resolve_placeholders(g, pos, acct, sec, reg, compositions_df=comps)
+    cons = render_prose_md(g["cons"], r)
+
+    for key in ("value", "thematic_equity_value", "lookthrough_equity_value",
+                "thematic_equity_share"):
+        assert escape_md(r[key]) in cons, f"cons must render {{{key}}}: {cons!r}"
+    # The household numerator and the TOD subtotal are different dollar figures —
+    # if they ever render identically the sentence has lost its point.
+    assert r["thematic_equity_value"] != r["value"]
+    # And the share is genuinely the two rendered figures divided.
+    _d = lambda s: float(s.replace("$", "").replace(",", ""))
+    share = _d(r["thematic_equity_value"]) / _d(r["lookthrough_equity_value"]) * 100
+    assert f"{share:.1f}%" == r["thematic_equity_share"], (
+        "the rendered dollars do not divide to the rendered percent — the reader "
+        "cannot check the figure"
+    )
+
+
+def test_thematic_share_is_none_without_compositions_so_render_raises():
+    """No compositions frame means no household look-through, and a share computed
+    on any other basis would silently contradict the page. Resolve to None and let
+    render_prose raise — the same contract roth_idle_cash has."""
+    pos, acct, sec, reg, _comps = _thematic_live_frames()
+    g = next(x for x in ACTION_GROUPS if x["key"] == "thematic_sprawl")
+    r = resolve_placeholders(g, pos, acct, sec, reg)
+    assert r["thematic_equity_share"] is None
+    assert r["thematic_equity_value"] is None
+    assert r["lookthrough_equity_value"] is None
+    with pytest.raises(ValueError, match="Unresolvable placeholder"):
+        render_prose(g["cons"], r)

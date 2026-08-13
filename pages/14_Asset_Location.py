@@ -275,7 +275,8 @@ for group in _ordered_groups:
         if group["key"] not in INFORMATIONAL_KEYS else register.iloc[0:0]
     )
     resolved = resolve_placeholders(group, positions_df, accounts_df, securities_df, register,
-                                    roth_idle_cash=_roth_idle_cash)
+                                    roth_idle_cash=_roth_idle_cash,
+                                    compositions_df=compositions_df)
 
     _, col, _ = st.columns([1, 8, 1])
     with col:
