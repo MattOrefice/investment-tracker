@@ -214,6 +214,40 @@ def test_resolved_zero_is_not_confused_with_unresolvable():
     assert render_prose(bad_group["pros"], resolved) == "value is $100"
 
 
+def test_phantom_income_is_attributed_to_tips_not_the_whole_group():
+    """Phantom income belongs to the TIPS sleeve, not to all four taxable-SAA holdings.
+
+    The saa_sleeves_taxable card covers PDBC, SCHP, VGIT and VNQ. Only SCHP throws
+    phantom income — TIPS are taxed each year on inflation accruals that pay no
+    cash until maturity. The other three generate ordinary income and nothing
+    phantom: VGIT interest, VNQ non-qualified dividends, and PDBC distributions
+    reported on a 1099, which is precisely the structure PDBC exists to provide
+    (it is the no-K-1 commodity wrapper).
+
+    The seed already records this correctly and is the source of truth checked
+    below, so a card conflating the two contradicts the repo's own data.
+    """
+    import csv as _csv
+    from src.location_actions import _SAA_TAXABLE_PROS
+
+    assert "ordinary income and phantom income" not in _SAA_TAXABLE_PROS, (
+        "conflates the two income types across all four holdings; only the TIPS "
+        "sleeve throws phantom income"
+    )
+    assert "phantom income" in _SAA_TAXABLE_PROS, "the phantom-income point is still worth making"
+    clause = _SAA_TAXABLE_PROS[_SAA_TAXABLE_PROS.index("phantom income") - 120:]
+    assert "TIPS" in clause, (
+        f"the phantom-income clause must name TIPS as its source: {clause[:160]!r}"
+    )
+
+    # Source of truth: the seed's own per-ticker notes.
+    rows = {r["symbol"]: (r.get("notes") or "").lower()
+            for r in _csv.DictReader(
+                (ROOT / "data" / "seed" / "securities_household.csv").open(encoding="utf-8-sig"))}
+    assert "phantom" in rows["SCHP"], "seed no longer attributes phantom income to SCHP"
+    assert "phantom" not in rows["PDBC"], "seed now attributes phantom income to PDBC"
+
+
 def test_foreign_tax_credit_claims_do_not_contradict():
     """No card may claim taxable is "the only wrapper" that can credit foreign tax
     withheld, without qualifying WHICH taxable wrapper.
@@ -544,7 +578,7 @@ RENDERED_PROSE_LEN = {
     "thematic_sprawl":           (217, 503),   # cons: gain rate 15% -> 18.07% (15% fed + 3.07% PA)
     "rollover_401k":             (486, 353),   # available now (MissionSquare 401(k), acct_wkpl_02 — holds RFUTX), not blocked on the next job
     "frozen_tod_income":         (400, 523),   # pros: literal "Three of them" -> derived {register_count} + JCPB joins the enumeration (Aug-2026 advisor swap)
-    "saa_sleeves_taxable":       (261, 648),   # cons: capacity restatement -> cross-ref to clear_roth_non_equity
+    "saa_sleeves_taxable":       (340, 648),   # pros +79: phantom income attributed to the TIPS sleeve (inflation accruals paying no cash until maturity) instead of applied to all four holdings — only SCHP throws it; VGIT/VNQ/PDBC generate ordinary income, PDBC being the no-K-1 1099 wrapper. Cons: capacity restatement -> cross-ref to clear_roth_non_equity
     "predeploy_stranded_equity": (328, 530),   # cons: FTC mechanism moved up to deploy_roth_cash; only the short application stays here (cons word count 122 -> 88, offsetting deploy's +34)
     "fund_intl_tilts":           (876, 1163),  # pros +12: "the only wrapper that can credit the foreign tax withheld" -> "the only wrapper YOU CONTROL that can" — both taxable books credit foreign withholding, so the unqualified claim contradicted the small-cap/EM card; what is unique here is control, not tax treatment
 }
