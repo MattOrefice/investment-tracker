@@ -223,9 +223,10 @@ _TOD_INCOME_CAPTION = (
 
 _SAA_TAXABLE_PROS = (
     "{count} holdings worth {value} — treasuries, TIPS, commodities, and a REIT — "
-    "sit in a taxable account, generating {annual_benefit} of ordinary income and "
-    "phantom income annually. The framework says these are the sleeves that most "
-    "deserve shelter. The register is right to flag them."
+    "sit in a taxable account, generating {annual_benefit} of ordinary income "
+    "annually, plus the phantom income the TIPS accrue on inflation adjustments "
+    "that pay no cash until maturity. The framework says these are the sleeves "
+    "that most deserve shelter. The register is right to flag them."
 )
 _SAA_TAXABLE_CONS = (
     "But it is flagging a capacity constraint, not a mistake. These are the SAA's "
