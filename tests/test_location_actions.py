@@ -1117,6 +1117,44 @@ def test_page14_renders_status_bucket_headers_live(monkeypatch):
     )
 
 
+def test_page14_evaluate_bucket_blurb_describes_its_cards_live(monkeypatch):
+    """The evaluate bucket's blurb must not claim its cards turn on this year's income.
+
+    The blurb is a static per-bucket string, so it asserts one reason for every card
+    that lands in the bucket. None of the four now there depends on this year's
+    income: relocate_loss_side survives on a structural credit-risk argument
+    ("nothing expires, no window closes"), rollover_401k is a destination choice
+    available now, predeploy_stranded_equity is a foreign-tax-credit argument for
+    leaving things alone, and fund_intl_tilts turns on pre-tax capacity. The income
+    claim is a leftover from when the bucket held gain-harvesting cards that did
+    turn on the 0% bracket.
+
+    A static blurb can only carry what is true of the BUCKET, not of whichever card
+    happens to sit in it — which for "evaluate" is that a decision is wanted and no
+    deadline forces it.
+    """
+    from src.household_data import find_latest_positions_csv
+    csv = find_latest_positions_csv()
+    if csv is None or not TRACKER_DB.exists() or TRACKER_DB.stat().st_size == 0:
+        pytest.skip("personal-mode inputs absent")
+    import src.config
+    import src.db
+    monkeypatch.setattr(src.config, "IS_DEMO", False)
+    monkeypatch.setattr(src.db, "DB_PATH", TRACKER_DB)
+    from streamlit.testing.v1 import AppTest
+    at = AppTest.from_file(str(ROOT / "pages" / "14_Asset_Location.py"), default_timeout=90).run()
+    assert not at.exception, f"page raised: {at.exception}"
+    caps = " ||| ".join(c.value for c in at.caption)
+    assert "depends on this year's income" not in caps, (
+        "the evaluate bucket blurb claims its cards turn on this year's income; "
+        "none of the four cards in that bucket does"
+    )
+    assert "nothing expires" in caps, (
+        "the evaluate bucket blurb must state what is true of the bucket itself — "
+        "a decision is wanted and no deadline forces it"
+    )
+
+
 # ── Final polish: totals, labelled figures, case-C footnote, act-now summary ────
 
 def test_gain_side_action_templates_cost_relief_payback():
