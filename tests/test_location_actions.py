@@ -1202,14 +1202,29 @@ def test_loss_side_action_templates_net_loss_no_literal():
 def test_loss_side_action_names_only_loss_lots_at_a_loss_live():
     """The loss-side action must not name a GAIN lot as sold 'at a loss'. JEPI is a
     +$ gain lot in this group; every ticker in the 'at a loss' clause must be at an
-    embedded loss, and JEPI must not appear there. (The block nets to roughly zero
-    since Aug-2026; BFRIX individually must still carry the embedded loss.)"""
+    embedded loss, and JEPI must not appear there. BFRIX individually must still
+    carry the embedded loss.
+
+    This asserts a PER-HOLDING label, not the group's net. It used to also require
+    `embedded_gain.sum() < 0`, which contradicted this docstring's own statement
+    that the block nets to roughly zero: the Aug-2026 advisor swap removed HLIPX,
+    the lot carrying the loss, leaving BFRIX -$40.22 + JEPI +$47.70 = +$7.48. The
+    action prose already says "nets to roughly zero" and reports the figure from a
+    template, so the sign of the net is data, not a promise this test can make —
+    and the next external swap can move it again in either direction. What must
+    stay true regardless is that no gain lot is described as sold at a loss.
+    """
     pos, acct, sec, reg = _live()
     g = next(x for x in ACTION_GROUPS if x["key"] == "relocate_loss_side")
     rr = filter_register_for_group(reg, g)
     action = render_prose(g["action"], resolve_placeholders(g, pos, acct, sec, reg))
     assert "at a loss" in action, action
     before = action.split("at a loss")[0]
+    # Non-vacuity: without this the two checks below pass trivially if the prose
+    # stops naming any holding at all, which is the same mislabelling defect in
+    # its silent form.
+    named = [s for s in rr["symbol"] if s in before]
+    assert named, f"no holding is named in the 'at a loss' clause: {action!r}"
     for sym, eg in zip(rr["symbol"], rr["embedded_gain"]):
         if sym in before:
             assert eg is not None and float(eg) < 0, (
@@ -1218,7 +1233,6 @@ def test_loss_side_action_names_only_loss_lots_at_a_loss_live():
     gains = [s for s, e in zip(rr["symbol"], rr["embedded_gain"]) if e is not None and float(e) > 0]
     for s in gains:
         assert s not in before, f"gain lot {s} must not be named 'at a loss'"
-    assert float(rr["embedded_gain"].sum()) < 0, "group must still net to a loss (net framing preserved)"
 
 
 # ── Capital-gains headroom sourced from the runtime income profile ─────────────
