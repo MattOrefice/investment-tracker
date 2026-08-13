@@ -257,7 +257,12 @@ _CASE_LABEL = {
 # so a bucket's cards are contiguous and the header fires on each status change.
 _BUCKET_BLURB = {
     "act_now":  "Trade now — free, or clearly worth the cost.",
-    "evaluate": "Optional — depends on this year's income; wait-and-see.",
+    # Says what is true of the BUCKET, not of whichever card sits in it. The four
+    # here turn on credit risk, a rollover destination, a foreign tax credit, and
+    # pre-tax capacity respectively — the old "depends on this year's income"
+    # described none of them, having outlived the gain-harvesting cards it was
+    # written for.
+    "evaluate": "Worth a decision — nothing expires while it waits.",
     "blocked":  "Waiting on an external event before it can happen.",
     "accepted": "Logged as a deliberate decision — no action.",
 }
