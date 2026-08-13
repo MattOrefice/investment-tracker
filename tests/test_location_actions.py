@@ -111,6 +111,33 @@ def test_statuses_are_read_from_config_verbatim():
     }
 
 
+def test_no_card_title_asserts_free_or_costly():
+    """A card title must not claim a trade is free or costly.
+
+    That determination is DERIVED per render, in pages/14_Asset_Location.py's
+    _summary_line: free when every register row for the group is is_free, costly
+    otherwise. The page's own glossary fixes the meaning — a trade inside a
+    tax-advantaged account is non-taxable and therefore free; a sale in a taxable
+    account realizes the embedded gain and is costly.
+
+    A title is an authored literal, so it cannot track the register. "Relocate the
+    loss side (free)" survived the Aug-2026 advisor swap that removed HLIPX and
+    turned the block from a net loss into a small net GAIN, still labelling the
+    card free while the derived badge said costly. It was wrong independently of
+    the net, too: the card sells in Individual Taxable (TOD), which the glossary
+    calls costly whether the block nets +$7 or -$40. Pinning the derivation rather
+    than the sign is what makes this durable against the next external swap.
+    """
+    offenders = {
+        g["key"]: g["title"] for g in ACTION_GROUPS
+        if re.search(r"\b(free|costly)\b", g["title"], re.IGNORECASE)
+    }
+    assert not offenders, (
+        "card titles assert a free/costly verdict that only the register can "
+        f"determine (see _summary_line): {offenders}"
+    )
+
+
 # ── No two groups render identical prose (guard against templated filler) ───────
 
 def test_no_two_groups_render_identical_prose():
