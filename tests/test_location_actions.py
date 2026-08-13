@@ -214,6 +214,36 @@ def test_resolved_zero_is_not_confused_with_unresolvable():
     assert render_prose(bad_group["pros"], resolved) == "value is $100"
 
 
+def test_foreign_tax_credit_claims_do_not_contradict():
+    """No card may claim taxable is "the only wrapper" that can credit foreign tax
+    withheld, without qualifying WHICH taxable wrapper.
+
+    The household holds two taxable books — Individual Taxable (Self-Directed) and
+    Individual Taxable (TOD) — and both preserve the foreign tax credit, because
+    the credit follows the tax treatment, not who directs the account. So an
+    unqualified "the only wrapper that can credit the foreign tax withheld" on the
+    international-tilts card contradicted the small-cap/EM card, which says holding
+    EM in taxable preserves the credit "which an IRA forfeits", and the deploy-Roth
+    card, which scopes the forfeit to a Roth.
+
+    What is actually unique about the self-directed book is that it is the only one
+    the owner can DIRECT — the TOD book is externally managed and frozen by
+    decision (see the frozen-TOD card). That is a control claim, not a tax claim,
+    and dropping the qualifier turned a true statement into a false one.
+    """
+    from src.location_actions import _FUND_INTL_TILTS_PROS
+    claim = "the only wrapper that can credit the foreign tax withheld"
+    assert claim not in _FUND_INTL_TILTS_PROS, (
+        "unqualified foreign-tax-credit exclusivity claim: both taxable books "
+        "credit foreign withholding, so this contradicts the small-cap/EM card. "
+        "The distinguishing property is control, not tax treatment."
+    )
+    assert "the only wrapper you control" in _FUND_INTL_TILTS_PROS, (
+        "the exclusivity claim must be qualified by control, naming what is "
+        "genuinely unique about the self-directed book"
+    )
+
+
 # ── fund_intl_tilts: no dollar literal, all placeholders resolve ────────────────
 
 def test_fund_intl_tilts_prose_no_literal_and_placeholders_resolve():
@@ -516,7 +546,7 @@ RENDERED_PROSE_LEN = {
     "frozen_tod_income":         (400, 523),   # pros: literal "Three of them" -> derived {register_count} + JCPB joins the enumeration (Aug-2026 advisor swap)
     "saa_sleeves_taxable":       (261, 648),   # cons: capacity restatement -> cross-ref to clear_roth_non_equity
     "predeploy_stranded_equity": (328, 530),   # cons: FTC mechanism moved up to deploy_roth_cash; only the short application stays here (cons word count 122 -> 88, offsetting deploy's +34)
-    "fund_intl_tilts":           (864, 1163),  # new evaluate group: fund the intl tilts from the rollover, FTC cost stated ({intl_tilt_ftc_cost} live off household x tilt share x 45bps)
+    "fund_intl_tilts":           (876, 1163),  # pros +12: "the only wrapper that can credit the foreign tax withheld" -> "the only wrapper YOU CONTROL that can" — both taxable books credit foreign withholding, so the unqualified claim contradicted the small-cap/EM card; what is unique here is control, not tax treatment
 }
 
 
