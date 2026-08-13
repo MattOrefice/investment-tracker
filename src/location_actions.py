@@ -335,7 +335,13 @@ ACTION_GROUPS: list[dict] = [
         "pros": _CLEAR_ROTH_PROS, "cons": _CLEAR_ROTH_CONS,
     },
     {
-        "key": "relocate_loss_side", "title": "Relocate the loss side (free)",
+        # No free/costly verdict in the title: that is derived per render from the
+        # register (_summary_line), and this card sells in a TAXABLE account, which
+        # the page glossary calls costly regardless of what the block nets. The old
+        # "(free)" was authored when the block carried a net loss and stayed put
+        # when the Aug-2026 swap turned it into a net gain — a literal cannot track
+        # the register, so it does not get to make this claim.
+        "key": "relocate_loss_side", "title": "Relocate the loss side",
         # Re-scored Aug-2026 (9/act_now -> 4/evaluate): the 9 rested on "harvests a
         # deduction at zero cost", and that premise left with HLIPX — the advisor
         # took the loss, and the remaining BFRIX+JEPI block nets to a small GAIN.
@@ -344,9 +350,10 @@ ACTION_GROUPS: list[dict] = [
         # nothing expires, no window closes. That is evaluate, not act_now.
         "score": 4, "status": "evaluate",
         # JEPI in this group is a small GAIN lot (a distinct account-lot that stays
-        # here); naming it individually "at a loss" was false. The block still NETS to
-        # a loss ({embedded_gain}), so the group-level framing holds — only JEPI's
-        # per-holding label is corrected. {embedded_gain} is templated (never a literal).
+        # here); naming it individually "at a loss" was false, and only BFRIX is named
+        # that way now. The block itself nets to a small GAIN since HLIPX left (see
+        # the re-scoring note above) — the action prose says "nets to roughly zero"
+        # and reports {embedded_gain}, which is templated (never a literal).
         # HLIPX left this block in Aug 2026: the advisor sold it and rebought the same
         # Core Plus strategy as JCPB (ETF wrapper) in taxable — so the harvest this
         # card proposed for HLIPX was executed externally, and JCPB is claimed by the
