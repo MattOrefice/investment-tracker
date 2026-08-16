@@ -10,7 +10,8 @@ import plotly.graph_objects as go
 from src.asof import as_of_banner
 from src.db import get_connection
 from src.endowment_benchmarks import CATEGORIES, ENTITIES, get_endowment_data
-from src.holdings import get_portfolio_account, get_sleeve_weights_on_date
+from src.holdings import get_portfolio_account, sleeve_weights_with_coverage
+from src.coverage import unresolved_marker
 from src.macro import percentile as macro_percentile
 from src.prose_helpers import percentile_label
 from src.rebalance import compute_drift, interpret_rebalance_status
@@ -265,8 +266,10 @@ with col:
 
     _band_line = ""
     _cash_note = ""
+    _gap_note = None
     try:
-        _sw = get_sleeve_weights_on_date(date.today().isoformat())
+        _sw, _sw_cov = sleeve_weights_with_coverage(date.today().isoformat())
+        _gap_note = unresolved_marker(_sw_cov)
         if not _sw.empty:
             _weights = dict(zip(_sw.index, _sw["Actual Weight"].values))
             _targets = {sc["name"]: sc["target_weight"] for sc in sub_classes}
@@ -286,7 +289,28 @@ with col:
     except Exception:
         _band_line = ""
 
-    if _band_line:
+    if _gap_note:
+        # A holding that could not be priced counted as zero, so the weights below
+        # are measured against a smaller book than is actually held — and because
+        # they are a share of an ex-cash denominator that shrank with it, the
+        # PRICED sleeves are overstated too, not just the unpriced ones. That
+        # second half is the non-obvious one and the reason this is a warning
+        # rather than a footnote.
+        st.warning(
+            f"⚠ **Weights exclude part of the book.** {_gap_note} Every sleeve "
+            "weight and drift figure below is measured against a smaller book "
+            "than you hold — the priced sleeves are overstated, not just the "
+            "unpriced ones."
+        )
+        # The band verdict is computed from those same weights, so neither "in
+        # band" nor "out of band" is a claim the data supports. Withdraw it rather
+        # than qualify it: a qualified verdict is still read as a verdict.
+        st.caption(
+            "**Band status:** unavailable — the book could not be fully priced. "
+            "Full drift detail and corrective contributions are on the Capital "
+            "Deployment page."
+        )
+    elif _band_line:
         _icon = "✓" if "within their tolerance" in _band_line else "⚠"
         st.caption(
             f"**Band status:** {_icon} {_band_line} "

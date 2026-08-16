@@ -191,6 +191,42 @@ class PriceCoverage:
         return frozenset(u.ticker for u in self.unresolved)
 
 
+def unresolved_marker(cov: PriceCoverage) -> "str | None":
+    """The shared body of a coverage marker, or None when there is nothing to say.
+
+    Returns None — not an empty string — when no holding is unresolved. A caller
+    must branch on it rather than render it unconditionally: an empty marker is
+    invisible in a rendered page and invisible to a digest, and it is the specific
+    leak tests/render/test_coverage_markers_render.py's control half exists to
+    catch.
+
+    Keyed on ``unresolved`` ALONE, deliberately. Not on ``is_complete`` (see that
+    property's docstring — it will read False on every render once substitutions
+    populate, and a marker wired to it would be permanently on), and not on
+    ``dropped_bars`` or ``substitutions``, which describe different failures and
+    need different sentences. Those get their own builders when their fields are
+    populated.
+
+    The phrase "no committed price" is the marker SIGNATURE: every coverage marker
+    on every page carries it, which is what makes "no marker rendered" checkable
+    without enumerating three pages of prose.
+
+    The vintage rides along because a reader told WHICH holdings failed asks AS OF
+    WHEN in the same breath. That is ``frontier_served`` — this marker's own
+    statement about its own figures — and is distinct from the every-page freshness
+    banner (``asof.as_of_live_line``, GitHub #189), which is a separate surface.
+    """
+    if not cov.unresolved:
+        return None
+    names = ", ".join(sorted(cov.unresolved_tickers()))
+    served = (f" Prices served through {cov.frontier_served}."
+              if cov.frontier_served else
+              " No committed price date is available for any holding.")
+    return (f"{len(cov.unresolved)} of {len(cov.requested)} holdings have "
+            f"no committed price ({names}), so their market value counted as "
+            f"zero.{served}")
+
+
 def coverage_from_statuses(
     statuses: "list[TickerStatus] | tuple[TickerStatus, ...]",
     as_of: str,
