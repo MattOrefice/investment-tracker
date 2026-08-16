@@ -124,7 +124,22 @@ class PriceCoverage:
     resolved: tuple[str, ...]
     unresolved: tuple[Unresolved, ...]
     as_of_requested: str
+
+    # frontier_served answers "HOW CURRENT IS WHAT I SERVED" — the MIN over the
+    # dates actually served, INCLUDING as_of_requested itself.
+    #
+    # Do not copy holdings.committed_price_frontier's `price_date < today` rule in
+    # here. That function answers a different question — "what date can I CLAIM AS
+    # SETTLED" — and excludes today so a partial mid-session bar cannot pose as a
+    # settled frontier. Applying that exclusion to this field reports None
+    # precisely when every price is fully current, i.e. blanks the disclosure
+    # exactly when coverage is best. It was written that way once and the bug
+    # surfaced only when a suite run brought the cache up to date mid-run.
+    #
+    # Whether a same-day bar is settled enough to anchor a report stays the
+    # caller's judgement, made on the evidence this field gives it.
     frontier_served: str | None = None
+
     dropped_bars: tuple[DroppedBar, ...] = ()
     substitutions: tuple[Substitution, ...] = ()
 
