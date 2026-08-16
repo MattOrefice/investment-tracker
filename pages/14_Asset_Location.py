@@ -64,6 +64,7 @@ from src.location_actions import (
     build_roth_deploy_answer,
     household_deploy_gaps,
     deploy_targets_split,
+    deploy_prose_for,
     resolve_placeholders,
     resolve_caption,
     render_prose_md,
@@ -125,6 +126,17 @@ assert_full_coverage(register)
 deploy = build_roth_deploy_answer(
     positions_df, accounts_df, securities_df, compositions_df, saa_targets_df)
 _roth_idle_cash = deploy["idle_cash"]
+if _roth_idle_cash is None:
+    # Unknown, not zero. Every figure below is keyed to this balance, and the
+    # page's own Assumptions expander promises an unresolvable figure raises
+    # rather than rendering $0 — so it raises HERE, with a diagnosis, instead of
+    # letting an f-string turn None into a TypeError three sections down.
+    raise ValueError(
+        "Idle Roth cash is unresolvable: no account with tax_treatment='roth_ira' "
+        "resolves in the accounts frame, so there is no balance to report. "
+        "Refusing to render $0 for a figure that is unknown — see "
+        "src/location_actions._roth_idle_cash."
+    )
 _deploy_residual = float(deploy.get("residual", 0.0))
 _deploy_buys = float(deploy["table"]["dollar"].sum()) if not deploy["table"].empty else 0.0
 
@@ -300,14 +312,23 @@ for group in _ordered_groups:
             _dts = deploy_targets_split(deploy)
             if _dts["deploy_targets"]:
                 st.markdown(f"**{render_prose_md(group['action'], {**resolved, **_dts})}**")
+            elif _roth_idle_cash == 0:
+                st.markdown("**Nothing to deploy — the Roth's cash sleeve is empty.**")
             else:
                 st.markdown("**Deploy the idle Roth cash across your underweight Roth sleeves.**")
         else:
             st.markdown(f"**{render_prose_md(group['action'], resolved)}**")
         st.caption(escape_md(f"**{_STATUS_LABEL[group['status']]}** — {_summary_line(group, resolved, reg_rows)}"))
 
-        st.markdown(f"**For.** {render_prose_md(group['pros'], resolved)}")
-        st.markdown(f"**Against.** {render_prose_md(group['cons'], resolved)}")
+        # The deploy card argues for acting on a balance; with a measured zero there
+        # is nothing to act on, so it renders its zero state instead — and the
+        # Against paragraph goes with it, because an argument against deploying
+        # nothing is not an argument.
+        _body = (deploy_prose_for(group, _roth_idle_cash)
+                 if group["key"] == "deploy_roth_cash" else group["pros"])
+        st.markdown(f"**For.** {render_prose_md(_body, resolved)}")
+        if _body is not group.get("zero_state"):
+            st.markdown(f"**Against.** {render_prose_md(group['cons'], resolved)}")
 
         if group["key"] == "deploy_roth_cash":
             tbl = deploy["table"].copy()
