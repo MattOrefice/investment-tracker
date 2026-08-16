@@ -7,13 +7,82 @@ figure labelled "Portfolio". The base reads therefore REQUIRE a keyword-only
 ``account_id`` and raise on None; the account identity itself is resolved in
 exactly one place, ``get_portfolio_account()``, which raises rather than guessing.
 """
+from dataclasses import replace
 from datetime import date, timedelta
-from typing import Optional
+from typing import NamedTuple, Optional
 
 import pandas as pd
 
+from src.coverage import PriceCoverage, TickerStatus, coverage_from_statuses
 from src.db import get_connection
-from src.prices import get_prices, _to_iso
+from src.prices import get_prices, classify_miss, _to_iso
+
+
+class SleeveWeights(NamedTuple):
+    """A sleeve-weights frame and the coverage record for the prices behind it.
+
+    A NamedTuple rather than a frame attribute, deliberately: coverage travels as
+    an explicit return value that a caller must destructure, so no pandas
+    operation can drop it and no ``.get(key, default)`` can quietly substitute a
+    different measurement for it. See the module docstring in src/coverage.py.
+    """
+
+    frame: pd.DataFrame
+    coverage: PriceCoverage
+
+
+class MarketValue(NamedTuple):
+    """A market-value figure and the coverage record for the prices behind it."""
+
+    value: float
+    coverage: PriceCoverage
+
+
+class ValueSeries(NamedTuple):
+    """A daily value series and the coverage record for the prices behind it."""
+
+    series: pd.Series
+    coverage: PriceCoverage
+
+
+def _price_and_status(
+    ticker: str,
+    start: str,
+    end: str,
+    *,
+    price_ticker: Optional[str] = None,
+) -> "tuple[pd.DataFrame, TickerStatus]":
+    """One holding's price frame and what happened getting it.
+
+    Calls the module-level ``get_prices``, so a caller that monkeypatches it (the
+    DRIP tests do) still intercepts the fetch — there is exactly one fetch path,
+    and this adds only the record of its outcome. The REASON for a miss comes from
+    ``prices.classify_miss``, which consults the cache: that distinction is not
+    available here, which is why coverage is two-layer.
+
+    ``price_ticker`` covers SPAXX, valued off BIL. The status is recorded under the
+    HOLDING's ticker; that the instrument differs is a substitution, and reporting
+    it belongs to the PR that populates that field.
+    """
+    fetch = price_ticker or ticker
+    try:
+        frame = get_prices(fetch, start, end)
+    except Exception as exc:                                     # noqa: BLE001
+        return (
+            pd.DataFrame({"close": pd.Series(dtype=float),
+                          "adj_close": pd.Series(dtype=float)}),
+            TickerStatus(ticker, False,
+                         reason=classify_miss(fetch, start, end, error=exc),
+                         error=exc),
+        )
+    if frame.empty:
+        return frame, TickerStatus(
+            ticker, False, reason=classify_miss(fetch, start, end))
+    try:
+        served = max(_to_iso(d) for d in frame.index)
+    except Exception:                                            # noqa: BLE001
+        served = None
+    return frame, TickerStatus(ticker, True, served_through=served)
 
 
 def get_portfolio_account() -> dict:
@@ -234,6 +303,41 @@ def get_portfolio_value_series(
     *,
     account_id: int,
 ) -> pd.Series:
+    """Daily total portfolio market value — see _portfolio_value_series_impl.
+
+    Unchanged for existing callers. Use portfolio_value_series_with_coverage where
+    the gap has to be disclosed; both share one valuation loop.
+    """
+    series, _statuses = _portfolio_value_series_impl(
+        start_date, end_date, account_id=account_id)
+    return series
+
+
+def portfolio_value_series_with_coverage(
+    start_date: str,
+    end_date: Optional[str] = None,
+    *,
+    account_id: int,
+) -> "ValueSeries":
+    """get_portfolio_value_series, plus the coverage record for its prices.
+
+    This series drives every TWR figure and every risk metric on the Performance
+    page, and it is where an unpriceable holding is hardest to see: its price
+    column is all-NaN, and .sum(axis=1) defaults to skipna=True, so the holding
+    contributes exactly zero dollars to every day without a NaN ever surfacing.
+    """
+    series, statuses = _portfolio_value_series_impl(
+        start_date, end_date, account_id=account_id)
+    as_of = end_date or date.today().isoformat()
+    return ValueSeries(series, coverage_from_statuses(statuses, as_of))
+
+
+def _portfolio_value_series_impl(
+    start_date: str,
+    end_date: Optional[str] = None,
+    *,
+    account_id: int,
+) -> "tuple[pd.Series, list[TickerStatus]]":
     """
     Return daily total portfolio market value over [start_date, end_date], for
     ONE account (keyword-only ``account_id``, required — see the module docstring).
@@ -265,7 +369,7 @@ def get_portfolio_value_series(
         ).fetchall()
 
     if not trade_rows:
-        return pd.Series(0.0, index=date_range)
+        return pd.Series(0.0, index=date_range), []
 
     trades_df = pd.DataFrame([dict(r) for r in trade_rows])
     trades_df["trade_date"] = pd.to_datetime(trades_df["trade_date"])
@@ -303,10 +407,12 @@ def get_portfolio_value_series(
     # already reflects reinvested T-bill yield.  BIL is normalized to start at
     # $1.00 so that shares × price still equals dollars of SPAXX held.
     price_cols: dict = {}
+    statuses: "list[TickerStatus]" = []
     for ticker in tickers:
         if ticker == "SPAXX":
+            p, st = _price_and_status(ticker, start_date, end, price_ticker="BIL")
+            statuses.append(st)
             try:
-                p = get_prices("BIL", start_date, end)
                 p.index = pd.to_datetime(p.index)
                 series = p["adj_close"].fillna(p["close"])
                 p0 = series.first_valid_index()
@@ -316,13 +422,29 @@ def get_portfolio_value_series(
             except Exception:
                 price_cols[ticker] = pd.Series(1.0, index=date_range)
         else:
+            p, st = _price_and_status(ticker, start_date, end)
+            if not st.resolved:
+                # Branch on the STATUS, not on an exception: _price_and_status
+                # reports a miss instead of raising, and letting an empty frame
+                # flow through the arithmetic below would build an object-dtype
+                # NaN column where the original built a float one. Same zero
+                # dollars either way, but this keeps the column byte-identical.
+                price_cols[ticker] = pd.Series(dtype=float, index=date_range)
+                statuses.append(st)
+                continue
             try:
-                p = get_prices(ticker, start_date, end)
                 p.index = pd.to_datetime(p.index)
                 series = p["adj_close"].fillna(p["close"])
                 price_cols[ticker] = series.reindex(date_range).ffill()
             except Exception:
+                # An all-NaN column contributes exactly zero dollars to every day
+                # of the series, because .sum(axis=1) below defaults to
+                # skipna=True — no NaN escapes to warn anyone (#188). The status
+                # is the only record that this holding was not valued.
                 price_cols[ticker] = pd.Series(dtype=float, index=date_range)
+                st = replace(st, resolved=False, reason="empty_window",
+                             served_through=None)
+            statuses.append(st)
 
     prices_matrix = pd.DataFrame(price_cols, index=date_range)
 
@@ -332,7 +454,8 @@ def get_portfolio_value_series(
     # the SQL query above: adj_close already embeds dividend reinvestment, so
     # adding the DRIP shares would double-count income. See the docstring.
 
-    return (holdings_matrix[common] * prices_matrix[common]).sum(axis=1)
+    value = (holdings_matrix[common] * prices_matrix[common]).sum(axis=1)
+    return value, statuses
 
 
 def get_external_cashflow_series(
@@ -392,6 +515,28 @@ _CASH_SLEEVE = "Cash / SPAXX"
 
 
 def get_sleeve_weights_on_date(date_str: str) -> pd.DataFrame:
+    """Actual vs. target weight per strategic sleeve — see _sleeve_weights_impl.
+
+    Kept as-is so no existing caller changes. Callers that need to disclose what
+    the figures are made of use sleeve_weights_with_coverage instead; both run the
+    same valuation loop, so the two can never drift apart.
+    """
+    frame, _statuses = _sleeve_weights_impl(date_str)
+    return frame
+
+
+def sleeve_weights_with_coverage(date_str: str) -> "SleeveWeights":
+    """get_sleeve_weights_on_date, plus the coverage record for its prices.
+
+    Returns a NamedTuple, so `frame, coverage = sleeve_weights_with_coverage(...)`
+    destructures and the coverage cannot be silently dropped by a pandas operation
+    the way a frame attribute can (see src/coverage.py for why this is not .attrs).
+    """
+    frame, statuses = _sleeve_weights_impl(date_str)
+    return SleeveWeights(frame, coverage_from_statuses(statuses, date_str))
+
+
+def _sleeve_weights_impl(date_str: str) -> "tuple[pd.DataFrame, list[TickerStatus]]":
     """
     Return actual vs. target weight per STRATEGIC sleeve as of date_str.
     Columns: Market Value, Actual Weight, Target Weight, Drift (actual - target).
@@ -407,8 +552,9 @@ def get_sleeve_weights_on_date(date_str: str) -> pd.DataFrame:
     """
     # Wrapper: resolves the portfolio account and passes it through.
     holdings = get_holdings_on_date(date_str, account_id=get_portfolio_account_id())
+    statuses: "list[TickerStatus]" = []
     if holdings.empty:
-        return pd.DataFrame()
+        return pd.DataFrame(), statuses
 
     with get_connection() as conn:
         sec_rows = conn.execute(
@@ -433,9 +579,13 @@ def get_sleeve_weights_on_date(date_str: str) -> pd.DataFrame:
         shares = float(row["net_shares"])
 
         if ticker == "SPAXX":
+            # Priced off BIL. The status is recorded under SPAXX, the holding
+            # being valued; that this is a PROXY instrument is a substitution, and
+            # reporting it belongs to the PR that populates that field.
+            inception = "2025-05-01"
+            p, st = _price_and_status(ticker, inception, date_str, price_ticker="BIL")
+            statuses.append(st)
             try:
-                inception = "2025-05-01"
-                p = get_prices("BIL", inception, date_str)
                 if not p.empty:
                     bil = p["adj_close"].fillna(p["close"])
                     p0_idx = bil.first_valid_index()
@@ -447,23 +597,28 @@ def get_sleeve_weights_on_date(date_str: str) -> pd.DataFrame:
             except Exception:
                 price = 1.0
         else:
+            p, st = _price_and_status(ticker, look_back, date_str)
             try:
-                p = get_prices(ticker, look_back, date_str)
                 price = float(p["close"].iloc[-1]) if not p.empty else 0.0
             except Exception:
+                # The frame arrived but the value would not extract. The price is
+                # fabricated either way, so the status must not claim resolved.
                 price = 0.0
+                st = replace(st, resolved=False, reason="empty_window",
+                             served_through=None)
+            statuses.append(st)
 
         values_by_sleeve[sleeve] = values_by_sleeve.get(sleeve, 0.0) + shares * price
 
     total = sum(values_by_sleeve.values())
     if total == 0:
-        return pd.DataFrame()
+        return pd.DataFrame(), statuses
 
     # Ex-cash denominator: strategic weights are a share of INVESTED value.
     cash_mv  = values_by_sleeve.get(_CASH_SLEEVE, 0.0)
     invested = total - cash_mv
     if invested <= 0:
-        return pd.DataFrame()
+        return pd.DataFrame(), statuses
 
     rows = []
     for sleeve, mv in sorted(values_by_sleeve.items(), key=lambda x: -x[1]):
@@ -486,7 +641,7 @@ def get_sleeve_weights_on_date(date_str: str) -> pd.DataFrame:
     df.attrs["cash_mv"]              = round(cash_mv, 2)
     df.attrs["invested_value"]       = round(invested, 2)
     df.attrs["cash_weight_of_total"] = round(cash_mv / total, 6) if total else 0.0
-    return df
+    return df, statuses
 
 
 def get_current_market_value(date_str: Optional[str] = None) -> float:
@@ -504,19 +659,45 @@ def get_current_market_value(date_str: Optional[str] = None) -> float:
     valuation in get_sleeve_weights_on_date (raw close; SPAXX proxied via
     BIL adj_close normalized to $1 at inception).
     """
+    value, _statuses = _current_market_value_impl(date_str)
+    return value
+
+
+def current_market_value_with_coverage(
+    date_str: Optional[str] = None,
+) -> "MarketValue":
+    """get_current_market_value, plus the coverage record for its prices.
+
+    This figure had nowhere to carry a frame attribute even in principle — it is a
+    bare float — and it drives the most consequential number in the app: the
+    "$X current value" header on the Performance page and the Total Market Value on
+    Tax Lots. A sibling returning value-plus-coverage is the only additive way to
+    make it disclosable.
+    """
+    value, statuses = _current_market_value_impl(date_str)
+    as_of = date_str or date.today().isoformat()
+    return MarketValue(value, coverage_from_statuses(statuses, as_of))
+
+
+def _current_market_value_impl(
+    date_str: Optional[str] = None,
+) -> "tuple[float, list[TickerStatus]]":
+    """The valuation loop behind both entry points above."""
     d = date_str or date.today().isoformat()
     # Wrapper: resolves the portfolio account and passes it through.
     holdings = get_holdings_on_date(d, account_id=get_portfolio_account_id())  # all shares, incl DRIP lots
+    statuses: "list[TickerStatus]" = []
     if holdings.empty:
-        return 0.0
+        return 0.0, statuses
 
     look_back = (date.fromisoformat(d) - timedelta(days=7)).isoformat()
     total = 0.0
     for ticker, row in holdings.iterrows():
         shares = float(row["net_shares"])
         if ticker == "SPAXX":
+            p, st = _price_and_status(ticker, "2025-05-01", d, price_ticker="BIL")
+            statuses.append(st)
             try:
-                p = get_prices("BIL", "2025-05-01", d)
                 if not p.empty:
                     bil = p["adj_close"].fillna(p["close"])
                     p0  = bil.first_valid_index()
@@ -528,13 +709,16 @@ def get_current_market_value(date_str: Optional[str] = None) -> float:
             except Exception:
                 price = 1.0
         else:
+            p, st = _price_and_status(ticker, look_back, d)
             try:
-                p = get_prices(ticker, look_back, d)
                 price = float(p["close"].iloc[-1]) if not p.empty else 0.0
             except Exception:
                 price = 0.0
+                st = replace(st, resolved=False, reason="empty_window",
+                             served_through=None)
+            statuses.append(st)
         total += shares * price
-    return round(total, 2)
+    return round(total, 2), statuses
 
 
 def get_inception_date(*, account_id: int) -> str:
