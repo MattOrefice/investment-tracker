@@ -1685,3 +1685,108 @@ def test_thematic_share_is_none_without_compositions_so_render_raises():
     assert r["lookthrough_equity_value"] is None
     with pytest.raises(ValueError, match="Unresolvable placeholder"):
         render_prose(g["cons"], r)
+
+
+# ── The fabricated zero behind {value} on the deploy card (PR 1b) ──────────────
+#
+# render_prose raises on an unresolvable None, and pages/14's Assumptions expander
+# advertises exactly that: "an unresolvable figure raises rather than rendering $0".
+# The guard has a hole shaped like this bug — a fabricated 0.0 produced UPSTREAM
+# sails straight through it, and the card renders "$0 is sitting uninvested in a
+# money market inside your most valuable account", an argument to act on nothing.
+#
+# Two cases share that 0.0 today and only one of them is honest:
+#   genuinely zero  — a Roth resolved and its cash sleeve is empty. A real
+#                     measurement; the card must say so instead of arguing.
+#   unresolvable    — no Roth account resolves at all. A fabrication; must be None
+#                     so the existing guard can do its job.
+
+def _deploy_group():
+    return next(g for g in ACTION_GROUPS if g["key"] == "deploy_roth_cash")
+
+
+def _sba(rows):
+    return pd.DataFrame(rows, columns=["pseudonym", "sleeve_category", "current_value"])
+
+
+def _accounts(treatments):
+    return pd.DataFrame(
+        [{"pseudonym": p, "tax_treatment": t} for p, t in treatments],
+        columns=["pseudonym", "tax_treatment"])
+
+
+def test_idle_cash_is_none_when_no_roth_account_resolves():
+    """The fabrication. With no Roth in the accounts frame there is no balance to
+    report, and the old code answered ("", 0.0) — a real-looking zero for an
+    account that does not exist."""
+    from src.location_actions import _roth_idle_cash
+    _pseudo, idle = _roth_idle_cash(
+        _sba([("acct_taxable_01", "cash", 900.0)]),
+        _accounts([("acct_taxable_01", "taxable")]),
+    )
+    assert idle is None, "an unresolvable Roth balance must be None, never 0.0"
+
+
+def test_idle_cash_is_zero_when_the_roth_resolves_and_holds_no_cash():
+    """Non-vacuity for the test above: making everything None would be just as
+    wrong. A resolved Roth with an empty cash sleeve genuinely holds zero, and
+    that zero is a measurement."""
+    from src.location_actions import _roth_idle_cash
+    pseudo, idle = _roth_idle_cash(
+        _sba([("acct_roth_01", "us_large_core", 5000.0)]),
+        _accounts([("acct_roth_01", "roth_ira")]),
+    )
+    assert idle == 0.0 and pseudo == "acct_roth_01"
+
+
+def test_deploy_answer_propagates_the_unresolvable_balance():
+    """build_roth_deploy_answer must not do arithmetic on the unknown and must not
+    substitute its own zero on the way through."""
+    from src.location_actions import build_roth_deploy_answer
+    ans = build_roth_deploy_answer(
+        pd.DataFrame([{"pseudonym": "acct_taxable_01", "symbol": "VOO",
+                       "current_value": 900.0}]),
+        _accounts([("acct_taxable_01", "taxable")]),
+        pd.DataFrame(columns=["ticker", "sleeve_category", "is_in_saa"]),
+    )
+    assert ans["idle_cash"] is None
+    assert ans["residual"] is None
+
+
+def test_unresolvable_balance_makes_the_card_raise_not_render_zero():
+    """The hole, closed: with the balance unknown the existing guard fires."""
+    from src.location_actions import render_prose, resolve_placeholders
+    g = _deploy_group()
+    resolved = resolve_placeholders(
+        g, pd.DataFrame(columns=["pseudonym", "symbol", "current_value"]),
+        pd.DataFrame(columns=["pseudonym", "tax_treatment"]),
+        pd.DataFrame(columns=["ticker", "sleeve_category"]),
+        pd.DataFrame(columns=_REGISTER_COLS), roth_idle_cash=None)
+    assert resolved["value"] is None
+    with pytest.raises(ValueError, match="Unresolvable placeholder"):
+        render_prose(g["pros"], resolved)
+
+
+def test_a_genuine_zero_renders_the_zero_state_not_the_deploy_argument():
+    """The honest zero must not render the deploy argument. "$0 is sitting
+    uninvested ... every day it sits is compounding you don't get back" is an
+    argument to act, and there is nothing to act on."""
+    from src.location_actions import deploy_prose_for
+    g = _deploy_group()
+    body = deploy_prose_for(g, 0.0)
+    assert body is g["zero_state"]
+    assert "sitting uninvested" not in body
+    assert "{value}" not in body, "the zero state must not template a balance"
+
+
+def test_a_real_balance_still_renders_the_deploy_argument():
+    """Non-vacuity: the zero state must not swallow the ordinary case."""
+    from src.location_actions import deploy_prose_for
+    g = _deploy_group()
+    assert deploy_prose_for(g, 1234.0) is g["pros"]
+
+
+def test_deploy_prose_refuses_an_unresolvable_balance():
+    from src.location_actions import deploy_prose_for
+    with pytest.raises(ValueError, match="unresolvable|unknown"):
+        deploy_prose_for(_deploy_group(), None)

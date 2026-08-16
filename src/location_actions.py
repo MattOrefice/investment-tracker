@@ -53,6 +53,17 @@ _DEPLOY_ROTH_CASH_PROS = (
     "trade closes an allocation gap and a location gap at once — the largest share "
     "goes to the deepest underweight, not split by a round number."
 )
+# Rendered INSTEAD of the pros when the balance is a measured zero. It must not
+# template {value}: there is no figure to state, and printing "$0" is what made
+# the fabricated zero indistinguishable from a real one in the first place.
+_DEPLOY_ROTH_CASH_ZERO_STATE = (
+    "Nothing to deploy. The Roth resolved and its cash sleeve is empty — every "
+    "dollar in the account is invested. This card returns when a contribution, a "
+    "dividend, or a sale leaves cash sitting in the money market. The zero here is "
+    "a measurement, not a missing figure; a balance that could not be resolved "
+    "raises instead of rendering."
+)
+
 _DEPLOY_ROTH_CASH_CONS = (
     "Tilts the Roth toward the factor sleeves you are most underweight — small-cap "
     "value and emerging markets among them. Small-cap value underperformed broad "
@@ -342,6 +353,7 @@ ACTION_GROUPS: list[dict] = [
                   "sized to its household underweight gap — most to {deploy_largest}.",
         "symbols": None, "case_filter": None, "accounts": None,   # informational
         "pros": _DEPLOY_ROTH_CASH_PROS, "cons": _DEPLOY_ROTH_CASH_CONS,
+        "zero_state": _DEPLOY_ROTH_CASH_ZERO_STATE,
     },
     {
         "key": "clear_roth_non_equity", "title": "Clear misplaced holdings from the Roth",
@@ -509,16 +521,49 @@ def _saa_ticker_by_sleeve(securities_df: pd.DataFrame) -> dict[str, str]:
     return dict(zip(saa["sleeve_category"], saa["ticker"]))
 
 
-def _roth_idle_cash(sba: pd.DataFrame, accounts_df: pd.DataFrame) -> tuple[str, float]:
-    """Return (roth_pseudonym, idle_cash) for the Roth holding the most cash."""
+def _roth_idle_cash(
+    sba: pd.DataFrame, accounts_df: pd.DataFrame
+) -> "tuple[str, float | None]":
+    """Return (roth_pseudonym, idle_cash) for the Roth holding the most cash.
+
+    ``idle_cash`` is None when NO Roth account resolves at all: the balance is
+    UNKNOWN, not zero. These two used to share a single 0.0, and the difference
+    is the whole point — a measured zero is a fact about the account, a
+    fabricated zero is a fact about nothing. Downstream, None reaches
+    resolve_placeholders, which leaves {value} unresolved so render_prose raises;
+    0.0 renders the card's zero state (see deploy_prose_for).
+
+    That mattered because render_prose only guards None. A 0.0 manufactured up
+    here sailed through it and the card argued "$0 is sitting uninvested in a
+    money market ... every day it sits is compounding you don't get back" — an
+    argument to act, over an account that may not exist — while the page's own
+    Assumptions expander promised "an unresolvable figure raises rather than
+    rendering $0".
+    """
     roth_pseudos = set(accounts_df[accounts_df["tax_treatment"] == "roth_ira"]["pseudonym"])
+    if not roth_pseudos:
+        return "", None
     cash = sba[(sba["sleeve_category"] == "cash") & (sba["pseudonym"].isin(roth_pseudos))]
     if cash.empty:
-        # A Roth with no cash sleeve at all -> idle cash is genuinely zero.
-        pseudo = next(iter(roth_pseudos), "")
-        return pseudo, 0.0
+        # A Roth resolved and holds no cash sleeve -> genuinely, measurably zero.
+        return next(iter(roth_pseudos)), 0.0
     row = cash.loc[cash["current_value"].idxmax()]
     return str(row["pseudonym"]), float(row["current_value"])
+
+
+def deploy_prose_for(group: dict, idle_cash: "float | None") -> str:
+    """The deploy card's body for this balance: the argument, or the zero state.
+
+    Raises on None rather than choosing for the caller — an unknown balance is
+    not a zero balance, and picking either branch for it would re-open the hole
+    this function exists to close.
+    """
+    if idle_cash is None:
+        raise ValueError(
+            "idle Roth cash is unresolvable, so neither the deploy argument nor "
+            "the zero state is true — refusing to choose one. See _roth_idle_cash."
+        )
+    return group["zero_state"] if float(idle_cash) == 0.0 else group["pros"]
 
 
 def household_deploy_gaps(
@@ -645,6 +690,9 @@ def build_roth_deploy_answer(
     _, idle_cash = _roth_idle_cash(sba, accounts_df)
 
     empty = pd.DataFrame(columns=["ticker", "sleeve", "dollar"])
+    if idle_cash is None:
+        # Unknown, not zero: propagate it rather than rounding it into a figure.
+        return {"idle_cash": None, "sleeves": [], "table": empty, "residual": None}
     if compositions_df is None or saa_targets_df is None:
         return {"idle_cash": idle_cash, "sleeves": [], "table": empty, "residual": round(idle_cash, 2)}
 
