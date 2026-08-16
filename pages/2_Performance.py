@@ -9,6 +9,7 @@ import streamlit as st
 
 st.set_page_config(page_title="Performance & Attribution", layout="wide")
 
+from src.coverage import unresolved_marker
 from src.asof import (
     as_of_banner_with_inception,
     format_long_date,
@@ -29,12 +30,12 @@ from src.db import get_connection
 from src.drip import distribution_gaps_for_holdings, drip_distribution_gap_notice
 from src.factors import run_sleeve_regressions
 from src.holdings import (
-    get_current_market_value,
+    current_market_value_with_coverage,
     get_external_cashflow_series,
     get_inception_date,
     get_portfolio_account,
-    get_portfolio_value_series,
-    get_sleeve_weights_on_date,
+    portfolio_value_series_with_coverage,
+    sleeve_weights_with_coverage,
     last_settled_price_date,
 )
 from src.performance import compute_risk_metrics
@@ -80,9 +81,13 @@ _PALETTE = {
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def _load_portfolio(_v: int = _PORTFOLIO_CACHE_V):
-    pv = get_portfolio_value_series(INCEPTION, TODAY, account_id=_ACCT_ID)
+    pv, cov = portfolio_value_series_with_coverage(
+        INCEPTION, TODAY, account_id=_ACCT_ID)
     cf = get_external_cashflow_series(INCEPTION, TODAY, account_id=_ACCT_ID).reindex(pv.index).fillna(0.0)
-    return pv, cf
+    # The coverage record travels as a value, not on .attrs: this return
+    # round-trips through st.cache_data's pickling, and the record is pure
+    # data so it survives intact.
+    return pv, cf, cov
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -135,13 +140,13 @@ def _load_factor_results(inception_date: str, end: str) -> dict:
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def _load_drift():
-    sw = get_sleeve_weights_on_date(TODAY)
+    sw, sw_cov = sleeve_weights_with_coverage(TODAY)
     with get_connection() as conn:
         bands = conn.execute(
             "SELECT name, tolerance_band FROM asset_classes WHERE parent_id IS NOT NULL"
         ).fetchall()
     band_map = {r["name"]: r["tolerance_band"] for r in bands}
-    return sw, band_map
+    return sw, band_map, sw_cov
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -218,7 +223,7 @@ with col:
 
     # Load data
     with st.spinner("Loading performance data…"):
-        pv, cf = _load_portfolio()
+        pv, cf, _pv_cov = _load_portfolio()
 
     # Display anchor C — the last SETTLED trading day. get_portfolio_value_series
     # forward-fills to today and a live mid-session fetch caches a PARTIAL intraday
@@ -364,7 +369,48 @@ with col:
     current_val = float(pv.iloc[-1])
     # current_mv: true current account market value (ALL shares incl DRIP × raw
     # close) — the dollar figure to DISPLAY. Display-only; never feeds a return.
-    current_mv  = get_current_market_value(TODAY)
+    current_mv, _mv_cov = current_market_value_with_coverage(TODAY)
+
+    # Three producers, one account, ten holdings. If they disagree about which
+    # holdings are missing, the page would MARK on one record and COMPUTE on
+    # another — a quiet failure, so it is an assertion rather than an assumption.
+    assert (_mv_cov.unresolved_tickers() == _pv_cov.unresolved_tickers()), (
+        "coverage disagreement between the market-value and value-series "
+        f"producers: {_mv_cov.unresolved_tickers()} vs {_pv_cov.unresolved_tickers()}"
+    )
+    _COV_GAP = unresolved_marker(_mv_cov)
+    # Module-level, because the risk section renders in a separate block far
+    # below and must gate on the same fact rather than re-deriving it.
+    globals()["_PAGE_COVERAGE_GAP"] = _COV_GAP
+
+    def _tile_delta(value):
+        """A portfolio-derived DELTA, or nothing at all.
+
+        Suppressing the value and leaving the delta renders "— (-59.97% SI
+        cumulative)" — the same fabricated figure, one field over, now with the
+        authority of sitting beside an explicit non-answer. None removes the delta
+        rather than blanking it, so there is no empty affordance to misread.
+        """
+        return None if _COV_GAP else value
+
+    def _tile(value: str) -> str:
+        """A portfolio-derived figure, or the suppression marker.
+
+        A return computed over a book missing holdings is not a degraded
+        measurement of this portfolio — it is an accurate measurement of a
+        different one, so there is no honest way to print it with a caveat.
+        "-59.97%, but incomplete" has no referent; "—, not priced" does.
+        Benchmark figures are NOT routed through this: they come from benchmark
+        series and are unaffected by a portfolio holding that would not price.
+        """
+        return "—" if _COV_GAP else value
+
+    if _COV_GAP:
+        st.warning(
+            f"⚠ **This page cannot be computed in full.** {_COV_GAP} Value, "
+            "returns and portfolio risk metrics are withheld rather than shown "
+            "against a partial book; benchmark figures are unaffected."
+        )
 
     # ── Summary banner ────────────────────────────────────────────────────
     st.markdown(
@@ -412,9 +458,9 @@ with col:
 
         st.markdown(f"### Quarterly report — {_q_label} (locked)")
         q1, q2, q3 = st.columns(3)
-        q1.metric(f"{_q_label} return",             _pct(_q_port),     f"{_pct(_q_sp)} S&P 500")
-        q2.metric(f"vs. S&P 500 — {_q_label}",      _bps(_q_alpha_sp), f"S&P 500: {_pct(_q_sp)}",  delta_color="off")
-        q3.metric(f"vs. Custom Blended — {_q_label}", _bps(_q_alpha_bl), f"Blended: {_pct(_q_bl)}", delta_color="off")
+        q1.metric(f"{_q_label} return",             _tile(_pct(_q_port)),     f"{_pct(_q_sp)} S&P 500")
+        q2.metric(f"vs. S&P 500 — {_q_label}",      _tile(_bps(_q_alpha_sp)), f"S&P 500: {_pct(_q_sp)}",  delta_color="off")
+        q3.metric(f"vs. Custom Blended — {_q_label}", _tile(_bps(_q_alpha_bl)), f"Blended: {_pct(_q_bl)}", delta_color="off")
 
     st.divider()
 
@@ -430,15 +476,16 @@ with col:
     m1, m2, m3, m4 = st.columns(4)
 
     inception_delta_pct = f"{port_si*100:+.1f}% since inception"
-    m1.metric(f"{_PORTFOLIO_ACCT['display_name']} value", f"${current_mv:,.0f}", inception_delta_pct)
+    m1.metric(f"{_PORTFOLIO_ACCT['display_name']} value", _tile(f"${current_mv:,.0f}"),
+              _tile_delta(inception_delta_pct))
     m2.metric("vs. S&P 500 (since inception)",    _bps(alpha_sp),
               f"S&P 500: {_pct(sp500_si)} SI",
               delta_color="off")
     m3.metric("vs. Custom Blended (since inception)", _bps(alpha_bl),
               f"Blended: {_pct(blended_si)} SI",
               delta_color="off")
-    m4.metric(f"YTD return ({TODAY[:4]})",    _pct(ytd_return),
-              f"{_pct(port_si)} SI cumulative")
+    m4.metric(f"YTD return ({TODAY[:4]})",    _tile(_pct(ytd_return)),
+              _tile_delta(f"{_pct(port_si)} SI cumulative"))
 
     st.caption(
         f"Underperformance vs. S&P 500 reflects intentional diversification: "
@@ -672,12 +719,14 @@ with col:
             )
         else:
             # Row 1 — portfolio metrics
+            _gap = globals().get("_PAGE_COVERAGE_GAP")
+            _rt = (lambda v: "—") if _gap else (lambda v: v)
             st.caption("Portfolio")
             _c1, _c2, _c3, _c4, _c5, _c6 = st.columns(6)
-            _c1.metric("Std Dev (ann.)", _fmt_pct(_m["annualized_vol_pct"]))
-            _c2.metric("Sharpe",         _fmt_ratio(_m["sharpe"]))
-            _c3.metric("Sortino",        _fmt_ratio(_m["sortino"]))
-            _c4.metric("Max DD",         _fmt_pct(_m["max_drawdown_pct"]))
+            _c1.metric("Std Dev (ann.)", _rt(_fmt_pct(_m["annualized_vol_pct"])))
+            _c2.metric("Sharpe",         _rt(_fmt_ratio(_m["sharpe"])))
+            _c3.metric("Sortino",        _rt(_fmt_ratio(_m["sortino"])))
+            _c4.metric("Max DD",         _rt(_fmt_pct(_m["max_drawdown_pct"])))
             _c5.metric("VaR (95%)",      _fmt_pct(_m["var_95_pct"]))
             _c6.metric("CVaR (95%)",     _fmt_pct(_m["cvar_95_pct"]))
 
@@ -1159,7 +1208,7 @@ with col:
     # ──────────────────────────────────────────────────────────────────────
     st.markdown("### Drift Analysis")
 
-    sw, band_map = _load_drift()
+    sw, band_map, _sw_cov = _load_drift()
 
     if sw.empty:
         st.info("No holdings found.")
@@ -1271,7 +1320,7 @@ with col:
                 "Since Inception return. 1Y and SI windows will diverge once the portfolio "
                 "crosses one year."
             )
-        pv2, cf2 = _load_portfolio()
+        pv2, cf2, _pv_cov2 = _load_portfolio()
         daily_si  = period_return("daily",          pv2, cf2, "SI")
         dietz_si  = period_return("modified_dietz", pv2, cf2, "SI")
         spread_bps = abs(daily_si - dietz_si) * 10_000

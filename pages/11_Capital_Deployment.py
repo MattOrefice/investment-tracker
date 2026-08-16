@@ -8,7 +8,8 @@ from datetime import date, timedelta
 
 from src.config import is_write_enabled
 from src.db import get_connection
-from src.holdings import get_sleeve_weights_on_date, get_holdings_on_date, get_portfolio_account, get_portfolio_account_id
+from src.holdings import sleeve_weights_with_coverage, get_holdings_on_date, get_portfolio_account, get_portfolio_account_id
+from src.coverage import unresolved_marker
 from src.prices import get_prices
 from src.rebalance import (
     compute_drift,
@@ -27,7 +28,7 @@ render_page_header()
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def _load_data(as_of: str) -> dict:
-    sleeve_df = get_sleeve_weights_on_date(as_of)
+    sleeve_df, sleeve_cov = sleeve_weights_with_coverage(as_of)
 
     with get_connection() as conn:
         band_rows = conn.execute(
@@ -75,6 +76,7 @@ def _load_data(as_of: str) -> dict:
             "ticker_to_sleeve": ticker_to_sleeve,
             "carrier_by_sleeve": carrier_by_sleeve,
             "pos_theses": pos_theses,
+            "gap_note": unresolved_marker(sleeve_cov),
             "prices": {},
             "portfolio_value": 0.0,
             "invested_value": 0.0,
@@ -104,6 +106,7 @@ def _load_data(as_of: str) -> dict:
     spaxx_value     = float(sleeve_df.attrs.get("cash_mv", 0.0))
 
     return {
+        "gap_note": unresolved_marker(sleeve_cov),
         "sleeve_df": sleeve_df,
         "saa_bands": saa_bands,
         "saa_targets_full": saa_targets_full,
@@ -155,6 +158,10 @@ with st.expander("How to read this page", expanded=False):
 today = date.today().isoformat()
 data = _load_data(today)
 sleeve_df = data["sleeve_df"]
+# Defined here, immediately after the load, because BOTH suggestion paths
+# below (contribution sizing at ~:314 and band-breach buys at ~:607) gate on
+# it, and they run before the band verdict does.
+_gap_note = data.get("gap_note")
 
 if sleeve_df.empty:
     st.info("No holdings found. Seed the database first.")
@@ -308,7 +315,7 @@ _dep_acct = next((a for a in _dep_accounts if a["name"] == _dep_acct_name), None
 _unfunded = unfunded_target_sleeves(saa_targets, ticker_to_sleeve, prices)
 _unfunded_tickers = [t for s in _unfunded for t in carrier_by_sleeve.get(s, [])]
 
-if contrib_cash > 0 and not _unfunded:
+if contrib_cash > 0 and not _unfunded and not _gap_note:
     orig_suggestions = suggest_contributions(
         portfolio_value=invested_value,
         cash_to_deploy=float(contrib_cash),
@@ -560,7 +567,21 @@ st.dataframe(
 n_outside    = int((~drift_df["In Band"]).sum())
 _status_line = interpret_rebalance_status(drift_df)
 
-if n_outside == 0:
+if _gap_note:
+    # A third branch beside in-band / out-of-band, because with part of the book
+    # unpriced BOTH are claims the data cannot support: the unpriced sleeves show
+    # as underweight when they may not be, and the priced ones are overstated
+    # against a shrunken ex-cash denominator. This is the #188 render — two failed
+    # fetches produced a warning prescribing new contributions to two sleeves whose
+    # prices merely did not resolve. It follows the page's own precedent at
+    # unfunded_target_sleeves: block the suggestion and name what is missing.
+    st.warning(
+        f"⚠ **Bands cannot be assessed.** {_gap_note} The sleeves holding them "
+        "appear underweight when they may not be, and because weights are measured "
+        "ex-cash against a denominator that shrank with them, the priced sleeves "
+        "are overstated too. No buy suggestions while the book is incomplete."
+    )
+elif n_outside == 0:
     # Calm state — interpret_rebalance_status names the closest-to-breach sleeve
     # and its remaining headroom, so "all in band" is still informative.
     st.success(_status_line)
@@ -585,7 +606,7 @@ rebal_cash = st.number_input(
     ),
 )
 
-if rebal_cash > 0:
+if rebal_cash > 0 and not _gap_note:
     buy_df = suggest_buys(
         drift_df=drift_df,
         portfolio_value=invested_value,
