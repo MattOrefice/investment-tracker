@@ -5,7 +5,7 @@ from datetime import date
 import pandas as pd
 
 from src.db import get_connection
-from src.prices import get_prices
+from src.prices import get_prices, total_return_series
 from src.sleeve_config import sleeve_benchmarks as _derive_benchmarks
 
 # Coverage tolerance for benchmark components, mirroring the portfolio side's
@@ -90,7 +90,7 @@ def _component_series(
     # Uncached direct fetches can carry duplicate date labels (get_prices only
     # dedups on the cache-concat path) — dedup here so reindex can't raise.
     p = p[~p.index.duplicated(keep="last")]
-    series = p["adj_close"].fillna(p["close"])
+    series = total_return_series(p)
     first_real = series.first_valid_index()
     last_real = series.last_valid_index()
     gaps: list[str] = []

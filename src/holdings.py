@@ -15,7 +15,7 @@ import pandas as pd
 
 from src.coverage import PriceCoverage, TickerStatus, coverage_from_statuses
 from src.db import get_connection
-from src.prices import get_prices, classify_miss, _to_iso
+from src.prices import get_prices, classify_miss, _to_iso, total_return_series
 
 
 # Distinguishes "argument omitted" from an explicit None meaning "this caller has
@@ -420,7 +420,7 @@ def _portfolio_value_series_impl(
             statuses.append(st)
             try:
                 p.index = pd.to_datetime(p.index)
-                series = p["adj_close"].fillna(p["close"])
+                series = total_return_series(p)
                 p0 = series.first_valid_index()
                 if p0 is not None and float(series[p0]) > 0:
                     series = series / float(series[p0])  # normalize to $1.00
@@ -440,7 +440,7 @@ def _portfolio_value_series_impl(
                 continue
             try:
                 p.index = pd.to_datetime(p.index)
-                series = p["adj_close"].fillna(p["close"])
+                series = total_return_series(p)
                 price_cols[ticker] = series.reindex(date_range).ffill()
             except Exception:
                 # An all-NaN column contributes exactly zero dollars to every day
@@ -593,7 +593,7 @@ def _sleeve_weights_impl(date_str: str) -> "tuple[pd.DataFrame, list[TickerStatu
             statuses.append(st)
             try:
                 if not p.empty:
-                    bil = p["adj_close"].fillna(p["close"])
+                    bil = total_return_series(p)
                     p0_idx = bil.first_valid_index()
                     if p0_idx is not None and float(bil[p0_idx]) > 0:
                         bil = bil / float(bil[p0_idx])
@@ -705,7 +705,7 @@ def _current_market_value_impl(
             statuses.append(st)
             try:
                 if not p.empty:
-                    bil = p["adj_close"].fillna(p["close"])
+                    bil = total_return_series(p)
                     p0  = bil.first_valid_index()
                     if p0 is not None and float(bil[p0]) > 0:
                         bil = bil / float(bil[p0])

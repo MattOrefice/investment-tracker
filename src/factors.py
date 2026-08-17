@@ -42,7 +42,7 @@ from statsmodels.tools import add_constant
 
 from src.benchmarks import get_custom_blended_series
 from src.holdings import get_holdings_on_date, get_portfolio_account_id, get_portfolio_value_series
-from src.prices import get_prices
+from src.prices import get_prices, total_return_series
 from src.prose_helpers import significance_label
 
 _ROOT = Path(__file__).resolve().parent.parent
@@ -667,7 +667,7 @@ def _get_sleeve_return_series(
         ticker = tickers[0]
         p = get_prices(ticker, inception, end_date)
         p.index = pd.to_datetime(p.index)
-        series = p["adj_close"].fillna(p["close"])
+        series = total_return_series(p)
         return series.reindex(date_range).ffill().pct_change().iloc[1:]
 
     # Multi-ticker: use provided weights or compute from inception market values
@@ -683,7 +683,7 @@ def _get_sleeve_return_series(
             try:
                 p_inc = get_prices(ticker, inception, inception)
                 p_inc.index = pd.to_datetime(p_inc.index)
-                px = p_inc["adj_close"].fillna(p_inc["close"])
+                px = total_return_series(p_inc)
                 price = float(px.dropna().iloc[-1]) if not px.dropna().empty else 0.0
                 if price > 0:
                     sleeve_values[ticker] = shares * price
@@ -701,7 +701,7 @@ def _get_sleeve_return_series(
         try:
             p = get_prices(ticker, inception, end_date)
             p.index = pd.to_datetime(p.index)
-            series = p["adj_close"].fillna(p["close"])
+            series = total_return_series(p)
             daily_ret = series.reindex(date_range).ffill().pct_change().fillna(0.0)
             weighted_ret = weighted_ret + w * daily_ret
         except Exception:
@@ -1031,7 +1031,7 @@ def regress_fi_sleeve(inception: str, end_date: str) -> Optional[dict]:
     for ticker, w in _FI_WEIGHTS.items():
         p = get_prices(ticker, inception, end_date)
         p.index = pd.to_datetime(p.index)
-        series = p["adj_close"].fillna(p["close"])
+        series = total_return_series(p)
         fi_ret = fi_ret + w * series.reindex(date_range).ffill().pct_change().fillna(0.0)
     fi_ret = fi_ret.iloc[1:]
     fi_ret.index = pd.to_datetime(fi_ret.index)
@@ -1047,7 +1047,7 @@ def regress_fi_sleeve(inception: str, end_date: str) -> Optional[dict]:
                 pass
         p = get_prices(ticker, inception, end_date)
         p.index = pd.to_datetime(p.index)
-        return p["adj_close"].fillna(p["close"]).reindex(date_range).ffill().pct_change().iloc[1:]
+        return total_return_series(p).reindex(date_range).ffill().pct_change().iloc[1:]
 
     ief_ret = _ret("IEF")
     bil_ret = _ret("BIL")

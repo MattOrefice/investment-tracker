@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 
 from src.macro import classify_regime, get_series
-from src.prices import get_prices
+from src.prices import get_prices, total_return_series
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
@@ -101,7 +101,7 @@ def _price_series(ticker: str, start: str, end: str) -> pd.Series:
     try:
         p = get_prices(ticker, start, end)
         p.index = pd.to_datetime(p.index)
-        return p["adj_close"].fillna(p["close"]).ffill()
+        return total_return_series(p).ffill()
     except Exception:
         return pd.Series(dtype=float)
 

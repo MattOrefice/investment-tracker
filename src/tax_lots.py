@@ -10,7 +10,7 @@ from typing import Optional
 import pandas as pd
 
 from src.db import get_connection
-from src.prices import get_prices
+from src.prices import get_prices, total_return_series
 
 # IRS "more than one year" = strictly more than 365 calendar days.
 # Day 366 is the first day of long-term treatment.
@@ -199,7 +199,7 @@ def get_lot_inventory(as_of: Optional[str] = None) -> pd.DataFrame:
             try:
                 p = get_prices(ticker, look_back, as_of_str)
                 if not p.empty:
-                    series = p["adj_close"].fillna(p["close"]).dropna()
+                    series = total_return_series(p).dropna()
                     current_prices[ticker] = float(series.iloc[-1]) if not series.empty else 0.0
                 else:
                     current_prices[ticker] = 0.0
