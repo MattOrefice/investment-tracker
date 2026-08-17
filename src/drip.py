@@ -321,7 +321,13 @@ def distribution_gaps_for_holdings(
         )
     if start_date is None:
         from src.holdings import get_inception_date
-        start_date = get_inception_date(account_id=account_id)
+        # default=None: this is the one caller for which an empty ledger is a
+        # legitimate answer rather than an error — an account with no trades has no
+        # distributions to be missing, so the gap list is empty. Every other caller
+        # omits `default` and keeps a total function (see get_inception_date).
+        start_date = get_inception_date(account_id=account_id, default=None)
+        if start_date is None:
+            return []
     end = end_date or date.today().isoformat()
 
     with get_connection() as conn:

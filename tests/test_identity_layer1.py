@@ -262,27 +262,37 @@ def test_identity_risk_metrics_uses_trading_day_annualization():
 
 # ── 1.4  Inception-date canonical-source check ───────────────────────────────
 
-def test_identity_performance_page_inception_constant_matches_fallback():
-    """get_inception_date() fallback must be the canonical portfolio launch date.
+def test_get_inception_date_has_no_hardcoded_fallback():
+    """INVERTED by #190. This test used to require the fallback literal
+    '2025-05-01' to be present inside get_inception_date and unchanged; it now
+    requires that no date literal is returned from that function at all.
 
-    pages/2_Performance.py now calls get_inception_date() at import time; the
-    fallback hard-coded in src/holdings.py is the only remaining literal and must
-    stay set to '2025-05-01'. This test fails if the fallback is changed without
-    a deliberate portfolio-relaunch decision.
+    The intent is the same — nobody may quietly change what the portfolio's
+    inception is — but the mechanism moved. The old fallback answered TWO states
+    with one confident date: an account with no trades, and a query that did not
+    answer (a locked DB, a renamed table, a permissions error). It sat 404 days
+    before this book's real inception and silently rebased every return window,
+    the risk sample and the PDF cover period. Now the second state raises, and the
+    first is opt-in per caller via `default`.
+
+    Note holdings.py still contains '2025-05-01' twice (the BIL normalisation start
+    in the two valuation loops). Those are a price-series anchor, not an inception
+    fallback, which is why this check is scoped to the function body.
     """
     import re
     src_path = pathlib.Path(__file__).resolve().parent.parent / "src" / "holdings.py"
     src_text = src_path.read_text(encoding="utf-8")
-    # Find the fallback literal inside get_inception_date
-    match = re.search(
-        r'def get_inception_date.*?return\s+["\']([0-9]{4}-[0-9]{2}-[0-9]{2})["\']',
-        src_text, re.DOTALL,
-    )
-    assert match, "get_inception_date fallback literal not found in src/holdings.py"
-    fallback = match.group(1)
-    assert fallback == "2025-05-01", (
-        f"get_inception_date fallback is '{fallback}', expected '2025-05-01' "
-        "(canonical portfolio launch date)."
+
+    start = src_text.index("def get_inception_date")
+    rest = src_text[start:]
+    nxt = re.search(r"\n(?=def |@)", rest[1:])
+    body = rest[: nxt.start() + 1] if nxt else rest
+
+    literal = re.search(r'return\s+["\']([0-9]{4}-[0-9]{2}-[0-9]{2})["\']', body)
+    assert literal is None, (
+        f"get_inception_date returns a hardcoded date {literal.group(1)!r} again. "
+        "An unanswerable query must raise and an empty ledger is the caller's "
+        "decision via `default` — see #190."
     )
 
 

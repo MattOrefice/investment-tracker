@@ -18,6 +18,12 @@ from src.db import get_connection
 from src.prices import get_prices, classify_miss, _to_iso
 
 
+# Distinguishes "argument omitted" from an explicit None meaning "this caller has
+# decided None is the right answer". Same pattern, same reasoning, as
+# location_actions._UNSET and asof._UNSET.
+_UNSET = object()
+
+
 class SleeveWeights(NamedTuple):
     """A sleeve-weights frame and the coverage record for the prices behind it.
 
@@ -721,20 +727,63 @@ def _current_market_value_impl(
     return round(total, 2), statuses
 
 
-def get_inception_date(*, account_id: int) -> str:
-    """Return ISO date of the first recorded trade FOR ``account_id`` (the
-    portfolio window start), falling back to '2025-05-01'.
+def get_inception_date(
+    *, account_id: int, default: "str | None" = _UNSET
+) -> "str | None":
+    """ISO date of the first recorded trade for ``account_id`` — the window start.
 
     ``account_id`` is required (keyword-only): an unscoped MIN(trade_date) would
     move the whole analysis window if a second account's earlier trade landed.
+
+    Two states used to share the literal "2025-05-01", and only one of them is a
+    question:
+
+    * **The query did not answer** — a locked DB, a renamed table, a permissions
+      error. Always raises now; see the comment in the body.
+    * **The account carries no trades** — genuinely has no inception. This is the
+      caller's decision, and it is opt-in: omit ``default`` and it RAISES; pass
+      ``default=None`` (or a date) and that is returned.
+
+    The fallback is per-caller rather than in the return type because of
+    reachability: ten of the eleven callers pass ``get_portfolio_account_id()``,
+    and ``get_portfolio_account`` requires ``EXISTS (SELECT 1 FROM trades ...)``, so
+    they CANNOT observe an empty ledger. Returning ``str | None`` to all of them
+    would give ten callers a None branch that can never execute — and a dead
+    defensive branch is where a wrong assumption gets written down and never
+    tested. They keep a total function; the one caller with a real answer for the
+    state (``drip.distribution_gaps_for_holdings``: no trades, no distributions)
+    names it at the call site.
     """
     account_id = _require_account_id(account_id)
+    # NO try/except. A locked database, a renamed table or a permissions error is
+    # not an inception date, and the previous `except Exception: return
+    # "2025-05-01"` answered all three with a confident one — 404 days before this
+    # book's real inception, a window ~7.5x the portfolio's age of which ~87%
+    # predates its existence. The underlying error IS the diagnosis; let it travel.
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT MIN(trade_date) FROM trades WHERE account_id = ?",
+            (account_id,),
+        ).fetchone()
+
+    earliest = row[0] if row else None
+    if not earliest:
+        if default is _UNSET:
+            raise ValueError(
+                f"account {account_id} carries no trades, so it has no inception "
+                "date. Refusing to invent one: this value is the left edge of every "
+                "return window, the risk sample and the PDF cover period. A caller "
+                "for which an empty ledger is a legitimate answer should say so "
+                "explicitly with default=None."
+            )
+        return default
+
     try:
-        with get_connection() as conn:
-            row = conn.execute(
-                "SELECT MIN(trade_date) FROM trades WHERE account_id = ?",
-                (account_id,),
-            ).fetchone()
-        return row[0] if row and row[0] else "2025-05-01"
-    except Exception:
-        return "2025-05-01"
+        date.fromisoformat(earliest)
+    except (TypeError, ValueError):
+        raise ValueError(
+            f"MIN(trade_date) for account {account_id} is {earliest!r}, which is not "
+            "an ISO date. Eleven callers feed this straight into date.fromisoformat; "
+            "catching it here names the account instead of failing later without one."
+        ) from None
+    return earliest
