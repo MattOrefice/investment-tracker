@@ -4,7 +4,7 @@ import math
 import sys
 import time
 from datetime import date
-from typing import Optional
+from typing import NamedTuple, Optional
 
 import pandas as pd
 
@@ -169,12 +169,38 @@ def window_pctile(series: pd.Series, current_value: float, w_start: str) -> floa
 
 _REGIME_LABELS = ("Recession", "Early-cycle", "Mid-cycle", "Late-cycle")
 
+# The three signals, in the order coverage is reported.
+_REGIME_SIGNALS = ("usrec", "t10y2y", "unrate")
+
+# Heuristic branches need at least this many present signals. Recession is exempt: it
+# reads USREC alone and one signal is COMPLETE there, not partial — NBER's indicator is
+# definitionally the answer to "is it a recession", not evidence toward it.
+_HEURISTIC_MIN_SIGNALS = 2
+
+
+class RegimeVerdict(NamedTuple):
+    """A regime label with a record of what it rests on.
+
+    ``label`` is one of ``_REGIME_LABELS``, or **None** when the signals present cannot
+    support a classification. None is a value to inspect, not an error: app.py imports
+    pages unwrapped and fifteen other panels on the Macro page degrade rather than crash,
+    so a raise here would take the page down for one badge.
+
+    ``present``/``missing`` partition ``_REGIME_SIGNALS`` so a caller can say "from 2 of
+    3 signals — T10Y2Y unavailable" without recomputing what it supplied. That is worth
+    rendering even when nothing is missing: it is strictly more than a bare label.
+    """
+
+    label: str | None
+    present: tuple[str, ...]
+    missing: tuple[str, ...]
+
 
 def classify_regime(
     usrec: float | None,
     t10y2y: float | None,
     unrate: float | None,
-) -> str:
+) -> RegimeVerdict:
     """
     Classify the macro regime given three FRED indicator values.
 
@@ -184,30 +210,55 @@ def classify_regime(
       3. Late-cycle  — USREC = 0, T10Y2Y < -0.25 OR UNRATE < 4.2
       4. Mid-cycle   — default
 
-    Missing signals (None) are treated as neutral for that rule.
-    Returns one of: 'Recession', 'Early-cycle', 'Mid-cycle', 'Late-cycle'.
+    Missing signals (None) are treated as neutral WITHIN a rule, but NEUTRALITY HAS A
+    FLOOR: below it, "neutral" stops being a modest assumption and becomes the entire
+    basis of the answer. Because Mid-cycle is the default branch, without a floor an
+    empty argument list returns a confident mid-cycle verdict — and pages/3_Macro.py
+    rendered exactly that as a coloured badge with interpretive prose while every FRED
+    series was unavailable.
+
+    The floor is PER-BRANCH because the branches differ in kind. Recession reads USREC
+    alone and that is complete. The other three are heuristic combinations needing
+    ``_HEURISTIC_MIN_SIGNALS`` present; the deciding case is ``curve_ok``, which defaults
+    True when t10y2y is None — so an absent curve actively supplies half the Early-cycle
+    test, and a lone UNRATE reading would otherwise decide it. A missing signal there
+    VOTES rather than abstains, which is why a flat "at least one present" floor does not
+    catch it.
+
+    Returns a RegimeVerdict; ``label`` is one of _REGIME_LABELS or None.
     See docs/regime_classifier.md for rationale and limitations.
     """
+    supplied = {"usrec": usrec, "t10y2y": t10y2y, "unrate": unrate}
+    present  = tuple(n for n in _REGIME_SIGNALS if supplied[n] is not None)
+    missing  = tuple(n for n in _REGIME_SIGNALS if supplied[n] is None)
+
+    def _verdict(label: str | None) -> RegimeVerdict:
+        return RegimeVerdict(label=label, present=present, missing=missing)
+
     if usrec is not None and usrec >= 0.5:
-        return "Recession"
+        return _verdict("Recession")
+
+    if len(present) < _HEURISTIC_MIN_SIGNALS:
+        return _verdict(None)
 
     unrate_high  = unrate is not None and unrate > 5.5
     curve_ok     = t10y2y is None or t10y2y > -0.25
     if unrate_high and curve_ok:
-        return "Early-cycle"
+        return _verdict("Early-cycle")
 
     curve_inv    = t10y2y is not None and t10y2y < -0.25
     labor_tight  = unrate is not None and unrate < 4.2
     if curve_inv or labor_tight:
-        return "Late-cycle"
+        return _verdict("Late-cycle")
 
-    return "Mid-cycle"
+    return _verdict("Mid-cycle")
 
 
 def get_regime_signals(as_of_date: str | None = None) -> dict:
     """
     Fetch the most-recent USREC, T10Y2Y, and UNRATE values as of as_of_date.
-    Returns a dict with keys: usrec, t10y2y, unrate, label (from classify_regime).
+    Returns a dict with keys: usrec, t10y2y, unrate, label (from classify_regime;
+    None when the signals present cannot support a verdict).
     """
     from datetime import date as _date
     end = as_of_date or _date.today().isoformat()
@@ -231,7 +282,9 @@ def get_regime_signals(as_of_date: str | None = None) -> dict:
         "usrec":   usrec,
         "t10y2y":  t10y2y,
         "unrate":  unrate,
-        "label":   classify_regime(usrec, t10y2y, unrate),
+        # Dead code (no callers as of 2026-08-17) but kept consistent: the docstring
+        # must not promise a label the classifier may decline to give.
+        "label":   classify_regime(usrec, t10y2y, unrate).label,
     }
 
 

@@ -216,7 +216,12 @@ def test_window_pctile_10y_matches_manual_slice():
     assert window_pctile(s, val, w10_start) == pytest.approx(expected, abs=1e-9)
 
 
-# ── classify_regime unit tests (Layer 1: no None gaps) ───────────────────────
+# ── classify_regime unit tests ───────────────────────────────────────────────
+# The header used to read "(Layer 1: no None gaps)". That framing WAS the defect:
+# it treated the absence of a None label as the invariant, when the real invariant is
+# that a label is never OUTSIDE the four. A verdict from no signals is a gap, not the
+# absence of one. Only ONE case below changed behaviour — (None, None, None) — which
+# is the measure of how narrow the floor is.
 
 @pytest.mark.parametrize("usrec,t10y2y,unrate,expected", [
     # Rule 1: Recession when USREC = 1
@@ -236,24 +241,42 @@ def test_window_pctile_10y_matches_manual_slice():
     # Rule 4: Mid-cycle default
     (0.0,  1.0,  4.5, "Mid-cycle"),
     (0.0,  0.0,  5.0, "Mid-cycle"),
-    (None, None, None, "Mid-cycle"),   # all signals missing → default
+    (None, None, None, None),          # all signals missing → NO VERDICT (was "Mid-cycle")
 ])
 def test_classify_regime_rules(usrec, t10y2y, unrate, expected):
     """classify_regime must return the correct label for each signal combination."""
-    assert classify_regime(usrec, t10y2y, unrate) == expected
+    assert classify_regime(usrec, t10y2y, unrate).label == expected
 
 
-def test_classify_regime_always_returns_valid_label():
-    """classify_regime must always return one of the four valid labels."""
+def test_classify_regime_never_returns_a_label_outside_the_set():
+    """INVERTED, not deleted. This asserted that every input combination — INCLUDING
+    (None, None, None) — yields one of the four labels. The real invariant survives: a
+    label is never outside the set. The assumption that a verdict always EXISTS does not,
+    and it was the thing making the defect look correct.
+
+    Same shape as the four tests #191 introduced that then pinned the yield defect open: a
+    guard written around the buggy behaviour reads as coverage and blocks the fix.
+
+    The floor is asserted positively too, so this cannot pass by declining everything —
+    see test_the_floor_admits_the_curve_default_once_two_signals_are_present and
+    test_all_three_present_is_unchanged_from_the_old_behaviour.
+    """
     import itertools
     usrec_vals  = [None, 0.0, 1.0]
     t10y2y_vals = [None, -1.0, -0.3, -0.1, 0.0, 0.5, 2.0]
     unrate_vals = [None, 3.5, 4.0, 4.2, 5.0, 5.5, 6.0, 8.0]
+    verdicts = 0
     for u, t, r in itertools.product(usrec_vals, t10y2y_vals, unrate_vals):
-        label = classify_regime(u, t, r)
-        assert label in _REGIME_LABELS, (
-            f"classify_regime({u}, {t}, {r}) = {label!r} not in {_REGIME_LABELS}"
+        v = classify_regime(u, t, r)
+        assert v.label is None or v.label in _REGIME_LABELS, (
+            f"classify_regime({u}, {t}, {r}) = {v.label!r} not in {_REGIME_LABELS} and not None"
         )
+        verdicts += v.label is not None
+    assert verdicts > 100, (
+        f"only {verdicts} of 168 combinations produced a verdict — the floor is refusing "
+        "far more than it should, and this test would pass while the classifier answered "
+        "almost nothing"
+    )
 
 
 def test_classify_regime_recession_overrides_all():
@@ -265,7 +288,7 @@ def test_classify_regime_recession_overrides_all():
         (1.0,  1.0, 8.0),   # would otherwise be Early-cycle
     ]
     for u, t, r in combos:
-        assert classify_regime(u, t, r) == "Recession", (
+        assert classify_regime(u, t, r).label == "Recession", (
             f"Expected 'Recession' for usrec={u}, t10y2y={t}, unrate={r}"
         )
 
@@ -282,7 +305,8 @@ def test_classify_regime_backtest_has_no_gaps():
     unrate_sim = rng.uniform(3.0, 10.0, n)
 
     labels = [
-        classify_regime(float(usrec_sim[i]), float(t10y2y_sim[i]), float(unrate_sim[i]))
+        classify_regime(float(usrec_sim[i]), float(t10y2y_sim[i]),
+                        float(unrate_sim[i])).label
         for i in range(n)
     ]
 
@@ -308,3 +332,237 @@ def test_format_ur_delta_positive():
 
 def test_format_ur_delta_negative():
     assert format_ur_delta(-30.0) == "-30 bps from one year ago"
+
+
+# ── #Group1: a verdict requires signals (per-branch sufficiency) ─────────────
+#
+# WHY A FLOOR AT ALL. `Mid-cycle` is the DEFAULT branch, so before this change an empty
+# argument list returned a confident mid-cycle verdict, and pages/3_Macro.py rendered it
+# as a coloured "Current Regime: Mid-cycle" badge with interpretive prose. Measured: with
+# the macro cache emptied and the network blocked, that badge still rendered.
+#
+# WHY PER-BRANCH RATHER THAN A FLAT n>=1 or n>=2. The branches differ in kind:
+#   * Recession reads USREC alone, and one signal is COMPLETE — NBER's indicator is
+#     definitionally the answer to "is it a recession", not evidence toward it.
+#   * Early/Late/Mid are heuristic combinations that mean nothing at n=1. The deciding
+#     case is `curve_ok = t10y2y is None or t10y2y > -0.25`: an absent curve actively
+#     supplies half the Early-cycle test, so a missing signal VOTES rather than
+#     abstaining. A flat n>=1 floor does not catch that, because one signal is present.
+
+def _v(usrec=None, t10y2y=None, unrate=None):
+    return classify_regime(usrec, t10y2y, unrate)
+
+
+def test_no_signals_yields_no_verdict():
+    """The site that motivated the change: a verdict from nothing."""
+    assert _v().label is None
+    assert _v().present == ()
+    assert _v().missing == ("usrec", "t10y2y", "unrate")
+
+
+def test_recession_needs_only_usrec():
+    """One signal, and it is complete rather than partial — USREC settles the question."""
+    v = _v(usrec=1.0)
+    assert v.label == "Recession"
+    assert v.present == ("usrec",)
+    assert v.missing == ("t10y2y", "unrate")
+
+
+def test_a_single_heuristic_signal_is_not_enough():
+    """THE DECIDING CASE. unrate=6.0 alone returned Early-cycle before this change,
+    because curve_ok defaults True when t10y2y is None — the absent curve supplied half
+    the test. One present signal is not a floor; this is why the floor is per-branch."""
+    assert _v(unrate=6.0).label is None
+    assert _v(t10y2y=-1.0).label is None
+
+
+def test_usrec_zero_alone_is_not_a_verdict():
+    """USREC is definitionally sufficient only for the branch it settles. usrec=0.0 rules
+    OUT recession; it says nothing about which non-recession phase, so n=1 is not enough
+    for the heuristic branches."""
+    assert _v(usrec=0.0).label is None
+
+
+def test_two_signals_support_a_heuristic_verdict():
+    v = _v(usrec=0.0, unrate=6.0)
+    assert v.label == "Early-cycle"
+    assert v.present == ("usrec", "unrate")
+    assert v.missing == ("t10y2y",)
+
+
+def test_the_floor_admits_the_curve_default_once_two_signals_are_present():
+    """Above the floor, `curve_ok`'s neutral default is accepted as the modelling choice
+    it is. Asserted so the boundary is explicit rather than incidental: this is the same
+    input pattern as test_a_single_heuristic_signal_is_not_enough plus one signal, and it
+    flips from no-verdict to a verdict."""
+    assert _v(unrate=6.0).label is None
+    assert _v(usrec=0.0, unrate=6.0).label == "Early-cycle"
+
+
+def test_all_three_present_is_unchanged_from_the_old_behaviour():
+    """The floor must not perturb the fully-populated case, which is every historical
+    backtest point and the normal render. Same expectations as the pre-existing rule
+    table."""
+    assert _v(1.0, 0.5, 4.0).label == "Recession"
+    assert _v(0.0, 0.5, 6.0).label == "Early-cycle"
+    assert _v(0.0, -1.0, 5.0).label == "Late-cycle"
+    assert _v(0.0, 0.5, 4.0).label == "Late-cycle"      # labor_tight
+    assert _v(0.0, 0.5, 5.0).label == "Mid-cycle"
+
+
+def test_verdict_coverage_is_ordered_and_partitions_the_signals():
+    """present + missing must account for all three signals, in a stable order, so a
+    caller can render "from 2 of 3" without recomputing what was supplied."""
+    for u, t, r in [(None, None, None), (1.0, None, None), (0.0, 0.5, 6.0),
+                    (None, 0.5, None), (0.0, None, 6.0)]:
+        v = classify_regime(u, t, r)
+        assert tuple(sorted(v.present + v.missing)) == ("t10y2y", "unrate", "usrec")
+        assert len(v.present) + len(v.missing) == 3
+        assert v.present == tuple(n for n in ("usrec", "t10y2y", "unrate")
+                                 if dict(usrec=u, t10y2y=t, unrate=r)[n] is not None)
+
+
+def test_no_verdict_is_not_an_error_state():
+    """label=None must be a value the caller inspects, not an exception. app.py imports
+    pages unwrapped, and fifteen other panels on this page degrade rather than crash — a
+    raise here would take the page down for one badge."""
+    v = _v()
+    assert v.label is None
+    assert isinstance(v.present, tuple) and isinstance(v.missing, tuple)
+
+
+# ── the page consumers, pinned as SOURCE ─────────────────────────────────────
+#
+# WHY SOURCE AND NOT EXECUTION. pages/3_Macro.py cannot run in CI: demo mode has no
+# populated macro_cache, so every panel would attempt an outbound FRED call, which is
+# exactly what @pytest.mark.live_data exists to keep out of the default suite. The
+# executing evidence is a local render with the cache emptied and the network blocked
+# (socket + prices._SESSION.get) — that render is what found the defect and confirmed the
+# fix, and it is recorded in the PR rather than automated here.
+#
+# These two layers FAIL DIFFERENTLY and both are kept: a source pin catches the
+# fabrication being reintroduced by an edit; the live render catches the page as a reader
+# meets it. Neither subsumes the other.
+
+def _page_src() -> str:
+    """pages/3_Macro.py with COMMENTS STRIPPED.
+
+    Comments are removed because the first cut of these tests asserted
+    `"(_cur_usrec or 0)" not in src` and went red on the comment EXPLAINING that the `or 0`
+    fallback had been removed. A source assertion that reads comments can be broken by
+    prose describing the fix — and, worse, satisfied by prose promising one. Only code
+    counts, which is the same rule as "read the assertion, not the comment above it",
+    applied to the thing being asserted about.
+    """
+    import io
+    import tokenize
+    from pathlib import Path
+
+    src = (Path(__file__).resolve().parent.parent / "pages" / "3_Macro.py").read_text(
+        encoding="utf-8")
+    out = []
+    for tok in tokenize.generate_tokens(io.StringIO(src).readline):
+        if tok.type != tokenize.COMMENT:
+            out.append(tok)
+    return tokenize.untokenize(out)
+
+
+def test_the_usrec_metric_does_not_map_absence_to_zero():
+    """`(_cur_usrec or 0) >= 0.5` rendered "None" — no recession — from an ABSENT
+    indicator. Its two neighbours in the same st.columns(3) already rendered "—", so this
+    metric was the odd one out among its own siblings.
+
+    Measured before: NBER Recession (USREC) -> "None" with the cache emptied.
+    Measured after:  NBER Recession (USREC) -> "—".
+    """
+    src = _page_src()
+    assert "(_cur_usrec or 0)" not in src, (
+        "the `or 0` fallback is back: an absent USREC renders as a definitive 'None'"
+    )
+    assert "_cur_usrec is None" in src, "absence is not distinguished from 0"
+
+
+def test_the_badge_handles_a_declined_verdict():
+    """The classifier can now decline, and the badge must not index a colour map with
+    None. _REGIME_COLORS/_REGIME_PROSE are dict lookups keyed on the four labels."""
+    src = _page_src()
+    assert "_verdict.label is None" in src, "the page does not branch on a declined verdict"
+    assert "_REGIME_COLORS[_verdict.label]" in src, (
+        "the colour lookup is not on the verdict's label"
+    )
+    assert "no verdict" in src, "the declined state renders no text of its own"
+
+
+def test_the_badge_states_what_the_verdict_rests_on():
+    """The coverage line renders even when nothing is missing — "Classified from all 3
+    signals" is strictly more than a bare label, which is the whole point of returning
+    coverage alongside the value rather than only on failure."""
+    src = _page_src()
+    # ASSERT THE CALL, NOT THE NAME. This asserted `"_coverage_line" in src`, which the
+    # helper's own DEFINITION satisfies — a mutant deleting the st.caption() call left the
+    # def in place and the test stayed green. The presence of a helper reads as its use,
+    # the same way a captured exception variable reads as a handled one.
+    assert "st.caption(_coverage_line(_verdict))" in src, (
+        "the coverage line is defined but not rendered"
+    )
+    assert src.count("_coverage_line") >= 2, "definition without a call site"
+    assert "of 3 signals" in src
+
+
+def test_the_two_orphaned_error_variables_now_reach_the_reader():
+    """_rec_err and _usrec_err were captured at the load site and never referenced again —
+    the only two of fifteen FRED error variables with no consumer. A USREC outage removed
+    recession shading from 16 charts and blanked a metric with no reason stated anywhere.
+
+    Asserted by counting occurrences, because a capture alone reads as handling.
+    """
+    src = _page_src()
+    for var in ("_rec_err", "_usrec_err"):
+        assert f"_panel_error(" in src and var in src, f"{var} has no consumer"
+        assert src.count(var) >= 3, (
+            f"{var} appears {src.count(var)}x — capture plus a guard plus a call is the "
+            "minimum for it to reach _panel_error"
+        )
+
+
+def test_both_consumers_project_the_verdict_and_there_are_only_two():
+    """The contract changed from str to RegimeVerdict, so every call site must either bind
+    the verdict or project .label — a leftover string comparison would silently never
+    match, and a bare f-string would render "RegimeVerdict(label=...)".
+
+    The count is pinned at two because a third call site appearing without review is how a
+    contract change leaks: src/asset_evaluation.py imports classify_regime and never calls
+    it (a dead import, filed as #240), so these two are the whole live surface.
+    """
+    src = _page_src()
+    assert src.count("macro.classify_regime(") == 2, (
+        f"{src.count('macro.classify_regime(')} call sites, expected 2 — a new consumer "
+        "needs its own handling for label=None"
+    )
+    assert "_verdict = macro.classify_regime(" in src, "the badge does not bind the verdict"
+    assert ").label]" in src, "the backtest chart does not project .label"
+
+def test_the_docs_carry_the_floor_argument():
+    """docs/regime_classifier.md must keep the reasoning, not just the rule.
+
+    The rule (">= 2 signals for the heuristic branches") is recoverable from the code. The
+    ARGUMENT is not: that neutrality has a floor, that Mid-cycle being the default is what
+    makes a floor necessary, and that curve_ok's True-when-None means an absent curve VOTES
+    rather than abstains — which is why a flat n>=1 floor does not catch it. A future
+    reader deciding whether to relax the threshold needs the argument, and the doc is where
+    it lives.
+    """
+    from pathlib import Path
+
+    doc = (Path(__file__).resolve().parent.parent / "docs" /
+           "regime_classifier.md").read_text(encoding="utf-8")
+    assert "**neutrality has a floor**" in doc, "the sentence carrying the argument is gone"
+    assert "curve_ok" in doc, "the deciding case is not named"
+    assert "definitionally the answer" in doc, (
+        "the per-branch distinction — USREC settles Recession, the others mean nothing at "
+        "n=1 — is not stated"
+    )
+    assert "one of four canonical phases" not in doc, (
+        "the Purpose section still claims a label is always one of four; the classifier "
+        "can now decline"
+    )

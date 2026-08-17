@@ -406,24 +406,69 @@ with col:
     _cur_t10y2y = float(t10y2y.dropna().iloc[-1]) if t10y2y is not None and not t10y2y.empty else None
     _cur_unrate = float(unrate.dropna().iloc[-1]) if unrate is not None and not unrate.empty else None
 
-    _regime_label = macro.classify_regime(_cur_usrec, _cur_t10y2y, _cur_unrate)
-    _r_fg, _r_bg  = _REGIME_COLORS[_regime_label]
+    _verdict = macro.classify_regime(_cur_usrec, _cur_t10y2y, _cur_unrate)
+
+    # SIGNAL NAMES as the reader knows them, for the coverage line below.
+    _SIG_DISPLAY = {"usrec": "USREC", "t10y2y": "T10Y2Y", "unrate": "UNRATE"}
+
+    def _coverage_line(v) -> str:
+        n = len(v.present)
+        if not v.missing:
+            return f"Classified from all {n} signals."
+        miss = ", ".join(_SIG_DISPLAY[m] for m in v.missing)
+        return f"Classified from {n} of 3 signals — {miss} unavailable."
 
     with st.container(border=True):
-        st.markdown(
-            f"<div style='background:{_r_bg};border-left:5px solid {_r_fg};"
-            f"padding:12px 16px;border-radius:4px;margin-bottom:8px'>"
-            f"<span style='font-size:1.4rem;font-weight:700;color:{_r_fg}'>"
-            f"Current Regime: {_regime_label}</span></div>",
-            unsafe_allow_html=True,
-        )
-        st.caption(_REGIME_PROSE[_regime_label])
+        if _verdict.label is None:
+            # NO VERDICT. Before this change the classifier's Mid-cycle default meant an
+            # empty argument list produced a confident badge; with the macro cache empty
+            # and no network the page rendered "Current Regime: Mid-cycle" in full colour.
+            _miss = ", ".join(_SIG_DISPLAY[m] for m in _verdict.missing)
+            st.markdown(
+                "<div style='background:#F2F2F2;border-left:5px solid #6B6B6B;"
+                "padding:12px 16px;border-radius:4px;margin-bottom:8px'>"
+                "<span style='font-size:1.4rem;font-weight:700;color:#6B6B6B'>"
+                "Current Regime: no verdict</span></div>",
+                unsafe_allow_html=True,
+            )
+            st.caption(
+                f"Only {len(_verdict.present)} of 3 signals are available — {_miss} "
+                "unavailable. The classifier declines rather than defaulting: Mid-cycle is "
+                "its default branch, so a verdict here would rest on the absence of data "
+                "rather than on data. The individual signals below show what is known."
+            )
+        else:
+            _r_fg, _r_bg = _REGIME_COLORS[_verdict.label]
+            st.markdown(
+                f"<div style='background:{_r_bg};border-left:5px solid {_r_fg};"
+                f"padding:12px 16px;border-radius:4px;margin-bottom:8px'>"
+                f"<span style='font-size:1.4rem;font-weight:700;color:{_r_fg}'>"
+                f"Current Regime: {_verdict.label}</span></div>",
+                unsafe_allow_html=True,
+            )
+            st.caption(_REGIME_PROSE[_verdict.label])
+            st.caption(_coverage_line(_verdict))
+
+        # WHY HERE. _rec_err and _usrec_err were captured at the load site and never
+        # referenced again — the only two of the fifteen FRED error variables with no
+        # consumer. So a USREC outage removed the recession shading from 16 charts and
+        # blanked the metric below with no stated reason anywhere on the page. The other
+        # thirteen series route their exception through _panel_error; these now do too.
+        if _usrec_err is not None:
+            _panel_error("NBER Recession Indicator (USREC)", _usrec_err, "retry_usrec")
+        if _rec_err is not None:
+            _panel_error("Recession shading (USREC periods)", _rec_err, "retry_rec")
 
         sig_l, sig_m, sig_r = st.columns(3)
         with sig_l:
+            # THREE states, not two. `(_cur_usrec or 0) >= 0.5` mapped an ABSENT
+            # indicator to 0 and rendered "None" — a definitive negative claim (no
+            # recession) manufactured from missing data. Its two neighbours in this same
+            # st.columns(3) already rendered "—" for absence; USREC was the odd one out.
             st.metric("NBER Recession (USREC)",
-                      "Active" if (_cur_usrec or 0) >= 0.5 else "None",
-                      help="1 = NBER-declared recession; 0 = expansion")
+                      "—" if _cur_usrec is None
+                      else ("Active" if _cur_usrec >= 0.5 else "None"),
+                      help="1 = NBER-declared recession; 0 = expansion; — = unavailable")
         with sig_m:
             st.metric("Yield Curve (10Y–2Y)",
                       f"{_cur_t10y2y:+.2f}%" if _cur_t10y2y is not None else "—",
@@ -458,11 +503,15 @@ with col:
 
                 _regime_map = {"Recession": 0, "Early-cycle": 1, "Mid-cycle": 2, "Late-cycle": 3}
                 _regime_num = [
+                    # All three signals present by construction (intersected index,
+                    # ffilled), so the sufficiency floor never fires here and .label is
+                    # never None. A None would KeyError loudly rather than plot a wrong
+                    # regime, which is the right failure for a backtest.
                     _regime_map[macro.classify_regime(
                         float(_bt_usrec.loc[d]),
                         float(_bt_curve.loc[d]),
                         float(_bt_ur.loc[d]),
-                    )]
+                    ).label]
                     for d in _bt_common
                 ]
                 _bt_series = pd.Series(_regime_num, index=_bt_common)
