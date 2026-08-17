@@ -12,11 +12,20 @@ from src.config import IS_DEMO
 from src.db import initialize_db
 from src.ui_helpers import render_footer, render_sidebar_footer
 
+# Defined for BOTH branches: the render guard below reads it, and relying on `not
+# IS_DEMO` short-circuiting before an undefined name is a NameError waiting for anyone
+# who reorders that condition.
+_unmapped_notice = None
+
 if IS_DEMO:
     initialize_db()          # demo.db is committed/prebuilt — just ensure base schema
 else:
-    from src.bootstrap import bootstrap_personal_db
-    bootstrap_personal_db()  # fresh personal DB: base schema + all migrations + all seeds
+    from src.bootstrap import bootstrap_personal_db, unmapped_holdings_notice
+    # The result is USED, not discarded: bootstrap reconciles the newest holdings CSV
+    # against `securities` and reports symbols the location register would silently
+    # drop. Before this, the call was bare and anything it learned died here.
+    _boot = bootstrap_personal_db()  # base schema + all migrations + all seeds
+    _unmapped_notice = unmapped_holdings_notice(_boot.get("unmapped_holdings") or {})
 
 
 def _inject_global_styles():
@@ -343,6 +352,14 @@ if not IS_DEMO:
     ]
 
 _inject_global_styles()
+
+# Rendered HERE — after the styles, before nav.run() — so it appears above the selected
+# page's own content on EVERY page, not only the landing page. A reader who navigates
+# straight to Asset Location meets it before that page raises (#217). WARNS, never
+# raises: app.py calls bootstrap unwrapped, and the fix is a CSV edit outside the app,
+# so a startup raise would be a lockout over a text file.
+if not IS_DEMO and _unmapped_notice:
+    st.warning(_unmapped_notice, icon="⚠️")
 
 nav = st.navigation(_page_groups, expanded=True)
 
