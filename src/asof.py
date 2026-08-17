@@ -274,13 +274,81 @@ def format_long_date(d: "date | str") -> str:
     return f"{d.strftime('%B')} {d.day}, {d.year}"
 
 
-def as_of_live_line(today: date | None = None) -> str:
-    """Return the live-data line only. e.g. 'Live data as of May 10, 2026.'
+# Distinguishes "argument omitted — resolve it" from an explicit None, which means
+# "known to be absent". Both are meaningful for a price frontier and they cannot
+# share a default: collapsing them makes the nothing-committed state unreachable,
+# because an omitted frontier would go and find a real one. Same pattern, and the
+# same reasoning, as location_actions._UNSET.
+_UNSET = object()
 
-    ``today`` defaults to the current date; it is injectable so a composed banner
-    can be pinned in a test without patching the clock.
+
+def as_of_live_line(
+    today: date | None = None,
+    *,
+    frontier: "date | str | None" = _UNSET,
+    coverage=None,
+) -> str:
+    """What the app can honestly say about how current its prices are.
+
+    "Prices through August 10" makes no completeness claim; "Live data as of
+    August 10" would. That distinction is the whole design: VINTAGE is knowable on
+    any page from the committed cache, COVERAGE is knowable only where a
+    PriceCoverage record exists, and the banner must never let the first imply the
+    second.
+
+    Four states:
+
+      1 fully current   frontier == today and nothing unresolved -> the original
+                        "Live data as of <date>." sentence, unchanged
+      2 stale           frontier < today                        -> "Prices through
+                        <date> — N days behind."
+      3 incomplete      something unresolved (needs a record)   -> as state 2, plus
+                        "N of M holdings have no committed price"
+      4 nothing         no frontier at all                      -> "No committed
+                        price data." — absence must never present as freshness,
+                        the same rule staleness_note applies above.
+
+    NO THRESHOLD, deliberately. staleness_note tolerates 70/45 days because it
+    guards a refresh cycle and a committed factor file is expected to lag. Prices
+    are expected to be current, so any lag is worth stating — and a threshold here
+    would recreate the very defect this fixes for every lag below its cutoff.
+
+    ``frontier`` omitted means "resolve it" (via committed_price_frontier, ~2ms);
+    ``frontier=None`` means "known to be absent" and gives state 4. ``coverage``
+    absent means this caller has no record to consult: it reports vintage and says
+    NOTHING about coverage. Nine of the twelve call sites are in that position, and
+    their silence is the honest limit of what the frontier knows — it skips a
+    holding with no committed price by construction (holdings.py:200-206), so it
+    cannot see the gap it would need to report.
     """
-    return f"Live data as of {format_long_date(today or date.today())}."
+    ref = today or date.today()
+
+    if frontier is _UNSET:
+        if coverage is not None:
+            frontier = coverage.frontier_served
+        else:
+            # Lazy import: avoids a DB import at module load, as at line ~108.
+            from src.holdings import committed_price_frontier
+            frontier = committed_price_frontier(ref)
+
+    if frontier is None:
+        return "No committed price data."
+
+    served = date.fromisoformat(frontier) if isinstance(frontier, str) else frontier
+    lag = (ref - served).days
+    gap = tuple(coverage.unresolved) if coverage is not None else ()
+
+    if lag <= 0 and not gap:
+        return f"Live data as of {format_long_date(ref)}."
+
+    line = f"Prices through {format_long_date(served)}"
+    if lag > 0:
+        line += f" — {lag} days behind"
+    if gap:
+        line += (", and " if lag > 0 else " — ")
+        line += (f"{len(gap)} of {len(coverage.requested)} holdings have "
+                 "no committed price")
+    return line + "."
 
 
 def as_of_report_line(
@@ -321,17 +389,18 @@ def inception_line(inception: "date | str", days: int) -> str:
     return f"Portfolio inception {format_long_date(inception)} ({days} day{'s' if days != 1 else ''})."
 
 
-def as_of_banner() -> str:
+def as_of_banner(*, frontier: "date | str | None" = _UNSET, coverage=None) -> str:
     """Return muted one-line as-of banner for display under each page title.
 
     Format: "Live data as of May 4, 2026. Latest locked quarterly report: Q1 2026 (March 31, 2026)."
     Both dates are computed dynamically — no hardcoded strings.
     """
-    return f"{as_of_live_line()} {as_of_report_line()}"
+    return f"{as_of_live_line(frontier=frontier, coverage=coverage)} {as_of_report_line()}"
 
 
 def as_of_banner_with_inception(
-    inception: "date | str", days: int, today: date | None = None
+    inception: "date | str", days: int, today: date | None = None,
+    *, frontier: "date | str | None" = _UNSET, coverage=None,
 ) -> str:
     """as_of_banner() extended with the portfolio's inception date and age.
 
@@ -343,7 +412,7 @@ def as_of_banner_with_inception(
     no reason to name it. Every component is computed — no literal dates.
     """
     return (
-        f"{as_of_live_line(today)} "
+        f"{as_of_live_line(today, frontier=frontier, coverage=coverage)} "
         f"{inception_line(inception, days)} "
         f"{as_of_report_line(today, inception)}"
     )

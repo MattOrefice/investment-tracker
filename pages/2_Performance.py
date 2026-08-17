@@ -239,7 +239,10 @@ with col:
     # Portfolio age, measured to C rather than today for the same reason the
     # returns are: the settled frontier is the last date the figures describe.
     si_days = (_C_ts - pd.Timestamp(INCEPTION)).days
-    _asof_slot.caption(as_of_banner_with_inception(INCEPTION, si_days))
+    # _sw_cov comes from _load_drift; page 2 asserts below that all three of its
+    # producers name the same unresolved set, so any of them answers for the banner.
+    _asof_slot.caption(as_of_banner_with_inception(
+        INCEPTION, si_days, coverage=_load_drift()[2]))
     pv = pv[pv.index <= _C_ts]
     cf = cf[cf.index <= _C_ts]
 

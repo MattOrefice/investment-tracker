@@ -56,8 +56,15 @@ def test_inception_line_uses_supplied_day_count() -> None:
 
 def test_banner_with_inception_extends_plain_banner_in_order() -> None:
     """Live data → inception → locked report, one line. The plain banner's two
-    clauses must survive verbatim so the extension is additive, not a rewrite."""
-    line = as_of_banner_with_inception(_INCEPTION, 34, _TODAY)
+    clauses must survive verbatim so the extension is additive, not a rewrite.
+
+    ``frontier`` is passed explicitly so this stays a test about COMPOSITION. The
+    freshness clause now depends on how current the committed prices are (#189),
+    and without pinning the frontier this unit test would silently read the
+    machine's price cache and change wording with it — which is exactly what
+    happened when the four-state banner landed.
+    """
+    line = as_of_banner_with_inception(_INCEPTION, 34, _TODAY, frontier=_TODAY)
     assert line == (
         "Live data as of July 14, 2026. "
         "Portfolio inception June 9, 2026 (34 days). "
@@ -68,4 +75,4 @@ def test_banner_with_inception_extends_plain_banner_in_order() -> None:
 def test_plain_banner_unchanged_by_inception_variant() -> None:
     """as_of_banner() is rendered by every other page and must not gain the
     inception clause — the extension is opt-in via the separate entry point."""
-    assert "Portfolio inception" not in as_of_banner()
+    assert "Portfolio inception" not in as_of_banner(frontier=_TODAY)
