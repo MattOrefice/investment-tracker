@@ -294,7 +294,34 @@ ROLLOVER_SOURCE_PSEUDONYM: str = "acct_wkpl_02"  # MissionSquare former-employer
 # and makes both the deploy alias and a global exclusion list unnecessary.
 #
 # Roth / HSA — rank by expected return (highest-growth deserves never-taxed space).
-# International is absent: a Roth forfeits the foreign tax credit.
+#
+# INTERNATIONAL IS NOT UNIFORMLY ABSENT, AND THE FTC IS NOT THE WHOLE RULE. This
+# comment read "International is absent: a Roth forfeits the foreign tax credit"
+# from b6b8774 until #221. That was too coarse in both directions: it described a
+# blanket exclusion the map below does not implement, and it implied that the one
+# international sleeve which IS here somehow escapes the credit loss. It does not.
+#
+# EXCLUDED — intl_developed, intl_all_exus, and the three intl tilt sleeves. The
+#   forgone FTC is only part of the reason. Pre-migration these render as off-SAA,
+#   target-$0 rows, so a Roth buy is movement AWAY from the SAA on the page's own
+#   terms; the phase-46 split gate counts carriers in acct_01 only, so a Roth trade
+#   cannot open it; and Roth space is the scarcest shelter, with the $76,147
+#   rollover inbound. Any one of those excludes them without the FTC.
+#
+# KEPT — emerging_markets, rank 2. A targeted SAA sleeve (9.18%, currently ~4.5pp
+#   underweight), not off-SAA, so none of those three arguments reaches it. The FTC
+#   cost is REAL AND ACCEPTED here, not avoided: EM withholding runs ~20-25%
+#   against developed's ~15%, so the credit forfeited is LARGER than the ~45bp
+#   _INTL_FTC_DRAG prices for the developed tilts (src/location_actions.py, built
+#   as ~3% yield x ~15% withholding — a developed-market calibration that
+#   understates EM). The judgement is that Roth-trapped, never-taxed growth on the
+#   highest-premium equity sleeve outweighs a credit that cannot be claimed in a
+#   Roth at all. A deliberate trade, not an exemption.
+#
+# DATED: the off-SAA half of the exclusion expires when the 9->12 split lands. The
+#   tilts become targeted sleeves then (Intl Quality 6.25 / Large Value 3.75 /
+#   Small Value 3.33), at which point they stop differing from EM on that axis and
+#   the exclusion has to rest on scarcity alone — or be revisited. Filed.
 _ROTH_PRIORITY: dict[str, int] = {
     "us_small_value":   1,   # AVUV — the SAA small-cap slot (small VALUE, not core)
     "emerging_markets": 2,

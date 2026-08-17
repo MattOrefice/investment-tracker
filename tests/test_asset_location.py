@@ -260,8 +260,11 @@ def test_case_d_mco_no_row():
 
 
 def test_case_d_international_no_row():
-    # intl is taxable-rank 1 and absent from the roth map (the FTC is only
-    # claimable in taxable) -> never case D.
+    # intl_developed / intl_all_exus are taxable-rank 1 and absent from the roth
+    # map -> never case D. NOT because "international is absent": emerging_markets
+    # IS in the roth map at rank 2 and the FTC applies there too (#221). This
+    # asserts the two BROAD sleeves, which are excluded on off-SAA and scarcity
+    # grounds as well as the credit.
     d = _case_d_symbols()
     assert "IXUS" not in d and "VXUS" not in d
 

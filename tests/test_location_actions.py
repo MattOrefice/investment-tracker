@@ -499,7 +499,9 @@ def test_deploy_answer_live_excludes_all_banned_sleeves():
 
 def test_priority_maps_are_account_conditional():
     from src.location_config import sleeve_priority
-    # International appears for taxable, never for roth (a Roth forfeits the FTC).
+    # intl_developed appears for taxable, never for roth. Deliberately the DEVELOPED
+    # sleeve, not "international" as a class: emerging_markets is in the roth map at
+    # rank 2, accepting the forgone credit for the growth premium (#221).
     assert sleeve_priority("taxable", "intl_developed") == 1
     assert sleeve_priority("roth_ira", "intl_developed") is None
     # hedged_equity appears for traditional_ira, never for roth.
