@@ -75,6 +75,8 @@ from src.location_actions import (
     assert_full_coverage,
     format_assumed_yield,
     yield_assumption_note,
+    drag_coverage,
+    format_drag_exclusion,
 )
 
 # ── Load data ──────────────────────────────────────────────────────────────────
@@ -121,6 +123,10 @@ positions_df = exclude_non_household_positions(positions_df, accounts_df)
 register = build_location_register(
     positions_df, accounts_df, securities_df,
     TAX_PROFILE, SLEEVE_PRIORITY_BY_ACCOUNT_TYPE, ACCOUNT_SHELTER_PRIORITY,
+    # Multi-asset and target-date funds are sized by looking through their
+    # compositions to the sleeve yields, not by an equity default. Omitting this
+    # frame is not an error — every blend then refuses visibly instead.
+    compositions_df=compositions_df,
 )
 # Coverage invariant: every register row must be claimed by some action group.
 # Raise loudly at render if a new mislocation slips in with no group to narrate it.
@@ -144,7 +150,12 @@ _deploy_buys = float(deploy["table"]["dollar"].sum()) if not deploy["table"].emp
 
 # ── KPIs (three distinct units; the last two must never be summed) ─────────────
 _kpi_idle_roth = _roth_idle_cash
-_kpi_annual_drag = float(register[register["case"].isin(["A", "B", "D"])]["annual_benefit"].sum())
+# drag_coverage, not a bare .sum(): pandas reads a not-modelled row's NaN as zero, so
+# the plain sum returns this same total whether those rows are present or absent. The
+# coverage record is what carries the difference, and _kpi_drag_note renders it.
+_kpi_coverage   = drag_coverage(register)
+_kpi_annual_drag = _kpi_coverage.total
+_kpi_drag_note   = format_drag_exclusion(_kpi_coverage)
 # The KPI counts ALL A/B/D drag. Partition it into actionable-now vs deferred, where
 # deferred = accepted groups (logged, no action) + blocked groups (a good move you
 # can't make yet — the gain side is blocked on pre-tax capacity). Every register row
@@ -154,7 +165,7 @@ for _g in ACTION_GROUPS:
     if _g["status"] in ("accepted", "blocked"):
         _deferred_idx |= set(filter_register_for_group(register, _g).index)
 _def_rows = register.loc[sorted(_deferred_idx)]
-_deferred_drag = float(_def_rows[_def_rows["case"].isin(["A", "B", "D"])]["annual_benefit"].sum()) if len(_def_rows) else 0.0
+_deferred_drag = drag_coverage(_def_rows).total if len(_def_rows) else 0.0
 _actionable_drag = _kpi_annual_drag - _deferred_drag
 # Case C is repositionable inside shelters — a stock of dollars, NOT an annual flow.
 _case_c = register[register["case"] == "C"]
@@ -245,6 +256,10 @@ with col:
     k1, k2, k3 = st.columns(3)
     k1.metric("Idle Roth cash", f"${_kpi_idle_roth:,.0f}")
     k2.metric("Annual tax drag (A/B/D)", f"${_kpi_annual_drag:,.0f}")
+    if _kpi_drag_note:
+        # Directly under the figure it qualifies, not in the expander: a total that
+        # omits rows must say so where the total is read.
+        k2.caption(escape_md(_kpi_drag_note))
     k3.metric("Repositionable in shelters (C)", f"${_kpi_repositionable:,.0f}")
     st.caption(
         "Annual tax drag is a yearly flow (cases A/B/D; case C is excluded — it "
@@ -457,10 +472,10 @@ for group in _ordered_groups:
                 # next to the figure it multiplies, so the assumption is visible where
                 # it is applied rather than only in the expander.
                 show["assumed_yield"] = [
-                    format_assumed_yield(y, bool(d))
-                    for y, d in zip(reg_rows["assumed_yield"], reg_rows["yield_from_default"])
+                    format_assumed_yield(y, b)
+                    for y, b in zip(reg_rows["assumed_yield"], reg_rows["yield_basis"])
                 ]
-                show = show.drop(columns=["yield_from_default"])
+                show = show.drop(columns=["yield_basis"])
                 show = show.rename(columns={
                     "holding": "Holding", "symbol": "Symbol", "account": "Account",
                     "sleeve": "Sleeve", "case": "Case", "current_value": "Value ($)",

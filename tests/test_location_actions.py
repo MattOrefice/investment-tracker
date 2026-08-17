@@ -45,7 +45,8 @@ ROOT       = pathlib.Path(__file__).resolve().parent.parent
 TRACKER_DB = ROOT / "data" / "tracker.db"
 
 _REGISTER_COLS = ["holding", "symbol", "account", "sleeve", "case", "current_value",
-                  "annual_benefit", "embedded_gain", "cost_to_realize", "is_free", "payback_months"]
+                  "annual_benefit", "assumed_yield", "yield_basis",
+                  "embedded_gain", "cost_to_realize", "is_free", "payback_months"]
 
 
 def _live():
@@ -58,9 +59,17 @@ def _live():
     conn = sqlite3.connect(str(TRACKER_DB))
     acct = pd.read_sql_query("SELECT * FROM accounts", conn)
     sec = pd.read_sql_query("SELECT * FROM securities", conn)
+    # Compositions are loaded HERE because the page loads them: a blend is sized by
+    # looking through its composition, and a helper that omits the frame the page
+    # passes stops mirroring the page. Omitting it made every blend refuse, which
+    # surfaced as frozen_tod_income.pros raising on {annual_benefit} — the designed
+    # behaviour for a caller with no compositions, in a helper that should have had
+    # them.
+    comps = pd.read_sql_query("SELECT * FROM fund_compositions", conn)
     conn.close()
     reg = build_location_register(pos, acct, sec, TAX_PROFILE,
-                                  SLEEVE_PRIORITY_BY_ACCOUNT_TYPE, ACCOUNT_SHELTER_PRIORITY)
+                                  SLEEVE_PRIORITY_BY_ACCOUNT_TYPE, ACCOUNT_SHELTER_PRIORITY,
+                                  compositions_df=comps)
     return pos, acct, sec, reg
 
 
@@ -606,7 +615,7 @@ RENDERED_PROSE_LEN = {
     "relocate_gain_side":        (339, 361),   # cons: capacity restatement -> cross-ref to clear_roth_non_equity
     "thematic_sprawl":           (204, 710),   # cons +244: the authored "11.8% of your equity" -> three templated figures ({value} TOD subtotal, {thematic_equity_value} household numerator, {lookthrough_equity_value} denominator) + {thematic_equity_share}, so the arithmetic closes on the page, plus the one clause naming what the equity share excludes (IBIT, crypto). Earlier: pros -13 / cons -37: unsourceable fee precision deleted ("roughly 0.45% ... against 0.07%", "The excess fee is about $76 a year") — expense_ratio is NULL for all 16 thematic tickers, and $76 was wrong by its own arithmetic (~$58). Qualitative claim kept; allow_literals exemption retired with it. Earlier: gain rate 15% -> 18.07% (15% fed + 3.07% PA)
     "rollover_401k":             (486, 353),   # available now (MissionSquare 401(k), acct_wkpl_02 — holds RFUTX), not blocked on the next job
-    "frozen_tod_income":         (400, 523),   # pros: literal "Three of them" -> derived {register_count} + JCPB joins the enumeration (Aug-2026 advisor swap)
+    "frozen_tod_income":         (401, 523),   # pros +1: GAOSX is now sized by looking through its fund_compositions holdings (2.66%) instead of taking the 1.80% equity default, so the group's {annual_benefit} went $99 -> $122 — one more digit. Earlier: literal "Three of them" -> derived {register_count} + JCPB joins the enumeration (Aug-2026 advisor swap)
     "saa_sleeves_taxable":       (340, 648),   # pros +79: phantom income attributed to the TIPS sleeve (inflation accruals paying no cash until maturity) instead of applied to all four holdings — only SCHP throws it; VGIT/VNQ/PDBC generate ordinary income, PDBC being the no-K-1 1099 wrapper. Cons: capacity restatement -> cross-ref to clear_roth_non_equity
     "predeploy_stranded_equity": (328, 530),   # cons: FTC mechanism moved up to deploy_roth_cash; only the short application stays here (cons word count 122 -> 88, offsetting deploy's +34)
     "fund_intl_tilts":           (876, 1163),  # pros +12: "the only wrapper that can credit the foreign tax withheld" -> "the only wrapper YOU CONTROL that can" — both taxable books credit foreign withholding, so the unqualified claim contradicted the small-cap/EM card; what is unique here is control, not tax treatment
@@ -1792,13 +1801,13 @@ def test_deploy_prose_refuses_an_unresolvable_balance():
         deploy_prose_for(_deploy_group(), None)
 
 
-def test_page14_discloses_the_yield_assumption_and_marks_defaults_live(monkeypatch):
-    """#191 page-level proof: the assumed-yield disclosure reaches the rendered page,
-    the old absolute claim is gone, and the per-row marker appears in the tables.
+def test_page14_discloses_the_yield_assumption_and_marks_its_basis_live(monkeypatch):
+    """#210 page-level proof: every yield basis reaches the rendered page.
 
-    The unit tests in tests/test_yield_disclosure.py pin what the strings SAY; this
-    pins that they arrive on the page a reader opens. A helper returning the right
-    text proves nothing if the page never calls it.
+    The unit tests in tests/test_yield_basis.py pin what the strings SAY; this pins
+    that they arrive on the page a reader opens. A helper returning the right text
+    proves nothing if the page never calls it — the two mutants that survive every
+    unit test are "page never calls the note" and "page drops the marker column".
     """
     from src.household_data import find_latest_positions_csv
     csv = find_latest_positions_csv()
@@ -1814,44 +1823,62 @@ def test_page14_discloses_the_yield_assumption_and_marks_defaults_live(monkeypat
     assert not at.exception, f"page raised: {at.exception}"
 
     md = " ||| ".join(m.value for m in at.markdown)
+    caps = " ||| ".join(c.value for c in at.caption)
 
-    # 1. the mechanism is named, with all three multiplicands
-    assert "position value \u00d7 assumed sleeve yield \u00d7 tax rate" in md, (
-        "the expander does not name the arithmetic behind Annual Benefit"
-    )
+    # 1. the mechanism, unchanged from #191
+    assert "position value × assumed sleeve yield × tax rate" in md
     assert "authored assumption" in md and "no declared basis" in md
+    # 2. the claim that made the omission a false statement stays gone
+    assert "Dollar figures in every card are templated" not in md
 
-    # 2. the claim that made the omission a false statement is gone. Asserted on the
-    #    rendered page, not the source, because the source could keep the phrase in a
-    #    comment while the page renders the corrected sentence (and vice versa).
-    assert "Dollar figures in every card are templated" not in md, (
-        "the absolute CSV-provenance claim is still rendered"
-    )
-
-    # 3. the per-row marker. Derived from the register, never a symbol literal: which
-    #    holding sits on the default is a property of the book, not of this test.
-    from src.household import build_location_register
+    # 3. every basis present in the register is disclosed, and the counts are
+    #    derived from the frame rather than authored.
     pos, acct, sec, reg = _live()
-    defaulted = sorted(set(reg.loc[reg["yield_from_default"], "symbol"]))
-    assert defaulted, (
-        "fixture precondition: the live book has at least one row on the yield "
-        "default — if this ever becomes empty the marker cannot be render-verified"
-    )
+    counts = reg["yield_basis"].value_counts().to_dict()
+    n = len(reg)
+    if counts.get("look_through", 0) + counts.get("look_through_partial", 0):
+        n_lt = counts.get("look_through", 0) + counts.get("look_through_partial", 0)
+        assert f"{n_lt} of {n} rows" in md, "look-through rows are not disclosed"
+        assert "looking through" in md
+    if counts.get("not_modelled", 0):
+        assert f"{counts['not_modelled']} of {n} rows" in md
+        assert "not modelled, not zero" in md
+    if counts.get("default", 0):
+        assert f"{counts['default']} of {n} rows" in md
 
+    # 4. the KPI's exclusion notice renders WITH the total it qualifies, not only in
+    #    the expander — the .sum() crux: a total omitting rows must say so where the
+    #    total is read.
+    from src.location_actions import drag_coverage, format_drag_exclusion
+    cov = drag_coverage(reg)
+    if cov.n_not_modelled:
+        assert "not modelled, not zero" in caps, (
+            "the drag KPI rendered without its exclusion notice; expected "
+            f"{format_drag_exclusion(cov)!r} in a caption"
+        )
+        for sym in set(cov.symbols):
+            assert sym in caps
+
+    # 5. the per-row marker. Derived from the register, never a symbol literal.
     yield_tables = [df.value for df in at.dataframe
                     if "Assumed Yield" in list(getattr(df.value, "columns", []))]
     assert yield_tables, "no Underlying-positions table carried an 'Assumed Yield' column"
-
-    marked = set()
+    rendered = set()
     for t in yield_tables:
         if "Symbol" not in t.columns:
             continue
         for sym, cell in zip(t["Symbol"], t["Assumed Yield"]):
-            if isinstance(cell, str) and "(default)" in cell:
-                marked.add(sym)
-    assert marked & set(defaulted), (
-        f"no default-sourced row is marked in the rendered tables; register says "
-        f"{defaulted} are on the default, rendered marks were {sorted(marked)}"
-    )
-    # and the count in the expander agrees with the frame it describes
-    assert f"{int(reg['yield_from_default'].sum())} of {len(reg)} rows" in md
+            if isinstance(cell, str) and cell:
+                rendered.add((sym, cell))
+    for basis, marker in (("look_through_partial", "look-through, partial"),
+                          ("look_through", "look-through"),
+                          ("default", "default"),
+                          ("not_modelled", "not modelled")):
+        syms = set(reg.loc[reg["yield_basis"] == basis, "symbol"])
+        if not syms:
+            continue
+        hit = {s for s, cell in rendered if s in syms and marker in cell}
+        assert hit, (
+            f"no row of basis {basis!r} rendered its {marker!r} marker; register says "
+            f"{sorted(syms)} carry it, rendered cells were {sorted(rendered)}"
+        )

@@ -58,7 +58,39 @@ SLEEVE_ASSUMED_YIELD: dict[str, float] = {
     "liquid_alt":              0.020,
 }
 # Fallback yield for sleeves absent from the table (broad equity).
+#
+# MEASURED 2-4x TOO HIGH FOR US EQUITY AND 25-39% TOO LOW FOR INTERNATIONAL — see
+# issue #210. us_large_growth measures 0.42%, us_sector_tech 0.44%, us_large_quality
+# 0.85%, us_large_core 0.92% against intl_developed 2.49% and emerging_markets 2.25%.
+# A single scalar cannot serve both directions; correcting it is a separate decision
+# from the structure work here, and it is NOT made by this file today.
 EQUITY_DEFAULT_YIELD: float = 0.018
+
+# Sleeves that mix asset classes inside one fund, so no single sleeve yield describes
+# them. They are NOT given a yield entry: they are LOOKED THROUGH via
+# fund_compositions, and the yield is the weight-weighted yield of the underlying
+# sleeves. GAOSX (multi_asset) and RFUTX/31564E540 (target_date) all carry full
+# compositions on record, so this resolves from data rather than from a judgement —
+# and it replaces the equity default they used to take, which was wrong in KIND, not
+# merely in magnitude: a global allocation fund holding 22% treasuries was modelled at
+# a US-equity yield. A blend with NO composition on record refuses (not_modelled)
+# rather than falling back, because a fallback here is what this fixes. USER-EDITABLE.
+BLEND_SLEEVES: frozenset[str] = frozenset({"multi_asset", "target_date"})
+
+# Sleeves the model DECLINES to size, rather than guessing. Not a data gap waiting to
+# be filled by a better default — a statement that no defensible number exists:
+#
+#   thematic     twelve holdings spanning cybersecurity, biotech, robotics, clean
+#                energy, space and EM internet. Homogeneous in KIND (all equity, all
+#                growth-tilted) but ZERO of the twelve are in the price cache, and
+#                there is no benchmark proxy for "thematic" to declare a basis
+#                against. A number here would be invented, not derived.
+#   us_mid_cap   held (IJH) but likewise with no proxy in the cache. IWB and IWM
+#                bracket it rather than represent it.
+#
+# Every OTHER equity sleeve has a benchmark proxy already cached (issue #210 lists
+# them), so those get declared-basis entries instead. USER-EDITABLE.
+NOT_MODELLED_SLEEVES: frozenset[str] = frozenset({"thematic", "us_mid_cap"})
 
 # Sleeves whose income is EXEMPT FROM FEDERAL TAX (municipal bonds). This set is a
 # MODELING CORRECTION, INDEPENDENT of the yield table above: the yield there is an

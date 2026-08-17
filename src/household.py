@@ -592,26 +592,89 @@ def get_substitution_note(sleeve_key: str) -> str:
 # location-model parameters, and their only consumer is build_location_register
 # (via _assumed_yield below).
 
-def _assumed_yield_with_source(sleeve_key: str) -> tuple[float, bool]:
-    """The yield applied to a sleeve, AND whether it came from the fallback.
+# How a row's yield was arrived at. Closed set, like coverage.py's UNRESOLVED_REASONS:
+# the render layer maps every value to a marker, so an unrecognised basis would show
+# no marker at all — silently the thing this replaced.
+YIELD_BASES: frozenset[str] = frozenset({
+    "table",                # the sleeve has an entry in SLEEVE_ASSUMED_YIELD
+    "look_through",         # a blend, decomposed; every underlying sleeve had an entry
+    "look_through_partial", # a blend, decomposed; some underlying weight took the default
+    "default",              # unlisted, non-blend -> EQUITY_DEFAULT_YIELD
+    "not_modelled",         # the model declines to size this row (yield is None)
+})
 
-    Returns (yield, from_default). The second half exists because the fallback is
-    not an edge case: on the live book six of nineteen rendered drag rows and 20.4%
-    of the drag KPI resolve through it — including the single largest row, a global
-    allocation fund whose ``multi_asset`` sleeve has no table entry and is therefore
-    modelled at the US-equity default. A reader cannot check an assumption they
-    cannot see was applied, so the register carries the provenance beside the value.
+# Weights that sum this far from 1.0 are not a composition we can look through.
+_WEIGHT_TOLERANCE = 0.01
+
+
+def _assumed_yield_with_source(
+    sleeve_key: str,
+    symbol: str = "",
+    compositions_df: "pd.DataFrame | None" = None,
+) -> tuple["float | None", str]:
+    """The yield applied to a row, AND how it was arrived at.
+
+    Returns ``(yield, basis)`` with ``basis`` in :data:`YIELD_BASES`. A
+    ``not_modelled`` row returns ``None`` for the yield — never 0.0, which would be a
+    claim that the holding throws off no income.
+
+    Resolution order, and why:
+
+    1. **table** — the sleeve has an authored entry. Unchanged.
+    2. **blend** (``BLEND_SLEEVES``) — decomposed through ``fund_compositions``: the
+       weight-weighted yield of its underlying sleeves. This is a derivation from data
+       already on record, not a new judgement: the same frame ``look_through_position``
+       uses for the Household View and the thematic card's denominator. An underlying
+       sleeve with no entry contributes the default and downgrades the basis to
+       ``look_through_partial``, which PR 2 retires by entering every underlying
+       sleeve. A blend with no usable composition returns ``not_modelled`` rather than
+       falling back — the fallback is what this fixes.
+    3. **``NOT_MODELLED_SLEEVES``** — an explicit refusal. See that set for why.
+    4. **default** — everything else. PR 3 turns this into a raise.
+
+    ``compositions_df=None`` means the caller supplied no compositions, so nothing can
+    be looked through and every blend refuses. That direction is deliberate: the two
+    failure modes are a VISIBLE refusal on a blend versus a SILENT equity yield on a
+    bond-carrying fund, and only the first is self-correcting — a reader who sees "not
+    modelled" asks why, where a reader who sees "1.80%" has nothing to ask about. Same
+    contract ``_thematic_equity_figures`` already applies to this frame.
     """
-    from src.location_config import SLEEVE_ASSUMED_YIELD, EQUITY_DEFAULT_YIELD
+    from src.location_config import (BLEND_SLEEVES, EQUITY_DEFAULT_YIELD,
+                                     NOT_MODELLED_SLEEVES, SLEEVE_ASSUMED_YIELD)
+
     if sleeve_key in SLEEVE_ASSUMED_YIELD:
-        return SLEEVE_ASSUMED_YIELD[sleeve_key], False
-    return EQUITY_DEFAULT_YIELD, True
+        return SLEEVE_ASSUMED_YIELD[sleeve_key], "table"
+
+    if sleeve_key in BLEND_SLEEVES:
+        if compositions_df is None or compositions_df.empty or not symbol:
+            return None, "not_modelled"
+        mix = compositions_df[compositions_df["fund_symbol"] == symbol]
+        if mix.empty or abs(float(mix["weight"].sum()) - 1.0) > _WEIGHT_TOLERANCE:
+            # No composition, or one that does not account for the whole fund. A
+            # partial composition would silently understate every weighted yield, so
+            # it refuses rather than normalising a number nobody can check.
+            return None, "not_modelled"
+        total = 0.0
+        partial = False
+        for _, part in mix.iterrows():
+            under = str(part["underlying_sleeve"])
+            if under in SLEEVE_ASSUMED_YIELD:
+                total += float(part["weight"]) * SLEEVE_ASSUMED_YIELD[under]
+            else:
+                total += float(part["weight"]) * EQUITY_DEFAULT_YIELD
+                partial = True
+        return total, ("look_through_partial" if partial else "look_through")
+
+    if sleeve_key in NOT_MODELLED_SLEEVES:
+        return None, "not_modelled"
+
+    return EQUITY_DEFAULT_YIELD, "default"
 
 
-def _assumed_yield(sleeve_key: str) -> float:
-    """Yield only. Kept as the arithmetic path so this change adds provenance
-    without touching any figure — see _assumed_yield_with_source for the fallback
-    flag."""
+def _assumed_yield(sleeve_key: str) -> float | None:
+    """Yield only, table-or-default — retained for callers that have no symbol or
+    compositions to hand. Cannot return a look-through yield; use
+    _assumed_yield_with_source for that."""
     return _assumed_yield_with_source(sleeve_key)[0]
 
 
@@ -668,6 +731,8 @@ def build_location_register(
     tax_profile: dict,
     priority_by_account_type: dict,
     shelter_priority: dict,
+    *,
+    compositions_df: "pd.DataFrame | None" = None,
 ) -> pd.DataFrame:
     """Rank asset-location cleanup actions across four mislocation cases.
 
@@ -784,8 +849,10 @@ def build_location_register(
         # PA's flat rate — so its income-shelter value at stake is the state rate
         # alone, not the combined ordinary rate. Keyed on the sleeve, not the symbol.
         income_rate = state_only if _is_federally_exempt(sleeve) else ordinary
-        sleeve_yield, yield_from_default = _assumed_yield_with_source(sleeve)
-        annual_benefit = dollar * sleeve_yield * income_rate
+        sleeve_yield, yield_basis = _assumed_yield_with_source(
+            sleeve, str(row["symbol"]), compositions_df)
+        annual_benefit = (
+            None if sleeve_yield is None else dollar * sleeve_yield * income_rate)
         # Cases A/B are only worth acting on if there is income tax to save — AND a
         # federally-exempt sleeve generates NO relocation action, categorically:
         # there is no federal tax to save, and moving it into a pre-tax shelter would
@@ -794,7 +861,13 @@ def build_location_register(
         # aggregate; it simply never fires an A/B action. Categorical, not size-based:
         # a dollar threshold could resurrect a categorically-wrong recommendation for
         # a large muni.
-        if case in ("A", "B") and (_is_federally_exempt(sleeve) or annual_benefit <= 0):
+        # A refused row SURVIVES this filter. The suppression means "there is no
+        # income tax to save here"; an unsizeable row makes no such claim, and
+        # dropping it would hide the holding entirely rather than mark it.
+        if case in ("A", "B") and (
+            _is_federally_exempt(sleeve)
+            or (annual_benefit is not None and annual_benefit <= 0)
+        ):
             continue
 
         embedded_gain = eg_lookup.get((row["pseudonym"], row["symbol"]))
@@ -805,7 +878,7 @@ def build_location_register(
             cost_to_realize = float(embedded_gain) * ltcg
         is_free = cost_to_realize <= 0
         payback_months = (
-            None if (is_free or annual_benefit <= 0)
+            None if (is_free or annual_benefit is None or annual_benefit <= 0)
             else round(12.0 * cost_to_realize / annual_benefit, 1)
         )
 
@@ -816,11 +889,14 @@ def build_location_register(
             "sleeve":          sleeve,
             "case":            case,
             "current_value":   round(dollar, 2),     # position market value (from positions CSV)
-            "annual_benefit":  round(annual_benefit, 2),
-            # Provenance of the yield multiplicand, NOT a new input: annual_benefit
-            # above is unchanged by recording these.
-            "assumed_yield":      sleeve_yield,
-            "yield_from_default": yield_from_default,
+            "annual_benefit":  (None if annual_benefit is None
+                                else round(annual_benefit, 2)),
+            # Provenance of the yield multiplicand. `yield_basis` is load-bearing, not
+            # decoration: pandas stores a None benefit as NaN, and NaN alone cannot say
+            # WHY the cell is empty. Every total that sums this column must consult
+            # the basis — see location_actions.drag_coverage.
+            "assumed_yield": sleeve_yield,
+            "yield_basis":   yield_basis,
             "embedded_gain":   (round(float(embedded_gain), 2) if has_gain else None),
             "cost_to_realize": round(cost_to_realize, 2),
             "is_free":         bool(is_free),
@@ -828,7 +904,7 @@ def build_location_register(
         })
 
     cols = ["holding", "symbol", "account", "sleeve", "case", "current_value",
-            "annual_benefit", "assumed_yield", "yield_from_default",
+            "annual_benefit", "assumed_yield", "yield_basis",
             "embedded_gain", "cost_to_realize", "is_free", "payback_months"]
     if not rows:
         return pd.DataFrame(columns=cols)
