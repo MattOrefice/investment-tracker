@@ -259,9 +259,9 @@ _TOD_INCOME_CAPTION = (
 _SAA_TAXABLE_PROS = (
     "{count} holdings worth {value} — treasuries, TIPS, commodities, and a REIT — "
     "sit in a taxable account, generating {annual_benefit} of ordinary income "
-    "annually, plus the phantom income the TIPS accrue on inflation adjustments "
-    "that pay no cash until maturity. The framework says these are the sleeves "
-    "that most deserve shelter. The register is right to flag them."
+    "annually — including the inflation accruals the TIPS are taxed on but pay no "
+    "cash for until maturity. The framework says these are the sleeves that most "
+    "deserve shelter. The register is right to flag them."
 )
 _SAA_TAXABLE_CONS = (
     "But it is flagging a capacity constraint, not a mistake. These are the SAA's "
@@ -899,7 +899,8 @@ def yield_assumption_note(register) -> str:
     — a disclosure that always warns teaches the reader to skip it.
     """
 
-    from src.location_config import PROXY_SPREAD_UNMEASURED, SLEEVE_YIELD_PROXY
+    from src.location_config import (PROXY_SPREAD_UNMEASURED,
+                                     SLEEVE_YIELD_CONSTRUCTION, SLEEVE_YIELD_PROXY)
 
     note = (
         "**Annual benefit is modelled, not measured**: `position value × assumed "
@@ -920,9 +921,15 @@ def yield_assumption_note(register) -> str:
     # the blanket claim "it carries no declared basis" was true of every entry; it is
     # now false for the proxied ones, and leaving it would understate what is known —
     # the #191 defect running the other way.
+    # THREE-WAY, not two. #213 gave tips a constructed basis (published real yield +
+    # breakeven), and a two-way split counted it under "authored, no declared basis at
+    # all" — false the moment the construction landed, and the same understatement this
+    # docstring warns about one paragraph up. A basis that exists in the config and not
+    # in the rendered note is not disclosed.
     table_rows = register[register["yield_basis"] == "table"]
     n_proxied = int(table_rows["sleeve"].isin(SLEEVE_YIELD_PROXY).sum())
-    n_authored = len(table_rows) - n_proxied
+    n_constructed = int(table_rows["sleeve"].isin(SLEEVE_YIELD_CONSTRUCTION).sum())
+    n_authored = len(table_rows) - n_proxied - n_constructed
 
     if n_proxied:
         note += (
@@ -932,6 +939,18 @@ def yield_assumption_note(register) -> str:
             "price cache. Those spreads are wide, up to **+85%** on one sleeve, and "
             f"for {len(PROXY_SPREAD_UNMEASURED)} sleeves only one candidate is cached "
             "so the spread is **unmeasured rather than zero**."
+        )
+    if n_constructed:
+        one = n_constructed == 1
+        note += (
+            f" **{n_constructed} of {len(register)} rows** {'uses' if one else 'use'} a "
+            f"**constructed** yield — {'its' if one else 'their'} value is the sum of "
+            "published series rather than an estimate or a benchmark's distributions, "
+            "recorded per entry with "
+            "the formula, the series and the as-of date (`SLEEVE_YIELD_CONSTRUCTION`). "
+            "The TIPS entry is real yield plus breakeven inflation, so it carries the "
+            "inflation accrual that is taxed without paying cash. **A dated snapshot, "
+            "not a live feed** — the figure does not move until the entry is updated."
         )
     if n_authored:
         note += (

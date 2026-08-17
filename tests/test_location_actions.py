@@ -262,6 +262,15 @@ def test_phantom_income_is_attributed_to_tips_not_the_whole_group():
 
     The seed already records this correctly and is the source of truth checked
     below, so a card conflating the two contradicts the repo's own data.
+
+    #213 CHANGED THE POLARITY, NOT THE CLAIM. This test used to assert the clause
+    "plus the phantom income the TIPS accrue" was PRESENT. That was correct while
+    the tips yield was 0.025 — a real yield only — because the accrual then sat
+    outside {annual_benefit} and "plus" said so. #213 constructed the yield as
+    real + breakeven, so the figure now includes the accrual and "plus" would
+    double-count it in prose. The attribution invariant is untouched: the accrual
+    still belongs to TIPS alone, and the card must still say which sleeve throws
+    it. Only the preposition moved, from "plus" to "including".
     """
     import csv as _csv
     from src.location_actions import _SAA_TAXABLE_PROS
@@ -270,10 +279,17 @@ def test_phantom_income_is_attributed_to_tips_not_the_whole_group():
         "conflates the two income types across all four holdings; only the TIPS "
         "sleeve throws phantom income"
     )
-    assert "phantom income" in _SAA_TAXABLE_PROS, "the phantom-income point is still worth making"
-    clause = _SAA_TAXABLE_PROS[_SAA_TAXABLE_PROS.index("phantom income") - 120:]
+    assert "including" in _SAA_TAXABLE_PROS and "accruals" in _SAA_TAXABLE_PROS, (
+        "the accrual point is still worth making — the figure includes it, and a "
+        "reader cannot tell that from a bare ordinary-income sentence"
+    )
+    clause = _SAA_TAXABLE_PROS[_SAA_TAXABLE_PROS.index("accruals") - 60:]
     assert "TIPS" in clause, (
-        f"the phantom-income clause must name TIPS as its source: {clause[:160]!r}"
+        f"the accrual clause must name TIPS as its source: {clause[:160]!r}"
+    )
+    assert "plus the phantom income" not in _SAA_TAXABLE_PROS, (
+        "'plus' puts the accrual outside {annual_benefit}, which was true at 0.025 "
+        "and is false now that the yield is constructed as real + breakeven"
     )
 
     # Source of truth: the seed's own per-ticker notes.
@@ -618,7 +634,7 @@ RENDERED_PROSE_LEN = {
     "thematic_sprawl":           (204, 710),   # cons +244: the authored "11.8% of your equity" -> three templated figures ({value} TOD subtotal, {thematic_equity_value} household numerator, {lookthrough_equity_value} denominator) + {thematic_equity_share}, so the arithmetic closes on the page, plus the one clause naming what the equity share excludes (IBIT, crypto). Earlier: pros -13 / cons -37: unsourceable fee precision deleted ("roughly 0.45% ... against 0.07%", "The excess fee is about $76 a year") — expense_ratio is NULL for all 16 thematic tickers, and $76 was wrong by its own arithmetic (~$58). Qualitative claim kept; allow_literals exemption retired with it. Earlier: gain rate 15% -> 18.07% (15% fed + 3.07% PA)
     "rollover_401k":             (486, 353),   # available now (MissionSquare 401(k), acct_wkpl_02 — holds RFUTX), not blocked on the next job
     "frozen_tod_income":         (401, 523),   # pros +1: GAOSX is now sized by looking through its fund_compositions holdings (2.66%) instead of taking the 1.80% equity default, so the group's {annual_benefit} went $99 -> $122 — one more digit. Earlier: literal "Three of them" -> derived {register_count} + JCPB joins the enumeration (Aug-2026 advisor swap)
-    "saa_sleeves_taxable":       (340, 648),   # pros +79: phantom income attributed to the TIPS sleeve (inflation accruals paying no cash until maturity) instead of applied to all four holdings — only SCHP throws it; VGIT/VNQ/PDBC generate ordinary income, PDBC being the no-K-1 1099 wrapper. Cons: capacity restatement -> cross-ref to clear_roth_non_equity
+    "saa_sleeves_taxable":       (334, 648),   # pros: accrual attributed to the TIPS sleeve, not applied to all four holdings — only SCHP throws it; VGIT/VNQ/PDBC generate ordinary income, PDBC being the no-K-1 1099 wrapper. #213 turned "plus the phantom income" into "including the inflation accruals" (-6) once the constructed yield put the accrual INSIDE {annual_benefit}. Cons UNCHANGED at 648, which is the evidence rather than the assumption: it says "The drag is {annual_benefit} a year" unqualified, so it was incomplete at 0.025 and is correct now with no edit — and $3.40 -> $5.08 is the same width, so the pin proves the prose held while the figure moved. Cons also carries the capacity restatement -> cross-ref to clear_roth_non_equity
     "predeploy_stranded_equity": (328, 530),   # cons: FTC mechanism moved up to deploy_roth_cash; only the short application stays here (cons word count 122 -> 88, offsetting deploy's +34)
     "fund_intl_tilts":           (876, 1163),  # pros +12: "the only wrapper that can credit the foreign tax withheld" -> "the only wrapper YOU CONTROL that can" — both taxable books credit foreign withholding, so the unqualified claim contradicted the small-cap/EM card; what is unique here is control, not tax treatment
 }
