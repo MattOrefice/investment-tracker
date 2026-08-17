@@ -141,10 +141,14 @@ def _synthetic_series(n: int = 300, seed: int = 0) -> pd.Series:
 
 
 def test_window_pctile_max_uses_full_series():
-    """'1800-01-01' sentinel must use the entire series, same as percentile()."""
+    """'1800-01-01' sentinel must use the entire series, same as percentile() — and must
+    NOT report that as a fallback: it is what the sentinel asks for."""
     s   = _synthetic_series()
     val = float(s.iloc[-1])
-    assert abs(window_pctile(s, val, "1800-01-01") - percentile(s, val)) < 1e-9
+    got = window_pctile(s, val, "1800-01-01")
+    assert abs(got.value - percentile(s, val)) < 1e-9
+    assert got.fell_back is False
+    assert got.n == len(s.dropna())
 
 
 def test_window_pctile_5y_differs_from_full():
@@ -156,7 +160,7 @@ def test_window_pctile_5y_differs_from_full():
 
     full_pctile = percentile(s, val)          # should be ~100
     w5_start    = (idx[-1] - pd.DateOffset(years=5)).isoformat()[:10]
-    w5_pctile   = window_pctile(s, val, w5_start)   # also ~100 since val is still max
+    w5_pctile   = window_pctile(s, val, w5_start).value   # also ~100 since val is still max
 
     # Both should be 100 for the absolute maximum
     assert full_pctile == pytest.approx(100.0, abs=1.0)
@@ -165,7 +169,7 @@ def test_window_pctile_5y_differs_from_full():
     # Now test a mid-range value — windowed pctile should differ from full
     mid_val     = float(s.iloc[150])          # 150/180 = 83rd percentile full history
     full_mid    = percentile(s, mid_val)
-    w5_mid      = window_pctile(s, mid_val, w5_start)
+    w5_mid      = window_pctile(s, mid_val, w5_start).value
     # The 5Y window only has values 120..179, so mid_val (150) is below the median
     # of the 5Y window (median ~149.5) — roughly the 50th percentile of that window
     assert w5_mid < full_mid, (
@@ -181,7 +185,7 @@ def test_window_pctile_10y_uses_only_windowed_data():
 
     w10_start = (idx[-1] - pd.DateOffset(years=10)).isoformat()[:10]
     val       = float(s.loc[w10_start:].median())
-    w10_pctile = window_pctile(s, val, w10_start)
+    w10_pctile = window_pctile(s, val, w10_start).value
 
     # Median of the 10Y window = 50th percentile of that window
     assert 48.0 < w10_pctile < 52.0, f"Median should be near 50th pctile; got {w10_pctile:.1f}"
@@ -195,7 +199,12 @@ def test_window_pctile_empty_window_falls_back_to_full():
 
     # Window starting after end of data
     future_start = "2030-01-01"
-    assert window_pctile(s, val, future_start) == pytest.approx(percentile(s, val), abs=1e-9)
+    got = window_pctile(s, val, future_start)
+    assert got.value == pytest.approx(percentile(s, val), abs=1e-9)
+    assert got.fell_back is True, (
+        "the fallback now has to ANNOUNCE itself — that it happens silently was the "
+        "defect, and this test asserted the silence as the contract"
+    )
 
 
 def test_window_pctile_5y_matches_manual_slice():
@@ -204,7 +213,7 @@ def test_window_pctile_5y_matches_manual_slice():
     w5_start  = (s.index[-1] - pd.DateOffset(years=5)).isoformat()[:10]
     val       = float(s.iloc[-1])
     expected  = percentile(s.loc[w5_start:].dropna(), val)
-    assert window_pctile(s, val, w5_start) == pytest.approx(expected, abs=1e-9)
+    assert window_pctile(s, val, w5_start).value == pytest.approx(expected, abs=1e-9)
 
 
 def test_window_pctile_10y_matches_manual_slice():
@@ -213,7 +222,7 @@ def test_window_pctile_10y_matches_manual_slice():
     w10_start = (s.index[-1] - pd.DateOffset(years=10)).isoformat()[:10]
     val       = float(s.quantile(0.75))
     expected  = percentile(s.loc[w10_start:].dropna(), val)
-    assert window_pctile(s, val, w10_start) == pytest.approx(expected, abs=1e-9)
+    assert window_pctile(s, val, w10_start).value == pytest.approx(expected, abs=1e-9)
 
 
 # ── classify_regime unit tests ───────────────────────────────────────────────
@@ -566,3 +575,203 @@ def test_the_docs_carry_the_floor_argument():
         "the Purpose section still claims a label is always one of four; the classifier "
         "can now decline"
     )
+
+
+# ── Group 2: a percentile declares the window it actually used ───────────────
+#
+# TWO DEFECTS, NOT ONE, and they need opposite dispositions:
+#   * percentile() returned 50.0 for an empty series — a FABRICATED VALUE from nothing.
+#     There is no percentile of no observations, so it REFUSES (None).
+#   * window_pctile() fell back to the full series when the requested window was empty —
+#     a REAL number under a FALSE LABEL. The number is worth keeping; what was missing is
+#     the disclosure that the window is not the one asked for.
+#
+# They compose: an empty window fell through to the full series, and if that was empty too
+# the caller got 50.0 with a window label on it.
+#
+# WHY ONLY window_pctile CARRIES COVERAGE. A percentile has exactly two things to declare
+# (how many observations, and which window), and only window_pctile has provenance to
+# report. Giving percentile() a coverage tuple would push a NamedTuple through ~24 call
+# sites to carry an `n` nobody reads — structure transferring without content.
+
+def test_percentile_refuses_an_empty_series():
+    """50.0 is the median rank — the single most plausible-looking wrong answer, and it
+    reads as a real measurement. Measured consequence at reports.py: a fabricated 50 maps
+    to a "Moderate" allocation stance (see #244)."""
+    assert percentile(pd.Series(dtype=float), 5.0) is None
+    assert percentile(pd.Series([np.nan, np.nan]), 5.0) is None
+
+
+def test_percentile_is_unchanged_on_a_populated_series():
+    s = pd.Series([1.0, 2.0, 3.0, 4.0])
+    assert percentile(s, 3.0) == pytest.approx(75.0)
+    assert percentile(s, 0.5) == pytest.approx(0.0)
+    assert percentile(s, 9.0) == pytest.approx(100.0)
+
+
+def test_window_pctile_reports_the_window_it_used():
+    """The load-bearing case. A series ending before the window start yields an empty
+    window; the value is the full-series percentile and fell_back says so."""
+    idx = pd.date_range("2000-01-01", periods=120, freq="MS")
+    s = pd.Series(np.linspace(1.0, 10.0, 120), index=idx)
+
+    got = window_pctile(s, 5.0, "2020-01-01")          # window starts after the data ends
+    assert got.fell_back is True
+    assert got.n == 120, "n must be the observations actually used, i.e. the full series"
+    assert got.value == pytest.approx(percentile(s, 5.0))
+
+
+def test_window_pctile_does_not_flag_a_populated_window():
+    idx = pd.date_range("2000-01-01", periods=120, freq="MS")
+    s = pd.Series(np.linspace(1.0, 10.0, 120), index=idx)
+
+    got = window_pctile(s, 5.0, "2005-01-01")
+    assert got.fell_back is False
+    assert 0 < got.n < 120, "n must be the WINDOWED count, not the full series"
+    assert got.value == pytest.approx(percentile(s.loc["2005-01-01":], 5.0))
+
+
+def test_the_max_sentinel_is_not_a_fallback():
+    """'1800-01-01' means "use everything" BY DESIGN, so "fell back" and "did what was
+    asked" are the same thing and there is nothing to disclose. Flagging it would train the
+    reader to ignore the marker on the two panels where it fires every single render."""
+    idx = pd.date_range("2000-01-01", periods=50, freq="MS")
+    s = pd.Series(np.linspace(1.0, 5.0, 50), index=idx)
+
+    got = window_pctile(s, 3.0, "1800-01-01")
+    assert got.fell_back is False, "the Max sentinel must not read as a fallback"
+    assert got.n == 50
+
+
+def test_window_pctile_refuses_when_even_the_full_series_is_empty():
+    """The composition of the two defects: empty window -> full series -> also empty. The
+    old code returned 50.0 here, with a window label attached."""
+    empty = pd.Series(dtype=float, index=pd.DatetimeIndex([]))
+    got = window_pctile(empty, 5.0, "2020-01-01")
+    assert got.value is None
+    assert got.n == 0
+
+
+def test_window_pctile_n_is_the_basis_of_the_number_not_the_series_length():
+    """n exists so a caller can say "over 816 observations" truthfully. If it reported the
+    series length rather than the slice actually used, the disclosure would be wrong in the
+    non-fallback case — the case that renders on every normal load."""
+    idx = pd.date_range("1990-01-01", periods=400, freq="MS")
+    s = pd.Series(np.arange(400.0), index=idx)
+    got = window_pctile(s, 100.0, "2020-01-01")
+    windowed = s.loc["2020-01-01":].dropna()
+    assert got.n == len(windowed)
+    assert got.n != len(s)
+
+
+def test_the_wrapper_docstrings_do_not_promise_a_number_that_may_be_absent():
+    """factor_percentile and valuation_percentile are pure delegation to macro.percentile,
+    and both said "Historical percentile rank (0-100)" — a claim None falsifies. They are
+    the reason a contract change here reaches pages/1_SAA.py and page 3's factor panels."""
+    import src.factor_regime as fr
+    import src.factor_valuation as fv
+
+    for fn in (fr.factor_percentile, fv.valuation_percentile):
+        doc = fn.__doc__ or ""
+        # ASSERT THE CLAIM, not the word. This asserted `"None" in doc`, which the
+        # EXPLANATORY paragraph below the claim also satisfies — a mutant that replaced the
+        # return-value sentence with "always a number." left the word "None" elsewhere in
+        # the docstring and the test stayed green (P12). Same shape as a helper's
+        # definition satisfying an assertion about its use.
+        assert "or **None** when" in doc, (
+            f"{fn.__name__}'s docstring no longer states that the RETURN may be None, "
+            "while it delegates to a function that now can return None"
+        )
+
+
+def test_every_selectable_window_site_renders_a_scope_note():
+    """COMPLETENESS, asserted rather than assumed. The wiring pass was mechanical and it
+    MISSED ONE site — `ecy_pctile_w  = ...` had two spaces before the `=` where the pattern
+    expected one, so 12 of 13 were wired and the run reported success. A transform that
+    silently covers less than it claims is the same defect class as a test that does.
+
+    The rule: a site whose window is USER-SELECTABLE must have a scope note. The three
+    credit-spread panels hardcode w_start to the Max sentinel and have no window control,
+    so they cannot fall back and must NOT be wired — asserted as a negative below, so this
+    test cannot be satisfied by wiring everything indiscriminately.
+    """
+    import re
+
+    src = _page_src()
+
+    selectable, sentinel_only = [], []
+    for m in re.finditer(r"_(\w+)_pct = _window_pctile\((\w+), [\w\.]+, (\w+)\)", src):
+        selectable.append((m.group(1), m.group(3), m.group(2)))
+    for m in re.finditer(r"(\w+)_pctile_w = _window_pctile\((\w+), [\w\.]+, (\w+)\)", src):
+        sentinel_only.append((m.group(1), m.group(3)))
+
+    assert len(selectable) == 13, (
+        f"expected 13 selectable-window percentile sites, found {len(selectable)}: "
+        f"{[n for n, _, _ in selectable]}"
+    )
+    for name, start, series in selectable:
+        assert f"_pctile_scope_note(_{name}_pct, " in src, (
+            f"{name} unpacks the verdict but renders no scope note"
+        )
+        assert f"{name}_pctile_w = _{name}_pct.value" in src, (
+            f"{name} does not project .value into the name its captions use"
+        )
+
+    assert sorted(n for n, _ in sentinel_only) == ["ccc", "hy", "ig"], (
+        f"the un-wired sites should be exactly the three hardcoded-Max credit panels, "
+        f"got {sorted(n for n, _ in sentinel_only)}"
+    )
+    for name, start in sentinel_only:
+        assert re.search(rf'{start}\s*=\s*"1800-01-01"', src), (
+            f"{name} is not wired for a scope note but its window is not the Max "
+            f"sentinel either — it can fall back silently"
+        )
+
+
+def test_the_scope_note_is_silent_unless_the_window_was_empty():
+    """A disclosure that always warns teaches the reader to skip it — this page's own
+    docstring rule. Asserted on the helper's source because the guard is the first thing a
+    later edit would drop."""
+    src = _page_src()
+    i = src.index("def _pctile_scope_note")
+    body = src[i:i + 1400]
+    assert "if pct is None or not pct.fell_back:" in body and "return" in body, (
+        "the scope note lost its early return, so it now fires on every render"
+    )
+
+
+def test_no_percentile_caption_references_a_raw_window_label():
+    """A marker that CONTRADICTS the caption beside it gives the reader two claims and no
+    basis for choosing. The whole argument for calling this fabricated provenance was that
+    the label is load-bearing, so the label itself has to become conditional — a false
+    label with a footnote keeps the defect and adds prose.
+
+    Asserted as a NEGATIVE over every percentile caption: no f-string that renders a
+    windowed percentile may interpolate the raw window variable, only the derived
+    `*_scope` / `*_scope_short` phrases which collapse to "the full series" on a fallback.
+    """
+    import re
+
+    src = _page_src()
+    offenders = []
+    for line in src.splitlines():
+        if "_pctile_w" not in line:
+            continue
+        if re.search(r"\{_?\w*_window\}", line):
+            offenders.append(line.strip()[:100])
+    assert not offenders, (
+        "these percentile captions still interpolate the window the reader SELECTED "
+        f"rather than the basis actually used: {offenders}"
+    )
+
+
+def test_every_wired_panel_derives_both_scope_phrases():
+    """Count-asserted, because the caption pass is mechanical and a miss is silent — the
+    wiring pass before it reported success having covered 12 of 13 sites (a two-space
+    alignment defeated the pattern). A presence assertion would pass on one panel."""
+    src = _page_src()
+    n_scope = src.count('_scope = (f"the ')
+    n_short = src.count("_scope_short = (")
+    assert n_scope == 13, f"{n_scope} panels derive a scope phrase, expected 13"
+    assert n_short == 13, f"{n_short} panels derive a short scope phrase, expected 13"
+    assert 'else "the full series")' in src and 'else "full series")' in src

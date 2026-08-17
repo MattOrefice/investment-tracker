@@ -84,7 +84,13 @@ def build_value_spread_series(
 
 def valuation_percentile(series: pd.Series, current_value: float) -> float:
     """
-    Historical percentile rank (0–100) of ``current_value`` within ``series``.
+    Historical percentile rank (0–100) of ``current_value`` within ``series``,
+    or **None** when ``series`` holds no observations.
+
+    The None case is inherited, not local: ``src.macro.percentile`` refuses an
+    empty series rather than returning the 50.0 median rank it used to (#244).
+    This docstring previously promised a number in every case, which is exactly
+    the claim that change falsifies.
 
     Delegates to ``src.macro.percentile`` so the valuation percentile uses the
     exact same method as CAPE and the Phase 29 performance percentile.
