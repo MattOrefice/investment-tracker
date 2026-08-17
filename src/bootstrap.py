@@ -11,6 +11,19 @@ tables/columns.
 This module *wires the existing pieces* into one idempotent bootstrap. It
 authors no schema, no seed data, and no classifications.
 
+IT ALSO READS THE NEWEST HOLDINGS CSV — a deliberate widening of what this module
+is, recorded here because the sentence above ("wires the existing pieces") no
+longer describes the whole function. After the seeds run, ``unmapped_holdings``
+reconciles the held symbols against ``securities`` and returns any that the
+location register would silently drop. Bootstrap is the only place both inputs
+exist at the moment they matter: it runs at every personal-mode start, it already
+loads the seed, and the check cannot run in CI at all (holdings are gitignored,
+and a committed fixture would have frozen holdings and pass forever while the real
+book drifted — see #217). It REPORTS, never raises: ``app.py`` calls this
+unwrapped at import, so a raise here takes down every page, and the fix is a CSV
+edit that is not in the app. Same reasoning the phase-46 migration already
+settled for its own guard (see its module docstring).
+
 Generic migration discovery: every ``tools/migrate_*.py`` that exposes a
 ``migrate_db(db_path)`` is run, in filename order, against the current DB — so a
 future migration following that convention is covered automatically, with no
@@ -71,6 +84,115 @@ def run_pending_migrations(db_path: Path) -> list[str]:
     return ran
 
 
+_SEED_CSV_NAME = "data/seed/securities_household.csv"
+_REGISTER_COLUMNS = ("sleeve_category", "tax_efficiency")
+
+
+def unmapped_holdings(
+    db_path: "str | Path | None" = None,
+    uploads_dir: "str | Path | None" = None,
+    account_map_path: "str | Path | None" = None,
+) -> dict[str, list[str]]:
+    """Held symbols the location register would silently drop, and why.
+
+    Returns ``{symbol: [reasons]}`` — either ``["no securities row at all"]`` or the
+    names of the NULL columns. Empty dict means nothing to report.
+
+    build_location_register drops a row when EITHER column is empty
+    (``household.py:850``), so both are checked together; which one is missing is
+    returned because a reader fixing the wrong column learns nothing.
+
+    NEVER RAISES. Every failure mode returns ``{}``:
+
+    * no dated positions CSV — a first run has nothing to reconcile, and reporting
+      every seeded symbol as unmapped would fire the notice on a state that is not
+      wrong;
+    * no ``securities`` table — a pre-migration DB. Bootstrap calls this after the
+      seeds so it should not happen, but a check that crashes the app it exists to
+      protect is the failure mode this whole item avoids;
+    * an unreadable CSV, or one naming an account number absent from
+      ``private/account_map.json`` — the ingest raises there by design and the page
+      reports it directly, so this check has nothing to add and must not crash trying.
+
+    ``account_map_path`` exists only so the check is testable without the gitignored
+    private map; production passes nothing.
+
+    Deliberately silent on ``tax_treatment``, the register's third condition: that
+    comes from the ACCOUNTS merge, is a different table with a different cause, and
+    is not fixed by editing the securities seed.
+    """
+    from src.household_data import find_latest_positions_csv
+
+    db = Path(db_path) if db_path is not None else Path(_db.DB_PATH)
+    csv_path = find_latest_positions_csv(uploads_dir)
+    if csv_path is None or not Path(csv_path).exists():
+        return {}
+
+    try:
+        from src.ingestion.fidelity import parse_fidelity_csv
+        parsed = parse_fidelity_csv(str(csv_path), account_map_path=account_map_path)
+        held = sorted({s for s in parsed["symbol"].dropna()})
+    except Exception:                                   # unreadable / unmapped account
+        logger.warning("unmapped_holdings: could not parse %s; skipping the check",
+                       csv_path, exc_info=True)
+        return {}
+    if not held:
+        return {}
+
+    try:
+        conn = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True)
+        conn.row_factory = sqlite3.Row
+        try:
+            rows = conn.execute(
+                "SELECT ticker, sleeve_category, tax_efficiency FROM securities"
+            ).fetchall()
+        finally:
+            conn.close()
+    except sqlite3.Error:                               # no table, no file, locked
+        logger.warning("unmapped_holdings: securities unreadable in %s; skipping", db)
+        return {}
+
+    by_ticker = {r["ticker"]: r for r in rows}
+    out: dict[str, list[str]] = {}
+    for sym in held:
+        row = by_ticker.get(sym)
+        if row is None:
+            out[sym] = ["no securities row at all"]
+            continue
+        missing = [c for c in _REGISTER_COLUMNS if row[c] is None]
+        if missing:
+            out[sym] = missing
+    return out
+
+
+def unmapped_holdings_notice(findings: dict[str, list[str]]) -> "str | None":
+    """The reader-facing sentence for :func:`unmapped_holdings`, or None if clean.
+
+    None when there is nothing to say — a notice that always renders teaches the
+    reader to skip it.
+
+    States that the pages FAIL rather than that data is missing, because they do:
+    Asset Location and Household View both raise on this state (#217), so
+    "incomplete" would understate it. Names the file to edit, because the fix is not
+    in the app.
+    """
+    if not findings:
+        return None
+    n = len(findings)
+    detail = "; ".join(f"**{sym}** ({', '.join(reasons)})"
+                       for sym, reasons in sorted(findings.items()))
+    # "not FULLY mapped", not "not mapped to a sleeve": a symbol missing only
+    # tax_efficiency does have a sleeve, and the narrower phrasing would be wrong for
+    # that half of the findings.
+    return (
+        f"**{n} held symbol{'' if n == 1 else 's'} "
+        f"{'is' if n == 1 else 'are'} not fully mapped:** {detail}. "
+        "The **Asset Location** and **Household View** pages will fail until this is "
+        f"fixed — add the symbol{'' if n == 1 else 's'} to `{_SEED_CSV_NAME}` and "
+        "reload; the next start picks it up."
+    )
+
+
 def bootstrap_personal_db() -> dict:
     """Idempotently bring the current personal-mode DB (``src.db.DB_PATH``) to a
     render-ready state: base schema -> all pending migrations -> household seeds.
@@ -82,7 +204,8 @@ def bootstrap_personal_db() -> dict:
     """
     path = Path(_db.DB_PATH)
     if str(path) in _bootstrapped:
-        return {"migrations": [], "db_path": str(path), "skipped": True}
+        return {"migrations": [], "db_path": str(path), "skipped": True,
+                "unmapped_holdings": unmapped_holdings(path)}
 
     from src import seed_saa, seed_securities
     from src.seed.securities_loader import load_household_securities
@@ -130,4 +253,7 @@ def bootstrap_personal_db() -> dict:
 
     _bootstrapped.add(str(path))
     logger.info("Personal-mode bootstrap complete (migrations: %s)", migrations)
-    return {"migrations": migrations, "db_path": str(path)}
+    # AFTER the seeds: load_household_securities has just UPSERTed, so this
+    # reconciles against the freshest mapping rather than the pre-seed state.
+    return {"migrations": migrations, "db_path": str(path),
+            "unmapped_holdings": unmapped_holdings(path)}
