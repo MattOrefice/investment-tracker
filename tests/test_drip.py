@@ -227,7 +227,7 @@ def test_persist_drip_lots_inserts_new_rows(minimal_db):
             "lot_source":           "drip",
         }
     ]
-    n = persist_drip_lots("VOO", lots)
+    n = persist_drip_lots("VOO", lots, account_id=1)
     assert n == 1
 
 
@@ -242,13 +242,13 @@ def test_persist_drip_lots_idempotent(minimal_db):
             "lot_source":           "drip",
         }
     ]
-    persist_drip_lots("VOO", lots)
-    n2 = persist_drip_lots("VOO", lots)
+    persist_drip_lots("VOO", lots, account_id=1)
+    n2 = persist_drip_lots("VOO", lots, account_id=1)
     assert n2 == 0
 
 
 def test_persist_drip_lots_empty_list_returns_zero(minimal_db):
-    assert persist_drip_lots("VOO", []) == 0
+    assert persist_drip_lots("VOO", [], account_id=1) == 0
 
 
 # ── backfill_all_drip_lots — SPAXX exclusion ─────────────────────────────────
@@ -267,7 +267,8 @@ def test_backfill_skips_spaxx(minimal_db):
     conn.commit()
     conn.close()
 
-    results = backfill_all_drip_lots(start_date="2025-05-01", end_date="2025-05-10")
+    results = backfill_all_drip_lots(start_date="2025-05-01", end_date="2025-05-10",
+                                     account_id=1)
     assert "SPAXX" not in results
 
 
