@@ -224,6 +224,14 @@ def _case_d_fixture():
     ])
     sec = pd.DataFrame([
         {"ticker": "MCO",  "name": "Moody's",      "tax_efficiency": "high", "sleeve_category": "single_stock"},
+        # IXUS/VXUS carry NO fund_compositions rows here, deliberately: this fixture
+        # exercises look_through_position's no-composition path, where a holding
+        # resolves to its own sleeve_category. Do NOT "fix" this by adding
+        # compositions — #215 is blocked on the off-SAA mapping decision (a
+        # composition moves these dollars out of off-SAA whatever the weights are),
+        # and adding rows here would quietly assume that decision. ZZZ below shows
+        # the other half: an unlisted sleeve only reaches yield resolution if its row
+        # produces a mislocation case, and these high-efficiency taxable rows do not.
         {"ticker": "IXUS", "name": "iShares Intl", "tax_efficiency": "high", "sleeve_category": "intl_all_exus"},
         {"ticker": "VXUS", "name": "Vanguard Intl","tax_efficiency": "high", "sleeve_category": "intl_all_exus"},
         {"ticker": "VOO",  "name": "S&P 500",      "tax_efficiency": "high", "sleeve_category": "us_large_core"},
