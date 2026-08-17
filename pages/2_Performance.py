@@ -92,10 +92,20 @@ def _load_portfolio(_v: int = _PORTFOLIO_CACHE_V):
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def _load_benchmarks(start_val: float):
-    """Gaps are captured off .attrs BEFORE the *start_val multiply — pandas
-    doesn't reliably propagate .attrs through arithmetic, and this result also
-    round-trips through st.cache_data's pickling — so the gap lists are
-    returned as plain values, not relied upon to survive on the Series."""
+    """Gaps are captured off .attrs BEFORE the *start_val multiply, and returned as
+    plain values rather than relied upon to survive on the Series.
+
+    The reason is NOT that those operations drop .attrs. Measured on pandas 2.2.3
+    (#194): scalar arithmetic preserves it, and so does st.cache_data's pickling —
+    21 of 23 operations taken from real lines in pages 1, 2 and 11 preserve it. The
+    two that do drop it are merge, and concat when the inputs' attrs differ.
+
+    The durable reason is that pandas documents `attrs` as "experimental and may
+    change without warning", and requirements.txt admits an open range
+    (pandas>=2.2.0), so no measurement on one version licenses the next. Carrying a
+    disclosure channel on it would put the disclosure itself on an unstable
+    footing — which is also why PriceCoverage travels as an explicit return value
+    (see src/coverage.py)."""
     sp_raw = get_sp500_series(INCEPTION, TODAY)
     bl_raw = get_custom_blended_series(INCEPTION, TODAY)
     sp_gaps = sp_raw.attrs.get("benchmark_gaps", [])
