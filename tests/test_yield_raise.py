@@ -1,5 +1,13 @@
 """#210 PR 3 — an unlisted sleeve raises, and there is no fallback left anywhere.
 
+SCOPE OF THAT CLAIM. It is true of the RESOLVER, which is what this file tests
+directly. It is narrower at the model level: build_location_register selects a
+mislocation case first, and a row matching none of A/B/C/D hits `continue`
+(src/household.py:837-855) before yield resolution runs. So the raise fires on an
+unlisted sleeve ON A MISLOCATED HOLDING, not on any unlisted sleeve in the book —
+see the ZZZ row in tests/test_asset_location.py's case-D fixture, which carries a
+sleeve in no config set and correctly does not raise.
+
 PR 1 looked blends through their compositions and refused where no basis exists. PR 2
 gave the thirteen proxy-backed equity sleeves declared-basis entries, after which zero
 rows fell to the default. This removes the fallback itself.
