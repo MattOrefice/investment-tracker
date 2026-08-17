@@ -443,10 +443,13 @@ def format_backfill_report(results: dict[str, BackfillResult]) -> str:
     lines.append(f"  Total new DRIP lots inserted: {total}")
 
     if skipped:
+        n = len(skipped)
         lines.append(
-            f"  INCOMPLETE: {len(skipped)} of {len(results)} tickers were skipped "
-            f"without a result, so the total above covers only the "
-            f"{len(results) - len(skipped)} that completed:"
+            f"  INCOMPLETE: {n} of {len(results)} tickers "
+            f"{'was' if n == 1 else 'were'} skipped without a result."
+        )
+        lines.append(
+            f"  The total above covers only the {len(results) - n} that completed:"
         )
         for ticker, r in skipped.items():
             detail = f" ({r.detail})" if r.detail else ""
