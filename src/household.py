@@ -592,9 +592,27 @@ def get_substitution_note(sleeve_key: str) -> str:
 # location-model parameters, and their only consumer is build_location_register
 # (via _assumed_yield below).
 
-def _assumed_yield(sleeve_key: str) -> float:
+def _assumed_yield_with_source(sleeve_key: str) -> tuple[float, bool]:
+    """The yield applied to a sleeve, AND whether it came from the fallback.
+
+    Returns (yield, from_default). The second half exists because the fallback is
+    not an edge case: on the live book six of nineteen rendered drag rows and 20.4%
+    of the drag KPI resolve through it — including the single largest row, a global
+    allocation fund whose ``multi_asset`` sleeve has no table entry and is therefore
+    modelled at the US-equity default. A reader cannot check an assumption they
+    cannot see was applied, so the register carries the provenance beside the value.
+    """
     from src.location_config import SLEEVE_ASSUMED_YIELD, EQUITY_DEFAULT_YIELD
-    return SLEEVE_ASSUMED_YIELD.get(sleeve_key, EQUITY_DEFAULT_YIELD)
+    if sleeve_key in SLEEVE_ASSUMED_YIELD:
+        return SLEEVE_ASSUMED_YIELD[sleeve_key], False
+    return EQUITY_DEFAULT_YIELD, True
+
+
+def _assumed_yield(sleeve_key: str) -> float:
+    """Yield only. Kept as the arithmetic path so this change adds provenance
+    without touching any figure — see _assumed_yield_with_source for the fallback
+    flag."""
+    return _assumed_yield_with_source(sleeve_key)[0]
 
 
 def _is_federally_exempt(sleeve_key: str) -> bool:
@@ -766,7 +784,8 @@ def build_location_register(
         # PA's flat rate — so its income-shelter value at stake is the state rate
         # alone, not the combined ordinary rate. Keyed on the sleeve, not the symbol.
         income_rate = state_only if _is_federally_exempt(sleeve) else ordinary
-        annual_benefit = dollar * _assumed_yield(sleeve) * income_rate
+        sleeve_yield, yield_from_default = _assumed_yield_with_source(sleeve)
+        annual_benefit = dollar * sleeve_yield * income_rate
         # Cases A/B are only worth acting on if there is income tax to save — AND a
         # federally-exempt sleeve generates NO relocation action, categorically:
         # there is no federal tax to save, and moving it into a pre-tax shelter would
@@ -798,6 +817,10 @@ def build_location_register(
             "case":            case,
             "current_value":   round(dollar, 2),     # position market value (from positions CSV)
             "annual_benefit":  round(annual_benefit, 2),
+            # Provenance of the yield multiplicand, NOT a new input: annual_benefit
+            # above is unchanged by recording these.
+            "assumed_yield":      sleeve_yield,
+            "yield_from_default": yield_from_default,
             "embedded_gain":   (round(float(embedded_gain), 2) if has_gain else None),
             "cost_to_realize": round(cost_to_realize, 2),
             "is_free":         bool(is_free),
@@ -805,7 +828,8 @@ def build_location_register(
         })
 
     cols = ["holding", "symbol", "account", "sleeve", "case", "current_value",
-            "annual_benefit", "embedded_gain", "cost_to_realize", "is_free", "payback_months"]
+            "annual_benefit", "assumed_yield", "yield_from_default",
+            "embedded_gain", "cost_to_realize", "is_free", "payback_months"]
     if not rows:
         return pd.DataFrame(columns=cols)
 

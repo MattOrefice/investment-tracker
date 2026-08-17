@@ -788,6 +788,63 @@ def _fmt_dollars(x: float) -> str:
     return f"-${abs(x):,.0f}" if x < 0 else f"${x:,.0f}"
 
 
+def format_assumed_yield(sleeve_yield: float, from_default: bool) -> str:
+    """Render a row's yield with its provenance: "4.00%" or "1.80% (default)".
+
+    The marker is on the DEFAULT case rather than the table case because the default
+    is the one a reader cannot otherwise detect — a table entry can be looked up by
+    sleeve, a fallback leaves no trace. Note a 0.00% row still carries the marker: a
+    zero is the value most likely to be read as "no assumption was made here", and
+    for real_assets_gold/crypto the authored zero is a deliberate fact while a
+    defaulted zero would be an accident.
+    """
+    return f"{sleeve_yield:.2%}{' (default)' if from_default else ''}"
+
+
+def yield_assumption_note(register) -> str:
+    """The Assumptions-expander disclosure for the assumed-yield multiplicand.
+
+    Page 14's expander enumerated all six tax rates, disclosed that scores are
+    authored and that deploy targets are ordinal, then closed with "Dollar figures in
+    every card are templated from the live positions CSV". That sentence is true of
+    ``current_value`` and false of ``annual_benefit``, which is
+    ``value × assumed yield × tax rate`` — it named one multiplicand and let the
+    result inherit its provenance. A reader who checks the assumptions was therefore
+    MORE misled than one who did not, which is what made the omission a false claim
+    rather than a gap.
+
+    Deliberately one paragraph, not a fifteen-row table: the expander discloses two
+    other modelling choices in exactly this form, and reproducing the whole yield
+    table would make the section unreadable without adding a checkable fact.
+
+    The fallback share is computed from ``register`` rather than authored, so it
+    tracks the book instead of going stale, and it is omitted entirely when no row
+    uses the fallback — a disclosure that always warns teaches the reader to skip it.
+    """
+    from src.location_config import EQUITY_DEFAULT_YIELD
+
+    note = (
+        "**Annual benefit is modelled, not measured**: `position value × assumed "
+        "sleeve yield × tax rate`. The value is live from the positions CSV and the "
+        "rate is the policy above, but the **yield is an authored assumption** "
+        "(`SLEEVE_ASSUMED_YIELD` in `src/location_config.py`), not a measured "
+        "distribution rate — and it carries **no declared basis**, so a "
+        "trailing-twelve-month, SEC 30-day, or forward yield would each give a "
+        "different figure."
+    )
+
+    n_default = int(register["yield_from_default"].sum()) if len(register) else 0
+    if n_default:
+        note += (
+            f" Sleeves with no entry in that table fall back to a single "
+            f"**{EQUITY_DEFAULT_YIELD:.1%} equity default**; "
+            f"**{n_default} of {len(register)} rows** below are on it, marked "
+            f"`(default)` in each group's *Assumed Yield* column."
+        )
+
+    return note
+
+
 def _join_tickers(tickers: list[str]) -> str:
     """Grammatical join: "AVUV", "AVUV and IEMG", "AVUV, SPHQ, and IEMG"."""
     if len(tickers) == 1:

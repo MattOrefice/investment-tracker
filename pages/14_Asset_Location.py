@@ -73,6 +73,8 @@ from src.location_actions import (
     filter_register_for_group,
     capital_gains_headroom,
     assert_full_coverage,
+    format_assumed_yield,
+    yield_assumption_note,
 )
 
 # ── Load data ──────────────────────────────────────────────────────────────────
@@ -450,10 +452,20 @@ for group in _ordered_groups:
                 show = reg_rows.copy()
                 show["case"] = show["case"].map(_CASE_LABEL).fillna(show["case"])
                 show["sleeve"] = show["sleeve"].map(sleeve_display_name)
+                # The yield that produced this row's Annual Benefit, marked when it
+                # came from EQUITY_DEFAULT_YIELD rather than a table entry. Rendered
+                # next to the figure it multiplies, so the assumption is visible where
+                # it is applied rather than only in the expander.
+                show["assumed_yield"] = [
+                    format_assumed_yield(y, bool(d))
+                    for y, d in zip(reg_rows["assumed_yield"], reg_rows["yield_from_default"])
+                ]
+                show = show.drop(columns=["yield_from_default"])
                 show = show.rename(columns={
                     "holding": "Holding", "symbol": "Symbol", "account": "Account",
                     "sleeve": "Sleeve", "case": "Case", "current_value": "Value ($)",
                     "annual_benefit": "Annual Benefit ($)",
+                    "assumed_yield": "Assumed Yield",
                     "embedded_gain": "Embedded Gain ($)", "cost_to_realize": "Cost to Realize ($)",
                     "is_free": "Free?", "payback_months": "Payback (months)",
                 })
@@ -550,11 +562,15 @@ with col:
             f"- Combined ordinary rate: **{_ord:.2%}** · combined rate on realized "
             f"gains: **{_ltcg:.2%}** (15% federal + PA)\n\n"
             + _headroom_para
+            + "\n\n"
+            + yield_assumption_note(register)
             + "\n\n**Scores are authored**, not computed — the owner's priority judgement, "
             "deliberately without a scoring formula. **Sleeve deploy targets are an "
-            "ordinal ranking**, not a return forecast. **Dollar figures in every card "
-            "are templated from the live positions CSV**; an unresolvable figure "
-            "raises rather than rendering \\$0."
+            "ordinal ranking**, not a return forecast. **Position values, and the "
+            "figures derived from them by tax rate alone, are templated from the live "
+            "positions CSV**; an unresolvable figure raises rather than rendering "
+            "\\$0. Annual benefit is the one exception — it also passes through the "
+            "assumed yield above."
         )
 
 # ── Ideal account location — 2026 reference ─────────────────────────────────────
