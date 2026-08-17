@@ -233,26 +233,70 @@ def test_cusip_loads_as_target_date(loaded_db):
 
 # ── Live tracker.db tests (skip if personal CSV absent) ───────────────────────
 
-def test_all_holding_symbols_have_sleeve_category():
-    """Every distinct symbol in the newest holdings must have a non-null sleeve_category."""
+def test_all_holding_symbols_are_register_ready():
+    """Every held symbol must have BOTH sleeve_category and tax_efficiency non-null.
+
+    This states the register's actual precondition in one place. build_location_register
+    drops a row when EITHER is empty::
+
+        if not te or not tt or not sleeve or sleeve == "cash": continue   # household.py:850
+
+    …so a symbol missing either column disappears from the Asset Location register, and
+    from every total computed over it, without a marker. (In practice the page raises
+    first, via look_through_position — see #217 — but the drop is real and this is the
+    one check that can catch the state before a render.)
+
+    WAS test_all_holding_symbols_have_sleeve_category, which asserted sleeve_category
+    only. Widened because the two columns were covered by two tests with DIFFERENT
+    REACH, and neither alone covered the register's contract. Measured on scratch DBs:
+
+        state                     old sleeve test   tax_efficiency test
+        row DELETED               FAIL              pass   <- IN (…) returns no row
+        sleeve_category NULL      FAIL              pass
+        tax_efficiency NULL       pass              FAIL
+
+    The absent-row case reached only the sleeve test, and the NULL-tax_efficiency case
+    only the other one — so the joint condition held by coincidence of coverage, with
+    nothing asserting it. test_tax_efficiency_no_nulls_and_valid_values stays: it also
+    checks the VALUE is in {high,medium,low}, which this does not.
+    """
     _skip_if_no_tracker_db()  # queries tracker.db.securities — skip on an empty/absent DB
     symbols = _holding_symbols()
     conn = sqlite3.connect(str(TRACKER_DB))
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
-        "SELECT ticker, sleeve_category FROM securities"
+        "SELECT ticker, sleeve_category, tax_efficiency FROM securities"
     ).fetchall()
     conn.close()
 
-    mapped = {r["ticker"]: r["sleeve_category"] for r in rows}
-    unmapped = [s for s in symbols if mapped.get(s) is None]
-    assert not unmapped, (
-        f"Holdings symbols with no sleeve_category (unmapped holes): {sorted(unmapped)}"
+    by_ticker = {r["ticker"]: r for r in rows}
+    holes: dict[str, list[str]] = {}
+    for s in sorted(symbols):
+        row = by_ticker.get(s)
+        if row is None:
+            holes[s] = ["no securities row at all"]
+            continue
+        missing = [c for c in ("sleeve_category", "tax_efficiency") if row[c] is None]
+        if missing:
+            holes[s] = missing
+
+    assert not holes, (
+        "Held symbols the location register would silently drop:\n  "
+        + "\n  ".join(f"{s}: {', '.join(m)}" for s, m in holes.items())
+        + "\nAdd them to data/seed/securities_household.csv; bootstrap UPSERTs on the "
+          "next personal-mode start."
     )
 
 
 def test_no_unmapped_sleeve_category_value():
-    """sleeve_category must not contain literal 'unmapped' for any holding symbol."""
+    """sleeve_category must not contain literal 'unmapped' for any holding symbol.
+
+    The ``or ""`` below is load-bearing: ``mapped.get(s, "")`` returns the DEFAULT only
+    when the key is ABSENT. A ticker present with a NULL sleeve_category yields None,
+    and ``None.lower()`` raised AttributeError — a guard crashing instead of failing,
+    on exactly the state the guard above exists to report. Measured before the fix: a
+    NULL sleeve_category made this test error rather than fail.
+    """
     _skip_if_no_tracker_db()  # queries tracker.db.securities — skip on an empty/absent DB
     symbols = _holding_symbols()
     conn = sqlite3.connect(str(TRACKER_DB))
@@ -263,7 +307,7 @@ def test_no_unmapped_sleeve_category_value():
     conn.close()
 
     mapped = {r["ticker"]: r["sleeve_category"] for r in rows}
-    bad = [s for s in symbols if mapped.get(s, "").lower() == "unmapped"]
+    bad = [s for s in symbols if (mapped.get(s) or "").lower() == "unmapped"]
     assert not bad, f"Holdings symbols with sleeve_category='unmapped': {bad}"
 
 
