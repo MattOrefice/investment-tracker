@@ -2,8 +2,11 @@
 
 ## Purpose
 
-Labels the current macro environment as one of four canonical phases used in institutional
-asset allocation: **Recession**, **Early-cycle**, **Mid-cycle**, or **Late-cycle**.
+Labels the current macro environment using four canonical phases from institutional asset
+allocation — **Recession**, **Early-cycle**, **Mid-cycle**, **Late-cycle** — **or declines
+to label it** when too few signals are available. The label is not guaranteed: see
+[When there is no verdict](#when-there-is-no-verdict); the classifier returns a
+`RegimeVerdict`, not a bare string.
 
 This label is a heuristic signal, not a forecast. It summarizes the current position in the
 business cycle to help contextualize portfolio positioning decisions — e.g., whether factor
@@ -51,6 +54,39 @@ Rules are applied in priority order. The first matching rule wins.
 4. Mid-cycle:    Default (USREC = 0, curve normal, labor moderate)
                  → label = "Mid-cycle"
 ```
+
+## When there is no verdict
+
+The classifier returns `label=None` when the signals present cannot support a
+classification. Missing signals are treated as **neutral within a rule** — a defensible
+modelling choice for one absent input among three — but **neutrality has a floor**: with
+too few signals present, "neutral" stops being a modest assumption and becomes the entire
+basis of the answer. `Mid-cycle` is the default branch, so without that floor an empty
+argument list returns a confident mid-cycle verdict.
+
+Sufficiency is **per-branch**, because the branches differ in kind. **Recession** reads
+`USREC` alone and one signal is *complete*: NBER's indicator is definitionally the answer,
+not evidence toward it. **Early-cycle**, **Late-cycle** and **Mid-cycle** are heuristic
+combinations and require at least two of three — in particular
+`curve_ok = t10y2y is None or t10y2y > -0.25` means an absent curve actively supplies half
+of the Early-cycle test, so a lone unemployment reading would otherwise decide it. A
+missing signal there *votes* rather than abstains, which is why a flat "at least one
+present" floor does not catch it.
+
+The verdict carries `present` and `missing` so a caller can state what the label rests on.
+Consumers must handle `label=None`; it is not an error state and must not be rendered as a
+regime.
+
+### What this changed, and how narrowly
+
+Of the thirteen signal combinations pinned in `tests/test_macro.py`, exactly **one**
+changed behaviour: `(None, None, None)`, which returned `"Mid-cycle"` and now returns no
+verdict. The fully-populated case — every historical backtest point and the normal render
+— is untouched.
+
+The measured render before the floor: with `macro_cache` emptied and the network blocked,
+`pages/3_Macro.py` displayed a full-colour **"Current Regime: Mid-cycle"** badge with
+interpretive prose while all three inputs were unavailable.
 
 ### Thresholds (rationale)
 
