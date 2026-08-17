@@ -1790,3 +1790,68 @@ def test_deploy_prose_refuses_an_unresolvable_balance():
     from src.location_actions import deploy_prose_for
     with pytest.raises(ValueError, match="unresolvable|unknown"):
         deploy_prose_for(_deploy_group(), None)
+
+
+def test_page14_discloses_the_yield_assumption_and_marks_defaults_live(monkeypatch):
+    """#191 page-level proof: the assumed-yield disclosure reaches the rendered page,
+    the old absolute claim is gone, and the per-row marker appears in the tables.
+
+    The unit tests in tests/test_yield_disclosure.py pin what the strings SAY; this
+    pins that they arrive on the page a reader opens. A helper returning the right
+    text proves nothing if the page never calls it.
+    """
+    from src.household_data import find_latest_positions_csv
+    csv = find_latest_positions_csv()
+    if csv is None or not TRACKER_DB.exists() or TRACKER_DB.stat().st_size == 0:
+        pytest.skip("personal-mode inputs absent")
+    import src.config
+    import src.db
+    monkeypatch.setattr(src.config, "IS_DEMO", False)
+    monkeypatch.setattr(src.db, "DB_PATH", TRACKER_DB)
+
+    from streamlit.testing.v1 import AppTest
+    at = AppTest.from_file(str(ROOT / "pages" / "14_Asset_Location.py"), default_timeout=90).run()
+    assert not at.exception, f"page raised: {at.exception}"
+
+    md = " ||| ".join(m.value for m in at.markdown)
+
+    # 1. the mechanism is named, with all three multiplicands
+    assert "position value \u00d7 assumed sleeve yield \u00d7 tax rate" in md, (
+        "the expander does not name the arithmetic behind Annual Benefit"
+    )
+    assert "authored assumption" in md and "no declared basis" in md
+
+    # 2. the claim that made the omission a false statement is gone. Asserted on the
+    #    rendered page, not the source, because the source could keep the phrase in a
+    #    comment while the page renders the corrected sentence (and vice versa).
+    assert "Dollar figures in every card are templated" not in md, (
+        "the absolute CSV-provenance claim is still rendered"
+    )
+
+    # 3. the per-row marker. Derived from the register, never a symbol literal: which
+    #    holding sits on the default is a property of the book, not of this test.
+    from src.household import build_location_register
+    pos, acct, sec, reg = _live()
+    defaulted = sorted(set(reg.loc[reg["yield_from_default"], "symbol"]))
+    assert defaulted, (
+        "fixture precondition: the live book has at least one row on the yield "
+        "default — if this ever becomes empty the marker cannot be render-verified"
+    )
+
+    yield_tables = [df.value for df in at.dataframe
+                    if "Assumed Yield" in list(getattr(df.value, "columns", []))]
+    assert yield_tables, "no Underlying-positions table carried an 'Assumed Yield' column"
+
+    marked = set()
+    for t in yield_tables:
+        if "Symbol" not in t.columns:
+            continue
+        for sym, cell in zip(t["Symbol"], t["Assumed Yield"]):
+            if isinstance(cell, str) and "(default)" in cell:
+                marked.add(sym)
+    assert marked & set(defaulted), (
+        f"no default-sourced row is marked in the rendered tables; register says "
+        f"{defaulted} are on the default, rendered marks were {sorted(marked)}"
+    )
+    # and the count in the expander agrees with the frame it describes
+    assert f"{int(reg['yield_from_default'].sum())} of {len(reg)} rows" in md
