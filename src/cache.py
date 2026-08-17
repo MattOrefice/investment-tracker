@@ -8,7 +8,7 @@ import io
 import json
 from contextlib import contextmanager
 from datetime import date, datetime
-from typing import Optional
+from typing import NamedTuple, Optional
 
 import pandas as pd
 
@@ -62,6 +62,36 @@ def is_quarter_complete(quarter_id: str) -> bool:
     return end is not None and date.today() > end
 
 
+class SnapshotFrames(NamedTuple):
+    """A quarter snapshot: one flat frame per price basis.
+
+    TWO FLAT FRAMES, deliberately, rather than one frame with a (ticker, basis)
+    column MultiIndex. A MultiIndex would have to survive
+    ``to_json(orient="split")`` round-tripping, and defending that rests a durable
+    artifact on a pandas behaviour upstream does not guarantee across the open
+    ``pandas>=2.2.0`` range — the same argument that keeps PriceCoverage off
+    ``DataFrame.attrs``. Two frames under top-level JSON keys have no round-trip
+    question, are readable by inspection, and make legacy detection a key lookup
+    rather than an ``nlevels`` check on a deserialized frame.
+
+    ``close is None`` marks a LEGACY snapshot — one captured before the writer
+    stored both bases. The reader then serves no ``close`` column at all, so a
+    primary-basis consumer raises ``KeyError`` naturally rather than through any
+    mechanism built for the purpose. That is the honest outcome: the data needed to
+    answer the question is not there.
+    """
+
+    adj_close: pd.DataFrame
+    close: "pd.DataFrame | None" = None
+
+
+def _as_frames(snap) -> SnapshotFrames:
+    """Accept a SnapshotFrames, or a bare adj_close-only frame (the legacy shape)."""
+    if isinstance(snap, SnapshotFrames):
+        return snap
+    return SnapshotFrames(adj_close=snap, close=None)
+
+
 def _get_all_snapshot_tickers() -> list:
     """Query DB for all portfolio and benchmark tickers (excluding SPAXX)."""
     with get_connection() as conn:
@@ -88,10 +118,22 @@ def get_quarter_snapshot(quarter_id: str) -> tuple:
     if row is None:
         return None, None
 
-    snap_dict = json.loads(row["snapshot_data"])
-    df = pd.read_json(io.StringIO(json.dumps(snap_dict)), orient="split")
-    df.index = pd.to_datetime(df.index).date
-    return df, row["captured_at"]
+    blob = json.loads(row["snapshot_data"])
+
+    def _frame(payload):
+        df = pd.read_json(io.StringIO(json.dumps(payload)), orient="split")
+        df.index = pd.to_datetime(df.index).date
+        return df
+
+    # LEGACY DETECTION IS A KEY LOOKUP. A snapshot captured before both bases were
+    # stored is a bare split-orient frame with no "adj_close"/"close" keys at all,
+    # and its single series is adj_close.
+    if "adj_close" not in blob:
+        return SnapshotFrames(adj_close=_frame(blob), close=None), row["captured_at"]
+
+    close = _frame(blob["close"]) if "close" in blob else None
+    return (SnapshotFrames(adj_close=_frame(blob["adj_close"]), close=close),
+            row["captured_at"])
 
 
 def capture_quarter_snapshot(quarter_id: str) -> tuple:
@@ -110,22 +152,37 @@ def capture_quarter_snapshot(quarter_id: str) -> tuple:
     inception_str = "2020-01-01"
 
     tickers = _get_all_snapshot_tickers()
-    frames: dict = {}
+    adj: dict = {}
+    raw: dict = {}
     for ticker in tickers:
         try:
             df = _prices_module.get_prices(ticker, inception_str, end_str)
-            frames[ticker] = df["adj_close"]
+            adj[ticker] = df["adj_close"]
+            # BOTH bases now. Storing adj_close alone left a raw-close consumer
+            # unservable, and the reader papered over that by aliasing (#193).
+            if "close" in df.columns:
+                raw[ticker] = df["close"]
         except Exception:
             pass
 
-    if not frames:
+    if not adj:
         raise RuntimeError(f"No price data fetched for snapshot {quarter_id}.")
 
-    snap_df = pd.DataFrame(frames)
-    snap_df.index = pd.to_datetime(snap_df.index).date
+    adj_df = pd.DataFrame(adj)
+    adj_df.index = pd.to_datetime(adj_df.index).date
+    raw_df = pd.DataFrame(raw)
+    if not raw_df.empty:
+        raw_df.index = pd.to_datetime(raw_df.index).date
+    snap_df = SnapshotFrames(adj_close=adj_df,
+                             close=raw_df if not raw_df.empty else None)
 
     captured_at = datetime.now().isoformat(timespec="seconds")
-    blob = snap_df.to_json(orient="split", date_format="iso")  # write-guard-exempt: portfolio snapshot cache, not user-mutable data
+    # Two top-level keys, one flat frame each — see SnapshotFrames for why this is
+    # not a column MultiIndex.
+    payload = {"adj_close": json.loads(adj_df.to_json(orient="split", date_format="iso"))}
+    if snap_df.close is not None:
+        payload["close"] = json.loads(raw_df.to_json(orient="split", date_format="iso"))
+    blob = json.dumps(payload)  # write-guard-exempt: portfolio snapshot cache, not user-mutable data
 
     _ensure_table()
     with get_connection() as conn:
@@ -149,13 +206,14 @@ def snapshot_price_context(snap_df: pd.DataFrame):
     snap_df: wide DataFrame, index=datetime.date objects, columns=tickers (adj_close values).
     """
     original_get_prices = _prices_module.get_prices
+    frames = _as_frames(snap_df)
 
     def _snapshot_reader(ticker: str, start_date: str, end_date: Optional[str] = None):
-        if ticker not in snap_df.columns:
+        if ticker not in frames.adj_close.columns:
             return original_get_prices(ticker, start_date, end_date)
 
         end = end_date or date.today().isoformat()
-        col = snap_df[ticker].dropna()
+        col = frames.adj_close[ticker].dropna()
         # Compare via ISO strings — robust against date vs datetime.date index dtype subtleties
         idx_iso = pd.Index([d.isoformat() for d in col.index])
         mask = (idx_iso >= start_date) & (idx_iso <= end)
@@ -164,10 +222,14 @@ def snapshot_price_context(snap_df: pd.DataFrame):
         if filtered.empty:
             return original_get_prices(ticker, start_date, end)
 
-        return pd.DataFrame(
-            {"close": filtered.values, "adj_close": filtered.values},
-            index=filtered.index,
-        )
+        # Serve ONLY the bases this snapshot actually holds. The old code returned
+        # the one stored series under BOTH names, which turned "cannot serve this"
+        # into "serves something wrong": a caller asking what the account is worth
+        # received a total-return series under a "Prices locked" cover (#193).
+        data = {"adj_close": filtered.values}
+        if frames.close is not None and ticker in frames.close.columns:
+            data["close"] = frames.close[ticker].reindex(filtered.index).values
+        return pd.DataFrame(data, index=filtered.index)
 
     _prices_module.get_prices = _snapshot_reader
     try:

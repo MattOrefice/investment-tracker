@@ -370,6 +370,34 @@ def get_prices(
     return cached
 
 
+def total_return_series(frame: pd.DataFrame) -> pd.Series:
+    """The total-return basis from a price frame: adj_close, filled from close.
+
+    Fourteen sites open-code ``p["adj_close"].fillna(p["close"])`` today
+    (benchmarks.py:93, holdings.py:423/443/596/708, drip.py:283, factors.py x5,
+    asset_evaluation.py:104). This is the same expression in one place, so that:
+
+    * a caller wanting TOTAL RETURN never touches ``close`` and therefore keeps
+      working against a legacy single-basis snapshot, which serves no ``close``
+      column at all (#193). Only a caller wanting close as its PRIMARY basis
+      raises there — which is the distinction the DataFrame API cannot express and
+      the reason this helper exists rather than a basis flag.
+    * the fourteen per-site verdicts get a single home. They are DEFERRED, not
+      settled: drip.py:283 is right to fill (a DRIP reinvestment executes at the
+      raw market close), while risk.py:135 manufactures a spurious return spike on
+      the dividend date by doing the same thing. Whoever takes that up changes it
+      here, per caller, instead of re-deriving the question fourteen times.
+
+    Behaviour is pinned to what those sites do today, verbatim: adj_close where
+    present, close where adj_close is null, and adj_close alone when there is no
+    close column to fall back to.
+    """
+    adj = frame["adj_close"]
+    if "close" in frame.columns:
+        return adj.fillna(frame["close"])
+    return adj
+
+
 def _cached_row_count(ticker: str, start_date: str, end: str) -> int:
     """How many settled rows the cache already holds for this window.
 

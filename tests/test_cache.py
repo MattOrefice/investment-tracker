@@ -64,7 +64,14 @@ def test_is_quarter_complete_invalid():
 
 
 def test_snapshot_price_context_returns_snapshot_values():
-    """Values fetched inside context come from snap_df, not the live cache."""
+    """Values fetched inside context come from snap_df, not the live cache.
+
+    The `close` half of this test used to assert `list(result["close"]) == [100.0,
+    102.0]` — i.e. it pinned the aliasing as a contract: a single-basis snapshot
+    handing its one adj_close series back under BOTH names. That is #193, so the
+    assertion is inverted rather than dropped. The docstring's actual claim is
+    proved by the adj_close line, which is unchanged.
+    """
     import src.prices as prices_mod
 
     snap_df = pd.DataFrame(
@@ -76,7 +83,10 @@ def test_snapshot_price_context_returns_snapshot_values():
         result = prices_mod.get_prices("VOO", "2026-01-02", "2026-01-03")
 
     assert list(result["adj_close"]) == [100.0, 102.0]
-    assert list(result["close"]) == [100.0, 102.0]
+    assert "close" not in result.columns, (
+        "a single-basis snapshot served a close column it does not hold — the "
+        "figures would be a total-return series under a 'Prices locked' cover"
+    )
 
 
 def test_snapshot_price_context_restores_original():

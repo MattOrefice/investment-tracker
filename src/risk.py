@@ -62,7 +62,7 @@ from src.holdings import (
     last_settled_price_date,
 )
 from src.positioning import ETF_DURATION
-from src.prices import get_prices
+from src.prices import get_prices, total_return_series
 
 # ── Model configuration ────────────────────────────────────────────────────────
 
@@ -132,7 +132,7 @@ def _proxy_returns(
         return _daily_return(injected, date_range)
     p = get_prices(ticker, inception, end_date)
     p.index = pd.to_datetime(p.index)
-    px = p["adj_close"].fillna(p["close"])
+    px = total_return_series(p)
     return _daily_return(px, date_range)
 
 

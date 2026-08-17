@@ -31,7 +31,7 @@ from typing import Optional
 import pandas as pd
 
 from src.db import get_connection
-from src.prices import get_dividends, get_prices
+from src.prices import get_dividends, get_prices, total_return_series
 
 _SPAXX_TICKER = "SPAXX"
 
@@ -280,7 +280,7 @@ def backfill_all_drip_lots(
             results[ticker] = 0
             continue
 
-        price_history       = price_df["adj_close"].fillna(price_df["close"])
+        price_history       = total_return_series(price_df)
         price_history.index = pd.to_datetime(price_history.index).date
 
         lots = compute_drip_lots(ticker, initial_shares, distributions, price_history)
