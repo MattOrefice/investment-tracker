@@ -878,7 +878,7 @@ def format_drag_exclusion(coverage: DragCoverage) -> "str | None":
     )
 
 
-def yield_assumption_note(register) -> str:
+def yield_assumption_note(register, *, today=None) -> str:
     """The Assumptions-expander disclosure for the assumed-yield multiplicand.
 
     Page 14's expander enumerated all six tax rates, disclosed that scores are
@@ -899,8 +899,13 @@ def yield_assumption_note(register) -> str:
     — a disclosure that always warns teaches the reader to skip it.
     """
 
+    from datetime import date
+
     from src.location_config import (PROXY_SPREAD_UNMEASURED,
-                                     SLEEVE_YIELD_CONSTRUCTION, SLEEVE_YIELD_PROXY)
+                                     SLEEVE_YIELD_CONSTRUCTION, SLEEVE_YIELD_PROXY,
+                                     YIELD_CONSTRUCTION_REVIEW_DAYS)
+
+    ref = today or date.today()
 
     note = (
         "**Annual benefit is modelled, not measured**: `position value × assumed "
@@ -952,6 +957,34 @@ def yield_assumption_note(register) -> str:
             "inflation accrual that is taxed without paying cash. **A dated snapshot, "
             "not a live feed** — the figure does not move until the entry is updated."
         )
+        # THE DATE, AND WHAT IT COVERS. Naming one row's vintage inside a note about 26
+        # invites the inference that the rest are current, so the scope travels with the
+        # date. It is the same move as declaring a basis: the honest content is the
+        # boundary, not the figure.
+        stamps = sorted(
+            date.fromisoformat(SLEEVE_YIELD_CONSTRUCTION[s]["as_of"])
+            for s in set(table_rows["sleeve"]) if s in SLEEVE_YIELD_CONSTRUCTION
+        )
+        oldest = stamps[0]
+        age_days = (ref - oldest).days
+        note += (
+            f" {'It is' if one else 'The oldest is'} stamped "
+            f"**{oldest.isoformat()}**, {age_days} days ago. That date **speaks only "
+            f"for** the constructed {'row' if one else 'rows'} — the proxy-backed rows "
+            "share one measurement date recorded in a config comment, which is **not "
+            "checked here**, and the authored rows carry **no date at all**. Nothing "
+            "above says any of them is current."
+        )
+        # Silent while fresh, per staleness_note's rule and this function's own
+        # docstring: a disclosure that always warns teaches the reader to skip it.
+        if age_days > YIELD_CONSTRUCTION_REVIEW_DAYS:
+            note += (
+                " **Past its annual review** — re-derive it from the component series "
+                "and stamp a new date. A review prompt, **not a materiality warning**: "
+                "a year of typical drift moves the total above by pennies at this "
+                "position size. The cadence exists so the entry gets looked at, and it "
+                "rides the annual tax-figure review this model already needs."
+            )
     if n_authored:
         note += (
             f" **{n_authored} of {len(register)} rows** use an **authored** yield with "

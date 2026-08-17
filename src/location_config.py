@@ -147,6 +147,33 @@ SLEEVE_YIELD_CONSTRUCTION: dict[str, dict] = {
 }
 
 
+# ── Annual review cadence for the constructed entries (#231) ──────────────────
+# DELIBERATELY NOT SIZED LIKE asof.MARKET_DATA_STALE_DAYS_FACTORS / _VALUATION (70/45).
+# Those two are sized so that firing means a REFRESH CYCLE was missed, and
+# tools/refresh_market_data.py is that cycle — five committed CSVs whose diff is
+# reviewed. FRED is not in it: these series come from macro_cache, a runtime 24-hour
+# cache that is never committed. So there is no cycle here to miss and no publication
+# lag to size against, and borrowing 45 or 70 would import a justification that does
+# not hold. The nearest-looking precedent settles the PATTERN (render it, stay silent
+# while fresh) and not the number.
+#
+# REVIEW HYGIENE, NOT A RISK CONTROL — the measurement is why. Over 5,890 cached
+# observations of DFII10 + T10YIE (2003-01-02 .. 2026-07-20, read 2026-08-17), a full
+# year of staleness moves the constructed value a median 31bp, p90 76bp, and 272bp in
+# the worst 365-day window in 23 years. At the $90.68 SCHP position and the 25.07%
+# ordinary rate that is $0.07 / $0.17 / $0.62 on the drag total — against $1.68 for the
+# ENTIRE 2.50%-9.88% candidate range weighed at #213. Nothing here is justifiable by
+# materiality. The cadence exists so the entry gets LOOKED AT.
+#
+# 365 because this file already commits to exactly that cadence for the IRS figures
+# later on ("verify annually" — IRA_CONTRIB_LIMIT_2026 and friends). A yield review
+# riding the tax-year pass that has to happen anyway beats a second calendar nobody
+# keeps. NOT ENFORCED BY A TEST, deliberately: an assertion that reddens as real data
+# ages fails with no commit, blocks unrelated PRs, and makes bumping the date the
+# cheapest fix — see the header in tests/test_yield_construction.py. It is rendered to
+# the reader instead, which is what every other staleness surface here does.
+YIELD_CONSTRUCTION_REVIEW_DAYS = 365
+
 # Sleeves with exactly ONE cached candidate, so their spread is UNKNOWN rather than
 # zero. Named explicitly because silence would read as the most certain when it is
 # merely the least checked — the same asymmetry #191 removed from the yield table as a

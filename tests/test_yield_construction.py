@@ -30,7 +30,7 @@ worth more than four weeks of vintage.
 """
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
 from src.location_config import (
     SLEEVE_ASSUMED_YIELD,
@@ -251,3 +251,221 @@ def test_the_note_says_the_construction_is_dated_not_live():
     reg = pd.DataFrame({"symbol": ["SCHP"], "sleeve": ["tips"], "yield_basis": ["table"]})
     note = yield_assumption_note(reg)
     assert "dated snapshot" in note and "not a live feed" in note
+
+
+# ── #231: the age of a dated snapshot ────────────────────────────────────────
+#
+# WHY RENDERED AND NOT ASSERTED. A test that fails when real data ages is the #200
+# defect: it reddens with no commit, which blocks unrelated PRs, silently turns the
+# 13F baseline into 14F, and makes bumping the date the cheapest fix — training the
+# reader to ignore the very banner asof.py:23-27 exists to keep credible. The repo
+# already answered this: staleness_note has 7+ RENDER call sites and no test asserts
+# that real committed data is fresh; its own tests inject a today-relative frontier.
+# So the age surface is rendered, and every test below derives its dates from the
+# entry's own as_of, which cannot expire.
+#
+# WHY NOT staleness_note ITSELF. Its remediation sentence names
+# tools/refresh_market_data.py, which rewrites five committed CSVs. FRED is not among
+# them — the construction's series come from macro_cache, a runtime 24-hour cache — so
+# reusing it would render an instruction that does not apply to this data. The
+# nearest-looking precedent decides the PATTERN and not the function.
+
+
+def _con_register():
+    import pandas as pd
+    return pd.DataFrame({
+        "symbol":      ["SCHP", "VOO",           "VNQ"],
+        "sleeve":      ["tips",  "us_large_core", "real_assets_reit"],
+        "yield_basis": ["table", "table",         "table"],
+    })
+
+
+def _as_of() -> date:
+    return date.fromisoformat(SLEEVE_YIELD_CONSTRUCTION["tips"]["as_of"])
+
+
+def test_the_note_names_the_as_of_date_and_its_age():
+    """A snapshot the reader cannot date is not meaningfully dated. The existing text
+    said "a dated snapshot, not a live feed" — the nature of the figure — without ever
+    giving the date, so the reader was told the class and not the instance."""
+    from src.location_actions import yield_assumption_note
+
+    note = yield_assumption_note(_con_register(), today=_as_of() + timedelta(days=30))
+    assert _as_of().isoformat() in note, f"the as-of date is not rendered: {note!r}"
+    assert "30 days" in note, f"the age is not rendered: {note!r}"
+
+
+def test_the_age_disclosure_is_scoped_to_the_constructed_row():
+    """THE POINT OF THE WORDING. Naming one row's date in a note covering 26 rows
+    invites the inference that the other 25 are current. They are not: 4 proxy-backed
+    rows share one measurement date in a config comment that nothing here checks, and
+    18 authored rows carry no date at all.
+
+    The fix for "1 of 26 rows is dated" is not dating everything — it is the note
+    saying what it covers.
+    """
+    from src.location_actions import yield_assumption_note
+
+    note = yield_assumption_note(_con_register(), today=_as_of() + timedelta(days=30))
+    assert "speaks only for" in note, (
+        f"the date is rendered unscoped, so it reads as covering the table: {note!r}"
+    )
+    assert "no date at all" in note, (
+        "the note does not say the authored rows are undated"
+    )
+    assert "not checked here" in note, (
+        "the note does not say the proxy rows' measurement date is unchecked"
+    )
+
+
+def test_a_fresh_construction_renders_no_review_prompt():
+    """Fresh renders nothing extra — the staleness_note rule, and this function's own
+    docstring: a disclosure that always warns teaches the reader to skip it.
+
+    Anchored at EXACTLY the threshold, which must still count as fresh, mirroring
+    test_staleness_note_at_threshold_is_still_fresh.
+    """
+    from src.location_actions import yield_assumption_note
+    from src.location_config import YIELD_CONSTRUCTION_REVIEW_DAYS
+
+    fresh = _as_of() + timedelta(days=YIELD_CONSTRUCTION_REVIEW_DAYS)
+    note = yield_assumption_note(_con_register(), today=fresh)
+    assert "annual review" not in note, (
+        f"the review prompt fires at the threshold, which should still be fresh: {note!r}"
+    )
+
+
+def test_a_construction_past_its_review_cadence_prompts_a_review():
+    from src.location_actions import yield_assumption_note
+    from src.location_config import YIELD_CONSTRUCTION_REVIEW_DAYS
+
+    stale = _as_of() + timedelta(days=YIELD_CONSTRUCTION_REVIEW_DAYS + 1)
+    note = yield_assumption_note(_con_register(), today=stale)
+    assert "annual review" in note, f"no review prompt past the cadence: {note!r}"
+    assert "stamp a new" in note, "the prompt does not say what to do"
+
+
+def test_the_review_prompt_disclaims_materiality():
+    """The cadence exists so the entry gets LOOKED AT, not because drift is material —
+    measured at #231: a full year is worth $0.07 typical, $0.62 worst-in-23-years,
+    against $1.68 for the entire candidate range. A prompt reading as a risk warning
+    would misrepresent its own measurement."""
+    from src.location_actions import yield_assumption_note
+    from src.location_config import YIELD_CONSTRUCTION_REVIEW_DAYS
+
+    stale = _as_of() + timedelta(days=YIELD_CONSTRUCTION_REVIEW_DAYS + 400)
+    note = yield_assumption_note(_con_register(), today=stale)
+    assert "not a materiality warning" in note, (
+        f"the prompt does not disclaim materiality: {note!r}"
+    )
+
+
+def test_the_note_does_not_borrow_the_refresh_cycle_remediation():
+    """staleness_note tells the reader to run tools/refresh_market_data.py. That tool
+    rewrites five committed CSVs and never touches FRED, so pointing this entry at it
+    would be a false instruction."""
+    from src.location_actions import yield_assumption_note
+    from src.location_config import YIELD_CONSTRUCTION_REVIEW_DAYS
+
+    stale = _as_of() + timedelta(days=YIELD_CONSTRUCTION_REVIEW_DAYS + 1)
+    note = yield_assumption_note(_con_register(), today=stale)
+    assert "refresh_market_data" not in note, (
+        "the note points at a refresh tool that does not cover this data"
+    )
+    assert "refresh cycle" not in note, (
+        "the note claims a refresh cycle; there is none for the FRED series"
+    )
+
+
+def _cadence_reasoning() -> str:
+    """The contiguous comment block immediately above the constant — NOT a fixed slice.
+
+    Both tests below asserted against ``src[i-2200:i]``, a window that reaches back past
+    the constant's own comment and into SLEEVE_YIELD_CONSTRUCTION's ``note`` field. That
+    note, written at #213, also contains "$1.68" — so the measurement assertion passed on
+    text belonging to a DIFFERENT declaration, and a mutant deleting the figure from the
+    cadence comment stayed green (N12). Same shape as a parser anchoring on the first
+    mention of a name instead of its definition: the window has to be the artifact, not
+    its neighbourhood.
+    """
+    import inspect
+
+    import src.location_config as lc
+    lines = inspect.getsource(lc).splitlines()
+    i = next(n for n, line in enumerate(lines)
+             if line.startswith("YIELD_CONSTRUCTION_REVIEW_DAYS"))
+    block = []
+    for line in reversed(lines[:i]):
+        if not line.startswith("#"):
+            break
+        block.append(line)
+    return chr(10).join(reversed(block))
+
+
+def test_the_cadence_is_annual_and_distinguishes_itself_from_the_refresh_thresholds():
+    """365, and the reasoning must say why it is not sized like 70/45. Those are sized
+    so that firing means a refresh CYCLE was missed; there is no cycle here, so a
+    borrowed number would import a justification that does not hold."""
+    from src.location_config import YIELD_CONSTRUCTION_REVIEW_DAYS
+
+    assert YIELD_CONSTRUCTION_REVIEW_DAYS == 365, (
+        "the cadence VALUE is pinned here and nowhere else: the fresh/stale tests derive "
+        "their dates FROM the constant, so they hold under any value and cannot detect a "
+        "wrong one. They test the rule; this tests the number."
+    )
+    reasoning = _cadence_reasoning()
+    assert "MARKET_DATA_STALE_DAYS" in reasoning, (
+        "the constant does not distinguish itself from the refresh-cycle thresholds"
+    )
+    assert "review hygiene" in reasoning.lower(), (
+        "the constant does not say it is review hygiene rather than a risk control"
+    )
+    assert "IRS" in reasoning or "verify annually" in reasoning, (
+        "the annual cadence is not anchored to the IRS block it rides along with"
+    )
+
+
+def test_the_cadence_constant_records_the_measurement_that_justifies_it():
+    """A cadence with no measurement behind it is a preference. The drift magnitudes and
+    their dollar translation belong in the code, with their vintage, so the next reader
+    can check the reasoning instead of re-deriving it."""
+    reasoning = _cadence_reasoning()
+    assert "bp" in reasoning, "no measured drift magnitudes"
+    assert "1.68" in reasoning, (
+        "the comparison that makes the drift trivial — the whole candidate range being "
+        "worth $1.68 — is not recorded"
+    )
+
+def test_the_oldest_constructed_stamp_governs(monkeypatch):
+    """With one constructed entry, min(stamps) and max(stamps) are the same value, so
+    the "oldest governs" rule is unfalsifiable against the real config — a mutant
+    swapping min for max would apply cleanly and change nothing. Two synthetic entries
+    make it real.
+
+    Oldest rather than newest because the note makes one claim for the whole category:
+    reporting the freshest would let a stale entry hide behind a recent one.
+    """
+    import pandas as pd
+
+    import src.location_config as lc
+    from src.location_actions import yield_assumption_note
+
+    old, new = date(2020, 1, 15), date(2026, 6, 30)
+    monkeypatch.setattr(lc, "SLEEVE_YIELD_CONSTRUCTION", {
+        "tips": {"formula": "a + b", "components": {"X": 0.01, "Y": 0.01},
+                 "as_of": old.isoformat(), "note": "10-year broad-maturity DGS10 #231"},
+        "core_fi_treasury": {"formula": "a + b", "components": {"X": 0.02, "Y": 0.02},
+                             "as_of": new.isoformat(), "note": "n/a"},
+    })
+    reg = pd.DataFrame({
+        "symbol":      ["SCHP", "VGIT"],
+        "sleeve":      ["tips", "core_fi_treasury"],
+        "yield_basis": ["table", "table"],
+    })
+    note = yield_assumption_note(reg, today=new + timedelta(days=5))
+
+    assert old.isoformat() in note, f"the older stamp is not the one reported: {note!r}"
+    assert new.isoformat() not in note, (
+        "the newer stamp is reported, so a stale entry could hide behind a fresh one"
+    )
+    assert "The oldest is" in note, "plural phrasing did not switch"
