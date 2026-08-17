@@ -8,10 +8,32 @@
   body (e.g. "Phase NN: <change>").
 
 ## Verification discipline (non-negotiable)
-- `git log origin/main..HEAD` returning empty is the only proof of
-  a push. A local commit is not "shipped."
+- The push proof has TWO forms and they are not interchangeable. Run
+  the one that matches the stage, and say which ref you checked:
+    - pre-merge, on a feature branch:
+      `git log origin/<branch>..HEAD` empty means pushed.
+    - post-merge, on main:
+      `git log origin/main..HEAD` empty means shipped.
+  An earlier version of this bullet named only the second and called
+  it "the only proof of a push". That is right about merges and wrong
+  about branches: run it pre-merge and it PRINTS the commit — correctly,
+  since origin/main does not have it yet — and the output reads exactly
+  like a failed push. A local commit is still not "shipped."
+- After a merge, also confirm the merge tree matches the tip CI passed
+  on: `git rev-parse main^{tree}` vs `<verified-tip>^{tree}`. Equal
+  trees are what make CI's green a statement about what actually
+  landed. Two PRs merged back to back produce a tree no CI run tested.
 - For UI changes, rendered-output verification in local Streamlit
   is required; passing tests is necessary but not sufficient.
+- `git diff --stat` CANNOT tell you whether a committed SQLite file
+  changed. It prints `Bin 28254208 -> 28254208 bytes` whether demo.db
+  is clean or carries hundreds of rows of drift — the size is stable
+  because sqlite reuses pages. Use `python tools/fingerprint_db.py
+  data/demo.db`, which compares per-table row counts and content
+  hashes and names both sides of the comparison. Run it before every
+  commit that ran the suite, and after every merge. This has bitten
+  twice, the second time with the trap already known — knowing it does
+  not prevent it, only the mechanical check does.
 - State root cause in plain English before changes that touch
   multiple files or git history.
 
@@ -30,6 +52,32 @@
 - Live-data tests (FRED etc.) are marked @pytest.mark.live_data
   and excluded from the default suite via pytest.ini. Do not
   un-exclude.
+- A TEST-COUNT BASELINE IS MEANINGLESS WITHOUT ITS HARNESS. Quote
+  them together, and match the harness on BOTH sides of any
+  comparison — including a run made only to confirm nothing moved.
+  There are two harnesses and they produce different numbers from the
+  same tree:
+    - LOCAL, personal mode: plain `python -m pytest -q`. `.env` pins
+      TRACKER_MODE=personal, so DB_PATH=data/tracker.db and the
+      personal fixtures are present. Guards down (see below).
+    - CI, demo mode: `python -m pytest --tb=long -q` with
+      TRACKER_MODE=demo and NO data/tracker.db (it is gitignored, so
+      tests keyed on the personal cache skip). This is the only
+      demo-mode full suite that matters — verify it by SHA rather than
+      reproducing it locally.
+  No count is written here on purpose: like a tip SHA, a baseline
+  figure is false the moment the next PR adds a test. Re-measure and
+  quote the harness with it.
+- "Guards" means the read-only attribute set on data/demo.db,
+  data/tracker.db and every `git ls-files data` entry, to prove a
+  diagnostic did not mutate tracked data. GUARDS-UP AND THE FULL SUITE
+  ARE MUTUALLY EXCLUSIVE — see Known Issues; do not read a guards-up
+  failure count as movement.
+- Two red tests are DELIBERATE and load-bearing: #177
+  (`test_exactly_the_saa_tickers_are_flagged`, the only live signal
+  that the personal book has diverged from its documented taxonomy)
+  and the twelve mode-sensitive render tests enumerated in #187. Do
+  not "fix" either. Any failure beyond those is real.
 
 ## History baseline (post-2026-06-08 reorg)
 - History was reorganized twice on 2026-06-08, both as
@@ -105,6 +153,23 @@
   updated when this happens; parse_fidelity_csv raises on an unmapped
   account, which is the intended behavior. The map is gitignored — carry
   new entries manually between machines.
+- A READ-ONLY GUARD AND THE PERSONAL-MODE SUITE CANNOT BOTH HOLD, so a
+  guards-up failure count is a different configuration and not movement.
+  `_auto_migrate` still performs a DDL write on any DB carrying the
+  vestigial `accounts.account_number` column: `_drop_account_number`
+  (src/db.py:146-157) runs `DROP INDEX IF EXISTS` + `ALTER TABLE ... DROP
+  COLUMN` when it finds the column. With guards up that write fails, and
+  tests/test_attribution.py errors during COLLECTION at src/db.py:155
+  ("attempt to write a readonly database") — so a guards-up FULL-SUITE
+  number does not exist to be quoted. Seven pages/14 render tests fail the
+  same way. Nothing is broken: the column was all-NULL where it was found,
+  no account numbers, and the migration itself works. Note the condition —
+  once a DB has been opened writably the column is gone and the write
+  stops happening, so this reproduces only on a DB restored from an older
+  copy, a second machine, or a clone seeded pre-migration. It also
+  corrects a claim made after PR #175 that the last write-on-touch channel
+  had been closed: #175 closed the others and the claim was generalised
+  past its evidence. Tracked as #232.
 - A running Streamlit server survives merges and hot-reloads partially,
   rendering a mix of old and new module state. Restart it after any PR
   before trusting a personal-mode render. A visual "bug" in a long-running
@@ -124,10 +189,17 @@
 - pages/14_Asset_Location.py and 13_Household_View.py raise
   `look_through_position: no composition or sleeve_category for symbol 'VEA'`
   when executed in demo mode. This is NOT a demo-data gap and must NOT be
-  "fixed" by populating demo.db. Verified 2026-07-27: demo.db has no
-  household tables at all, fund_compositions is empty (0 rows for any fund),
-  and EVERY securities row has sleeve_category NULL (all 27 tickers) — VEA is
-  merely the first symbol the iteration reaches, not a missing row. The raise
+  "fixed" by populating demo.db. Verified 2026-07-27 and re-verified
+  2026-08-17: fund_compositions is empty (0 rows for any fund) and EVERY
+  securities row has sleeve_category NULL (27 of 27 tickers) — VEA is
+  merely the first symbol the iteration reaches, not a missing row.
+  An earlier version of this bullet said "demo.db has no household tables
+  at all". That is not the gap: the table LISTS are identical apart from
+  quarter_snapshots (which only demo.db has), and demo.db's accounts table
+  carries all five household columns — included_in_household, pseudonym,
+  managed_by, display_name, tax_treatment. The difference is ROWS, not
+  schema: 1 account in demo.db against 7 in tracker.db. Said the old way it
+  sends a reader looking for missing tables. The raise
   is the fail-loud guard from b915f09 working correctly on a publicly
   unreachable path: app.py gates 13/14/15 behind `if not IS_DEMO`, so the
   error only appears when a page module is executed directly, bypassing the
