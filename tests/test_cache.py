@@ -54,9 +54,32 @@ def test_is_quarter_complete_past_q4():
     assert is_quarter_complete("2025Q4") is True
 
 
+def _next_quarter_id(today: date) -> str:
+    """The quarter AFTER the one containing ``today`` — always genuinely future.
+
+    Deliberately the NEXT quarter rather than the current one: on the last day of a
+    quarter the current quarter completes, so anchoring there would flake four days a
+    year. The next quarter cannot have ended.
+    """
+    q = (today.month - 1) // 3 + 1          # 1-4
+    return f"{today.year + 1}Q1" if q == 4 else f"{today.year}Q{q + 1}"
+
+
 def test_is_quarter_complete_future():
-    # Q1 2027 ends March 31, 2027; today is May 5, 2026
-    assert is_quarter_complete("2027Q1") is False
+    """A quarter that has not ended yet is not complete.
+
+    DERIVED, not named. This asserted ``is_quarter_complete("2027Q1") is False`` with
+    the comment "today is May 5, 2026" — a literal that was already stale (today was
+    2026-08-17 when this was rewritten) and that would have turned red on
+    **2027-04-01**, when Q1 2027 completed and the claim became false. Measured by
+    advancing the clock: green at 2027-03-31, red at 2027-04-01.
+
+    The general rule this is an instance of: an assertion that something HAS happened
+    is stable, and an assertion that something has NOT YET happened expires. Its
+    siblings above ("2025Q4 is complete") never expire for exactly that reason. Any
+    "not yet" claim carries a date whether it says so or not — so derive it.
+    """
+    assert is_quarter_complete(_next_quarter_id(date.today())) is False
 
 
 def test_is_quarter_complete_invalid():
