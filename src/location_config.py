@@ -56,7 +56,63 @@ SLEEVE_ASSUMED_YIELD: dict[str, float] = {
     "single_stock":            0.020,
     "crypto":                  0.000,
     "liquid_alt":              0.020,
+    # ── Equity sleeves, added #210 PR 2. Each value is a benchmark proxy's
+    # trailing-twelve-month distribution yield as of 2026-08-11, rounded to 4dp.
+    # The proxy, its spread against every other cached candidate, and how much of
+    # the sleeve is measurable from holdings all live in SLEEVE_YIELD_PROXY below —
+    # read them together, because the spread is the honest content of the value.
+    "us_large_core":           0.0092,
+    "us_large_growth":         0.0036,
+    "us_large_value":          0.0136,
+    "us_large_quality":        0.0084,
+    "us_small_core":           0.0088,
+    "us_small_value":          0.0123,
+    "us_sector_tech":          0.0044,
+    "us_sector_healthcare":    0.0158,
+    "intl_developed":          0.0311,
+    "emerging_markets":        0.0170,
+    "intl_quality":            0.0231,
+    "intl_large_value":        0.0448,
+    "intl_small_value":        0.0309,
 }
+
+# Where each equity entry above came from. A value without a declared basis is what
+# #191 closed, so this map is not optional metadata — a test fails if an entry exists
+# without one, and fails again if its comment omits the spread or the coverage.
+#
+# BENCHMARK THROUGHOUT, deliberately, including where a held ticker looks more apt.
+# intl_large_value takes EFV (0% held) rather than AVIV (the sleeve's SAA carrier),
+# because departing from the framing on one row is held-weighted reasoning applied
+# selectively: thirteen entries meaning "benchmark" and one meaning "the ticker I plan
+# to buy" is an undeclared basis again. The +85% spread is that entry's honest content.
+#
+# "N% held" is how much of the sleeve's HELD value is measurable from the cache at all
+# — the reason a benchmark stands in. Where it is low the held-weighted alternative is
+# not a better measurement, just a thinner one.
+SLEEVE_YIELD_PROXY: dict[str, str] = {
+    "us_large_core":        "IWB",   # +13% vs VOO 1.04%, SPY 0.98%; quarterly; 82.8% held cached
+    "us_large_growth":      "IWF",   # +19% vs QQQ 0.42%; quarterly; 60.1% held cached
+    "us_large_value":       "IWD",   # +34% vs VTV 1.81%; quarterly; only 7.8% held cached
+    "us_large_quality":     "QUAL",  # +30% vs SPHQ 1.09%; quarterly; 100.0% held cached
+    "us_small_core":        "IWM",   # spread UNMEASURED, only cached candidate; quarterly; 0.0% held cached
+    "us_small_value":       "AVUV",  # spread UNMEASURED, only cached candidate; quarterly; 100.0% held cached
+    "us_sector_tech":       "XLK",   # spread UNMEASURED, only cached candidate; quarterly; 100.0% held cached
+    "us_sector_healthcare": "XLV",   # spread UNMEASURED, only cached candidate; quarterly; 100.0% held cached
+    "intl_developed":       "EFA",   # -25% vs VEA 2.49%; semi-annual so the TTM is 2 payments; only 7.2% held cached
+    "emerging_markets":     "EEM",   # +32% vs IEMG 2.25%; semi-annual so the TTM is 2 payments; only 4.7% held cached
+    "intl_quality":         "IQLT",  # +20% vs IDHQ 1.93%; semi-annual so the TTM is 2 payments; 0.0% held cached
+    "intl_large_value":     "EFV",   # +85% vs AVIV 2.42% — the widest in the table; semi-annual so the TTM is 2 payments; 0.0% held cached
+    "intl_small_value":     "SCZ",   # +16% vs ISVL 3.02%, AVDV 2.67%; semi-annual so the TTM is 2 payments; 0.0% held cached
+}
+
+# Sleeves with exactly ONE cached candidate, so their spread is UNKNOWN rather than
+# zero. Named explicitly because silence would read as the most certain when it is
+# merely the least checked — the same asymmetry #191 removed from the yield table as a
+# whole. Adding a second cached candidate for any of these makes its spread measurable
+# and should remove it from this set.
+PROXY_SPREAD_UNMEASURED: frozenset[str] = frozenset({
+    "us_small_core", "us_small_value", "us_sector_tech", "us_sector_healthcare",
+})
 # Fallback yield for sleeves absent from the table (broad equity).
 #
 # MEASURED 2-4x TOO HIGH FOR US EQUITY AND 25-39% TOO LOW FOR INTERNATIONAL — see
@@ -88,9 +144,20 @@ BLEND_SLEEVES: frozenset[str] = frozenset({"multi_asset", "target_date"})
 #   us_mid_cap   held (IJH) but likewise with no proxy in the cache. IWB and IWM
 #                bracket it rather than represent it.
 #
-# Every OTHER equity sleeve has a benchmark proxy already cached (issue #210 lists
-# them), so those get declared-basis entries instead. USER-EDITABLE.
-NOT_MODELLED_SLEEVES: frozenset[str] = frozenset({"thematic", "us_mid_cap"})
+#   intl_all_exus  held (IXUS + VXUS, $19,387 — the largest of the equity sleeves).
+#                The only all-ex-US candidate in the cache is EFA, which is
+#                DEVELOPED-ONLY and excludes emerging markets: wrong in KIND for this
+#                sleeve, the same error declined for multi_asset. Using it would buy a
+#                number at the cost of the thing this workstream is for. The
+#                structurally right fix is a fund_compositions row set for IXUS/VXUS
+#                so they are looked through like any other blend of sleeves — filed,
+#                not folded in here.
+#
+# Every OTHER equity sleeve has a benchmark proxy already cached, and takes a
+# declared-basis entry instead — see SLEEVE_YIELD_PROXY. USER-EDITABLE.
+NOT_MODELLED_SLEEVES: frozenset[str] = frozenset({
+    "thematic", "us_mid_cap", "intl_all_exus",
+})
 
 # Sleeves whose income is EXEMPT FROM FEDERAL TAX (municipal bonds). This set is a
 # MODELING CORRECTION, INDEPENDENT of the yield table above: the yield there is an

@@ -40,6 +40,13 @@ from src.location_config import (
     TAX_PROFILE,
 )
 
+# A sleeve name that is in NO config set, deliberately. After #210 PR 2 every
+# real sleeve resolves through the table, a look-through or an explicit refusal,
+# so the ONLY way to reach the default is a name the config has never seen — which
+# is exactly the condition PR 3 turns into a raise. Using a real sleeve here would
+# break again the moment it gained an entry.
+UNLISTED = "zz_unlisted_test_sleeve"
+
 VALUE = 50_000.0
 ORDINARY = TAX_PROFILE["federal_marginal"] + TAX_PROFILE["state_marginal"]
 
@@ -47,8 +54,8 @@ ORDINARY = TAX_PROFILE["federal_marginal"] + TAX_PROFILE["state_marginal"]
 def _fixture():
     """One sleeve IN the yield table, one ABSENT from it.
 
-    multi_sector_fi is a table entry (0.040). us_large_core has no entry and is not a
-    blend, so it takes the equity default — the state this PR discloses.
+    multi_sector_fi is a table entry (0.040). UNLISTED is in no config set at all, so
+    it takes the equity default — the state this PR discloses.
 
     #210 NOTE: this fixture used multi_asset for the default case, because GAOSX (a
     $10,833 global allocation fund, the largest drag row) took the equity default.
@@ -63,7 +70,7 @@ def _fixture():
         {"ticker": "INTBL", "name": "In Table",  "tax_efficiency": "medium",
          "sleeve_category": "multi_sector_fi"},
         {"ticker": "NOTBL", "name": "Not In Table", "tax_efficiency": "medium",
-         "sleeve_category": "us_large_core"},
+         "sleeve_category": UNLISTED},
     ])
     pos = pd.DataFrame([
         {"pseudonym": "acct_tax", "symbol": "INTBL", "current_value": VALUE,
@@ -108,6 +115,7 @@ def test_register_records_the_yield_it_applied():
     # — correctly, because it is a blend — so what must hold is that it does NOT
     # resolve through the default.
     assert "multi_asset" not in SLEEVE_ASSUMED_YIELD
+    assert UNLISTED not in SLEEVE_ASSUMED_YIELD, "the fixture's unlisted name must stay unlisted"
     assert "multi_asset" in BLEND_SLEEVES, (
         "multi_asset must be declared a blend, or it silently takes the equity default"
     )
@@ -132,7 +140,7 @@ def test_flag_consults_the_table_not_a_hardcoded_list(monkeypatch):
     assert _row(before, "NOTBL")["yield_basis"] == "default"
     benefit_before = float(_row(before, "NOTBL")["annual_benefit"])
 
-    monkeypatch.setitem(lc.SLEEVE_ASSUMED_YIELD, "us_large_core", 0.036)
+    monkeypatch.setitem(lc.SLEEVE_ASSUMED_YIELD, UNLISTED, 0.036)
     after = _register()
 
     assert _row(after, "NOTBL")["yield_basis"] == "table"
@@ -210,10 +218,9 @@ def test_note_scales_with_more_default_rows():
     computed, which a single-row fixture cannot distinguish from a literal '1'."""
     pos, acct, sec = _fixture()
     sec = pd.concat([sec, pd.DataFrame([
-        # us_small_core, not thematic: thematic is in NOT_MODELLED_SLEEVES now, so it
-        # would add a refused row rather than a second defaulted one.
+        # A SECOND unlisted name, not a real sleeve: every real one now resolves.
         {"ticker": "NOTB2", "name": "Also Absent", "tax_efficiency": "medium",
-         "sleeve_category": "us_small_core"},
+         "sleeve_category": UNLISTED + "_2"},
     ])], ignore_index=True)
     pos = pd.concat([pos, pd.DataFrame([
         {"pseudonym": "acct_tax", "symbol": "NOTB2", "current_value": VALUE,
@@ -235,7 +242,7 @@ def test_note_does_not_overclaim_when_no_row_uses_the_default(monkeypatch):
     the disclosure has to be true of the book in front of the reader, not a fixed
     paragraph that always warns."""
     import src.location_config as lc
-    monkeypatch.setitem(lc.SLEEVE_ASSUMED_YIELD, "us_large_core", 0.036)
+    monkeypatch.setitem(lc.SLEEVE_ASSUMED_YIELD, UNLISTED, 0.036)
 
     reg = _register()
     assert int(reg["yield_basis"].eq("default").sum()) == 0
