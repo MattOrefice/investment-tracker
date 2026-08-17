@@ -5,10 +5,8 @@ Three states replace the old boolean `yield_from_default`:
   table                 the sleeve has an entry
   look_through          the SYMBOL has a fund_compositions row set; the yield is the
                         weight-weighted yield of its underlying sleeves
-  look_through_partial  same, but some underlying weight fell to the equity default
-                        (self-retiring: PR 2 gives every underlying sleeve an entry)
   not_modelled          the model refuses to size this row's income
-  default               unlisted, non-blend (PR 3 turns this into a raise)
+  (PR 3 removed `default` and `look_through_partial` with the fallback itself)
 
 WHY LOOK-THROUGH AND NOT A NOT-MODELLED STATE FOR BLENDS. GAOSX, RFUTX and
 31564E540 all carry FULL compositions in fund_compositions (7/7/6 sleeves, weights
@@ -49,7 +47,6 @@ from src.location_actions import (
 )
 from src.location_config import (
     ACCOUNT_SHELTER_PRIORITY,
-    EQUITY_DEFAULT_YIELD,
     SLEEVE_ASSUMED_YIELD,
     SLEEVE_PRIORITY_BY_ACCOUNT_TYPE,
     TAX_PROFILE,
@@ -72,9 +69,17 @@ COMPLETE_YIELD = sum(SLEEVE_ASSUMED_YIELD[s] * w for s, w in COMPLETE_MIX)
 # break again the moment it gained an entry.
 UNLISTED = "zz_unlisted_test_sleeve"
 
-PARTIAL_MIX = [("core_fi_treasury", 0.60), (UNLISTED, 0.40)]
-PARTIAL_YIELD = (SLEEVE_ASSUMED_YIELD["core_fi_treasury"] * 0.60
-                 + EQUITY_DEFAULT_YIELD * 0.40)
+# A second all-listed mix, so the shared fixture never raises. (The base fixture must
+# resolve: putting the raising case in it made every test in this file fail at once.)
+SECOND_MIX = [("core_fi_treasury", 0.70), ("cash", 0.30)]
+SECOND_YIELD = sum(SLEEVE_ASSUMED_YIELD[s] * w for s, w in SECOND_MIX)
+
+# INVERTED by #210 PR 3. This mix used to yield 0.60*core_fi_treasury +
+# 0.40*EQUITY_DEFAULT_YIELD and report basis "look_through_partial". The fallback is
+# gone, so an unlisted UNDERLYING sleeve now raises: a look-through that quietly
+# defaults part of its weight is the same defect one level down. Used ONLY by the
+# raise test below, never by the shared fixture.
+UNLISTED_UNDERLYING_MIX = [("core_fi_treasury", 0.60), (UNLISTED, 0.40)]
 
 
 def _compositions(rows):
@@ -120,7 +125,7 @@ def _fixture():
          "total_gain_loss": 500.0, "cost_basis_total": 9_500.0}
         for t, _ in specs
     ])
-    comps = _compositions([("GAOSX", COMPLETE_MIX), ("JCPB", PARTIAL_MIX)])
+    comps = _compositions([("GAOSX", COMPLETE_MIX), ("JCPB", SECOND_MIX)])
     return pos, acct, sec, comps
 
 
@@ -142,8 +147,9 @@ def _row(reg, symbol):
 # ── basis resolution ─────────────────────────────────────────────────────────
 
 def test_basis_set_is_closed():
-    assert YIELD_BASES == frozenset({
-        "table", "look_through", "look_through_partial", "default", "not_modelled"})
+    """Three, down from the five PR 1 introduced: #210 PR 3 removed `default` and
+    `look_through_partial` along with the fallback itself."""
+    assert YIELD_BASES == frozenset({"table", "look_through", "not_modelled"})
 
 
 def test_table_sleeve_resolves_from_the_table():
@@ -158,17 +164,31 @@ def test_blend_with_a_complete_composition_is_looked_through():
     r = _row(_register(), "GAOSX")
     assert r["yield_basis"] == "look_through"
     assert r["assumed_yield"] == pytest.approx(COMPLETE_YIELD)
-    # and it is NOT the equity default it used to take
-    assert r["assumed_yield"] != pytest.approx(EQUITY_DEFAULT_YIELD)
+    # and it is NOT the 1.8% equity default it used to take (the constant itself was
+    # deleted in PR 3; the literal stays here as the historical value it must not be)
+    assert r["assumed_yield"] != pytest.approx(0.018)
 
 
-def test_blend_with_a_partial_composition_says_partial():
-    """Some underlying weight has no entry, so part of the yield came from the
-    default. The marker exists so PR 2 can retire it by giving every underlying
-    sleeve an entry — a self-retiring disclosure, not a permanent caveat."""
+def test_blend_with_an_unlisted_underlying_sleeve_now_raises():
+    """INVERTED by #210 PR 3 — this asserted basis "look_through_partial" and a yield
+    part-drawn from the equity default. PR 2 retired the marker from the DATA (zero
+    partial rows on the live book) and PR 3 retired it from the CODE, because a basis
+    that cannot occur is a claim the artifact does not support."""
+    pos, acct, sec, _ = _fixture()
+    comps = _compositions([("GAOSX", COMPLETE_MIX),
+                           ("JCPB", UNLISTED_UNDERLYING_MIX)])
+    with pytest.raises(ValueError, match="no yield basis"):
+        build_location_register(
+            pos, acct, sec, TAX_PROFILE, SLEEVE_PRIORITY_BY_ACCOUNT_TYPE,
+            ACCOUNT_SHELTER_PRIORITY, compositions_df=comps)
+
+
+def test_second_blend_with_all_listed_underlyings_is_a_complete_look_through():
+    """The complement, so the raise test above cannot be satisfied by a fixture that
+    raises for some unrelated reason."""
     r = _row(_register(), "JCPB")
-    assert r["yield_basis"] == "look_through_partial"
-    assert r["assumed_yield"] == pytest.approx(PARTIAL_YIELD)
+    assert r["yield_basis"] == "look_through"
+    assert r["assumed_yield"] == pytest.approx(SECOND_YIELD)
 
 
 def test_blend_with_no_composition_is_not_modelled():
@@ -220,18 +240,17 @@ def test_refusal_set_is_not_modelled(symbol, sleeve):
     assert pd.isna(r["assumed_yield"])
 
 
-def test_unlisted_non_blend_sleeve_still_takes_the_default_in_pr1():
-    """PR 3 turns this into a raise. Pinned now so that change is visible as a
-    behaviour change rather than arriving inside an unrelated diff."""
+def test_unlisted_non_blend_sleeve_now_raises():
+    """INVERTED by #210 PR 3, exactly as this test's own docstring predicted when PR 1
+    wrote it ("PR 3 turns this into a raise"). It asserted basis "default" and a
+    0.018 yield."""
     pos, acct, sec, comps = _fixture()
     sec = sec.copy()
     sec.loc[sec["ticker"] == "JHEQX", "sleeve_category"] = UNLISTED
-    reg = build_location_register(
-        pos, acct, sec, TAX_PROFILE, SLEEVE_PRIORITY_BY_ACCOUNT_TYPE,
-        ACCOUNT_SHELTER_PRIORITY, compositions_df=comps)
-    r = _row(reg, "JHEQX")
-    assert r["yield_basis"] == "default"
-    assert r["assumed_yield"] == pytest.approx(EQUITY_DEFAULT_YIELD)
+    with pytest.raises(ValueError, match="no yield basis"):
+        build_location_register(
+            pos, acct, sec, TAX_PROFILE, SLEEVE_PRIORITY_BY_ACCOUNT_TYPE,
+            ACCOUNT_SHELTER_PRIORITY, compositions_df=comps)
 
 
 # ── annual_benefit and payback on a refused row ──────────────────────────────
@@ -412,15 +431,22 @@ def test_drag_coverage_on_an_empty_register():
 # ── the per-row marker ───────────────────────────────────────────────────────
 
 def test_format_assumed_yield_per_basis():
+    """One label per LIVE basis. #210 PR 3 removed the `default` and
+    `look_through_partial` labels with the states themselves — see
+    test_yield_raise.py::test_no_basis_string_survives_for_a_removed_state."""
     assert format_assumed_yield(0.040, "table") == "4.00%"
     assert format_assumed_yield(0.0248, "look_through") == "2.48% (look-through)"
-    assert format_assumed_yield(0.0266, "look_through_partial") == \
-        "2.66% (look-through, partial)"
-    assert format_assumed_yield(0.018, "default") == "1.80% (default)"
     assert format_assumed_yield(None, "not_modelled") == "not modelled"
 
 
-def test_format_assumed_yield_marks_a_zero_default():
-    """A 0.00% row is the one most likely to read as 'no assumption was made'."""
+def test_format_assumed_yield_keeps_an_unknown_basis_visible():
+    """A basis the label map has never seen must render VISIBLY, not silently as a bare
+    percentage — an unmarked figure is indistinguishable from a verified table entry,
+    which is the defect this column exists to remove."""
+    assert "some_future_basis" in format_assumed_yield(0.02, "some_future_basis")
+
+
+def test_format_assumed_yield_renders_a_zero_table_entry():
+    """A 0.00% row is the one most likely to read as 'no assumption was made'. For
+    real_assets_gold and crypto the authored zero is a deliberate FACT."""
     assert format_assumed_yield(0.0, "table") == "0.00%"
-    assert format_assumed_yield(0.0, "default") == "0.00% (default)"

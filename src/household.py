@@ -588,23 +588,53 @@ def get_substitution_note(sleeve_key: str) -> str:
 
 
 # ── Assumed per-sleeve distribution yields ─────────────────────────────────────
-# The yield table and equity default now live in src/location_config.py — they are
-# location-model parameters, and their only consumer is build_location_register
-# (via _assumed_yield below).
+# The yield table lives in src/location_config.py — location-model parameters whose
+# only consumer is build_location_register, via _assumed_yield_with_source below.
 
 # How a row's yield was arrived at. Closed set, like coverage.py's UNRESOLVED_REASONS:
 # the render layer maps every value to a marker, so an unrecognised basis would show
 # no marker at all — silently the thing this replaced.
+#
+# Three, down from five. `default` and `look_through_partial` were removed with the
+# fallback itself (#210 PR 3): a basis that cannot occur is a claim the artifact does
+# not support, and leaving an unreachable one behind is a fallback waiting to be
+# re-wired.
 YIELD_BASES: frozenset[str] = frozenset({
-    "table",                # the sleeve has an entry in SLEEVE_ASSUMED_YIELD
-    "look_through",         # a blend, decomposed; every underlying sleeve had an entry
-    "look_through_partial", # a blend, decomposed; some underlying weight took the default
-    "default",              # unlisted, non-blend -> EQUITY_DEFAULT_YIELD
-    "not_modelled",         # the model declines to size this row (yield is None)
+    "table",         # the sleeve has an entry in SLEEVE_ASSUMED_YIELD
+    "look_through",  # a blend, decomposed through fund_compositions
+    "not_modelled",  # the model declines to size this row (yield is None)
 })
 
 # Weights that sum this far from 1.0 are not a composition we can look through.
 _WEIGHT_TOLERANCE = 0.01
+
+
+def _unlisted_sleeve_error(sleeve_key: str, symbol: str, *, underlying_of: str = "") -> ValueError:
+    """The message for a sleeve the model has never been told how to size.
+
+    Names the SLEEVE (what is unconfigured) and the SYMBOL (where to find it in the
+    book), and lists all three places a fix can go rather than only reporting that one
+    is missing. Says "configuration gap" explicitly: this is not a data condition a
+    page reader can act on, and it surfaces as a traceback rather than an in-page
+    message for that reason.
+
+    ``underlying_of`` distinguishes "this holding's sleeve is unlisted" from "this
+    holding is a blend and one of its UNDERLYING sleeves is unlisted" — without it a
+    reader would look up the blend's own sleeve in the table and find it correctly
+    absent, which is the wrong diagnosis.
+    """
+    where = (f"underlying sleeve {sleeve_key!r} of blend {underlying_of!r} "
+             f"(symbol {symbol!r})" if underlying_of
+             else f"sleeve {sleeve_key!r} (symbol {symbol!r})")
+    return ValueError(
+        f"{where} has no yield basis: it is absent from SLEEVE_ASSUMED_YIELD, "
+        "BLEND_SLEEVES and NOT_MODELLED_SLEEVES in src/location_config.py. This is a "
+        "configuration gap, not a data condition — a new sleeve name reached the "
+        "location model before the model was told how to size it. Add an entry (with "
+        "its proxy in SLEEVE_YIELD_PROXY), declare it a blend, or declare it not "
+        "modelled. Refusing to fall back to an equity default, which is what this "
+        "replaced."
+    )
 
 
 def _assumed_yield_with_source(
@@ -620,27 +650,28 @@ def _assumed_yield_with_source(
 
     Resolution order, and why:
 
-    1. **table** — the sleeve has an authored entry. Unchanged.
+    1. **table** — the sleeve has an authored entry, with its declared basis recorded
+       in ``SLEEVE_YIELD_PROXY`` where one exists.
     2. **blend** (``BLEND_SLEEVES``) — decomposed through ``fund_compositions``: the
-       weight-weighted yield of its underlying sleeves. This is a derivation from data
-       already on record, not a new judgement: the same frame ``look_through_position``
-       uses for the Household View and the thematic card's denominator. An underlying
-       sleeve with no entry contributes the default and downgrades the basis to
-       ``look_through_partial``, which PR 2 retires by entering every underlying
-       sleeve. A blend with no usable composition returns ``not_modelled`` rather than
-       falling back — the fallback is what this fixes.
+       weight-weighted yield of its underlying sleeves. A derivation from data already
+       on record, not a new judgement — the same frame ``look_through_position`` uses
+       for the Household View and the thematic card's denominator. A blend with no
+       usable composition returns ``not_modelled`` rather than falling back.
     3. **``NOT_MODELLED_SLEEVES``** — an explicit refusal. See that set for why.
-    4. **default** — everything else. PR 3 turns this into a raise.
+    4. **anything else RAISES.** There is no fallback. An unlisted sleeve is a config
+       gap, and an unlisted *underlying* sleeve raises for the same reason: a
+       look-through that quietly defaults part of its weight is the same defect one
+       level down.
 
     ``compositions_df=None`` means the caller supplied no compositions, so nothing can
     be looked through and every blend refuses. That direction is deliberate: the two
     failure modes are a VISIBLE refusal on a blend versus a SILENT equity yield on a
     bond-carrying fund, and only the first is self-correcting — a reader who sees "not
-    modelled" asks why, where a reader who sees "1.80%" has nothing to ask about. Same
+    modelled" asks why, where a reader who sees a number has nothing to ask about. Same
     contract ``_thematic_equity_figures`` already applies to this frame.
     """
-    from src.location_config import (BLEND_SLEEVES, EQUITY_DEFAULT_YIELD,
-                                     NOT_MODELLED_SLEEVES, SLEEVE_ASSUMED_YIELD)
+    from src.location_config import (BLEND_SLEEVES, NOT_MODELLED_SLEEVES,
+                                     SLEEVE_ASSUMED_YIELD)
 
     if sleeve_key in SLEEVE_ASSUMED_YIELD:
         return SLEEVE_ASSUMED_YIELD[sleeve_key], "table"
@@ -655,27 +686,17 @@ def _assumed_yield_with_source(
             # it refuses rather than normalising a number nobody can check.
             return None, "not_modelled"
         total = 0.0
-        partial = False
         for _, part in mix.iterrows():
             under = str(part["underlying_sleeve"])
-            if under in SLEEVE_ASSUMED_YIELD:
-                total += float(part["weight"]) * SLEEVE_ASSUMED_YIELD[under]
-            else:
-                total += float(part["weight"]) * EQUITY_DEFAULT_YIELD
-                partial = True
-        return total, ("look_through_partial" if partial else "look_through")
+            if under not in SLEEVE_ASSUMED_YIELD:
+                raise _unlisted_sleeve_error(under, symbol, underlying_of=sleeve_key)
+            total += float(part["weight"]) * SLEEVE_ASSUMED_YIELD[under]
+        return total, "look_through"
 
     if sleeve_key in NOT_MODELLED_SLEEVES:
         return None, "not_modelled"
 
-    return EQUITY_DEFAULT_YIELD, "default"
-
-
-def _assumed_yield(sleeve_key: str) -> float | None:
-    """Yield only, table-or-default — retained for callers that have no symbol or
-    compositions to hand. Cannot return a look-through yield; use
-    _assumed_yield_with_source for that."""
-    return _assumed_yield_with_source(sleeve_key)[0]
+    raise _unlisted_sleeve_error(sleeve_key, symbol)
 
 
 def _is_federally_exempt(sleeve_key: str) -> bool:
@@ -747,8 +768,9 @@ def build_location_register(
          Equal priority is NOT a strand (a sleeve in the taxable map is a fine
          taxable holding). Two inputs, two jobs: the per-account-type priority
          maps only IDENTIFY which rows qualify; the dollar benefit is sized by
-         SLEEVE_ASSUMED_YIELD via _assumed_yield (case-D rows are equity, so any
-         sleeve without a yield entry falls back to EQUITY_DEFAULT_YIELD).
+         SLEEVE_ASSUMED_YIELD via _assumed_yield_with_source — through a
+         look-through for a blend, and RAISING for a sleeve the config has never
+         been told how to size (there is no fallback).
 
     Case C is opportunity cost, not income-tax drag: a zero-yield asset registers
     no drag while being the worst possible use of never-taxed space (e.g. USRT/IAU
