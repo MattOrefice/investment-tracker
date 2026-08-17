@@ -27,6 +27,7 @@ matches the authored prose.
 from __future__ import annotations
 
 import re
+from typing import NamedTuple
 
 import pandas as pd
 
@@ -757,7 +758,16 @@ def _group_annual_benefit(register: pd.DataFrame, key: str) -> str | None:
     and gain-side relief) without hardcoding a dollar amount."""
     grp = next(g for g in ACTION_GROUPS if g["key"] == key)
     reg = filter_register_for_group(register, grp)
-    return _fmt_dollars(float(reg["annual_benefit"].sum())) if not reg.empty else None
+    if reg.empty:
+        return None
+    if reg["yield_basis"].eq("not_modelled").any():
+        # REFUSE, do not understate. A group total that silently drops a row the
+        # model could not size would land inside authored prose as a complete
+        # figure; None makes render_prose raise instead. The KPI takes the other
+        # branch (state the exclusion) because refusing there would take the page
+        # down — see drag_coverage.
+        return None
+    return _fmt_dollars(float(reg["annual_benefit"].sum()))
 
 
 def assert_full_coverage(register: pd.DataFrame) -> None:
@@ -788,17 +798,82 @@ def _fmt_dollars(x: float) -> str:
     return f"-${abs(x):,.0f}" if x < 0 else f"${x:,.0f}"
 
 
-def format_assumed_yield(sleeve_yield: float, from_default: bool) -> str:
-    """Render a row's yield with its provenance: "4.00%" or "1.80% (default)".
+_BASIS_SUFFIX = {
+    "table":                "",
+    "look_through":         " (look-through)",
+    "look_through_partial": " (look-through, partial)",
+    "default":              " (default)",
+}
 
-    The marker is on the DEFAULT case rather than the table case because the default
-    is the one a reader cannot otherwise detect — a table entry can be looked up by
-    sleeve, a fallback leaves no trace. Note a 0.00% row still carries the marker: a
-    zero is the value most likely to be read as "no assumption was made here", and
-    for real_assets_gold/crypto the authored zero is a deliberate fact while a
-    defaulted zero would be an accident.
+
+def format_assumed_yield(sleeve_yield: "float | None", basis: str) -> str:
+    """Render a row's yield with its provenance.
+
+    ``"4.00%"`` / ``"2.48% (look-through)"`` / ``"1.80% (default)"`` /
+    ``"not modelled"``. Only the table case is unmarked, because it is the only one a
+    reader can verify unaided — a sleeve entry can be looked up, every other basis
+    leaves no trace in the number itself.
+
+    A 0.00% row still carries its marker: a zero is the value most likely to be read
+    as "no assumption was made here", and for real_assets_gold/crypto the authored
+    zero is a deliberate fact where a defaulted zero would be an accident.
     """
-    return f"{sleeve_yield:.2%}{' (default)' if from_default else ''}"
+    if basis == "not_modelled" or sleeve_yield is None or pd.isna(sleeve_yield):
+        return "not modelled"
+    return f"{sleeve_yield:.2%}{_BASIS_SUFFIX.get(basis, f' ({basis})')}"
+
+
+class DragCoverage(NamedTuple):
+    """A drag total AND what it left out.
+
+    ``total`` covers only the rows whose income the model could size. The rest of the
+    fields exist because pandas reads NaN as zero: ``reg["annual_benefit"].sum()``
+    returns exactly this total whether the refused rows are present or absent, so the
+    bare sum is numerically right and silently incomplete. That is the same shape as
+    holdings.py:325 in a different column — a default nobody typed turning a partial
+    figure into one that renders as complete.
+
+    ``not_modelled_value`` is position market value, NOT a benefit: the whole point is
+    that the benefit is unknown. It sizes what the total is blind to.
+    """
+    total: float
+    n_not_modelled: int
+    not_modelled_value: float
+    symbols: tuple
+
+
+def drag_coverage(register, cases: tuple = ("A", "B", "D")) -> DragCoverage:
+    """The annual-drag total for ``cases``, with the refused rows accounted for."""
+    if register.empty:
+        return DragCoverage(0.0, 0, 0.0, ())
+    scoped = register[register["case"].isin(cases)]
+    if scoped.empty:
+        return DragCoverage(0.0, 0, 0.0, ())
+    refused = scoped[scoped["yield_basis"] == "not_modelled"]
+    modelled = scoped[scoped["yield_basis"] != "not_modelled"]
+    return DragCoverage(
+        total=float(pd.to_numeric(modelled["annual_benefit"], errors="coerce").sum()),
+        n_not_modelled=len(refused),
+        not_modelled_value=float(refused["current_value"].sum()),
+        symbols=tuple(refused["symbol"]),
+    )
+
+
+def format_drag_exclusion(coverage: DragCoverage) -> "str | None":
+    """The sentence that keeps a drag total from reading as complete.
+
+    ``None`` when nothing was excluded — a notice that always renders teaches the
+    reader to skip it, which is how the disclosure this replaces went unread.
+    """
+    if not coverage.n_not_modelled:
+        return None
+    names = _join_tickers(sorted(set(coverage.symbols)))
+    return (
+        f"Excludes {coverage.n_not_modelled} holding"
+        f"{'' if coverage.n_not_modelled == 1 else 's'} "
+        f"({names}, {_fmt_dollars(coverage.not_modelled_value)} of positions) whose "
+        "income the model does not size — their drag is not modelled, not zero."
+    )
 
 
 def yield_assumption_note(register) -> str:
@@ -817,9 +892,9 @@ def yield_assumption_note(register) -> str:
     other modelling choices in exactly this form, and reproducing the whole yield
     table would make the section unreadable without adding a checkable fact.
 
-    The fallback share is computed from ``register`` rather than authored, so it
-    tracks the book instead of going stale, and it is omitted entirely when no row
-    uses the fallback — a disclosure that always warns teaches the reader to skip it.
+    Every count is computed from ``register`` rather than authored, so the note tracks
+    the book instead of going stale, and each clause is omitted when its count is zero
+    — a disclosure that always warns teaches the reader to skip it.
     """
     from src.location_config import EQUITY_DEFAULT_YIELD
 
@@ -832,16 +907,53 @@ def yield_assumption_note(register) -> str:
         "trailing-twelve-month, SEC 30-day, or forward yield would each give a "
         "different figure."
     )
+    if register.empty:
+        return note
 
-    n_default = int(register["yield_from_default"].sum()) if len(register) else 0
+    n = len(register)
+    basis = register["yield_basis"]
+    n_lt = int(basis.isin(("look_through", "look_through_partial")).sum())
+    n_lt_partial = int(basis.eq("look_through_partial").sum())
+    n_nm = int(basis.eq("not_modelled").sum())
+    n_default = int(basis.eq("default").sum())
+
+    if n_lt:
+        one = n_lt == 1
+        note += (
+            f" **{n_lt} of {n} rows** {'is a' if one else 'are'} multi-asset or "
+            f"target-date fund{'' if one else 's'}, sized by **looking through** "
+            f"{'its' if one else 'their'} `fund_compositions` holdings to the sleeve "
+            f"yields above rather than given a yield of {'its' if one else 'their'} own"
+        )
+        if n_lt_partial:
+            one_p = n_lt_partial == 1
+            note += (
+                f" — {n_lt_partial} of those still {'draws' if one_p else 'draw'} part "
+                f"of {'its' if one_p else 'their'} weight from the equity default, "
+                "marked *partial*."
+            )
+        else:
+            note += "."
+    if n_nm:
+        note += (
+            f" For **{n_nm} of {n} rows** the model declines to size the income at "
+            "all — sleeves with no benchmark to declare a basis against. Their drag "
+            "is **not modelled, not zero**, they are excluded from the drag total "
+            "above, and that exclusion is stated with it."
+        )
     if n_default:
         note += (
-            f" Sleeves with no entry in that table fall back to a single "
-            f"**{EQUITY_DEFAULT_YIELD:.1%} equity default**; "
-            f"**{n_default} of {len(register)} rows** below are on it, marked "
-            f"`(default)` in each group's *Assumed Yield* column."
+            f" **{n_default} of {n} rows** fall back to the single "
+            f"**{EQUITY_DEFAULT_YIELD:.1%} equity default**, marked `(default)`. That "
+            "one number measures 2–4× too high for US equity and 25–39% too low for "
+            "international (issue #210); it is disclosed here rather than corrected, "
+            "because replacing it with a differently-authored number is not progress."
         )
 
+    note += (
+        " Each row's *Assumed Yield* column shows the figure used and how it was "
+        "arrived at."
+    )
     return note
 
 
@@ -1145,7 +1257,12 @@ def resolve_placeholders(
         embedded_gain = None
 
     reg = filter_register_for_group(register, group)
-    annual_benefit = _fmt_dollars(reg["annual_benefit"].sum()) if not reg.empty else None
+    # A group holding a row the model could not size resolves BOTH {annual_benefit}
+    # and {payback} to None, so render_prose raises rather than rendering a figure
+    # that silently omits it (pandas would have summed the NaN as zero).
+    _refuses = (not reg.empty) and bool(reg["yield_basis"].eq("not_modelled").any())
+    annual_benefit = (
+        None if (reg.empty or _refuses) else _fmt_dollars(reg["annual_benefit"].sum()))
     # The count of register rows (the holdings driving {annual_benefit}) — derived,
     # never a literal in prose, so a symbols-list change can't strand a spelled-out
     # number (the "Three of them" staleness JCPB's arrival exposed).
@@ -1153,8 +1270,11 @@ def resolve_placeholders(
     # Cost to realize the group's gains (<=0 for a net-loss / free move) and the
     # payback in years (cost / annual relief) — used by the gain-side defer prose.
     _ctr = float(reg["cost_to_realize"].sum()) if not reg.empty else 0.0
-    _ab = float(reg["annual_benefit"].sum()) if not reg.empty else 0.0
+    _ab = 0.0 if (reg.empty or _refuses) else float(reg["annual_benefit"].sum())
     cost_to_realize = _fmt_dollars(_ctr) if not reg.empty else None
+    # _ab is the denominator of a rendered "<n>-year payback". A silently reduced
+    # denominator renders a payback that is too SHORT — the direction that invites
+    # action — so a refusing group yields no payback at all.
     payback = f"{_ctr / _ab:.1f}-year" if (_ctr > 0 and _ab > 0) else None
 
     # Roth equity-rebuy sizing (clear_roth_non_equity): the VOO buy is 1:1 with the

@@ -33,6 +33,7 @@ from src.household import build_location_register
 from src.location_actions import format_assumed_yield, yield_assumption_note
 from src.location_config import (
     ACCOUNT_SHELTER_PRIORITY,
+    BLEND_SLEEVES,
     EQUITY_DEFAULT_YIELD,
     SLEEVE_ASSUMED_YIELD,
     SLEEVE_PRIORITY_BY_ACCOUNT_TYPE,
@@ -46,10 +47,14 @@ ORDINARY = TAX_PROFILE["federal_marginal"] + TAX_PROFILE["state_marginal"]
 def _fixture():
     """One sleeve IN the yield table, one ABSENT from it.
 
-    multi_sector_fi is a table entry (0.040). multi_asset is not in the table at all
-    — it is the real case behind this PR: GAOSX, a $10,833 global allocation fund and
-    the single largest drag row on the live page, silently modelled at the 1.8% US
-    equity default because its sleeve has no row.
+    multi_sector_fi is a table entry (0.040). us_large_core has no entry and is not a
+    blend, so it takes the equity default — the state this PR discloses.
+
+    #210 NOTE: this fixture used multi_asset for the default case, because GAOSX (a
+    $10,833 global allocation fund, the largest drag row) took the equity default.
+    multi_asset now resolves by LOOK-THROUGH, so using it here would no longer test
+    the default at all. The basis mechanics live in tests/test_yield_basis.py; what
+    stays here is the DISCLOSURE.
     """
     acct = pd.DataFrame([
         {"pseudonym": "acct_tax", "display_name": "Taxable Acct", "tax_treatment": "taxable"},
@@ -58,7 +63,7 @@ def _fixture():
         {"ticker": "INTBL", "name": "In Table",  "tax_efficiency": "medium",
          "sleeve_category": "multi_sector_fi"},
         {"ticker": "NOTBL", "name": "Not In Table", "tax_efficiency": "medium",
-         "sleeve_category": "multi_asset"},
+         "sleeve_category": "us_large_core"},
     ])
     pos = pd.DataFrame([
         {"pseudonym": "acct_tax", "symbol": "INTBL", "current_value": VALUE,
@@ -95,15 +100,24 @@ def test_register_records_the_yield_it_applied():
     # fails here loudly instead of silently agreeing with a stale expectation
     assert SLEEVE_ASSUMED_YIELD["multi_sector_fi"] == pytest.approx(0.040)
     assert EQUITY_DEFAULT_YIELD == pytest.approx(0.018)
+    # INVERTED (#210). This line used to read
+    #     assert "multi_asset" not in SLEEVE_ASSUMED_YIELD
+    # written in #191 as a fixture precondition. It became a PIN holding the defect
+    # open: multi_asset having no entry was the reason GAOSX took a US-equity yield.
+    # Same class as the test_cache.py:79 aliasing pin. The sleeve still has no entry
+    # — correctly, because it is a blend — so what must hold is that it does NOT
+    # resolve through the default.
     assert "multi_asset" not in SLEEVE_ASSUMED_YIELD
+    assert "multi_asset" in BLEND_SLEEVES, (
+        "multi_asset must be declared a blend, or it silently takes the equity default"
+    )
 
 
 def test_register_flags_rows_that_fell_back_to_the_default():
     reg = _register()
 
-    assert _row(reg, "INTBL")["yield_from_default"] is False or \
-        not bool(_row(reg, "INTBL")["yield_from_default"])
-    assert bool(_row(reg, "NOTBL")["yield_from_default"]), (
+    assert _row(reg, "INTBL")["yield_basis"] == "table"
+    assert _row(reg, "NOTBL")["yield_basis"] == "default", (
         "a sleeve absent from SLEEVE_ASSUMED_YIELD took the default silently and "
         "the row does not say so"
     )
@@ -115,13 +129,13 @@ def test_flag_consults_the_table_not_a_hardcoded_list(monkeypatch):
     import src.location_config as lc
 
     before = _register()
-    assert bool(_row(before, "NOTBL")["yield_from_default"])
+    assert _row(before, "NOTBL")["yield_basis"] == "default"
     benefit_before = float(_row(before, "NOTBL")["annual_benefit"])
 
-    monkeypatch.setitem(lc.SLEEVE_ASSUMED_YIELD, "multi_asset", 0.036)
+    monkeypatch.setitem(lc.SLEEVE_ASSUMED_YIELD, "us_large_core", 0.036)
     after = _register()
 
-    assert not bool(_row(after, "NOTBL")["yield_from_default"])
+    assert _row(after, "NOTBL")["yield_basis"] == "table"
     assert _row(after, "NOTBL")["assumed_yield"] == pytest.approx(0.036)
     assert float(_row(after, "NOTBL")["annual_benefit"]) == pytest.approx(
         benefit_before * 0.036 / EQUITY_DEFAULT_YIELD
@@ -140,14 +154,14 @@ def test_recording_the_yield_does_not_change_the_benefit():
 # ── the per-row marker ───────────────────────────────────────────────────────
 
 def test_format_assumed_yield_marks_the_default():
-    assert format_assumed_yield(0.040, False) == "4.00%"
-    assert format_assumed_yield(0.018, True) == "1.80% (default)"
+    assert format_assumed_yield(0.040, "table") == "4.00%"
+    assert format_assumed_yield(0.018, "default") == "1.80% (default)"
 
 
 def test_format_assumed_yield_marks_a_zero_default_too():
     """A 0.00% row is the case most likely to read as 'no assumption was made'."""
-    assert format_assumed_yield(0.0, False) == "0.00%"
-    assert format_assumed_yield(0.0, True) == "0.00% (default)"
+    assert format_assumed_yield(0.0, "table") == "0.00%"
+    assert format_assumed_yield(0.0, "default") == "0.00% (default)"
 
 
 # ── the disclosure ───────────────────────────────────────────────────────────
@@ -184,7 +198,7 @@ def test_note_counts_default_rows_from_the_register():
     """Derived from the frame, never a literal — a hardcoded count passes alone and
     fails as soon as the book changes."""
     reg = _register()
-    n_default = int(reg["yield_from_default"].sum())
+    n_default = int(reg["yield_basis"].eq("default").sum())
     assert n_default == 1, "fixture precondition: exactly one row on the default"
 
     note = yield_assumption_note(reg)
@@ -196,8 +210,10 @@ def test_note_scales_with_more_default_rows():
     computed, which a single-row fixture cannot distinguish from a literal '1'."""
     pos, acct, sec = _fixture()
     sec = pd.concat([sec, pd.DataFrame([
+        # us_small_core, not thematic: thematic is in NOT_MODELLED_SLEEVES now, so it
+        # would add a refused row rather than a second defaulted one.
         {"ticker": "NOTB2", "name": "Also Absent", "tax_efficiency": "medium",
-         "sleeve_category": "thematic"},
+         "sleeve_category": "us_small_core"},
     ])], ignore_index=True)
     pos = pd.concat([pos, pd.DataFrame([
         {"pseudonym": "acct_tax", "symbol": "NOTB2", "current_value": VALUE,
@@ -205,7 +221,7 @@ def test_note_scales_with_more_default_rows():
     ])], ignore_index=True)
 
     reg = _register(pos, acct, sec)
-    assert int(reg["yield_from_default"].sum()) == 2
+    assert int(reg["yield_basis"].eq("default").sum()) == 2
     assert f"2 of {len(reg)} rows" in yield_assumption_note(reg)
 
 
@@ -219,13 +235,13 @@ def test_note_does_not_overclaim_when_no_row_uses_the_default(monkeypatch):
     the disclosure has to be true of the book in front of the reader, not a fixed
     paragraph that always warns."""
     import src.location_config as lc
-    monkeypatch.setitem(lc.SLEEVE_ASSUMED_YIELD, "multi_asset", 0.036)
+    monkeypatch.setitem(lc.SLEEVE_ASSUMED_YIELD, "us_large_core", 0.036)
 
     reg = _register()
-    assert int(reg["yield_from_default"].sum()) == 0
+    assert int(reg["yield_basis"].eq("default").sum()) == 0
 
     note = yield_assumption_note(reg)
-    assert "fall back" not in note.lower() or "0 of" not in note
+    assert "0 of" not in note, "a zero count must not render at all"
     # the mechanism disclosure survives even with no fallback row
     assert "authored assumption" in note.lower()
     assert "no declared basis" in note.lower()
