@@ -114,7 +114,11 @@ _, col, _ = st.columns([1, 8, 1])
 with col:
     st.title("Strategic Asset Allocation")
     st.caption("Target weights, tolerance bands, and rationale")
-    st.caption(as_of_banner())
+    # Deferred into a slot: the banner reports coverage, which is not known until
+    # the sleeve weights load further down. The slot holds its position so the
+    # rendered order is unchanged. Same pattern as pages/2_Performance.py:222.
+    _asof_slot = st.empty()
+    _asof_slot.caption(as_of_banner())
     st.divider()
 
 # ── Investment thesis ──────────────────────────────────────────────────────────
@@ -270,6 +274,9 @@ with col:
     try:
         _sw, _sw_cov = sleeve_weights_with_coverage(date.today().isoformat())
         _gap_note = unresolved_marker(_sw_cov)
+        # Rewrite the banner now that coverage is known. Until this point it has
+        # the frontier only, which is honest but says nothing about completeness.
+        _asof_slot.caption(as_of_banner(coverage=_sw_cov))
         if not _sw.empty:
             _weights = dict(zip(_sw.index, _sw["Actual Weight"].values))
             _targets = {sc["name"]: sc["target_weight"] for sc in sub_classes}
