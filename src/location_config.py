@@ -119,7 +119,18 @@ PROXY_SPREAD_UNMEASURED: frozenset[str] = frozenset({
 # removed it in three steps: look through blends (PR 1), give the proxy-backed equity
 # sleeves declared bases (PR 2), and delete the fallback so an unlisted sleeve RAISES
 # (PR 3). A sleeve now resolves through SLEEVE_ASSUMED_YIELD, BLEND_SLEEVES or
-# NOT_MODELLED_SLEEVES, or the location model refuses to build.
+# NOT_MODELLED_SLEEVES, or the resolver raises.
+#
+# THE BOUNDARY, because the sentence above used to run "…or the location model refuses
+# to build" and that is wider than the artifact. The raise fires on an unlisted sleeve
+# ON A MISLOCATED HOLDING, not on any unlisted sleeve in the book: build_location_register
+# selects a case FIRST and a row matching none of A/B/C/D hits `continue`
+# (src/household.py:837-855) before yield resolution is reached. A high-tax-efficiency
+# holding sitting in the account the priority map ranks first for it therefore never
+# consults its sleeve's yield, and an unlisted sleeve there stays silent.
+# tests/test_asset_location.py's case-D fixture demonstrates it with a ZZZ row whose
+# sleeve is in no config set. Related boundary: #217 (a symbol absent from securities is
+# skipped earlier still, at the same `continue`).
 
 # Sleeves that mix asset classes inside one fund, so no single sleeve yield describes
 # them. They are NOT given a yield entry: they are LOOKED THROUGH via
