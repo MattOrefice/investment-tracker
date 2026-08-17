@@ -65,7 +65,14 @@ COMPLETE_YIELD = sum(SLEEVE_ASSUMED_YIELD[s] * w for s, w in COMPLETE_MIX)
 
 # A composition with one underlying sleeve that has NO entry (us_large_core), so the
 # look-through is partial and part of the weight resolves through the default.
-PARTIAL_MIX = [("core_fi_treasury", 0.60), ("us_large_core", 0.40)]
+# A sleeve name that is in NO config set, deliberately. After #210 PR 2 every
+# real sleeve resolves through the table, a look-through or an explicit refusal,
+# so the ONLY way to reach the default is a name the config has never seen — which
+# is exactly the condition PR 3 turns into a raise. Using a real sleeve here would
+# break again the moment it gained an entry.
+UNLISTED = "zz_unlisted_test_sleeve"
+
+PARTIAL_MIX = [("core_fi_treasury", 0.60), (UNLISTED, 0.40)]
 PARTIAL_YIELD = (SLEEVE_ASSUMED_YIELD["core_fi_treasury"] * 0.60
                  + EQUITY_DEFAULT_YIELD * 0.40)
 
@@ -218,7 +225,7 @@ def test_unlisted_non_blend_sleeve_still_takes_the_default_in_pr1():
     behaviour change rather than arriving inside an unrelated diff."""
     pos, acct, sec, comps = _fixture()
     sec = sec.copy()
-    sec.loc[sec["ticker"] == "JHEQX", "sleeve_category"] = "us_large_core"
+    sec.loc[sec["ticker"] == "JHEQX", "sleeve_category"] = UNLISTED
     reg = build_location_register(
         pos, acct, sec, TAX_PROFILE, SLEEVE_PRIORITY_BY_ACCOUNT_TYPE,
         ACCOUNT_SHELTER_PRIORITY, compositions_df=comps)

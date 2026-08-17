@@ -898,17 +898,46 @@ def yield_assumption_note(register) -> str:
     """
     from src.location_config import EQUITY_DEFAULT_YIELD
 
+    from src.location_config import PROXY_SPREAD_UNMEASURED, SLEEVE_YIELD_PROXY
+
     note = (
         "**Annual benefit is modelled, not measured**: `position value × assumed "
         "sleeve yield × tax rate`. The value is live from the positions CSV and the "
         "rate is the policy above, but the **yield is an authored assumption** "
         "(`SLEEVE_ASSUMED_YIELD` in `src/location_config.py`), not a measured "
-        "distribution rate — and it carries **no declared basis**, so a "
-        "trailing-twelve-month, SEC 30-day, or forward yield would each give a "
-        "different figure."
+        "distribution rate. Authored stays true even where a benchmark basis is "
+        "declared below: choosing EFV over AVIV for the same sleeve is a judgement, "
+        "and those two differ by 85%."
     )
     if register.empty:
-        return note
+        return note + (
+            " Some entries declare that basis and some carry **no declared basis** at "
+            "all; each row's *Assumed Yield* column says which."
+        )
+
+    # Split the table rows by whether their sleeve declares a basis. Before #210 PR 2
+    # the blanket claim "it carries no declared basis" was true of every entry; it is
+    # now false for the proxied ones, and leaving it would understate what is known —
+    # the #191 defect running the other way.
+    table_rows = register[register["yield_basis"] == "table"]
+    n_proxied = int(table_rows["sleeve"].isin(SLEEVE_YIELD_PROXY).sum())
+    n_authored = len(table_rows) - n_proxied
+
+    if n_proxied:
+        note += (
+            f" **{n_proxied} of {len(register)} rows** use a yield with a **declared "
+            "basis** — a named benchmark's trailing-twelve-month distribution yield, "
+            "recorded per entry with its spread against every other candidate in the "
+            "price cache. Those spreads are wide, up to **+85%** on one sleeve, and "
+            f"for {len(PROXY_SPREAD_UNMEASURED)} sleeves only one candidate is cached "
+            "so the spread is **unmeasured rather than zero**."
+        )
+    if n_authored:
+        note += (
+            f" **{n_authored} of {len(register)} rows** use an **authored** yield with "
+            "**no declared basis** at all — for those, a trailing-twelve-month, SEC "
+            "30-day, or forward figure would each give a different answer."
+        )
 
     n = len(register)
     basis = register["yield_basis"]
