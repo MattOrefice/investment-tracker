@@ -144,27 +144,73 @@ def get_recession_periods(start_date: str, end_date: str) -> list:
     return periods
 
 
-def percentile(series: pd.Series, current_value: float) -> float:
-    """Return percentile rank of current_value in the series (0–100)."""
+MAX_WINDOW_SENTINEL = "1800-01-01"
+
+
+def percentile(series: pd.Series, current_value: float) -> float | None:
+    """Percentile rank of current_value in the series (0–100), or None if there is none.
+
+    RETURNS None ON AN EMPTY SERIES. It used to return 50.0 — the median rank, which is
+    the single most plausible-looking wrong answer: it reads as a real measurement, sits
+    in the middle of every band a consumer might test, and is indistinguishable from a
+    genuine mid-range reading. Measured consequence in the PDF: a fabricated 50 maps to a
+    "Moderate" allocation stance (#244). There is no percentile of no observations.
+
+    Callers that cannot receive an empty series are unaffected; those that can must handle
+    None. See window_pctile for the case where the number is real but its SCOPE was not
+    what the label claimed — a different defect with the opposite disposition.
+    """
     clean = series.dropna()
     if clean.empty:
-        return 50.0
+        return None
     return float((clean <= current_value).mean() * 100)
 
 
-def window_pctile(series: pd.Series, current_value: float, w_start: str) -> float:
+class WindowedPctile(NamedTuple):
+    """A windowed percentile with a record of what actually produced it.
+
+    ``fell_back`` is the disclosure this type exists for: the requested window held no
+    observations, so ``value`` is the FULL-series percentile rendered under a window label
+    that overstates its scope. The number is real — it is a true percentile of real data —
+    which is why the fix is to declare the window rather than to refuse the value.
+
+    ``n`` is the count actually used (windowed when in-window, full when fallen back), so a
+    caller can say "over N observations" truthfully in BOTH cases. Reporting the series
+    length instead would be wrong on every normal load.
+
+    The Max sentinel is NOT a fallback: '1800-01-01' means "use everything" by design, so
+    "fell back" and "did what was asked" coincide and there is nothing to disclose.
+    Flagging it would fire on every render of the two panels that use it and train the
+    reader to ignore the marker.
+    """
+
+    value: float | None
+    n: int
+    fell_back: bool
+
+
+def window_pctile(series: pd.Series, current_value: float,
+                  w_start: str) -> WindowedPctile:
     """Percentile of current_value within series windowed from w_start onward.
 
-    Falls back to the full series when the windowed slice is empty (w_start
-    predates available data or '1800-01-01' sentinel for 'Max' window).
+    Falls back to the full series when the windowed slice is empty (the series ends before
+    w_start), and SAYS SO via the returned ``fell_back``. Before that flag existed the
+    caller received a bare float and rendered it under the reader's selected window label:
+    pick 10Y, get the full-history number, no marker. Measured on the unemployment panel
+    with a series ending 2015 — "33rd percentile of the 10Y window, near the historical
+    median for this window" over a window containing zero observations.
     """
-    if w_start == "1800-01-01":
+    if w_start == MAX_WINDOW_SENTINEL:
         windowed = series.dropna()
+        fell_back = False
     else:
         windowed = series.loc[w_start:].dropna()
-    if windowed.empty:
-        return percentile(series, current_value)
-    return percentile(windowed, current_value)
+        fell_back = windowed.empty
+        if fell_back:
+            windowed = series.dropna()
+    return WindowedPctile(value=percentile(windowed, current_value),
+                          n=int(len(windowed)),
+                          fell_back=fell_back)
 
 
 _REGIME_LABELS = ("Recession", "Early-cycle", "Mid-cycle", "Late-cycle")

@@ -88,8 +88,37 @@ def _non_us_equity_pct() -> str:
 _NON_US_PCT = _non_us_equity_pct()
 
 
-def _window_pctile(series: pd.Series, current_val: float, w_start: str) -> float:
+def _window_pctile(series: pd.Series, current_val: float, w_start: str):
+    """Returns macro.WindowedPctile — .value plus the window it actually used."""
     return macro.window_pctile(series, current_val, w_start)
+
+
+def _pctile_scope_note(pct, window_label: str, series: pd.Series) -> None:
+    """Disclose, at the render boundary, when a percentile's window is not what it says.
+
+    Renders NOTHING unless the requested window held no observations, per staleness_note's
+    rule and this page's own practice: a disclosure that always warns teaches the reader to
+    skip it.
+
+    The 'Max' sentinel is handled inside macro.window_pctile, not here — asking for the
+    whole series and getting it is not a fallback. So this is applied at every site whose
+    window is USER-SELECTABLE, and a panel currently showing Max simply never fires it.
+    The three credit-spread panels (IG/HY/CCC) hardcode w_start to the sentinel and have no
+    window control at all, so they cannot fall back and are deliberately not wired here.
+    """
+    if pct is None or not pct.fell_back:
+        return
+    clean = series.dropna()
+    span = ""
+    if not clean.empty:
+        span = (f", spanning {clean.index[0].strftime('%b %Y')}–"
+                f"{clean.index[-1].strftime('%b %Y')}")
+    st.warning(
+        f"**Percentile scope:** the {window_label} window holds no observations, so the "
+        f"percentile above is computed over the **full series** — {pct.n} "
+        f"observations{span} — not {window_label}. The data ends before the window "
+        "begins."
+    )
 
 
 def _apply_style(fig: go.Figure, height: int = _CHART_H) -> go.Figure:
@@ -592,7 +621,15 @@ with col:
             index=1, key="gdp_yaxis", horizontal=True,
         )
         gdp_start    = _window_start(gdp_window)
-        gdp_pctile_w = _window_pctile(gdp_clean, current_gdp, gdp_start)
+        _gdp_pct = _window_pctile(gdp_clean, current_gdp, gdp_start)
+        gdp_pctile_w = _gdp_pct.value
+        # The percentile's scope IN PROSE. On a fallback the label the reader
+        # selected is not the basis of the number, so the caption says what is.
+        gdp_scope = (f"the {gdp_window} window" if not _gdp_pct.fell_back
+                      else "the full series")
+        gdp_scope_short = (gdp_window if not _gdp_pct.fell_back
+                            else "full series")
+        _pctile_scope_note(_gdp_pct, gdp_window, gdp_clean)
         gdp_data     = gdp_clean.loc[gdp_start:]
         _gdp_base = gdp_data[gdp_data.index.year != 2020] if gdp_yaxis == "Excl. 2020 outliers" else gdp_data
         fig_gdp = go.Figure()
@@ -614,7 +651,7 @@ with col:
         st.metric("Real GDP Growth (QoQ ann.)", f"{current_gdp:.1f}%")
         st.caption(
             f"As of {gdp_as_of} (quarterly release, 1-2 quarter lag) · "
-            f"{_ordinal(gdp_pctile_w)} percentile of {gdp_window} window"
+            f"{_ordinal(gdp_pctile_w)} percentile of {gdp_scope}"
         )
 
         st.caption(
@@ -648,7 +685,15 @@ with col:
             index=0, key="ur_yaxis", horizontal=True,
         )
         ur_start    = _window_start(ur_window)
-        ur_pctile_w = _window_pctile(ur_clean, current_ur, ur_start)
+        _ur_pct = _window_pctile(ur_clean, current_ur, ur_start)
+        ur_pctile_w = _ur_pct.value
+        # The percentile's scope IN PROSE. On a fallback the label the reader
+        # selected is not the basis of the number, so the caption says what is.
+        ur_scope = (f"the {ur_window} window" if not _ur_pct.fell_back
+                      else "the full series")
+        ur_scope_short = (ur_window if not _ur_pct.fell_back
+                            else "full series")
+        _pctile_scope_note(_ur_pct, ur_window, ur_clean)
         ur_data     = ur_clean.loc[ur_start:]
         fig_ur = go.Figure()
         _add_recession_shading(fig_ur, rec_periods or [], ur_start)
@@ -659,7 +704,7 @@ with col:
         ))
         _add_current_annotation(
             fig_ur, current_ur,
-            f"Current {current_ur:.1f}% ({_ordinal(ur_pctile_w)} pct, {ur_window})",
+            f"Current {current_ur:.1f}% ({_ordinal(ur_pctile_w)} pct, {ur_scope_short})",
         )
         _apply_style(fig_ur)
         fig_ur.update_yaxes(title_text="Rate (%)")
@@ -672,25 +717,25 @@ with col:
         st.metric("Unemployment Rate", f"{current_ur:.1f}%")
         st.caption(
             f"{format_ur_delta(ur_chg)} · "
-            f"{_ordinal(ur_pctile_w)} percentile of {ur_window} window"
+            f"{_ordinal(ur_pctile_w)} percentile of {ur_scope}"
         )
 
         if ur_pctile_w < 30:
             _ur_interp = (
                 f"Unemployment at {current_ur:.1f}% is in the {_ordinal(ur_pctile_w)} percentile "
-                f"of the {ur_window} window — historically low, consistent with a tight labor market "
+                f"of {ur_scope} — historically low, consistent with a tight labor market "
                 "and late-cycle conditions. Low unemployment has historically preceded cyclical peaks."
             )
         elif ur_pctile_w < 60:
             _ur_interp = (
                 f"Unemployment at {current_ur:.1f}% is in the {_ordinal(ur_pctile_w)} percentile "
-                f"of the {ur_window} window — near the historical median for this window, "
+                f"of {ur_scope} — near the historical median for that basis, "
                 "consistent with a mid-cycle labor market."
             )
         else:
             _ur_interp = (
                 f"Unemployment at {current_ur:.1f}% is in the {_ordinal(ur_pctile_w)} percentile "
-                f"of the {ur_window} window — elevated relative to recent history, "
+                f"of {ur_scope} — elevated relative to recent history, "
                 "potentially consistent with recessionary or early-recovery conditions."
             )
         st.caption(
@@ -717,7 +762,15 @@ with col:
             index=1, key="cfnai_window", horizontal=True,
         )
         cfnai_start    = _window_start(cfnai_window)
-        cfnai_pctile_w = _window_pctile(cfnai_clean, current_cfnai, cfnai_start)
+        _cfnai_pct = _window_pctile(cfnai_clean, current_cfnai, cfnai_start)
+        cfnai_pctile_w = _cfnai_pct.value
+        # The percentile's scope IN PROSE. On a fallback the label the reader
+        # selected is not the basis of the number, so the caption says what is.
+        cfnai_scope = (f"the {cfnai_window} window" if not _cfnai_pct.fell_back
+                      else "the full series")
+        cfnai_scope_short = (cfnai_window if not _cfnai_pct.fell_back
+                            else "full series")
+        _pctile_scope_note(_cfnai_pct, cfnai_window, cfnai_clean)
         cfnai_data     = cfnai_clean.loc[cfnai_start:]
 
         fig_cfnai = go.Figure()
@@ -732,7 +785,7 @@ with col:
         )
         _add_current_annotation(
             fig_cfnai, current_cfnai,
-            f"Current {sign_cfnai}{current_cfnai:.2f} ({_ordinal(cfnai_pctile_w)} pct, {cfnai_window})",
+            f"Current {sign_cfnai}{current_cfnai:.2f} ({_ordinal(cfnai_pctile_w)} pct, {cfnai_scope_short})",
         )
         _apply_style(fig_cfnai)
         fig_cfnai.update_yaxes(title_text="Diffusion Index")
@@ -743,7 +796,7 @@ with col:
         st.metric("CFNAIDIFF (PMI Proxy)", f"{sign_cfnai}{current_cfnai:.2f}")
         st.caption(
             f"As of {cfnai_as_of} (monthly, ~1-month lag) · "
-            f"{_ordinal(cfnai_pctile_w)} percentile of {cfnai_window} window"
+            f"{_ordinal(cfnai_pctile_w)} percentile of {cfnai_scope}"
         )
 
         if current_cfnai > 0:
@@ -792,7 +845,15 @@ with col:
             index=1, key="cpi_window", horizontal=True,
         )
         cpi_start    = _window_start(cpi_window)
-        cpi_pctile_w = _window_pctile(cpi_yoy, current_cpi, cpi_start)
+        _cpi_pct = _window_pctile(cpi_yoy, current_cpi, cpi_start)
+        cpi_pctile_w = _cpi_pct.value
+        # The percentile's scope IN PROSE. On a fallback the label the reader
+        # selected is not the basis of the number, so the caption says what is.
+        cpi_scope = (f"the {cpi_window} window" if not _cpi_pct.fell_back
+                      else "the full series")
+        cpi_scope_short = (cpi_window if not _cpi_pct.fell_back
+                            else "full series")
+        _pctile_scope_note(_cpi_pct, cpi_window, cpi_yoy)
         cpi_data     = cpi_yoy.loc[cpi_start:]
         fig_cpi = go.Figure()
         _add_recession_shading(fig_cpi, rec_periods or [], cpi_start)
@@ -808,7 +869,7 @@ with col:
         )
         _add_current_annotation(
             fig_cpi, current_cpi,
-            f"Current {current_cpi:.1f}% ({_ordinal(cpi_pctile_w)} pct, {cpi_window})",
+            f"Current {current_cpi:.1f}% ({_ordinal(cpi_pctile_w)} pct, {cpi_scope_short})",
         )
         _apply_style(fig_cpi)
         fig_cpi.update_yaxes(title_text="YoY Change (%)")
@@ -819,7 +880,7 @@ with col:
         st.metric("Core CPI YoY", f"{current_cpi:.1f}%")
         st.caption(
             f"As of {cpi_as_of} · "
-            f"{_ordinal(cpi_pctile_w)} percentile of {cpi_window} window"
+            f"{_ordinal(cpi_pctile_w)} percentile of {cpi_scope}"
         )
         st.caption(
             "Core CPI strips out food and energy because those components are volatile on a "
@@ -877,7 +938,15 @@ with col:
             index=1, key="be_window", horizontal=True,
         )
         be_start    = _window_start(be_window)
-        be_pctile_w = _window_pctile(be_clean, current_be, be_start)
+        _be_pct = _window_pctile(be_clean, current_be, be_start)
+        be_pctile_w = _be_pct.value
+        # The percentile's scope IN PROSE. On a fallback the label the reader
+        # selected is not the basis of the number, so the caption says what is.
+        be_scope = (f"the {be_window} window" if not _be_pct.fell_back
+                      else "the full series")
+        be_scope_short = (be_window if not _be_pct.fell_back
+                            else "full series")
+        _pctile_scope_note(_be_pct, be_window, be_clean)
         be_data     = be_clean.loc[be_start:]
 
         fig_be = go.Figure()
@@ -894,7 +963,7 @@ with col:
         )
         _add_current_annotation(
             fig_be, current_be,
-            f"Current {current_be:.2f}% ({_ordinal(be_pctile_w)} pct, {be_window})",
+            f"Current {current_be:.2f}% ({_ordinal(be_pctile_w)} pct, {be_scope_short})",
         )
         _apply_style(fig_be)
         fig_be.update_yaxes(title_text="Breakeven Inflation (%)")
@@ -904,7 +973,7 @@ with col:
         st.plotly_chart(fig_be, width='stretch')
         st.metric("10Y Breakeven Inflation", f"{current_be:.2f}%")
         st.caption(
-            f"As of {be_as_of} · {_ordinal(be_pctile_w)} percentile of {be_window} window "
+            f"As of {be_as_of} · {_ordinal(be_pctile_w)} percentile of {be_scope} "
             f"(data since {be_since})"
         )
 
@@ -943,7 +1012,15 @@ with col:
             index=1, key="real10y_window", horizontal=True,
         )
         real10y_start    = _window_start(real10y_window)
-        real10y_pctile_w = _window_pctile(dfii10_clean, current_real10y, real10y_start)
+        _real10y_pct = _window_pctile(dfii10_clean, current_real10y, real10y_start)
+        real10y_pctile_w = _real10y_pct.value
+        # The percentile's scope IN PROSE. On a fallback the label the reader
+        # selected is not the basis of the number, so the caption says what is.
+        real10y_scope = (f"the {real10y_window} window" if not _real10y_pct.fell_back
+                      else "the full series")
+        real10y_scope_short = (real10y_window if not _real10y_pct.fell_back
+                            else "full series")
+        _pctile_scope_note(_real10y_pct, real10y_window, dfii10_clean)
         real10y_data     = dfii10_clean.loc[real10y_start:]
 
         fig_r10 = go.Figure()
@@ -961,7 +1038,7 @@ with col:
         )
         _add_current_annotation(
             fig_r10, current_real10y,
-            f"Current {current_real10y:+.2f}% ({_ordinal(real10y_pctile_w)} pct, {real10y_window})",
+            f"Current {current_real10y:+.2f}% ({_ordinal(real10y_pctile_w)} pct, {real10y_scope_short})",
         )
         _apply_style(fig_r10)
         fig_r10.update_yaxes(title_text="Real Yield (%)")
@@ -971,7 +1048,7 @@ with col:
         st.plotly_chart(fig_r10, width='stretch')
         st.metric("Real 10Y Yield (TIPS)", f"{current_real10y:+.2f}%")
         st.caption(
-            f"As of {real10y_as_of} · {_ordinal(real10y_pctile_w)} percentile of {real10y_window} window "
+            f"As of {real10y_as_of} · {_ordinal(real10y_pctile_w)} percentile of {real10y_scope} "
             f"(data since {real10y_since})"
         )
 
@@ -1024,7 +1101,15 @@ with col:
             index=1, key="yc_window", horizontal=True,
         )
         yc_start    = _window_start(yc_window)
-        yc_pctile_w = _window_pctile(t10y2y_bps, current_spread_bps, yc_start)
+        _yc_pct = _window_pctile(t10y2y_bps, current_spread_bps, yc_start)
+        yc_pctile_w = _yc_pct.value
+        # The percentile's scope IN PROSE. On a fallback the label the reader
+        # selected is not the basis of the number, so the caption says what is.
+        yc_scope = (f"the {yc_window} window" if not _yc_pct.fell_back
+                      else "the full series")
+        yc_scope_short = (yc_window if not _yc_pct.fell_back
+                            else "full series")
+        _pctile_scope_note(_yc_pct, yc_window, t10y2y_bps)
         yc_data     = t10y2y_bps.loc[yc_start:]
         sign = "+" if current_spread_bps >= 0 else ""
         fig_yc = go.Figure()
@@ -1042,7 +1127,7 @@ with col:
         )
         _add_current_annotation(
             fig_yc, current_spread_bps,
-            f"Current {current_spread_bps:+.0f} bps ({_ordinal(yc_pctile_w)} pct, {yc_window})",
+            f"Current {current_spread_bps:+.0f} bps ({_ordinal(yc_pctile_w)} pct, {yc_scope_short})",
         )
         _apply_style(fig_yc)
         fig_yc.update_yaxes(title_text="Spread (bps)")
@@ -1053,7 +1138,7 @@ with col:
         st.metric("10Y − 2Y Spread", f"{sign}{current_spread_bps:.0f} bps")
         st.caption(
             f"{curve_state} · "
-            f"{_ordinal(yc_pctile_w)} percentile of {yc_window} window"
+            f"{_ordinal(yc_pctile_w)} percentile of {yc_scope}"
         )
 
         st.caption(interpret_curve_spread(current_spread_bps))
@@ -1163,7 +1248,15 @@ with col:
             index=1, key="ff_window", horizontal=True,
         )
         ff_start    = _window_start(ff_window)
-        ff_pctile_w = _window_pctile(dff_clean, current_ff, ff_start)
+        _ff_pct = _window_pctile(dff_clean, current_ff, ff_start)
+        ff_pctile_w = _ff_pct.value
+        # The percentile's scope IN PROSE. On a fallback the label the reader
+        # selected is not the basis of the number, so the caption says what is.
+        ff_scope = (f"the {ff_window} window" if not _ff_pct.fell_back
+                      else "the full series")
+        ff_scope_short = (ff_window if not _ff_pct.fell_back
+                            else "full series")
+        _pctile_scope_note(_ff_pct, ff_window, dff_clean)
         ff_data     = dff_clean.loc[ff_start:]
         chg_sign = "+" if ff_chg_bps >= 0 else ""
         fig_ff = go.Figure()
@@ -1175,7 +1268,7 @@ with col:
         ))
         _add_current_annotation(
             fig_ff, current_ff,
-            f"Current {current_ff:.2f}% ({_ordinal(ff_pctile_w)} pct, {ff_window})",
+            f"Current {current_ff:.2f}% ({_ordinal(ff_pctile_w)} pct, {ff_scope_short})",
         )
         _apply_style(fig_ff)
         fig_ff.update_yaxes(title_text="Rate (%)")
@@ -1187,7 +1280,7 @@ with col:
         st.metric("Fed Funds Rate", f"{current_ff:.2f}%")
         st.caption(
             f"{chg_sign}{ff_chg_bps:.0f} bps from {ff_1y_date} · "
-            f"{_ordinal(ff_pctile_w)} percentile of {ff_window} window"
+            f"{_ordinal(ff_pctile_w)} percentile of {ff_scope}"
         )
 
         st.caption(_ff_interpretation(current_ff, ff_chg_bps))
@@ -1249,7 +1342,15 @@ with col:
             index=1, key="rv_window", horizontal=True,
         )
         rv_start    = _window_start(rv_window)
-        rv_pctile_w = _window_pctile(rate_vol_21, current_rv, rv_start)
+        _rv_pct = _window_pctile(rate_vol_21, current_rv, rv_start)
+        rv_pctile_w = _rv_pct.value
+        # The percentile's scope IN PROSE. On a fallback the label the reader
+        # selected is not the basis of the number, so the caption says what is.
+        rv_scope = (f"the {rv_window} window" if not _rv_pct.fell_back
+                      else "the full series")
+        rv_scope_short = (rv_window if not _rv_pct.fell_back
+                            else "full series")
+        _pctile_scope_note(_rv_pct, rv_window, rate_vol_21)
         rv_data     = rate_vol_21.loc[rv_start:]
 
         fig_rv = go.Figure()
@@ -1261,7 +1362,7 @@ with col:
         ))
         _add_current_annotation(
             fig_rv, current_rv,
-            f"Current {current_rv:.2f}% ({_ordinal(rv_pctile_w)} pct, {rv_window})",
+            f"Current {current_rv:.2f}% ({_ordinal(rv_pctile_w)} pct, {rv_scope_short})",
         )
         _apply_style(fig_rv)
         fig_rv.update_yaxes(title_text="Annualized Vol (%)")
@@ -1272,7 +1373,7 @@ with col:
         st.plotly_chart(fig_rv, width='stretch')
         st.metric("Rate Volatility (10Y Realized)", f"{current_rv:.2f}%")
         st.caption(
-            f"As of {rv_as_of} · {_ordinal(rv_pctile_w)} percentile of {rv_window} window  \n"
+            f"As of {rv_as_of} · {_ordinal(rv_pctile_w)} percentile of {rv_scope}  \n"
             "Rolling 21-day stdev of daily DGS10 changes, annualized (×√252). "
             "MOVE Index proxy — VXTLT (CBOE TLT vol) not available via the price cache."
         )
@@ -1280,7 +1381,7 @@ with col:
         if rv_pctile_w > 70:
             _rv_interp = (
                 f"Rate volatility at {current_rv:.2f}% (annualized) is elevated — "
-                f"{_ordinal(rv_pctile_w)} percentile of the {rv_window} window. "
+                f"{_ordinal(rv_pctile_w)} percentile of {rv_scope}. "
                 "Elevated rate vol compresses carry strategies, widens bid-ask spreads in credit, "
                 "and creates an environment where active duration management adds more value "
                 "than passive carry harvesting."
@@ -1288,14 +1389,14 @@ with col:
         elif rv_pctile_w > 30:
             _rv_interp = (
                 f"Rate volatility at {current_rv:.2f}% (annualized) is moderate — "
-                f"{_ordinal(rv_pctile_w)} percentile of the {rv_window} window. "
+                f"{_ordinal(rv_pctile_w)} percentile of {rv_scope}. "
                 "Moderate rate vol is consistent with a stable rate environment where "
                 "passive duration earns carry without significant mark-to-market risk."
             )
         else:
             _rv_interp = (
                 f"Rate volatility at {current_rv:.2f}% (annualized) is low — "
-                f"{_ordinal(rv_pctile_w)} percentile of the {rv_window} window. "
+                f"{_ordinal(rv_pctile_w)} percentile of {rv_scope}. "
                 "Low rate vol compresses manager dispersion in fixed income; "
                 "passive duration harvesting is sufficient and active duration management "
                 "adds limited edge in this environment."
@@ -1651,7 +1752,15 @@ with col:
         cape_as_of    = cape_last_date.strftime("%b %Y")
         w_start_cape  = _window_start(cape_window)
         cape_filtered = cape_series[cape_series.index >= w_start_cape].dropna()
-        cape_pctile_w = _window_pctile(cape_series, cape_val, w_start_cape)
+        _cape_pct = _window_pctile(cape_series, cape_val, w_start_cape)
+        cape_pctile_w = _cape_pct.value
+        # The percentile's scope IN PROSE. On a fallback the label the reader
+        # selected is not the basis of the number, so the caption says what is.
+        cape_scope = (f"the {cape_window} window" if not _cape_pct.fell_back
+                      else "the full series")
+        cape_scope_short = (cape_window if not _cape_pct.fell_back
+                            else "full series")
+        _pctile_scope_note(_cape_pct, cape_window, cape_series)
 
         fig_cape = go.Figure()
         fig_cape.add_trace(go.Scatter(
@@ -1679,7 +1788,7 @@ with col:
         )
         _add_current_annotation(
             fig_cape, cape_val,
-            f"Current {cape_val:.1f}× ({_ordinal(cape_pctile_w)} pct, {cape_window})",
+            f"Current {cape_val:.1f}× ({_ordinal(cape_pctile_w)} pct, {cape_scope_short})",
         )
         _apply_style(fig_cape, height=_CHART_H_CAPE)
         fig_cape.update_yaxes(title_text="CAPE (×)")
@@ -1690,7 +1799,7 @@ with col:
         st.plotly_chart(fig_cape, width='stretch')
         st.metric("Shiller CAPE", f"{cape_val:.1f}×")
         st.caption(
-            f"{_ordinal(cape_pctile_w)} percentile of {cape_window} window "
+            f"{_ordinal(cape_pctile_w)} percentile of {cape_scope} "
             f"· full history: {_ordinal(cape_pctile)} pct since 1881 "
             f"· data as of {cape_as_of} "
             "· Source: Shiller dataset via multpl.com, monthly  \n"
@@ -1748,7 +1857,15 @@ with col:
         _ttm_window  = cape_window if cape_ok else "Max"
         w_start_ttm  = _window_start(_ttm_window)
         ttm_filtered = ttm_series[ttm_series.index >= w_start_ttm].dropna()
-        ttm_pctile_w = _window_pctile(ttm_series, ttm_val, w_start_ttm)
+        _ttm_pct = _window_pctile(ttm_series, ttm_val, w_start_ttm)
+        ttm_pctile_w = _ttm_pct.value
+        # The percentile's scope IN PROSE. On a fallback the label the reader
+        # selected is not the basis of the number, so the caption says what is.
+        ttm_scope = (f"the {_ttm_window} window" if not _ttm_pct.fell_back
+                      else "the full series")
+        ttm_scope_short = (_ttm_window if not _ttm_pct.fell_back
+                            else "full series")
+        _pctile_scope_note(_ttm_pct, _ttm_window, ttm_series)
         ttm_pctile   = macro.percentile(ttm_series, ttm_val)
 
         fig_ttm = go.Figure()
@@ -1765,7 +1882,7 @@ with col:
         )
         _add_current_annotation(
             fig_ttm, ttm_val,
-            f"Current {ttm_val:.1f}× ({_ordinal(ttm_pctile_w)} pct, {_ttm_window})",
+            f"Current {ttm_val:.1f}× ({_ordinal(ttm_pctile_w)} pct, {ttm_scope_short})",
         )
         _apply_style(fig_ttm, height=_CHART_H)
         fig_ttm.update_yaxes(title_text="P/E (TTM)")
@@ -1775,7 +1892,7 @@ with col:
         st.plotly_chart(fig_ttm, width='stretch')
         st.metric("Trailing P/E (TTM)", f"{ttm_val:.1f}×")
         st.caption(
-            f"{_ordinal(ttm_pctile_w)} percentile of {_ttm_window} window "
+            f"{_ordinal(ttm_pctile_w)} percentile of {ttm_scope} "
             f"· full history: {_ordinal(ttm_pctile)} pct since 1871 "
             f"· data as of {ttm_asof} "
             "· Source: multpl.com, S&P 500 trailing-twelve-month P/E, monthly. "
@@ -1941,7 +2058,15 @@ with col:
             index=2, key="ecy_window", horizontal=True,
         )
         w_start_ecy   = _window_start(ecy_window)
-        ecy_pctile_w  = _window_pctile(_ecy_hist, current_ecy, w_start_ecy)
+        _ecy_pct = _window_pctile(_ecy_hist, current_ecy, w_start_ecy)
+        ecy_pctile_w = _ecy_pct.value
+        # The percentile's scope IN PROSE. On a fallback the label the reader
+        # selected is not the basis of the number, so the caption says what is.
+        ecy_scope = (f"the {ecy_window} window" if not _ecy_pct.fell_back
+                      else "the full series")
+        ecy_scope_short = (ecy_window if not _ecy_pct.fell_back
+                            else "full series")
+        _pctile_scope_note(_ecy_pct, ecy_window, _ecy_hist)
         ecy_pctile    = macro.percentile(_ecy_hist, current_ecy)
 
         _ecy_w = _ecy_hist[_ecy_hist.index >= pd.Timestamp(w_start_ecy)]
@@ -1966,7 +2091,7 @@ with col:
         )
         _add_current_annotation(
             fig_ecy, current_ecy,
-            f"Current {current_ecy:.2f}% ({_ordinal(ecy_pctile_w)} pct, {ecy_window})",
+            f"Current {current_ecy:.2f}% ({_ordinal(ecy_pctile_w)} pct, {ecy_scope_short})",
         )
         _apply_style(fig_ecy, height=_CHART_H_CAPE)
         fig_ecy.update_yaxes(title_text="ECY (%)")
@@ -1976,7 +2101,7 @@ with col:
         st.plotly_chart(fig_ecy, width='stretch')
         st.metric("ECY", f"{current_ecy:.2f}%")
         st.caption(
-            f"{_ordinal(ecy_pctile_w)} percentile of {ecy_window} window "
+            f"{_ordinal(ecy_pctile_w)} percentile of {ecy_scope} "
             f"(full history since {ecy_since}: {_ordinal(ecy_pctile)} pct)  \n"
             f"CAPE yield {100/cape_val:.2f}% vs real rate {_real_rate:.2f}% "
             f"({current_dgs10:.2f}% − {current_t10yie:.2f}%)"
@@ -2105,7 +2230,15 @@ with col:
             index=1, key="dtwex_window", horizontal=True,
         )
         dtwex_start    = _window_start(dtwex_window)
-        dtwex_pctile_w = _window_pctile(dtwex_clean, current_dtwex, dtwex_start)
+        _dtwex_pct = _window_pctile(dtwex_clean, current_dtwex, dtwex_start)
+        dtwex_pctile_w = _dtwex_pct.value
+        # The percentile's scope IN PROSE. On a fallback the label the reader
+        # selected is not the basis of the number, so the caption says what is.
+        dtwex_scope = (f"the {dtwex_window} window" if not _dtwex_pct.fell_back
+                      else "the full series")
+        dtwex_scope_short = (dtwex_window if not _dtwex_pct.fell_back
+                            else "full series")
+        _pctile_scope_note(_dtwex_pct, dtwex_window, dtwex_clean)
         dtwex_data     = dtwex_clean.loc[dtwex_start:]
 
         fig_dtwex = go.Figure()
@@ -2117,7 +2250,7 @@ with col:
         ))
         _add_current_annotation(
             fig_dtwex, current_dtwex,
-            f"Current {current_dtwex:.1f} ({_ordinal(dtwex_pctile_w)} pct, {dtwex_window})",
+            f"Current {current_dtwex:.1f} ({_ordinal(dtwex_pctile_w)} pct, {dtwex_scope_short})",
         )
         _apply_style(fig_dtwex)
         fig_dtwex.update_yaxes(title_text="Index Level")
@@ -2129,7 +2262,7 @@ with col:
         chg_sign = "+" if dtwex_1y_pct >= 0 else ""
         st.caption(
             f"{chg_sign}{dtwex_1y_pct:.1f}% over 12 months · "
-            f"{_ordinal(dtwex_pctile_w)} percentile of {dtwex_window} window "
+            f"{_ordinal(dtwex_pctile_w)} percentile of {dtwex_scope} "
             f"(data since {dtwex_since})"
         )
 
@@ -2162,7 +2295,7 @@ with col:
         )
         st.caption(
             f"Current value of {current_dtwex:.1f} is at the {_ordinal(dtwex_pctile_w)} percentile "
-            f"of the {dtwex_window} window ({_dtwex_strength}). "
+            f"of {dtwex_scope} ({_dtwex_strength}). "
             + _dtwex_impl + " "
             f"Dollar direction is a meaningful translation factor on the {_NON_US_PCT} non-US equity "
             "allocation (developed and emerging sleeves). "
