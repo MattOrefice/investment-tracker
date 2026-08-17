@@ -50,7 +50,11 @@ SLEEVE_ASSUMED_YIELD: dict[str, float] = {
     "multi_sector_fi":         0.040,
     "core_fi_credit":          0.035,
     "core_fi_treasury":        0.040,
-    "tips":                    0.025,
+    # CONSTRUCTED, not assumed — see SLEEVE_YIELD_CONSTRUCTION below, which a test
+    # re-adds. 2.35% real yield + 2.26% breakeven inflation. It shipped at 0.025, which
+    # read as a real yield because it essentially was one (within 15bp of DFII10) and so
+    # carried only half of what a TIPS holder is taxed on.
+    "tips":                    0.0461,
     "cash":                    0.045,
     "hedged_equity":           0.060,
     "single_stock":            0.020,
@@ -104,6 +108,44 @@ SLEEVE_YIELD_PROXY: dict[str, str] = {
     "intl_large_value":     "EFV",   # +85% vs AVIV 2.42% — the widest in the table; semi-annual so the TTM is 2 payments; 0.0% held cached
     "intl_small_value":     "SCZ",   # +16% vs ISVL 3.02%, AVDV 2.67%; semi-annual so the TTM is 2 payments; 0.0% held cached
 }
+
+# Entries whose value is CONSTRUCTED from published series rather than measured from a
+# proxy's distributions. Parallel to SLEEVE_YIELD_PROXY above and disjoint from it: a
+# proxy entry declares ticker, spread and coverage; a constructed entry declares its
+# formula, its component series and its as-of date. Same obligation either way — the
+# value does not travel without its basis.
+#
+# A DICT AND NOT A COMMENT, because only a structure can be re-added. A test sums the
+# components and asserts they equal the shipped value, so the arithmetic cannot drift
+# from the prose describing it; a comment can be wrong forever. That test is the
+# constructed-entry analogue of recomputing a proxy's TTM from the price cache.
+SLEEVE_YIELD_CONSTRUCTION: dict[str, dict] = {
+    "tips": {
+        "formula":    "real_yield + breakeven_inflation",
+        "components": {"DFII10": 0.0235,    # 10y TIPS real yield
+                       "T10YIE": 0.0226},   # 10y breakeven inflation, market-implied
+        "as_of":      "2026-07-20",
+        "note": (
+            "WHY CONSTRUCTED. A TIPS holder is taxed on the real coupon AND on the "
+            "inflation accrual that pays no cash until maturity. The old 0.025 carried "
+            "only the first, so the register understated the very sleeve whose tax "
+            "treatment is the strongest argument for sheltering it. Neither component "
+            "is authored: T10YIE is market-implied forward expectation, not an estimate "
+            "of ours. "
+            "WHY DEFENSIBLE. The two sum to 4.61% against DGS10's 4.60% nominal 10-year "
+            "on the same date — the Fisher identity reproduced to 1bp from a third, "
+            "independent series. Arithmetic validation, not a judgement to defend. "
+            "APPROXIMATION, DECLARED. This is the 10-year point; SCHP holds "
+            "broad-maturity TIPS, so a duration-matched real yield and breakeven would "
+            "be more exact. #231 tracks it, and the sizing says why it can wait: the "
+            "whole 2.50%-9.88% range moves the drag KPI by $1.68. "
+            "FROZEN AND DATED, NOT LIVE. src/macro.py caches both series and could "
+            "fetch them, but the yield table has no network dependency and does not "
+            "vary by day. That property is worth more than the vintage."
+        ),
+    },
+}
+
 
 # Sleeves with exactly ONE cached candidate, so their spread is UNKNOWN rather than
 # zero. Named explicitly because silence would read as the most certain when it is
