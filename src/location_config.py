@@ -39,7 +39,7 @@ TAX_PROFILE: dict[str, float] = {
 # federally-exempt sleeve still throws off real income; its exemption lives in
 # FEDERALLY_EXEMPT_SLEEVES below, not as a fake zero here. Sizes the income-shelter
 # value at stake in the Asset Location register (build_location_register, via
-# household._assumed_yield). USER-EDITABLE.
+# household._assumed_yield_with_source). USER-EDITABLE.
 SLEEVE_ASSUMED_YIELD: dict[str, float] = {
     "real_assets_reit":        0.040,
     "real_assets_commodities": 0.015,
@@ -113,14 +113,13 @@ SLEEVE_YIELD_PROXY: dict[str, str] = {
 PROXY_SPREAD_UNMEASURED: frozenset[str] = frozenset({
     "us_small_core", "us_small_value", "us_sector_tech", "us_sector_healthcare",
 })
-# Fallback yield for sleeves absent from the table (broad equity).
-#
-# MEASURED 2-4x TOO HIGH FOR US EQUITY AND 25-39% TOO LOW FOR INTERNATIONAL — see
-# issue #210. us_large_growth measures 0.42%, us_sector_tech 0.44%, us_large_quality
-# 0.85%, us_large_core 0.92% against intl_developed 2.49% and emerging_markets 2.25%.
-# A single scalar cannot serve both directions; correcting it is a separate decision
-# from the structure work here, and it is NOT made by this file today.
-EQUITY_DEFAULT_YIELD: float = 0.018
+# NO FALLBACK. EQUITY_DEFAULT_YIELD used to sit here at 0.018 and catch every sleeve
+# with no entry. It measured 2-4x too high for US equity and 25-39% too low for
+# international, and it was silent — a reader could not see it had been applied. #210
+# removed it in three steps: look through blends (PR 1), give the proxy-backed equity
+# sleeves declared bases (PR 2), and delete the fallback so an unlisted sleeve RAISES
+# (PR 3). A sleeve now resolves through SLEEVE_ASSUMED_YIELD, BLEND_SLEEVES or
+# NOT_MODELLED_SLEEVES, or the location model refuses to build.
 
 # Sleeves that mix asset classes inside one fund, so no single sleeve yield describes
 # them. They are NOT given a yield entry: they are LOOKED THROUGH via

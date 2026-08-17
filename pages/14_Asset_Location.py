@@ -468,7 +468,7 @@ for group in _ordered_groups:
                 show["case"] = show["case"].map(_CASE_LABEL).fillna(show["case"])
                 show["sleeve"] = show["sleeve"].map(sleeve_display_name)
                 # The yield that produced this row's Annual Benefit, marked when it
-                # came from EQUITY_DEFAULT_YIELD rather than a table entry. Rendered
+                # came from a look-through rather than a table entry. Rendered
                 # next to the figure it multiplies, so the assumption is visible where
                 # it is applied rather than only in the expander.
                 show["assumed_yield"] = [

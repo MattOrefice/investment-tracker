@@ -798,11 +798,13 @@ def _fmt_dollars(x: float) -> str:
     return f"-${abs(x):,.0f}" if x < 0 else f"${x:,.0f}"
 
 
+# Only the table case is unmarked: it is the only basis a reader can verify unaided.
+# `default` and `look_through_partial` were removed with the fallback itself (#210
+# PR 3) — a label for a basis that cannot occur is a claim the artifact does not
+# support. The .get() fallback below keeps an UNKNOWN basis visible rather than silent.
 _BASIS_SUFFIX = {
-    "table":                "",
-    "look_through":         " (look-through)",
-    "look_through_partial": " (look-through, partial)",
-    "default":              " (default)",
+    "table":        "",
+    "look_through": " (look-through)",
 }
 
 
@@ -896,7 +898,6 @@ def yield_assumption_note(register) -> str:
     the book instead of going stale, and each clause is omitted when its count is zero
     — a disclosure that always warns teaches the reader to skip it.
     """
-    from src.location_config import EQUITY_DEFAULT_YIELD
 
     from src.location_config import PROXY_SPREAD_UNMEASURED, SLEEVE_YIELD_PROXY
 
@@ -941,10 +942,8 @@ def yield_assumption_note(register) -> str:
 
     n = len(register)
     basis = register["yield_basis"]
-    n_lt = int(basis.isin(("look_through", "look_through_partial")).sum())
-    n_lt_partial = int(basis.eq("look_through_partial").sum())
+    n_lt = int(basis.eq("look_through").sum())
     n_nm = int(basis.eq("not_modelled").sum())
-    n_default = int(basis.eq("default").sum())
 
     if n_lt:
         one = n_lt == 1
@@ -952,31 +951,14 @@ def yield_assumption_note(register) -> str:
             f" **{n_lt} of {n} rows** {'is a' if one else 'are'} multi-asset or "
             f"target-date fund{'' if one else 's'}, sized by **looking through** "
             f"{'its' if one else 'their'} `fund_compositions` holdings to the sleeve "
-            f"yields above rather than given a yield of {'its' if one else 'their'} own"
+            f"yields above rather than given a yield of {'its' if one else 'their'} own."
         )
-        if n_lt_partial:
-            one_p = n_lt_partial == 1
-            note += (
-                f" — {n_lt_partial} of those still {'draws' if one_p else 'draw'} part "
-                f"of {'its' if one_p else 'their'} weight from the equity default, "
-                "marked *partial*."
-            )
-        else:
-            note += "."
     if n_nm:
         note += (
             f" For **{n_nm} of {n} rows** the model declines to size the income at "
             "all — sleeves with no benchmark to declare a basis against. Their drag "
             "is **not modelled, not zero**, they are excluded from the drag total "
             "above, and that exclusion is stated with it."
-        )
-    if n_default:
-        note += (
-            f" **{n_default} of {n} rows** fall back to the single "
-            f"**{EQUITY_DEFAULT_YIELD:.1%} equity default**, marked `(default)`. That "
-            "one number measures 2–4× too high for US equity and 25–39% too low for "
-            "international (issue #210); it is disclosed here rather than corrected, "
-            "because replacing it with a differently-authored number is not progress."
         )
 
     note += (
