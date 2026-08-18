@@ -87,27 +87,22 @@
   attributed to a commit it never described. That happened at #246 —
   1808 accounted for against 1810 collected, because two tests were
   added after the measurement (#247).
-- THE HARNESS INCLUDES A DATE-DEPENDENT DATA CONDITION, not only
-  configuration. Record `MAX(price_date)` AND today alongside every
-  local baseline:
-
-      python -c "import sqlite3,datetime; print(sqlite3.connect(
-        'file:data/tracker.db?mode=ro',uri=True).execute(
-        'SELECT MAX(price_date) FROM prices').fetchone()[0],
-        datetime.date.today().isoformat())"
-
-  #241's two banner-control tests fire ONLY when tracker.db's committed
-  price frontier equals today: the legacy banner is a pure clock read,
-  so when the frontier reaches today it renders the same sentence as
-  the current banner, `changed` is empty, and the positive half of the
-  inertness proof has nothing to detect. Frontier == today expects 15
-  failures; frontier != today expects 13. Both are correct, and a
-  13-vs-15 comparison across runs that did not check reads as a
-  regression that never happened. The suite refreshes the cache when
-  the network is up, so the condition changes under you mid-session.
-  This step is easy to skip because NOTHING FAILS WHEN YOU SKIP IT —
-  you simply get a number whose meaning you cannot reconstruct later.
-  Do it first, before the collect.
+- RECORD, NO LONGER A PROCEDURE — the harness USED to carry a
+  date-dependent data condition, and baselines recorded before #241 was
+  fixed may read 15 failures where later ones read 13. Both were
+  correct. #241's two banner-control tests fired only when tracker.db's
+  committed price frontier equalled today: the legacy banner was a pure
+  clock read, and `as_of_live_line`'s state 1 deliberately renders that
+  same sentence when the book is fully current, so the two converged and
+  the test's `assert changed` had nothing to detect. It asserted
+  something FALSE — the contract is that they are identical there.
+  The test now derives state 1 per page and asserts the contrast, so
+  the count no longer depends on the date and **the frontier check is
+  not required**. Kept as a record rather than deleted: without it the
+  15-then-13 sequence in earlier notes reads as a regression that
+  healed itself. Do not reinstate the check as a standing step — an
+  instruction guarding a fixed condition is the class of stale claim
+  this file has had to correct three times.
 - "Guards" means the read-only attribute set on data/demo.db,
   data/tracker.db and every `git ls-files data` entry, to prove a
   diagnostic did not mutate tracked data. GUARDS-UP AND THE FULL SUITE
