@@ -33,6 +33,9 @@ jobs:
           cache: "pip"
 
       # REMOVED: an apt step installing WeasyPrint's Pango/HarfBuzz system libs.
+      # The identical step survived in live-data.yml when this comment was first
+      # written, so "removed" described this file only; it is now gone from both,
+      # and that workflow carries the same note.
       #
       # It hung indefinitely on `apt-get update -qq` on 2026-08-18 — twice on the same
       # SHA, for 25 and 17 minutes, against a measured 6-second normal (run
