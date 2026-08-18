@@ -800,3 +800,145 @@ def test_sel_commentary_suppresses_unmapped_holding(monkeypatch):
     assert len(attr["sel_commentary"]) == 2, attr["sel_commentary"]
     assert not any("(—)" in s or "holding (Real Assets)" in s for s in attr["sel_commentary"])
     assert all("Real Assets:" not in s for s in attr["sel_commentary"])
+
+
+# ── Failure paths carry their reason ─────────────────────────────────────────
+#
+# WHY THIS CAME BEFORE THE MARKER WORK. A marker cannot render a reason that was thrown
+# away. The attribution section had three exits, two of which produced rows == [], and the
+# template gated on `attr.rows` — so "No attribution data available for this period" was
+# shown whether the quarter had no trades or the computation raised. One sentence, two
+# facts, and a kept document cannot let its reader guess which.
+#
+# WHAT THE RENDER CORRECTED, recorded because the source reading was confidently wrong
+# twice: an in-memory render (WeasyPrint intercepted, nothing written to data/reports/)
+# showed the section does NOT vanish — the outer gate has an else branch — and the "+0.0"
+# totals in _empty never reach the page, because the table body is gated out. So the defect
+# was never fabricated zeros or a missing section. It was the conflation, and that is all.
+
+def _reports_src() -> str:
+    """src/reports.py with comments stripped, so no assertion here can be satisfied — or
+    broken — by prose describing the fix."""
+    import io
+    import tokenize
+    from pathlib import Path
+
+    src = (Path(__file__).resolve().parent.parent / "src" / "reports.py").read_text(
+        encoding="utf-8")
+    return tokenize.untokenize(
+        [tok for tok in tokenize.generate_tokens(io.StringIO(src).readline)
+         if tok.type != tokenize.COMMENT])
+
+
+def _template_src() -> str:
+    from pathlib import Path
+    return (Path(__file__).resolve().parent.parent / "templates" /
+            "quarterly_report.html").read_text(encoding="utf-8")
+
+
+def test_the_attribution_failure_exit_carries_its_reason():
+    """`except Exception: return _empty` discarded the only thing the disposition field
+    needs. The reason is now attached to the exit that produced it."""
+    src = _reports_src()
+    assert "except Exception as exc:" in src
+    assert '"disposition": "failed"' in src
+    assert 'f"{type(exc).__name__}: {exc}"' in src, (
+        "the failure exit does not carry the exception type and message"
+    )
+
+
+def test_all_three_attribution_exits_declare_a_disposition():
+    """Count-asserted over the three exits, not presence-asserted on one: failed, no_rows,
+    computed. A presence assertion passes when two of three are wired, which is exactly the
+    failure mode a mechanical edit produces."""
+    src = _reports_src()
+    for token in ('"disposition": "failed"', '"disposition": "no_rows"',
+                  '"disposition":      "computed"'):
+        assert token in src, f"no exit declares {token}"
+    assert src.count('"disposition"') >= 4, (
+        "expected the default plus three exits to set a disposition"
+    )
+
+
+def test_the_two_states_render_different_sentences():
+    """The whole point. A template that branched on `attr.rows` alone could not tell them
+    apart; it now branches on the disposition and says which."""
+    tpl = _template_src()
+    assert 'attr.disposition == "failed"' in tpl
+    assert 'attr.disposition == "no_rows"' in tpl
+    assert "could not be computed" in tpl, "the failure state has no text of its own"
+    assert "No attribution to report" in tpl, "the no-rows state has no text of its own"
+
+
+def test_the_failure_text_states_a_disposition_and_never_an_instruction():
+    """The PDF rule, derived from reports.py already dropping staleness_note's remedy while
+    keeping its date: a marker states what is missing, as of when, and what was done about
+    it — never what the reader should do. A document's reader may have no access to the
+    tool, the machine, or the moment."""
+    tpl = _template_src()
+    i = tpl.index('attr.disposition == "failed"')
+    block = tpl[i:i + 700]
+    assert "rather than shown with fabricated returns" in block, (
+        "the failure text does not say what was done instead"
+    )
+    for imperative in ("Run ", "run tools/", "Try again", "refresh the", "Please "):
+        assert imperative not in block, (
+            f"the failure text tells the reader to act: {imperative!r}"
+        )
+
+
+def test_the_failure_text_forbids_the_wrong_inference():
+    """"No data" invites "nothing happened". The failure state has to block that reading,
+    because the one thing the software knows is that it does NOT know."""
+    tpl = _template_src()
+    i = tpl.index('attr.disposition == "failed"')
+    assert "not a statement about the quarter" in tpl[i:i + 700]
+
+
+def test_neither_gap_check_swallows_its_failure_any_more():
+    """THE G2 SHAPE STATED PROPERLY. These two blocks compute the MARKER'S OWN INPUT, so a
+    swallowed failure does not degrade a figure — it empties the channel the disclosure
+    reads. The absence of a gap notice stops meaning "no gaps found" and starts meaning
+    "either no gaps, or the check never ran", and silence reads as all-clear.
+
+    Asserted by counting bare `except Exception: pass` in the executive-summary builder,
+    because a handler that logs and re-swallows would still lose the disclosure.
+    """
+    import re
+
+    src = _reports_src()
+    # SCOPED TO THE TWO BLOCKS THIS PR CHANGED. An earlier version scanned the whole
+    # executive-summary builder and failed on a THIRD swallow at the CAPE computation —
+    # which feeds a rendered figure rather than a disclosure channel, and is deliberately
+    # out of scope until its template guard is checked (filed separately). The test was
+    # claiming a scope the change never had.
+    start = src.index("_gap_check_failures: list[str] = []")
+    end = src.index("_all_positive = worst")
+    body = src[start:end]
+    bare = re.findall(r"except Exception:\s*\n\s*pass", body)
+    assert not bare, (
+        f"{len(bare)} bare swallow(s) remain in the two gap-check blocks, where a "
+        "swallowed failure empties a disclosure channel"
+    )
+    assert src.count("_gap_check_failures.append") == 2, (
+        "expected both gap-check blocks to record their failure"
+    )
+
+
+def test_an_incomplete_gap_check_is_stated_where_its_notice_would_have_gone():
+    """And phrased as what the reader must NOT conclude, which is the only honest content
+    of a check that did not run."""
+    src = _reports_src()
+    assert "Coverage checks incomplete" in src
+    assert "not evidence that no gaps" in src, (
+        "the notice does not block the all-clear reading, which is its entire purpose"
+    )
+    # ASSERT THE APPEND, not the text. Composing the sentence is not rendering it — a
+    # mutant that changed `narrative.append(...)` to `_unused = (...)` left every string
+    # above intact and this test stayed green (D10). Presence is not use, and for a
+    # DISCLOSURE that gap is the whole defect: the notice existing in the source while
+    # never reaching the reader is indistinguishable from not having written it.
+    i = src.index("**Coverage checks incomplete:**")
+    assert "narrative.append(" in src[max(0, i - 120):i], (
+        "the incomplete-check notice is composed but never appended to the narrative"
+    )
