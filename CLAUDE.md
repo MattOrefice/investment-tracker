@@ -68,6 +68,17 @@
   No count is written here on purpose: like a tip SHA, a baseline
   figure is false the moment the next PR adds a test. Re-measure and
   quote the harness with it.
+- RECORD THE COLLECTION TOTAL ALONGSIDE THE SPLIT, and confirm a
+  recorded baseline belongs to the tree it names — re-measure after the
+  final commit, not before it. `failed + passed + skipped` must equal
+  `python -m pytest --collect-only -q | tail -1`'s selected count; if
+  it does not, the figure is incomplete and any delta computed from it
+  inherits the gap. The second clause is the one that bites: a suite
+  run taken mid-session measures an INTERMEDIATE tree, and a review
+  round that adds tests afterwards leaves the recorded number
+  attributed to a commit it never described. That happened at #246 —
+  1808 accounted for against 1810 collected, because two tests were
+  added after the measurement (#247).
 - "Guards" means the read-only attribute set on data/demo.db,
   data/tracker.db and every `git ls-files data` entry, to prove a
   diagnostic did not mutate tracked data. GUARDS-UP AND THE FULL SUITE
