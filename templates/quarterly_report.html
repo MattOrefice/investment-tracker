@@ -286,7 +286,18 @@
   {% endif %}
 
   {% else %}
+  {% if attr and attr.disposition == "failed" %}
+  <div class="empty-banner"><strong>Attribution could not be computed for this period.</strong>
+  {% if attr.failure_reason %}The computation failed with: {{ attr.failure_reason }}.{% endif %}
+  No sleeve figures are shown, rather than shown with fabricated returns. This is a failure
+  to measure and not a statement about the quarter — do not read it as an absence of
+  activity.</div>
+  {% elif attr and attr.disposition == "no_rows" %}
+  <div class="empty-banner"><strong>No attribution to report for this period.</strong>
+  The computation ran and found no sleeve activity to decompose.</div>
+  {% else %}
   <div class="empty-banner">No attribution data available for this period.</div>
+  {% endif %}
   {% endif %}
 </section>
 

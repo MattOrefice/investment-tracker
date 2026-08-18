@@ -478,12 +478,21 @@ def _build_executive_summary(start_date: str, end_date: str) -> dict:
     _bf_price_gap_note = None
     _bf_benchmark_gap_note = None
     _drip_gap_note = None
+    # THESE TWO SWALLOWS WERE THE SEVERE ONES, and the reason is structural rather than a
+    # matter of degree: both blocks compute the MARKER'S OWN INPUT. A swallowed failure
+    # here does not degrade a figure — it empties the channel the disclosure reads, so the
+    # absence of a gap notice stops meaning "no gaps found" and starts meaning "either no
+    # gaps, or the check never ran". The reader cannot tell, and silence reads as all-clear.
+    _gap_check_failures: list[str] = []
     try:
         _drip_gaps = distribution_gaps_for_holdings(inception, end_date, account_id=acct)
         if _drip_gaps:
             _drip_gap_note = drip_distribution_gap_notice(_drip_gaps)
-    except Exception:
-        pass
+    except Exception as exc:
+        logging.exception("DRIP distribution-gap check failed")
+        _gap_check_failures.append(
+            f"the distribution-gap check for holdings ({type(exc).__name__})"
+        )
     try:
         bf_df = brinson_fachler_period(start_date, end_date, account_id=acct)
         if bf_df.attrs.get("price_gaps"):
@@ -497,8 +506,11 @@ def _build_executive_summary(start_date: str, end_date: str) -> dict:
             top_detractor   = (worst["sleeve"], worst["total_effect"] * 10_000)
             # Suppress detractor narrative when all sleeves are within noise threshold
             _all_positive = worst["total_effect"] * 10_000 > -5
-    except Exception:
-        pass
+    except Exception as exc:
+        logging.exception("Executive-summary attribution gap checks failed")
+        _gap_check_failures.append(
+            f"the price- and benchmark-gap checks for attribution ({type(exc).__name__})"
+        )
 
     cape_val = cape_pct = None
     try:
@@ -553,6 +565,15 @@ def _build_executive_summary(start_date: str, end_date: str) -> dict:
         narrative.append(_bf_benchmark_gap_note)
     if _drip_gap_note:
         narrative.append(_drip_gap_note)
+    if _gap_check_failures:
+        # Stated where the notices it replaces would have appeared, and phrased as what
+        # the reader must NOT conclude — the honest content of a check that did not run.
+        narrative.append(
+            "**Coverage checks incomplete:** " + "; ".join(_gap_check_failures)
+            + " did not complete. Any data gaps they would have listed are therefore not "
+            "listed above, and the absence of a gap notice is not evidence that no gaps "
+            "exist."
+        )
 
     end = date.fromisoformat(end_date)
     formatted_end_date = f"{end.strftime('%B')} {end.day}, {end.year}"
@@ -752,6 +773,15 @@ def _build_performance_section(start_date: str, end_date: str) -> dict:
 
 
 def _build_attribution_section(start_date: str, end_date: str) -> dict:
+    # DISPOSITION, because one sentence covered two states. Both the failure exit and
+    # the genuinely-empty exit end with rows == [], and the template gated on
+    # `attr.rows`, so a reader met "No attribution data available for this period"
+    # whether the quarter had no trades or the computation raised. Those are not the
+    # same fact and a kept document cannot let the reader guess which.
+    #
+    # The totals below are DEAD on both non-computed exits — the template gates the
+    # table body out, verified by an in-memory render — but they stay explicit rather
+    # than becoming None so a future template change cannot interpolate a null.
     _empty = {
         "rows": [], "chart_b64": None,
         "total_alloc": "+0.0", "total_sel": "+0.0", "total_total": "+0.0",
@@ -759,11 +789,17 @@ def _build_attribution_section(start_date: str, end_date: str) -> dict:
         "suppressed_drivers": [],
         "price_gaps": [],
         "benchmark_gaps": [],
+        "disposition": "failed",       # the only exit that used this dict unmodified
+        "failure_reason": None,
     }
     try:
         bf_df = brinson_fachler_period(start_date, end_date, account_id=get_portfolio_account_id())
-    except Exception:
-        return _empty
+    except Exception as exc:
+        # The reason is what the disposition field exists to carry. Swallowing it here
+        # left the section unable to say anything except that data was "unavailable".
+        logging.exception("Attribution section failed")
+        return {**_empty, "disposition": "failed",
+                "failure_reason": f"{type(exc).__name__}: {exc}"}
     _price_gaps = [
         {"ticker": t, "date": d} for t, d in bf_df.attrs.get("price_gaps", [])
     ]
@@ -772,8 +808,12 @@ def _build_attribution_section(start_date: str, end_date: str) -> dict:
         for s, t, d in bf_df.attrs.get("benchmark_gaps", [])
     ]
     if bf_df.empty:
+        # Computed successfully and found nothing to attribute — a fact about the
+        # quarter, not about the software.
         return {
             **_empty,
+            "disposition": "no_rows",
+            "failure_reason": None,
             "price_gaps": _price_gaps,
             "benchmark_gaps": _benchmark_gaps,
         }
@@ -886,6 +926,8 @@ def _build_attribution_section(start_date: str, end_date: str) -> dict:
         "cash_drag_bps":    f"{bf_df.attrs.get('cash_drag', 0.0)*10000:+.1f}",
         "price_gaps":       _price_gaps,
         "benchmark_gaps":   _benchmark_gaps,
+        "disposition":      "computed",
+        "failure_reason":   None,
     }
 
 
