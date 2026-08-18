@@ -21,6 +21,7 @@ Sections:
 from __future__ import annotations
 
 import pathlib
+import re
 import sys
 
 import numpy as np
@@ -514,13 +515,91 @@ def test_average_pairwise_rolling_correlation_live():
 
 @pytest.mark.live_data
 def test_extended_history_reaches_2008_live():
-    default = ae.average_pairwise_rolling_correlation(window=60, start_date="2007-01-01")
-    extended = ae.average_pairwise_rolling_correlation(
-        window=60, start_date="2007-01-01", exclude=["US Large Quality"],
+    """Extended history must reach the 2008 crisis on WHATEVER book this is.
+
+    Both assertions here were book-specific literals and both failed as
+    verification:
+
+    - ``exclude=["US Large Quality"]`` was correct for the 9-sleeve book, where
+      QUAL (2013-07-18) was the youngest benchmark. The Phase 39 international
+      split added IQLT (2015-01-21) to the demo book; dropping QUAL alone then
+      unlocked nothing, and this test failed for 28 consecutive scheduled runs
+      while pages/9_Correlations.py — deriving the same set at render time —
+      was already correct.
+    - ``default.index.min().year >= 2013`` is a LOWER bound, so it passed at
+      2015 and would pass at 2026. It could not detect drift in the direction
+      drift actually went.
+
+    Now derived from the data and asserted as a contrast: the default set must
+    NOT reach the crisis and the derived exclusion MUST. Asserting only the
+    second passes trivially on a book where every sleeve predates 2008.
+    """
+    firsts = ae.sleeve_first_dates()
+    assert firsts, (
+        "no sleeve benchmark series loaded — cannot derive the history structure, "
+        "and an empty map would make every assertion below vacuous"
     )
-    # Default 9-sleeve set is QUAL-constrained (~2013); extended reaches ~2007.
-    assert default.index.min().year >= 2013
-    assert extended.index.min().year <= 2008
+    late = ae.late_inception_sleeves(firsts=firsts)
+    assert late, (
+        f"no sleeve starts after {ae.LATE_INCEPTION_CUTOFF}, so Extended history "
+        "has nothing to drop and the page's history-constraint caption describes a "
+        f"constraint that no longer exists. First dates: {firsts}"
+    )
+
+    default  = ae.average_pairwise_rolling_correlation(window=60, start_date="2007-01-01")
+    extended = ae.average_pairwise_rolling_correlation(
+        window=60, start_date="2007-01-01", exclude=late,
+    )
+    assert not default.empty and not extended.empty, (
+        f"empty correlation frame(s): default={default.empty}, extended={extended.empty}"
+    )
+
+    # Pin the default window to its constraining benchmark, DERIVED — a literal
+    # year is what went vacuous. Two-sided: the intersection cannot open before
+    # its youngest benchmark exists, and the 60-day burn-in cannot push it more
+    # than one calendar year past that.
+    constraining = max(firsts, key=firsts.get)
+    c_year       = int(firsts[constraining][:4])
+    d_year       = default.index.min().year
+    assert c_year <= d_year <= c_year + 1, (
+        f"default window starts {default.index.min().date()} but its constraining "
+        f"benchmark ({constraining}) starts {firsts[constraining]} — expected the "
+        "window to open within one rolling-window burn-in of that date"
+    )
+
+    # The contrast. Either half alone is satisfiable by a book that makes the
+    # Extended-history option pointless.
+    assert d_year > 2008, (
+        f"default set already reaches {d_year}; the Extended-history option and "
+        "the page's history-constraint caption both describe a constraint that is "
+        "no longer there"
+    )
+    assert extended.index.min().year <= 2008, (
+        f"dropping {late} leaves the window starting {extended.index.min().date()}, "
+        f"which does not reach the 2008 crisis. Sleeve first dates: {firsts}"
+    )
+
+
+def test_page_history_cutoff_matches_module():
+    """pages/9_Correlations.py's _RECENT_CUTOFF must equal LATE_INCEPTION_CUTOFF.
+
+    Two derivations of the same set exist — the page's at render time
+    (pages/9_Correlations.py:465-468) and this module's for everything else.
+    They agree today; this pins them so they cannot drift into the state that
+    produced the 28-run failure, where one consumer was repaired and the other
+    was left with a stale literal in the same file the fix touched.
+
+    Offline: reads source text, no book and no network.
+    """
+    page_path = _ROOT / "pages" / "9_Correlations.py"
+    source    = page_path.read_text(encoding="utf-8")
+    m = re.search(r'^_RECENT_CUTOFF\s*=\s*"([^"]+)"', source, re.MULTILINE)
+    assert m, "could not find a module-level _RECENT_CUTOFF in pages/9_Correlations.py"
+    assert m.group(1) == ae.LATE_INCEPTION_CUTOFF, (
+        f"page cutoff {m.group(1)!r} != ae.LATE_INCEPTION_CUTOFF "
+        f"{ae.LATE_INCEPTION_CUTOFF!r} — the page and the module would derive "
+        "different exclusion sets, which is the drift this pin exists to prevent"
+    )
 
 
 # ── Phase 32: candidate-to-sleeves correlation ──────────────────────────────────

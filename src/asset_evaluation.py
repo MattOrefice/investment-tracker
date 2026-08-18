@@ -131,11 +131,17 @@ def get_sleeve_returns(
     Rows where any sleeve has a near-zero absolute return sum are dropped
     (Phase 11 zero-return rule: these are non-trading days for equity markets).
 
-    By default all 9 sleeves are included; the common-date intersection is then
-    bounded by the latest-starting sleeve (QUAL, ~2013). Pass ``exclude`` (a list
-    of sleeve names) to drop sleeves *before* the intersection — e.g.
-    ``exclude=["US Large Quality"]`` drops QUAL so the remaining 8-sleeve set
-    extends back to ~2007 (DBC inception), making the 2008 crisis visible.
+    All sleeves of the CURRENT book are included by default; the common-date
+    intersection is then bounded by the youngest benchmark. Pass ``exclude`` (a
+    list of sleeve names) to drop sleeves *before* the intersection. Derive that
+    set with ``late_inception_sleeves()`` — do not name tickers here.
+
+    This docstring used to read *"``exclude=["US Large Quality"]`` drops QUAL so
+    the remaining 8-sleeve set extends back to ~2007 (DBC inception)"*. True of
+    the 9-sleeve book, and wrong from the moment the Phase 39 international split
+    added IQLT (2015-01-21): IQLT starts LATER than QUAL (2013-07-18), so
+    dropping QUAL alone stopped unlocking anything, and DBC stopped being the
+    binding kept leg — SCZ (2007-12-12) is.
     """
     end  = end_date or date.today().isoformat()
     skip = set(exclude or [])
@@ -161,6 +167,67 @@ def get_sleeve_returns(
     df       = pd.DataFrame(ret_dict).dropna()
     non_zero = df.abs().sum(axis=1) > 0
     return df[non_zero]
+
+
+# Sleeves whose benchmark series begins after this date constrain the common
+# window short of the 2008 crisis; the Extended-history option drops them.
+# 2010-01-01 sits in the empty decade between the crisis and the factor-ETF
+# launches (QUAL 2013, IQLT 2015), so it separates them without naming either.
+LATE_INCEPTION_CUTOFF = "2010-01-01"
+
+# Requested start for inception probing. get_prices returns from the ticker's
+# actual first trading day, so asking from 1990 yields true inception rather
+# than the analysis window's start.
+_HISTORY_PROBE_START = "1990-01-01"
+
+
+def sleeve_first_dates(end_date: Optional[str] = None) -> dict[str, str]:
+    """{sleeve -> ISO first date of its benchmark return series}, current book.
+
+    The empirical inception of each sleeve's benchmark. Blended sleeves are
+    summed with ``fill_value=0.0`` exactly as ``get_sleeve_returns`` does, so a
+    blend's first date is its EARLIEST leg — the same convention
+    pages/9_Correlations.py:_sleeve_first_dates() uses, so the two derivations
+    cannot disagree about which sleeves are late.
+
+    Sleeves whose series fails to load are omitted rather than guessed: a
+    missing sleeve must not silently become a late one and get excluded.
+    """
+    end = end_date or date.today().isoformat()
+    out: dict[str, str] = {}
+
+    for sleeve_name, components in sleeve_benchmarks().items():
+        blended: pd.Series | None = None
+        for ticker, weight in components:
+            p = _price_series(ticker, _HISTORY_PROBE_START, end)
+            if p.empty:
+                blended = None
+                break
+            r = p.pct_change().dropna()
+            blended = r * weight if blended is None else blended.add(r * weight, fill_value=0.0)
+        if blended is not None and not blended.empty:
+            out[sleeve_name] = blended.index.min().date().isoformat()
+
+    return out
+
+
+def late_inception_sleeves(
+    cutoff: str = LATE_INCEPTION_CUTOFF,
+    firsts: Optional[dict[str, str]] = None,
+) -> list[str]:
+    """Sleeves starting after ``cutoff``, oldest first — the set to ``exclude``
+    from ``get_sleeve_returns``/``average_pairwise_rolling_correlation`` to reach
+    the 2008 crisis on WHATEVER book this process is pointed at.
+
+    Derived, never a literal. A hardcoded ``["US Large Quality"]`` was correct
+    for the 9-sleeve book and silently stopped working when the Phase 39
+    international split added a younger benchmark (IQLT, 2015-01-21) — the
+    exclusion still ran, still returned data, and simply stopped buying any
+    history. Pass ``firsts`` to reuse an already-computed map (each call
+    otherwise re-probes every benchmark from 1990).
+    """
+    f = sleeve_first_dates() if firsts is None else firsts
+    return sorted((s for s, d in f.items() if d > cutoff), key=lambda s: f[s])
 
 
 def align_to_equity_days(
@@ -684,10 +751,11 @@ def average_pairwise_rolling_correlation(
     Sleeve-level aggregate: the mean (and min/max band) of all pairwise rolling
     correlations across the SAA sleeves over time.
 
-    ``exclude`` is forwarded to ``get_sleeve_returns`` — e.g. dropping
-    "US Large Quality" extends the common history back to ~2007. Returns a
-    DataFrame with columns ``mean``, ``min``, ``max`` (empty if data is
-    unavailable).
+    ``exclude`` is forwarded to ``get_sleeve_returns``; pass
+    ``late_inception_sleeves()`` to reach the 2008 crisis on whatever book this
+    is. Naming a sleeve literally here is exactly what went stale — see that
+    function. Returns a DataFrame with columns ``mean``, ``min``, ``max`` (empty
+    if data is unavailable).
     """
     returns = get_sleeve_returns(start_date=start_date, end_date=end_date, exclude=exclude)
     if returns.empty or returns.shape[1] < 2:
