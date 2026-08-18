@@ -4,12 +4,152 @@ Pure functions only — no DB access. DB-backed helpers live in the page layer.
 """
 from __future__ import annotations
 
+from typing import NamedTuple
+
 import pandas as pd
+
+from src.coverage import PriceCoverage
 
 _CASH_SLEEVE = "Cash / SPAXX"
 _CASH_TICKER = "SPAXX"
 
 SUM_INVARIANT_TOLERANCE = 0.10
+
+
+class UnpricedAllocationError(ValueError):
+    """A sleeve was allocated cash while holding something with no resolved price.
+
+    RAISED, never returned as an empty frame. pages/11_Capital_Deployment.py maps an
+    empty result to "All sleeves within tolerance bands. No rebalancing required."
+    (:618-619), so a refusal expressed as emptiness would render as REASSURANCE —
+    which is the #261 defect reintroduced by the fix for it. A refusal has to be
+    impossible to mistake for nothing-to-do.
+    """
+
+
+class CoverageMismatchError(ValueError):
+    """``prices`` and ``coverage`` disagree about the same ticker.
+
+    The page assembles them from two separate fetch passes — `sleeve_weights_with_
+    coverage` produces the record, and pages/11:89-99 builds the price dict in its
+    own loop — so they can disagree if taken at different as-of dates or across a
+    cache change. A ticker the record calls resolved but the dict cannot price is
+    not a data gap to disclose; it means the two inputs do not describe the same
+    moment, and every figure derived from the pair is then unfounded.
+    """
+
+
+class BuySuggestions(NamedTuple):
+    """suggest_buys' rows, plus the report a caller needs to EXPLAIN them.
+
+    A NamedTuple rather than ``DataFrame.attrs``, matching holdings.SleeveWeights
+    and holdings.ValueSeries. src/coverage.py:10-22 sets out why: pandas documents
+    ``attrs`` as experimental, requirements.txt admits an open pandas range, and
+    ``attrs`` is dropped by merge/concat. PR #261 put this report on ``attrs``
+    anyway; this moves it onto the channel the rest of the codebase already uses.
+
+      ``total_shortfall``           dollars needed to close every breach
+      ``shortfalls_fully_filled``   True in the fill-completely branch, where any
+                                    leftover is a genuine surplus; False in the
+                                    proportional branch, where the cash was exhausted
+                                    and shortfalls REMAIN, so leftover is per-row
+                                    rounding residue; None when nothing was assessed.
+    """
+
+    frame: pd.DataFrame
+    total_shortfall: float
+    shortfalls_fully_filled: "bool | None"
+
+
+def _placeable_by_sleeve(
+    ticker_to_sleeve: dict[str, str],
+    prices: dict[str, float],
+    coverage: PriceCoverage,
+    allocated_sleeves: "set[str]",
+    *,
+    caller: str,
+) -> dict[str, list[str]]:
+    """sleeve -> [tickers that can actually be bought], separating three states.
+
+    Replaces the single test ``prices.get(ticker, 0.0) > 0``, which decided two
+    different questions at once — *is this security held* and *did its price
+    resolve* — and answered both with "absent from the dict". That conflation is
+    why neither function's own invariant could see the defect in #192.
+
+    ``coverage.requested`` is exactly the HELD set (sleeve_weights_with_coverage
+    asks per held ticker), so the record already separates them:
+
+      not in ``requested``      -> not held. Exclude silently; correct, and the
+                                   majority case, since ticker_to_sleeve spans every
+                                   security while the book holds ten.
+      in ``unresolved``         -> HELD but unpriced. Refuse if its sleeve is being
+                                   allocated; ignore otherwise, because an unpriced
+                                   holding in a sleeve receiving nothing cannot
+                                   affect the trade.
+      resolved, but unpriceable
+      from ``prices``           -> the two inputs disagree. Raise.
+
+    The refusal is scoped to ``allocated_sleeves`` deliberately. A global refusal
+    would block a trade over a holding that has no bearing on it.
+    """
+    unresolved_reason = {u.ticker: u.reason for u in coverage.unresolved}
+    requested = set(coverage.requested)
+
+    out: dict[str, list[str]] = {}
+    blocked: dict[str, list[str]] = {}
+
+    for ticker, sleeve in ticker_to_sleeve.items():
+        # Cash is the funding source, never a buy target. Both functions already
+        # exclude it — suggest_buys via the drift filter, suggest_contributions via
+        # `investable` — so testing both spellings here changes no output.
+        if ticker == _CASH_TICKER or sleeve == _CASH_SLEEVE:
+            continue
+
+        if ticker in unresolved_reason:
+            if sleeve in allocated_sleeves:
+                blocked.setdefault(sleeve, []).append(
+                    f"{ticker} ({unresolved_reason[ticker]})"
+                )
+            continue
+
+        if ticker not in requested:
+            continue
+
+        price = prices.get(ticker, 0.0)
+        if price <= 0:
+            raise CoverageMismatchError(
+                f"{caller}: coverage reports {ticker!r} resolved as of "
+                f"{coverage.as_of_requested}, but `prices` cannot price it "
+                f"({price!r}). The two arguments are built by separate fetch passes "
+                "and must describe the same moment; when they do not, every sleeve "
+                "weight and dollar figure derived from the pair is unfounded. This "
+                "is not a data gap to disclose — a gap would appear in "
+                "coverage.unresolved, and it does not."
+            )
+        out.setdefault(sleeve, []).append(ticker)
+
+    if blocked:
+        detail = "; ".join(
+            f"{s}: {', '.join(sorted(ts))}" for s, ts in sorted(blocked.items())
+        )
+        raise UnpricedAllocationError(
+            f"{caller}: {len(blocked)} sleeve(s) are being allocated cash while "
+            f"holding a security with no resolved price — {detail}. Sizing a buy "
+            "against a sleeve whose market value is understated produces a wrong "
+            "trade instruction, not a wrong display: the unpriced holding counted "
+            "as $0.00, so the sleeve looks more underweight than it is and draws a "
+            "larger share, and the surviving tickers in it absorb the whole "
+            "allocation (measured at 3.76x for VNQ when PDBC went unpriced, #192).\n\n"
+            "Refuse and name the holding; do not fall back to sizing over the "
+            "survivors. That looks reasonable and is the least safe option — the "
+            "sleeve's shortfall is already inflated upstream, so an 'honest' split "
+            "over what remains is a confident number on a corrupted base.\n\n"
+            "Callers must not turn this into an empty result. pages/11 renders an "
+            "empty frame as 'All sleeves within tolerance bands. No rebalancing "
+            "required.', so a refusal expressed as emptiness reads as reassurance."
+        )
+
+    return out
 
 
 def compute_drift(
@@ -71,7 +211,9 @@ def suggest_buys(
     cash_to_deploy: float,
     ticker_to_sleeve: dict[str, str],
     prices: dict[str, float],
-) -> pd.DataFrame:
+    *,
+    coverage: PriceCoverage,
+) -> "BuySuggestions":
     """
     Suggest buy orders to bring underweight sleeves toward target.
 
@@ -94,40 +236,33 @@ def suggest_buys(
         ticker_to_sleeve: ticker → sleeve name
         prices:          ticker → current price
 
-    Returns DataFrame with columns:
-        Ticker, Sleeve, Price, Suggested $, Suggested Shares.
-    Empty DataFrame if no underweight non-cash sleeves or cash <= 0.
+    ``coverage`` is REQUIRED and keyword-only, and must stay that way. Giving it a
+    default of ``None`` recreates the defect exactly: a caller that omits it gets
+    the old conflated behaviour with nothing to indicate the guard is inert, which
+    is the silent path this parameter exists to close. If a call site is awkward to
+    supply, build the record — do not weaken the signature. Tests use a helper that
+    constructs an all-resolved record; that is the right place to pay the cost.
 
-    ``.attrs`` carries what the caller needs to EXPLAIN the result, because the
-    two allocation branches leave undeployed cash for opposite reasons and the
-    frame alone cannot tell them apart:
+    Returns a ``BuySuggestions`` NamedTuple: the rows, plus the branch report a
+    caller needs to explain undeployed cash. See that class for why it is not
+    ``DataFrame.attrs``.
 
-      ``total_shortfall``           the dollars needed to close every breach
-      ``shortfalls_fully_filled``   True in the fill-completely branch, where
-                                    leftover cash is a genuine surplus; False in
-                                    the proportional branch, where the cash was
-                                    exhausted and shortfalls REMAIN — any leftover
-                                    there is per-row rounding residue, not surplus.
-
-    Without this, pages/11 read every leftover as the first case and rendered
-    "all band-breach shortfalls fully filled" over proportional-branch runs that
-    had filled a fraction of them. attrs rather than a return-shape change,
-    matching sleeve_df.attrs and the benchmark_gap_bounds series attrs.
+    Raises ``UnpricedAllocationError`` when an allocated sleeve holds a security
+    with no resolved price — never an empty frame, which pages/11 renders as
+    "All sleeves within tolerance bands".
     """
     _EMPTY = pd.DataFrame(
         columns=["Ticker", "Sleeve", "Price", "Suggested $", "Suggested Shares"]
     )
 
-    def _stamp(df: pd.DataFrame, shortfall: float, filled: "bool | None") -> pd.DataFrame:
-        """Stamp the branch report on EVERY return path.
+    def _stamp(df: pd.DataFrame, shortfall: float, filled: "bool | None") -> "BuySuggestions":
+        """Report on EVERY return path.
 
-        An unstamped frame reads as "not assessed" to a caller, which is the same
+        An unreported frame reads as "not assessed" to a caller, which is the same
         silence this record exists to remove — so the guard returns declare their
         state explicitly rather than defaulting into it.
         """
-        df.attrs["total_shortfall"] = float(shortfall)
-        df.attrs["shortfalls_fully_filled"] = filled
-        return df
+        return BuySuggestions(df, float(shortfall), filled)
 
     # Nothing assessed: no cash to place, or no book to place it against. None, not
     # True — "no breach remains unfilled" is a claim this branch has not tested, and
@@ -153,13 +288,9 @@ def suggest_buys(
             for sleeve, shortfall in underweight["Shortfall $"].items()
         }
 
-    # Build sleeve → [tickers], only tickers with known prices (excludes benchmarks)
-    sleeve_to_tickers: dict[str, list[str]] = {}
-    for ticker, sleeve in ticker_to_sleeve.items():
-        if ticker == _CASH_TICKER:
-            continue
-        if prices.get(ticker, 0.0) > 0:
-            sleeve_to_tickers.setdefault(sleeve, []).append(ticker)
+    sleeve_to_tickers = _placeable_by_sleeve(
+        ticker_to_sleeve, prices, coverage, set(allocations), caller="suggest_buys",
+    )
 
     rows = []
     dropped: dict[str, float] = {}
@@ -182,35 +313,39 @@ def suggest_buys(
                 }
             )
 
-    # INVARIANT: no allocated sleeve may be dropped silently.
+    # COMPLETENESS BACKSTOP: no allocated sleeve may be dropped silently.
     #
-    # Counts SLEEVES, not dollars, and that is the whole design. suggest_contributions
-    # asserts its Suggested-$ total equals the cash offered (:283-288). Transplanting
-    # that here is UNSOUND rather than merely weak: mutation-tested, it does flag the
-    # dropped-sleeve case, but it ALSO flags the fill-completely branch, where
-    # deploying less than the cash offered is the correct answer. A dollar check
-    # cannot separate "correctly deployed less" from "lost a sleeve's allocation";
-    # only the second is a wrong trade instruction, so only the second may fire.
+    # Since the coverage record arrived (#192 item 1) this is no longer the primary
+    # guard — _placeable_by_sleeve refuses a held-but-unpriced holding before the
+    # loop runs, so that cause can no longer reach here. What remains is the cause
+    # coverage CANNOT see: a held, resolved ticker that is absent from
+    # ticker_to_sleeve altogether (an unmapped holding, cf. #224). Coverage reports
+    # it resolved; only this structural check notices the sleeve produced no row.
+    #
+    # It still counts SLEEVES, not dollars. suggest_contributions asserts its
+    # Suggested-$ total equals the cash offered; transplanting that here is UNSOUND
+    # rather than merely weak — mutation-tested, it flags this case AND the
+    # fill-completely branch, where deploying less than the cash offered is correct.
+    # A guard that cannot be left armed is not a guard.
     assert not dropped, (
         f"suggest_buys: {len(dropped)} allocated sleeve(s) produced no buy rows, so "
         f"${sum(dropped.values()):,.2f} of the ${sum(allocations.values()):,.2f} "
         f"allocated is missing from the result — "
         + "; ".join(f"{s} (${d:,.2f})" for s, d in sorted(dropped.items()))
-        + ". Every ticker mapped to these sleeves failed the "
-        "`prices.get(ticker, 0.0) > 0` filter above: either the account holds nothing "
-        "in them, or what it holds has no resolved price. Both look identical here, "
-        "which is why this cannot be fixed by relaxing the filter.\n\n"
+        + ". A holding with no resolved price cannot cause this: "
+        "_placeable_by_sleeve raises UnpricedAllocationError on that before this "
+        "loop. The remaining cause is a held, resolved ticker missing from "
+        "ticker_to_sleeve, so its sleeve is allocated cash with nothing mapped to "
+        "buy — an unmapped holding (see #224's startup warning), not a price gap. "
+        "Check the securities-to-asset_classes join for these sleeves.\n\n"
         "Do not replace this with a Suggested-$ total check like the one in "
-        "suggest_contributions (:283-288). Such a check would catch this case — but "
-        "it also fires when total_shortfall <= cash_to_deploy, where deploying only "
-        "the shortfall and leaving the rest undeployed is the CORRECT answer. It is "
-        "unsound here, not insufficient, and a guard that cannot be left armed is not "
-        "a guard. That is why this counts sleeves rather than dollars.\n\n"
+        "suggest_contributions. Such a check would catch this case — but it also "
+        "fires when total_shortfall <= cash_to_deploy, where deploying only the "
+        "shortfall and leaving the rest undeployed is the CORRECT answer. It is "
+        "unsound here, not insufficient, and a guard that cannot be left armed is "
+        "not a guard. That is why this counts sleeves rather than dollars.\n\n"
         "The result would otherwise render as a complete rebalance that quietly "
-        "under-deploys — a wrong trade instruction, not a wrong display. A caller "
-        "reaching this must refuse and name the sleeve rather than proceed; "
-        "pages/11_Capital_Deployment.py gates on the coverage record before calling, "
-        "which is why this had been unreachable. See issue #192."
+        "under-deploys — a wrong trade instruction, not a wrong display. See #192."
     )
 
     return _stamp(
@@ -227,6 +362,8 @@ def suggest_contributions(
     saa_targets: dict[str, float],
     ticker_to_sleeve: dict[str, str],
     prices: dict[str, float],
+    *,
+    coverage: PriceCoverage,
 ) -> pd.DataFrame:
     """
     Suggest how to allocate new cash contributions across sleeves.
@@ -260,10 +397,20 @@ def suggest_contributions(
         saa_targets:      SAA target weights per sleeve (fractions)
         ticker_to_sleeve: ticker → sleeve name
         prices:           ticker → current price
+        coverage:         what the price layer actually resolved. REQUIRED and
+                          keyword-only, and must stay that way — a default of
+                          ``None`` recreates the defect exactly, letting a caller
+                          that omits it fall back to the old conflated filter with
+                          nothing to show the guard is inert. Build the record at
+                          the call site rather than weakening this signature.
 
     Returns DataFrame with columns:
         Ticker, Sleeve, Rationale, Price, Suggested $, Suggested Shares.
     Empty DataFrame if cash <= 0 or no investable sleeves with ticker mappings.
+
+    Raises ``UnpricedAllocationError`` when an allocated sleeve holds a security
+    with no resolved price, and ``CoverageMismatchError`` when ``prices`` and
+    ``coverage`` disagree about a ticker.
     """
     _EMPTY = pd.DataFrame(
         columns=["Ticker", "Sleeve", "Rationale", "Price", "Suggested $", "Suggested Shares"]
@@ -315,13 +462,14 @@ def suggest_contributions(
             return "above target"
         return "maintain target"
 
-    # Sleeve → [tickers], only tickers with known prices (excludes benchmarks)
-    sleeve_to_tickers: dict[str, list[str]] = {}
-    for ticker, sleeve in ticker_to_sleeve.items():
-        if ticker == _CASH_TICKER or sleeve == _CASH_SLEEVE:
-            continue
-        if prices.get(ticker, 0.0) > 0:
-            sleeve_to_tickers.setdefault(sleeve, []).append(ticker)
+    # Scoped to sleeves that actually receive an allocation — the loop below skips
+    # anything under half a cent, so a sleeve at 0.0 cannot produce a trade and an
+    # unpriced holding in it has no bearing on one.
+    sleeve_to_tickers = _placeable_by_sleeve(
+        ticker_to_sleeve, prices, coverage,
+        {s for s, d in sleeve_alloc.items() if d >= 0.005},
+        caller="suggest_contributions",
+    )
 
     rows = []
     raw_total = 0.0

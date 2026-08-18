@@ -77,6 +77,7 @@ def _load_data(as_of: str) -> dict:
             "carrier_by_sleeve": carrier_by_sleeve,
             "pos_theses": pos_theses,
             "gap_note": unresolved_marker(sleeve_cov),
+            "coverage": sleeve_cov,
             "prices": {},
             "portfolio_value": 0.0,
             "invested_value": 0.0,
@@ -107,6 +108,7 @@ def _load_data(as_of: str) -> dict:
 
     return {
         "gap_note": unresolved_marker(sleeve_cov),
+        "coverage": sleeve_cov,
         "sleeve_df": sleeve_df,
         "saa_bands": saa_bands,
         "saa_targets_full": saa_targets_full,
@@ -162,6 +164,9 @@ sleeve_df = data["sleeve_df"]
 # below (contribution sizing at ~:314 and band-breach buys at ~:607) gate on
 # it, and they run before the band verdict does.
 _gap_note = data.get("gap_note")
+# The record itself, not just its rendered marker: the sizing functions need to
+# tell "not held" from "held but unpriced", which the price dict alone cannot.
+_coverage = data["coverage"]
 
 if sleeve_df.empty:
     st.info("No holdings found. Seed the database first.")
@@ -323,6 +328,7 @@ if contrib_cash > 0 and not _unfunded and not _gap_note:
         saa_targets=saa_targets,
         ticker_to_sleeve=ticker_to_sleeve,
         prices=prices,
+        coverage=_coverage,
     )
 
     if orig_suggestions.empty:
@@ -607,12 +613,13 @@ rebal_cash = st.number_input(
 )
 
 if rebal_cash > 0 and not _gap_note:
-    buy_df = suggest_buys(
+    buy_df, _shortfall, _fully_filled = suggest_buys(
         drift_df=drift_df,
         portfolio_value=invested_value,
         cash_to_deploy=float(rebal_cash),
         ticker_to_sleeve=ticker_to_sleeve,
         prices=prices,
+        coverage=_coverage,
     )
 
     if buy_df.empty:
@@ -645,8 +652,6 @@ if rebal_cash > 0 and not _gap_note:
         # deploying $744 against $4,810 of shortfall while claiming it was all filled.
         # Wrong in the direction that reads as reassurance to someone deciding whether
         # to deploy more. Branch from what suggest_buys reports, never from the amount.
-        _fully_filled = buy_df.attrs.get("shortfalls_fully_filled")
-        _shortfall    = float(buy_df.attrs.get("total_shortfall", 0.0))
 
         if _fully_filled and leftover > 0.01:
             st.caption(

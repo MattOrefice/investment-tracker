@@ -7,9 +7,33 @@ import pandas as pd
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
+from src.coverage import PriceCoverage, Unresolved
 from src.rebalance import (
     compute_drift, suggest_buys, suggest_contributions, unfunded_target_sleeves,
+    UnpricedAllocationError, CoverageMismatchError,
 )
+
+
+
+def _cov(prices, *, unresolved=(), as_of="2026-08-18"):
+    """A PriceCoverage for a price dict — every ticker resolved unless named.
+
+    `coverage` is REQUIRED on the sizing functions and deliberately has no default:
+    an optional one would let a caller fall back to the old conflated filter with
+    nothing to show the guard is inert. That cost lands here, in a one-line helper,
+    which is the right place to pay it.
+
+    `unresolved` names tickers that are HELD but whose price did not resolve — the
+    state the old `prices.get(t, 0.0) > 0` test could not tell from "not held".
+    """
+    unresolved = tuple(unresolved)
+    resolved = tuple(t for t in prices if t not in unresolved)
+    return PriceCoverage(
+        requested=tuple(prices) + tuple(t for t in unresolved if t not in prices),
+        resolved=resolved,
+        unresolved=tuple(Unresolved(t, "fetch_failed") for t in unresolved),
+        as_of_requested=as_of,
+    )
 
 
 _TARGETS = {
@@ -108,7 +132,8 @@ def test_compute_drift_untargeted_sleeve_is_overweight_not_raised():
 def test_suggest_buys_no_cash():
     df = _drift({"US Large Core": 0.10, "US Large Quality": 0.14,
                  "International Developed": 0.19, "Cash / SPAXX": 0.57})
-    result = suggest_buys(df, 10_000.0, 0.0, _TICKER_MAP, _PRICES)
+    result_sug = suggest_buys(df, 10_000.0, 0.0, _TICKER_MAP, _PRICES, coverage=_cov(_PRICES))
+    result = result_sug.frame
     assert result.empty
 
 
@@ -116,7 +141,8 @@ def test_suggest_buys_no_underweight():
     # All non-cash sleeves at or above target
     df = _drift({"US Large Core": 0.16, "US Large Quality": 0.14,
                  "International Developed": 0.19, "Cash / SPAXX": 0.51})
-    result = suggest_buys(df, 10_000.0, 500.0, _TICKER_MAP, _PRICES)
+    result_sug = suggest_buys(df, 10_000.0, 500.0, _TICKER_MAP, _PRICES, coverage=_cov(_PRICES))
+    result = result_sug.frame
     assert result.empty
 
 
@@ -125,7 +151,8 @@ def test_suggest_buys_proportional_allocation():
     # total shortfall $1100 > cash $500 → proportional
     df = _drift({"US Large Core": 0.10, "US Large Quality": 0.14,
                  "International Developed": 0.14, "Cash / SPAXX": 0.62})
-    result = suggest_buys(df, 10_000.0, 500.0, _TICKER_MAP, _PRICES)
+    result_sug = suggest_buys(df, 10_000.0, 500.0, _TICKER_MAP, _PRICES, coverage=_cov(_PRICES))
+    result = result_sug.frame
 
     assert not result.empty
     assert "VOO" in result["Ticker"].values
@@ -145,7 +172,8 @@ def test_suggest_buys_full_fill_when_shortfall_under_cash():
     df = _drift({"US Large Core": 0.12, "US Large Quality": 0.14,
                  "International Developed": 0.19, "Cash / SPAXX": 0.55})
     assert not df.loc["US Large Core", "In Band"]   # confirm breach
-    result = suggest_buys(df, 10_000.0, 500.0, _TICKER_MAP, _PRICES)
+    result_sug = suggest_buys(df, 10_000.0, 500.0, _TICKER_MAP, _PRICES, coverage=_cov(_PRICES))
+    result = result_sug.frame
 
     assert not result.empty
     # shortfall = 0.04 × 10000 = $400 (gap to target, not band edge)
@@ -160,7 +188,8 @@ def test_suggest_buys_in_band_below_target_returns_empty():
     df = _drift(weights)
     assert df.loc["US Large Core", "In Band"]    # confirm in band
     assert df.loc["US Large Core", "Drift"] < 0  # confirm below target
-    result = suggest_buys(df, 10_000.0, 500.0, _TICKER_MAP, _PRICES)
+    result_sug = suggest_buys(df, 10_000.0, 500.0, _TICKER_MAP, _PRICES, coverage=_cov(_PRICES))
+    result = result_sug.frame
     assert result.empty
 
 
@@ -171,7 +200,8 @@ def test_suggest_buys_band_breach_shortfall_to_target_not_band_edge():
                "International Developed": 0.19, "Cash / SPAXX": 0.57}
     df = _drift(weights)
     assert not df.loc["US Large Core", "In Band"]
-    result = suggest_buys(df, 10_000.0, 10_000.0, _TICKER_MAP, _PRICES)
+    result_sug = suggest_buys(df, 10_000.0, 10_000.0, _TICKER_MAP, _PRICES, coverage=_cov(_PRICES))
+    result = result_sug.frame
     assert not result.empty
     voo_dollars = float(result.loc[result["Ticker"] == "VOO", "Suggested $"].iloc[0])
     assert voo_dollars == pytest.approx(600.0, rel=1e-3)   # 0.06 × 10000 to target
@@ -186,7 +216,8 @@ def test_suggest_buys_mixed_breached_and_in_band():
     assert not df.loc["US Large Core", "In Band"]
     assert df.loc["US Large Quality", "In Band"]    # below target but in band
     assert df.loc["US Large Quality", "Drift"] < 0
-    result = suggest_buys(df, 10_000.0, 1_000.0, _TICKER_MAP, _PRICES)
+    result_sug = suggest_buys(df, 10_000.0, 1_000.0, _TICKER_MAP, _PRICES, coverage=_cov(_PRICES))
+    result = result_sug.frame
     assert not result.empty
     assert "VOO" in result["Ticker"].values
     assert "SPHQ" not in result["Ticker"].values    # Quality in band → excluded
@@ -200,7 +231,8 @@ def test_suggest_buys_multi_ticker_sleeve():
 
     weights = {"Real Assets": 0.05, "Cash / SPAXX": 0.95}
     df = compute_drift(weights, targets, bands)
-    result = suggest_buys(df, 10_000.0, 500.0, ticker_map, prices)
+    result_sug = suggest_buys(df, 10_000.0, 500.0, ticker_map, prices, coverage=_cov(prices))
+    result = result_sug.frame
 
     assert not result.empty
     assert set(result["Ticker"].values) == {"VNQ", "PDBC"}
@@ -220,7 +252,7 @@ _SC_PRICES     = {"CORE_ETF": 100.0, "BOND_ETF": 50.0}
 
 
 def _sc(weights, cash):
-    return suggest_contributions(10_000, cash, weights, _SC_TARGETS, _SC_TICKER_MAP, _SC_PRICES)
+    return suggest_contributions(10_000, cash, weights, _SC_TARGETS, _SC_TICKER_MAP, _SC_PRICES, coverage=_cov(_SC_PRICES))
 
 
 def test_suggest_contributions_zero_cash_returns_empty():
@@ -332,7 +364,7 @@ def test_suggest_contributions_benchmark_tickers_excluded_from_division():
 
     result = suggest_contributions(
         10_000, 1_000, {"Core": 0.60, "Bonds": 0.40},
-        _SC_TARGETS, ticker_map, prices,
+        _SC_TARGETS, ticker_map, prices, coverage=_cov(prices),
     )
 
     assert not result.empty
@@ -354,7 +386,7 @@ def test_suggest_contributions_step3_residual_distribution():
     result = suggest_contributions(
         10_000, 1_000,
         {"Core": 0.60, "Bonds": 0.30, "Alt": 0.10},
-        targets_3, ticker_map_3, prices_3,
+        targets_3, ticker_map_3, prices_3, coverage=_cov(prices_3),
     )
 
     core_d = float(result.loc[result["Ticker"] == "CORE_ETF", "Suggested $"].iloc[0])
@@ -385,6 +417,7 @@ def test_suggest_contributions_assertion_fires_on_missing_ticker_coverage():
         suggest_contributions(
             10_000, 1_000, {"Core": 0.60, "Bonds": 0.40},
             _SC_TARGETS, ticker_map_core_only, _SC_PRICES,
+            coverage=_cov(_SC_PRICES),
         )
 
 
@@ -461,6 +494,7 @@ def test_suggest_contributions_production_scenario_sum_invariant():
         result = suggest_contributions(
             100_000, cash, _PROD_WEIGHTS,
             _PROD_TARGETS, _PROD_TICKER_MAP, _PROD_PRICES,
+            coverage=_cov(_PROD_PRICES),
         )
         assert not result.empty, f"Expected non-empty result for cash={cash}"
         total = float(result["Suggested $"].sum())
@@ -622,9 +656,10 @@ def test_suggest_buys_reports_fully_filled_when_cash_covers_shortfall():
     # Core 6pp under ($600), Intl 5pp under ($500) → shortfall $1100, cash $2000.
     df = _drift({"US Large Core": 0.10, "US Large Quality": 0.14,
                  "International Developed": 0.14, "Cash / SPAXX": 0.62})
-    result = suggest_buys(df, 10_000.0, 2_000.0, _TICKER_MAP, _PRICES)
-    assert result.attrs["shortfalls_fully_filled"] is True
-    assert result.attrs["total_shortfall"] == pytest.approx(1100.0, rel=1e-6)
+    result_sug = suggest_buys(df, 10_000.0, 2_000.0, _TICKER_MAP, _PRICES, coverage=_cov(_PRICES))
+    result = result_sug.frame
+    assert result_sug.shortfalls_fully_filled is True
+    assert result_sug.total_shortfall == pytest.approx(1100.0, rel=1e-6)
     # Genuine surplus: the sum is the shortfall, not the cash.
     assert result["Suggested $"].sum() == pytest.approx(1100.0, rel=1e-3)
 
@@ -633,41 +668,44 @@ def test_suggest_buys_reports_not_fully_filled_when_cash_runs_out():
     # Same book, cash $500 < shortfall $1100 → proportional branch.
     df = _drift({"US Large Core": 0.10, "US Large Quality": 0.14,
                  "International Developed": 0.14, "Cash / SPAXX": 0.62})
-    result = suggest_buys(df, 10_000.0, 500.0, _TICKER_MAP, _PRICES)
-    assert result.attrs["shortfalls_fully_filled"] is False
-    assert result.attrs["total_shortfall"] == pytest.approx(1100.0, rel=1e-6)
+    result_sug = suggest_buys(df, 10_000.0, 500.0, _TICKER_MAP, _PRICES, coverage=_cov(_PRICES))
+    result = result_sug.frame
+    assert result_sug.shortfalls_fully_filled is False
+    assert result_sug.total_shortfall == pytest.approx(1100.0, rel=1e-6)
     # The cash is exhausted and $600 of breach remains — the fact the old caption
-    # denied. Derived from attrs, never from the leftover amount, which is ~0 here
-    # and so read as "nothing left to say".
-    unfilled = result.attrs["total_shortfall"] - float(result["Suggested $"].sum())
+    # denied. Derived from the report, never from the leftover amount, which is ~0
+    # here and so read as "nothing left to say".
+    unfilled = result_sug.total_shortfall - float(result["Suggested $"].sum())
     assert unfilled == pytest.approx(600.0, abs=0.05)
 
 
 def test_suggest_buys_branch_flag_is_not_derivable_from_leftover():
-    """The two branches are distinguishable by attrs and NOT by undeployed cash.
+    """The two branches are distinguishable by the report and NOT by undeployed cash.
 
     This is the whole reason the flag exists. In the proportional branch the
     leftover is ~$0, which is also what a fully-filled-and-exactly-spent run looks
     like — so a caller branching on the amount cannot tell "all breaches closed"
     from "cash ran out with breaches open", and the page picked the wrong one.
     """
-    proportional = suggest_buys(
+    proportional_sug = suggest_buys(
         _drift({"US Large Core": 0.10, "US Large Quality": 0.14,
                 "International Developed": 0.14, "Cash / SPAXX": 0.62}),
-        10_000.0, 500.0, _TICKER_MAP, _PRICES)
+        10_000.0, 500.0, _TICKER_MAP, _PRICES, coverage=_cov(_PRICES))
+    proportional = proportional_sug.frame
     # Exactly-spent fill branch: cash equals the shortfall.
-    exact = suggest_buys(
+    exact_sug = suggest_buys(
         _drift({"US Large Core": 0.10, "US Large Quality": 0.14,
                 "International Developed": 0.14, "Cash / SPAXX": 0.62}),
-        10_000.0, 1_100.0, _TICKER_MAP, _PRICES)
+        10_000.0, 1_100.0, _TICKER_MAP, _PRICES, coverage=_cov(_PRICES))
+    exact = exact_sug.frame
 
     left_prop = 500.0 - float(proportional["Suggested $"].sum())
     left_exact = 1_100.0 - float(exact["Suggested $"].sum())
     assert abs(left_prop) < 0.05 and abs(left_exact) < 0.05, (
         "both branches leave ~no undeployed cash — that is the premise of this test"
     )
-    assert proportional.attrs["shortfalls_fully_filled"] is False
-    assert exact.attrs["shortfalls_fully_filled"] is True
+    assert proportional_sug.shortfalls_fully_filled is False
+    assert exact_sug.shortfalls_fully_filled is True
 
 
 def test_suggest_buys_every_return_path_carries_the_flags():
@@ -684,82 +722,181 @@ def test_suggest_buys_every_return_path_carries_the_flags():
                        "International Developed": 0.14, "Cash / SPAXX": 0.62})
 
     # No breaches: nothing is unfilled, so True is the honest report.
-    no_breach = suggest_buys(in_band, 10_000.0, 500.0, _TICKER_MAP, _PRICES)
+    no_breach_sug = suggest_buys(in_band, 10_000.0, 500.0, _TICKER_MAP, _PRICES, coverage=_cov(_PRICES))
+    no_breach = no_breach_sug.frame
     assert no_breach.empty
-    assert no_breach.attrs["shortfalls_fully_filled"] is True
-    assert no_breach.attrs["total_shortfall"] == 0.0
+    assert no_breach_sug.shortfalls_fully_filled is True
+    assert no_breach_sug.total_shortfall == 0.0
 
     # Nothing assessed: None, not True. Claiming "all filled" on a run that never
     # looked at the breaches is the class of error this whole change fixes.
-    no_cash = suggest_buys(breached, 10_000.0, 0.0, _TICKER_MAP, _PRICES)
+    no_cash_sug = suggest_buys(breached, 10_000.0, 0.0, _TICKER_MAP, _PRICES, coverage=_cov(_PRICES))
+    no_cash = no_cash_sug.frame
     assert no_cash.empty
-    assert no_cash.attrs["shortfalls_fully_filled"] is None
+    assert no_cash_sug.shortfalls_fully_filled is None
 
-    no_book = suggest_buys(breached, 0.0, 500.0, _TICKER_MAP, _PRICES)
+    no_book_sug = suggest_buys(breached, 0.0, 500.0, _TICKER_MAP, _PRICES, coverage=_cov(_PRICES))
+
+    no_book = no_book_sug.frame
     assert no_book.empty
-    assert no_book.attrs["shortfalls_fully_filled"] is None
+    assert no_book_sug.shortfalls_fully_filled is None
 
 
-# ── INVARIANT: suggest_buys cannot drop an allocated sleeve silently ─────────
+# ── THE TWO STATES THE OLD FILTER CONFLATED ──────────────────────────────────
 #
-# The check counts SLEEVES, not dollars. Both halves below must be able to fail,
-# and the second is the one a transplant of suggest_contributions' sum-invariant
-# would get wrong: deploying less than the cash offered is CORRECT here.
+# `prices.get(ticker, 0.0) > 0` answered two questions with one test — *is this
+# security held* and *did its price resolve* — and both arrived as "absent from
+# the dict". Coverage separates them, and each state has a different correct
+# answer, so BOTH directions must be proved. A proof testing only one is testing
+# nothing: it cannot tell a working separation from a filter that refuses
+# everything, or from one that refuses nothing.
 
-def test_suggest_buys_raises_when_an_allocated_sleeve_has_no_priced_ticker():
-    """The positive half — the invariant must fire on a dropped sleeve.
+def test_held_but_unpriced_in_an_allocated_sleeve_refuses():
+    """Direction 1 — HELD, price did not resolve. Must REFUSE.
 
-    Intl is underweight and out of band, so it receives an allocation; its only
-    ticker VEA is absent from `prices`, so it produces no rows and its dollars
-    leave the result. Before this check that was silent.
+    VEA is in `requested` (the account holds it) and in `unresolved` (the fetch
+    failed). Its sleeve is underweight and out of band, so it is allocated cash.
+    This is the #192 state: before coverage, VEA was silently dropped and VOO
+    absorbed its dollars.
     """
     df = _drift({"US Large Core": 0.10, "US Large Quality": 0.14,
                  "International Developed": 0.14, "Cash / SPAXX": 0.62})
     prices_no_vea = {t: p for t, p in _PRICES.items() if t != "VEA"}
+    cov = _cov(prices_no_vea, unresolved=["VEA"])
 
-    with pytest.raises(AssertionError) as exc:
-        suggest_buys(df, 10_000.0, 500.0, _TICKER_MAP, prices_no_vea)
+    with pytest.raises(UnpricedAllocationError) as exc:
+        suggest_buys(df, 10_000.0, 500.0, _TICKER_MAP, prices_no_vea, coverage=cov)
 
     msg = str(exc.value)
-    assert "International Developed" in msg, "the message must name the dropped sleeve"
-    assert "produced no buy rows" in msg
-    # It must state the dollar consequence, not merely that something was dropped.
-    assert "$" in msg and "missing from the result" in msg
-    # And it must pre-empt the wrong fix, since whoever sees this has no context.
-    assert "cannot be fixed by relaxing the filter" in msg
-    assert "counts sleeves rather than dollars" in msg
+    assert "International Developed" in msg, "must name the sleeve"
+    assert "VEA" in msg and "fetch_failed" in msg, "must name the holding and why"
+    # It must forbid the plausible-but-unsafe fix, not merely report the state.
+    assert "do not fall back to sizing over the survivors" in msg.lower()
+    # And it must forbid the caller turning the refusal back into silence.
+    assert "empty" in msg.lower() and "reassurance" in msg.lower()
 
 
-def test_suggest_buys_invariant_silent_when_deploying_less_than_cash_offered():
-    """The negative half — and the one the sibling's invariant would fail.
+def test_not_held_in_an_allocated_sleeve_does_not_refuse():
+    """Direction 2 — NOT held. Must NOT refuse; exclusion is correct here.
 
-    total_shortfall $1100 < cash $5000, so the fill-completely branch deploys only
-    $1100 and leaves $3900 undeployed. That is CORRECT. suggest_contributions'
-    `sum == cash_to_deploy` assertion would fire here; this one must not, because
-    no sleeve was dropped.
+    Same shape as above and the opposite verdict. VEA is absent from `prices` AND
+    absent from `requested`: the account simply does not hold it, which is the
+    ordinary case for the many securities in ticker_to_sleeve that are not in the
+    book. Refusing here would block every ordinary rebalance.
+
+    Without this direction the refusal test above passes against a filter that
+    refuses on any absence at all — which is the conflation, not the fix.
     """
     df = _drift({"US Large Core": 0.10, "US Large Quality": 0.14,
                  "International Developed": 0.14, "Cash / SPAXX": 0.62})
-    result = suggest_buys(df, 10_000.0, 5_000.0, _TICKER_MAP, _PRICES)
+    prices_no_vea = {t: p for t, p in _PRICES.items() if t != "VEA"}
+    cov = _cov(prices_no_vea)          # VEA not requested -> never held
 
-    deployed = float(result["Suggested $"].sum())
-    assert deployed == pytest.approx(1100.0, rel=1e-3)
-    assert 5_000.0 - deployed == pytest.approx(3900.0, rel=1e-3), (
-        "premise of this test: far less than the offered cash is deployed, and it "
-        "is correct — a dollar-based invariant would fire right here"
+    # The sleeve has nothing placeable, so the completeness backstop fires — but
+    # NOT UnpricedAllocationError, which is the distinction under test.
+    with pytest.raises(AssertionError) as exc:
+        suggest_buys(df, 10_000.0, 500.0, _TICKER_MAP, prices_no_vea, coverage=cov)
+    assert not isinstance(exc.value, UnpricedAllocationError)
+    msg = str(exc.value)
+    assert "no resolved price cannot cause this" in msg, (
+        "the backstop must say the price-gap cause is already handled upstream"
     )
-    assert result.attrs["shortfalls_fully_filled"] is True
+    assert "unmapped holding" in msg
 
 
-def test_suggest_buys_invariant_silent_on_a_sleeve_with_no_allocation():
-    """A sleeve absent from `prices` but NOT underweight is never allocated, so it
-    is not a drop and must not fire. Otherwise the invariant would refuse ordinary
-    books that simply hold nothing in some in-band sleeve."""
-    # Intl at target -> in band -> not underweight -> no allocation.
+def test_unpriced_but_unallocated_sleeve_does_not_refuse():
+    """The refusal is scoped to ALLOCATED sleeves, deliberately.
+
+    Intl is at target, so in band, so it receives nothing. An unresolved holding
+    there cannot affect the trade, and refusing over it would block a correct
+    rebalance for an irrelevant gap.
+    """
     df = _drift({"US Large Core": 0.10, "US Large Quality": 0.14,
                  "International Developed": 0.19, "Cash / SPAXX": 0.57})
     prices_no_vea = {t: p for t, p in _PRICES.items() if t != "VEA"}
-    result = suggest_buys(df, 10_000.0, 500.0, _TICKER_MAP, prices_no_vea)
+    result = suggest_buys(df, 10_000.0, 500.0, _TICKER_MAP, prices_no_vea,
+                          coverage=_cov(prices_no_vea, unresolved=["VEA"])).frame
     assert not result.empty
     assert "VEA" not in result["Ticker"].values
-    assert "International Developed" not in result["Sleeve"].values
+
+
+def test_coverage_and_prices_disagreeing_raises():
+    """State 3 — coverage says resolved, `prices` cannot price it.
+
+    The page builds these from two separate fetch passes, so they can describe
+    different moments. That is not a gap to disclose (a gap would appear in
+    `unresolved`); it means every figure derived from the pair is unfounded.
+    """
+    df = _drift({"US Large Core": 0.10, "US Large Quality": 0.14,
+                 "International Developed": 0.14, "Cash / SPAXX": 0.62})
+    prices_zero = dict(_PRICES, VEA=0.0)
+    with pytest.raises(CoverageMismatchError) as exc:
+        suggest_buys(df, 10_000.0, 500.0, _TICKER_MAP, prices_zero,
+                     coverage=_cov(prices_zero))     # VEA "resolved"
+    assert "VEA" in str(exc.value)
+
+
+# ── COMPLETENESS BACKSTOP — reduced, not removed ─────────────────────────────
+#
+# Since coverage arrived, the assert can no longer be reached by a price gap;
+# _placeable_by_sleeve refuses that first. What it still covers is the cause
+# coverage cannot see: a held, resolved ticker missing from ticker_to_sleeve.
+
+def test_backstop_fires_on_a_held_resolved_ticker_missing_from_the_map():
+    """An unmapped holding: resolved in coverage, absent from ticker_to_sleeve.
+
+    Coverage reports it fine, because the price DID resolve. Only the structural
+    check notices its sleeve was allocated cash with nothing mapped to buy.
+    """
+    df = _drift({"US Large Core": 0.10, "US Large Quality": 0.14,
+                 "International Developed": 0.14, "Cash / SPAXX": 0.62})
+    map_without_vea = {t: s for t, s in _TICKER_MAP.items() if t != "VEA"}
+    with pytest.raises(AssertionError) as exc:
+        suggest_buys(df, 10_000.0, 500.0, map_without_vea, _PRICES,
+                     coverage=_cov(_PRICES))
+    assert "unmapped holding" in str(exc.value)
+    assert "counts sleeves rather than dollars" in str(exc.value)
+
+
+def test_backstop_silent_when_deploying_less_than_cash_offered():
+    """The half a transplant of suggest_contributions' invariant gets wrong.
+
+    total_shortfall $1100 < cash $5000, so the fill-completely branch deploys only
+    $1100 and leaves $3900 undeployed. That is CORRECT. A `sum == cash_to_deploy`
+    assertion fires here; this one must not, because no sleeve was dropped.
+    """
+    df = _drift({"US Large Core": 0.10, "US Large Quality": 0.14,
+                 "International Developed": 0.14, "Cash / SPAXX": 0.62})
+    sug = suggest_buys(df, 10_000.0, 5_000.0, _TICKER_MAP, _PRICES,
+                       coverage=_cov(_PRICES))
+    deployed = float(sug.frame["Suggested $"].sum())
+    assert deployed == pytest.approx(1100.0, rel=1e-3)
+    assert 5_000.0 - deployed == pytest.approx(3900.0, rel=1e-3), (
+        "premise: far less than the offered cash is deployed, and it is correct — "
+        "a dollar-based invariant would fire right here"
+    )
+    assert sug.shortfalls_fully_filled is True
+
+
+def test_suggest_contributions_refuses_on_held_but_unpriced_too():
+    """The same separation, same shape, in the sibling function."""
+    prices_no_bond = {t: p for t, p in _SC_PRICES.items() if t != "BOND_ETF"}
+    with pytest.raises(UnpricedAllocationError) as exc:
+        suggest_contributions(
+            10_000, 1_000, {"Core": 0.60, "Bonds": 0.40},
+            _SC_TARGETS, _SC_TICKER_MAP, prices_no_bond,
+            coverage=_cov(prices_no_bond, unresolved=["BOND_ETF"]),
+        )
+    assert "BOND_ETF" in str(exc.value)
+
+
+def test_suggest_contributions_silent_when_the_ticker_is_merely_not_held():
+    """And the opposite direction in the sibling: not held is not a refusal."""
+    prices_no_bond = {t: p for t, p in _SC_PRICES.items() if t != "BOND_ETF"}
+    result = suggest_contributions(
+        10_000, 1_000, {"Core": 1.0},
+        {"Core": 1.0}, {"CORE_ETF": "Core"}, prices_no_bond,
+        coverage=_cov(prices_no_bond),
+    )
+    assert not result.empty
+    assert set(result["Ticker"]) == {"CORE_ETF"}
