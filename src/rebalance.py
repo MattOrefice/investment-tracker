@@ -97,19 +97,50 @@ def suggest_buys(
     Returns DataFrame with columns:
         Ticker, Sleeve, Price, Suggested $, Suggested Shares.
     Empty DataFrame if no underweight non-cash sleeves or cash <= 0.
+
+    ``.attrs`` carries what the caller needs to EXPLAIN the result, because the
+    two allocation branches leave undeployed cash for opposite reasons and the
+    frame alone cannot tell them apart:
+
+      ``total_shortfall``           the dollars needed to close every breach
+      ``shortfalls_fully_filled``   True in the fill-completely branch, where
+                                    leftover cash is a genuine surplus; False in
+                                    the proportional branch, where the cash was
+                                    exhausted and shortfalls REMAIN — any leftover
+                                    there is per-row rounding residue, not surplus.
+
+    Without this, pages/11 read every leftover as the first case and rendered
+    "all band-breach shortfalls fully filled" over proportional-branch runs that
+    had filled a fraction of them. attrs rather than a return-shape change,
+    matching sleeve_df.attrs and the benchmark_gap_bounds series attrs.
     """
     _EMPTY = pd.DataFrame(
         columns=["Ticker", "Sleeve", "Price", "Suggested $", "Suggested Shares"]
     )
 
+    def _stamp(df: pd.DataFrame, shortfall: float, filled: "bool | None") -> pd.DataFrame:
+        """Stamp the branch report on EVERY return path.
+
+        An unstamped frame reads as "not assessed" to a caller, which is the same
+        silence this record exists to remove — so the guard returns declare their
+        state explicitly rather than defaulting into it.
+        """
+        df.attrs["total_shortfall"] = float(shortfall)
+        df.attrs["shortfalls_fully_filled"] = filled
+        return df
+
+    # Nothing assessed: no cash to place, or no book to place it against. None, not
+    # True — "no breach remains unfilled" is a claim this branch has not tested, and
+    # a caller must be able to say nothing rather than say the wrong thing.
     if cash_to_deploy <= 0 or portfolio_value <= 0:
-        return _EMPTY
+        return _stamp(_EMPTY, 0.0, None)
 
     underweight = drift_df[
         (~drift_df["In Band"]) & (drift_df["Drift"] < 0) & (~drift_df.index.isin([_CASH_SLEEVE]))
     ].copy()
+    # No breaches at all, so nothing is unfilled — True is the honest report here.
     if underweight.empty:
-        return _EMPTY
+        return _stamp(_EMPTY, 0.0, True)
 
     underweight["Shortfall $"] = underweight["Drift"].abs() * portfolio_value
 
@@ -149,7 +180,11 @@ def suggest_buys(
                 }
             )
 
-    return pd.DataFrame(rows) if rows else _EMPTY
+    return _stamp(
+        pd.DataFrame(rows) if rows else _EMPTY,
+        total_shortfall,
+        bool(total_shortfall <= cash_to_deploy),
+    )
 
 
 def suggest_contributions(
