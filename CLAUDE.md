@@ -34,6 +34,14 @@
   commit that ran the suite, and after every merge. This has bitten
   twice, the second time with the trap already known — knowing it does
   not prevent it, only the mechanical check does.
+  A LOCAL SUITE RUN DRIFTS demo.db EVEN IN PERSONAL MODE, which is the
+  counter-intuitive part: `.env` pins TRACKER_MODE=personal so
+  DB_PATH=data/tracker.db, yet some tests open the committed demo.db
+  directly regardless of mode. Measured five times for five in one
+  session (2026-08-18), +235 to +306 price rows each. tracker.db is
+  gitignored so its drift cannot be committed; demo.db is TRACKED, so
+  restore it — `git checkout -- data/demo.db` — and fingerprint before
+  committing. Tracked as #227.
 - State root cause in plain English before changes that touch
   multiple files or git history.
 
@@ -79,6 +87,27 @@
   attributed to a commit it never described. That happened at #246 —
   1808 accounted for against 1810 collected, because two tests were
   added after the measurement (#247).
+- THE HARNESS INCLUDES A DATE-DEPENDENT DATA CONDITION, not only
+  configuration. Record `MAX(price_date)` AND today alongside every
+  local baseline:
+
+      python -c "import sqlite3,datetime; print(sqlite3.connect(
+        'file:data/tracker.db?mode=ro',uri=True).execute(
+        'SELECT MAX(price_date) FROM prices').fetchone()[0],
+        datetime.date.today().isoformat())"
+
+  #241's two banner-control tests fire ONLY when tracker.db's committed
+  price frontier equals today: the legacy banner is a pure clock read,
+  so when the frontier reaches today it renders the same sentence as
+  the current banner, `changed` is empty, and the positive half of the
+  inertness proof has nothing to detect. Frontier == today expects 15
+  failures; frontier != today expects 13. Both are correct, and a
+  13-vs-15 comparison across runs that did not check reads as a
+  regression that never happened. The suite refreshes the cache when
+  the network is up, so the condition changes under you mid-session.
+  This step is easy to skip because NOTHING FAILS WHEN YOU SKIP IT —
+  you simply get a number whose meaning you cannot reconstruct later.
+  Do it first, before the collect.
 - "Guards" means the read-only attribute set on data/demo.db,
   data/tracker.db and every `git ls-files data` entry, to prove a
   diagnostic did not mutate tracked data. GUARDS-UP AND THE FULL SUITE
