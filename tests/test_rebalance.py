@@ -609,3 +609,92 @@ def test_unfunded_target_sleeves_zero_price_is_not_covered():
     t2s = {"VOO": "US Large Core", "IDHQ": "International Quality"}
     prices = {"VOO": 100.0, "IDHQ": 0.0}
     assert unfunded_target_sleeves(targets, t2s, prices) == ["International Quality"]
+
+
+# ── suggest_buys reports WHICH branch allocated, so callers can explain leftover ──
+#
+# Undeployed cash means opposite things in the two branches and the frame alone
+# cannot tell them apart. pages/11 read every leftover as "all shortfalls fully
+# filled", which is false in the proportional branch by construction: that branch
+# is reached precisely because the cash ran out.
+
+def test_suggest_buys_reports_fully_filled_when_cash_covers_shortfall():
+    # Core 6pp under ($600), Intl 5pp under ($500) → shortfall $1100, cash $2000.
+    df = _drift({"US Large Core": 0.10, "US Large Quality": 0.14,
+                 "International Developed": 0.14, "Cash / SPAXX": 0.62})
+    result = suggest_buys(df, 10_000.0, 2_000.0, _TICKER_MAP, _PRICES)
+    assert result.attrs["shortfalls_fully_filled"] is True
+    assert result.attrs["total_shortfall"] == pytest.approx(1100.0, rel=1e-6)
+    # Genuine surplus: the sum is the shortfall, not the cash.
+    assert result["Suggested $"].sum() == pytest.approx(1100.0, rel=1e-3)
+
+
+def test_suggest_buys_reports_not_fully_filled_when_cash_runs_out():
+    # Same book, cash $500 < shortfall $1100 → proportional branch.
+    df = _drift({"US Large Core": 0.10, "US Large Quality": 0.14,
+                 "International Developed": 0.14, "Cash / SPAXX": 0.62})
+    result = suggest_buys(df, 10_000.0, 500.0, _TICKER_MAP, _PRICES)
+    assert result.attrs["shortfalls_fully_filled"] is False
+    assert result.attrs["total_shortfall"] == pytest.approx(1100.0, rel=1e-6)
+    # The cash is exhausted and $600 of breach remains — the fact the old caption
+    # denied. Derived from attrs, never from the leftover amount, which is ~0 here
+    # and so read as "nothing left to say".
+    unfilled = result.attrs["total_shortfall"] - float(result["Suggested $"].sum())
+    assert unfilled == pytest.approx(600.0, abs=0.05)
+
+
+def test_suggest_buys_branch_flag_is_not_derivable_from_leftover():
+    """The two branches are distinguishable by attrs and NOT by undeployed cash.
+
+    This is the whole reason the flag exists. In the proportional branch the
+    leftover is ~$0, which is also what a fully-filled-and-exactly-spent run looks
+    like — so a caller branching on the amount cannot tell "all breaches closed"
+    from "cash ran out with breaches open", and the page picked the wrong one.
+    """
+    proportional = suggest_buys(
+        _drift({"US Large Core": 0.10, "US Large Quality": 0.14,
+                "International Developed": 0.14, "Cash / SPAXX": 0.62}),
+        10_000.0, 500.0, _TICKER_MAP, _PRICES)
+    # Exactly-spent fill branch: cash equals the shortfall.
+    exact = suggest_buys(
+        _drift({"US Large Core": 0.10, "US Large Quality": 0.14,
+                "International Developed": 0.14, "Cash / SPAXX": 0.62}),
+        10_000.0, 1_100.0, _TICKER_MAP, _PRICES)
+
+    left_prop = 500.0 - float(proportional["Suggested $"].sum())
+    left_exact = 1_100.0 - float(exact["Suggested $"].sum())
+    assert abs(left_prop) < 0.05 and abs(left_exact) < 0.05, (
+        "both branches leave ~no undeployed cash — that is the premise of this test"
+    )
+    assert proportional.attrs["shortfalls_fully_filled"] is False
+    assert exact.attrs["shortfalls_fully_filled"] is True
+
+
+def test_suggest_buys_every_return_path_carries_the_flags():
+    """Including the two guard returns, which bypass the allocation entirely.
+
+    An unstamped frame is indistinguishable from one reporting "nothing to say",
+    so a caller would fall through to silence — the same failure the record exists
+    to remove. Written after the first version of this change stamped only the
+    allocating path and this assertion caught it.
+    """
+    in_band = _drift({"US Large Core": 0.16, "US Large Quality": 0.14,
+                      "International Developed": 0.19, "Cash / SPAXX": 0.51})
+    breached = _drift({"US Large Core": 0.10, "US Large Quality": 0.14,
+                       "International Developed": 0.14, "Cash / SPAXX": 0.62})
+
+    # No breaches: nothing is unfilled, so True is the honest report.
+    no_breach = suggest_buys(in_band, 10_000.0, 500.0, _TICKER_MAP, _PRICES)
+    assert no_breach.empty
+    assert no_breach.attrs["shortfalls_fully_filled"] is True
+    assert no_breach.attrs["total_shortfall"] == 0.0
+
+    # Nothing assessed: None, not True. Claiming "all filled" on a run that never
+    # looked at the breaches is the class of error this whole change fixes.
+    no_cash = suggest_buys(breached, 10_000.0, 0.0, _TICKER_MAP, _PRICES)
+    assert no_cash.empty
+    assert no_cash.attrs["shortfalls_fully_filled"] is None
+
+    no_book = suggest_buys(breached, 0.0, 500.0, _TICKER_MAP, _PRICES)
+    assert no_book.empty
+    assert no_book.attrs["shortfalls_fully_filled"] is None

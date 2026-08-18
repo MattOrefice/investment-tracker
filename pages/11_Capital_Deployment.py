@@ -637,11 +637,42 @@ if rebal_cash > 0 and not _gap_note:
         c2.metric("Cash input",       f"${rebal_cash:,.2f}")
         c3.metric("Undeployed",       f"${leftover:,.2f}")
 
-        if leftover > 0.01:
+        # Undeployed cash means opposite things in the two allocation branches, and
+        # the old caption asserted the first for both: it read "all band-breach
+        # shortfalls fully filled" over PROPORTIONAL-branch runs, where the cash ran
+        # out and shortfalls demonstrably remain. Measured: ~14% of proportional runs
+        # leave rounding residue above the 0.01 threshold that fired it, the worst
+        # deploying $744 against $4,810 of shortfall while claiming it was all filled.
+        # Wrong in the direction that reads as reassurance to someone deciding whether
+        # to deploy more. Branch from what suggest_buys reports, never from the amount.
+        _fully_filled = buy_df.attrs.get("shortfalls_fully_filled")
+        _shortfall    = float(buy_df.attrs.get("total_shortfall", 0.0))
+
+        if _fully_filled and leftover > 0.01:
             st.caption(
                 f"${leftover:,.2f} undeployed — all band-breach shortfalls fully filled. "
                 "Hold remaining cash or add it to the most underweight sleeve manually."
             )
+        elif _fully_filled is False:
+            # Always disclosed, not gated on leftover: in this branch the metrics row
+            # shows Undeployed ≈ $0.00, which on its own implies the job is done.
+            _unfilled = max(_shortfall - total_suggested, 0.0)
+            _residue = (
+                f" The ${leftover:,.2f} shown as undeployed is rounding from splitting "
+                "the cash across positions, not spare cash."
+                if leftover > 0.01 else ""
+            )
+            st.caption(
+                f"Cash exhausted before the breaches closed: this ${total_suggested:,.2f} "
+                f"covers part of ${_shortfall:,.2f} in band-breach shortfalls, leaving "
+                f"${_unfilled:,.2f} unfilled at this cash level. Suggestions above are "
+                f"sized proportionally to each sleeve's shortfall." + _residue
+            )
+        # A third cause — a sleeve dropped for having no priced ticker — is not named
+        # here because nothing can currently detect it (src/rebalance.py:137-138 drops
+        # it silently, and unlike suggest_contributions there is no sum invariant to
+        # fire). Naming a cause the page cannot distinguish is the defect being fixed;
+        # this gets its clause when that detection lands. Tracked on #192.
 
         st.caption(
             "Prices based on most recent close. Execute via your broker. "
