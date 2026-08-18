@@ -162,10 +162,12 @@ def suggest_buys(
             sleeve_to_tickers.setdefault(sleeve, []).append(ticker)
 
     rows = []
+    dropped: dict[str, float] = {}
     for sleeve in sorted(allocations, key=lambda s: -allocations[s]):
         dollars = allocations[sleeve]
         tickers_in_sleeve = sorted(sleeve_to_tickers.get(sleeve, []))
         if not tickers_in_sleeve:
+            dropped[sleeve] = dollars
             continue
         per_ticker = dollars / len(tickers_in_sleeve)
         for ticker in tickers_in_sleeve:
@@ -179,6 +181,37 @@ def suggest_buys(
                     "Suggested Shares": round(per_ticker / price, 6),
                 }
             )
+
+    # INVARIANT: no allocated sleeve may be dropped silently.
+    #
+    # Counts SLEEVES, not dollars, and that is the whole design. suggest_contributions
+    # asserts its Suggested-$ total equals the cash offered (:283-288). Transplanting
+    # that here is UNSOUND rather than merely weak: mutation-tested, it does flag the
+    # dropped-sleeve case, but it ALSO flags the fill-completely branch, where
+    # deploying less than the cash offered is the correct answer. A dollar check
+    # cannot separate "correctly deployed less" from "lost a sleeve's allocation";
+    # only the second is a wrong trade instruction, so only the second may fire.
+    assert not dropped, (
+        f"suggest_buys: {len(dropped)} allocated sleeve(s) produced no buy rows, so "
+        f"${sum(dropped.values()):,.2f} of the ${sum(allocations.values()):,.2f} "
+        f"allocated is missing from the result — "
+        + "; ".join(f"{s} (${d:,.2f})" for s, d in sorted(dropped.items()))
+        + ". Every ticker mapped to these sleeves failed the "
+        "`prices.get(ticker, 0.0) > 0` filter above: either the account holds nothing "
+        "in them, or what it holds has no resolved price. Both look identical here, "
+        "which is why this cannot be fixed by relaxing the filter.\n\n"
+        "Do not replace this with a Suggested-$ total check like the one in "
+        "suggest_contributions (:283-288). Such a check would catch this case — but "
+        "it also fires when total_shortfall <= cash_to_deploy, where deploying only "
+        "the shortfall and leaving the rest undeployed is the CORRECT answer. It is "
+        "unsound here, not insufficient, and a guard that cannot be left armed is not "
+        "a guard. That is why this counts sleeves rather than dollars.\n\n"
+        "The result would otherwise render as a complete rebalance that quietly "
+        "under-deploys — a wrong trade instruction, not a wrong display. A caller "
+        "reaching this must refuse and name the sleeve rather than proceed; "
+        "pages/11_Capital_Deployment.py gates on the coverage record before calling, "
+        "which is why this had been unreachable. See issue #192."
+    )
 
     return _stamp(
         pd.DataFrame(rows) if rows else _EMPTY,

@@ -698,3 +698,68 @@ def test_suggest_buys_every_return_path_carries_the_flags():
     no_book = suggest_buys(breached, 0.0, 500.0, _TICKER_MAP, _PRICES)
     assert no_book.empty
     assert no_book.attrs["shortfalls_fully_filled"] is None
+
+
+# ── INVARIANT: suggest_buys cannot drop an allocated sleeve silently ─────────
+#
+# The check counts SLEEVES, not dollars. Both halves below must be able to fail,
+# and the second is the one a transplant of suggest_contributions' sum-invariant
+# would get wrong: deploying less than the cash offered is CORRECT here.
+
+def test_suggest_buys_raises_when_an_allocated_sleeve_has_no_priced_ticker():
+    """The positive half — the invariant must fire on a dropped sleeve.
+
+    Intl is underweight and out of band, so it receives an allocation; its only
+    ticker VEA is absent from `prices`, so it produces no rows and its dollars
+    leave the result. Before this check that was silent.
+    """
+    df = _drift({"US Large Core": 0.10, "US Large Quality": 0.14,
+                 "International Developed": 0.14, "Cash / SPAXX": 0.62})
+    prices_no_vea = {t: p for t, p in _PRICES.items() if t != "VEA"}
+
+    with pytest.raises(AssertionError) as exc:
+        suggest_buys(df, 10_000.0, 500.0, _TICKER_MAP, prices_no_vea)
+
+    msg = str(exc.value)
+    assert "International Developed" in msg, "the message must name the dropped sleeve"
+    assert "produced no buy rows" in msg
+    # It must state the dollar consequence, not merely that something was dropped.
+    assert "$" in msg and "missing from the result" in msg
+    # And it must pre-empt the wrong fix, since whoever sees this has no context.
+    assert "cannot be fixed by relaxing the filter" in msg
+    assert "counts sleeves rather than dollars" in msg
+
+
+def test_suggest_buys_invariant_silent_when_deploying_less_than_cash_offered():
+    """The negative half — and the one the sibling's invariant would fail.
+
+    total_shortfall $1100 < cash $5000, so the fill-completely branch deploys only
+    $1100 and leaves $3900 undeployed. That is CORRECT. suggest_contributions'
+    `sum == cash_to_deploy` assertion would fire here; this one must not, because
+    no sleeve was dropped.
+    """
+    df = _drift({"US Large Core": 0.10, "US Large Quality": 0.14,
+                 "International Developed": 0.14, "Cash / SPAXX": 0.62})
+    result = suggest_buys(df, 10_000.0, 5_000.0, _TICKER_MAP, _PRICES)
+
+    deployed = float(result["Suggested $"].sum())
+    assert deployed == pytest.approx(1100.0, rel=1e-3)
+    assert 5_000.0 - deployed == pytest.approx(3900.0, rel=1e-3), (
+        "premise of this test: far less than the offered cash is deployed, and it "
+        "is correct — a dollar-based invariant would fire right here"
+    )
+    assert result.attrs["shortfalls_fully_filled"] is True
+
+
+def test_suggest_buys_invariant_silent_on_a_sleeve_with_no_allocation():
+    """A sleeve absent from `prices` but NOT underweight is never allocated, so it
+    is not a drop and must not fire. Otherwise the invariant would refuse ordinary
+    books that simply hold nothing in some in-band sleeve."""
+    # Intl at target -> in band -> not underweight -> no allocation.
+    df = _drift({"US Large Core": 0.10, "US Large Quality": 0.14,
+                 "International Developed": 0.19, "Cash / SPAXX": 0.57})
+    prices_no_vea = {t: p for t, p in _PRICES.items() if t != "VEA"}
+    result = suggest_buys(df, 10_000.0, 500.0, _TICKER_MAP, prices_no_vea)
+    assert not result.empty
+    assert "VEA" not in result["Ticker"].values
+    assert "International Developed" not in result["Sleeve"].values
