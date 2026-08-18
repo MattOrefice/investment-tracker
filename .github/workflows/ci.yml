@@ -10,24 +10,58 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
+    # A HUNG RUN IS WORSE THAN A FAILED ONE. A failure is a signal; a hang is the
+    # absence of one, and an absence invites "it would have passed" — the exact
+    # substitution this repo's merge discipline forbids. CI-green-BY-SHA is one of
+    # three merge proofs, so a run that can neither pass nor fail breaks a
+    # verification leg rather than merely being annoying.
+    #
+    # Without this the job inherits GitHub's 360-minute default. Observed normal for
+    # the whole job is 3-4 minutes, so 15 is ~4x headroom and cannot fire on a merely
+    # slow run. This is the backstop for every step with no timeout of its own; the
+    # step-level values below are tighter where a normal has been measured.
+    timeout-minutes: 15
+
     steps:
       - uses: actions/checkout@v5
 
       - name: Set up Python
         uses: actions/setup-python@v6
+        timeout-minutes: 5
         with:
           python-version: "3.11"
           cache: "pip"
 
-      - name: Install system dependencies (WeasyPrint)
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends \
-            libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz0b \
-            libgobject-2.0-0 libffi-dev
+      # REMOVED: an apt step installing WeasyPrint's Pango/HarfBuzz system libs.
+      #
+      # It hung indefinitely on `apt-get update -qq` on 2026-08-18 — twice on the same
+      # SHA, for 25 and 17 minutes, against a measured 6-second normal (run
+      # 32085457063, step 4: 00:41:28 -> 00:41:34). `-qq` suppressed the mirror output,
+      # so the step showed nothing at all rather than what it was waiting on.
+      #
+      # IT GUARDED NOTHING HERE. weasyprint is imported function-locally at
+      # src/reports.py:236, so importing src.reports — which tests/test_imports.py does
+      # for every module — never touches the libs. The only test that reaches the render
+      # is tests/test_market_data_immutability.py::test_pdf_build_writes_no_tracked_data,
+      # and it wraps the call in `except Exception: pass` BY DESIGN: its stated guarantee
+      # is that no tracked file was written, not that the PDF builds. So it passes
+      # identically with or without the libs, and nothing CI asserts depended on this
+      # step.
+      #
+      # THE LIBS ARE STILL REQUIRED AT RUNTIME on Streamlit Cloud, via packages.txt. Do
+      # not read this removal as "WeasyPrint needs nothing" — it means CI does not verify
+      # the PDF path, which it did not verify before either.
+      #
+      # Before re-adding, two things are on record: CI's list was a SUPERSET of
+      # packages.txt by two packages (libgobject-2.0-0, libffi-dev), tracked separately;
+      # and whether CI should cover the PDF build is a decision about tightening that
+      # test, which is a different question from this one and is filed, not assumed.
 
       - name: Install Python dependencies
         run: pip install -r requirements.txt
+        # pip is now the only network-bound install step and the natural heir to the
+        # hang risk. Observed normal ~30s (00:41:34 -> 00:42:03).
+        timeout-minutes: 5
 
       - name: Show key package versions (diagnostic)
         run: pip show streamlit weasyprint kaleido statsmodels | grep -E "^(Name|Version):"
@@ -61,5 +95,8 @@ jobs:
       - name: Run fast tests (slow/network tests excluded)
         # Exclusions live in pytest.ini addopts (not slow and not live_data). Do NOT add a CLI -m here — it overrides addopts and silently re-includes the live_data tests (live external API calls on every push).
         run: python -m pytest --tb=long -q
+        # Observed normal ~2.5 minutes. 10 leaves room for a slow runner while still
+        # bounding a hang — a slow test run and a hung one deserve different verdicts.
+        timeout-minutes: 10
         env:
           TRACKER_MODE: demo
