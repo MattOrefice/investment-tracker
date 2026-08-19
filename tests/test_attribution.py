@@ -1165,7 +1165,7 @@ def _demo_copy_with_deletions(tmp_path, monkeypatch, *delete_statements):
     trap — demo-mode fetches append rows — cannot fire because fetch_prices raises),
     and the mutation lands only on the throwaway copy.
     """
-    import shutil, sqlite3, pathlib
+    import os, shutil, sqlite3, pathlib
     import src.db as db
     import src.prices as prices
 
@@ -1173,7 +1173,14 @@ def _demo_copy_with_deletions(tmp_path, monkeypatch, *delete_statements):
     if not demo.exists():
         pytest.skip("demo.db unavailable — skipped in local/empty-DB mode")
     work = tmp_path / "demo_gap.db"
-    shutil.copy(demo, work)
+    # copyfile + explicit chmod, never shutil.copy (#173): copy propagates the
+    # SOURCE's permission bits, so with the read-only guards armed the committed
+    # demo.db yields a read-only temp file and this fixture's own writes below
+    # fail with "attempt to write a readonly database" — a guard artifact that
+    # reads exactly like a real failure. Same pattern as
+    # tests/test_market_data_immutability.py:92-94.
+    shutil.copyfile(demo, work)
+    os.chmod(work, 0o644)
     conn = sqlite3.connect(work)
     for stmt in delete_statements:
         conn.execute(stmt)
@@ -1290,7 +1297,7 @@ def test_brinson_fachler_period_requires_account_id():
 def test_brinson_fachler_period_excludes_non_portfolio_account(tmp_path, monkeypatch):
     """A 5-share VOO buy in a Roth (account 5) must NOT inflate the portfolio account's
     US Large Core weight. Pre-fix the blind read ballooned it from ~17% to ~77%."""
-    import shutil, sqlite3, pathlib
+    import os, shutil, sqlite3, pathlib
     import src.db as db
     import src.prices as prices
     from src.attribution import brinson_fachler_period
@@ -1299,7 +1306,10 @@ def test_brinson_fachler_period_excludes_non_portfolio_account(tmp_path, monkeyp
     if not demo.exists():
         pytest.skip("demo.db unavailable — skipped in empty-DB mode")
     work = tmp_path / "demo_two_account.db"
-    shutil.copy(demo, work)
+    # copyfile + chmod, not shutil.copy — see the note at the coverage-gap
+    # fixture above (#173).
+    shutil.copyfile(demo, work)
+    os.chmod(work, 0o644)
     conn = sqlite3.connect(work)
     conn.execute(
         "INSERT INTO accounts (account_id,name,type,custodian,tax_treatment,managed_by,"
