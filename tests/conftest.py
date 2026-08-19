@@ -162,6 +162,127 @@ if _redirect_disabled():
     )
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# TRACKED-DATA CONTENT BACKSTOP (GitHub #271)
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# THE ONLY GUARD HERE WHOSE COVERAGE IS NOT A LIST OF CALL SURFACES.
+#
+# Every other protection patches a surface someone had to think of — the redirect
+# above patches sqlite3.connect, tests/test_market_data_immutability.py patches
+# builtins.open (and now io.open / os.replace / os.rename). Each covers exactly
+# what was enumerated, and enumeration has already failed once: measured
+# 2026-08-19, `io.open`, `pathlib.Path.write_text`/`write_bytes` and `os.replace`
+# all bypassed the builtins.open trap. Path(...).write_text(...) — the most
+# idiomatic file write in Python — walked straight past it.
+#
+# This one watches CONTENT instead, so it catches a write regardless of the
+# surface used, including one nobody enumerated, and including one made by a
+# SUBPROCESS that no in-process patch can reach.
+#
+# TWO TIERS, because the costs differ by 25x (measured over 1876 tests):
+#   per-test   stat() size + mtime_ns on all 14 files      3.2 s total  -> names
+#              the culprit test, which a session check cannot
+#   per-session sha256 of all 14 files, start and end      44 ms total  -> the
+#              authoritative check; catches a content change even if stat matched
+#
+# Hashing per-test would cost 82 s on a 300 s suite. Stat-ing per-session would
+# name nothing. Neither tier is redundant.
+#
+# IT WATCHES ALL 14 `git ls-files data` ENTRIES, INCLUDING demo.db — deliberately
+# wider than the write_trap set, which excludes *.db. That puts the database
+# channel under a non-enumerating check too, so a subprocess DB write, or a run
+# with TRACKER_TEST_NO_DB_REDIRECT set, is still caught here. demo.db is 28.3 MB
+# of the 30.7 MB total, which is exactly why it can only be hashed per session.
+#
+# WHAT IT DOES NOT DO: it does not tell you WHICH LINE wrote, and it cannot refuse
+# the write. That is write_trap's job and the reason both exist. The count is now
+# three enumerating guards plus one non-enumerating backstop.
+
+_BACKSTOP_OFF = "TRACKER_TEST_NO_DATA_BACKSTOP"
+
+
+def _tracked_data_paths():
+    import subprocess
+    try:
+        out = subprocess.run(["git", "ls-files", "data"], cwd=str(_ROOT),
+                             capture_output=True, text=True, timeout=30).stdout.split()
+    except Exception:
+        return []
+    return [p for p in (_ROOT / q for q in out if q.strip()) if p.exists()]
+
+
+def _stat_snapshot(paths):
+    snap = {}
+    for p in paths:
+        try:
+            st = p.stat()
+            snap[p] = (st.st_size, st.st_mtime_ns)
+        except OSError:
+            snap[p] = None
+    return snap
+
+
+def _hash_snapshot(paths):
+    import hashlib
+    snap = {}
+    for p in paths:
+        try:
+            snap[p] = hashlib.sha256(p.read_bytes()).hexdigest()
+        except OSError:
+            snap[p] = None
+    return snap
+
+
+_TRACKED_DATA = _tracked_data_paths()
+_stat_baseline = {}
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _tracked_data_content_backstop():
+    """Session bookend: sha256 every tracked data file before and after."""
+    if os.environ.get(_BACKSTOP_OFF) or not _TRACKED_DATA:
+        yield
+        return
+    before = _hash_snapshot(_TRACKED_DATA)
+    yield
+    after = _hash_snapshot(_TRACKED_DATA)
+    moved = [p for p in _TRACKED_DATA if before.get(p) != after.get(p)]
+    assert not moved, (
+        "tracked data files CHANGED during this session: "
+        f"{[str(p.relative_to(_ROOT)) for p in moved]}. Something wrote a "
+        "committed input. The per-test tripwire above should name the test; if it "
+        "did not, the write came from a subprocess or from outside a test."
+    )
+
+
+@pytest.fixture(autouse=True)
+def _tracked_data_tripwire(request):
+    """Per-test: stat-based, so it can name the culprit for ~1% of runtime.
+
+    On a hit the baseline is UPDATED as well as reported, so only the test that
+    actually wrote fails — otherwise every subsequent test fails against a moved
+    baseline and the real culprit is buried in 1800 identical failures.
+    """
+    if os.environ.get(_BACKSTOP_OFF) or not _TRACKED_DATA:
+        yield
+        return
+    global _stat_baseline
+    if not _stat_baseline:
+        _stat_baseline = _stat_snapshot(_TRACKED_DATA)
+    yield
+    after = _stat_snapshot(_TRACKED_DATA)
+    moved = [p for p in _TRACKED_DATA if _stat_baseline.get(p) != after.get(p)]
+    if moved:
+        _stat_baseline = after
+        raise AssertionError(
+            f"{request.node.nodeid} wrote tracked data file(s): "
+            f"{[str(p.relative_to(_ROOT)) for p in moved]}. Committed inputs are "
+            "read-only to runtime code and to tests; refresh is "
+            "tools/refresh_market_data.py's job."
+        )
+
+
 def pytest_report_header(config):
     """A kill-switch whose only signal is a CI assertion is invisible locally,
     and a local green run with protection off is what teaches someone to leave it
