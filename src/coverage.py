@@ -227,6 +227,99 @@ def unresolved_marker(cov: PriceCoverage) -> "str | None":
             f"zero.{served}")
 
 
+# The three conditions that produce an empty sleeve frame. They are NOT
+# interchangeable and only one of them means "there is nothing here" — see
+# empty_book_note.
+EMPTY_NO_HOLDINGS = "no_holdings"
+EMPTY_UNPRICED = "unpriced"
+EMPTY_CASH_ONLY = "cash_only"
+
+
+def empty_book_state(cov: PriceCoverage) -> str:
+    """Which condition emptied the sleeve frame, from the coverage record alone.
+
+    `_sleeve_weights_impl` has THREE empty returns and they mean different things
+    (src/holdings.py — `holdings.empty`, `total == 0`, `invested <= 0`). It returns
+    the same empty DataFrame for all three, but it returns the STATUSES too, and
+    those separate the cases without any change to the producer:
+
+      no_holdings  requested is empty  — the pricing loop never ran, so nothing was
+                   ever requested. Nothing is held on this date.
+      unpriced     requested non-empty, resolved empty — every holding was asked
+                   for and none priced, so every market value counted as zero and
+                   the total came to zero.
+      cash_only    requested non-empty, something resolved — the book priced, but
+                   the non-cash remainder is zero, so weights (a share of INVESTED
+                   value) are undefined rather than zero.
+
+    Derived, not plumbed: adding a disposition to the producer the way #251 did for
+    attribution would work too, but here the record already present at every call
+    site carries the distinction, and a second channel could disagree with it.
+    """
+    if not cov.requested:
+        return EMPTY_NO_HOLDINGS
+    if not cov.resolved:
+        return EMPTY_UNPRICED
+    return EMPTY_CASH_ONLY
+
+
+def empty_book_note(cov: PriceCoverage) -> str:
+    """What to tell the reader when the sleeve frame came back empty.
+
+    THE MESSAGE THIS REPLACES HAD NO TRUE CASE. "No holdings found. Seed the
+    database first." rendered for all three conditions above, and it is false in
+    every one of them:
+
+      - unpriced   the book is seeded and holds positions; only the prices failed
+      - cash_only  the book is seeded, holds positions, and they priced
+      - no_holdings the ledger exists; seeding is not what is missing
+
+    And the state it WOULD have been right about — a database with no trades at
+    all — never reaches it: `get_portfolio_account` raises first (#139's fail-loud
+    guard, "no active self-directed taxable account carries a trade ledger"), so
+    the page stops before rendering anything. That is why both messages are
+    rewritten here rather than one: there was no correct case to preserve.
+
+    Shape follows #251: what happened, what was done instead, and — for the
+    failure — the clause that blocks the wrong inference. The third clause is the
+    one the code cannot derive: "no holdings" invites "the portfolio is empty",
+    and that reading is free unless something forbids it.
+    """
+    state = empty_book_state(cov)
+
+    if state == EMPTY_NO_HOLDINGS:
+        # A fact about the book, not a setup instruction. This is the only
+        # condition that legitimately reaches the empty branch, so it gets the
+        # careful sentence rather than the leftover one.
+        return (f"**No open positions as of {cov.as_of_requested}.** The trade "
+                f"ledger for this book has entries, but none of them leaves a "
+                f"position open on this date, so there is nothing to weigh "
+                f"against the policy targets.")
+
+    if state == EMPTY_UNPRICED:
+        names = ", ".join(sorted(cov.unresolved_tickers()))
+        reasons = ", ".join(sorted({u.reason for u in cov.unresolved}))
+        return (f"**Sleeve weights cannot be computed: no holding could be "
+                f"priced.** This book holds {len(cov.requested)} positions "
+                f"({names}) and none of them resolved to a committed price "
+                f"({reasons}). No committed price date is available for any "
+                f"holding. Every market value would count as zero, so weights, "
+                f"drift and deployment sizing are withheld rather than shown "
+                f"against a book valued at nothing. **The holdings exist and are "
+                f"not displayed — this is a failure to price them, not an empty "
+                f"or unseeded portfolio.**")
+
+    # "All 1 priced positions" — the count reads naturally only in the plural, and
+    # this state is MOST likely to hold exactly one position. Phrased so the number
+    # sits in an appositive instead of agreeing with a noun.
+    return (f"**No invested holdings: this book is entirely cash.** Every priced "
+            f"position ({len(cov.resolved)} of {len(cov.requested)}) sits in the "
+            f"cash sleeve, so invested value — total market value less cash — is "
+            f"zero. Strategic weights are a share of invested value, so they are "
+            f"undefined here rather than zero, and no drift or deployment sizing "
+            f"follows from them.")
+
+
 def coverage_from_statuses(
     statuses: "list[TickerStatus] | tuple[TickerStatus, ...]",
     as_of: str,

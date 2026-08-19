@@ -9,7 +9,7 @@ from datetime import date, timedelta
 from src.config import is_write_enabled
 from src.db import get_connection
 from src.holdings import sleeve_weights_with_coverage, get_holdings_on_date, get_portfolio_account, get_portfolio_account_id
-from src.coverage import unresolved_marker
+from src.coverage import unresolved_marker, empty_book_note, empty_book_state, EMPTY_UNPRICED
 from src.prices import get_prices
 from src.rebalance import (
     compute_drift,
@@ -169,7 +169,18 @@ _gap_note = data.get("gap_note")
 _coverage = data["coverage"]
 
 if sleeve_df.empty:
-    st.info("No holdings found. Seed the database first.")
+    # Three different conditions land here and the old single sentence ("No
+    # holdings found. Seed the database first.") was false in all three — see
+    # empty_book_note. The record needed to tell them apart is _coverage, bound
+    # two lines above and, until this change, never read on this path.
+    #
+    # Still st.stop(): everything below is sized from weights that do not exist,
+    # and rendering holdings under a failure banner invites reading them as a
+    # partial answer. Stop, having said what happened.
+    if empty_book_state(_coverage) == EMPTY_UNPRICED:
+        st.warning(empty_book_note(_coverage))   # a failure to measure
+    else:
+        st.info(empty_book_note(_coverage))      # a fact about the book
     render_footer()
     st.stop()
 
