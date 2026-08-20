@@ -396,6 +396,17 @@ def _fmt_bps(v: float) -> str:
 # "supporting the diversification rationale" unconditionally while Macro said "increase
 # US equity exposure" below the 40th percentile — a same-PDF contradiction).
 
+# The honest form, defined ONCE so the two paths that need it cannot drift apart.
+# "Uncertain" is a stated stance, not a withheld one — the absence of a stance is not
+# a neutral stance — and the action is what SAA policy says regardless of CAPE, so it
+# is a default that is correct when nothing is known rather than a reading of absent
+# data. That is the test a fallback stance has to pass: does its action DEPEND on the
+# missing input? "Moderate / consistent with the long-run average" fails it, because
+# it asserts a specific relationship to a history that produced no observations.
+_CAPE_UNKNOWN: tuple[str, str] = (
+    "Uncertain", "suggest maintaining SAA diversification")
+
+
 def _cape_regime(pct_int: int) -> tuple[str, str]:
     """Map a CAPE percentile rank (0-100, rounded) to (regime label, allocation stance).
 
@@ -1093,14 +1104,26 @@ def _build_macro_section() -> dict:
     try:
         cape_val = current_cape()
         cape_s   = get_cape_series()
-        try:
-            _raw_pct = percentile(cape_s, cape_val)
+        # HANDLE None, DO NOT CATCH ITS TypeError. percentile() returns None on an
+        # empty series BY CONTRACT, and its docstring names this caller's obligation:
+        # "those that can [receive an empty series] must handle None". The previous
+        # code wrapped these three lines in `except Exception` — so `f"{None:.0f}th"`
+        # raised TypeError, the catch-all swallowed it, and the honest None was
+        # LAUNDERED BACK INTO 50, which _cape_regime maps to a confident "Moderate".
+        # An upstream fix, made citing this very defect, silently reverted one layer
+        # down by a broad except. Nothing reported that.
+        _raw_pct = percentile(cape_s, cape_val)
+        if _raw_pct is None:
+            pct_str, pct_int = "N/A", None
+            _regime, _regime_action = _CAPE_UNKNOWN
+            _note = (f"{_regime}: no historical percentile is available to rank CAPE "
+                     f"{cape_val:.1f}x against, so no valuation reading is drawn from "
+                     f"it; valuations {_regime_action}.")
+        else:
             pct_str  = f"{_raw_pct:.0f}th"
             pct_int  = int(round(_raw_pct))
-        except Exception:
-            pct_str  = "N/A"
-            pct_int  = 50
-        _regime, _regime_action = _cape_regime(pct_int)
+            _regime, _regime_action = _cape_regime(pct_int)
+            _note = f"{_regime} vs. history ({pct_str}); valuations {_regime_action}."
         cape_implied = compute_cape_implied_return(cape_val)
         macro["cape"] = {
             "value":          f"{cape_val:.1f}x",
@@ -1108,16 +1131,21 @@ def _build_macro_section() -> dict:
             "pct_int":        pct_int,
             "regime":         _regime,
             "regime_action":  _regime_action,
-            "note":           f"{_regime} vs. history ({pct_str}); valuations {_regime_action}.",
+            "note":           _note,
             "implied_return": f"{cape_implied:+.2%}",
         }
     except Exception:
+        # Anything that RAISES (a missing committed CSV raises FileNotFoundError by
+        # design) lands here and always did degrade honestly. pct_int was 50 here
+        # too — inert, because this path never calls _cape_regime — but an inert
+        # fabrication is one consumer away from a live one, which is #245's whole
+        # lesson. None instead.
         macro["cape"] = {
             "value":          "N/A",
             "percentile":     "N/A",
-            "pct_int":        50,
-            "regime":         "Uncertain",
-            "regime_action":  "suggest maintaining SAA diversification",
+            "pct_int":        None,
+            "regime":         _CAPE_UNKNOWN[0],
+            "regime_action":  _CAPE_UNKNOWN[1],
             "note":           "Data unavailable.",
             "implied_return": None,
         }
