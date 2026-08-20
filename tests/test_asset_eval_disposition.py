@@ -193,6 +193,84 @@ def test_empty_dict_defaults_to_failed_not_to_a_gentler_state():
     assert '"disposition":      "failed"' in head or '"disposition": "failed"' in head
 
 
+def test_the_harness_context_leaves_nothing_undefined_inside_the_section():
+    """Why the blank-tolerant Undefined cannot affect what these tests measure.
+
+    `_Blank` differs from production exactly where a variable is MISSING — which is
+    the same direction as the suppression bug this change fixes, so the divergence
+    would matter if it reached the section. It does not: `_ctx()` supplies every
+    key `_empty` defines, so no name inside the asset-eval block is ever undefined
+    and `_Blank` engages only on the REST of the report (thesis, exec, holdings),
+    which is outside the extracted section.
+
+    Asserted rather than argued, because "the harness is fine" is the claim most
+    likely to be believed without evidence.
+    """
+    import ast
+    import inspect
+    import textwrap
+
+    # Parsed, not grepped: a regex over the source also matches the per-row dicts
+    # built inside the univariate loop, which are not section-level context. The
+    # first version of this test did exactly that and failed against itself.
+    fn = ast.parse(textwrap.dedent(
+        inspect.getsource(reports._build_asset_eval_section))).body[0]
+    keys = None
+    for node in ast.walk(fn):
+        if (isinstance(node, ast.AnnAssign)
+                and getattr(node.target, "id", None) == "_empty"):
+            keys = {k.value for k in node.value.keys}
+            break
+    assert keys, "_empty dict not found — the builder's shape changed"
+
+    missing = keys - set(_BASE)
+    assert not missing, (
+        f"the builder produces keys the test context omits: {sorted(missing)} — "
+        f"those WOULD be Undefined in the section and _Blank would hide it")
+
+
+def test_partial_state_through_a_real_pdf_build(monkeypatch):
+    """ONE real build, pinning that the harness and production agree.
+
+    `partial` is the state chosen, and deliberately: it is the ONLY one that
+    renders the section BODY. `no_data` and `failed` emit a single <div> and touch
+    almost no context, so harness and production have nearly nothing to disagree
+    about there. `partial` traverses every sub-block, and its whole claim — "the
+    remaining analyses are shown" — is precisely what a permissive Undefined could
+    fake by rendering a missing variable as empty.
+
+    EXPENSIVE: a real build is ~190s, the largest single test in the suite. One
+    state is the pin; four would pay minutes to re-prove the same agreement.
+    WeasyPrint is never invoked — _render_pdf is stubbed — and nothing is written
+    to data/reports/.
+    """
+    import src.asset_evaluation as ae
+
+    captured = {}
+    monkeypatch.setattr(reports, "_render_pdf",
+                        lambda html: (captured.__setitem__("html", html), b"stub")[1])
+    monkeypatch.setattr(ae, "build_univariate_table", lambda *a, **k: pd.DataFrame())
+
+    out = reports.generate_quarterly_report_bytes("2025-05-01", "2026-06-30",
+                                                  is_demo=True)
+    assert out == b"stub", "the build did not reach _render_pdf"
+
+    m = re.search(r"<section>\s*<h2>Asset Evaluation.*?</section>",
+                  captured["html"], re.S)
+    assert m, "asset-eval section absent from a real build"
+    body = _text(m.group(0))
+
+    # the partial banner, under production's Undefined policy
+    assert "Univariate statistics unavailable" in body
+    # and the analyses it promises are actually there — the claim the gate makes true
+    assert "Full-Sample Correlation" in body, "real build discarded the analyses"
+    assert "Rolling" in body
+    # the table that genuinely failed is the only thing omitted
+    assert "Ann. Return" not in body
+    # and no state claims a cause it cannot know
+    assert OLD not in body
+
+
 def test_the_log_line_does_not_claim_the_section_is_omitted():
     """It said "section omitted from PDF"; the render disproved it — the section
     emits a banner. An internal message contradicting the output is read by a
