@@ -30,18 +30,21 @@
   is clean or carries hundreds of rows of drift — the size is stable
   because sqlite reuses pages. Use `python tools/fingerprint_db.py
   data/demo.db`, which compares per-table row counts and content
-  hashes and names both sides of the comparison. Run it before every
-  commit that ran the suite, and after every merge. This has bitten
-  twice, the second time with the trap already known — knowing it does
-  not prevent it, only the mechanical check does.
-  A LOCAL SUITE RUN DRIFTS demo.db EVEN IN PERSONAL MODE, which is the
-  counter-intuitive part: `.env` pins TRACKER_MODE=personal so
-  DB_PATH=data/tracker.db, yet some tests open the committed demo.db
-  directly regardless of mode. Measured five times for five in one
-  session (2026-08-18), +235 to +306 price rows each. tracker.db is
-  gitignored so its drift cannot be committed; demo.db is TRACKED, so
-  restore it — `git checkout -- data/demo.db` — and fingerprint before
-  committing. Tracked as #227.
+  hashes and names both sides of the comparison.
+  THE SUITE DRIFT THIS GUARDED AGAINST IS FIXED (#227/#269, 2026-08-19).
+  A local personal-mode run used to write the TRACKED demo.db — nine
+  runs for nine, +235 to +324 price rows each — because some tests open
+  it directly regardless of mode. `tests/conftest.py` now redirects
+  write-mode opens of `data/*.db` to a per-session copy, and the suite
+  additionally self-checks every `git ls-files data` entry (per-test
+  stat names the culprit; per-session sha256 is authoritative, #271/#272).
+  A GREEN SUITE IS NOW THE PROOF that nothing moved.
+  So fingerprint_db is no longer a gate before every commit — it is the
+  DIAGNOSTIC you run to find out WHAT changed once the suite reports that
+  something did, because it is the only thing that names tables and row
+  counts. Pair it with `sha256sum data/tracker.db`, which nothing else
+  covers. Keep the `git diff --stat` warning above: it stays true, and it
+  is why a byte-size check can never stand in for either.
 - State root cause in plain English before changes that touch
   multiple files or git history.
 
@@ -67,7 +70,9 @@
   same tree:
     - LOCAL, personal mode: plain `python -m pytest -q`. `.env` pins
       TRACKER_MODE=personal, so DB_PATH=data/tracker.db and the
-      personal fixtures are present. Guards down (see below).
+      personal fixtures are present. Guards UP (see below) — since
+      #269/#270 both guard states give identical failure sets by name,
+      so guards-up is the default rather than merely permitted.
     - CI, demo mode: `python -m pytest --tb=long -q` with
       TRACKER_MODE=demo and NO data/tracker.db (it is gitignored, so
       tests keyed on the personal cache skip). This is the only
@@ -105,9 +110,16 @@
   this file has had to correct three times.
 - "Guards" means the read-only attribute set on data/demo.db,
   data/tracker.db and every `git ls-files data` entry, to prove a
-  diagnostic did not mutate tracked data. GUARDS-UP AND THE FULL SUITE
-  ARE MUTUALLY EXCLUSIVE — see Known Issues; do not read a guards-up
-  failure count as movement.
+  diagnostic did not mutate tracked data. RUN THE SUITE GUARDS-UP.
+  An earlier version of this bullet said guards-up and the full suite
+  were MUTUALLY EXCLUSIVE. That was true until 2026-08-19 and is not
+  now: #269 sends the DDL write that aborted collection to a per-session
+  copy, and #270 stopped three attribution fixtures inheriting the
+  read-only bit via `shutil.copy`. Measured on the same tree, both
+  states give 13 failures with IDENTICAL NAMES — diffed, not counted.
+  Guards stay up because they are the only OUT-OF-PROCESS protection:
+  every other guard here patches a call surface someone enumerated, and
+  enumeration has already failed once (#271).
 - Two red tests are DELIBERATE and load-bearing: #177
   (`test_exactly_the_saa_tickers_are_flagged`, the only live signal
   that the personal book has diverged from its documented taxonomy)
@@ -174,7 +186,9 @@
   reads take a required keyword-only account_id (raise on None), and
   get_portfolio_account() resolves exactly one active taxable+self
   trade-bearing account or raises. Two-account CI fixtures exist
-  (tests/test_account_scoping.py; tests/test_attribution.py:1276). An
+  (tests/test_account_scoping.py; and in tests/test_attribution.py, the
+  test named `test_brinson_fachler_period_excludes_non_portfolio_account`,
+  which builds its second account in a `demo_two_account.db` fixture). An
   earlier version of this bullet called holdings.py account-blind and
   demanded read-time scoping before multi-account work — both fixed by
   #139 (note: #152 scoped the PDF on top of it; #139 itself has no
@@ -188,23 +202,31 @@
   updated when this happens; parse_fidelity_csv raises on an unmapped
   account, which is the intended behavior. The map is gitignored — carry
   new entries manually between machines.
-- A READ-ONLY GUARD AND THE PERSONAL-MODE SUITE CANNOT BOTH HOLD, so a
-  guards-up failure count is a different configuration and not movement.
-  `_auto_migrate` still performs a DDL write on any DB carrying the
-  vestigial `accounts.account_number` column: `_drop_account_number`
-  (src/db.py:146-157) runs `DROP INDEX IF EXISTS` + `ALTER TABLE ... DROP
-  COLUMN` when it finds the column. With guards up that write fails, and
-  tests/test_attribution.py errors during COLLECTION at src/db.py:155
-  ("attempt to write a readonly database") — so a guards-up FULL-SUITE
-  number does not exist to be quoted. Seven pages/14 render tests fail the
-  same way. Nothing is broken: the column was all-NULL where it was found,
-  no account numbers, and the migration itself works. Note the condition —
-  once a DB has been opened writably the column is gone and the write
-  stops happening, so this reproduces only on a DB restored from an older
-  copy, a second machine, or a clone seeded pre-migration. It also
-  corrects a claim made after PR #175 that the last write-on-touch channel
-  had been closed: #175 closed the others and the claim was generalised
-  past its evidence. Tracked as #232.
+- RESOLVED 2026-08-19, kept as a record because the reasoning recurs.
+  A read-only guard and the personal-mode suite USED TO be mutually
+  exclusive. `_auto_migrate` performs a DDL write on any DB carrying the
+  vestigial `accounts.account_number` column — `_drop_account_number`
+  runs `DROP INDEX IF EXISTS` + `ALTER TABLE ... DROP COLUMN` when it
+  finds it — and with guards up that write failed, so
+  tests/test_attribution.py errored during COLLECTION and no guards-up
+  full-suite number existed to quote. #232.
+  It is DISSOLVED, not worked around: the write still happens, but
+  `tests/conftest.py` redirects it to a per-session copy (#269), so the
+  guard and the migration no longer contend. Measured single-variable,
+  guards up both sides: redirect off aborts collection in 2.24s, redirect
+  on completes. #232 and #227 are CLOSED.
+  Nothing was ever broken here: the column was all-NULL where it was
+  found, no account numbers, and the migration itself works. The
+  reproduction condition still holds if you disable the redirect — once a
+  DB has been opened writably the column is gone and the write stops, so
+  it only appears on a DB restored from an older copy, a second machine,
+  or a clone seeded pre-migration.
+  The lasting lesson is the one this bullet was written for: it corrected
+  a claim made after PR #175 that the last write-on-touch channel had been
+  closed. #175 closed the others and the claim was generalised past its
+  evidence. The 2026-08-19 census found that generalisation was wrong by
+  more than it looked — 1,118 mutating statements in a full run, of which
+  404 were not price-cache writes at all.
 - A running Streamlit server survives merges and hot-reloads partially,
   rendering a mix of old and new module state. Restart it after any PR
   before trusting a personal-mode render. A visual "bug" in a long-running
@@ -215,7 +237,10 @@
   sys.modules, so a process warm from before a merge runs the NEW page file
   against the OLD module object. Fired 2026-07-27 on the Performance page:
   `ImportError: cannot import name 'quarter_staleness_note' from 'src.asof'`
-  at pages/2_Performance.py:12, because PR #159 (f07cfce) added that function
+  at pages/2_Performance.py:12 AS THE TRACEBACK READ THAT DAY — quoted
+  evidence, not a live pointer; do not follow it or "correct" it, since
+  the line has since moved and the record is the point. PR #159 (f07cfce)
+  added that function
   to src/asof.py and to the page's import list in ONE commit — so only a
   split-brain process can see the name missing. Reboot the app from the
   Cloud dashboard; there is nothing to fix in the code. Before bisecting a
