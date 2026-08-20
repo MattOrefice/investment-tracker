@@ -813,8 +813,14 @@ def interpret_rolling_correlation(current_value: float, history_series: pd.Serie
     from src.macro import percentile as _macro_percentile
 
     hist = history_series.dropna()
-    pct  = _macro_percentile(hist, current_value) if not hist.empty else 50.0
-    start_year = hist.index.min().year if not hist.empty else "the sample start"
+    # NO INLINE EMPTY GUARD (#245). This line used to read
+    #     _macro_percentile(hist, current_value) if not hist.empty else 50.0
+    # which guarded emptiness ITSELF and supplied the median rank inline, so it could
+    # never reach macro.percentile's empty branch — whatever that function returned,
+    # this site was untouched by it. Its own neighbour one line down already degraded
+    # honestly under the identical test, which is the tell: someone reached the honest
+    # answer on one line and not on the one above it.
+    pct  = _macro_percentile(hist, current_value)      # None on empty, by contract
 
     if current_value >= 0.65:
         level = "compressed: the sleeves are moving largely together and offer little offset right now"
@@ -823,9 +829,26 @@ def interpret_rolling_correlation(current_value: float, history_series: pd.Serie
     else:
         level = "strong: average co-movement is low and the sleeves are genuinely diversifying"
 
+    # The level band is derived from current_value, which is KNOWN, so it stays
+    # truthful either way. Only the historical rank is withheld.
+    #
+    # `start_year` used to be computed here with its own `else "the sample start"`
+    # fallback — the honest neighbour that made #245 legible, since it reached the
+    # right answer under the same guard the line above fabricated under. That
+    # fallback is now UNREACHABLE and has been removed rather than left: pct is None
+    # exactly when hist is empty (macro.percentile returns None only on an empty
+    # series, and hist is already dropna'd), so the two conditions coincide and the
+    # no-history clause below subsumes what "since the sample start" used to admit.
+    # Keeping a dead honest fallback beside a deleted dishonest one would leave the
+    # same latency this change exists to remove.
+    rank = (f"the {_ordinal(pct)} percentile of its history since "
+            f"{hist.index.min().year}"
+            if pct is not None else
+            "with no history available to rank it against")
+
     return (
-        f"Average pairwise sleeve correlation is currently ρ ≈ {current_value:+.2f}, the "
-        f"{_ordinal(pct)} percentile of its history since {start_year} — cross-sleeve "
+        f"Average pairwise sleeve correlation is currently ρ ≈ {current_value:+.2f}, "
+        f"{rank} — cross-sleeve "
         f"diversification is {level}. In stress episodes the equity sleeves converge toward "
         "+1 (diversification among equity styles evaporates in a crash); the blended average "
         "stays lower only because the bond sleeves decouple from equities, which is the "
