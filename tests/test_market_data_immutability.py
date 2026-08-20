@@ -28,6 +28,7 @@ mtime/lag staleness window regardless of wall-clock, so the mtime-gated paths
 from __future__ import annotations
 
 import builtins
+import io
 import os
 import pathlib
 import shutil
@@ -60,25 +61,71 @@ _WRITE_MODES = ("w", "a", "x", "+")
 
 @pytest.fixture
 def write_trap(monkeypatch):
-    """Wrap builtins.open: record + refuse write-mode opens of tracked data files."""
+    """Record + refuse write-mode opens of tracked data files.
+
+    FOUR SURFACES, NOT ONE. This wrapped only ``builtins.open`` until #271, and
+    measurement showed three common idioms walked straight past it:
+
+        io.open(path, "a")            -> io.open       MISSED
+        Path(path).write_text(...)    -> io.open       MISSED
+        os.replace(src, path)         -> os.replace    MISSED
+        open / to_csv / to_parquet    -> builtins.open caught
+
+    ``builtins.open`` and ``io.open`` are the SAME function object but SEPARATE
+    NAME BINDINGS, so patching one leaves the other untouched — and ``pathlib``
+    reaches the latter. That made the most idiomatic file write in Python
+    invisible here.
+
+    A prediction that was wrong in the useful direction, kept as a warning against
+    reasoning about this from plausibility: ``to_parquet`` was expected to be the
+    gap, on the theory that pyarrow opens files in C. It does not — it routes
+    through ``builtins.open`` and was always caught. The NATIVE path went through
+    the trap; the plain-Python idioms did not.
+
+    THIS LIST IS STILL AN ENUMERATION and will go stale the same way. It buys
+    attribution — the culprit line, at the moment of the write, refused — not
+    coverage. Coverage comes from the content backstop in tests/conftest.py,
+    which watches bytes rather than call surfaces. Do not read this widening as
+    having closed the class.
+    """
     tracked = _tracked_data_files()
     assert tracked, "git ls-files returned no tracked data files — trap would be vacuous"
     attempts: list[tuple[str, str]] = []
     real_open = builtins.open
+    real_io_open = io.open
+    real_replace = os.replace
+    real_rename = os.rename
 
-    def guarded_open(file, mode="r", *args, **kwargs):
+    def _hit(resolved, how):
+        attempts.append((resolved, how))
+        raise AssertionError(f"write-mode {how} of tracked data file {resolved}")
+
+    def _resolve(target):
         try:
-            resolved = os.path.normcase(str(pathlib.Path(file).resolve()))
+            return os.path.normcase(str(pathlib.Path(target).resolve()))
         except (TypeError, ValueError, OSError):
-            return real_open(file, mode, *args, **kwargs)   # fd or exotic target
-        if resolved in tracked and any(m in mode for m in _WRITE_MODES):
-            attempts.append((resolved, mode))
-            raise AssertionError(
-                f"write-mode open({mode!r}) of tracked data file {resolved}"
-            )
-        return real_open(file, mode, *args, **kwargs)
+            return None                      # fd or exotic target
 
-    monkeypatch.setattr(builtins, "open", guarded_open)
+    def _make_open(real, label):
+        def guarded(file, mode="r", *args, **kwargs):
+            resolved = _resolve(file)
+            if resolved in tracked and any(m in str(mode) for m in _WRITE_MODES):
+                _hit(resolved, f"{label}({mode!r})")
+            return real(file, mode, *args, **kwargs)
+        return guarded
+
+    def _make_move(real, label):
+        def guarded(src, dst, *args, **kwargs):
+            resolved = _resolve(dst)
+            if resolved in tracked:
+                _hit(resolved, f"{label}(dst)")
+            return real(src, dst, *args, **kwargs)
+        return guarded
+
+    monkeypatch.setattr(builtins, "open", _make_open(real_open, "builtins.open"))
+    monkeypatch.setattr(io, "open", _make_open(real_io_open, "io.open"))
+    monkeypatch.setattr(os, "replace", _make_move(real_replace, "os.replace"))
+    monkeypatch.setattr(os, "rename", _make_move(real_rename, "os.rename"))
     yield attempts
 
 
