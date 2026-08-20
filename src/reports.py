@@ -1256,10 +1256,41 @@ def _build_positioning_section(end_date: str) -> dict:
 
 
 def _build_asset_eval_section() -> dict:
-    """Build the Asset Evaluation section — same source as pages/10_Asset_Evaluation.py."""
+    """Build the Asset Evaluation section — same source as pages/5_Asset_Evaluation.py.
+
+    THREE STATES REACH THE TEMPLATE AND THEY ARE NOT THE SAME CLAIM (#250). Before
+    this, all three rendered one sentence — "Asset evaluation data unavailable —
+    requires market data access" — measured by rendering each in memory:
+
+      no_data   the input return series are empty. An absence of input.
+      failed    a loader raised. A failure to compute, and the exception is the
+                only thing that says which.
+      partial   the loads succeeded and the UNIVARIATE TABLE did not. This was the
+                worst of the three: the correlation, rolling-correlation and
+                mean-variance analyses were all computed and then DISCARDED,
+                because the template gated the whole section on ``uni_rows``.
+                Coarse gating throwing away successful work — distinct from #249,
+                which is coarse disclosure over fine-grained failures.
+
+    DISPOSITION IS DERIVED HERE, NOT PLUMBED UP FROM asset_evaluation, and that is
+    a deliberate layer choice. The test is the one src/coverage.py's two-layer
+    docstring settles: is the distinguishing fact knowable ONLY upstream? There it
+    was — only the price layer can consult the cache before a fetch and tell
+    ``no_cached_rows`` from ``fetch_failed``. Here it is not, on three counts:
+    this function holds the empty frame itself; it catches the exception object
+    itself; and an empty return series is a CORRECT answer from
+    asset_evaluation's standpoint (get_candidate_returns returns an empty Series
+    by design), so a producer status would mean inventing an error concept for a
+    non-error. #251 made the same call for attribution — its disposition lives
+    here, not in src/attribution.py.
+    """
     import src.asset_evaluation as ae
 
     _empty: dict = {
+        # "failed" is the value the UNMODIFIED dict carries, so an exit that
+        # returns _empty as-is cannot accidentally claim a gentler state.
+        "disposition":      "failed",
+        "failure_reason":   None,
         "sample_start":     ae.SAMPLE_START,
         "uni_rows":         [],
         "corr_chart_b64":   None,
@@ -1282,10 +1313,16 @@ def _build_asset_eval_section() -> dict:
         slv_ret = ae.get_sleeve_returns(ae.SAMPLE_START)
         spy_ret = ae.get_candidate_returns("SPY", ae.SAMPLE_START)
         if btc_ret.empty or slv_ret.empty:
-            return _empty
-    except Exception:
-        logging.exception("asset_eval data load failed — section omitted from PDF")
-        return _empty
+            return {**_empty, "disposition": "no_data"}
+    except Exception as exc:
+        # NOT "omitted": the section renders a banner. The old message said
+        # omitted, and an in-memory render disproved it — an internal message
+        # contradicting the output, read by a maintainer mid-debug.
+        logging.exception(
+            "asset_eval data load failed — the section renders a failure banner "
+            "in place of figures; it is NOT omitted from the PDF")
+        return {**_empty, "disposition": "failed",
+                "failure_reason": f"{type(exc).__name__}: {exc}"}
 
     result = {k: (list(v) if isinstance(v, list) else v) for k, v in _empty.items()}
 
@@ -1514,6 +1551,21 @@ def _build_asset_eval_section() -> dict:
         result["args_against"] = args_against
     except Exception:
         pass
+
+    # The loads succeeded, so this is not "failed" — but each analysis below has
+    # its own try/except and any of them can come back empty. Keyed on what was
+    # actually produced rather than on uni_rows alone, which is what discarded
+    # successful work before #250.
+    _other = any((result["corr_chart_b64"], result["corr_prose"],
+                  result["rolling_chart_b64"], result["rolling_prose"],
+                  result["con_rows"], result["msc_chart_b64"],
+                  result["dd_rows"], result["args_for"], result["args_against"]))
+    if result["uni_rows"]:
+        result["disposition"] = "computed"
+    elif _other:
+        result["disposition"] = "partial"
+    else:
+        result["disposition"] = "no_data"
 
     return result
 

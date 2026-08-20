@@ -540,14 +540,39 @@
 <section>
   <h2>Asset Evaluation &mdash; Case Study: Bitcoin</h2>
 
-  {% if not asset_eval or not asset_eval.uni_rows %}
-  <div class="empty-banner">Asset evaluation data unavailable &mdash; requires market data access.</div>
+  {# Gated on DISPOSITION, not on uni_rows (#250). The old gate suppressed the
+     whole section whenever the univariate table was empty, discarding the
+     correlation, rolling-correlation and mean-variance analyses even when they
+     had computed successfully. It also rendered one sentence for three states. #}
+  {% if not asset_eval or asset_eval.disposition == "failed" %}
+  <div class="empty-banner"><strong>Asset evaluation could not be computed.</strong>
+  {% if asset_eval and asset_eval.failure_reason %}The data load failed with:
+  <code>{{ asset_eval.failure_reason }}</code>.{% endif %}
+  No figures are shown, rather than shown from a partial load.
+  <strong>This is a failure to compute and not a judgement about the asset &mdash; do
+  not read the absent analysis as a negative conclusion.</strong></div>
+
+  {% elif asset_eval.disposition == "no_data" %}
+  <div class="empty-banner"><strong>Asset evaluation not included: its input return
+  series are empty.</strong> No daily returns were available for BTC-USD or for the
+  SAA sleeves over the sample window beginning {{ asset_eval.sample_start }}. No
+  figures are shown, rather than shown over a window that has none.
+  <strong>This is an absence of input data, not a finding about the asset.</strong></div>
+
   {% else %}
+
+  {% if asset_eval.disposition == "partial" %}
+  <div class="empty-banner"><strong>Univariate statistics unavailable; the remaining
+  analyses are shown.</strong> The summary table could not be built, so it is omitted.
+  The correlation, rolling-correlation and mean-variance results below were computed
+  normally and are unaffected.</div>
+  {% endif %}
 
   <p class="muted">BTC-USD &middot; {{ asset_eval.sample_start }} to present &middot;
   daily returns &middot; 252-day annualization &middot; Candidate asset evaluation for SAA
   inclusion under the same analytical framework as the Streamlit Asset Evaluation page.</p>
 
+  {% if asset_eval.uni_rows %}
   <h3>Univariate Statistics ({{ asset_eval.sample_start }}&ndash;present)</h3>
   <table class="data-table">
     <thead>
@@ -575,6 +600,7 @@
       {% endfor %}
     </tbody>
   </table>
+  {% endif %}
 
   <h3>Full-Sample Correlation vs SAA Sleeves</h3>
   {% if asset_eval.corr_chart_b64 %}
