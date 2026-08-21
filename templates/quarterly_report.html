@@ -692,11 +692,17 @@
   <table class="data-table">
     <thead>
       <tr>
+        {# THE SUBJECT, NAMED IN THE HEADER (#276). These columns are the blended
+           PORTFOLIO's, and the Decision Framework directly below cites Bitcoin's
+           own drawdown, four times larger. Read as "Max DD" against a bullet
+           saying ">80%", the pair looks like a contradiction; read as "Portfolio
+           Max DD" it is two different quantities, which is what they are. The
+           cheapest half of that fix is these two cells. #}
         <th>BTC Alloc</th>
         <th class="num">CAGR</th>
-        <th class="num">Max DD</th>
+        <th class="num">Portfolio Max DD</th>
         <th class="num">Sharpe</th>
-        <th class="num">2022 MDD</th>
+        <th class="num">Portfolio 2022 MDD</th>
       </tr>
     </thead>
     <tbody>
@@ -711,9 +717,23 @@
       {% endfor %}
     </tbody>
   </table>
-  <p class="muted">2022 stress scenario: equities &minus;20%, bonds &minus;15%, BTC &minus;65%
-  simultaneously. The 2022 MDD column is the critical test &mdash; diversification value
-  eroded precisely when it was most needed.</p>
+  {# WAS: "2022 stress scenario: equities -20%, bonds -15%, BTC -65% simultaneously."
+     Three fixed figures presented as a SCENARIO, beside a column that is realized
+     2022 history — `stress = combined.loc["2022-01-01":"2022-12-31"]`, actual
+     returns, not a hypothetical shock. Calling a measured column a scenario invites
+     reading it as hypothetical, the inverse of the ">80%" defect and arguably worse.
+     The BTC figure is now derived (-65% was a rounded restatement of a measured
+     -66.9%); the equity and bond figures are DROPPED rather than derived, because
+     accurate sleeve-level numbers would still describe something this column does
+     not compute. #276. #}
+  <p class="muted">The <strong>2022 MDD</strong> column is <strong>realized history, not a
+  hypothetical shock</strong> &mdash; each blend's worst peak-to-trough loss over calendar
+  2022 as it actually happened, from the same daily series as the rest of the table.
+  {% if asset_eval.btc_2022_mdd %}That year equities and bonds fell together while Bitcoin
+  fell {{ asset_eval.btc_2022_mdd }}, so adding BTC deepened the drawdown instead of
+  cushioning it.{% else %}That year equities and bonds fell together, and a BTC allocation
+  deepened the drawdown instead of cushioning it.{% endif %} It is the critical test:
+  diversification value eroded precisely when it was most needed.</p>
   {% endif %}
 
   <h3>Decision Framework</h3>
