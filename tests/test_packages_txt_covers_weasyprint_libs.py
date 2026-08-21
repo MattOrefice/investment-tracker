@@ -46,8 +46,20 @@ import pathlib
 
 import pytest
 
-# The set packages.txt was reviewed against, and the version it was read from.
-# Pinned TOGETHER: the set means nothing without the version that produced it.
+# The version the set was read from. RECORDED, NOT ASSERTED — and that distinction
+# was learned the hard way: an equality check here failed CI immediately, because
+# requirements.txt says `weasyprint>=60.0`, so CI resolves the latest (69.0) while
+# this machine had 68.1. Nothing was wrong; the assertion was measuring the wrong
+# thing — an environment's resolved version rather than the library's requirements.
+#
+# The SET is the contract, and it is environment-independent. A version difference
+# matters only if it changes the set, which the set test catches directly — so the
+# version belongs in that test's FAILURE MESSAGE, where a reader needs it, and not
+# in an assertion of its own.
+#
+# The accident was informative: the required set is IDENTICAL at 68.1 (this machine)
+# and 69.0 (CI), which is evidence the derivation survives a minor version bump —
+# a second data point no local run could have produced.
 REVIEWED_AGAINST_WEASYPRINT = "68.1"
 REVIEWED_REQUIRED = {
     "libgobject-2.0-0",
@@ -120,28 +132,27 @@ def test_the_derivation_is_not_vacuous():
         "being detected and required/optional may be conflated")
 
 
-def test_the_pinned_version_matches_what_is_installed():
-    """The reviewed set is only meaningful for the version it was read from. This is
-    a REMINDER, not a lockfile: on a version bump, re-derive and re-review, then move
-    the pin. requirements.txt says weasyprint>=60.0, so drift is expected."""
-    installed = importlib.metadata.version("weasyprint")
-    assert installed == REVIEWED_AGAINST_WEASYPRINT, (
-        f"weasyprint is {installed}, packages.txt was reviewed against "
-        f"{REVIEWED_AGAINST_WEASYPRINT}. Re-run the derivation, compare the required "
-        f"set to packages.txt by hand, then update REVIEWED_AGAINST_WEASYPRINT.")
-
-
 def test_weasyprints_required_libraries_are_the_reviewed_set():
     """THE CONTRACT. If WeasyPrint adds a required library, packages.txt silently
     stops covering the set it was reviewed against — and the first symptom would
-    otherwise be a RuntimeError in front of a user."""
+    otherwise be a RuntimeError in front of a user.
+
+    Environment-independent by construction: it compares the library's own
+    declarations against a reviewed set, so it says the same thing on any machine
+    whatever version resolves there. An earlier version of this file ALSO asserted
+    the installed version equalled the reviewed one, and that failed CI on sight —
+    see the note at REVIEWED_AGAINST_WEASYPRINT.
+    """
     required, _ = _weasyprint_dlopen_sets()
+    installed = importlib.metadata.version("weasyprint")
     assert required == REVIEWED_REQUIRED, (
-        f"WeasyPrint's required libraries changed.\n"
+        f"WeasyPrint {installed}'s required libraries differ from the set reviewed "
+        f"at {REVIEWED_AGAINST_WEASYPRINT}.\n"
         f"  added:   {sorted(required - REVIEWED_REQUIRED)}\n"
         f"  removed: {sorted(REVIEWED_REQUIRED - required)}\n"
-        f"Re-read packages.txt against the new set, update REVIEWED_REQUIRED, and "
-        f"note in #254 whether the deployed list still covers it.")
+        f"Re-read packages.txt against the new set, update REVIEWED_REQUIRED and "
+        f"REVIEWED_AGAINST_WEASYPRINT, and note in #254 whether the deployed list "
+        f"still covers it.")
 
 
 def test_the_optional_library_stays_optional():
