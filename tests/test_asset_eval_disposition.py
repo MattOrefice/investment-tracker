@@ -37,6 +37,10 @@ _BASE = {
     "delta_bps_con": None, "msc_chart_b64": None, "dd_rows": [],
     "args_for": [], "args_against": [], "conclusion": "x",
     "disposition": "computed", "failure_reason": None,
+    # Added by #249. Present here because this file's own premise-check
+    # (test_the_harness_context_leaves_nothing_undefined_inside_the_section)
+    # went red when the builder grew this key — which is what it is for.
+    "unavailable": [],
 }
 
 
