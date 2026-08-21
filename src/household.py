@@ -688,6 +688,21 @@ def _assumed_yield_with_source(
         total = 0.0
         for _, part in mix.iterrows():
             under = str(part["underlying_sleeve"])
+            if under in NOT_MODELLED_SLEEVES:
+                # A component the model DECLINES to size makes the whole blend
+                # unsizable — the same rule as the partial-composition check four
+                # lines above, and for the same reason: normalising over the
+                # remaining weight produces a number nobody can check, and it is
+                # WRONG IN THE SAFE-LOOKING DIRECTION (a 95% answer reads as a 100%
+                # answer). This is deliberately not gated on the component's weight.
+                # A 5% component is precisely where normalising feels harmless,
+                # which is why the rule has no small-component exception: the next
+                # blend to hit this would otherwise arrive without one.
+                #
+                # Distinct from the raise below. An UNLISTED underlying is a config
+                # gap and must be loud; a NOT-MODELLED one is a decision already
+                # taken and recorded, so it refuses like any other unsizable row.
+                return None, "not_modelled"
             if under not in SLEEVE_ASSUMED_YIELD:
                 raise _unlisted_sleeve_error(under, symbol, underlying_of=sleeve_key)
             total += float(part["weight"]) * SLEEVE_ASSUMED_YIELD[under]
