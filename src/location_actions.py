@@ -230,8 +230,8 @@ _TOD_INCOME_PROS = (
     "{count} ordinary-income holdings worth {value} sit in the TOD account. "
     "{register_count} of them — a hedged-equity mutual fund, a liquid-alternatives "
     "fund, a global allocation fund, and a core-plus bond ETF — throw ordinary "
-    "income into your highest-taxed wrapper, at a "
-    "cost of {annual_benefit} a year. None of which you selected, none of which you "
+    "income into your highest-taxed wrapper. {drag_amount} "
+    "None of which you selected, none of which you "
     "would buy today. Relocating them to pre-tax space would eliminate that drag "
     "entirely."
 )
@@ -258,9 +258,9 @@ _TOD_INCOME_CAPTION = (
 
 _SAA_TAXABLE_PROS = (
     "{count} holdings worth {value} — treasuries, TIPS, commodities, and a REIT — "
-    "sit in a taxable account, generating {annual_benefit} of ordinary income "
-    "annually — including the inflation accruals the TIPS are taxed on but pay no "
-    "cash for until maturity. The framework says these are the sleeves that most "
+    "sit in a taxable account, generating ordinary income annually — including the "
+    "inflation accruals the TIPS are taxed on but pay no cash for until maturity. "
+    "{drag_amount} The framework says these are the sleeves that most "
     "deserve shelter. The register is right to flag them."
 )
 _SAA_TAXABLE_CONS = (
@@ -270,8 +270,8 @@ _SAA_TAXABLE_CONS = (
     "{pretax_capacity}, exhausted at a policy book of roughly "
     "{pretax_capacity_threshold} — already smaller than this book, and "
     "{group_2_title} claims what's left. So the better home exists and is full. "
-    "The drag is {annual_benefit} a year — the honest price of running a coherent "
-    "SAA inside the only wrapper you control. Accepted until the 401(k) rollover "
+    "{drag_sentence} Whatever its size, it is the honest price of running a "
+    "coherent SAA inside the only wrapper you control. Accepted until the 401(k) rollover "
     "creates space, which is the argument that makes that rollover the "
     "household's largest lever."
 )
@@ -457,6 +457,23 @@ ACTION_GROUPS: list[dict] = [
         # JCPB (Aug-2026): the advisor's core-plus bond ETF replacing HLIPX — an
         # ordinary-income holding placed by the frozen book's manager, so it is
         # claimed here (accepted), not by a sell-side group.
+        # {drag_amount} states the group's annual cost, or why it is withheld. The
+        # refusal here is NARROW: four rows, one refuses. GAOSX is a blend that looks
+        # through to real_assets_commodities at 5%, and a blend with an unsizable
+        # component refuses whole rather than normalising over the remaining 95%
+        # (src/household.py). So the total is withheld because ONE holding cannot be
+        # sized — not because none can. Every other figure on this card stays live.
+        "stateful_prose": {
+            "drag_amount": {
+                "sized": "That costs {amount} a year.",
+                "unsized": (
+                    "The annual cost is not stated here: the global allocation fund "
+                    "holds 5% commodities, and commodity distributions are realized "
+                    "gains with no steady-state yield, so its drag cannot be sized — "
+                    "and a total that dropped it would understate the other three."
+                ),
+            },
+        },
         "symbols": ["BILPX", "GAOSX", "GHYIX", "JHEQX", "JCPB"],
         "case_filter": ["A", "B"], "accounts": ["Individual Taxable (TOD)"],
         "pros": _TOD_INCOME_PROS, "cons": _TOD_INCOME_CONS,
@@ -464,6 +481,31 @@ ACTION_GROUPS: list[dict] = [
     },
     {
         "key": "saa_sleeves_taxable", "title": "SAA sleeves in taxable",
+        # Two stateful sentences. PDBC is one of this group's four rows, and it is
+        # not-modelled (#210): a commodity fund distributes realized gains, not
+        # income. The cons sentence carries the EVIDENCE inline — 0.0%-40.4% across
+        # the eight years in the cache — so a reader can check the claim rather than
+        # take it, and separates the fact (the drag is real) from the measurement
+        # (its size is unknown), which is what an ACCEPTED position needs: the
+        # decision stands, only the figure is withheld.
+        "stateful_prose": {
+            "drag_amount": {
+                "sized": "That costs {amount} a year.",
+                "unsized": ("The annual cost is not stated: one of these four "
+                            "cannot be sized — see below."),
+            },
+            "drag_sentence": {
+                "sized": "The drag is {amount} a year —",
+                "unsized": (
+                    "The drag is real and deliberately unsized: PDBC distributes "
+                    "realized gains rather than income, so it has no steady-state "
+                    "yield to apply — its payout has ranged from 0.0% to 40.4% of "
+                    "price across the eight years in the cache. The other three "
+                    "holdings are sized normally; the group total is withheld rather "
+                    "than stated without it."
+                ),
+            },
+        },
         "score": 1, "status": "accepted",
         "action": "Leave as-is — these belong in a shelter, but pre-tax space is "
                   "full. Revisit after the 401(k) rollover.",
@@ -1340,6 +1382,27 @@ def resolve_placeholders(
     # action — so a refusing group yields no payback at all.
     payback = f"{_ctr / _ab:.1f}-year" if (_ctr > 0 and _ab > 0) else None
 
+    # Placeholders whose SENTENCE depends on whether the group's drag could be sized.
+    # The mechanism is generic; the prose is authored per card in `stateful_prose`,
+    # because what to say about a refusal is card-specific — which holding refused,
+    # and what the card had already concluded without it.
+    #
+    # A WHOLE SENTENCE, never a spliced clause: a card must read correctly in both
+    # states, and substituting a fragment into a sentence built around a dollar
+    # amount is how the grammar breaks in the state nobody renders.
+    #
+    # NOTE the refusal is NARROW. These groups hold four rows each and one refuses,
+    # so the total is withheld because one holding cannot be sized — not because
+    # none can. Every other figure on the card stays live.
+    stateful: dict[str, str | None] = {}
+    for _name, _variants in (group.get("stateful_prose") or {}).items():
+        if _refuses:
+            stateful[_name] = _variants["unsized"]
+        elif annual_benefit is not None:
+            stateful[_name] = _variants["sized"].format(amount=annual_benefit)
+        else:
+            stateful[_name] = None
+
     # Roth equity-rebuy sizing (clear_roth_non_equity): the VOO buy is 1:1 with the
     # hedged, covered-call EQUITY sold — a location move, not the whole card value —
     # so it sums current_value over equity_rebuy_symbols ∩ the group's accounts, from
@@ -1358,7 +1421,8 @@ def resolve_placeholders(
             "embedded_gain": embedded_gain, "annual_benefit": annual_benefit,
             "register_count": register_count,
             "cost_to_realize": cost_to_realize, "payback": payback,
-            "roth_equity_rebuy": roth_equity_rebuy}
+            "roth_equity_rebuy": roth_equity_rebuy,
+            **stateful}
 
 
 _PLACEHOLDER_RE = re.compile(r"\{(\w+)\}")

@@ -42,7 +42,6 @@ TAX_PROFILE: dict[str, float] = {
 # household._assumed_yield_with_source). USER-EDITABLE.
 SLEEVE_ASSUMED_YIELD: dict[str, float] = {
     "real_assets_reit":        0.040,
-    "real_assets_commodities": 0.015,
     "real_assets_gold":        0.000,
     "high_yield_fi":           0.060,
     "high_yield_muni":         0.040,   # yield ESTIMATE (income throw-off); federal exemption is a separate fact — see FEDERALLY_EXEMPT_SLEEVES
@@ -223,6 +222,21 @@ BLEND_SLEEVES: frozenset[str] = frozenset({"multi_asset", "target_date"})
 #   us_mid_cap   held (IJH) but likewise with no proxy in the cache. IWB and IWM
 #                bracket it rather than represent it.
 #
+#   real_assets_commodities  held (PDBC). Unlike the three below, the problem is not
+#                a missing proxy — PDBC *is* the holding, and its distributions are in
+#                the cache. The problem is that a commodity fund distributes REALIZED
+#                GAINS, not income, so a trailing-twelve-month yield measures what it
+#                happened to sell that year and has no steady-state value. Measured at
+#                each year-end from the committed cache: 0.97%, 1.70%, 0.00%, 40.38%,
+#                13.15%, 4.18%, 4.41%, 2.84%. The shipped 1.50% and the 2.84% #210
+#                proposed are both single-year snapshots of that range. Correcting one
+#                to the other is #210's own opening principle violated — an invented
+#                number replaced by a differently-invented one. Compounded by #278: the
+#                register taxes every non-exempt sleeve at the ordinary rate, and
+#                commodity distributions are ordinary/LTCG with no qualified treatment,
+#                so BOTH inputs are wrong in different ways. A sleeve the model cannot
+#                size on either axis is exactly what this set is for.
+#
 #   intl_all_exus  held (IXUS + VXUS, $19,387 — the largest of the equity sleeves).
 #                The only all-ex-US candidate in the cache is EFA, which is
 #                DEVELOPED-ONLY and excludes emerging markets: wrong in KIND for this
@@ -235,7 +249,7 @@ BLEND_SLEEVES: frozenset[str] = frozenset({"multi_asset", "target_date"})
 # Every OTHER equity sleeve has a benchmark proxy already cached, and takes a
 # declared-basis entry instead — see SLEEVE_YIELD_PROXY. USER-EDITABLE.
 NOT_MODELLED_SLEEVES: frozenset[str] = frozenset({
-    "thematic", "us_mid_cap", "intl_all_exus",
+    "thematic", "us_mid_cap", "intl_all_exus", "real_assets_commodities",
 })
 
 # Sleeves whose income is EXEMPT FROM FEDERAL TAX (municipal bonds). This set is a

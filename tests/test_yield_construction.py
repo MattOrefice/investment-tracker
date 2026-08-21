@@ -156,17 +156,35 @@ def test_the_pros_no_longer_adds_phantom_income_to_the_figure():
 
 
 def test_the_cons_states_the_drag_without_qualification():
-    """CONFIRMED, not assumed. The cons says "The drag is {annual_benefit} a year" with
-    no phantom-income qualifier — a sentence that was incomplete while the figure
-    excluded the accrual and becomes correct, unedited, now that it includes it.
+    """CONFIRMED, not assumed. The drag sentence carries no phantom-income qualifier —
+    it was incomplete while the figure excluded the accrual and became correct,
+    unedited, once the constructed TIPS yield included it.
 
     Asserted because "it happens to be right already" is the kind of claim that is true
     when written and silently false after the next edit to either half.
-    """
-    from src.location_actions import _SAA_TAXABLE_CONS
 
-    assert "The drag is {annual_benefit} a year" in _SAA_TAXABLE_CONS
+    AND IT WENT SILENTLY FALSE EXACTLY THAT WAY, which is why this test earned its
+    keep. #210 moved real_assets_commodities to NOT_MODELLED_SLEEVES, so PDBC — one of
+    this group's four rows — can no longer be sized, and a sentence built around
+    {annual_benefit} could not survive: the figure it cited stopped existing. The
+    sentence is now stateful, and the claim this test makes has moved WITH it rather
+    than being deleted. When the drag IS sizable the sized variant still states it
+    unqualified, which is the property that was worth pinning.
+    """
+    from src.location_actions import ACTION_GROUPS, _SAA_TAXABLE_CONS
+
+    grp = next(g for g in ACTION_GROUPS if g["key"] == "saa_sleeves_taxable")
+    sized = grp["stateful_prose"]["drag_sentence"]["sized"]
+    assert "The drag is {amount} a year" in sized, (
+        "the sized drag sentence no longer states the figure plainly")
+    assert "phantom" not in sized
     assert "phantom" not in _SAA_TAXABLE_CONS
+
+    # The unsized variant must NOT smuggle a figure back in — that is the whole point
+    # of the refusal, and a qualifier-free sentence is only correct when there is a
+    # number to state.
+    unsized = grp["stateful_prose"]["drag_sentence"]["unsized"]
+    assert "{amount}" not in unsized and "$" not in unsized
 
 
 def test_the_seed_still_attributes_the_accrual_to_SCHP():
