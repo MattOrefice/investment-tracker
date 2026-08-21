@@ -608,6 +608,23 @@
   {% else %}
   <div class="chart-placeholder">Correlation heatmap unavailable</div>
   {% endif %}
+  {# TIER 2 (#249) — ONE note for the two correlation analyses, and it is NOT
+     redundant with the chart placeholders above. The same placeholder text carries
+     two meanings, separated only by whether the prose survives: computation OK with
+     image rendering failed, versus computation failed. It reads as the image case in
+     both. This says what the placeholder structurally cannot. #}
+  {% if "correlation" in asset_eval.unavailable or "rolling" in asset_eval.unavailable %}
+  <p class="muted"><strong>Correlation figures unavailable:</strong>
+  {%- if "correlation" in asset_eval.unavailable and "rolling" in asset_eval.unavailable %}
+  neither the full-sample sleeve correlations nor the rolling BTC-vs-SPY series
+  {%- elif "correlation" in asset_eval.unavailable %}
+  the full-sample sleeve correlations
+  {%- else %}
+  the rolling BTC-vs-SPY series
+  {%- endif %}
+  could not be computed, so the accompanying figures are not shown. The chart
+  placeholder above refers to image rendering and is a separate matter.</p>
+  {% endif %}
   {% if asset_eval.corr_prose %}
   <p class="muted">{{ asset_eval.corr_prose }}</p>
   {% endif %}
@@ -622,6 +639,12 @@
   <p class="muted">{{ asset_eval.rolling_prose }}</p>
   {% endif %}
 
+  {# TIER 1 (#249) — a heading left standing over nothing is the visible gap. #}
+  {% if "mv" in asset_eval.unavailable %}
+  <p class="muted"><strong>Mean-variance analysis unavailable.</strong> The constrained
+  tangency optimisation could not be computed, so the with/without-BTC weight comparison
+  and its Sharpe delta are not shown.</p>
+  {% endif %}
   {% if asset_eval.con_rows %}
   <h3>Mean-Variance: Constrained Tangency (max 25% per sleeve)</h3>
   <table class="data-table">
@@ -658,6 +681,12 @@
   proportional to SAA targets. Curve reflects sample-period arithmetic only.</p>
   {% endif %}
 
+  {# TIER 1 (#249). #}
+  {% if "drawdown" in asset_eval.unavailable %}
+  <p class="muted"><strong>Drawdown sensitivity unavailable.</strong> The allocation
+  sweep could not be computed, so the CAGR, max-drawdown and Sharpe figures across BTC
+  weights are not shown.</p>
+  {% endif %}
   {% if asset_eval.dd_rows %}
   <h3>Drawdown Sensitivity</h3>
   <table class="data-table">
@@ -688,7 +717,17 @@
   {% endif %}
 
   <h3>Decision Framework</h3>
-  {% if asset_eval.args_for %}
+  {# TIER 3 (#249). One sentence rendered for BOTH a real
+     result and a failed computation — and the structure makes that failure
+     DIRECTIONAL: args_for is entirely derived from the marginal-Sharpe curve, while
+     three of the four args_against are hardcoded and survive every failure. So a
+     computation that did not run produced a one-sided verdict. #}
+  {% if "marginal_sharpe" in asset_eval.unavailable %}
+  <p><strong>Arguments for inclusion: not assessed.</strong> The marginal-Sharpe curve
+  could not be computed, so no case for inclusion was evaluated. <strong>The arguments
+  against listed below were not weighed against anything — this is a gap in the
+  analysis, not a finding about the asset.</strong></p>
+  {% elif asset_eval.args_for %}
   <p><strong>Arguments for inclusion:</strong></p>
   <ul style="page-break-inside: avoid; break-inside: avoid;">
     {% for arg in asset_eval.args_for %}
@@ -696,7 +735,9 @@
     {% endfor %}
   </ul>
   {% else %}
-  <p><strong>Arguments for inclusion:</strong> None identified from available data.</p>
+  <p><strong>Arguments for inclusion: none found.</strong> The marginal-Sharpe curve was
+  computed across BTC allocations and no weight improved the portfolio's Sharpe ratio
+  against SAA targets. This is a result, not a gap.</p>
   {% endif %}
 
   <p><strong>Arguments against inclusion:</strong></p>

@@ -1319,6 +1319,14 @@ def _build_asset_eval_section() -> dict:
         # returns _empty as-is cannot accidentally claim a gentler state.
         "disposition":      "failed",
         "failure_reason":   None,
+        # Which SUB-ANALYSES could not be computed (#249). One list, not one field
+        # per block and not seven values on `disposition`: extending a section-level
+        # string to cover seven sub-analyses would relocate the very problem this
+        # fixes into the data model. `disposition` stays section-level, for
+        # reachability; each group keys on this list.
+        #
+        # Keys: univariate, correlation, rolling, mv, marginal_sharpe, drawdown.
+        "unavailable":      [],
         "sample_start":     ae.SAMPLE_START,
         "uni_rows":         [],
         "corr_chart_b64":   None,
@@ -1369,7 +1377,7 @@ def _build_asset_eval_section() -> dict:
                     "kurtosis":     f"{row['kurtosis']:.2f}",
                 })
     except Exception:
-        pass
+        result["unavailable"].append("univariate")
 
     # 5b: Full-sample correlation heatmap
     corr: pd.Series = pd.Series(dtype=float)
@@ -1414,7 +1422,7 @@ def _build_asset_eval_section() -> dict:
                 parts.append(f"Core Fixed Income: {fi_corr:.2f}.")
             result["corr_prose"] = " ".join(parts)
     except Exception:
-        pass
+        result["unavailable"].append("correlation")
 
     # 5c: Rolling 60-day correlation (BTC vs SPY)
     try:
@@ -1457,7 +1465,7 @@ def _build_asset_eval_section() -> dict:
                 )
             result["rolling_prose"] = " ".join(prose_parts)
     except Exception:
-        pass
+        result["unavailable"].append("rolling")
 
     # 5f: Constrained MV analysis
     mv_result: dict = {}
@@ -1488,7 +1496,7 @@ def _build_asset_eval_section() -> dict:
             result["sharpe_con_with"] = f"{sharpe_con_with:.3f}"
             result["delta_bps_con"]   = f"{delta_bps_con:+.0f}"
     except Exception:
-        pass
+        result["unavailable"].append("mv")
 
     # 5g: Marginal Sharpe curve
     try:
@@ -1514,7 +1522,7 @@ def _build_asset_eval_section() -> dict:
             )
             result["msc_chart_b64"] = _chart_b64(fig_msc, 700, 200)
     except Exception:
-        pass
+        result["unavailable"].append("marginal_sharpe")
 
     # 5h: Drawdown sensitivity
     try:
@@ -1532,7 +1540,7 @@ def _build_asset_eval_section() -> dict:
                     "mdd22":  f"{mdd22_val:.1%}" if not np.isnan(mdd22_val) else "—",
                 })
     except Exception:
-        pass
+        result["unavailable"].append("drawdown")
 
     # 5j: Decision framework
     try:
@@ -1578,7 +1586,12 @@ def _build_asset_eval_section() -> dict:
         result["args_for"]     = args_for
         result["args_against"] = args_against
     except Exception:
-        pass
+        # 5j has no ae.* call of its own — it is purely downstream of 5g (msc),
+        # 5f (mv_result) and 5b (corr), so it cannot fail independently; a raise
+        # here means one of those produced malformed data rather than raising.
+        # Recorded under marginal_sharpe because that is what gates args_for, and
+        # a silent pass here would restore exactly the defect #249 is about.
+        result["unavailable"].append("marginal_sharpe")
 
     # The loads succeeded, so this is not "failed" — but each analysis below has
     # its own try/except and any of them can come back empty. Keyed on what was
