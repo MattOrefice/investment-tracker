@@ -623,8 +623,20 @@ def household_deploy_gaps(
 
     Eligibility is the same structural rule as the deploy: a sleeve in the roth_ira
     priority map that also has an is_in_saa ticker to buy (so cash / fixed income /
-    real assets / hedged equity / developed international never qualify — developed
-    intl is absent from the map because a Roth forfeits the foreign tax credit).
+    real assets / hedged equity / developed international never qualify).
+
+    THE FOURTH COPY of a claim corrected in three other places (#221 / da2e590,
+    found by #228). This sentence used to name the forgone foreign tax credit as the
+    reason the developed sleeves are absent from the map — right about WHICH sleeves,
+    wrong about why. It cannot be the credit: emerging_markets IS in the map and
+    forfeits MORE credit than the developed sleeves do, so the credit is not what
+    separates them. The three reasons that do are recorded once, above _ROTH_PRIORITY
+    in src/location_config.py; deliberately not restated here, since restating is what
+    produced four copies of the wrong one.
+
+    The retired wording is DESCRIBED above rather than quoted, on purpose. Quoting it
+    would put the exact string back into a file the #228 sweep scans, so the sweep
+    would flag its own correction — a checker inside its own sample.
 
     A sleeve at or over its household target (gap ≤ 0) is dropped — new cash never
     overshoots a target. Returns [sleeve, ticker, roth_rank, current, target, gap],
