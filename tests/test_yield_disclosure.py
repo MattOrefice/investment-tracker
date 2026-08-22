@@ -129,8 +129,11 @@ def test_register_flags_rows_that_fell_back_to_the_default():
     # INVERTED (#210 PR 3): NOTBL used to be an unlisted sleeve asserting basis
     # "default". There is no default any more — an unlisted sleeve raises — so both
     # rows resolve through the table and the raise is pinned in test_yield_raise.py.
-    assert _row(reg, "INTBL")["yield_basis"] == "table"
-    assert _row(reg, "NOTBL")["yield_basis"] == "table"
+    # MIGRATED at #289: `table` split four ways. Both fixture sleeves
+    # (multi_sector_fi, core_fi_credit) are AUTHORED — a judgement, and the basis now
+    # says so instead of naming where the number is stored.
+    assert _row(reg, "INTBL")["yield_basis"] == "authored"
+    assert _row(reg, "NOTBL")["yield_basis"] == "authored"
 
 
 def test_yield_is_read_from_the_config_not_a_copy_of_it(monkeypatch):
@@ -144,14 +147,14 @@ def test_yield_is_read_from_the_config_not_a_copy_of_it(monkeypatch):
     import src.location_config as lc
 
     before = _register()
-    assert _row(before, "NOTBL")["yield_basis"] == "table"
+    assert _row(before, "NOTBL")["yield_basis"] == "authored"
     benefit_before = float(_row(before, "NOTBL")["annual_benefit"])
     original = SLEEVE_ASSUMED_YIELD["core_fi_credit"]
 
     monkeypatch.setitem(lc.SLEEVE_ASSUMED_YIELD, "core_fi_credit", 0.036)
     after = _register()
 
-    assert _row(after, "NOTBL")["yield_basis"] == "table"
+    assert _row(after, "NOTBL")["yield_basis"] == "authored"
     assert _row(after, "NOTBL")["assumed_yield"] == pytest.approx(0.036)
     # computed from scratch, not by scaling benefit_before: that value is already
     # rounded to 2dp in the register, so scaling it reintroduces the rounding error
@@ -179,14 +182,16 @@ def test_format_assumed_yield_marks_anything_that_is_not_a_table_entry():
     fallback. That the fallback still renders the name visibly is the property worth
     keeping: an unrecognised basis must never render as a bare percentage.
     """
-    assert format_assumed_yield(0.040, "table") == "4.00%"
+    # Unmarked means DECLARED (proxy or constructed); the undeclared kinds are marked.
+    assert format_assumed_yield(0.040, "proxy") == "4.00%"
+    assert format_assumed_yield(0.040, "authored") == "4.00% (authored)"
     assert format_assumed_yield(0.0248, "look_through") == "2.48% (look-through)"
     assert "default" in format_assumed_yield(0.018, "default")
 
 
 def test_format_assumed_yield_marks_a_zero_non_table_basis_too():
     """A 0.00% row is the case most likely to read as 'no assumption was made'."""
-    assert format_assumed_yield(0.0, "table") == "0.00%"
+    assert format_assumed_yield(0.0, "proxy") == "0.00%"
     assert "unknown_basis" in format_assumed_yield(0.0, "unknown_basis")
 
 
@@ -202,9 +207,15 @@ def test_note_names_all_three_multiplicands():
     assert "location_config" in note, "the note must name where the assumption lives"
 
 
-def test_note_says_the_basis_is_undeclared():
+def test_note_says_the_value_is_a_judgement_not_a_measurement():
+    """MIGRATED at #289, and the old phrase became FALSE rather than reworded. This
+    required "no declared basis" — true while authored MEANT undeclared.
+    SLEEVE_YIELD_AUTHORED makes an authored entry a declared basis that happens not to
+    be a measured one, so the note states what KIND of claim it is. The property this
+    test protects is unchanged: the reader must be told the number was not measured."""
     note = yield_assumption_note(_register()).lower()
-    assert "no declared basis" in note
+    assert "judgement, not a measurement" in note
+    assert "no declared basis** at all" not in note
     # and names at least two of the bases that would disagree, so "undeclared" is
     # concrete rather than a hedge
     assert "trailing" in note and ("sec 30-day" in note or "forward" in note)
@@ -228,13 +239,16 @@ def test_note_counts_its_populations_from_the_register():
     counts must still be derived from the frame rather than authored.
     """
     reg = _register()
-    table_rows = int(reg["yield_basis"].eq("table").sum())
+    table_rows = int(reg["yield_basis"].isin(
+        ("proxy", "constructed", "authored", "structural")).sum())
     assert table_rows == 2, "fixture precondition: two table rows"
 
     note = yield_assumption_note(reg)
     # both populations are named with computed counts, never a literal
     assert f"of {len(reg)} rows" in note
-    assert "declared basis" in note or "no declared basis" in note
+    # Both fixture sleeves are authored, so the proxied clause does not fire; the
+    # authored clause is what must carry a computed count here.
+    assert f"**{table_rows} of {len(reg)} rows** use an **authored** yield" in note
 
 
 def test_note_makes_no_claim_about_a_default(monkeypatch):
@@ -260,7 +274,7 @@ def test_note_does_not_overclaim_when_no_row_uses_the_default(monkeypatch):
     assert "0 of" not in note, "a zero count must not render at all"
     # the mechanism disclosure survives even with no fallback row
     assert "authored assumption" in note.lower()
-    assert "no declared basis" in note.lower()
+    assert "judgement, not a measurement" in note.lower()
 
 
 def test_note_is_empty_safe_on_an_empty_register():
