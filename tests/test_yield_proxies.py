@@ -313,6 +313,22 @@ def test_entry_values_match_their_proxies_recomputed_from_the_cache():
     if not db.exists() or db.stat().st_size == 0:
         pytest.skip("personal cache absent")
 
+    # ONE AS-OF FOR THE WHOLE MAP, and this is a CONSTRAINT ON THE MAP, not a
+    # convenience here. Every proxy entry is recomputed at this single date, so an
+    # entry carrying its OWN as-of does not merely go undocumented — it recomputes
+    # against the wrong day and fails, or worse, passes at a value nobody chose.
+    #
+    # #286 hit it. Its first draft gave core_fi_treasury a per-entry as-of of
+    # 2026-08-19 and wrote the value measured there (0.0394); this test recomputed at
+    # 2026-08-11 and got 0.0397 and went red. The harness found the constraint that
+    # reasoning had not.
+    #
+    # SO IF YOU ARE HERE TO ADD PER-ENTRY DATING — the natural next request, since a
+    # shared date ages every entry at once — it is this line that decides it. Moving
+    # to per-entry as-ofs means the date becomes part of each entry (a dict value, not
+    # a bare float) and this test resolves each at its own; a half-migration where the
+    # map claims per-entry dates and the recomputation keeps one is the state that
+    # passes while measuring the wrong thing.
     as_of = date(2026, 8, 11)
     w0 = (as_of - timedelta(days=365)).isoformat()
     conn = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True)
