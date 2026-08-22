@@ -243,6 +243,45 @@ with col:
             "**Scores are judgement, not output.** The 1–10 scores are the "
             "owner's authored priority, deliberately not derived from a formula. "
             "Sleeve deploy targets are an ordinal ranking, never a return forecast.\n\n"
+            # #228. The Roth deploy excludes the developed international sleeves and
+            # nothing rendered said so, while the one international sleeve it DOES
+            # buy sat in the table looking like a contradiction. Deliberately does
+            # NOT rest on the foreign tax credit: #221 settled that the FTC is not
+            # the rule, because emerging markets forfeits MORE of it and stays. An
+            # earlier draft of this clause did rest on it, and would have restored
+            # on the page the exact claim da2e590 removed from three comments.
+            #
+            # NO DOLLAR FIGURES, ON PURPOSE: the rollover amount and the sleeve
+            # weights live in the config comment this points at. Hardcoding them
+            # here would contradict the "Dollar figures are live" clause above.
+            #
+            # DIRECTION WITHOUT NUMBERS, and this is the one to read before "improving"
+            # it. The sentence says EM withholding "runs higher than developed's" and
+            # deliberately omits the ~20-25% vs ~15% behind it. Those two figures are
+            # AUTHORED estimates — country-mix averages that move year to year, not
+            # measurements from anything in this repo. The DIRECTION survives them
+            # being loose: EM withholds more than developed under any plausible
+            # version of either number, which is all the argument needs. The FIGURES
+            # do not survive it — printed here they would read as measured, on a page
+            # whose own Assumptions promise live-or-refuse for every dollar shown, and
+            # a reader could not tell them from the computed ones beside them.
+            # So: if you are about to add "~20-25% vs ~15%" here, the question to
+            # answer first is what MEASURED them, not whether they are roughly right.
+            "**Why international is split across wrappers.** The Roth deploy buys "
+            "emerging markets but not developed or broad international, and the "
+            "reason is *not* the foreign tax credit — a Roth forfeits that on "
+            "emerging markets too, and by more, since emerging-market withholding "
+            "runs higher than developed's. The developed sleeves are excluded "
+            "because, today, they sit off the SAA as target-\\$0 rows, so buying "
+            "them in the Roth is movement *away* from the target on this page's own "
+            "terms; because the gate that would bring them onto the SAA counts "
+            "carrier positions in the taxable book only, so a Roth trade cannot open "
+            "it; and because Roth space is the scarcest shelter with the 401(k) "
+            "rollover still inbound. **The first of those three expires when the "
+            "international split lands** — after which the exclusion rests on "
+            "scarcity alone, or is revisited. Emerging markets is a targeted SAA "
+            "sleeve and currently underweight, so none of the three reaches it: the "
+            "credit it forfeits is a real cost, accepted rather than avoided.\n\n"
             f"**Actionability.** {len(_directable_names)} of the household's accounts "
             f"are directable jointly today — {', '.join(_directable_names)} — and can be "
             f"traded now. The others ({', '.join(_coordination_names)}) are externally "
