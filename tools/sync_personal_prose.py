@@ -7,13 +7,14 @@ its holding_rationale text up to what shipped in the seed:
 
     python tools/sync_personal_prose.py
 
-It runs the four personal prose migrations in CHRONOLOGICAL order — the order the
+It runs the five personal prose migrations in CHRONOLOGICAL order — the order the
 edits actually landed, which is deliberately NOT filename-sorted order:
 
     1. migrate_personal_vea_rationale        (drop the stale 19% weight)
     2. migrate_personal_intl_rationales      (fill IDHQ/AVIV/AVDV; de-superlative AVUV/IEMG)
     3. migrate_personal_revisit_clause_bold  (bold + split the five existing revisit clauses)
     4. migrate_personal_missing_falsifiers   (add the five missing falsifiers; PDBC opening rewrite)
+    5. migrate_personal_vgit_jurisdiction    (VGIT: DC -> Pennsylvania's flat rate, #283)
 
 Today's per-ticker substring swaps happen to be order-independent, but that is
 coincidental, not guaranteed — the real order is encoded here so a future
@@ -30,7 +31,7 @@ WHY this is a manual runner and not an auto-discovered bootstrap migration
 --------------------------------------------------------------------------
 src/bootstrap.run_pending_migrations auto-runs every tools/migrate_*.py that
 exposes migrate_db(db_path); modules exposing only main() are deliberately skipped
-(bootstrap.py documents this for the SAA migrations). These four are main()-only
+(bootstrap.py documents this for the SAA migrations). These five are main()-only
 ON PURPOSE — auto-running them on bootstrap is wrong for three concrete reasons:
 
   - Ordering. run_pending_migrations fires at bootstrap step 3, BEFORE
@@ -64,6 +65,10 @@ _MIGRATIONS = [
     "migrate_personal_intl_rationales",
     "migrate_personal_revisit_clause_bold",
     "migrate_personal_missing_falsifiers",
+    # #283, 2026-08-22. Independent of the four above — a different ticker (VGIT) and
+    # a different sentence — so it is order-free in fact, and appended last because
+    # this list encodes WHEN edits landed, not what depends on what.
+    "migrate_personal_vgit_jurisdiction",
 ]
 
 

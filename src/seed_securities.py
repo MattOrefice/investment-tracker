@@ -234,9 +234,24 @@ HOLDINGS = [
             "modestly shorter (~5.5 years vs IEF's ~7.5 years), appropriate for a 6% sleeve inside a 78% "
             "growth portfolio. The shorter duration means VGIT underperforms longer-dated Treasuries in a "
             "flight-to-quality rally but limits drawdown in a rate-selloff — appropriate given the "
+            # #283. Was "a real after-tax advantage in a high-income-tax jurisdiction
+            # like DC". Two errors pointing OPPOSITE ways: the exemption claim was
+            # correct and the register contradicted it until #278, while the
+            # jurisdiction was wrong and rendered to a reader as-is. A reader spotting
+            # "DC" would have discarded the half that was right.
+            #
+            # Not a straight DC->PA swap: PA's 3.07% flat rate is one of the LOWEST
+            # state income taxes, so "high-income-tax jurisdiction" is true of DC and
+            # FALSE of PA. Three claims have to hold at once — the exemption, the
+            # jurisdiction, and the magnitude — and the swap alone fixes one.
+            #
+            # NO RATE STATED. TAX_PROFILE already holds 3.07%; putting it here mints a
+            # second copy of a config value, which is the mechanism #228 and #284 are
+            # both about. "Real, if modest" carries the size without the number: at
+            # VGIT's 4.00% assumed yield the advantage is ~12bp/yr.
             "portfolio's 78% growth allocation. Critically, Treasury interest income is exempt from state "
             "and local taxes — a "
-            "real after-tax advantage in a high-income-tax jurisdiction like DC over investment-grade corporate "
+            "real, if modest, after-tax advantage at Pennsylvania's flat rate over investment-grade corporate "
             "bond funds with similar yield. Cost minimization is the dominant selection criterion for a sleeve "
             "that exists for drawdown buffering and rebalancing optionality, not return.\n\n"
             "**Would revisit if** nominal Treasuries stopped hedging equity drawdowns across successive "
