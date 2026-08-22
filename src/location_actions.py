@@ -879,6 +879,36 @@ def format_assumed_yield(sleeve_yield: "float | None", basis: str) -> str:
     return f"{sleeve_yield:.2%}{_BASIS_SUFFIX.get(basis, f' ({basis})')}"
 
 
+_CHARACTER_LABEL = {
+    "ordinary":          "ordinary",
+    "qualified":         "qualified",
+    "qualified_199a":    "REIT §199A",
+    "treasury":          "Treasury (state-exempt)",
+    "muni_out_of_state": "muni (federally exempt)",
+    "muni_in_state":     "muni (fully exempt)",
+    "collectibles":      "collectibles (on sale)",
+}
+
+
+def format_tax_character(character: "str | None") -> str:
+    """Render a row's tax character — the provenance of the RATE, as
+    format_assumed_yield is of the yield (#278).
+
+    EVERY CHARACTER IS MARKED, and this deliberately departs from
+    format_assumed_yield above, which leaves its `table` case unmarked "because it is
+    the only one a reader can verify unaided."
+
+    No character is verifiable unaided. A reader cannot tell 25.07% from 20.67% by
+    looking at a dollar figure, so there is no case that earns going unmarked — and an
+    unmarked row would read as "no character was declared here" rather than as "the
+    ordinary one", which inverts the meaning. Following the precedent literally would
+    have been the wrong call; stating why stops someone restoring consistency later.
+    """
+    if not character:
+        return "—"
+    return _CHARACTER_LABEL.get(character, character)
+
+
 class DragCoverage(NamedTuple):
     """A drag total AND what it left out.
 
@@ -932,6 +962,67 @@ def format_drag_exclusion(coverage: DragCoverage) -> "str | None":
     )
 
 
+_CHARACTER_PHRASE = {
+    "ordinary":          "taxed as **ordinary income**",
+    "qualified":         "taxed at the **qualified-dividend** rate",
+    "qualified_199a":    "taxed at the **REIT §199A** rate (ordinary less the 20% deduction)",
+    "treasury":          "**US Treasury obligations**, whose interest PA does not tax "
+                         "— the federal rate only",
+    "muni_out_of_state": "**federally exempt municipal** interest, which PA still taxes",
+    "muni_in_state":     "**fully exempt municipal** interest",
+    "collectibles":      "a **collectible**, which changes the rate on a *sale* rather "
+                         "than on income",
+}
+
+
+def tax_character_note(register) -> str:
+    """The Assumptions-expander disclosure for the RATE multiplicand (#278).
+
+    The rate block above lists four rates and stopping there implies the model has
+    exactly four — which was true only while the rate was a boolean, and is what let
+    US Treasury interest be charged PA tax (#283). This says what a holding is
+    actually taxed at and why that is a per-holding fact.
+
+    COUNTS ARE DERIVED FROM THE REGISTER, never written down, for the same reason
+    every dollar figure on the page is templated: a hand-written count is false the
+    first time a position moves, and this paragraph would then be describing a table
+    the reader can see disagreeing with it.
+
+    Parallel to yield_assumption_note in form and in the admission it ends on — the
+    character is AUTHORED, exactly as the yield is. Neither is measured, and a note
+    that disclosed one provenance while implying the other was self-evident would
+    reproduce the #191 defect this family keeps circling.
+    """
+    note = "**Not every holding is taxed at the rates above.** "
+    if register.empty or "tax_character" not in register.columns:
+        return note + (
+            "Income **tax character** is declared per sleeve — ordinary, qualified, "
+            "REIT §199A, Treasury or municipal — and each row's *Tax Character* "
+            "column says which. **Character is declared, not measured.**"
+        )
+
+    counts = register["tax_character"].value_counts()
+    total = int(len(register))
+    unsized = int((register["yield_basis"] == "not_modelled").sum())
+    parts = []
+    for char, phrase in _CHARACTER_PHRASE.items():
+        n = int(counts.get(char, 0))
+        if n:
+            parts.append(f"**{n}** {phrase}")
+    body = "; ".join(parts) if parts else "no rows carry a declared character"
+    tail = ""
+    if unsized:
+        tail = (f" **{unsized}** of the {total} are not sized at all, so no income "
+                f"rate reaches them — their character still governs a sale.")
+    return note + (
+        f"What a holding pays depends on its income's **tax character**, declared per "
+        f"sleeve rather than inferred. Of {total} rows: {body}.{tail} "
+        f"**Character is declared, not measured** — like the sleeve yields below, it "
+        f"is an authored fact about how income is taxed, and a sleeve whose character "
+        f"has not been declared **raises rather than defaulting to ordinary**."
+    )
+
+
 def yield_assumption_note(register, *, today=None) -> str:
     """The Assumptions-expander disclosure for the assumed-yield multiplicand.
 
@@ -964,7 +1055,8 @@ def yield_assumption_note(register, *, today=None) -> str:
     note = (
         "**Annual benefit is modelled, not measured**: `position value × assumed "
         "sleeve yield × tax rate`. The value is live from the positions CSV and the "
-        "rate is the policy above, but the **yield is an authored assumption** "
+        "rate is the policy above **as it applies to that holding's declared tax "
+        "character**, but the **yield is an authored assumption** "
         "(`SLEEVE_ASSUMED_YIELD` in `src/location_config.py`), not a measured "
         "distribution rate. Authored stays true even where a benchmark basis is "
         "declared below: choosing EFV over AVIV for the same sleeve is a judgement, "

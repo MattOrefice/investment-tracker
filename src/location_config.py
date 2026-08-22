@@ -252,22 +252,154 @@ NOT_MODELLED_SLEEVES: frozenset[str] = frozenset({
     "thematic", "us_mid_cap", "intl_all_exus", "real_assets_commodities",
 })
 
-# Sleeves whose income is EXEMPT FROM FEDERAL TAX (municipal bonds). This set is a
-# MODELING CORRECTION, INDEPENDENT of the yield table above: the yield there is an
-# ESTIMATE of income thrown off; this set is a fact about how that income is taxed.
-# A future reader should be able to revise one without touching the other.
+# ── Tax character (#278) ───────────────────────────────────────────────────────
 #
-# build_location_register uses it two ways: (1) a federally-exempt sleeve is charged
-# the STATE rate only (PA 3.07%), never the combined federal+state ordinary rate, so
-# its drag magnitude carries no phantom federal saving; and (2) it generates NO
-# case A/B relocation action at all — with no federal tax to save, moving a muni into
-# a pre-tax shelter would convert exempt interest into ordinary income at withdrawal,
-# which is categorically wrong regardless of the dollar size (so the rule is a
-# category, not a threshold). PA taxes out-of-state muni interest, and a national
-# HY-muni fund (e.g. GHYIX, sleeve high_yield_muni) is mostly out-of-state, so PA's
-# 3.07% still applies: the exemption is federal, not total. Keyed on the SLEEVE,
-# never a symbol list. USER-EDITABLE.
-FEDERALLY_EXEMPT_SLEEVES: frozenset[str] = frozenset({"high_yield_muni"})
+# WHAT INCOME IS, not how much of it there is. A MODELING CORRECTION, INDEPENDENT of
+# the yield table above: the yield there ESTIMATES income thrown off; this declares
+# how that income is taxed. A future reader should be able to revise one without
+# touching the other.
+#
+# REPLACES FEDERALLY_EXEMPT_SLEEVES, which was deleted rather than kept alongside.
+# That set was a boolean, and `state_only if exempt else ordinary` has exactly two
+# outcomes — so US Treasury interest, which is federally taxed and STATE-EXEMPT, had
+# nowhere to go. It is not a missing value; it is a missing dimension, and no set can
+# hold a third state. Keeping the old set beside this table would also leave two
+# places saying "muni", which is the mechanism that produced four copies of one
+# sentence in #228 and two contradicting ones in #284.
+#
+# THREE FACTS PER MEMBER, and `treasury` is why one value cannot do. Treasury
+# INTEREST is exempt from PA tax; a capital gain on a Treasury fund is an ordinary
+# capital gain and PA taxes it. Collapse the three into one and either the interest
+# is over-taxed or the gain is under-taxed — the same failure the boolean had, one
+# level down. The two axes are genuinely independent, which the repo already knew on
+# the one sleeve it applied to: PA taxes out-of-state muni interest, so a national
+# HY-muni fund is federally exempt and state-taxed. `muni_in_state` is DECLARED AND
+# UNUSED for exactly that reason — nothing held is one, and without it `treasury`
+# reads as a special case with nowhere for the next state-exemption question to go.
+#
+# NOT DECLARED, deliberately: `section_1256` (60/40). JHEQX writes index options, but
+# 60/40 governs the FUND's internal gains, not the character of what it distributes —
+# those reach a holder as ordinary income. It is the member someone will want to add,
+# and adding it would encode a real tax rule at the wrong level.
+#
+# AUTHORED, NOT MEASURED — the same standing limitation as the yield table, and the
+# page says so in the same words rather than implying a measurement.
+#
+#     member -> (federal income treatment, PA taxes the income?, gain treatment)
+#
+# USER-EDITABLE.
+TAX_CHARACTER: dict[str, tuple[str, bool, str]] = {
+    "ordinary":          ("ordinary", True,  "ltcg"),
+    "qualified":         ("ltcg",     True,  "ltcg"),
+    "qualified_199a":    ("199a",     True,  "ltcg"),
+    "treasury":          ("ordinary", False, "ltcg"),
+    "muni_out_of_state": ("exempt",   True,  "ltcg"),
+    # DECLARED, UNUSED. The coordinate proving the federal and state axes are
+    # independent rather than accidentally aligned. Costs one line.
+    "muni_in_state":     ("exempt",   False, "ltcg"),
+    "collectibles":      ("ordinary", True,  "collectibles"),
+}
+
+# §199A's 20% deduction on qualified REIT dividends. Its 2026 statutory status is NOT
+# established in this repo — if it has lapsed, `qualified_199a` collapses into
+# `ordinary` and becomes another declared-and-unused member. The vocabulary survives
+# either way, which is part of the argument for having one.
+SECTION_199A_DEDUCTION: float = 0.20
+
+# Federal long-term rate on collectibles (physical-metal grantor trusts such as IAU).
+# Lands on the REALIZATION term, never on income — gold throws off no income at all.
+COLLECTIBLES_FEDERAL_RATE: float = 0.28
+
+# Character per sleeve — the DEFAULT, complete by construction. There is no fallback:
+# _tax_character RAISES on an unlisted sleeve rather than assuming `ordinary`, the
+# same rule SLEEVE_ASSUMED_YIELD adopted in #210 (PR 3) and for the same reason — a
+# silent default is indistinguishable from a decision. Maintenance is enforced by a
+# raise, not by discipline, and a test pins these keys against the sleeve universe.
+#
+# BLENDS ARE A KNOWN SIMPLIFICATION. multi_asset and target_date look THROUGH to
+# component sleeves for their yield, but declare a single character here. `ordinary`
+# is what the model already applied to them, so declaring it changes no number — it
+# makes the existing simplification visible instead of implicit. Character
+# look-through for blends is filed, not folded in.
+# USER-EDITABLE.
+SLEEVE_TAX_CHARACTER: dict[str, str] = {
+    # ── ordinary income ───────────────────────────────────────────────────────
+    "cash":                    "ordinary",
+    "core_fi_credit":          "ordinary",
+    "high_yield_fi":           "ordinary",
+    "floating_rate":           "ordinary",
+    "multi_sector_fi":         "ordinary",
+    "liquid_alt":              "ordinary",
+    # Covered-call and ELN income is ordinary. The sleeve sits in EQUITY_SLEEVES for
+    # EXPOSURE and is taxed as ordinary for CHARACTER — the two axes disagreeing here
+    # is the reason #278 exists, and why a fix keyed on EQUITY_SLEEVES was wrong by 4x.
+    "hedged_equity":           "ordinary",
+    # Blends — see the simplification note above.
+    "multi_asset":             "ordinary",
+    "target_date":             "ordinary",
+    # No income at all; declared so the GAIN path resolves. Its income character is
+    # never consulted because NOT_MODELLED_SLEEVES refuses the sleeve first, which is
+    # also why #284's dispute over PDBC's distributions does not bite here.
+    "real_assets_commodities": "ordinary",
+    "crypto":                  "ordinary",
+
+    # ── qualified dividends ───────────────────────────────────────────────────
+    "us_large_core":           "qualified",
+    "us_large_growth":         "qualified",
+    "us_large_quality":        "qualified",
+    "us_large_value":          "qualified",
+    "us_mid_cap":              "qualified",
+    "us_small_core":           "qualified",
+    "us_small_value":          "qualified",
+    "us_sector_healthcare":    "qualified",
+    "us_sector_tech":          "qualified",
+    "single_stock":            "qualified",
+    "thematic":                "qualified",
+    "emerging_markets":        "qualified",
+    "intl_all_exus":           "qualified",
+    "intl_developed":          "qualified",
+    "intl_quality":            "qualified",
+    "intl_large_value":        "qualified",
+    "intl_small_value":        "qualified",
+
+    # ── everything else is its own character ──────────────────────────────────
+    # REIT dividends are non-qualified ordinary but carry §199A's 20% deduction.
+    "real_assets_reit":        "qualified_199a",
+    # US Treasury obligations — interest exempt from PA tax, gains taxed normally.
+    # THE CASE THAT FORCED THIS TABLE. pages/8_Research.py renders VGIT's rationale
+    # naming this exemption as the reason the fund was chosen, while the register
+    # charged it state tax anyway (#283).
+    "core_fi_treasury":        "treasury",
+    "tips":                    "treasury",
+    # A national HY-muni fund is mostly out-of-state, so PA's 3.07% still applies:
+    # the exemption is federal, not total.
+    "high_yield_muni":         "muni_out_of_state",
+    "real_assets_gold":        "collectibles",
+}
+
+# Per-SECURITY overrides — deliberately empty, and that is the finding rather than an
+# omission. Character is sleeve-determined in 33 of 33 sleeves as the book stands.
+# Kept because character is a property of a FUND (its holdings and structure) while a
+# sleeve is a property of EXPOSURE, and the two can come apart: a fund can change
+# structure without changing sleeve. Config rather than a `securities` column so the
+# fact keeps its reasoning beside it and shows up in a diff. USER-EDITABLE.
+SECURITY_TAX_CHARACTER: dict[str, str] = {}
+
+# Sleeves a relocation must NEVER recommend, whatever the dollars. SEPARATED FROM
+# CHARACTER ON PURPOSE — this was the second behaviour bundled into
+# FEDERALLY_EXEMPT_SLEEVES, and the mirror needed the rate without it: a Treasury in
+# taxable still has federal tax to save by relocating, so a state-exempt sleeve must
+# NOT be suppressed.
+#
+# The reasons here are not properties of the income's character. A muni is wrong to
+# shelter because of what the DESTINATION WRAPPER does to it — a pre-tax shelter
+# converts exempt interest into ordinary income at withdrawal, strictly worse. An MLP
+# would be wrong for an unrelated reason (UBTI inside an IRA). Deriving this from
+# character would force the next entry to pretend to be one.
+#
+# A category, not a threshold: a dollar cutoff could resurrect a categorically wrong
+# recommendation for a large holding. USER-EDITABLE.
+RELOCATION_IS_CATEGORICALLY_WRONG: frozenset[str] = frozenset({"high_yield_muni"})
 
 # The annual income-shelter benefit below which a "relocation" is a rounding error
 # rather than a decision (e.g. a $0.43/yr row). A PRESENTATION THRESHOLD, never a

@@ -74,7 +74,9 @@ from src.location_actions import (
     capital_gains_headroom,
     assert_full_coverage,
     format_assumed_yield,
+    format_tax_character,
     yield_assumption_note,
+    tax_character_note,
     drag_coverage,
     format_drag_exclusion,
 )
@@ -514,12 +516,21 @@ for group in _ordered_groups:
                     format_assumed_yield(y, b)
                     for y, b in zip(reg_rows["assumed_yield"], reg_rows["yield_basis"])
                 ]
+                # The RATE that produced this row's Annual Benefit, beside the yield
+                # that produced it. Both multiplicands are authored, so both declare
+                # themselves — carrying one and not the other would imply the rate is
+                # self-evident, which is how Treasury interest was charged PA tax for
+                # as long as the rate was a boolean (#278, #283).
+                show["tax_character"] = [
+                    format_tax_character(c) for c in reg_rows["tax_character"]
+                ]
                 show = show.drop(columns=["yield_basis"])
                 show = show.rename(columns={
                     "holding": "Holding", "symbol": "Symbol", "account": "Account",
                     "sleeve": "Sleeve", "case": "Case", "current_value": "Value ($)",
                     "annual_benefit": "Annual Benefit ($)",
                     "assumed_yield": "Assumed Yield",
+                    "tax_character": "Tax Character",
                     "embedded_gain": "Embedded Gain ($)", "cost_to_realize": "Cost to Realize ($)",
                     "is_free": "Free?", "payback_months": "Payback (months)",
                 })
@@ -616,6 +627,13 @@ with col:
             f"- Combined ordinary rate: **{_ord:.2%}** · combined rate on realized "
             f"gains: **{_ltcg:.2%}** (15% federal + PA)\n\n"
             + _headroom_para
+            + "\n\n"
+            # THE FOUR RATES ABOVE ARE INPUTS, NOT THE ANSWER (#278). Listing them and
+            # stopping implies the model has exactly four, which was true only while
+            # the rate was a boolean. Counts are templated from the register rather
+            # than written down, so this sentence cannot drift from the table it
+            # describes — the same rule as every other figure on this page.
+            + tax_character_note(register)
             + "\n\n"
             + yield_assumption_note(register)
             + "\n\n**Scores are authored**, not computed — the owner's priority judgement, "

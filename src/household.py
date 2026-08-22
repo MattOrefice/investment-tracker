@@ -714,13 +714,85 @@ def _assumed_yield_with_source(
     raise _unlisted_sleeve_error(sleeve_key, symbol)
 
 
-def _is_federally_exempt(sleeve_key: str) -> bool:
-    """True if the sleeve's income is federally tax-exempt (municipal). Read at
-    call time from FEDERALLY_EXEMPT_SLEEVES — so the exemption is keyed on the
-    SLEEVE (never a symbol), and editing the config set (or patching it in a test)
-    changes the rate with no edit here."""
-    from src.location_config import FEDERALLY_EXEMPT_SLEEVES
-    return sleeve_key in FEDERALLY_EXEMPT_SLEEVES
+def _tax_character(sleeve_key: str, symbol: str) -> str:
+    """The declared tax character of a holding's income. RAISES if undeclared.
+
+    Security first, sleeve as the default — character is a property of a FUND while a
+    sleeve is a property of EXPOSURE, and `hedged_equity` is the standing proof they
+    can disagree (equity exposure, ordinary income).
+
+    NO FALLBACK, which is the whole point. Defaulting an unlisted sleeve to `ordinary`
+    would be indistinguishable from someone having decided it is ordinary, and the
+    defect this replaces was exactly that: a boolean that answered `ordinary` for
+    every sleeve nobody had thought about, including US Treasuries. Same rule as
+    SLEEVE_ASSUMED_YIELD since #210 (PR 3).
+
+    Read at call time so patching the config in a test changes behaviour with no edit
+    here.
+    """
+    from src.location_config import SECURITY_TAX_CHARACTER, SLEEVE_TAX_CHARACTER
+    if symbol in SECURITY_TAX_CHARACTER:
+        return SECURITY_TAX_CHARACTER[symbol]
+    try:
+        return SLEEVE_TAX_CHARACTER[sleeve_key]
+    except KeyError:
+        raise KeyError(
+            f"no tax character declared for sleeve {sleeve_key!r} (symbol {symbol!r}). "
+            f"Add it to SLEEVE_TAX_CHARACTER in src/location_config.py, or override "
+            f"the symbol in SECURITY_TAX_CHARACTER. There is deliberately no default: "
+            f"assuming 'ordinary' is how US Treasury interest came to be charged PA "
+            f"tax (#283)."
+        ) from None
+
+
+def income_rate(character: str, tax_profile: dict) -> float:
+    """The rate a holding's INCOME is taxed at, from its declared character.
+
+    Reads the first two of the character's three facts. The third (gain treatment) is
+    realization_rate's, and they must not be conflated: `treasury` interest is
+    state-exempt while a gain on the same fund is state-taxed.
+    """
+    from src.location_config import SECTION_199A_DEDUCTION, TAX_CHARACTER
+    federal_kind, state_taxed, _ = TAX_CHARACTER[character]
+    fed_ordinary = float(tax_profile["federal_marginal"])
+    federal = {
+        "ordinary": fed_ordinary,
+        "ltcg":     float(tax_profile["federal_ltcg"]),
+        # Qualified REIT dividends are ordinary income less §199A's deduction — NOT
+        # the LTCG rate. Two different corrections that land near each other.
+        "199a":     fed_ordinary * (1.0 - SECTION_199A_DEDUCTION),
+        "exempt":   0.0,
+    }[federal_kind]
+    state = float(tax_profile["state_marginal"]) if state_taxed else 0.0
+    return federal + state
+
+
+def realization_rate(character: str, tax_profile: dict) -> float:
+    """The rate a SALE's embedded gain is taxed at, from the same declared character.
+
+    One vocabulary, two consumers — not two vocabularies. Declaring an asset twice
+    would need a reconciliation rule between the declarations; declaring it once with
+    three facts does not. This is also the term a refused sleeve still reaches: an
+    unsizable income does not make a holding unsellable.
+    """
+    from src.location_config import COLLECTIBLES_FEDERAL_RATE, TAX_CHARACTER
+    _, _, gain_kind = TAX_CHARACTER[character]
+    federal = (COLLECTIBLES_FEDERAL_RATE if gain_kind == "collectibles"
+               else float(tax_profile["federal_ltcg"]))
+    return federal + float(tax_profile["state_ltcg"])
+
+
+def _relocation_is_categorically_wrong(sleeve_key: str) -> bool:
+    """True if relocating this sleeve is wrong at any size — an ELIGIBILITY question,
+    deliberately not derived from tax character.
+
+    A muni is wrong to shelter because of what the DESTINATION does to it (a pre-tax
+    shelter converts exempt interest into ordinary income at withdrawal), not because
+    of what its income IS. An MLP would be wrong for an unrelated reason (UBTI).
+    Bundling the two is what made a state-exempt mirror impossible to add.
+    """
+    from src.location_config import RELOCATION_IS_CATEGORICALLY_WRONG
+    return sleeve_key in RELOCATION_IS_CATEGORICALLY_WRONG
 
 
 # ── Asset-location register & deploy view (Asset Location page) ─────────────────
@@ -791,20 +863,28 @@ def build_location_register(
     no drag while being the worst possible use of never-taxed space (e.g. USRT/IAU
     in the Roth).
     The `cash` sleeve is excluded throughout — it is dry powder for the deploy
-    view, not a holding to relocate. A FEDERALLY-EXEMPT sleeve (municipal — see
-    FEDERALLY_EXEMPT_SLEEVES) is excluded from cases A/B: with no federal tax to
-    save, relocating it into a pre-tax shelter is categorically wrong, so it stays
-    in taxable and generates no action (it keeps its state-only drag magnitude).
+    view, not a holding to relocate. A sleeve in RELOCATION_IS_CATEGORICALLY_WRONG
+    (today: municipal) is excluded from cases A/B — relocating it into a pre-tax
+    shelter converts exempt interest into ordinary income at withdrawal, so it stays
+    in taxable and generates no action (it keeps its drag magnitude). That is an
+    ELIGIBILITY rule with its own reasons, deliberately not derived from tax
+    character: it turns on what the DESTINATION does to the income, not on what the
+    income is, and the next entry (an MLP, for UBTI) shares nothing with this one.
 
-    Money model (all from tax_profile — no hardcoded rate):
-      ordinary = federal_marginal + state_marginal
-      ltcg     = federal_ltcg     + state_ltcg
-      annual_benefit  = value * assumed_sleeve_yield * income_rate (income-shelter
-                        value at stake — a ranking magnitude, not a forecast), where
-                        income_rate = state_marginal for a FEDERALLY-EXEMPT sleeve
-                        (municipal — see FEDERALLY_EXEMPT_SLEEVES), else ordinary
-      cost_to_realize = 0                     for a sale inside a shelter
-                      = embedded_gain * ltcg  for a taxable sale
+    Money model — every rate derived per row from the holding's declared TAX
+    CHARACTER (#278), nothing precomputed and no hardcoded rate:
+      character       = SECURITY_TAX_CHARACTER[symbol] or SLEEVE_TAX_CHARACTER[sleeve],
+                        RAISING if neither declares one — there is no `ordinary`
+                        default, because that default is what charged US Treasury
+                        interest PA tax for as long as it existed (#283)
+      annual_benefit  = value * assumed_sleeve_yield * income_rate(character)
+                        (income-shelter value at stake — a ranking magnitude, not a
+                        forecast)
+      cost_to_realize = 0                                       in-shelter sale
+                      = embedded_gain * realization_rate(character)  taxable sale
+                        — the SAME character, a DIFFERENT one of its three facts.
+                        Treasury interest is state-exempt while a gain on the same
+                        fund is state-taxed, so one value could not serve both.
       is_free         = cost_to_realize <= 0  (in-shelter, or a loss to harvest)
       payback_months  = 12 * cost_to_realize / annual_benefit, None when free
 
@@ -812,9 +892,10 @@ def build_location_register(
              embedded_gain, cost_to_realize, is_free, payback_months
     Sorted: free actions first (annual_benefit desc), then paid by payback asc.
     """
-    ordinary = float(tax_profile["federal_marginal"]) + float(tax_profile["state_marginal"])
-    ltcg     = float(tax_profile["federal_ltcg"]) + float(tax_profile["state_ltcg"])
-    state_only = float(tax_profile["state_marginal"])   # federally-exempt (muni) sleeves
+    # The three precomputed rates that used to live here are gone: every rate is now
+    # derived per row from the holding's declared tax character, via income_rate() and
+    # realization_rate(). Precomputing them was what made a third state unrepresentable
+    # — `state_only` existed only because a boolean needed somewhere to branch to.
 
     # Case D is comparative: a sleeve is stranded only if a shelter ranks it
     # strictly better than taxable does. Absent from a map = infinity (that
@@ -882,14 +963,16 @@ def build_location_register(
         else:
             continue
 
-        # A federally-exempt (muni) sleeve owes no federal tax on its income — only
-        # PA's flat rate — so its income-shelter value at stake is the state rate
-        # alone, not the combined ordinary rate. Keyed on the sleeve, not the symbol.
-        income_rate = state_only if _is_federally_exempt(sleeve) else ordinary
+        # THE RATE COMES FROM THE HOLDING'S DECLARED CHARACTER (#278). This was
+        # `state_only if _is_federally_exempt(sleeve) else ordinary` — two outcomes,
+        # so every sleeve nobody had classified got the combined ordinary rate,
+        # including US Treasuries whose interest PA does not tax (#283).
+        character = _tax_character(sleeve, str(row["symbol"]))
+        char_rate = income_rate(character, tax_profile)
         sleeve_yield, yield_basis = _assumed_yield_with_source(
             sleeve, str(row["symbol"]), compositions_df)
         annual_benefit = (
-            None if sleeve_yield is None else dollar * sleeve_yield * income_rate)
+            None if sleeve_yield is None else dollar * sleeve_yield * char_rate)
         # Cases A/B are only worth acting on if there is income tax to save — AND a
         # federally-exempt sleeve generates NO relocation action, categorically:
         # there is no federal tax to save, and moving it into a pre-tax shelter would
@@ -902,7 +985,7 @@ def build_location_register(
         # income tax to save here"; an unsizeable row makes no such claim, and
         # dropping it would hide the holding entirely rather than mark it.
         if case in ("A", "B") and (
-            _is_federally_exempt(sleeve)
+            _relocation_is_categorically_wrong(sleeve)
             or (annual_benefit is not None and annual_benefit <= 0)
         ):
             continue
@@ -912,7 +995,13 @@ def build_location_register(
         if tt != "taxable" or not has_gain:
             cost_to_realize = 0.0                      # in-shelter sale is free
         else:
-            cost_to_realize = float(embedded_gain) * ltcg
+            # THE OTHER TERM, and it takes the same character (#278). This was a flat
+            # `ltcg`, which is right for almost everything and wrong for a physical-
+            # metal trust: IAU's federal long-term rate is 28%, not 15%. #278 as
+            # filed dismissed this path as "used only for cost_to_realize, never for
+            # the recurring drag" — true, and wrong there too.
+            cost_to_realize = float(embedded_gain) * realization_rate(
+                character, tax_profile)
         is_free = cost_to_realize <= 0
         payback_months = (
             None if (is_free or annual_benefit is None or annual_benefit <= 0)
@@ -934,6 +1023,10 @@ def build_location_register(
             # the basis — see location_actions.drag_coverage.
             "assumed_yield": sleeve_yield,
             "yield_basis":   yield_basis,
+            # Provenance of the RATE multiplicand, exactly as yield_basis is of the
+            # yield. Both multiplicands are authored, so both declare themselves;
+            # carrying one and not the other would say the rate is self-evident.
+            "tax_character": character,
             "embedded_gain":   (round(float(embedded_gain), 2) if has_gain else None),
             "cost_to_realize": round(cost_to_realize, 2),
             "is_free":         bool(is_free),
@@ -941,7 +1034,7 @@ def build_location_register(
         })
 
     cols = ["holding", "symbol", "account", "sleeve", "case", "current_value",
-            "annual_benefit", "assumed_yield", "yield_basis",
+            "annual_benefit", "assumed_yield", "yield_basis", "tax_character",
             "embedded_gain", "cost_to_realize", "is_free", "payback_months"]
     if not rows:
         return pd.DataFrame(columns=cols)
