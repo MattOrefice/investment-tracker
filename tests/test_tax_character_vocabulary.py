@@ -74,6 +74,36 @@ def test_an_undeclared_sleeve_raises_rather_than_defaulting(monkeypatch):
     assert "no default" in msg or "deliberately no default" in msg
 
 
+def test_an_unlisted_sleeve_still_gets_the_YIELD_raise_not_the_character_one():
+    """RESOLUTION ORDER, pinned because getting it wrong is a silent downgrade.
+
+    #210 built a careful raise for a sleeve the config has never been told how to
+    size: it names the sleeve and the symbol and points at all THREE config sets. The
+    first version of this change resolved character before yield, so an unlisted
+    sleeve hit the character raise first and a reader got the narrower message — six
+    yield-raise tests caught it on the full suite.
+
+    Both raises are correct for their own case. This asserts which case is which: an
+    unknown sleeve is a yield-table gap; an undeclared character is a sleeve the
+    yield table already knows.
+    """
+    import pandas as pd
+    acct = pd.DataFrame([{"pseudonym": "a", "display_name": "Tax",
+                          "tax_treatment": "taxable"}])
+    sec = pd.DataFrame([{"ticker": "ZZZ", "name": "Z", "tax_efficiency": "low",
+                         "sleeve_category": "no_such_sleeve_at_all"}])
+    pos = pd.DataFrame([{"pseudonym": "a", "symbol": "ZZZ", "current_value": 1000.0,
+                         "total_gain_loss": 0.0, "cost_basis_total": 1000.0}])
+    with pytest.raises(Exception) as exc:
+        hh.build_location_register(
+            pos, acct, sec, PROFILE, lc.SLEEVE_PRIORITY_BY_ACCOUNT_TYPE,
+            lc.ACCOUNT_SHELTER_PRIORITY)
+    msg = str(exc.value)
+    assert "SLEEVE_ASSUMED_YIELD" in msg, (
+        "an unlisted sleeve no longer reaches #210's yield raise — the character "
+        f"lookup pre-empted it, downgrading the diagnostic. Got: {msg}")
+
+
 def test_a_security_override_beats_its_sleeve(monkeypatch):
     """Security first, sleeve as default. Character is a property of a FUND while a
     sleeve is a property of EXPOSURE — hedged_equity is the standing proof they can

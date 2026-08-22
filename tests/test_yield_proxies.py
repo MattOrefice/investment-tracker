@@ -196,7 +196,14 @@ def test_intl_all_exus_is_not_modelled_and_has_no_proxy():
 # ── the register on a fixture built from claimed symbols ────────────────────
 
 VALUE = 10_000.0
-ORDINARY = TAX_PROFILE["federal_marginal"] + TAX_PROFILE["state_marginal"]
+# The rate a row's income is taxed at is DERIVED from its declared tax character
+# (#278), not assumed to be the combined ordinary rate. This constant used to be
+# `federal_marginal + state_marginal` and was right only while every sleeve got that
+# rate — us_large_core's income is qualified dividends, so hardcoding ordinary here
+# would make this test assert the defect #278 removed.
+def _rate_for(sleeve: str) -> float:
+    from src.household import _tax_character, income_rate
+    return income_rate(_tax_character(sleeve, ""), TAX_PROFILE)
 
 COMPLETE_MIX = [("us_large_core", 0.60), ("emerging_markets", 0.40)]
 
@@ -243,7 +250,8 @@ def test_a_proxied_sleeve_now_resolves_from_the_table():
     assert r["yield_basis"] == "table"
     assert r["assumed_yield"] == pytest.approx(SLEEVE_ASSUMED_YIELD["us_large_core"])
     assert float(r["annual_benefit"]) == pytest.approx(
-        round(VALUE * SLEEVE_ASSUMED_YIELD["us_large_core"] * ORDINARY, 2))
+        round(VALUE * SLEEVE_ASSUMED_YIELD["us_large_core"]
+              * _rate_for("us_large_core"), 2))
 
 
 def test_a_blend_over_proxied_sleeves_is_now_a_COMPLETE_look_through():

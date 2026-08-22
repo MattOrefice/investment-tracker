@@ -967,10 +967,16 @@ def build_location_register(
         # `state_only if _is_federally_exempt(sleeve) else ordinary` — two outcomes,
         # so every sleeve nobody had classified got the combined ordinary rate,
         # including US Treasuries whose interest PA does not tax (#283).
-        character = _tax_character(sleeve, str(row["symbol"]))
-        char_rate = income_rate(character, tax_profile)
+        # YIELD FIRST, THEN CHARACTER, and the order is load-bearing rather than
+        # stylistic. #210 built a careful raise for an unlisted sleeve — it names the
+        # sleeve and the symbol and points at all three config sets. Resolving
+        # character first pre-empted it with a narrower message, and six yield-raise
+        # tests went red saying so. The character raise is for the different case: a
+        # sleeve the yield table KNOWS whose character nobody declared.
         sleeve_yield, yield_basis = _assumed_yield_with_source(
             sleeve, str(row["symbol"]), compositions_df)
+        character = _tax_character(sleeve, str(row["symbol"]))
+        char_rate = income_rate(character, tax_profile)
         annual_benefit = (
             None if sleeve_yield is None else dollar * sleeve_yield * char_rate)
         # Cases A/B are only worth acting on if there is income tax to save — AND a
