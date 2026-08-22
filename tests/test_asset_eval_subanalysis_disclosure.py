@@ -51,6 +51,7 @@ _BASE = {
     "corr_prose": None, "rolling_chart_b64": None, "rolling_prose": None,
     "con_rows": [], "sharpe_con_no": None, "sharpe_con_with": None,
     "delta_bps_con": None, "msc_chart_b64": None, "dd_rows": [],
+    "btc_2022_mdd": None,
     "args_for": [], "args_against": [], "conclusion": "x",
     "disposition": "computed", "failure_reason": None, "unavailable": [],
 }
@@ -258,16 +259,27 @@ def test_the_harness_context_leaves_nothing_undefined_inside_the_section():
 
 # ── the asymmetry that this change discloses but does NOT remove ──────────────
 
-def test_args_against_still_survives_every_failure_and_that_is_filed():
-    """DOCUMENTING A KNOWN REMAINDER, not asserting it is correct.
+def test_the_hardcoded_args_against_count_is_two_since_the_drawdown_was_derived():
+    """UPDATED DELIBERATELY at #276, which is what the previous version asked for.
 
-    Three of the four `args_against` are hardcoded in _build_asset_eval_section and
-    depend on no computation, so they survive every sub-analysis failure. Disclosing
-    the asymmetry is not the same as removing it; making them conditional is a
-    separate question about whether the decision framework's two sides should be
-    symmetric IN KIND, and is filed as #276 rather than decided here.
+    It read `static == 3` and said "if that was deliberate, update #276." It was:
+    the drawdown argument moved out of the `extend([...])` block and is now derived
+    from `btc_ret` per render, so the hardcoded literal count is **2**.
 
-    This test pins the count so the remainder cannot quietly change while it is open.
+    THE COUNT ALONE WAS NEVER THE POINT, and reading the old figure as "three of four
+    are hardcoded" was itself brittle — the fourth entry is the correlation argument,
+    which fires only above a `> 0.3` gate and measured **0.31** on 2026-08-21. One
+    hundredth lower and the ratio would have read "three of three", describing a
+    WORSE asymmetry with a better-sounding number, with nothing changed in the code.
+
+    What survives, and why each is right:
+
+      - the commodity tax-treatment string, FROZEN pending #278 (a rate vocabulary
+        may land, and this string should then derive from it rather than be a fourth
+        copy of the same claim)
+      - the editorial no-cash-flow-anchor string, now LABELLED as standing, because
+        it is not a measurement withheld — it is not measurable and should not
+        become conditional
     """
     import ast
     import inspect
@@ -281,6 +293,35 @@ def test_args_against_still_survives_every_failure_and_that_is_filed():
                 and node.func.attr == "extend"
                 and getattr(node.func.value, "id", "") == "args_against"):
             static = len(node.args[0].elts)
-    assert static == 3, (
-        f"the unconditional args_against count changed to {static}; if that was "
-        f"deliberate, update #276, which tracks the for/against asymmetry")
+    assert static == 2, (
+        f"the hardcoded args_against count changed to {static}; if that was "
+        f"deliberate, update #276 (asymmetry) and #278 (the frozen tax string)")
+
+
+def test_deriving_the_drawdown_did_not_make_the_case_against_conditional():
+    """The reason the count fell without the case-against weakening: the drawdown
+    entry is appended UNCONDITIONALLY, in one of two forms. A version that appended
+    only when the sweep succeeded would have quietly shrunk the arguments against
+    on exactly the runs where the reader can least check them."""
+    import ast
+    import inspect
+    import textwrap
+
+    fn = ast.parse(textwrap.dedent(
+        inspect.getsource(reports._build_asset_eval_section))).body[0]
+    appends = [n for n in ast.walk(fn)
+               if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+               and n.func.attr == "append"
+               and getattr(n.func.value, "id", "") == "args_against"
+               and any(isinstance(a, ast.Call)
+                       and getattr(a.func, "id", "") == "_drawdown_argument"
+                       for a in n.args)]
+    assert len(appends) == 1, "the drawdown argument is not appended exactly once"
+    # ...and not inside an `if`. Walking the branch bodies is what separates
+    # "always appended" from "appended when the sweep ran".
+    guarded = [n for b in ast.walk(fn) if isinstance(b, ast.If)
+               for n in ast.walk(b) if n is appends[0]]
+    assert not guarded, (
+        "the drawdown argument is appended inside a conditional — the case against "
+        "would shrink silently when the sweep fails; the two forms exist so it "
+        "does not")

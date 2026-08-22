@@ -35,6 +35,11 @@ _BASE = {
     "corr_prose": None, "rolling_chart_b64": None, "rolling_prose": None,
     "con_rows": [], "sharpe_con_no": None, "sharpe_con_with": None,
     "delta_bps_con": None, "msc_chart_b64": None, "dd_rows": [],
+    # Added by #276, and caught the same way #249's key below was: the
+    # premise-check went red on the full suite the moment the builder grew it.
+    # Second time that guard has earned its keep, which is the argument for
+    # keeping a premise assertion even when it looks like bookkeeping.
+    "btc_2022_mdd": None,
     "args_for": [], "args_against": [], "conclusion": "x",
     "disposition": "computed", "failure_reason": None,
     # Added by #249. Present here because this file's own premise-check

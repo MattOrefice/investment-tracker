@@ -1283,6 +1283,60 @@ def _build_positioning_section(end_date: str) -> dict:
     }
 
 
+def _max_drawdown(returns) -> float:
+    """Worst peak-to-trough loss of a daily return series, as a NEGATIVE fraction.
+
+    Signed, and deliberately so: every drawdown figure in this section's table is
+    signed, and the decision-framework sentence sets one against another. A
+    magnitude here would read as the same quantity as the table's while carrying
+    the opposite sign convention, which is the confusion #276 exists to remove.
+
+    NaN on an empty series rather than 0.0 — a zero drawdown is a real and very
+    different claim from an unmeasured one.
+    """
+    s = returns.dropna()
+    if s.empty:
+        return float("nan")
+    cum = (1 + s).cumprod()
+    return float((cum / np.maximum.accumulate(cum) - 1).min())
+
+
+def _drawdown_argument(btc_mdd: float, btc_2022: str | None,
+                       port: dict, sample_start: str) -> str:
+    """The case-against drawdown bullet, in one of TWO forms (#276).
+
+    The figure was never the defect. ">80%" was TRUE — -81.5% over this report's
+    own sample — and stale-proofing it by derivation alone would have fixed a
+    correct number and left the confusion untouched, because what it never said is
+    WHOSE drawdown. It renders directly under a table whose Max DD column is the
+    PORTFOLIO's and four times smaller, so the two read as a contradiction.
+
+    FULL form when the sweep ran: names Bitcoin's own figure, names the table's as
+    something else, and sizes what a BTC allocation did to 2022.
+
+    REDUCED form when 5h failed: Bitcoin's own figure still renders (btc_ret is
+    guaranteed past the loader guard), and the missing portfolio contrast is
+    declared ABSENT. That last clause is load-bearing — a contrast that quietly
+    vanishes reads as no contrast, i.e. as though the allocation cost nothing.
+    """
+    head = (f"Bitcoin's own maximum drawdown is {btc_mdd:.1%} over "
+            f"{sample_start}–present")
+    if port and btc_2022:
+        return (
+            f"{head} — not the {port['max_dd']:.1%} in the table above, which is "
+            f"the portfolio's. Its 2022 drawdown of {btc_2022} came while equities "
+            f"and bonds fell together, deepening the portfolio's own 2022 drawdown "
+            f"from {port['mdd22_lo']:.1%} at 0% allocation to {port['mdd22_hi']:.1%} "
+            f"at {port['alloc_top']} — no diversification benefit when it was most "
+            f"needed"
+        )
+    return (
+        f"{head}. The portfolio-level comparison — how much a BTC allocation "
+        f"deepened the 2022 drawdown — is not available this run: the drawdown "
+        f"sweep did not produce data. Absent, not zero"
+    )
+
+
 def _build_asset_eval_section() -> dict:
     """Build the Asset Evaluation section — same source as pages/5_Asset_Evaluation.py.
 
@@ -1339,6 +1393,13 @@ def _build_asset_eval_section() -> dict:
         "delta_bps_con":    None,
         "msc_chart_b64":    None,
         "dd_rows":          [],
+        # Bitcoin's OWN 2022 drawdown, for the table caption. The caption used to
+        # describe a "2022 stress scenario: equities -20%, bonds -15%, BTC -65%",
+        # which read as a hypothetical shock applied to the table — the column is
+        # realized 2022 history. The two unverified sleeve figures are gone rather
+        # than derived: accurate sleeve-level numbers would still describe
+        # something the column does not compute. #276.
+        "btc_2022_mdd":     None,
         "args_for":         [],
         "args_against":     [],
         "conclusion": ae.CONCLUSION,
@@ -1361,6 +1422,15 @@ def _build_asset_eval_section() -> dict:
                 "failure_reason": f"{type(exc).__name__}: {exc}"}
 
     result = {k: (list(v) if isinstance(v, list) else v) for k, v in _empty.items()}
+
+    # Bitcoin's OWN realized 2022 drawdown, for the table caption (#276). Computed
+    # here rather than inside 5h because it is a property of the candidate asset, not
+    # of any blend — and because btc_ret is guaranteed non-empty past the loader
+    # guard above, so the caption cannot silently lose its figure when the sweep
+    # fails. Stored preformatted: its only consumers are a caption and a sentence.
+    _btc_2022 = _max_drawdown(btc_ret.loc["2022-01-01":"2022-12-31"])
+    if not np.isnan(_btc_2022):
+        result["btc_2022_mdd"] = f"{_btc_2022:.1%}"
 
     # 5a: Univariate statistics
     try:
@@ -1525,6 +1595,18 @@ def _build_asset_eval_section() -> dict:
         result["unavailable"].append("marginal_sharpe")
 
     # 5h: Drawdown sensitivity
+    #
+    # THE COLUMNS ARE THE PORTFOLIO'S, NOT BITCOIN'S — which is the whole of #276.
+    # `Max DD` here is the blended portfolio's worst peak-to-trough loss at each
+    # candidate allocation, and it IMPROVES as BTC rises (-31.3% -> -29.8% on the
+    # 2026-08-21 book). The Decision Framework immediately below asserts a drawdown
+    # figure of Bitcoin's own, which is four times larger. Rendered adjacently with
+    # neither subject named, the pair reads as a contradiction.
+    #
+    # These three numbers are lifted out for 5j so that argument can name both
+    # subjects rather than only its own. Kept as floats, not the formatted strings
+    # in dd_rows: 5j formats for a sentence, the table formats for a cell.
+    _port: dict[str, float] = {}
     try:
         dd_sens = ae.compute_drawdown_sensitivity(
             btc_ret, slv_ret, ae.sleeve_weights(), rf_annual=ae.RF_ANNUAL
@@ -1539,6 +1621,15 @@ def _build_asset_eval_section() -> dict:
                     "sharpe": f"{row['Sharpe']:.2f}",
                     "mdd22":  f"{mdd22_val:.1%}" if not np.isnan(mdd22_val) else "—",
                 })
+            _base = dd_sens.iloc[0]
+            _top  = dd_sens.iloc[-1]
+            if not np.isnan(_base["2022 MDD"]) and not np.isnan(_top["2022 MDD"]):
+                _port = {
+                    "max_dd":    float(_base["Max DD"]),
+                    "alloc_top": str(_top["BTC Alloc"]),
+                    "mdd22_lo":  float(_base["2022 MDD"]),
+                    "mdd22_hi":  float(_top["2022 MDD"]),
+                }
     except Exception:
         result["unavailable"].append("drawdown")
 
@@ -1574,13 +1665,41 @@ def _build_asset_eval_section() -> dict:
                     "co-movement spikes during stress precisely when a hedge is most valuable"
                 )
 
+        # DERIVED, and the derivation is not the point — the SUBJECT is (#276).
+        #
+        # This read "Maximum historical drawdown exceeding 80%" as a constant. The
+        # number was TRUE: -81.5% over the report's own sample, measured from the
+        # same btc_ret three blocks above. What it never said is WHOSE drawdown,
+        # and it renders directly beneath a table whose Max DD column is the
+        # PORTFOLIO's and four times smaller. So the defect was never staleness —
+        # deriving the figure and stopping there would have fixed a number that was
+        # already right and left the confusion exactly as it was. The clause that
+        # does the work is the one naming the table's figure as something else.
+        #
+        # btc_ret cannot be empty here: the loader above returns `no_data` before
+        # reaching this block if it is. So Bitcoin's own drawdown always renders.
+        # The PORTFOLIO half comes from 5h, which can fail on its own — hence two
+        # forms, and the reduced one says the contrast is ABSENT rather than
+        # quietly dropping it. A missing contrast otherwise reads as no contrast.
+        args_against.append(_drawdown_argument(
+            _max_drawdown(btc_ret), result["btc_2022_mdd"], _port, ae.SAMPLE_START))
+
         args_against.extend([
-            "Maximum historical drawdown exceeding 80% — 2022 coincided with equity and bond "
-            "losses simultaneously (no diversification benefit when needed)",
+            # FROZEN PENDING #278 — deliberately not rewritten, and not an oversight.
+            # This sentence is the THIRD in-repo statement of commodity tax character,
+            # and the only one that is both correct and rendered. #278 asks whether the
+            # asset-location register should grow a tax-character vocabulary; if it
+            # does, this string must DERIVE from it. Editing it here first would mint a
+            # fourth copy, which is precisely how this family of defect reproduces.
             "Commodity tax treatment: short-term ordinary income / long-term capital gains, "
             "no qualified-dividend treatment — unfavorable vs. equity ETFs in taxable accounts",
-            "No intrinsic cash flow or fundamental valuation anchor — expected return is "
-            "purely sentiment-driven, making MV inputs unreliable for forward-looking allocation",
+            # LABELLED AS STANDING (#276). Unlike the drawdown above it, this is not a
+            # measurement withheld — it is not measurable, and should not become
+            # conditional. Saying so is what lets a reader tell the two apart.
+            "Standing argument, not a measurement — no intrinsic cash flow or fundamental "
+            "valuation anchor: expected return is purely sentiment-driven, making MV inputs "
+            "unreliable for forward-looking allocation. A judgement about the asset class, "
+            "true of any portfolio, and independent of every figure above",
         ])
 
         result["args_for"]     = args_for
