@@ -37,18 +37,24 @@ TAX_PROFILE: dict[str, float] = {
 # Assumed annual distribution YIELD per sleeve (income throw-off, not total
 # return). This table is INCOME ONLY — it must never encode tax status. A
 # federally-exempt sleeve still throws off real income; its exemption lives in
-# FEDERALLY_EXEMPT_SLEEVES below, not as a fake zero here. Sizes the income-shelter
+# SLEEVE_TAX_CHARACTER below, not as a fake zero here. Sizes the income-shelter
 # value at stake in the Asset Location register (build_location_register, via
 # household._assumed_yield_with_source). USER-EDITABLE.
 SLEEVE_ASSUMED_YIELD: dict[str, float] = {
     "real_assets_reit":        0.040,
     "real_assets_gold":        0.000,
     "high_yield_fi":           0.060,
-    "high_yield_muni":         0.040,   # yield ESTIMATE (income throw-off); federal exemption is a separate fact — see FEDERALLY_EXEMPT_SLEEVES
+    "high_yield_muni":         0.040,   # yield ESTIMATE (income throw-off); federal exemption is a separate fact — see SLEEVE_TAX_CHARACTER
     "floating_rate":           0.055,
     "multi_sector_fi":         0.040,
     "core_fi_credit":          0.035,
-    "core_fi_treasury":        0.040,
+    # DECLARED BASIS (#286) — IEF's TTM distribution yield on the map's shared as-of of
+    # 2026-08-11, same as every equity entry below. The 0.040 it replaces was AUTHORED:
+    # it arrived at 6cd6f99 (2026-06-01) inside a block whose fifteen entries are ALL
+    # exact multiples of 0.5%, with no comment then or since. Never measured, rather
+    # than measured-and-gone-stale — which is why the fix is a first measurement and
+    # not a refresh. See SLEEVE_YIELD_PROXY.
+    "core_fi_treasury":        0.0397,
     # CONSTRUCTED, not assumed — see SLEEVE_YIELD_CONSTRUCTION below, which a test
     # re-adds. 2.35% real yield + 2.26% breakeven inflation. It shipped at 0.025, which
     # read as a real yield because it essentially was one (within 15bp of DFII10) and so
@@ -79,9 +85,14 @@ SLEEVE_ASSUMED_YIELD: dict[str, float] = {
     "intl_small_value":        0.0309,
 }
 
-# Where each equity entry above came from. A value without a declared basis is what
+# Where each proxied entry above came from. A value without a declared basis is what
 # #191 closed, so this map is not optional metadata — a test fails if an entry exists
 # without one, and fails again if its comment omits the spread or the coverage.
+#
+# EQUITY-ONLY UNTIL #286, which added core_fi_treasury and made this map's scope wider
+# than the block it was written for. Nothing about the contract changed — a proxy is a
+# proxy — and the as-of is SHARED (2026-08-11), because the recomputation test resolves
+# every entry at one date. A per-entry as-of would fail it, which is how that was found.
 #
 # BENCHMARK THROUGHOUT, deliberately, including where a held ticker looks more apt.
 # intl_large_value takes EFV (0% held) rather than AVIV (the sleeve's SAA carrier),
@@ -106,6 +117,10 @@ SLEEVE_YIELD_PROXY: dict[str, str] = {
     "intl_quality":         "IQLT",  # +20% vs IDHQ 1.93%; semi-annual so the TTM is 2 payments; 0.0% held cached
     "intl_large_value":     "EFV",   # +85% vs AVIV 2.42% — the widest in the table; semi-annual so the TTM is 2 payments; 0.0% held cached
     "intl_small_value":     "SCZ",   # +16% vs ISVL 3.02%, AVDV 2.67%; semi-annual so the TTM is 2 payments; 0.0% held cached
+    # FIXED INCOME, added #286 — the first non-equity entry. It takes the map's SHARED
+    # as-of (2026-08-11), which the recomputation test pins for every entry at once; an
+    # entry with its own as-of would silently fail that recomputation.
+    "core_fi_treasury":     "IEF",   # +2% vs VGIT 3.90%; monthly, so the TTM is 12 payments; 100.0% held cached
 }
 
 # Entries whose value is CONSTRUCTED from published series rather than measured from a

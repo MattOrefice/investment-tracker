@@ -61,12 +61,29 @@ EXPECTED_PROXIES = {
     "intl_quality":         "IQLT",
     "intl_large_value":     "EFV",
     "intl_small_value":     "SCZ",
+    # #286. Fixed income, so the sleeve names below that say "equity" are now wider
+    # than they read — corrected where they are assertions, kept where they are history.
+    "core_fi_treasury":      "IEF",
 }
 
 
 # ── the entries exist and declare a proxy ────────────────────────────────────
 
-def test_every_new_equity_sleeve_has_an_entry():
+def test_the_test_enumeration_and_the_real_map_agree_BOTH_WAYS():
+    """A GAP #286 WALKED INTO. EXPECTED_PROXIES is a test-side duplicate of the config
+    map, and every assertion below iterates the DUPLICATE — so a sleeve added to the
+    real map was invisible here: 13 pinned, a 14th unchecked, and nothing red.
+
+    One-directional coverage of a mirrored enumeration is the assert-collections-are-
+    complete shape with the collection split across two files. Both directions now.
+    """
+    assert set(EXPECTED_PROXIES) == set(SLEEVE_YIELD_PROXY), (
+        f"only in the test: {sorted(set(EXPECTED_PROXIES) - set(SLEEVE_YIELD_PROXY))}; "
+        f"only in the config: {sorted(set(SLEEVE_YIELD_PROXY) - set(EXPECTED_PROXIES))}"
+    )
+
+
+def test_every_proxied_sleeve_has_an_entry():
     for sleeve in EXPECTED_PROXIES:
         assert sleeve in SLEEVE_ASSUMED_YIELD, f"{sleeve} has no yield entry"
 
