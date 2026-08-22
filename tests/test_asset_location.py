@@ -283,14 +283,20 @@ def test_case_d_sleeve_absent_from_both_maps_no_row():
     assert "ZZZ" not in _case_d_symbols()
 
 
-# ── Federally-exempt sleeves generate no A/B action (municipal) ─────────────────
-# high_yield_muni income is federally exempt: relocating it into a pre-tax shelter
-# converts exempt interest into ordinary income at withdrawal — strictly worse — so
-# it generates NO case A/B action, categorically (not because its drag is small). It
-# keeps its state-only drag magnitude; it just never fires a relocation row. The
-# comparison holding (NONEX / multi_sector_fi) has the SAME assumed yield AND value
-# in the SAME taxable account, so the only thing that differs is the federal
-# exemption. Keyed on the SLEEVE, never a symbol.
+# ── Categorically-wrong relocations generate no A/B action (municipal) ─────────
+# Relocating high_yield_muni into a pre-tax shelter converts exempt interest into
+# ordinary income at withdrawal — strictly worse — so it generates NO case A/B
+# action, categorically (not because its drag is small). It keeps its drag
+# magnitude; it just never fires a relocation row. The comparison holding (NONEX /
+# multi_sector_fi) has the SAME assumed yield AND value in the SAME taxable account.
+# Keyed on the SLEEVE, never a symbol.
+#
+# MIGRATED AT #278, and the migration is the point. This suppression used to be
+# driven by FEDERALLY_EXEMPT_SLEEVES — the same set that supplied the RATE. That
+# bundle is why a state-exempt mirror was impossible to add: a Treasury needs the
+# rate half and must NOT be suppressed. Eligibility now has its own set with its own
+# reasons, and test_a_state_exempt_sleeve_is_not_suppressed pins the half that the
+# bundle made unexpressible.
 
 _MUNI_VALUE = 50000.0
 
@@ -327,26 +333,48 @@ def test_exempt_sleeve_no_ab_row_but_nonexempt_same_yield_and_value_does():
     )
 
 
-def test_adding_sleeve_to_exempt_set_suppresses_its_rows(monkeypatch):
-    """Declaring multi_sector_fi federally exempt (adding it to the set) must drop its
-    row with NO other edit — proving the exclusion consults the set, not a symbol."""
+def test_adding_sleeve_to_the_wrong_set_suppresses_its_rows(monkeypatch):
+    """Declaring multi_sector_fi categorically wrong to relocate must drop its row
+    with NO other edit — proving the exclusion consults the set, not a symbol."""
     import src.location_config as lc
     pos, acct, sec = _muni_fixture()
 
     before = _muni_register(pos, acct, sec)
     assert not before[before["symbol"] == "NONEX"].empty, "baseline: NONEX registers a row"
 
-    monkeypatch.setattr(lc, "FEDERALLY_EXEMPT_SLEEVES",
+    monkeypatch.setattr(lc, "RELOCATION_IS_CATEGORICALLY_WRONG",
                         frozenset({"high_yield_muni", "multi_sector_fi"}))
     after = _muni_register(pos, acct, sec)
     assert after[after["symbol"] == "NONEX"].empty, (
-        "adding multi_sector_fi to FEDERALLY_EXEMPT_SLEEVES must suppress its rows"
+        "adding multi_sector_fi to RELOCATION_IS_CATEGORICALLY_WRONG must suppress "
+        "its rows"
     )
+
+
+def test_a_state_exempt_sleeve_is_not_suppressed(monkeypatch):
+    """THE HALF THE OLD BUNDLE COULD NOT EXPRESS (#278).
+
+    Under FEDERALLY_EXEMPT_SLEEVES, rate and eligibility were one set: anything
+    given the exempt rate was also barred from generating an action. A US Treasury
+    needs the opposite pairing — a reduced rate (PA does not tax the interest) AND a
+    live relocation action, because there is still federal tax to save by sheltering
+    it. Re-bundling them would make this row vanish.
+    """
+    import src.location_config as lc
+    pos, acct, sec = _muni_fixture()
+    monkeypatch.setitem(lc.SLEEVE_TAX_CHARACTER, "multi_sector_fi", "treasury")
+    reg = _muni_register(pos, acct, sec)
+    row = reg[reg["symbol"] == "NONEX"]
+    assert len(row) == 1, (
+        "giving a sleeve the state-exempt character suppressed its row — rate and "
+        "eligibility have been re-bundled"
+    )
+    assert row.iloc[0]["tax_character"] == "treasury"
 
 
 def test_yield_table_does_not_encode_tax_status():
     # The muni's yield is its real income throw-off, not a zero smuggling in
-    # "tax-exempt". Exemption lives in FEDERALLY_EXEMPT_SLEEVES, not this table.
+    # "tax-exempt". Exemption lives in the tax-character table, not this one.
     assert SLEEVE_ASSUMED_YIELD["high_yield_muni"] > 0
 
 
