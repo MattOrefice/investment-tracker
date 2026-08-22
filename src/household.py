@@ -599,8 +599,23 @@ def get_substitution_note(sleeve_key: str) -> str:
 # fallback itself (#210 PR 3): a basis that cannot occur is a claim the artifact does
 # not support, and leaving an unreachable one behind is a fallback waiting to be
 # re-wired.
+# HOW the yield was arrived at — not WHERE it is stored. `table` used to mean "the
+# sleeve has an entry in SLEEVE_ASSUMED_YIELD", which is a fact about storage and spans
+# three different provenances: a benchmark's measured TTM, a sum of published series,
+# and somebody's judgement. The register rendered all three identically (#289), so a
+# reader could not tell a measured 3.97% from an authored 6.00%.
+#
+# Split three ways at #289. The disclosure paragraph already made this distinction —
+# yield_assumption_note has counted proxied / constructed / authored since #213 — so
+# the paragraph and the per-row column disagreed about how many kinds existed.
 YIELD_BASES: frozenset[str] = frozenset({
-    "table",         # the sleeve has an entry in SLEEVE_ASSUMED_YIELD
+    "proxy",         # a benchmark's TTM distribution yield (SLEEVE_YIELD_PROXY)
+    "constructed",   # summed from published series (SLEEVE_YIELD_CONSTRUCTION)
+    "authored",      # a judgement of MAGNITUDE (SLEEVE_YIELD_AUTHORED)
+    "structural",    # no cash flow to yield (SLEEVE_YIELD_STRUCTURAL) — a fact about
+                     # the asset, not an estimate. Kept apart from `authored` because
+                     # the marker decides what a reviewer is invited to reconsider, and
+                     # whether bullion pays a dividend is not a question review improves.
     "look_through",  # a blend, decomposed through fund_compositions
     "not_modelled",  # the model declines to size this row (yield is None)
 })
@@ -671,10 +686,32 @@ def _assumed_yield_with_source(
     contract ``_thematic_equity_figures`` already applies to this frame.
     """
     from src.location_config import (BLEND_SLEEVES, NOT_MODELLED_SLEEVES,
-                                     SLEEVE_ASSUMED_YIELD)
+                                     SLEEVE_ASSUMED_YIELD, SLEEVE_YIELD_AUTHORED,
+                                     SLEEVE_YIELD_CONSTRUCTION, SLEEVE_YIELD_PROXY,
+                                     SLEEVE_YIELD_STRUCTURAL)
 
     if sleeve_key in SLEEVE_ASSUMED_YIELD:
-        return SLEEVE_ASSUMED_YIELD[sleeve_key], "table"
+        # WHICH MAP DECLARED IT, not where the number is stored. No new lookup — the
+        # three basis maps already partition SLEEVE_ASSUMED_YIELD, and a test asserts
+        # they do, so an entry cannot land in the table without declaring a basis.
+        if sleeve_key in SLEEVE_YIELD_PROXY:
+            basis = "proxy"
+        elif sleeve_key in SLEEVE_YIELD_CONSTRUCTION:
+            basis = "constructed"
+        elif sleeve_key in SLEEVE_YIELD_STRUCTURAL:
+            basis = "structural"
+        elif sleeve_key in SLEEVE_YIELD_AUTHORED:
+            basis = "authored"
+        else:
+            raise KeyError(
+                f"sleeve {sleeve_key!r} has a yield but declares no basis. Add it to "
+                f"SLEEVE_YIELD_PROXY, SLEEVE_YIELD_CONSTRUCTION, "
+                f"SLEEVE_YIELD_AUTHORED or SLEEVE_YIELD_STRUCTURAL in "
+                f"src/location_config.py. There is no "
+                f"default: an undeclared basis rendering as a measured one is the "
+                f"defect #289 removed."
+            )
+        return SLEEVE_ASSUMED_YIELD[sleeve_key], basis
 
     if sleeve_key in BLEND_SLEEVES:
         if compositions_df is None or compositions_df.empty or not symbol:
