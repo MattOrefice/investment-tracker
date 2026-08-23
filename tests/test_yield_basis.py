@@ -147,14 +147,27 @@ def _row(reg, symbol):
 # ── basis resolution ─────────────────────────────────────────────────────────
 
 def test_basis_set_is_closed():
-    """Three, down from the five PR 1 introduced: #210 PR 3 removed `default` and
-    `look_through_partial` along with the fallback itself."""
-    assert YIELD_BASES == frozenset({"table", "look_through", "not_modelled"})
+    """SIX, and the arithmetic is not a return to PR 1's five. #210 PR 3 removed
+    `default` and `look_through_partial` along with the fallback itself, taking it to
+    three. #289 then SPLIT `table` — which named where a value was STORED, not how it
+    was arrived at, and so spanned a measured TTM, a sum of published series, and
+    somebody's judgement rendering identically. `structural` split off from `authored`
+    in the same PR, on the render: an `(authored)` zero on IAU reads as "somebody
+    estimated zero" where bullion simply has no cash flow to yield."""
+    assert YIELD_BASES == frozenset(
+        {"proxy", "constructed", "authored", "structural",
+         "look_through", "not_modelled"})
+    assert "table" not in YIELD_BASES, (
+        "`table` is back — it describes storage, not provenance, which is what let an "
+        "authored 6.00% render exactly like a measured 3.97%")
 
 
-def test_table_sleeve_resolves_from_the_table():
+def test_an_authored_sleeve_resolves_as_authored():
+    """MIGRATED at #289. This asserted `table`, which was true of JHEQX and equally
+    true of a proxied row — so it could not distinguish the two things the column now
+    has to. hedged_equity is authored; the assertion says so."""
     r = _row(_register(), "JHEQX")
-    assert r["yield_basis"] == "table"
+    assert r["yield_basis"] == "authored"
     assert r["assumed_yield"] == pytest.approx(SLEEVE_ASSUMED_YIELD["hedged_equity"])
 
 
@@ -274,7 +287,7 @@ def test_not_modelled_payback_is_none_and_distinguishable_from_free():
     assert pd.isna(refused["payback_months"])
     assert refused["yield_basis"] == "not_modelled"
     modelled = _row(reg, "JHEQX")
-    assert modelled["yield_basis"] == "table"
+    assert modelled["yield_basis"] == "authored"
 
 
 def test_look_through_benefit_uses_the_looked_through_yield():
@@ -434,7 +447,11 @@ def test_format_assumed_yield_per_basis():
     """One label per LIVE basis. #210 PR 3 removed the `default` and
     `look_through_partial` labels with the states themselves — see
     test_yield_raise.py::test_no_basis_string_survives_for_a_removed_state."""
-    assert format_assumed_yield(0.040, "table") == "4.00%"
+    # Unmarked means DECLARED — a proxy or a construction. An authored value is
+    # marked, because there is nothing to look up.
+    assert format_assumed_yield(0.040, "proxy") == "4.00%"
+    assert format_assumed_yield(0.0461, "constructed") == "4.61%"
+    assert format_assumed_yield(0.060, "authored") == "6.00% (authored)"
     assert format_assumed_yield(0.0248, "look_through") == "2.48% (look-through)"
     assert format_assumed_yield(None, "not_modelled") == "not modelled"
 
@@ -449,4 +466,4 @@ def test_format_assumed_yield_keeps_an_unknown_basis_visible():
 def test_format_assumed_yield_renders_a_zero_table_entry():
     """A 0.00% row is the one most likely to read as 'no assumption was made'. For
     real_assets_gold and crypto the authored zero is a deliberate FACT."""
-    assert format_assumed_yield(0.0, "table") == "0.00%"
+    assert format_assumed_yield(0.0, "authored") == "0.00% (authored)"

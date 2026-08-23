@@ -1845,7 +1845,13 @@ def test_page14_discloses_the_yield_assumption_and_marks_its_basis_live(monkeypa
 
     # 1. the mechanism, unchanged from #191
     assert "position value × assumed sleeve yield × tax rate" in md
-    assert "authored assumption" in md and "no declared basis" in md
+    # MIGRATED at #289: "no declared basis" was true while authored MEANT undeclared.
+    # An authored entry now declares a basis that is not a measurement, and the live
+    # page must say which kind of claim it is — that is the reader-facing property.
+    assert "authored assumption" in md
+    assert "judgement, not a measurement" in md, (
+        "the live page does not say the authored rows are judgements")
+    assert "no declared basis** at all" not in md
     # 2. the claim that made the omission a false statement stays gone
     assert "Dollar figures in every card are templated" not in md
 
@@ -1863,6 +1869,13 @@ def test_page14_discloses_the_yield_assumption_and_marks_its_basis_live(monkeypa
         assert "not modelled, not zero" in md
     if counts.get("default", 0):
         assert f"{counts['default']} of {n} rows" in md
+    # #289's kinds, disclosed on the live page the same way — a basis that exists in
+    # the register and not in the rendered note is not disclosed.
+    if counts.get("authored", 0):
+        assert f"{counts['authored']} of {n} rows** use an **authored** yield" in md
+    if counts.get("structural", 0):
+        assert f"{counts['structural']} of {n} rows" in md
+        assert "no cash flow to yield" in md
 
     # 4. the KPI's exclusion notice renders WITH the total it qualifies, not only in
     #    the expander — the .sum() crux: a total omitting rows must say so where the

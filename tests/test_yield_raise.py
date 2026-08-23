@@ -152,8 +152,11 @@ def test_raise_on_an_underlying_sleeve_names_the_fund_and_the_underlying():
 
 # ── the fallback is gone from the code, not just from the data ──────────────
 
-def test_basis_set_is_three():
-    assert YIELD_BASES == frozenset({"table", "look_through", "not_modelled"})
+def test_basis_set_is_six():
+    """THREE until #289 split `table` — which named storage, not provenance — into
+    proxy / constructed / authored / structural."""
+    assert YIELD_BASES == frozenset({"proxy", "constructed", "authored", "structural",
+                                     "look_through", "not_modelled"})
 
 
 def test_equity_default_yield_no_longer_exists():

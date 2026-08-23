@@ -217,12 +217,25 @@ def test_the_note_counts_a_constructed_row_separately_from_authored():
     """
     import pandas as pd
 
+
+def _basis_for(sleeve: str) -> str:
+    """The declared basis for a sleeve, read from the config rather than written down.
+    #289 split `table` four ways; a fixture that hardcoded one of them would drift the
+    moment a sleeve changed kind."""
+    import src.location_config as _lc
+    if sleeve in _lc.SLEEVE_YIELD_PROXY:        return "proxy"
+    if sleeve in _lc.SLEEVE_YIELD_CONSTRUCTION: return "constructed"
+    if sleeve in _lc.SLEEVE_YIELD_STRUCTURAL:   return "structural"
+    return "authored"
+
     from src.location_actions import yield_assumption_note
 
     reg = pd.DataFrame({
         "symbol":      ["SCHP", "VOO",           "VNQ"],
-        "sleeve":      ["tips",  "us_large_core", "real_assets_reit"],
-        "yield_basis": ["table", "table",         "table"],
+        "sleeve":      ["tips",         "us_large_core", "real_assets_reit"],
+        # MIGRATED at #289: `table` named where the value was STORED and spanned three
+        # provenances. Derived per sleeve so the fixture cannot drift from the maps.
+        "yield_basis": ["constructed", "proxy",         "authored"],
     })
     note = yield_assumption_note(reg)
 
@@ -250,7 +263,7 @@ def test_the_note_partitions_table_rows_exactly():
     reg = pd.DataFrame({
         "symbol":      [f"S{i}" for i in range(len(sleeves))],
         "sleeve":      sleeves,
-        "yield_basis": ["table"] * len(sleeves),
+        "yield_basis": [_basis_for(x) for x in sleeves],
     })
     note = yield_assumption_note(reg)
     counted = sum(int(m) for m in re.findall(r"\*\*(\d+) of 5 rows\*\*", note))
@@ -266,7 +279,8 @@ def test_the_note_says_the_construction_is_dated_not_live():
 
     from src.location_actions import yield_assumption_note
 
-    reg = pd.DataFrame({"symbol": ["SCHP"], "sleeve": ["tips"], "yield_basis": ["table"]})
+    reg = pd.DataFrame({"symbol": ["SCHP"], "sleeve": ["tips"],
+                        "yield_basis": ["constructed"]})
     note = yield_assumption_note(reg)
     assert "dated snapshot" in note and "not a live feed" in note
 
@@ -293,8 +307,10 @@ def _con_register():
     import pandas as pd
     return pd.DataFrame({
         "symbol":      ["SCHP", "VOO",           "VNQ"],
-        "sleeve":      ["tips",  "us_large_core", "real_assets_reit"],
-        "yield_basis": ["table", "table",         "table"],
+        "sleeve":      ["tips",         "us_large_core", "real_assets_reit"],
+        # MIGRATED at #289: `table` named where the value was STORED and spanned three
+        # provenances. Derived per sleeve so the fixture cannot drift from the maps.
+        "yield_basis": ["constructed", "proxy",         "authored"],
     })
 
 
@@ -328,8 +344,18 @@ def test_the_age_disclosure_is_scoped_to_the_constructed_row():
     assert "speaks only for" in note, (
         f"the date is rendered unscoped, so it reads as covering the table: {note!r}"
     )
-    assert "no date at all" in note, (
-        "the note does not say the authored rows are undated"
+    # MIGRATED at #289, and the old assertion is now FALSE rather than reworded. It
+    # required the note to say the authored rows carry "no date at all" — true until
+    # SLEEVE_YIELD_AUTHORED gave them one. The scoping claim this test exists for is
+    # unchanged and arguably sharper: the constructed date still speaks only for the
+    # constructed row, and the authored rows carry a date of a DIFFERENT KIND, which
+    # the note must distinguish rather than deny.
+    assert "no date at all" not in note, (
+        "the note still says the authored rows are undated; they carry an authored "
+        "date since #289"
+    )
+    assert "a date of a DIFFERENT KIND" in note, (
+        "the note does not distinguish the authored rows' date from a vintage"
     )
     assert "not checked here" in note, (
         "the note does not say the proxy rows' measurement date is unchecked"
@@ -477,8 +503,8 @@ def test_the_oldest_constructed_stamp_governs(monkeypatch):
     })
     reg = pd.DataFrame({
         "symbol":      ["SCHP", "VGIT"],
-        "sleeve":      ["tips", "core_fi_treasury"],
-        "yield_basis": ["table", "table"],
+        "sleeve":      ["tips",        "core_fi_treasury"],
+        "yield_basis": ["constructed", "proxy"],
     })
     note = yield_assumption_note(reg, today=new + timedelta(days=5))
 

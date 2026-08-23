@@ -857,7 +857,12 @@ def _fmt_dollars(x: float) -> str:
 # PR 3) — a label for a basis that cannot occur is a claim the artifact does not
 # support. The .get() fallback below keeps an UNKNOWN basis visible rather than silent.
 _BASIS_SUFFIX = {
-    "table":        "",
+    "proxy":        "",
+    "constructed":  "",
+    "authored":     " (authored)",
+    # NOT " (structural)". The suffix has to say WHY the number is not a measurement,
+    # because a zero marked with a category name still reads as an estimate of zero.
+    "structural":   " (no cash flow to yield)",
     "look_through": " (look-through)",
 }
 
@@ -865,10 +870,33 @@ _BASIS_SUFFIX = {
 def format_assumed_yield(sleeve_yield: "float | None", basis: str) -> str:
     """Render a row's yield with its provenance.
 
-    ``"4.00%"`` / ``"2.48% (look-through)"`` / ``"1.80% (default)"`` /
-    ``"not modelled"``. Only the table case is unmarked, because it is the only one a
-    reader can verify unaided — a sleeve entry can be looked up, every other basis
-    leaves no trace in the number itself.
+    ``"3.97%"`` / ``"6.00% (authored)"`` / ``"2.48% (look-through)"`` /
+    ``"not modelled"``.
+
+    THE OLD JUSTIFICATION WAS WRONG, NOT MERELY INCOMPLETE, and saying so is the point
+    of this paragraph. It read: *"Only the table case is unmarked, because it is the
+    only one a reader can verify unaided — a sleeve entry can be looked up."* Tested
+    against the three kinds ``table`` actually spanned, that principle does not track
+    verifiability at all:
+
+    ======================  =====================================================
+    kind                    can a reader check it unaided?
+    ======================  =====================================================
+    ``constructed``         YES — formula and components are in the config; a
+                            reader adds 2.35 + 2.26
+    ``proxy``               no — needs the price cache and a TTM computation
+    ``authored``            nothing to check
+    ======================  =====================================================
+
+    So ``constructed`` is the MOST checkable and would be the one left unmarked under
+    the stated rule. **The surviving distinction is simpler: an entry either DECLARES
+    A BASIS or it does not.** Unmarked means declared; ``(authored)`` means not.
+
+    NOT MARKING ALL THREE, and this does not transfer from ``format_tax_character``,
+    which marks every character. There, unmarked was genuinely ambiguous because NO
+    character is verifiable from a dollar figure. Here unmarked has exactly one meaning
+    once ``authored`` is marked, and suffixing 15 of 27 rows costs legibility for no
+    added information. Recorded so a later consistency pass does not "fix" it.
 
     A 0.00% row still carries its marker: a zero is the value most likely to be read
     as "no assumption was made here", and for real_assets_gold/crypto the authored
@@ -1047,6 +1075,7 @@ def yield_assumption_note(register, *, today=None) -> str:
     from datetime import date
 
     from src.location_config import (PROXY_SPREAD_UNMEASURED,
+                                     SLEEVE_YIELD_AUTHORED, SLEEVE_YIELD_STRUCTURAL,
                                      SLEEVE_YIELD_CONSTRUCTION, SLEEVE_YIELD_PROXY,
                                      YIELD_CONSTRUCTION_REVIEW_DAYS)
 
@@ -1077,10 +1106,12 @@ def yield_assumption_note(register, *, today=None) -> str:
     # all" — false the moment the construction landed, and the same understatement this
     # docstring warns about one paragraph up. A basis that exists in the config and not
     # in the rendered note is not disclosed.
-    table_rows = register[register["yield_basis"] == "table"]
+    table_rows = register[register["yield_basis"].isin(
+        ("proxy", "constructed", "authored", "structural"))]
     n_proxied = int(table_rows["sleeve"].isin(SLEEVE_YIELD_PROXY).sum())
     n_constructed = int(table_rows["sleeve"].isin(SLEEVE_YIELD_CONSTRUCTION).sum())
-    n_authored = len(table_rows) - n_proxied - n_constructed
+    n_structural = int(table_rows["sleeve"].isin(SLEEVE_YIELD_STRUCTURAL).sum())
+    n_authored = len(table_rows) - n_proxied - n_constructed - n_structural
 
     if n_proxied:
         note += (
@@ -1118,8 +1149,8 @@ def yield_assumption_note(register, *, today=None) -> str:
             f"**{oldest.isoformat()}**, {age_days} days ago. That date **speaks only "
             f"for** the constructed {'row' if one else 'rows'} — the proxy-backed rows "
             "share one measurement date recorded in a config comment, which is **not "
-            "checked here**, and the authored rows carry **no date at all**. Nothing "
-            "above says any of them is current."
+            "checked here**, and the authored rows carry a date of a DIFFERENT KIND "
+            "(below). Nothing above says any of them is current."
         )
         # Silent while fresh, per staleness_note's rule and this function's own
         # docstring: a disclosure that always warns teaches the reader to skip it.
@@ -1132,10 +1163,51 @@ def yield_assumption_note(register, *, today=None) -> str:
                 "rides the annual tax-figure review this model already needs."
             )
     if n_authored:
+        one = n_authored == 1
         note += (
-            f" **{n_authored} of {len(register)} rows** use an **authored** yield with "
-            "**no declared basis** at all — for those, a trailing-twelve-month, SEC "
-            "30-day, or forward figure would each give a different answer."
+            f" **{n_authored} of {len(register)} rows** use an **authored** yield — a "
+            "**judgement, not a measurement**. Each row's *Assumed Yield* column marks "
+            "{it} `(authored)`; for {them}, a trailing-twelve-month, SEC 30-day, or "
+            "forward figure would each give a different answer."
+        ).format(it="it" if one else "them", them="those" if not one else "it")
+        # THE DATE, AND WHY IT IS NOT A VINTAGE. A measured value's date is a fact
+        # about the WORLD; an authored value's date can only be a fact about the
+        # AUTHOR. A constructed entry drifts because the world moves — #231 measured a
+        # year of TIPS drift at a median 31bp. An authored value does not drift,
+        # because there is nothing it could drift FROM.
+        #
+        # So this sentence must NOT read as a staleness warning. "Authored 82 days ago"
+        # beside a figure invites the inference that the number has gone out of date,
+        # which is the wrong inference in a harmful direction: the failure mode is that
+        # it may never have been right, and elapsed time neither creates nor cures
+        # that. The date is therefore stated HERE, as a review fact, and never rendered
+        # next to the figure it would miscolour.
+        stamps = sorted(
+            SLEEVE_YIELD_AUTHORED[s]["authored"]
+            for s in set(table_rows["sleeve"]) if s in SLEEVE_YIELD_AUTHORED
+        )
+        if stamps:
+            same = stamps[0] == stamps[-1]
+            note += (
+                f" {'They were' if not one else 'It was'} authored "
+                + (f"**{stamps[0]}** — all on the same day, wholesale rather than "
+                   "judged entry by entry" if same and not one
+                   else f"**{stamps[0]}**" if one
+                   else f"between **{stamps[0]}** and **{stamps[-1]}**")
+                + ". **That date is not a vintage.** An authored value does not go "
+                "stale, because there is nothing it could drift from — the date says "
+                "how long it has gone **unexamined**, not how far it has moved. "
+                "`SLEEVE_YIELD_AUTHORED` records why each one is a judgement."
+            )
+    if n_structural:
+        one = n_structural == 1
+        note += (
+            f" **{n_structural} of {len(register)} rows** {'has' if one else 'have'} "
+            f"**no cash flow to yield** — bullion and crypto distribute nothing, so "
+            f"{'its' if one else 'their'} zero is a fact about the asset rather than an "
+            "estimate of its size. Marked separately from the authored rows because a "
+            "zero labelled *authored* invites the next review to reconsider whether "
+            "gold pays a dividend, and that question has a fixed answer."
         )
 
     n = len(register)

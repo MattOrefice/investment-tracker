@@ -133,6 +133,128 @@ SLEEVE_YIELD_PROXY: dict[str, str] = {
 # components and asserts they equal the shipped value, so the arithmetic cannot drift
 # from the prose describing it; a comment can be wrong forever. That test is the
 # constructed-entry analogue of recomputing a proxy's TTM from the price cache.
+# Entries that were AUTHORED — a judgement, not a measurement. The third declaration
+# shape, and the one that ends "authored with no basis" without measuring anything
+# (#289). A proxy entry declares ticker, spread and coverage; a constructed entry
+# declares formula, components and as-of; an authored entry declares WHEN THE JUDGEMENT
+# WAS MADE and WHAT KIND OF CLAIM IT IS. Same obligation all three ways — the value does
+# not travel without its basis.
+#
+# ── WHY THE KEY IS `authored` AND NOT `as_of` ─────────────────────────────────
+#
+# A MEASURED VALUE'S DATE IS A FACT ABOUT THE WORLD. AN AUTHORED VALUE'S DATE CAN ONLY
+# BE A FACT ABOUT THE AUTHOR. Everything below follows from that one sentence, which is
+# why it is written here rather than left to be re-derived:
+#
+#   - A constructed or proxied value goes stale because THE WORLD MOVES, and the
+#     staleness is measurable — #231 measured a year of TIPS drift at a median 31bp,
+#     p90 76bp, 272bp in the worst 365-day window. An authored value does not go stale,
+#     because there is nothing it could drift FROM. A 6.00% judgement is exactly as
+#     justified in 2027 as on the day it was written.
+#   - So this date cannot mean "how stale is this". It can only mean "how long has this
+#     gone UNEXAMINED" — review hygiene, which the constructed entry's cadence note
+#     below already distinguishes from a risk control. For a measured entry that
+#     distinction is a supplement. Here it is the entire content of the date.
+#   - Hence a different key. Calling it `as_of` would invite comparison against the
+#     proxy map's as-of, and those two dates answer different questions.
+#
+# ── WHY THE DATE IS 2026-06-01 AND NOT THE DAY THIS MAP WAS ADDED ─────────────
+#
+# ALL TWELVE ENTRIES TRACE TO ONE COMMIT: 6cd6f99, 2026-06-01, where fifteen yields
+# arrived together and every one was an exact multiple of 0.5%. They were authored
+# WHOLESALE, in one sitting, and the shared date says so — it is evidence, not
+# bookkeeping.
+#
+# Stamping today's date would claim twelve reviews that did not happen. DECLARING
+# SOMETHING AUTHORED IS NOT REVIEWING IT, exactly as declaring something reviewed by
+# declaring it authored would not be. If a date is ever unrecoverable, "unknown" is the
+# honest value — the same discipline as `not_modelled` over a fabricated zero.
+#
+# ── WHAT `why` MAY AND MAY NOT SAY ───────────────────────────────────────────
+#
+# It states WHAT KIND OF CLAIM the value is. It must NOT supply a corroborating fact
+# invented at declaration time: #290 found `SLEEVE_TAX_CHARACTER["hedged_equity"]`
+# justified by "Covered-call and ELN income is ordinary" where `grep -rni "ELN"`
+# returns exactly ONE hit in the whole repo — that comment. A justification whose only
+# source exists because the claim was made restates the decision instead of supporting
+# it.
+#
+# NO REVIEW INTERVAL, deliberately. #231's cadence exists because the drift it guards
+# was MEASURED. There is no measurement here to size an interval against, and inventing
+# one would put a number with no basis inside the shape built to end numbers with no
+# basis.
+#
+# TWO KINDS, NOT ONE — and the RENDER decided it, against the first draft of this map.
+#
+# The draft folded structural into authored on the argument that a kind should earn its
+# name by changing behaviour, and that this one changed none. Rendering it showed
+# otherwise: `IAU` is a LIVE register row (case C, Roth IRA) and came out as
+#
+#     IAU   Real Assets — Gold   0.00% (authored)
+#
+# which reads as "somebody estimated zero" when the truth is that bullion has no cash
+# flow to yield. That is not a smaller version of an authored judgement; it is a
+# different claim, and the marker was making the wrong one.
+#
+# THE CONCRETE HARM is what a reviewer is invited to do. An `(authored)` zero invites
+# the next review to reconsider whether gold pays a dividend — a question with a fixed
+# answer that no amount of review will improve. `structural` closes it.
+#
+# NOTE the register reach, because it is not what one would guess: real_assets_gold
+# DOES reach the register (one row, $0.00 benefit, and the marker is visible on it);
+# crypto does not on this book; cash never can, being excluded by name throughout. So
+# the distinction is live on exactly one row today and would still be worth making on
+# zero, because the harm is to the reviewer rather than to the figure.
+# USER-EDITABLE.
+SLEEVE_YIELD_STRUCTURAL: dict[str, dict] = {
+    "real_assets_gold":  {"authored": "2026-06-01",
+                          "why": "No cash flow to yield — bullion pays no distribution. "
+                                 "A fact about the asset, not an estimate of its size."},
+    "crypto":            {"authored": "2026-06-01",
+                          "why": "No cash flow to yield — the asset distributes nothing."},
+    "cash":              {"authored": "2026-06-01",
+                          "why": "A money-market rate, and the `cash` sleeve is excluded "
+                                 "from the register by name throughout, so no rendered "
+                                 "figure depends on it. BIL is cached if one ever does."},
+}
+
+# Entries that were JUDGED — a plausibility estimate of magnitude, with no benchmark
+# applied. Distinct from SLEEVE_YIELD_STRUCTURAL above: there the zero is a fact about
+# the asset; here the number is somebody's estimate and could have been another number.
+# USER-EDITABLE.
+SLEEVE_YIELD_AUTHORED: dict[str, dict] = {
+    "hedged_equity":     {"authored": "2026-06-01",
+                          "why": "JUDGED — no benchmark exists for a covered-call payout and "
+                                 "the holdings are uncached. Whether this sleeve is sizable as "
+                                 "a yield AT ALL is #290; whether one number can serve its two "
+                                 "payout structures is #294."},
+    "multi_sector_fi":   {"authored": "2026-06-01",
+                          "why": "JUDGED — the sleeve spans investment-grade and high-yield, so "
+                                 "choosing between AGG and HYG is a judgement rather than a "
+                                 "lookup (#289)."},
+    "floating_rate":     {"authored": "2026-06-01",
+                          "why": "JUDGED — no bank-loan benchmark is cached (BKLN, SRLN and the "
+                                 "held BFRIX all absent)."},
+    "core_fi_credit":    {"authored": "2026-06-01",
+                          "why": "JUDGED — AGG is cached and measurable, but it is the AGGREGATE "
+                                 "and includes Treasuries; LQD would be apter and is uncached (#289)."},
+    "real_assets_reit":  {"authored": "2026-06-01",
+                          "why": "JUDGED — and measurable today: VNQ is both held and cached. "
+                                 "Left authored here only because #289 sequences the benchmark "
+                                 "work after this shape exists."},
+    "liquid_alt":        {"authored": "2026-06-01",
+                          "why": "JUDGED — the category is heterogeneous and no defensible "
+                                 "benchmark may exist (#289)."},
+    "high_yield_fi":     {"authored": "2026-06-01",
+                          "why": "JUDGED — HYG is cached but inadequately (50 price rows over 71 "
+                                 "days, 2 dividends), so it measures a window rather than a yield."},
+    "high_yield_muni":   {"authored": "2026-06-01",
+                          "why": "JUDGED — no muni benchmark cached. Its income character is "
+                                 "declared separately and is not affected."},
+    "single_stock":      {"authored": "2026-06-01",
+                          "why": "JUDGED — a sleeve of one-off holdings with no common benchmark."},
+}
+
 SLEEVE_YIELD_CONSTRUCTION: dict[str, dict] = {
     "tips": {
         "formula":    "real_yield + breakeven_inflation",

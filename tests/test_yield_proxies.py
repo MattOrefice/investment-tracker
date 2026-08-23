@@ -264,7 +264,9 @@ def _row(reg, symbol):
 
 def test_a_proxied_sleeve_now_resolves_from_the_table():
     r = _row(_register(), "JHEQX")
-    assert r["yield_basis"] == "table"
+    assert r["yield_basis"] == "proxy", (
+        "a proxied sleeve must resolve as `proxy`, not the old storage-named `table` "
+        "that an authored entry shared (#289)")
     assert r["assumed_yield"] == pytest.approx(SLEEVE_ASSUMED_YIELD["us_large_core"])
     assert float(r["annual_benefit"]) == pytest.approx(
         round(VALUE * SLEEVE_ASSUMED_YIELD["us_large_core"]
@@ -390,14 +392,23 @@ def test_note_no_longer_claims_no_declared_basis_for_every_row():
     """
     from src.location_actions import yield_assumption_note
     reg = _note_register()
-    assert reg["yield_basis"].eq("table").sum() == 2, "precondition: two table rows"
+    assert reg["yield_basis"].isin(("proxy", "constructed", "authored")).sum() == 2, (
+        "precondition: two rows resolved from SLEEVE_ASSUMED_YIELD")
     note = yield_assumption_note(reg)
 
     assert "declared basis" in note
     assert "1 of 2 rows** use a yield with a **declared basis" in note, (
         "the proxied row's declared basis is not reported"
     )
-    assert "1 of 2 rows** use an **authored** yield with **no declared basis" in note, (
+    # MIGRATED at #289, and the old phrase is now FALSE rather than merely reworded.
+    # It read "an **authored** yield with **no declared basis** at all" — true when
+    # authored meant undeclared. SLEEVE_YIELD_AUTHORED makes an authored entry a
+    # DECLARED basis that happens not to be a measured one, so the note says what kind
+    # of claim it is instead of asserting an absence that no longer holds.
+    assert "no declared basis** at all" not in note, (
+        "the note still claims authored rows declare nothing; SLEEVE_YIELD_AUTHORED "
+        "declares them (#289)")
+    assert "1 of 2 rows** use an **authored** yield" in note, (
         "the authored row is not distinguished from the proxied one"
     )
 
