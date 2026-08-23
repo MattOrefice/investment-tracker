@@ -231,3 +231,58 @@ def test_the_note_says_they_were_authored_wholesale():
         [{"sleeve": "hedged_equity", "yield_basis": "authored", "assumed_yield": 0.06},
          {"sleeve": "liquid_alt", "yield_basis": "authored", "assumed_yield": 0.02}]))
     assert "all on the same day" in note and "wholesale" in note
+
+
+# ── zero-suppression, both directions ─────────────────────────────────────────
+
+@pytest.mark.parametrize("kind,sleeve,phrase", [
+    ("authored",    "hedged_equity",    "use an **authored** yield"),
+    ("structural",  "real_assets_gold", "no cash flow to yield"),
+    ("proxy",       "us_large_core",    "declared basis"),
+    ("constructed", "tips",             "constructed** yield"),
+])
+def test_a_clause_renders_when_its_kind_is_present(kind, sleeve, phrase):
+    """BOTH DIRECTIONS, and this is the half that was missing. A suppression that
+    fires ALWAYS is the same defect as one that never fires — the first hides a real
+    population, the second claims an empty one."""
+    note = la.yield_assumption_note(_reg(
+        [{"sleeve": sleeve, "yield_basis": kind, "assumed_yield": 0.04}]))
+    assert phrase in note, f"{kind} is present and its clause did not render"
+
+
+@pytest.mark.parametrize("kind,phrase", [
+    ("authored",    "use an **authored** yield"),
+    ("structural",  "no cash flow to yield"),
+    ("proxy",       "declared basis"),
+    ("constructed", "constructed** yield"),
+])
+def test_a_clause_is_suppressed_when_its_kind_is_absent(kind, phrase):
+    """A register carrying only look-through and not-modelled rows must claim nothing
+    about the four table kinds. A clause describing a population of zero is a claim
+    the artifact does not support — the same rule format_drag_exclusion follows by
+    returning None rather than reporting an exclusion of nothing."""
+    note = la.yield_assumption_note(_reg([
+        {"sleeve": "multi_asset", "yield_basis": "look_through", "assumed_yield": 0.03},
+        {"sleeve": "thematic", "yield_basis": "not_modelled", "assumed_yield": None},
+    ]))
+    assert phrase not in note, f"{kind}'s clause rendered with no {kind} row present"
+
+
+def test_no_clause_claims_a_count_of_zero():
+    """The general form, over every clause at once: no "0 of N" may ever render."""
+    for reg in (_reg([]),
+                _reg([{"sleeve": "thematic", "yield_basis": "not_modelled",
+                       "assumed_yield": None}])):
+        note = la.yield_assumption_note(reg)
+        assert not re.search(r"\*\*0 of \d+ rows?\*\*", note), (
+            f"a zero count rendered: {note[:200]!r}")
+
+
+def test_the_empty_register_still_states_the_mechanism():
+    """Suppressing the COUNTS must not suppress the disclosure. An empty register is a
+    legitimate state (nothing mislocated), and the reader is still owed how the number
+    would be built if there were one."""
+    note = la.yield_assumption_note(_reg([]))
+    assert "position value" in note and "authored assumption" in note.lower()
+    assert not re.search(r"\*\*\d+ of \d+ rows?\*\*", note), (
+        "an empty register rendered a population count")
