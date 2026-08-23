@@ -428,8 +428,19 @@ ACTION_GROUPS: list[dict] = [
                     "JTEK", "QQQ", "IBIT"],
         "case_filter": ["B", "D"], "accounts": ["Individual Taxable (TOD)"],
         "pros": _THEMATIC_PROS, "cons": _THEMATIC_CONS,
-        # {count}/{value} measure the whole sprawl (matched symbols), but the
-        # expander lists only the 2 mislocation rows — so a caption is required.
+        # {count}/{value} measure the whole sprawl (matched symbols), but the expander
+        # lists only the MISLOCATION rows — always fewer, and the gap is the reason a
+        # caption is mandatory here. `resolve_caption` derives both numbers, so the
+        # difference is visible to a reader without either being written down.
+        #
+        # NO COUNT, deliberately (#186). This used to name a specific number of rows,
+        # and the register has since yielded a different one. The retired figure is
+        # DESCRIBED rather than quoted, so the guard that forbids a count here does not
+        # flag its own correction — the same reason #287 stopped quoting the sentence it
+        # replaced. The point of the sentence was always the
+        # INVARIANT — population exceeds rows — and that stayed true while the figure
+        # went stale, which is why the fix removes the figure rather than updating it:
+        # a count in a comment has no guard and cannot acquire one.
         "population": "matched_symbols", "caption": _THEMATIC_CAPTION,
     },
     {
