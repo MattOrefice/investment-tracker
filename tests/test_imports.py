@@ -198,6 +198,16 @@ def _run_with_db_trap(code: str) -> tuple[bool, str]:
     return result.returncode == 0, result.stderr.strip()
 
 
+# WHY pages/ IS NOT ENROLLED (#174, decided 2026-09-23). This guard exists for modules
+# OTHER modules import: a DB read at import runs as a side effect of `import src.x`,
+# at collection time, in every consumer, before any fixture can scope it. A Streamlit
+# page is not imported by anything. Streamlit EXECUTES it as a script, on every
+# rerun, so its module body IS its render: a page reading the DB at top level is the
+# page doing its job, not an import-time side effect. Enrolling pages/ would flag
+# every page for rendering. (pages/9_Correlations.py's module-level
+# `ae.sleeve_benchmarks()` is exactly this, and is fine.) What WOULD be a defect in a
+# page is a DB value cached ACROSS reruns (st.cache_* or session_state) without
+# invalidation, which is a render-staleness question, not an import-side-effect one.
 @pytest.mark.parametrize("module", _SRC_MODULES)
 def test_src_module_import_touches_no_db(module):
     ok, err = _run_with_db_trap(f"import src.{module}")
