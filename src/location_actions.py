@@ -704,7 +704,7 @@ def deploy_state(group: dict, deploy: dict, saa_targets_df: pd.DataFrame) -> dic
     """Which tier the idle Roth balance selects, and the figures the card states.
 
     Tiers, both thresholds anchored to the ONE smallest tolerance band:
-      zero            measured 0                   -> the zero state
+      zero            measured 0                   -> the zero state, scored as below_floor
       below_floor     0 < cash < floor             -> below-floor state
       under_one_band  floor <= cash < one band     -> the argument, lower score
       full_band       cash >= one band             -> the group's own score/status
@@ -729,7 +729,10 @@ def deploy_state(group: dict, deploy: dict, saa_targets_df: pd.DataFrame) -> dic
         tier = "under_one_band"
     else:
         tier = "full_band"
-    row = group["floor_tiers"].get(tier) if tier in group["floor_tiers"] else None
+    # A measured zero is below the floor too (#313): it takes the below-floor row's
+    # score and status, so $0 cannot outrank $7.93. Only its WORDING differs.
+    row_key = "below_floor" if tier == "zero" else tier
+    row = group["floor_tiers"].get(row_key)
     score, status = (row["score"], row["status"]) if row else (group["score"], group["status"])
 
     gaps = deploy.get("gaps")

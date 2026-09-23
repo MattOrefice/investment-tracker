@@ -1970,7 +1970,7 @@ def test_floor_tiers_are_read_from_config_verbatim():
 
 
 @pytest.mark.parametrize("cash, tier, score, status", [
-    (0.0,      "zero",           10,   "act_now"),
+    (0.0,      "zero",           None, "accepted"),   # #313: $0 is below the floor
     (0.01,     "below_floor",    None, "accepted"),
     (199.99,   "below_floor",    None, "accepted"),
     (200.00,   "under_one_band", 6,    "evaluate"),
@@ -2148,3 +2148,14 @@ def test_page14_live_kpi_states_the_same_below_floor_balance_as_the_card(monkeyp
     exact = escape_md(f"${tier['cash']:,.2f}")
     kpi = [m.value for m in at.markdown if m.value.startswith("Deploy **")]
     assert kpi and exact in kpi[0], f"KPI does not state {exact}: {kpi}"
+
+
+def test_a_measured_zero_is_scored_below_the_floor_but_keeps_its_wording():
+    """#313. $0 is below the floor, so it cannot outrank $7.93: no score, Accepted.
+    Its WORDING is the zero state's, unchanged -- only the routing moved."""
+    zero, small = _card(0.0), _card(7.93)
+    assert zero["subheader"] == small["subheader"] == _deploy_group()["title"]
+    assert _tier(0.0)["status"] == _tier(7.93)["status"] == "accepted"
+    assert zero["action"] == "Nothing to deploy — the Roth's cash sleeve is empty."
+    assert zero["body"] == render_prose_md(_deploy_group()["zero_state"], {})
+    assert zero["status_label"] == "Accepted"
