@@ -253,11 +253,25 @@ def test_persist_drip_lots_empty_list_returns_zero(minimal_db):
 
 # ── backfill_all_drip_lots — SPAXX exclusion ─────────────────────────────────
 
-def test_backfill_skips_spaxx(minimal_db):
+def test_backfill_skips_spaxx(minimal_db, monkeypatch):
     """
     backfill_all_drip_lots must not include SPAXX in the returned results.
     Uses a minimal DB that includes a SPAXX buy trade.
+
+    OFFLINE (#209): the minimal DB's VOO trade sends a cache miss to fetch_prices, an
+    outbound call the code swallows, so a raising fetch would not fail this test.
+    Distributions and prices are stubbed in src.drip's namespace, and every fetch is
+    COUNTED and must be zero.
     """
+    import pandas as _pd
+    import src.prices as _prices
+    fetches = []
+    monkeypatch.setattr("src.drip.get_dividends",
+                        lambda *a, **k: _pd.Series(dtype=float))
+    monkeypatch.setattr("src.drip.get_prices",
+                        lambda *a, **k: _pd.DataFrame({"close": [], "adj_close": []}))
+    monkeypatch.setattr(_prices, "fetch_prices",
+                        lambda *a, **k: fetches.append(a[:1]) or _pd.DataFrame())
     import sqlite3 as _sq
     conn = _sq.connect(str(minimal_db))
     conn.execute(
@@ -270,6 +284,7 @@ def test_backfill_skips_spaxx(minimal_db):
     results = backfill_all_drip_lots(start_date="2025-05-01", end_date="2025-05-10",
                                      account_id=1)
     assert "SPAXX" not in results
+    assert fetches == [], f"the test reached the network: {fetches}"
 
 
 # ── Income double-count: DRIP excluded from value series, kept in holdings ───
