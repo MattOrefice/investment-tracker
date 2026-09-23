@@ -132,6 +132,18 @@
   Guards stay up because they are the only OUT-OF-PROCESS protection:
   every other guard here patches a call surface someone enumerated, and
   enumeration has already failed once (#271).
+  AT SESSION CLOSE, CLEAR THE READ-ONLY BIT ON data/tracker.db (the
+  other 14 `git ls-files data` entries stay read-only). A read-only
+  tracker.db crashes the owner's local app at startup: app.py's
+  bootstrap runs `tools/migrate_accounts_phase25_2.py`, whose
+  `ALTER TABLE ... ADD COLUMN account_number` fails on it (#306's
+  add/drop cycle). This happened on 2026-09-23, when a session ended
+  with guards at 15 of 15. Guarding tracker.db DURING a session is still
+  right. Leaving it guarded AFTER is not, because the #269 redirect
+  already keeps the suite's writes off it. Last step of every session:
+  `Set-ItemProperty data/tracker.db -Name IsReadOnly -Value $false`,
+  then confirm it reads False and that the 14 tracked entries still read
+  True.
 - Two red tests are DELIBERATE and load-bearing: #177
   (`test_exactly_the_saa_tickers_are_flagged`, the only live signal
   that the personal book has diverged from its documented taxonomy)
