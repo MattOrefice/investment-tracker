@@ -1087,7 +1087,8 @@ _BASIS_SUFFIX = {
 }
 
 
-def format_assumed_yield(sleeve_yield: "float | None", basis: str) -> str:
+def format_assumed_yield(sleeve_yield: "float | None", basis: str,
+                         weakest: "str | None" = None) -> str:
     """Render a row's yield with its provenance.
 
     ``"3.97%"`` / ``"6.00% (authored)"`` / ``"2.48% (look-through)"`` /
@@ -1124,6 +1125,10 @@ def format_assumed_yield(sleeve_yield: "float | None", basis: str) -> str:
     """
     if basis == "not_modelled" or sleeve_yield is None or pd.isna(sleeve_yield):
         return "not modelled"
+    if basis == "look_through" and weakest:
+        # Derived from the composition, AND what the weakest part of it rests on
+        # (#297): "look-through" alone would hide an authored component.
+        return f"{sleeve_yield:.2%} (look-through; least-verified component: {weakest})"
     return f"{sleeve_yield:.2%}{_BASIS_SUFFIX.get(basis, f' ({basis})')}"
 
 
@@ -1136,6 +1141,16 @@ _CHARACTER_LABEL = {
     "muni_in_state":     "muni (fully exempt)",
     "collectibles":      "collectibles (on sale)",
 }
+
+
+def assumed_yield_cells(rows: "pd.DataFrame") -> list:
+    """The register's Assumed Yield column as page 14 renders it: each row's yield
+    with its basis, and for a blend the least-verified component (#297). One place,
+    so the page cannot drop the component while the formatter still knows it."""
+    weakest = (rows["yield_basis_weakest"] if "yield_basis_weakest" in rows.columns
+               else [None] * len(rows))
+    return [format_assumed_yield(y, b, w)
+            for y, b, w in zip(rows["assumed_yield"], rows["yield_basis"], weakest)]
 
 
 def format_tax_character(character: "str | None") -> str:

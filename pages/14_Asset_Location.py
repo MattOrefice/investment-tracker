@@ -76,7 +76,7 @@ from src.location_actions import (
     filter_register_for_group,
     capital_gains_headroom,
     assert_full_coverage,
-    format_assumed_yield,
+    assumed_yield_cells,
     format_tax_character,
     yield_assumption_note,
     tax_character_note,
@@ -552,10 +552,7 @@ for group in _ordered_groups:
                 # came from a look-through rather than a table entry. Rendered
                 # next to the figure it multiplies, so the assumption is visible where
                 # it is applied rather than only in the expander.
-                show["assumed_yield"] = [
-                    format_assumed_yield(y, b)
-                    for y, b in zip(reg_rows["assumed_yield"], reg_rows["yield_basis"])
-                ]
+                show["assumed_yield"] = assumed_yield_cells(reg_rows)
                 # The RATE that produced this row's Annual Benefit, beside the yield
                 # that produced it. Both multiplicands are authored, so both declare
                 # themselves — carrying one and not the other would imply the rate is
@@ -564,7 +561,7 @@ for group in _ordered_groups:
                 show["tax_character"] = [
                     format_tax_character(c) for c in reg_rows["tax_character"]
                 ]
-                show = show.drop(columns=["yield_basis"])
+                show = show.drop(columns=["yield_basis", "yield_basis_weakest"])
                 show = show.rename(columns={
                     "holding": "Holding", "symbol": "Symbol", "account": "Account",
                     "sleeve": "Sleeve", "case": "Case", "current_value": "Value ($)",
