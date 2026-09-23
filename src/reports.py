@@ -1918,6 +1918,8 @@ def generate_quarterly_report_bytes(
         recipient_name       = recipient_name,
         generation_date      = gen_date,
         snapshot_captured_at = snapshot_display,
+        # Series the lock could not capture: read live, so the cover says so (#204).
+        snapshot_gaps        = list(getattr(snap_df, "gaps", ()) or ()),
         staleness_note       = staleness_note,
         has_trades           = has_trades,
         inception_date       = inception_str,
