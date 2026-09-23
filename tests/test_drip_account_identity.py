@@ -434,3 +434,26 @@ def test_every_status_is_declared(two_account_db):
     assert BACKFILL_STATUSES == frozenset({
         "inserted", "current", "no_distributions", "no_trades", "price_fetch_failed",
     })
+
+
+def test_a_drip_only_ticker_is_shown_not_filtered(two_account_db, no_network):
+    """#208, decided 2026-09-23: SHOW IT. A ticker whose only rows in the account are
+    drip lots stays in the backfill's ticker list and reports the named skip, so it
+    renders as "0 — SKIPPED: no non-drip trades" under the INCOMPLETE notice. Hiding a
+    real holding is the worse error. This pins that decision against the other
+    resolution (filtering the ticker list to non-drip rows), which would make the
+    holding vanish."""
+    conn = sqlite3.connect(str(two_account_db))
+    conn.execute(
+        "INSERT INTO trades (account_id, ticker, trade_date, action, shares, price, "
+        "notes, lot_source) VALUES (?, 'VEA', '2025-06-30', 'Buy', 0.2, 50.0, "
+        "'DRIP', 'drip')", (TAXABLE,))
+    conn.commit()
+    conn.close()
+
+    results = backfill_all_drip_lots(start_date="2025-05-01", end_date="2025-06-30",
+                                     account_id=TAXABLE)
+
+    assert "VEA" in results, "the drip-only holding was filtered out of the ticker list"
+    assert results["VEA"].status == "no_trades"
+    assert "0 — SKIPPED: no non-drip trades" in format_backfill_report(results)
