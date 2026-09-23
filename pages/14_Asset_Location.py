@@ -60,11 +60,14 @@ from src.location_config import (
 from src.location_actions import (
     ACTION_GROUPS,
     STATUS_ORDER,
+    STATUS_LABEL,
     INFORMATIONAL_KEYS,
+    DEPLOY_BUY_FORMAT,
     build_roth_deploy_answer,
     household_deploy_gaps,
     deploy_targets_split,
-    deploy_prose_for,
+    deploy_state,
+    deploy_card_text,
     resolve_placeholders,
     resolve_caption,
     render_prose_md,
@@ -111,7 +114,7 @@ with get_connection() as conn:
     # household sleeve gaps rather than splitting by a round number.
     compositions_df = pd.read_sql_query("SELECT * FROM fund_compositions", conn)
     saa_targets_df  = pd.read_sql_query(
-        "SELECT asset_class_id, name, target_weight FROM asset_classes "
+        "SELECT asset_class_id, name, target_weight, tolerance_band FROM asset_classes "
         "WHERE parent_id IS NOT NULL AND target_weight > 0",
         conn,
     )
@@ -147,6 +150,11 @@ if _roth_idle_cash is None:
         "Refusing to render $0 for a figure that is unknown — see "
         "src/location_actions._roth_idle_cash."
     )
+# The balance selects a tier (#309): below the floor, the card renders its
+# below-floor state and leaves Act now; under one full band it is an Evaluate. The
+# tier's score and status are authored config; deploy_state only picks the row.
+_deploy_group = next(g for g in ACTION_GROUPS if g["key"] == "deploy_roth_cash")
+_deploy_tier = deploy_state(_deploy_group, deploy, saa_targets_df)
 _deploy_residual = float(deploy.get("residual", 0.0))
 _deploy_buys = float(deploy["table"]["dollar"].sum()) if not deploy["table"].empty else 0.0
 
@@ -186,11 +194,27 @@ _present_accts = accounts_df[accounts_df["pseudonym"].isin(positions_df["pseudon
 _directable_names = [n for p, n in zip(_present_accts["pseudonym"], _present_accts["display_name"]) if is_directable(p)]
 _coordination_names = [n for p, n in zip(_present_accts["pseudonym"], _present_accts["display_name"]) if not is_directable(p)]
 
-_STATUS_LABEL = {"act_now": "Act now", "evaluate": "Evaluate", "blocked": "Blocked", "accepted": "Accepted"}
+_STATUS_LABEL = STATUS_LABEL
 
-# Group render order: status bucket, then score descending within bucket.
+
+def _status(g: dict) -> str:
+    """A group's status for THIS render: the deploy card's comes from its tier."""
+    return _deploy_tier["status"] if g["key"] == "deploy_roth_cash" else g["status"]
+
+
+def _score(g: dict) -> int:
+    """Sort score for this render. A below-floor deploy has no score; it sorts last
+    in its bucket."""
+    if g["key"] == "deploy_roth_cash":
+        return _deploy_tier["score"] if _deploy_tier["score"] is not None else -1
+    return g["score"]
+
+
+# Group render order: status bucket, then score descending within bucket. Resolved
+# per render, BEFORE the sort: a tier chosen after it would leave a below-floor
+# deploy sorted as Act now.
 _ordered_groups = sorted(
-    ACTION_GROUPS, key=lambda g: (STATUS_ORDER.index(g["status"]), -g["score"])
+    ACTION_GROUPS, key=lambda g: (STATUS_ORDER.index(_status(g)), -_score(g))
 )
 
 
@@ -336,7 +360,7 @@ _BUCKET_BLURB = {
     "blocked":  "Waiting on an external event before it can happen.",
     "accepted": "Logged as a deliberate decision — no action.",
 }
-_bucket_counts = {s: sum(1 for g in _ordered_groups if g["status"] == s) for s in STATUS_ORDER}
+_bucket_counts = {s: sum(1 for g in _ordered_groups if _status(g) == s) for s in STATUS_ORDER}
 _prev_status = None
 
 for group in _ordered_groups:
@@ -346,77 +370,88 @@ for group in _ordered_groups:
     )
     resolved = resolve_placeholders(group, positions_df, accounts_df, securities_df, register,
                                     roth_idle_cash=_roth_idle_cash,
-                                    compositions_df=compositions_df)
+                                    compositions_df=compositions_df,
+                                    tier_state=_deploy_tier)
+    _card = (deploy_card_text(group, _deploy_tier, resolved)
+             if group["key"] == "deploy_roth_cash" else None)
 
     _, col, _ = st.columns([1, 8, 1])
     with col:
-        if group["status"] != _prev_status:
-            _n = _bucket_counts[group["status"]]
-            st.header(_STATUS_LABEL[group["status"]])
-            st.caption(f"{_n} {'decision' if _n == 1 else 'decisions'} · {_BUCKET_BLURB[group['status']]}")
-            if group["status"] == "act_now":
+        if _status(group) != _prev_status:
+            _n = _bucket_counts[_status(group)]
+            st.header(_STATUS_LABEL[_status(group)])
+            st.caption(f"{_n} {'decision' if _n == 1 else 'decisions'} · {_BUCKET_BLURB[_status(group)]}")
+            if _status(group) == "act_now":
                 # Actionable dollar weight in one glance — every figure computed from
-                # the register above.
+                # the register above. Below the floor there is no deploy to weigh, so
+                # the figure is stated as below the floor rather than as an action.
+                if _deploy_tier["tier"] in ("zero", "below_floor"):
+                    # Cents, as the card states it: one balance, one rendering.
+                    _deploy_kpi = (f"Deploy **—** ({escape_md(f'${_kpi_idle_roth:,.2f}')}, "
+                                   f"below the {escape_md(_fmt_dollars(_deploy_tier['floor']))} floor)")
+                else:
+                    _deploy_kpi = f"Deploy **{escape_md(_fmt_dollars(_kpi_idle_roth))}**"
                 st.markdown(
-                    f"Deploy **{escape_md(_fmt_dollars(_kpi_idle_roth))}** · "
+                    f"{_deploy_kpi} · "
                     f"reposition **{escape_md(_fmt_dollars(_kpi_repositionable))}** "
                     f"in-shelter (free)"
                 )
-            _prev_status = group["status"]
-        st.subheader(f"{group['title']}  ·  {group['score']}/10")
-        # One-line imperative decision, directly under the score — what to DO, in
-        # bold, before the two-paragraph For/Against reasoning below.
-        if group["key"] == "deploy_roth_cash":
-            _dts = deploy_targets_split(deploy)
-            if _dts["deploy_targets"]:
-                st.markdown(f"**{render_prose_md(group['action'], {**resolved, **_dts})}**")
-            elif _roth_idle_cash == 0:
-                st.markdown("**Nothing to deploy — the Roth's cash sleeve is empty.**")
+            _prev_status = _status(group)
+        if _card is not None:
+            # The deploy card's head, body and parts all come from its tier
+            # (deploy_card_text), so what renders here is what the tests pin.
+            st.subheader(_card["subheader"])
+            if _card["action"] is not None:
+                st.markdown(f"**{_card['action']}**")
             else:
-                st.markdown("**Deploy the idle Roth cash across your underweight Roth sleeves.**")
+                _dts = deploy_targets_split(deploy)
+                if _dts["deploy_targets"]:
+                    st.markdown(f"**{render_prose_md(group['action'], {**resolved, **_dts})}**")
+                else:
+                    st.markdown("**Deploy the idle Roth cash across your underweight Roth sleeves.**")
+            st.caption(escape_md(f"**{_card['status_label']}** — {_card['summary']}"))
+            st.markdown(f"**For.** {_card['body']}")
+            if _card["show_against"]:
+                st.markdown(f"**Against.** {render_prose_md(group['cons'], resolved)}")
         else:
+            st.subheader(f"{group['title']}  ·  {group['score']}/10")
+            # One-line imperative decision, directly under the score — what to DO, in
+            # bold, before the two-paragraph For/Against reasoning below.
             st.markdown(f"**{render_prose_md(group['action'], resolved)}**")
-        st.caption(escape_md(f"**{_STATUS_LABEL[group['status']]}** — {_summary_line(group, resolved, reg_rows)}"))
-
-        # The deploy card argues for acting on a balance; with a measured zero there
-        # is nothing to act on, so it renders its zero state instead — and the
-        # Against paragraph goes with it, because an argument against deploying
-        # nothing is not an argument.
-        _body = (deploy_prose_for(group, _roth_idle_cash)
-                 if group["key"] == "deploy_roth_cash" else group["pros"])
-        st.markdown(f"**For.** {render_prose_md(_body, resolved)}")
-        if _body is not group.get("zero_state"):
+            st.caption(escape_md(f"**{_STATUS_LABEL[group['status']]}** — {_summary_line(group, resolved, reg_rows)}"))
+            st.markdown(f"**For.** {render_prose_md(group['pros'], resolved)}")
             st.markdown(f"**Against.** {render_prose_md(group['cons'], resolved)}")
 
         if group["key"] == "deploy_roth_cash":
-            tbl = deploy["table"].copy()
-            tbl["sleeve"] = tbl["sleeve"].map(sleeve_display_name)
-            # Total row = Σ buys (= idle cash minus any residual), so the table
-            # reconciles against its own rows. A residual (cash left after every gap
-            # is filled) is reported separately below — never forced into a sleeve.
-            total = pd.DataFrame([{"ticker": "Total", "sleeve": "", "dollar": _deploy_buys}])
-            disp = pd.concat([tbl, total], ignore_index=True).rename(
-                columns={"ticker": "Ticker", "sleeve": "Sleeve", "dollar": "Amount ($)"}
-            )
-            st.dataframe(
-                disp, use_container_width=True, hide_index=True,
-                column_config={"Amount ($)": st.column_config.NumberColumn(format="$%.0f")},
-            )
-            _sizing_note = (
-                "One is_in_saa ticker per sleeve; the idle cash is sized to close each "
-                "sleeve's household gap to target, filling the underweight equity "
-                "sleeves in proportion to their dollar gaps (largest underweight gets "
-                "the most), capped so none overshoots. The number of tickers follows "
-                "from how many sleeves are underweight — no fixed count, no round-number "
-                "split."
-            )
-            if _deploy_residual >= 1.0:
-                _sizing_note += (
-                    f" Every gap is already fully funded, so about "
-                    f"{escape_md(_fmt_dollars(_deploy_residual))} of the idle cash stays "
-                    "undeployed rather than being forced into a sleeve past its target."
+            if _card["show_buys"]:
+                tbl = deploy["table"].copy()
+                tbl["sleeve"] = tbl["sleeve"].map(sleeve_display_name)
+                # Total row = Σ buys (= idle cash minus any residual), so the table
+                # reconciles against its own rows. A residual (cash left after every gap
+                # is filled) is reported separately below — never forced into a sleeve.
+                total = pd.DataFrame([{"ticker": "Total", "sleeve": "", "dollar": _deploy_buys}])
+                disp = pd.concat([tbl, total], ignore_index=True).rename(
+                    columns={"ticker": "Ticker", "sleeve": "Sleeve", "dollar": "Amount ($)"}
                 )
-            st.caption(_sizing_note)
+                st.dataframe(
+                    disp, use_container_width=True, hide_index=True,
+                    column_config={"Amount ($)": st.column_config.NumberColumn(format=DEPLOY_BUY_FORMAT)},
+                )
+                _sizing_note = (
+                    "One is_in_saa ticker per sleeve; the idle cash is sized to close each "
+                    "sleeve's household gap to target, filling the underweight equity "
+                    "sleeves in proportion to their dollar gaps (largest underweight gets "
+                    "the most), capped so none overshoots. The number of tickers follows "
+                    "from how many sleeves are underweight — no fixed count, no round-number "
+                    "split."
+                )
+                if _deploy_residual >= 1.0:
+                    _sizing_note += (
+                        f" Every gap is already fully funded, so about "
+                        f"{escape_md(_fmt_dollars(_deploy_residual))} of the idle cash stays "
+                        "undeployed rather than being forced into a sleeve past its target."
+                    )
+                st.caption(_sizing_note)
 
             with st.expander("How these weights were sized", expanded=False):
                 _total_hh = float(positions_df["current_value"].sum())
@@ -431,6 +466,11 @@ for group in _ordered_groups:
                 _exhibit = _exhibit.rename(columns={"gap": "Gap ($)"})[
                     ["Sleeve", "Target (%)", "Current (%)", "Gap ($)", "Buy ($)"]
                 ]
+                if not _card["show_buys"]:
+                    # Below the floor no buy is proposed, so the gaps stay as context
+                    # and the Buy column goes: a column of sub-dollar "buys" would
+                    # contradict the card's own action line.
+                    _exhibit = _exhibit.drop(columns=["Buy ($)"])
                 st.markdown(
                     "**Method.** Each buy is sized proportional to its sleeve's dollar "
                     "gap — target weight × household value, minus what look-through "
@@ -453,7 +493,7 @@ for group in _ordered_groups:
                         "Target (%)":  st.column_config.NumberColumn(format="%.1f%%"),
                         "Current (%)": st.column_config.NumberColumn(format="%.1f%%"),
                         "Gap ($)":     st.column_config.NumberColumn(format="$%.0f"),
-                        "Buy ($)":     st.column_config.NumberColumn(format="$%.0f"),
+                        "Buy ($)":     st.column_config.NumberColumn(format=DEPLOY_BUY_FORMAT),
                     },
                 )
 

@@ -16,6 +16,9 @@ from src.location_actions import (
     ACTION_GROUPS,
     INFORMATIONAL_KEYS,
     build_roth_deploy_answer,
+    deploy_state,
+    deploy_card_text,
+    DEPLOY_BUY_FORMAT,
     household_deploy_gaps,
     _gap_proportional_split,
     deploy_targets_split,
@@ -80,10 +83,18 @@ def _live_saa():
     conn = sqlite3.connect(str(TRACKER_DB))
     comps = pd.read_sql_query("SELECT * FROM fund_compositions", conn)
     targets = pd.read_sql_query(
-        "SELECT asset_class_id, name, target_weight FROM asset_classes "
+        "SELECT asset_class_id, name, target_weight, tolerance_band FROM asset_classes "
         "WHERE parent_id IS NOT NULL AND target_weight > 0", conn)
     conn.close()
     return comps, targets
+
+
+def _live_tier(pos, acct, sec):
+    """The deploy answer and its tier, built exactly as page 14 builds them."""
+    comps, targets = _live_saa()
+    dep = build_roth_deploy_answer(pos, acct, sec, comps, targets)
+    g = next(x for x in ACTION_GROUPS if x["key"] == "deploy_roth_cash")
+    return dep, deploy_state(g, dep, targets)
 
 
 # ── Scores are authored config, never computed ─────────────────────────────────
@@ -152,11 +163,11 @@ def test_no_card_title_asserts_free_or_costly():
 def test_no_two_groups_render_identical_prose():
     pos, acct, sec, reg = _live()
     comps, _targets = _live_saa()
-    deploy = build_roth_deploy_answer(pos, acct, sec)
+    deploy, tier = _live_tier(pos, acct, sec)
     rendered = []
     for g in ACTION_GROUPS:
         resolved = resolve_placeholders(g, pos, acct, sec, reg, roth_idle_cash=deploy["idle_cash"],
-                                        compositions_df=comps)
+                                        compositions_df=comps, tier_state=tier)
         rendered.append(render_prose(g["pros"], resolved))
         rendered.append(render_prose(g["cons"], resolved))
     assert len(set(rendered)) == len(rendered), (
@@ -535,11 +546,11 @@ def test_priority_maps_are_account_conditional():
 
 def test_deploy_and_rollover_render():
     pos, acct, sec, reg = _live()
-    deploy = build_roth_deploy_answer(pos, acct, sec)
+    deploy, tier = _live_tier(pos, acct, sec)
     by_key = {g["key"]: g for g in ACTION_GROUPS}
 
     d = resolve_placeholders(by_key["deploy_roth_cash"], pos, acct, sec, reg,
-                             roth_idle_cash=deploy["idle_cash"])
+                             roth_idle_cash=deploy["idle_cash"], tier_state=tier)
     deploy_pros = render_prose(by_key["deploy_roth_cash"]["pros"], d)
     assert f"${deploy['idle_cash']:,.0f}" in deploy_pros
 
@@ -607,11 +618,11 @@ def test_directability_is_not_managed_by_or_tax_treatment():
 def _rendered_all():
     pos, acct, sec, reg = _live()
     comps, _targets = _live_saa()
-    dep = build_roth_deploy_answer(pos, acct, sec)
+    dep, tier = _live_tier(pos, acct, sec)
     out = {}
     for g in ACTION_GROUPS:
         r = resolve_placeholders(g, pos, acct, sec, reg, roth_idle_cash=dep["idle_cash"],
-                                 compositions_df=comps)
+                                 compositions_df=comps, tier_state=tier)
         out[g["key"]] = (render_prose_md(g["pros"], r), render_prose_md(g["cons"], r), r, g)
     return out
 
@@ -627,7 +638,10 @@ def test_no_rendered_prose_contains_comma_emdash():
 # Exact rendered lengths against the live Aug-10 CSV — a brittle-on-purpose canary
 # for silent prose corruption (dropped words render as valid Markdown).
 RENDERED_PROSE_LEN = {
-    "deploy_roth_cash":          (500, 766),   # pros -14: "{value} is this year's contribution" -> "{value} is sitting uninvested" — the balance's provenance is unknowable (no contribution ledger exists anywhere in the repo) and the deploy argument does not need it. Cons: + FTC mechanism, relocated here from predeploy_stranded_equity (first encounter on the page; cons word count 97 -> 131)
+    # deploy_roth_cash: pinned against a FIXED state in
+    # test_deploy_prose_lengths_pinned_at_a_fixed_balance, not the live book. Its
+    # rendered length here measured the balance ({value}), which is why it failed
+    # at 496 once the Sep-23 CSV moved the Roth cash to $7.93 (#309).   # pros -14: "{value} is this year's contribution" -> "{value} is sitting uninvested" — the balance's provenance is unknowable (no contribution ledger exists anywhere in the repo) and the deploy argument does not need it. Cons: + FTC mechanism, relocated here from predeploy_stranded_equity (first encounter on the page; cons word count 97 -> 131)
     "clear_roth_non_equity":     (1372, 1440),  # pros: rebuy VTI -> VOO (US Large Core's SAA ticker); the pro-VTI "total-market, not the S&P 500" rationale is REPLACED by the honest VTI-vs-VOO tradeoff + the overweight-is-visibility note (pros word count 166 -> 228). Cons -1 char: Aug-10 data drift in a templated figure.
     "relocate_loss_side":        (408, 908),   # Aug-2026: HLIPX sold by the advisor (rebought as JCPB) — action/pros rewritten sign-safe ("nets to roughly zero"), cons drops the HLIPX mention
     "relocate_gain_side":        (339, 361),   # cons: capacity restatement -> cross-ref to clear_roth_non_equity
@@ -642,6 +656,8 @@ RENDERED_PROSE_LEN = {
 
 def test_rendered_prose_char_lengths_pinned():
     for key, (pros, cons, _r, _g) in _rendered_all().items():
+        if key == "deploy_roth_cash":
+            continue            # pinned at a fixed balance instead (#309)
         assert (len(pros), len(cons)) == RENDERED_PROSE_LEN[key], (
             f"{key} rendered length drifted: got {(len(pros), len(cons))}, "
             f"pinned {RENDERED_PROSE_LEN[key]} — possible silent prose corruption"
@@ -1263,9 +1279,13 @@ def test_page14_action_lines_and_prominent_captions_live(monkeypatch):
     assert not at.exception, f"page raised: {at.exception}"
     md = " ||| ".join(m.value for m in at.markdown)
     caps = " ||| ".join(c.value for c in at.caption)
-    # The deploy action line is gap-proportional now — assert its stable phrasing
-    # (the tickers/order are data-driven), plus the other cards' fixed action lines.
-    for snippet in ("sized to its household underweight gap", "keeps the Traditional IRA empty",
+    # The deploy action line follows the live balance's tier (#309): below the floor
+    # it is the below-floor line, otherwise the gap-proportional deploy line.
+    pos, acct, sec, _reg = _live()
+    _dep, tier = _live_tier(pos, acct, sec)
+    deploy_line = ("No buy proposed" if tier["tier"] == "below_floor"
+                   else "sized to its household underweight gap")
+    for snippet in (deploy_line, "keeps the Traditional IRA empty",
                     "already builds these positions", "belong in a shelter"):
         assert snippet in md, f"action line missing from render: {snippet!r}"
     assert "This group covers" in md, "gap caption must render as prominent markdown"
@@ -1800,7 +1820,7 @@ def test_a_genuine_zero_renders_the_zero_state_not_the_deploy_argument():
     argument to act, and there is nothing to act on."""
     from src.location_actions import deploy_prose_for
     g = _deploy_group()
-    body = deploy_prose_for(g, 0.0)
+    body = deploy_prose_for(g, 0.0, tier="zero")
     assert body is g["zero_state"]
     assert "sitting uninvested" not in body
     assert "{value}" not in body, "the zero state must not template a balance"
@@ -1810,13 +1830,13 @@ def test_a_real_balance_still_renders_the_deploy_argument():
     """Non-vacuity: the zero state must not swallow the ordinary case."""
     from src.location_actions import deploy_prose_for
     g = _deploy_group()
-    assert deploy_prose_for(g, 1234.0) is g["pros"]
+    assert deploy_prose_for(g, 1234.0, tier="full_band") is g["pros"]
 
 
 def test_deploy_prose_refuses_an_unresolvable_balance():
     from src.location_actions import deploy_prose_for
     with pytest.raises(ValueError, match="unresolvable|unknown"):
-        deploy_prose_for(_deploy_group(), None)
+        deploy_prose_for(_deploy_group(), None, tier="full_band")
 
 
 def test_page14_discloses_the_yield_assumption_and_marks_its_basis_live(monkeypatch):
@@ -1913,3 +1933,218 @@ def test_page14_discloses_the_yield_assumption_and_marks_its_basis_live(monkeypa
             f"no row of basis {basis!r} rendered its {marker!r} marker; register says "
             f"{sorted(syms)} carry it, rendered cells were {sorted(rendered)}"
         )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# #309 — the deploy floor, its tiers, the effect in one number, and cents
+# ══════════════════════════════════════════════════════════════════════════════
+# Synthetic book, CI-runnable (page 14 itself is personal-only): household $100,000,
+# tightest band 2pp -> one full band $2,000, floor 10% of it = $200. Two gaps,
+# $3,000 and $1,000, so Σgap = $4,000.
+
+_HH = 100_000.0
+_TARGETS = pd.DataFrame({"name": ["A", "B", "C"], "target_weight": [0.2, 0.1, 0.1],
+                         "tolerance_band": [0.03, 0.02, 0.0]})
+_GAPS = pd.DataFrame({"sleeve": ["us_large_quality", "emerging_markets"],
+                      "ticker": ["SPHQ", "IEMG"], "current": [5_000.0, 9_000.0],
+                      "target": [8_000.0, 10_000.0], "gap": [3_000.0, 1_000.0]})
+
+
+def _synthetic(cash):
+    return {"idle_cash": cash, "gaps": _GAPS, "household_value": _HH,
+            "table": pd.DataFrame(columns=["ticker", "sleeve", "dollar"])}
+
+
+def _tier(cash):
+    return deploy_state(_deploy_group(), _synthetic(cash), _TARGETS)
+
+
+def test_floor_tiers_are_read_from_config_verbatim():
+    """The tiers' scores and statuses are AUTHORED, like every other card's; the
+    balance only selects the row. The full-band tier is the group's own 10 /
+    act_now, which test_scores/test_statuses_are_read_from_config_verbatim pin."""
+    assert _deploy_group()["floor_tiers"] == {
+        "below_floor":    {"score": None, "status": "accepted"},
+        "under_one_band": {"score": 6,    "status": "evaluate"},
+    }
+
+
+@pytest.mark.parametrize("cash, tier, score, status", [
+    (0.0,      "zero",           10,   "act_now"),
+    (0.01,     "below_floor",    None, "accepted"),
+    (199.99,   "below_floor",    None, "accepted"),
+    (200.00,   "under_one_band", 6,    "evaluate"),
+    (1_999.99, "under_one_band", 6,    "evaluate"),
+    (2_000.00, "full_band",      10,   "act_now"),
+    (7_000.00, "full_band",      10,   "act_now"),
+])
+def test_the_balance_selects_the_tier_two_sided_at_both_thresholds(cash, tier, score, status):
+    st_ = _tier(cash)
+    assert (st_["tier"], st_["score"], st_["status"]) == (tier, score, status)
+
+
+def test_the_floor_is_ten_percent_of_the_tightest_band_of_the_household():
+    st_ = _tier(50.0)
+    assert st_["band"] == 0.02                       # the tightest POSITIVE band
+    assert st_["full_band"] == pytest.approx(2_000.0)
+    assert st_["floor"] == pytest.approx(200.0)
+
+
+def test_a_floor_without_its_anchor_raises():
+    with pytest.raises(ValueError, match="tolerance_band"):
+        deploy_state(_deploy_group(), _synthetic(50.0), _TARGETS.drop(columns=["tolerance_band"]))
+
+
+def test_the_effect_is_one_share_of_every_gap():
+    """Gap-proportional buys close the SAME share of every gap: cash / Σgap."""
+    st_ = _tier(1_000.0)
+    assert st_["gap_share"] == pytest.approx(0.25)
+    lg = st_["largest"]
+    assert lg["current"] == pytest.approx(0.05) and lg["target"] == pytest.approx(0.08)
+    assert lg["after"] == pytest.approx((5_000 + 750) / _HH)
+    assert _tier(10_000.0)["gap_share"] == 1.0       # capped: the residual carries the rest
+
+
+def _card(cash):
+    g = _deploy_group()
+    st_ = _tier(cash)
+    resolved = {"value": _fmt_dollars(cash),
+                **__import__("src.location_actions", fromlist=["x"])._deploy_placeholders(st_)}
+    return deploy_card_text(g, st_, resolved)
+
+
+def test_below_the_floor_the_card_renders_its_third_state():
+    """The RENDERED card below the floor: no score, not Act now, no buys, no Against,
+    and the action line says no buy is proposed."""
+    c = _card(7.93)
+    assert "/10" not in c["subheader"], f"a below-floor card must not carry a score: {c['subheader']!r}"
+    assert c["status_label"] == "Below floor"
+    # The card strings are Markdown, so "$" arrives escaped.
+    assert c["action"].replace(r"\$", "$").startswith(
+        "No buy proposed: $7.93 of Roth cash is below the $200 deploy floor")
+    assert not c["show_against"] and not c["show_buys"]
+
+
+def test_the_below_floor_body_forbids_the_reassuring_misreading():
+    c = _card(7.93)
+    assert "the balance is not lost" in c["body"]
+    assert "The Roth is not empty" in c["body"]
+    assert "sits in the Roth's cash sleeve" in c["body"]
+    assert "Nothing to deploy" not in c["body"], "the zero state is false at $7.93"
+
+
+def test_no_buy_proposed_is_said_once_not_twice():
+    """The action line says it; the body must not repeat it."""
+    c = _card(7.93)
+    assert "No buy" not in c["body"] and "no buy" not in c["body"].lower()
+
+
+def test_below_the_floor_asserts_no_provenance():
+    """How the cash got there is unknowable (no contribution ledger), so the body
+    must not claim it was a dividend, a contribution, or left over from a deploy."""
+    body = _card(7.93)["body"].lower()
+    for word in ("dividend", "contribution", "accumulated", "deployment complete", "leftover"):
+        assert word not in body, f"below-floor body asserts provenance: {word!r}"
+
+
+def test_above_the_floor_the_prose_states_the_effect_not_urgency():
+    c = _card(1_000.0)
+    assert c["subheader"].endswith("·  6/10") and c["status_label"] == "Evaluate"
+    assert "closes 25.0% of every underweight sleeve's gap" in c["body"]
+    assert "moves from 5.0% to 5.8% of the household against its 8.0% target" in c["body"]
+    assert "compounding you don't get back" not in c["body"]
+    full = _card(2_000.0)
+    assert full["subheader"].endswith("·  10/10") and full["status_label"] == "Act now"
+
+
+def test_deploy_prose_lengths_pinned_at_a_fixed_balance():
+    """The pin moved here from the live table: at a FIXED state it measures the
+    prose, not the book (#309). Argument at $1,000; below-floor state at $7.93."""
+    assert (len(_card(1_000.0)["body"]), len(_card(7.93)["body"])) == PINNED_DEPLOY_LENGTHS
+
+
+PINNED_DEPLOY_LENGTHS = (565, 375)   # measured and READ at 2026-09-23, not transcribed
+
+
+# ── cents: a nonzero amount never prints as $0 ─────────────────────────────────
+
+def test_a_nonzero_buy_never_prints_as_zero_in_the_buy_tables():
+    """The tables format with DEPLOY_BUY_FORMAT. "$%.0f" printed a $0.40 leg as
+    "$0" — a real amount shown as zero."""
+    assert DEPLOY_BUY_FORMAT % 0.40 == "$0.40"
+    assert DEPLOY_BUY_FORMAT % 1.13 == "$1.13"
+
+
+def test_page14_buy_columns_use_the_cents_format():
+    """Both buy columns read the constant; neither may carry a whole-dollar literal."""
+    text = (ROOT / "pages" / "14_Asset_Location.py").read_text(encoding="utf-8")
+    for col in ('"Amount ($)"', '"Buy ($)"'):
+        lines = [ln for ln in text.splitlines() if col in ln and "NumberColumn" in ln]
+        assert lines, f"{col} column_config not found"
+        for ln in lines:
+            assert "DEPLOY_BUY_FORMAT" in ln and "$%.0f" not in ln, ln
+
+
+@pytest.mark.parametrize("x, want", [
+    (0.40, "$0.40"), (0.01, "$0.01"), (-0.2, "-$0.20"),
+    (0.0, "$0"), (0.5, "$0"), (7.93, "$8"), (51, "$51"), (447.56, "$448"),
+])
+def test_fmt_dollars_keeps_cents_only_where_rounding_would_print_zero(x, want):
+    """Narrow on purpose: whole dollars everywhere else, so no other card's
+    rendered length moves. (0.5 rounds half-to-even to $0: a known edge of the
+    whole-dollar branch, not a nonzero-shown-as-zero case under 0.5.)"""
+    assert _fmt_dollars(x) == want
+
+
+def test_page14_live_below_floor_card_renders_its_third_state(monkeypatch):
+    """The RENDERED page on the live book, when the live balance is below the floor
+    (it is, at $7.93 on 2026-09-23): the card leaves Act now, carries no score, and
+    renders the below-floor action and body."""
+    from src.household_data import find_latest_positions_csv
+    if find_latest_positions_csv() is None or not TRACKER_DB.exists() \
+            or TRACKER_DB.stat().st_size == 0:
+        pytest.skip("personal-mode inputs absent")
+    pos, acct, sec, _reg = _live()
+    _dep, tier = _live_tier(pos, acct, sec)
+    if tier["tier"] != "below_floor":
+        pytest.skip(f"live balance is {tier['tier']}, not below the floor")
+    import src.config
+    import src.db
+    monkeypatch.setattr(src.config, "IS_DEMO", False)
+    monkeypatch.setattr(src.db, "DB_PATH", TRACKER_DB)
+    from streamlit.testing.v1 import AppTest
+    at = AppTest.from_file(str(ROOT / "pages" / "14_Asset_Location.py"), default_timeout=90).run()
+    assert not at.exception, f"page raised: {at.exception}"
+    subs = [s.value for s in at.subheader]
+    deploy_sub = [s for s in subs if s.startswith("Deploy idle Roth cash")]
+    assert deploy_sub == ["Deploy idle Roth cash"], f"below-floor card carries a score: {deploy_sub}"
+    md = " ||| ".join(m.value for m in at.markdown)
+    assert "No buy proposed" in md and "the balance is not lost" in md
+    # It is not in the Act now bucket: its subheader comes after the Accepted header.
+    order = [(e.type, e.value) for e in at.main if getattr(e, "type", "") in ("header", "subheader")]
+    heads = [v for t, v in order if t == "header"]
+    pos_accepted = next(i for i, (t, v) in enumerate(order) if t == "header" and v == "Accepted")
+    pos_card = next(i for i, (t, v) in enumerate(order) if v == "Deploy idle Roth cash")
+    assert pos_card > pos_accepted, f"below-floor card rendered outside Accepted: {heads}"
+
+
+def test_page14_live_kpi_states_the_same_below_floor_balance_as_the_card(monkeypatch):
+    """One balance, one rendering: the Act-now KPI line and the card both say $7.93,
+    not "$8" in one place and "$7.93" in the other."""
+    from src.household_data import find_latest_positions_csv
+    if find_latest_positions_csv() is None or not TRACKER_DB.exists() \
+            or TRACKER_DB.stat().st_size == 0:
+        pytest.skip("personal-mode inputs absent")
+    pos, acct, sec, _reg = _live()
+    _dep, tier = _live_tier(pos, acct, sec)
+    if tier["tier"] != "below_floor":
+        pytest.skip(f"live balance is {tier['tier']}, not below the floor")
+    import src.config
+    import src.db
+    monkeypatch.setattr(src.config, "IS_DEMO", False)
+    monkeypatch.setattr(src.db, "DB_PATH", TRACKER_DB)
+    from streamlit.testing.v1 import AppTest
+    at = AppTest.from_file(str(ROOT / "pages" / "14_Asset_Location.py"), default_timeout=90).run()
+    exact = escape_md(f"${tier['cash']:,.2f}")
+    kpi = [m.value for m in at.markdown if m.value.startswith("Deploy **")]
+    assert kpi and exact in kpi[0], f"KPI does not state {exact}: {kpi}"
