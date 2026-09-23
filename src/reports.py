@@ -423,6 +423,18 @@ def _cape_regime(pct_int: int) -> tuple[str, str]:
     return "Below-average", "support increased US equity exposure relative to SAA targets"
 
 
+def not_computed_sentence(subject: str, exc: BaseException, consequence: str) -> str:
+    """ONE disclosure pattern for a figure the report could not compute (#248).
+
+    States what could not be computed, why (the exception's type, following the
+    Coverage-checks precedent: the message is diagnostic detail for the log), and what
+    was done instead. It never instructs the reader. It is appended exactly where the
+    missing sentence would have gone, so silence can no longer read as "nothing to
+    say" when the truth is "the computation failed"."""
+    return (f"{subject} could not be computed for this report "
+            f"({type(exc).__name__}), so {consequence}.")
+
+
 def _cape_reading_sentence(cape_val: float, cape_pct: float) -> str:
     """Executive-summary CAPE line: reports the reading and the derived regime label and
     draws NO allocation conclusion — that stance belongs to the Macro Context section.
@@ -524,11 +536,16 @@ def _build_executive_summary(start_date: str, end_date: str) -> dict:
         )
 
     cape_val = cape_pct = None
+    _cape_failure: Optional[str] = None
     try:
         cape_val = current_cape()
         cape_pct = percentile(get_cape_series(), cape_val)
-    except Exception:
-        pass
+    except Exception as exc:
+        logging.exception("Executive-summary CAPE reading failed")
+        cape_val = cape_pct = None
+        _cape_failure = not_computed_sentence(
+            "The CAPE valuation reading", exc,
+            "this summary states no valuation regime")
 
     period_label = _format_period_label(start_date, end_date)
 
@@ -570,6 +587,8 @@ def _build_executive_summary(start_date: str, end_date: str) -> dict:
     if cape_val is not None and cape_pct is not None:
         # Reports the regime; the allocation stance is drawn once, in the Macro section.
         narrative.append(_cape_reading_sentence(cape_val, cape_pct))
+    elif _cape_failure:
+        narrative.append(_cape_failure)
     if _bf_price_gap_note:
         narrative.append(_bf_price_gap_note)
     if _bf_benchmark_gap_note:
@@ -959,10 +978,14 @@ def _build_factor_section(end_date: str) -> Optional[dict]:
         return None
 
     fi_result: Optional[dict] = None
+    _fi_failure: Optional[str] = None
     try:
         fi_result = regress_fi_sleeve(inception, end_date)
-    except Exception:
-        pass
+    except Exception as exc:
+        logging.exception("Fixed-income sleeve factor regression failed")
+        _fi_failure = not_computed_sentence(
+            "The fixed-income sleeve's factor regression", exc,
+            "this section carries no fixed-income note")
 
     def _fmt_date_local(iso: str) -> str:
         d = date.fromisoformat(iso)
@@ -1012,7 +1035,8 @@ def _build_factor_section(end_date: str) -> Optional[dict]:
     return {
         "sleeves":           sleeves,
         "em_note":           em_disclosure(),
-        "prose":             build_factor_prose(results, fi_result=fi_result),
+        "prose":             build_factor_prose(results, fi_result=fi_result)
+                             + ([_fi_failure] if _fi_failure else []),
         "methodology_notes": build_factor_methodology_notes(results, fi_result=fi_result),
     }
 
@@ -1066,11 +1090,15 @@ def _build_benchmark_section(start_date: str, end_date: str) -> Optional[dict]:
     # Top-3 Brinson-Fachler cross-reference — use report period (Q1) window.
     bhb_top = None
     _xref_suppressed: list[str] = []
+    _xref_failure: Optional[str] = None
     try:
         bf_df = brinson_fachler_period(start_date, end_date, account_id=get_portfolio_account_id())
         bhb_top = build_bf_cross_reference(bf_df, suppressed=_xref_suppressed) or None
-    except Exception:
-        pass
+    except Exception as exc:
+        logging.exception("Brinson-Fachler cross-reference failed")
+        _xref_failure = not_computed_sentence(
+            "The Brinson-Fachler attribution cross-reference", exc,
+            "the intercept is shown without the attribution drivers behind it")
 
     return {
         "rows":              rows,
@@ -1086,7 +1114,8 @@ def _build_benchmark_section(start_date: str, end_date: str) -> Optional[dict]:
         "prose":             build_benchmark_prose(
             result, bhb_top_selection=bhb_top,
             bhb_period_label=_format_period_label(start_date, end_date),
-            bhb_location="in this report"),
+            bhb_location="in this report")
+                             + ([_xref_failure] if _xref_failure else []),
         "methodology_notes": build_benchmark_methodology(result),
         "_raw":              result,
     }
