@@ -428,8 +428,10 @@ ACTION_GROUPS: list[dict] = [
                     "JTEK", "QQQ", "IBIT"],
         "case_filter": ["B", "D"], "accounts": ["Individual Taxable (TOD)"],
         "pros": _THEMATIC_PROS, "cons": _THEMATIC_CONS,
-        # {count}/{value} measure the whole sprawl (matched symbols), but the
-        # expander lists only the 2 mislocation rows — so a caption is required.
+        # {count}/{value} measure the whole sprawl (matched symbols), but the expander
+        # lists only the MISLOCATION rows among those symbols — so a caption is
+        # mandatory to reconcile the two. `resolve_caption` derives both numbers, so
+        # neither is written down here.
         "population": "matched_symbols", "caption": _THEMATIC_CAPTION,
     },
     {
