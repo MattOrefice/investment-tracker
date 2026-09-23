@@ -36,6 +36,29 @@ def period_bounds(
     return start_iso, end_iso
 
 
+def clamped_period_bounds(
+    period: str, anchor_end: "date | str", inception: "date | str"
+) -> "tuple[str, str, bool]":
+    """``(start_iso, end_iso, clamped)``: period_bounds with the start clamped to
+    inception, and whether it was (#334).
+
+    For ATTRIBUTION, where a window starting before inception otherwise computes zero
+    rows and renders nothing: the portfolio did not exist for the start of that window,
+    and the price-series side of the reconciliation (the value series and the naive
+    benchmark both begin at inception) already starts there. Clamping makes the
+    attribution window agree with it; ``clamped`` is what the page discloses.
+
+    Not for the returns TABLE: there, a pre-inception window is SUPPRESSED rather than
+    clamped (period_window_predates_inception), because a "1 Year" return must not
+    describe a months-old book.
+    """
+    start, end = period_bounds(period, anchor_end, inception)
+    inc = inception if isinstance(inception, str) else inception.isoformat()
+    if start < inc:                          # ISO strings compare lexicographically
+        return inc, end, True
+    return start, end, False
+
+
 def period_window_predates_inception(
     period: str, anchor_end: "date | str", inception: "date | str"
 ) -> bool:

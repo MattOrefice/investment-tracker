@@ -328,10 +328,33 @@ def test_two_stage_attribution_section_renders(performance_app: AppTest) -> None
     assert stage1_3m is not None and stage1_si is not None, (
         "Stage 1 tile missing after radio switch"
     )
-    assert stage1_3m != stage1_si, (
-        f"Stage 1 value unchanged after switching 3M → SI: both = {stage1_3m!r}. "
-        "Window filtering may have collapsed — check _load_attribution or _benchmark_period_return."
-    )
+    # Which contract applies is DERIVED from the page's own anchor (#334). While the
+    # book is under three months old at that anchor, 3M is clamped to inception, so
+    # it IS the since-inception window: the tiles must agree and the page must say
+    # why. Otherwise the windows differ and so must the tiles. Asserting "differ"
+    # unconditionally made this test pass or fail by the calendar (#303).
+    from datetime import date
+
+    import src.holdings as holdings
+    from src.returns import clamped_period_bounds
+    acct = holdings.get_portfolio_account()["account_id"]
+    inception = holdings.get_inception_date(account_id=acct)
+    anchor = holdings.last_settled_price_date(inception, date.today().isoformat())
+    clamped = clamped_period_bounds("3M", anchor, inception)[2]
+    at.radio(key="bf_period").set_value("3M").run()
+    disclosed = any("Attribution from inception" in str(i.value) for i in at.info)
+    assert disclosed is clamped, (
+        f"3M clamped={clamped} at anchor {anchor}, but the inception disclosure "
+        f"{'is' if disclosed else 'is not'} shown")
+    if clamped:
+        assert stage1_3m == stage1_si, (
+            f"3M is clamped to inception at anchor {anchor}, so it is the SI window, "
+            f"yet Stage 1 differs: 3M={stage1_3m!r}, SI={stage1_si!r}")
+    else:
+        assert stage1_3m != stage1_si, (
+            f"Stage 1 value unchanged after switching 3M → SI: both = {stage1_3m!r}. "
+            "Window filtering may have collapsed — check _load_attribution or "
+            "_benchmark_period_return.")
 
 
 # ── Phase 39 — polish regression pins ────────────────────────────────────────

@@ -41,7 +41,7 @@ from src.holdings import (
 from src.performance import compute_risk_metrics
 from src.reports import generate_quarterly_report_bytes
 from src.sleeve_config import international_sleeves
-from src.returns import annualize, period_bounds, period_return, period_window_predates_inception, twr_daily_linked
+from src.returns import annualize, clamped_period_bounds, period_bounds, period_return, period_window_predates_inception, twr_daily_linked
 from src.positioning import get_effective_duration
 from src.rebalance import compute_drift
 from src.ui_helpers import render_footer, render_page_header
@@ -136,7 +136,9 @@ def _load_attribution(period_key: str, anchor_end: str, account_id: int):
     account-scoped, so the memoized result MUST be keyed by account — otherwise a
     cache warmed for one account would serve a silently wrong attribution to another.
     """
-    start, end = period_bounds(period_key, anchor_end, INCEPTION)
+    # Clamped to inception (#334): a window starting before the portfolio existed
+    # computed ZERO rows and the section rendered nothing, with no reason given.
+    start, end, _clamped = clamped_period_bounds(period_key, anchor_end, INCEPTION)
     return brinson_fachler_period(start, end, account_id=account_id)
 
 
@@ -939,6 +941,19 @@ with col:
     # forward-filled / partial-intraday tail in any window endpoint.
     with st.spinner("Computing attribution…"):
         bf_df = _load_attribution(bf_period, _C, _ACCT_ID)
+
+    # State the window actually used when it is not the one selected (#334), the
+    # shape of the percentile-window captions (#246): derived from the same clamp the
+    # computation used, so the disclosure cannot disagree with the figures.
+    _bf_start, _bf_end, _bf_clamped = clamped_period_bounds(bf_period, _C, INCEPTION)
+    if _bf_clamped:
+        st.info(
+            f"**Attribution from inception, {format_long_date(INCEPTION)}**, because the "
+            f"selected {PERIOD_LABEL[bf_period]} window would start "
+            f"{format_long_date(period_bounds(bf_period, _C, INCEPTION)[0])}, before the "
+            "portfolio existed. The figures below cover inception to "
+            f"{format_long_date(_bf_end)}."
+        )
 
     if bf_df.attrs.get("price_gaps"):
         st.warning(price_gap_notice(bf_df.attrs["price_gaps"]))
