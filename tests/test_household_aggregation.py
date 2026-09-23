@@ -19,32 +19,6 @@ HOLDINGS_CSV = find_latest_positions_csv()
 
 ALLOWED_RATIONALE = {"no_exposure", "on_target", "underweight", "overweight", "off_saa_exposure"}
 
-# Actuals computed from the Jul-08 data (look_through + total scope).
-# Assertions below use ±2pp tolerance.
-#
-# RFUTX's look-through composition was replaced with real factsheet data (was a
-# generic manual estimate with no us_large_value sleeve at all); the unvested,
-# $0-vested workplace account was also excluded from the household total. Both
-# shift these weights — US Large Value materially (1.04 -> 3.83, since RFUTX's
-# factsheet-sourced split carries an explicit value-tilt slice the old estimate
-# didn't), the rest by under a point.
-ACTUAL_LT_WEIGHTS = {
-    "US Large Core":         24.64,
-    # Phase 39: this reads the personal book (tracker.db), which keeps its
-    # 9-sleeve taxonomy — developed international is the single "International
-    # Developed" sleeve (VEA + IEFA) — until the personal restructure lands.
-    "International Developed": 11.27,
-    "Emerging Markets":       4.80,
-    "Core Fixed Income":      3.91,
-    "US Large Quality":       2.52,
-    "Real Assets":            1.51,
-    "cash":                   4.90,   # off-SAA post-38a (cash untargeted, routes to off-SAA bucket)
-    "US Large Value":         3.83,
-    "US Small Cap":           0.07,   # AVUV added in the Jul-08 export (was 0 on May-27)
-    "TIPS":                   0.04,   # SCHP added in the Jul-08 export (was 0 on May-27)
-}
-
-
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _tracker_db_has_schema() -> bool:
@@ -162,14 +136,75 @@ def test_us_large_core_is_largest_saa_sleeve(lt_total_result):
     )
 
 
-@pytest.mark.parametrize("sleeve,expected_pct", list(ACTUAL_LT_WEIGHTS.items()))
-def test_sleeve_weight_within_2pp(lt_total_result, sleeve, expected_pct):
-    # Actuals were computed from May-27 data; tolerance allows small data drift.
-    row = lt_total_result[lt_total_result["sleeve"] == sleeve]
-    actual = float(row["percent_weight"].iloc[0]) if not row.empty else 0.0
-    assert abs(actual - expected_pct) <= 2.0, (
-        f"{sleeve}: actual {actual:.2f}% differs from snapshot {expected_pct:.2f}% by >2pp"
-    )
+# ── Look-through weights, pinned on a FROZEN book (#305) ──────────────────────
+# This used to pin the LIVE household's weights (±2pp, a retired constant), a fact
+# about real holdings: it failed on cash (1.62% vs 4.90%) the day the Sep-23 CSV
+# moved the book, and said nothing about the aggregation. The weights are now pinned
+# on a book that cannot move, with every expected figure worked by hand below, so a
+# red means the AGGREGATION changed. Not a second copy of the look-through: the
+# expected values are this book's arithmetic, not a general algorithm.
+#
+#   VOO   $6,000  direct                          -> US Large Core       6,000
+#   SPAXX $1,000  direct cash                     -> cash                1,000
+#   TDF   $3,000  look-through: 50% us_large_core -> US Large Core       1,500
+#                               30% core_fixed_income -> Core Fixed Income 900
+#                               20% cash          -> cash                  600
+#   household $10,000:  US Large Core 75%,  Core Fixed Income 9%,  cash 16%
+
+def _frozen_book():
+    positions = pd.DataFrame([
+        {"pseudonym": "A1", "symbol": "VOO",   "current_value": 6000.0},
+        {"pseudonym": "A1", "symbol": "SPAXX", "current_value": 1000.0},
+        {"pseudonym": "A2", "symbol": "TDF",   "current_value": 3000.0},
+    ])
+    accounts = pd.DataFrame([
+        {"pseudonym": "A1", "managed_by": "self", "display_name": "Taxable",
+         "tax_treatment": "taxable"},
+        {"pseudonym": "A2", "managed_by": "external", "display_name": "401k",
+         "tax_treatment": "workplace_plan"},
+    ])
+    securities = pd.DataFrame([
+        {"ticker": "VOO",   "sleeve_category": "us_large_core",     "is_in_saa": 1, "asset_class_id": 10},
+        {"ticker": "AGG",   "sleeve_category": "core_fixed_income", "is_in_saa": 1, "asset_class_id": 20},
+        {"ticker": "SPAXX", "sleeve_category": "cash",              "is_in_saa": 1, "asset_class_id": 100},
+        {"ticker": "TDF",   "sleeve_category": "multi_asset",       "is_in_saa": 0, "asset_class_id": None},
+    ])
+    compositions = pd.DataFrame([
+        {"fund_symbol": "TDF", "underlying_sleeve": "us_large_core",     "weight": 0.5},
+        {"fund_symbol": "TDF", "underlying_sleeve": "core_fixed_income", "weight": 0.3},
+        {"fund_symbol": "TDF", "underlying_sleeve": "cash",              "weight": 0.2},
+    ])
+    targets = pd.DataFrame([
+        {"asset_class_id": 10, "name": "US Large Core",     "target_weight": 0.60},
+        {"asset_class_id": 20, "name": "Core Fixed Income", "target_weight": 0.40},
+    ])
+    return positions, accounts, securities, compositions, targets
+
+
+FROZEN_LT_WEIGHTS = {"US Large Core": 75.0, "Core Fixed Income": 9.0, "cash": 16.0}
+
+
+def test_look_through_weights_on_a_frozen_book():
+    """Every expected weight is the arithmetic in the block above, on a book that
+    cannot move, so this fails only when the aggregation does."""
+    from src.household import compute_household_allocation
+    alloc = compute_household_allocation(*_frozen_book(), mode="look_through", scope="total")
+    got = {r["sleeve"]: round(float(r["percent_weight"]), 6)
+           for _, r in alloc.iterrows() if float(r["dollar_value"]) > 0}
+    assert got == FROZEN_LT_WEIGHTS, got
+    assert abs(sum(got.values()) - 100.0) < 1e-9
+
+
+def test_the_frozen_book_is_not_satisfied_by_emptiness():
+    """Two-sided, #178's rule: an empty or unpriced book must not pass by producing
+    nothing. The fund's composition must actually be applied (as_held keeps it
+    whole), so the look-through weights are not what an undecomposed book gives."""
+    from src.household import compute_household_allocation
+    held = compute_household_allocation(*_frozen_book(), mode="as_held", scope="total")
+    held_w = {r["sleeve"]: float(r["percent_weight"])
+              for _, r in held.iterrows() if float(r["dollar_value"]) > 0}
+    assert held_w and held_w != FROZEN_LT_WEIGHTS, held_w
+    assert abs(sum(held_w.values()) - 100.0) < 1e-9
 
 
 def test_tips_and_small_cap_now_held_underweight(lt_total_result):
