@@ -1,11 +1,16 @@
 """Phase 25.2 migration: add account metadata and pseudonymization columns.
 
-Adds five columns to the accounts table:
-  account_number TEXT UNIQUE  -- join key between ingestion output and account metadata
+Adds four columns to the accounts table:
   tax_treatment  TEXT DEFAULT 'other'
   pseudonym      TEXT UNIQUE  -- stable alias used in all UI rendering
   display_name   TEXT         -- human-readable label
   managed_by     TEXT DEFAULT 'self'
+
+It USED to add a fifth, account_number, and must not (#306). That column is the raw
+PII key the account-number purge removed; src/db.py's _auto_migrate m4
+(_drop_account_number) drops it on the next writable connection. Bootstrap runs this
+migration on EVERY personal start, so while it added the column the book oscillated:
+added here, dropped there, every boot. Accounts are keyed on pseudonym.
 
 Idempotent: safe to run multiple times.
 Applies to both data/tracker.db and data/demo.db.
@@ -18,7 +23,6 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 NEW_COLUMNS = [
-    ("account_number", "TEXT"),
     ("tax_treatment",  "TEXT DEFAULT 'other'"),
     ("pseudonym",      "TEXT"),
     ("display_name",   "TEXT"),
@@ -27,9 +31,8 @@ NEW_COLUMNS = [
 
 # SQLite does not support ADD COLUMN ... UNIQUE; enforce via separate unique indexes.
 # NULLs are always treated as distinct in SQLite unique indexes, so pre-existing rows
-# with NULL account_number / pseudonym don't conflict.
+# with a NULL pseudonym don't conflict. (No account_number index: see the docstring.)
 UNIQUE_INDEXES = [
-    ("ux_accounts_account_number", "accounts", "account_number"),
     ("ux_accounts_pseudonym",      "accounts", "pseudonym"),
 ]
 
