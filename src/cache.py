@@ -83,6 +83,10 @@ class SnapshotFrames(NamedTuple):
 
     adj_close: pd.DataFrame
     close: "pd.DataFrame | None" = None
+    # (ticker, reason) for every series the capture could NOT lock (#204). A ticker
+    # absent from the frames is read LIVE by snapshot_price_context, so a report
+    # under a "Prices locked" cover is partly unlocked; this is what says so.
+    gaps: tuple = ()
 
 
 def _as_frames(snap) -> SnapshotFrames:
@@ -92,16 +96,29 @@ def _as_frames(snap) -> SnapshotFrames:
     return SnapshotFrames(adj_close=snap, close=None)
 
 
-def _get_all_snapshot_tickers() -> list:
-    """Query DB for all portfolio and benchmark tickers (excluding SPAXX)."""
+def _get_all_snapshot_tickers() -> "tuple[list, list]":
+    """(tickers, gaps): every holding and every benchmark CONSTITUENT (SPAXX excluded),
+    plus (spec, reason) for any benchmark spec that cannot be parsed.
+
+    Benchmark specs are expanded with parse_benchmark_spec (#204). A composite like
+    "VNQ (60%) + DBC (40%)" is not a ticker: fetched raw it can never succeed, and
+    its constituents were never locked."""
+    from src.sleeve_config import parse_benchmark_spec
     with get_connection() as conn:
         holdings = conn.execute("SELECT ticker FROM securities").fetchall()
         benchmarks = conn.execute(
             "SELECT DISTINCT benchmark_ticker FROM asset_classes WHERE benchmark_ticker IS NOT NULL"
         ).fetchall()
-    tickers = {r["ticker"] for r in holdings} | {r["benchmark_ticker"] for r in benchmarks}
+    tickers = {r["ticker"] for r in holdings}
+    gaps = []
+    for r in benchmarks:
+        spec = r["benchmark_ticker"]
+        try:
+            tickers |= {t for t, _w in parse_benchmark_spec(spec)}
+        except ValueError as exc:
+            gaps.append((spec, f"unparseable benchmark spec: {exc}"))
     tickers.discard("SPAXX")
-    return sorted(tickers)
+    return sorted(tickers), gaps
 
 
 def get_quarter_snapshot(quarter_id: str) -> tuple:
@@ -132,7 +149,8 @@ def get_quarter_snapshot(quarter_id: str) -> tuple:
         return SnapshotFrames(adj_close=_frame(blob), close=None), row["captured_at"]
 
     close = _frame(blob["close"]) if "close" in blob else None
-    return (SnapshotFrames(adj_close=_frame(blob["adj_close"]), close=close),
+    gaps = tuple(tuple(g) for g in blob.get("gaps", []))
+    return (SnapshotFrames(adj_close=_frame(blob["adj_close"]), close=close, gaps=gaps),
             row["captured_at"])
 
 
@@ -151,19 +169,24 @@ def capture_quarter_snapshot(quarter_id: str) -> tuple:
     end_str = end.isoformat()
     inception_str = "2020-01-01"
 
-    tickers = _get_all_snapshot_tickers()
+    tickers, gaps = _get_all_snapshot_tickers()
     adj: dict = {}
     raw: dict = {}
     for ticker in tickers:
         try:
             df = _prices_module.get_prices(ticker, inception_str, end_str)
+            if df is None or df.empty:
+                gaps.append((ticker, "no price data through the quarter end"))
+                continue
             adj[ticker] = df["adj_close"]
             # BOTH bases now. Storing adj_close alone left a raw-close consumer
             # unservable, and the reader papered over that by aliasing (#193).
             if "close" in df.columns:
                 raw[ticker] = df["close"]
-        except Exception:
-            pass
+        except Exception as exc:                     # noqa: BLE001
+            # One bad ticker does not fail the quarter, and is not dropped
+            # silently either: it is stored as a disclosed gap (#204).
+            gaps.append((ticker, f"{type(exc).__name__}: {exc}"[:200]))
 
     if not adj:
         raise RuntimeError(f"No price data fetched for snapshot {quarter_id}.")
@@ -174,7 +197,8 @@ def capture_quarter_snapshot(quarter_id: str) -> tuple:
     if not raw_df.empty:
         raw_df.index = pd.to_datetime(raw_df.index).date
     snap_df = SnapshotFrames(adj_close=adj_df,
-                             close=raw_df if not raw_df.empty else None)
+                             close=raw_df if not raw_df.empty else None,
+                             gaps=tuple((str(t), str(r)) for t, r in gaps))
 
     captured_at = datetime.now().isoformat(timespec="seconds")
     # Two top-level keys, one flat frame each — see SnapshotFrames for why this is
@@ -182,6 +206,7 @@ def capture_quarter_snapshot(quarter_id: str) -> tuple:
     payload = {"adj_close": json.loads(adj_df.to_json(orient="split", date_format="iso"))}
     if snap_df.close is not None:
         payload["close"] = json.loads(raw_df.to_json(orient="split", date_format="iso"))
+    payload["gaps"] = [list(g) for g in snap_df.gaps]
     blob = json.dumps(payload)  # write-guard-exempt: portfolio snapshot cache, not user-mutable data
 
     _ensure_table()
