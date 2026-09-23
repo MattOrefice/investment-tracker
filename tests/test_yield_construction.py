@@ -17,7 +17,7 @@ against DGS10's 4.60% nominal 10-year on the same date — the Fisher identity r
 to 1bp from a third, independent cached series. So the construction is validated by
 arithmetic rather than by argument, and `test_the_construction_re_adds_to_the_shipped
 _value` below is that validation as an assertion. This is the analogue of
-`test_entry_values_match_their_proxies_recomputed_from_the_cache` in
+`test_entry_values_match_their_proxies_at_the_shared_as_of` in
 tests/test_yield_proxies.py: a declared basis that is never recomputed is a claim.
 
 WHY A DICT RATHER THAN A COMMENT. Only a structure can be enumerated and re-added. A
