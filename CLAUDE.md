@@ -102,12 +102,24 @@
   the test's `assert changed` had nothing to detect. It asserted
   something FALSE — the contract is that they are identical there.
   The test now derives state 1 per page and asserts the contrast, so
-  the count no longer depends on the date and **the frontier check is
-  not required**. Kept as a record rather than deleted: without it the
-  15-then-13 sequence in earlier notes reads as a regression that
-  healed itself. Do not reinstate the check as a standing step — an
-  instruction guarding a fixed condition is the class of stale claim
-  this file has had to correct three times.
+  #241's two tests no longer depend on the date and **the frontier
+  check is not required** for them. Kept as a record rather than
+  deleted: without it the 15-then-13 sequence in earlier notes reads as
+  a regression that healed itself. Do not reinstate the check as a
+  standing step — an instruction guarding a fixed condition is the
+  class of stale claim this file has had to correct three times.
+- THE COUNT DEPENDS ON THE DATE AGAIN, through a different mechanism
+  (#302, 2026-09-23). This file said "the count no longer depends on
+  the date"; that was true of #241 and false in general. 19
+  personal-mode render tests copy tracker.db, block the network, and
+  need a price within `get_sleeve_weights_on_date`'s 7-day look-back.
+  They pass while tracker.db's newest price is within 7 days of today
+  and fail after. Since #269 the suite's price writes go to a
+  per-session copy, so running the suite no longer advances the cache.
+  Only rendering a page that fetches prices with the network up does.
+  Until #302 is fixed, a personal-mode count is a function of the tree,
+  the environment AND how stale tracker.db's prices are. Record the
+  newest price date and the run date with any baseline.
 - "Guards" means the read-only attribute set on data/demo.db,
   data/tracker.db and every `git ls-files data` entry, to prove a
   diagnostic did not mutate tracked data. RUN THE SUITE GUARDS-UP.
