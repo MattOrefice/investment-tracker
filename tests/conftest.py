@@ -18,6 +18,7 @@ is inert and is deliberately not used here.
 """
 import os
 import sqlite3
+import sys
 import shutil
 import tempfile
 import warnings
@@ -317,13 +318,66 @@ def pytest_runtest_teardown(item, nextitem):
     _allow_real_db = False
 
 
+def remove_tree_reporting(path: Path) -> "list[str]":
+    """Remove `path`, returning one line per entry that COULD NOT be removed.
+
+    Replaces `rmtree(ignore_errors=True)`, which is how the redirect's copies went
+    silently: on Windows a sqlite connection still open at session end blocks the
+    delete, the error was swallowed, and copies of the personal book piled up in
+    TEMP with nothing reporting it (#307). A failure here is a LEAK — a connection
+    to a tracked-book copy outlived the tests — so it is returned for the caller to
+    print, never hidden.
+    """
+    failures: "list[str]" = []
+
+    def _record(func, p, exc_info):
+        err = exc_info[1]
+        failures.append(f"{p}: {type(err).__name__}: {err}")
+
+    if path.exists():
+        shutil.rmtree(path, onerror=_record)
+    return failures
+
+
+def _cleanup_redirect_dir() -> "list[str]":
+    global _redirect_dir
+    if _redirect_dir is None:
+        return []
+    failures = remove_tree_reporting(_redirect_dir)
+    if not failures:
+        _redirect_dir = None
+    return failures
+
+
+_CLEANUP_HEADLINE = "tracked-DB redirect cleanup FAILED — a connection leaked (#307)"
+_CLEANUP_EXPLAIN = (
+    "These per-session copies hold TRACKED DATA (possibly the personal book) and "
+    "could not be removed, so nothing else will remove them. On Windows this means "
+    "a sqlite connection to the copy was still open when the session ended."
+)
+
+
+def pytest_terminal_summary(terminalreporter, exitstatus, config):
+    """Clean up HERE rather than only in pytest_unconfigure, because this is the
+    last point where a failure can still be printed where the reader looks."""
+    failures = _cleanup_redirect_dir()
+    if failures:
+        terminalreporter.write_sep("!", _CLEANUP_HEADLINE, red=True)
+        terminalreporter.write_line(_CLEANUP_EXPLAIN, red=True)
+        for line in failures:
+            terminalreporter.write_line(f"  {line}", red=True)
+
+
 def pytest_unconfigure(config):
     global _installed
     if _installed:
         sqlite3.connect = _real_connect
         _installed = False
-    if _redirect_dir is not None:
-        shutil.rmtree(_redirect_dir, ignore_errors=True)
+    # Backstop for a run whose terminal summary never ran: still never silent.
+    failures = _cleanup_redirect_dir()
+    if failures:
+        print(f"\n{_CLEANUP_HEADLINE}\n{_CLEANUP_EXPLAIN}\n  " + "\n  ".join(failures),
+              file=sys.__stderr__)
 
 
 def _pin_mode(monkeypatch, mode: str) -> None:

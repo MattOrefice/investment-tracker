@@ -284,9 +284,31 @@ def _auto_migrate(conn: sqlite3.Connection) -> None:
     _add_included_in_household(conn)
 
 
+class _ClosingConnection(sqlite3.Connection):
+    """A connection whose ``with`` block commits or rolls back AND THEN CLOSES.
+
+    sqlite3's own context manager only commits or rolls back; it never closes. Every
+    ``with get_connection() as conn:`` site (97 of them) therefore held its connection
+    open until garbage collection, which a reference cycle can delay indefinitely. On
+    Windows an open handle also blocks deleting the file, which is how it surfaced
+    (#307). A census of all 97 sites found no use of a connection after its block,
+    so closing on exit breaks none of them.
+
+    Only ``__exit__`` changes. A caller that uses the connection without ``with`` and
+    calls ``close()`` itself is unaffected.
+    """
+
+    def __exit__(self, exc_type, exc, tb):
+        try:
+            return super().__exit__(exc_type, exc, tb)   # commit, or roll back
+        finally:
+            self.close()
+
+
 def get_connection():
-    """Return a SQLite connection with foreign keys enabled."""
-    conn = sqlite3.connect(DB_PATH)
+    """Return a SQLite connection with foreign keys enabled. Used as a context
+    manager it commits (or rolls back) and then closes; see _ClosingConnection."""
+    conn = sqlite3.connect(DB_PATH, factory=_ClosingConnection)
     conn.execute("PRAGMA foreign_keys = ON")
     conn.row_factory = sqlite3.Row
     db_key = str(DB_PATH)
