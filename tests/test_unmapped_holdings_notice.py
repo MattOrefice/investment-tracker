@@ -17,6 +17,10 @@ place that always runs locally.
 
 SKIP, NOT FAIL, ON NO HOLDINGS. A first run with an empty uploads dir has nothing to
 reconcile, so the check returns no findings rather than reporting everything as broken.
+
+BUT "COULD NOT CHECK" IS NOT "NOTHING TO REPORT". When an input cannot be read, the
+check says so, with the reason, and the notice renders it. An empty result there would
+read exactly like a clean book.
 """
 from __future__ import annotations
 
@@ -26,7 +30,7 @@ from pathlib import Path
 
 import pytest
 
-from src.bootstrap import unmapped_holdings, unmapped_holdings_notice
+from src.bootstrap import UnmappedCheck, unmapped_holdings, unmapped_holdings_notice
 
 SCHEMA = """
 CREATE TABLE securities (
@@ -50,8 +54,7 @@ def _book(tmp_path: Path, securities: list[tuple], held: list[str]) -> tuple[Pat
     The account map is scratch and PASSED IN: parse_fidelity_csv raises on an account
     number absent from private/account_map.json (by design — raw numbers must never
     reach the schema), so a fixture with an invented account number would make the
-    check return {} for the wrong reason. That is how the first cut of these tests
-    failed: three of them read as "no findings" when the parse had actually raised.
+    check report an unreadable CSV instead of the state under test.
     """
     db = tmp_path / "t.db"
     conn = sqlite3.connect(db)
@@ -76,18 +79,24 @@ def _book(tmp_path: Path, securities: list[tuple], held: list[str]) -> tuple[Pat
     return db, uploads, amap
 
 
+def _checked(findings: dict) -> UnmappedCheck:
+    return UnmappedCheck("checked", findings)
+
+
 # ── the check ────────────────────────────────────────────────────────────────
 
 def test_fully_mapped_book_reports_nothing(tmp_path):
     db, uploads, amap = _book(tmp_path,
                         [("AAA", "us_large_core", "high"), ("BBB", "tips", "low")],
                         ["AAA", "BBB"])
-    assert unmapped_holdings(db, uploads, amap) == {}
+    assert unmapped_holdings(db, uploads, amap) == UnmappedCheck("checked", {})
 
 
 def test_absent_securities_row_is_reported(tmp_path):
     db, uploads, amap = _book(tmp_path, [("AAA", "us_large_core", "high")], ["AAA", "NEW"])
-    found = unmapped_holdings(db, uploads, amap)
+    check = unmapped_holdings(db, uploads, amap)
+    assert check.disposition == "checked"
+    found = check.findings
     assert list(found) == ["NEW"]
     assert found["NEW"] == ["no securities row at all"]
 
@@ -101,7 +110,7 @@ def test_null_columns_are_reported_by_name(tmp_path, sleeve, te, expected):
     """Which column is missing, not just that something is — the register drops on
     EITHER, and a reader fixing the wrong column learns nothing."""
     db, uploads, amap = _book(tmp_path, [("AAA", sleeve, te)], ["AAA"])
-    assert unmapped_holdings(db, uploads, amap) == {"AAA": expected}
+    assert unmapped_holdings(db, uploads, amap) == _checked({"AAA": expected})
 
 
 def test_no_positions_csv_skips_rather_than_failing(tmp_path):
@@ -111,7 +120,7 @@ def test_no_positions_csv_skips_rather_than_failing(tmp_path):
     db, _u, amap = _book(tmp_path, [("AAA", "us_large_core", "high")], ["AAA"])
     empty = tmp_path / "empty_uploads"
     empty.mkdir()
-    assert unmapped_holdings(db, empty, amap) == {}
+    assert unmapped_holdings(db, empty, amap) == UnmappedCheck("no_holdings", {})
 
 
 def test_undated_csv_is_ignored_like_the_loader_does(tmp_path):
@@ -121,13 +130,10 @@ def test_undated_csv_is_ignored_like_the_loader_does(tmp_path):
     db, uploads, amap = _book(tmp_path, [("AAA", "us_large_core", "high")], ["AAA"])
     (uploads / "Portfolio_Positions_Aug-10-2026.csv").unlink()
     (uploads / "some_other_export.csv").write_text(CSV_HEADER, encoding="utf-8")
-    assert unmapped_holdings(db, uploads, amap) == {}
+    assert unmapped_holdings(db, uploads, amap) == UnmappedCheck("no_holdings", {})
 
 
-def test_missing_securities_table_does_not_raise(tmp_path):
-    """A pre-migration DB has no securities table. Bootstrap calls this AFTER the
-    seeds, so it should not happen — but a check that crashes the app it is meant to
-    protect is the failure mode this whole item exists to avoid."""
+def _bare_db_book(tmp_path):
     db = tmp_path / "bare.db"
     sqlite3.connect(db).close()
     uploads = tmp_path / "uploads"
@@ -137,31 +143,105 @@ def test_missing_securities_table_does_not_raise(tmp_path):
         encoding="utf-8")
     amap = tmp_path / "account_map.json"
     amap.write_text(json.dumps({"X1": "acct_01"}), encoding="utf-8")
-    assert unmapped_holdings(db, uploads, amap) == {}
+    return db, uploads, amap
 
 
-def test_unmapped_account_number_does_not_crash_the_check(tmp_path):
-    """An account number absent from the map makes parse_fidelity_csv raise, BY DESIGN —
-    raw numbers must never reach the schema. The page reports that directly, so this
-    check has nothing to add; what it must not do is propagate the raise into
-    bootstrap, where app.py calls it unwrapped."""
+def _unmapped_account_book(tmp_path, account="X1"):
+    """A book whose CSV names an account absent from the map, so the parse raises."""
     db, uploads, _amap = _book(tmp_path, [("AAA", "us_large_core", "high")], ["AAA"])
+    if account != "X1":
+        csv = uploads / "Portfolio_Positions_Aug-10-2026.csv"
+        csv.write_text(csv.read_text(encoding="utf-8").replace("X1,", f"{account},"),
+                       encoding="utf-8")
     empty_map = tmp_path / "no_accounts.json"
     empty_map.write_text(json.dumps({}), encoding="utf-8")
-    assert unmapped_holdings(db, uploads, empty_map) == {}
+    return db, uploads, empty_map
+
+
+def test_missing_securities_table_is_reported_not_raised(tmp_path):
+    """A pre-migration DB has no securities table. Bootstrap calls this AFTER the
+    seeds, so it should not happen. It must neither crash the app it protects NOR
+    report the state as clean: it says it could not check, and why."""
+    check = unmapped_holdings(*_bare_db_book(tmp_path))
+    assert check.disposition == "could_not_check"
+    assert check.findings == {}
+    assert check.reason == "the `securities` table in `bare.db` could not be read"
+    assert check.detail == "OperationalError: no such table: securities"
+
+
+def test_unmapped_account_number_is_reported_not_raised(tmp_path):
+    """An account number absent from the map makes parse_fidelity_csv raise, BY DESIGN —
+    raw numbers must never reach the schema. The check must not propagate that into
+    bootstrap, where app.py calls it unwrapped, and must not read as clean either."""
+    check = unmapped_holdings(*_unmapped_account_book(tmp_path))
+    assert check.disposition == "could_not_check"
+    assert check.findings == {}
+    # PARSED, not read: the file was read; the account-map step inside the parser
+    # failed. "Read" would send an operator to permissions and encoding first.
+    assert check.reason == ("the newest positions file, "
+                            "`Portfolio_Positions_Aug-10-2026.csv`, could not be parsed")
+    # KeyError's quotes are unwrapped: the detail reads as a sentence, not a repr.
+    assert check.detail.startswith(
+        "KeyError: 1 account number(s) in the export are not present")
+
+
+# ── what the reader sees when the check could not run ────────────────────────
+# Asserted on the NOTICE, the string app.py hands to st.warning, composed exactly as
+# app.py composes it. The return value can be right while the rendered text is silent,
+# and silence is the defect.
+
+@pytest.mark.parametrize("book, what, detail", [
+    (_unmapped_account_book,
+     "the newest positions file, `Portfolio_Positions_Aug-10-2026.csv`, could not be parsed",
+     "KeyError: 1 account number(s)"),
+    (_bare_db_book, "the `securities` table in `bare.db` could not be read",
+     "OperationalError: no such table: securities"),
+])
+def test_a_check_that_could_not_run_renders_a_notice_saying_so(tmp_path, book, what, detail):
+    note = unmapped_holdings_notice(unmapped_holdings(*book(tmp_path)))
+    assert note is not None, "the check could not run and the notice said nothing"
+    assert note.startswith("**Holdings mapping could not be verified.**")
+    assert f"At startup, {what}, so the app" in note, "the notice does not say what failed"
+    # The exception is its own paragraph, never spliced into the sentence above it.
+    body, _, reason_line = note.rpartition("\n\nReason: ")
+    assert body and reason_line.startswith(f"`{detail}"), "the notice does not say why"
+    assert detail.split(":")[0] not in body
+    assert "not a finding that everything is mapped" in note
+    assert "securities_household.csv" in note
+    assert "Asset Location" in note and "Household View" in note
+
+
+def test_the_could_not_check_notice_carries_no_raw_account_number(tmp_path):
+    """The reason is rendered, so it must not be a channel for the raw number the
+    parser exists to keep out. The parser's own messages never include it; this pins
+    that the notice does not add it back."""
+    note = unmapped_holdings_notice(
+        unmapped_holdings(*_unmapped_account_book(tmp_path, account="918273645")))
+    assert note is not None and "could not be verified" in note
+    assert "918273645" not in note
+
+
+def test_no_holdings_and_a_clean_check_render_nothing_but_a_failed_check_does(tmp_path):
+    """Two-sided. Nothing to reconcile and nothing unmapped both stay quiet; a check
+    that died does not. Without the third case, the first two pass on a notice that
+    never renders anything."""
+    assert unmapped_holdings_notice(UnmappedCheck("no_holdings", {})) is None
+    assert unmapped_holdings_notice(_checked({})) is None
+    assert unmapped_holdings_notice(
+        UnmappedCheck("could_not_check", {}, "x could not be read", "E: y")) is not None
 
 
 # ── the notice text ──────────────────────────────────────────────────────────
 
 def test_notice_is_none_when_nothing_is_unmapped():
-    assert unmapped_holdings_notice({}) is None
+    assert unmapped_holdings_notice(_checked({})) is None
 
 
 def test_notice_names_every_symbol_and_what_is_missing():
-    note = unmapped_holdings_notice({
+    note = unmapped_holdings_notice(_checked({
         "NEW": ["no securities row at all"],
         "OLD": ["tax_efficiency"],
-    })
+    }))
     assert "NEW" in note and "OLD" in note
     assert "no securities row at all" in note
     assert "tax_efficiency" in note
@@ -170,7 +250,7 @@ def test_notice_names_every_symbol_and_what_is_missing():
 def test_notice_names_the_file_to_edit():
     """The fix is a CSV edit, and it is not in the app — so the notice has to say
     which file, or a reader is told a page is broken with nowhere to go."""
-    note = unmapped_holdings_notice({"NEW": ["no securities row at all"]})
+    note = unmapped_holdings_notice(_checked({"NEW": ["no securities row at all"]}))
     assert "securities_household.csv" in note
 
 
@@ -178,14 +258,15 @@ def test_notice_says_the_pages_will_fail_not_merely_that_data_is_missing():
     """#217: the Asset Location and Household View pages RAISE on this state. A notice
     that only said 'unmapped' would understate — the reader needs to know the page is
     down, not degraded."""
-    note = unmapped_holdings_notice({"NEW": ["no securities row at all"]}).lower()
+    note = unmapped_holdings_notice(_checked({"NEW": ["no securities row at all"]})).lower()
     assert "asset location" in note and "household view" in note
     assert "fail" in note or "raise" in note
 
 
 def test_notice_singular_and_plural_read_correctly():
-    one = unmapped_holdings_notice({"A": ["tax_efficiency"]})
-    two = unmapped_holdings_notice({"A": ["tax_efficiency"], "B": ["sleeve_category"]})
+    one = unmapped_holdings_notice(_checked({"A": ["tax_efficiency"]}))
+    two = unmapped_holdings_notice(_checked({"A": ["tax_efficiency"],
+                                             "B": ["sleeve_category"]}))
     assert "1 held symbol is" in one
     assert "2 held symbols are" in two
 
@@ -205,7 +286,7 @@ def test_bootstrap_result_carries_the_findings(tmp_path, monkeypatch):
 
     # Only the check is exercised here; the seed steps need the full personal schema.
     result = {"unmapped_holdings": b.unmapped_holdings(db, uploads, amap)}
-    assert result["unmapped_holdings"] == {"NEW": ["no securities row at all"]}
+    assert result["unmapped_holdings"] == _checked({"NEW": ["no securities row at all"]})
 
 
 def test_app_py_does_not_discard_the_bootstrap_result():

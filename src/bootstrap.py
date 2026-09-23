@@ -40,6 +40,7 @@ import importlib.util
 import logging
 import sqlite3
 from pathlib import Path
+from typing import NamedTuple
 
 import src.db as _db
 
@@ -88,31 +89,65 @@ _SEED_CSV_NAME = "data/seed/securities_household.csv"
 _REGISTER_COLUMNS = ("sleeve_category", "tax_efficiency")
 
 
+class UnmappedCheck(NamedTuple):
+    """What the startup mapping check found, and whether it could look at all.
+
+    ``disposition`` is one of:
+
+    * ``"checked"`` — the holdings and ``securities`` were both read. ``findings``
+      is ``{symbol: [reasons]}``, and EMPTY here means nothing is unmapped.
+    * ``"no_holdings"`` — there is no dated positions CSV to reconcile (a first
+      run). Nothing to check, and nothing wrong.
+    * ``"could_not_check"`` — an input could not be used. ``reason`` says which
+      input and what went wrong with it, ``detail`` is the exception, and
+      ``findings`` is empty because nothing was compared — NOT because nothing is
+      unmapped.
+
+    A clean check and a check that never ran must not read the same: an empty
+    ``findings`` means "nothing unmapped" ONLY under ``"checked"``.
+    """
+    disposition: str
+    findings: dict[str, list[str]]
+    reason: "str | None" = None
+    detail: "str | None" = None
+
+
+def _reason(exc: BaseException) -> str:
+    """``Type: message``. A KeyError's str() wraps its message in quotes, and the
+    parser raises KeyError for its two most likely failures, so unwrap it."""
+    msg = exc.args[0] if isinstance(exc, KeyError) and exc.args else exc
+    return f"{type(exc).__name__}: {msg}"
+
+
 def unmapped_holdings(
     db_path: "str | Path | None" = None,
     uploads_dir: "str | Path | None" = None,
     account_map_path: "str | Path | None" = None,
-) -> dict[str, list[str]]:
+) -> UnmappedCheck:
     """Held symbols the location register would silently drop, and why.
 
-    Returns ``{symbol: [reasons]}`` — either ``["no securities row at all"]`` or the
-    names of the NULL columns. Empty dict means nothing to report.
+    ``findings`` is ``{symbol: [reasons]}``: either ``["no securities row at all"]``
+    or the names of the NULL columns. Read it only with ``disposition``; see
+    :class:`UnmappedCheck`.
 
     build_location_register drops a row when EITHER column is empty
     (``household.py:850``), so both are checked together; which one is missing is
     returned because a reader fixing the wrong column learns nothing.
 
-    NEVER RAISES. Every failure mode returns ``{}``:
+    NEVER RAISES — ``app.py`` calls it unwrapped at import, and a check that
+    crashes the app it exists to protect is the failure mode this whole item avoids.
+    Each exit says which state it is in instead:
 
-    * no dated positions CSV — a first run has nothing to reconcile, and reporting
-      every seeded symbol as unmapped would fire the notice on a state that is not
-      wrong;
-    * no ``securities`` table — a pre-migration DB. Bootstrap calls this after the
-      seeds so it should not happen, but a check that crashes the app it exists to
-      protect is the failure mode this whole item avoids;
+    * no dated positions CSV -> ``no_holdings``. A first run has nothing to
+      reconcile, and reporting every seeded symbol as unmapped would fire the notice
+      on a state that is not wrong;
     * an unreadable CSV, or one naming an account number absent from
-      ``private/account_map.json`` — the ingest raises there by design and the page
-      reports it directly, so this check has nothing to add and must not crash trying.
+      ``private/account_map.json`` -> ``could_not_check``, with the parser's reason.
+      The parser's own messages never carry a raw account number (fidelity.py
+      writes them that way deliberately);
+    * no ``securities`` table, or an unreadable DB -> ``could_not_check``. Bootstrap
+      calls this after the seeds so it should not happen, which is exactly why it
+      must say so if it does.
 
     ``account_map_path`` exists only so the check is testable without the gitignored
     private map; production passes nothing.
@@ -126,18 +161,23 @@ def unmapped_holdings(
     db = Path(db_path) if db_path is not None else Path(_db.DB_PATH)
     csv_path = find_latest_positions_csv(uploads_dir)
     if csv_path is None or not Path(csv_path).exists():
-        return {}
+        return UnmappedCheck("no_holdings", {})
 
     try:
         from src.ingestion.fidelity import parse_fidelity_csv
         parsed = parse_fidelity_csv(str(csv_path), account_map_path=account_map_path)
         held = sorted({s for s in parsed["symbol"].dropna()})
-    except Exception:                                   # unreadable / unmapped account
-        logger.warning("unmapped_holdings: could not parse %s; skipping the check",
-                       csv_path, exc_info=True)
-        return {}
+    except Exception as exc:                            # unreadable / unmapped account
+        logger.warning("unmapped_holdings: could not parse %s", csv_path, exc_info=True)
+        # PARSED, not read: the likeliest failure is the account-map step inside the
+        # parser, on a file that was read fine. "Read" sends an operator to
+        # permissions and encoding first.
+        return UnmappedCheck(
+            "could_not_check", {},
+            f"the newest positions file, `{Path(csv_path).name}`, could not be parsed",
+            _reason(exc))
     if not held:
-        return {}
+        return UnmappedCheck("checked", {})
 
     try:
         conn = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True)
@@ -148,9 +188,12 @@ def unmapped_holdings(
             ).fetchall()
         finally:
             conn.close()
-    except sqlite3.Error:                               # no table, no file, locked
-        logger.warning("unmapped_holdings: securities unreadable in %s; skipping", db)
-        return {}
+    except sqlite3.Error as exc:                        # no table, no file, locked
+        logger.warning("unmapped_holdings: securities unreadable in %s", db,
+                       exc_info=True)
+        return UnmappedCheck(
+            "could_not_check", {},
+            f"the `securities` table in `{db.name}` could not be read", _reason(exc))
 
     by_ticker = {r["ticker"]: r for r in rows}
     out: dict[str, list[str]] = {}
@@ -162,20 +205,35 @@ def unmapped_holdings(
         missing = [c for c in _REGISTER_COLUMNS if row[c] is None]
         if missing:
             out[sym] = missing
-    return out
+    return UnmappedCheck("checked", out)
 
 
-def unmapped_holdings_notice(findings: dict[str, list[str]]) -> "str | None":
+def unmapped_holdings_notice(check: UnmappedCheck) -> "str | None":
     """The reader-facing sentence for :func:`unmapped_holdings`, or None if clean.
 
-    None when there is nothing to say — a notice that always renders teaches the
-    reader to skip it.
+    None when there is nothing to say — a clean check, or no holdings file yet. A
+    notice that always renders teaches the reader to skip it.
+
+    A check that could NOT run is not "nothing to say": it renders its own notice,
+    naming what could not be read and why, and saying outright that this is not a
+    finding that everything is mapped, because silence is what reads that way.
 
     States that the pages FAIL rather than that data is missing, because they do:
     Asset Location and Household View both raise on this state (#217), so
     "incomplete" would understate it. Names the file to edit, because the fix is not
     in the app.
     """
+    if check.disposition == "could_not_check":
+        # The exception text goes on its OWN line: it is often a full sentence of its
+        # own, and spliced into this one it breaks the sentence around it.
+        return (
+            "**Holdings mapping could not be verified.** At startup, "
+            f"{check.reason}, so the app cannot say whether every held symbol is "
+            f"mapped in `{_SEED_CSV_NAME}`. **This is not a finding that everything is "
+            "mapped:** if any symbol is not, the **Asset Location** and **Household "
+            f"View** pages will fail.\n\nReason: `{check.detail}`"
+        )
+    findings = check.findings
     if not findings:
         return None
     n = len(findings)
