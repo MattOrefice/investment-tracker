@@ -357,6 +357,19 @@ _CLEANUP_EXPLAIN = (
 )
 
 
+def pytest_collection_finish(session):
+    """Run each collected module's one-time capture AFTER collection (so importing a
+    test module reads no DB) and BEFORE the first test (so no test's fetch can move
+    what is captured). #166: tests/test_attribution.py's holdings frontier."""
+    seen = set()
+    for item in session.items:
+        mod = getattr(item, "module", None)
+        capture = getattr(mod, "_capture_holdings_frontier", None)
+        if capture is not None and id(mod) not in seen:
+            seen.add(id(mod))
+            capture()
+
+
 def pytest_terminal_summary(terminalreporter, exitstatus, config):
     """Clean up HERE rather than only in pytest_unconfigure, because this is the
     last point where a failure can still be printed where the reader looks."""

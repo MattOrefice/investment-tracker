@@ -214,6 +214,22 @@ def test_src_module_import_touches_no_db(module):
     assert ok, f"src.{module} opened a database connection at import time:\n{err}"
 
 
+def test_attribution_test_module_import_touches_no_db():
+    """#166: importing tests/test_attribution.py (which pytest does at COLLECTION)
+    must not open a database. Its frontier is captured at collection finish by
+    tests/conftest.py instead."""
+    path = _ROOT / "tests" / "test_attribution.py"
+    code = (
+        "import importlib.util, sys\n"
+        f"sys.path.insert(0, {str(_ROOT)!r})\n"
+        f"spec = importlib.util.spec_from_file_location('_attr_probe', {str(path)!r})\n"
+        "mod = importlib.util.module_from_spec(spec)\n"
+        "spec.loader.exec_module(mod)\n"
+    )
+    ok, err = _run_with_db_trap(code)
+    assert ok, f"tests/test_attribution.py opened a database at import:\n{err}"
+
+
 def test_render_conftest_chain_touches_no_db():
     """tests/render/conftest.py's module-level imports load during pytest's
     initial conftest phase, before any plugin hook can patch DB paths — so this
