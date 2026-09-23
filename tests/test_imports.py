@@ -29,7 +29,16 @@ def _importable(module_expr: str) -> tuple[bool, str]:
 
 # ── src modules ───────────────────────────────────────────────────────────────
 
-_SRC_MODULES = [p.stem for p in sorted(_SRC.glob("*.py")) if p.stem != "__init__"]
+# EVERY module under src/, recursively, as a dotted name (#332). The previous
+# `_SRC.glob("*.py")` did not recurse, so src/seed/ and src/ingestion/ were outside both
+# tests below: the glob chose its scope by where modules were EXPECTED to live.
+# `__init__` files are excluded (the package itself is imported on the way to its
+# modules). Enumerate from the root and let the tree say where modules are.
+_SRC_MODULES = sorted(
+    ".".join(p.relative_to(_SRC).with_suffix("").parts)
+    for p in _SRC.rglob("*.py")
+    if p.stem != "__init__" and "__pycache__" not in p.parts
+)
 
 
 @pytest.mark.parametrize("module", _SRC_MODULES)
@@ -246,3 +255,19 @@ def test_render_conftest_chain_touches_no_db():
         "tests/render/conftest.py's import chain opened a database connection "
         f"during initial conftest loading:\n{err}"
     )
+
+
+def test_the_module_list_is_the_whole_src_tree():
+    """#332: the enumeration must reach every module under src/, subpackages included.
+    Re-derived here with os.walk, an independent method, so a regression to a
+    top-level-only glob cannot pass by agreeing with itself."""
+    import os
+    found = set()
+    for dirpath, dirnames, filenames in os.walk(_SRC):
+        dirnames[:] = [d for d in dirnames if d != "__pycache__"]
+        rel = pathlib.Path(dirpath).relative_to(_SRC).parts
+        for f in filenames:
+            if f.endswith(".py") and f != "__init__.py":
+                found.add(".".join((*rel, f[:-3])))
+    assert set(_SRC_MODULES) == found, sorted(found ^ set(_SRC_MODULES))
+    assert any("." in m for m in _SRC_MODULES), "no subpackage module enumerated"
