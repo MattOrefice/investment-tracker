@@ -161,3 +161,36 @@ def test_history_constraint_caption_is_derived(corr_avg_app: AppTest) -> None:
         assert re.search(r"window starts \d{4}-\d{2}-\d{2}", all_text), (
             "History caption missing a derived ISO window-start date."
         )
+
+
+def _disclosed_vs_plotted(at: AppTest):
+    """(start the History caption discloses, first plotted date in the chart caption)."""
+    import re
+    text = " ".join(str(c.value) for c in at.caption)
+    disclosed = re.search(r"The line above starts \*\*(\d{4}-\d{2}-\d{2})\*\*", text)
+    plotted = re.search(r"sleeves[^·]*· (\d{4}-\d{2}-\d{2}) to \d{4}-\d{2}-\d{2}", text)
+    return (disclosed.group(1) if disclosed else None,
+            plotted.group(1) if plotted else None, text)
+
+
+@pytest.mark.parametrize("extended", [False, True])
+def test_history_caption_discloses_the_first_plotted_date(extended: bool) -> None:
+    """#258: the disclosed start is the first PLOTTED point, derived from the rendered
+    series, not the returns intersection (which precedes a rolling window's burn-in).
+    Both views, since the gap scales with the window and the sleeve set."""
+    at = AppTest.from_file("pages/9_Correlations.py", default_timeout=120).run()
+    # The History caption belongs to the "Average over time" view, not the default.
+    [v for v in at.radio if v.key == "corr_view"][0].set_value("Average over time").run()
+    if extended:
+        boxes = [b for b in at.checkbox if b.key == "corr_avg_extended"]
+        if not boxes:
+            pytest.skip("this book offers no Extended-history option")
+        boxes[0].check().run()
+    assert not at.exception, f"page raised: {at.exception}"
+    disclosed, plotted, text = _disclosed_vs_plotted(at)
+    if "History constraint:" not in text:
+        pytest.skip("no history-constraint caption on this book")
+    assert plotted, "chart caption start date not found"
+    assert disclosed == plotted, (
+        f"History caption discloses {disclosed}, the chart plots from {plotted}")
+    assert "2008 crisis visible" not in text and "becomes visible" not in text
