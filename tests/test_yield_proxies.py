@@ -303,11 +303,17 @@ def test_no_row_falls_to_the_default_on_this_fixture():
 
 # ── the values are the proxies', recomputed independently ───────────────────
 
-def test_entry_values_match_their_proxies_recomputed_from_the_cache():
-    """Independent right-hand side: the proxy's TTM is recomputed here from the
-    committed dividends/prices tables, never read back from the config. Skips only if
-    the personal cache is absent (CI), and asserts a non-empty comparison otherwise so
-    an empty run cannot pass."""
+def test_entry_values_match_their_proxies_at_the_shared_as_of():
+    """Each authored proxy value equals its proxy's TTM yield recomputed from the
+    committed dividends/prices tables AT THE ONE SHARED AS-OF below, never read back
+    from the config. Skips only if the personal cache is absent (CI), and asserts a
+    non-empty comparison otherwise so an empty run cannot pass.
+
+    WHAT THIS CHECKS, AND WHAT IT DOES NOT (#234). It verifies the value was
+    TRANSCRIBED correctly from the measurement at the recorded date. It says nothing
+    about whether that value is still CURRENT. The as-of is frozen, and deliberately
+    so: a moving window would make this test's outcome depend on the day it runs.
+    It was named "..._recomputed_from_the_cache", which read as a currency check."""
     import sqlite3
     from datetime import date, timedelta
 
