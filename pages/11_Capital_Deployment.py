@@ -130,9 +130,13 @@ st.caption(
     "Correct band-breach drift · Execute via your broker"
 )
 st.caption(
-    f"Current allocation and drift are the **{get_portfolio_account()['display_name']}** "
-    "self-directed taxable book. The account each deployment is *logged to* is chosen "
-    "in the Deploy section below and may differ."
+    # Scope, not existence (#268): this renders before the data load, so it cannot
+    # know whether figures follow. "Are the X book" read as a promise that the
+    # empty-book states below then withdrew.
+    f"Allocation and drift figures on this page, when shown, are for the "
+    f"**{get_portfolio_account()['display_name']}** self-directed taxable book. The "
+    "account each deployment is *logged to* is chosen in the Deploy section below and "
+    "may differ."
 )
 
 with st.expander("How to read this page", expanded=False):
