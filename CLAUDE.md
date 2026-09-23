@@ -228,11 +228,21 @@
   guards up both sides: redirect off aborts collection in 2.24s, redirect
   on completes. #232 and #227 are CLOSED.
   Nothing was ever broken here: the column was all-NULL where it was
-  found, no account numbers, and the migration itself works. The
-  reproduction condition still holds if you disable the redirect — once a
-  DB has been opened writably the column is gone and the write stops, so
-  it only appears on a DB restored from an older copy, a second machine,
-  or a clone seeded pre-migration.
+  found, no account numbers, and the migration itself works.
+  CORRECTED 2026-09-23 (#306): this record said that once a DB has been
+  opened writably the column is gone and the write stops, so the
+  condition "only appears on a DB restored from an older copy, a second
+  machine, or a clone seeded pre-migration". FALSE. Every personal-mode
+  start re-creates it: bootstrap runs `tools/migrate_accounts_phase25_2.py`,
+  which ADDS `accounts.account_number` and its unique index, and the next
+  writable connection's `_auto_migrate` m4 (`_drop_account_number`) DROPS
+  them again. The schema and the migrations disagree about one column,
+  and it is the column m4 exists to remove. It is ALL-NULL when re-added
+  (count 0 after a full bootstrap on a copy, 2026-09-23): nothing is
+  written into it and nothing leaks. This is churn, not exposure. But it is a DDL write on every start, and the
+  #232 collection abort would reproduce (derived from its mechanism, not
+  re-run) on any guarded run that meets a freshly bootstrapped book with
+  the redirect off.
   The lasting lesson is the one this bullet was written for: it corrected
   a claim made after PR #175 that the last write-on-touch channel had been
   closed. #175 closed the others and the claim was generalised past its
