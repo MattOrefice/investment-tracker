@@ -1203,8 +1203,11 @@ with col:
             with _mcols[_ci]:
                 st.metric(f"{m} Yield", f"{v:.2f}%")
 
+        # Three points decide this branch, so the claim is about those three (#239):
+        # the chart plots eight tenors, and a curve rising 3M -> 2Y -> 10Y can still
+        # dip beyond 10Y.
         if _yc_10y > _yc_2y > _yc_3m:
-            _yc_shape = "normally upward-sloping across all maturities"
+            _yc_shape = "upward-sloping across those three maturities"
         elif _yc_10y > _yc_3m and _yc_2y >= _yc_10y:
             _yc_shape = "humped — 2Y above 10Y, with the front end elevated relative to the back end"
         elif _yc_3m > _yc_10y:
