@@ -214,11 +214,16 @@ def test_a_check_that_could_not_run_renders_a_notice_saying_so(tmp_path, book, w
 def test_the_could_not_check_notice_carries_no_raw_account_number(tmp_path):
     """The reason is rendered, so it must not be a channel for the raw number the
     parser exists to keep out. The parser's own messages never include it; this pins
-    that the notice does not add it back."""
+    that the notice does not add it back.
+
+    A SENTINEL, not a realistic number: what is under test is whether the account
+    string is echoed, and CI's account-number guard rightly rejects a number-shaped
+    literal in a tracked file."""
+    sentinel = "ACCT-SENTINEL-NOT-A-NUMBER"
     note = unmapped_holdings_notice(
-        unmapped_holdings(*_unmapped_account_book(tmp_path, account="918273645")))
+        unmapped_holdings(*_unmapped_account_book(tmp_path, account=sentinel)))
     assert note is not None and "could not be verified" in note
-    assert "918273645" not in note
+    assert sentinel not in note
 
 
 def test_no_holdings_and_a_clean_check_render_nothing_but_a_failed_check_does(tmp_path):
