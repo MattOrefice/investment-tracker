@@ -7,11 +7,12 @@ No hand-written quarterly text — every number re-derives from live data.
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import date, timedelta
 
 import plotly.graph_objects as go
 
-from src.holdings import get_holdings_on_date, get_portfolio_account_id, get_sleeve_weights_on_date
+from src.holdings import (
+    get_holdings_on_date, get_portfolio_account_id, get_sleeve_weights_on_date, look_back_start,
+)
 from src.prices import get_prices
 from src.style_box import (
     US_EQUITY_TICKERS, NON_US_EQUITY_MAP,
@@ -96,7 +97,6 @@ def _portfolio_market_values(date_str: str) -> tuple[dict[str, float], float]:
     if holdings.empty:
         return {}, 0.0
 
-    look_back = (date.fromisoformat(date_str) - timedelta(days=7)).isoformat()
     total_mv = 0.0
     ticker_mv: dict[str, float] = {}
 
@@ -106,7 +106,8 @@ def _portfolio_market_values(date_str: str) -> tuple[dict[str, float], float]:
             mv = shares
         else:
             try:
-                p = get_prices(ticker, look_back, date_str)
+                # From the newest stored price, not the calendar (#302).
+                p = get_prices(ticker, look_back_start(ticker, date_str), date_str)
                 price = float(p["close"].iloc[-1]) if not p.empty else 0.0
                 mv = shares * price
             except Exception:

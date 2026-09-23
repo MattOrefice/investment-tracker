@@ -4,7 +4,7 @@ The trades table is the lot ledger. Each BUY row is one lot. SELLs are matched
 against open lots on a FIFO basis. DRIP reinvestments are persisted as separate
 lot rows with lot_source='drip'; discretionary trades carry lot_source='initial'.
 """
-from datetime import date, timedelta
+from datetime import date
 from typing import Optional
 
 import pandas as pd
@@ -189,15 +189,16 @@ def get_lot_inventory(as_of: Optional[str] = None) -> pd.DataFrame:
     lots["cost_basis_per_share"] = lots["price"]
     lots["cost_basis_total"] = lots["shares"] * lots["price"]
 
-    # Current prices — look back 7 calendar days for last trading day
-    look_back = (as_of_date - timedelta(days=7)).isoformat()
+    # Current prices: look back 7 calendar days from the newest STORED price, not
+    # from the calendar (#302), so a stale cache offline still prices the lots.
+    from src.holdings import look_back_start
     current_prices: dict[str, float] = {}
     for ticker in lots["ticker"].unique():
         if ticker == "SPAXX":
             current_prices[ticker] = 1.0
         else:
             try:
-                p = get_prices(ticker, look_back, as_of_str)
+                p = get_prices(ticker, look_back_start(ticker, as_of_str), as_of_str)
                 if not p.empty:
                     series = total_return_series(p).dropna()
                     current_prices[ticker] = float(series.iloc[-1]) if not series.empty else 0.0
