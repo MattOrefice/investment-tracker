@@ -482,13 +482,32 @@ def _holdings_common_frontier() -> str:
     return min(frontiers) if frontiers else today
 
 
-# Captured ONCE at import (pytest collection). Scoped to the holdings' common frontier
-# (min over holdings), not the GLOBAL cache MAX: a non-holding ticker that reaches a
-# later date — a weekend benchmark, or a row a sibling/prior-session fetch advanced —
-# can no longer push the anchor past the date on which the holdings the reconciliation
-# consumes actually have data. Combined with the per-test hermetic fixture below
-# (which holds the cache fixed), the anchor is independent of cache state and order.
-_HOLDINGS_FRONTIER = _holdings_common_frontier()
+# Captured ONCE, AFTER COLLECTION AND BEFORE ANY TEST RUNS (#166), by
+# tests/conftest.py's pytest_collection_finish calling _capture_holdings_frontier.
+# Not at import: importing this module used to read the DB during collection. Not
+# lazily at first use either: by then other test files may have fetched and written
+# prices into the session copy, moving the anchor, which is exactly what capturing it
+# once and early prevents. Scoped to the holdings' common frontier (min over
+# holdings), not the GLOBAL cache MAX: a non-holding ticker that reaches a later date
+# can no longer push the anchor past the date on which the holdings the
+# reconciliation consumes actually have data. Combined with the per-test hermetic
+# fixture below (which holds the cache fixed), the anchor is independent of cache
+# state and order.
+_HOLDINGS_FRONTIER: "str | None" = None
+
+
+def _capture_holdings_frontier() -> None:
+    """Called once by tests/conftest.py at collection finish."""
+    global _HOLDINGS_FRONTIER
+    if _HOLDINGS_FRONTIER is None:
+        _HOLDINGS_FRONTIER = _holdings_common_frontier()
+
+
+def _captured_frontier() -> str:
+    assert _HOLDINGS_FRONTIER is not None, (
+        "the holdings frontier was not captured at collection finish; "
+        "tests/conftest.py pytest_collection_finish should have run it (#166)")
+    return _HOLDINGS_FRONTIER
 
 
 @pytest.fixture
@@ -687,7 +706,7 @@ def test_identity_bf_sum_reconciles_to_stage2(_no_live_fetch):
     # made this fail on the first local run after the shared cache had been ragged-
     # advanced. The identity holds on the committed prices by construction; the
     # _no_live_fetch fixture keeps the cache fixed under the test.
-    TODAY = _HOLDINGS_FRONTIER
+    TODAY = _captured_frontier()
 
     try:
         pv_full = get_portfolio_value_series(INCEPTION, TODAY, account_id=1)
@@ -791,10 +810,10 @@ def test_bf_reconciles_when_wall_clock_past_price_frontier(days_past_frontier, _
     from src.returns import period_bounds
 
     INCEPTION = "2025-05-01"
-    # Frontier = holdings' common frontier captured at import (no live fetch), not today
+    # Frontier = holdings' common frontier captured at collection finish (no live fetch), not today
     # and not the global cache MAX (which a non-holding/sibling-advanced ticker could
     # push past the holdings). The _no_live_fetch fixture holds the cache fixed.
-    real_end = _HOLDINGS_FRONTIER
+    real_end = _captured_frontier()
     real_end_d = datetime.date.fromisoformat(real_end)
 
     # Cached through the frontier only — no future-date fetch, so this stays offline.
