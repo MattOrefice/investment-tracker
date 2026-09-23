@@ -102,12 +102,24 @@
   the test's `assert changed` had nothing to detect. It asserted
   something FALSE — the contract is that they are identical there.
   The test now derives state 1 per page and asserts the contrast, so
-  the count no longer depends on the date and **the frontier check is
-  not required**. Kept as a record rather than deleted: without it the
-  15-then-13 sequence in earlier notes reads as a regression that
-  healed itself. Do not reinstate the check as a standing step — an
-  instruction guarding a fixed condition is the class of stale claim
-  this file has had to correct three times.
+  #241's two tests no longer depend on the date and **the frontier
+  check is not required** for them. Kept as a record rather than
+  deleted: without it the 15-then-13 sequence in earlier notes reads as
+  a regression that healed itself. Do not reinstate the check as a
+  standing step — an instruction guarding a fixed condition is the
+  class of stale claim this file has had to correct three times.
+- THE COUNT DEPENDS ON THE DATE AGAIN, through a different mechanism
+  (#302, 2026-09-23). This file said "the count no longer depends on
+  the date"; that was true of #241 and false in general. 19
+  personal-mode render tests copy tracker.db, block the network, and
+  need a price within `get_sleeve_weights_on_date`'s 7-day look-back.
+  They pass while tracker.db's newest price is within 7 days of today
+  and fail after. Since #269 the suite's price writes go to a
+  per-session copy, so running the suite no longer advances the cache.
+  Only rendering a page that fetches prices with the network up does.
+  Until #302 is fixed, a personal-mode count is a function of the tree,
+  the environment AND how stale tracker.db's prices are. Record the
+  newest price date and the run date with any baseline.
 - "Guards" means the read-only attribute set on data/demo.db,
   data/tracker.db and every `git ls-files data` entry, to prove a
   diagnostic did not mutate tracked data. RUN THE SUITE GUARDS-UP.
@@ -216,11 +228,21 @@
   guards up both sides: redirect off aborts collection in 2.24s, redirect
   on completes. #232 and #227 are CLOSED.
   Nothing was ever broken here: the column was all-NULL where it was
-  found, no account numbers, and the migration itself works. The
-  reproduction condition still holds if you disable the redirect — once a
-  DB has been opened writably the column is gone and the write stops, so
-  it only appears on a DB restored from an older copy, a second machine,
-  or a clone seeded pre-migration.
+  found, no account numbers, and the migration itself works.
+  CORRECTED 2026-09-23 (#306): this record said that once a DB has been
+  opened writably the column is gone and the write stops, so the
+  condition "only appears on a DB restored from an older copy, a second
+  machine, or a clone seeded pre-migration". FALSE. Every personal-mode
+  start re-creates it: bootstrap runs `tools/migrate_accounts_phase25_2.py`,
+  which ADDS `accounts.account_number` and its unique index, and the next
+  writable connection's `_auto_migrate` m4 (`_drop_account_number`) DROPS
+  them again. The schema and the migrations disagree about one column,
+  and it is the column m4 exists to remove. It is ALL-NULL when re-added
+  (count 0 after a full bootstrap on a copy, 2026-09-23): nothing is
+  written into it and nothing leaks. This is churn, not exposure. But it is a DDL write on every start, and the
+  #232 collection abort would reproduce (derived from its mechanism, not
+  re-run) on any guarded run that meets a freshly bootstrapped book with
+  the redirect off.
   The lasting lesson is the one this bullet was written for: it corrected
   a claim made after PR #175 that the last write-on-touch channel had been
   closed. #175 closed the others and the claim was generalised past its
