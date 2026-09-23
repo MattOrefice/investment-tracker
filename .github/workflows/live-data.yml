@@ -3,14 +3,29 @@ name: live-data
 on:
   schedule:
     - cron: "30 9 * * *"   # daily 09:30 UTC
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      simulate_failure:
+        description: "Fail on purpose, to exercise the failure-issue step (#259)"
+        type: boolean
+        default: false
 
 jobs:
   live-data:
     runs-on: ubuntu-latest
+    # issues: write for the failure step below; contents: read for checkout.
+    permissions:
+      contents: read
+      issues: write
 
     steps:
       - uses: actions/checkout@v5
+
+      - name: Simulated failure (dispatch input only)
+        if: ${{ inputs.simulate_failure }}
+        run: |
+          echo "simulate_failure=true: failing on purpose to exercise the failure-issue step"
+          exit 1
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -44,3 +59,30 @@ jobs:
         env:
           TRACKER_MODE: demo
           # FRED_API_KEY: ${{ secrets.FRED_API_KEY }}   # not needed — live_data tests use keyless Ken French + Yahoo
+
+      # A PUSH SIGNAL, NOT A BADGE (#259). The README badge was red for 28 days and
+      # nobody re-read it. On failure this keeps exactly ONE open issue, found by its
+      # label rather than by title: it is created on the first failing run and
+      # commented on by every later one until someone closes it. Runs for scheduled
+      # and dispatched runs alike.
+      - name: Open or update the live-data failure issue
+        if: ${{ failure() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref_name }}
+        run: |
+          gh label create live-data-failure --color B60205 \
+            --description "Opened automatically when the live-data workflow fails" --force
+          N=$(gh issue list --state open --label live-data-failure --json number --jq '.[0].number // empty')
+          if [ -n "$N" ]; then
+            gh issue comment "$N" --body "Still failing: $RUN_URL ($EVENT on $REF, $(date -u +%F))."
+            echo "commented on #$N"
+          else
+            gh issue create --label live-data-failure \
+              --title "live-data workflow is failing" \
+              --body "The scheduled live-data job failed: $RUN_URL ($EVENT on $REF, $(date -u +%F)).
+
+          This issue is maintained by the workflow (#259): later failures comment here instead of opening new issues. Close it once the job is green again."
+          fi
