@@ -236,3 +236,35 @@ def test_get_account_display_workplace_uuid_account(seeded_db):
     result = get_account_display("acct_wkpl_02", _accounts_df(seeded_db))
     assert result["pseudonym"] == "acct_wkpl_02"
     assert result["managed_by"] == "external"
+
+
+
+def test_phase25_2_migration_does_not_re_add_account_number(tmp_path):
+    """#306. Bootstrap runs this migration on every personal start. It used to ADD
+    accounts.account_number (and its unique index), which _auto_migrate m4 then
+    DROPPED on the next writable connection: an add/drop cycle on every boot, on the
+    one column the account-number purge removed. Run it on a post-purge table."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "_mig25_2", ROOT / "tools" / "migrate_accounts_phase25_2.py")
+    mig = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mig)
+
+    db = tmp_path / "post_purge.db"
+    conn = sqlite3.connect(db)
+    conn.execute("CREATE TABLE accounts (account_id INTEGER PRIMARY KEY, name TEXT, "
+                 "type TEXT, custodian TEXT, is_active INTEGER, created_at TEXT, "
+                 "included_in_household INTEGER DEFAULT 0)")
+    conn.execute("INSERT INTO accounts (name) VALUES ('Personal Fidelity')")
+    conn.commit()
+    conn.close()
+
+    mig.migrate_db(db)
+    mig.migrate_db(db)                       # idempotent, as bootstrap runs it every boot
+
+    assert "account_number" not in _cols(db), "the migration re-added the purged column"
+    idx = {r[1] for r in sqlite3.connect(db).execute("PRAGMA index_list(accounts)")}
+    assert "ux_accounts_account_number" not in idx
+    # The rest of the migration still does its job.
+    assert {"tax_treatment", "pseudonym", "display_name", "managed_by"} <= set(_cols(db))
+    assert "ux_accounts_pseudonym" in idx
