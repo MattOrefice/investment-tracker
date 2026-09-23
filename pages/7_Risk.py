@@ -106,6 +106,130 @@ with col:
         st.error("Factor decomposition unavailable — please try again later.")
         st.stop()
 
+    def _render_risk_contribution_section() -> None:
+        """Section 3, rendered from risk contribution's OWN status (#318).
+
+        Called from both branches below. The insufficient-regression branch used to
+        infer that risk contribution was insufficient too, and read its min_obs. But
+        the regression runs on the lagging factor cache and risk contribution runs on
+        prices, so with current prices it returned `ok`, which has no min_obs, and the
+        page raised KeyError. Each result carries its own status; read that one."""
+        # ══════════════════════════════════════════════════════════════════════════
+        #  Section 3 — Risk contribution (Euler / marginal-contribution-to-risk)
+        # ══════════════════════════════════════════════════════════════════════════
+        st.divider()
+        st.subheader("Risk contribution")
+        st.caption(
+            "Total policy volatility decomposed into each sleeve's contribution — "
+            "risk share beside capital share, because correlation makes them differ."
+        )
+
+        with st.expander("How to read this section", expanded=False):
+            st.markdown(
+                "Policy volatility is split into per-sleeve **risk contributions** "
+                "via the **Euler decomposition** — each sleeve's marginal contribution "
+                "to risk weighted by its allocation. The contributions **sum exactly "
+                "to total policy volatility** (and the percentages to 100%); that "
+                "summation is the correctness check.\n\n"
+                "The point is the gap between **risk share and weight share**: a "
+                "high-volatility or highly-correlated sleeve contributes **more** risk "
+                "than its weight, while a diversifying (low/negative-correlation) "
+                "sleeve contributes **less** — *a 10% allocation is not 10% of the "
+                "risk*. This is a decomposition of **total volatility**, not VaR or "
+                "downside risk, using realized **sample covariance** over the window."
+            )
+
+        rc = run_risk_contribution()
+
+        if rc["status"] == "insufficient_history":
+            st.info(risk_contribution_insufficient_history_message(rc["n"], rc["min_obs"]))
+        else:
+            # ── Low-confidence caveat on the [60, 120) observation band ───────────
+            if rc.get("low_confidence"):
+                st.warning(risk_contribution_low_confidence_caveat(rc["n"]))
+
+            st.metric("Policy / SAA volatility (annualized)", f"{rc['portfolio_vol'] * 100:.1f}%")
+            st.caption(
+                "Computed from SAA target weights and sleeve-benchmark proxies — this "
+                "is the policy portfolio's volatility, not the realized volatility of "
+                "current holdings (which appears on the Performance page)."
+            )
+
+            # Grouped horizontal bars: each sleeve's risk share beside its capital
+            # share, sorted by risk share (rc["sleeves"] is already risk_pct-desc).
+            # Where the navy (risk) bar exceeds the grey (weight) bar the sleeve is a
+            # risk concentrator; where it falls short it diversifies — the
+            # "10% allocation ≠ 10% of risk" point at a glance. Display-only: consumes
+            # the SAME computed values as the table below, no recomputation.
+            _RC_RISK_COLOR   = "#2E4057"   # navy — risk share (emphasis)
+            _RC_WEIGHT_COLOR = "#9E9E9E"   # slate — weight share (reference)
+            _rc_names   = [s["sleeve"] for s in rc["sleeves"]]
+            _rc_weights = [s["weight"] * 100 for s in rc["sleeves"]]
+            _rc_risks   = [s["risk_pct"] * 100 for s in rc["sleeves"]]
+            _fig_rc = go.Figure()
+            _fig_rc.add_trace(go.Bar(
+                y=_rc_names, x=_rc_weights, name="Weight % (capital share)",
+                orientation="h", marker_color=_RC_WEIGHT_COLOR,
+                hovertemplate="<b>%{y}</b><br>Weight: %{x:.1f}%<extra></extra>",
+            ))
+            _fig_rc.add_trace(go.Bar(
+                y=_rc_names, x=_rc_risks, name="Risk % (volatility share)",
+                orientation="h", marker_color=_RC_RISK_COLOR,
+                hovertemplate="<b>%{y}</b><br>Risk: %{x:.1f}%<extra></extra>",
+            ))
+            _fig_rc.update_layout(
+                barmode="group",
+                height=440,
+                margin=dict(l=0, r=10, t=10, b=0),
+                paper_bgcolor="white", plot_bgcolor="white",
+                font=dict(color="#333333", size=12),
+                xaxis=dict(title="Share of total (%)", gridcolor="#EBEBEB", ticksuffix="%"),
+                yaxis=dict(autorange="reversed"),   # highest risk share at top
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0, font_size=11),
+                bargap=0.28, bargroupgap=0.12,
+            )
+            st.plotly_chart(_fig_rc, width="stretch")
+            st.caption(
+                "Each sleeve's share of risk (navy) beside its share of capital (grey), "
+                "sorted by risk share. Where the navy bar exceeds the grey, the sleeve "
+                "contributes more risk than its weight (a risk concentrator); where it "
+                "falls short, the sleeve diversifies — a sleeve's share of capital is "
+                "not its share of risk. The table below is the precise reference."
+            )
+
+            rc_rows = []
+            for s in rc["sleeves"]:
+                divergence = (s["risk_pct"] - s["weight"]) * 100
+                rc_rows.append({
+                    "Sleeve":      s["sleeve"],
+                    "Weight %":    f"{s['weight'] * 100:.1f}%",
+                    "Risk %":      f"{s['risk_pct'] * 100:.1f}%",
+                    "Risk − Weight": f"{divergence:+.1f} pp",
+                    "Sleeve vol":  f"{s['vol'] * 100:.1f}%",
+                })
+            st.dataframe(pd.DataFrame(rc_rows).set_index("Sleeve"), width="stretch")
+
+            # The Euler summation, surfaced as the correctness proof.
+            _rc_sum_pct = sum(s["risk_pct"] for s in rc["sleeves"]) * 100
+            st.caption(
+                f"Euler check: the sleeve risk contributions sum to total policy "
+                f"volatility — Σ RC = {rc['rc_sum_check'] * 100:.2f}% = "
+                f"σ_p ({rc['portfolio_vol'] * 100:.2f}%); risk shares sum to "
+                f"{_rc_sum_pct:.1f}%. The **Risk − Weight** column is the point: where "
+                "it is positive the sleeve carries more risk than capital, where "
+                "negative it diversifies."
+            )
+            st.caption(
+                f"Sample covariance over {rc['n']} trading days since inception, "
+                "annualized (√252). Sample (realized) covariance is an estimate — "
+                "off-diagonal correlation terms especially — so read the shares in "
+                "the context of the window length."
+            )
+
+        with st.expander("Risk-contribution methodology & disclosure", expanded=False):
+            for note in risk_contribution_methodology_notes():
+                st.markdown(f"- {note}")
+
     # ── Insufficient-history empty state (the #38-analog) ─────────────────────
     # Phase 2 (scenarios) is GATED on Phase 1: with no betas there is nothing to
     # shock, so BOTH sections show the empty state — never garbage P&L.
@@ -120,11 +244,10 @@ with col:
         st.subheader("Scenario stress test")
         _scn_empty = run_scenarios(result)  # inherits the insufficient-history state
         st.info(scenario_insufficient_history_message(_scn_empty["n"], _scn_empty["min_obs"]))
-        st.divider()
-        st.subheader("Risk contribution")
-        _rc_empty = run_risk_contribution()  # covariance needs even more history
-        st.info(risk_contribution_insufficient_history_message(
-            _rc_empty["n"], _rc_empty["min_obs"]))
+        # Risk contribution runs on PRICES, not the factor cache, so the
+        # regression being short says nothing about it: render it from its own
+        # status (#318).
+        _render_risk_contribution_section()
         render_footer()
         st.stop()
 
@@ -256,120 +379,6 @@ with col:
         for note in scenario_methodology_notes(scen.get("durations")):
             st.markdown(f"- {note}")
 
-    # ══════════════════════════════════════════════════════════════════════════
-    #  Section 3 — Risk contribution (Euler / marginal-contribution-to-risk)
-    # ══════════════════════════════════════════════════════════════════════════
-    st.divider()
-    st.subheader("Risk contribution")
-    st.caption(
-        "Total policy volatility decomposed into each sleeve's contribution — "
-        "risk share beside capital share, because correlation makes them differ."
-    )
-
-    with st.expander("How to read this section", expanded=False):
-        st.markdown(
-            "Policy volatility is split into per-sleeve **risk contributions** "
-            "via the **Euler decomposition** — each sleeve's marginal contribution "
-            "to risk weighted by its allocation. The contributions **sum exactly "
-            "to total policy volatility** (and the percentages to 100%); that "
-            "summation is the correctness check.\n\n"
-            "The point is the gap between **risk share and weight share**: a "
-            "high-volatility or highly-correlated sleeve contributes **more** risk "
-            "than its weight, while a diversifying (low/negative-correlation) "
-            "sleeve contributes **less** — *a 10% allocation is not 10% of the "
-            "risk*. This is a decomposition of **total volatility**, not VaR or "
-            "downside risk, using realized **sample covariance** over the window."
-        )
-
-    rc = run_risk_contribution()
-
-    if rc["status"] == "insufficient_history":
-        st.info(risk_contribution_insufficient_history_message(rc["n"], rc["min_obs"]))
-    else:
-        # ── Low-confidence caveat on the [60, 120) observation band ───────────
-        if rc.get("low_confidence"):
-            st.warning(risk_contribution_low_confidence_caveat(rc["n"]))
-
-        st.metric("Policy / SAA volatility (annualized)", f"{rc['portfolio_vol'] * 100:.1f}%")
-        st.caption(
-            "Computed from SAA target weights and sleeve-benchmark proxies — this "
-            "is the policy portfolio's volatility, not the realized volatility of "
-            "current holdings (which appears on the Performance page)."
-        )
-
-        # Grouped horizontal bars: each sleeve's risk share beside its capital
-        # share, sorted by risk share (rc["sleeves"] is already risk_pct-desc).
-        # Where the navy (risk) bar exceeds the grey (weight) bar the sleeve is a
-        # risk concentrator; where it falls short it diversifies — the
-        # "10% allocation ≠ 10% of risk" point at a glance. Display-only: consumes
-        # the SAME computed values as the table below, no recomputation.
-        _RC_RISK_COLOR   = "#2E4057"   # navy — risk share (emphasis)
-        _RC_WEIGHT_COLOR = "#9E9E9E"   # slate — weight share (reference)
-        _rc_names   = [s["sleeve"] for s in rc["sleeves"]]
-        _rc_weights = [s["weight"] * 100 for s in rc["sleeves"]]
-        _rc_risks   = [s["risk_pct"] * 100 for s in rc["sleeves"]]
-        _fig_rc = go.Figure()
-        _fig_rc.add_trace(go.Bar(
-            y=_rc_names, x=_rc_weights, name="Weight % (capital share)",
-            orientation="h", marker_color=_RC_WEIGHT_COLOR,
-            hovertemplate="<b>%{y}</b><br>Weight: %{x:.1f}%<extra></extra>",
-        ))
-        _fig_rc.add_trace(go.Bar(
-            y=_rc_names, x=_rc_risks, name="Risk % (volatility share)",
-            orientation="h", marker_color=_RC_RISK_COLOR,
-            hovertemplate="<b>%{y}</b><br>Risk: %{x:.1f}%<extra></extra>",
-        ))
-        _fig_rc.update_layout(
-            barmode="group",
-            height=440,
-            margin=dict(l=0, r=10, t=10, b=0),
-            paper_bgcolor="white", plot_bgcolor="white",
-            font=dict(color="#333333", size=12),
-            xaxis=dict(title="Share of total (%)", gridcolor="#EBEBEB", ticksuffix="%"),
-            yaxis=dict(autorange="reversed"),   # highest risk share at top
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0, font_size=11),
-            bargap=0.28, bargroupgap=0.12,
-        )
-        st.plotly_chart(_fig_rc, width="stretch")
-        st.caption(
-            "Each sleeve's share of risk (navy) beside its share of capital (grey), "
-            "sorted by risk share. Where the navy bar exceeds the grey, the sleeve "
-            "contributes more risk than its weight (a risk concentrator); where it "
-            "falls short, the sleeve diversifies — a sleeve's share of capital is "
-            "not its share of risk. The table below is the precise reference."
-        )
-
-        rc_rows = []
-        for s in rc["sleeves"]:
-            divergence = (s["risk_pct"] - s["weight"]) * 100
-            rc_rows.append({
-                "Sleeve":      s["sleeve"],
-                "Weight %":    f"{s['weight'] * 100:.1f}%",
-                "Risk %":      f"{s['risk_pct'] * 100:.1f}%",
-                "Risk − Weight": f"{divergence:+.1f} pp",
-                "Sleeve vol":  f"{s['vol'] * 100:.1f}%",
-            })
-        st.dataframe(pd.DataFrame(rc_rows).set_index("Sleeve"), width="stretch")
-
-        # The Euler summation, surfaced as the correctness proof.
-        _rc_sum_pct = sum(s["risk_pct"] for s in rc["sleeves"]) * 100
-        st.caption(
-            f"Euler check: the sleeve risk contributions sum to total policy "
-            f"volatility — Σ RC = {rc['rc_sum_check'] * 100:.2f}% = "
-            f"σ_p ({rc['portfolio_vol'] * 100:.2f}%); risk shares sum to "
-            f"{_rc_sum_pct:.1f}%. The **Risk − Weight** column is the point: where "
-            "it is positive the sleeve carries more risk than capital, where "
-            "negative it diversifies."
-        )
-        st.caption(
-            f"Sample covariance over {rc['n']} trading days since inception, "
-            "annualized (√252). Sample (realized) covariance is an estimate — "
-            "off-diagonal correlation terms especially — so read the shares in "
-            "the context of the window length."
-        )
-
-    with st.expander("Risk-contribution methodology & disclosure", expanded=False):
-        for note in risk_contribution_methodology_notes():
-            st.markdown(f"- {note}")
+    _render_risk_contribution_section()
 
     render_footer()

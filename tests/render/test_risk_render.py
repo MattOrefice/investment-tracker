@@ -134,17 +134,26 @@ def test_risk_contribution_chart_gated_with_table(risk_app: AppTest) -> None:
         )
 
 
-def test_risk_contribution_low_confidence_caveat_absent_at_full_confidence(risk_app: AppTest) -> None:
-    """The risk-contribution low-confidence caveat must NOT render when the
-    decomposition is present (demo has ~270+ obs, well above the 120 band
-    ceiling) — the band is additive and must not surface at full confidence.
-    Personal mode never reaches this branch (insufficient-history empty state)."""
+def test_risk_contribution_low_confidence_caveat_tracks_its_own_band(risk_app: AppTest) -> None:
+    """The risk-contribution low-confidence caveat renders IF AND ONLY IF risk
+    contribution's OWN result is in the [60, 120) band — derived from that result,
+    two-sided.
+
+    This test used to be "caveat absent at full confidence", resting on "personal
+    mode never reaches this branch": the same inference #318 removed from the page.
+    It passed in personal mode only because the page crashed before rendering any
+    text. With the crash fixed, personal mode reaches the section at n ~ 70, which
+    IS low confidence, so the caveat is correct there."""
+    import src.risk as risk
+    rc = risk.run_risk_contribution()
     all_text = _all_text(risk_app)
-    if "insufficient history for risk decomposition" not in all_text:
-        assert "stable covariance estimate" not in all_text, (
-            "Risk-contribution low-confidence caveat rendered even though the "
-            "decomposition is at full confidence — check the [60, 120) band gate."
-        )
+    shown = "stable covariance estimate" in all_text
+    if rc["status"] == "insufficient_history":
+        assert not shown, "caveat rendered with no decomposition to caveat"
+    else:
+        assert shown == bool(rc.get("low_confidence")), (
+            f"caveat shown={shown} but risk contribution n={rc['n']} "
+            f"low_confidence={rc.get('low_confidence')} — check the [60, 120) band gate")
 
 
 def test_scenario_section_behaves_per_band(risk_app: AppTest) -> None:
@@ -163,3 +172,55 @@ def test_scenario_section_behaves_per_band(risk_app: AppTest) -> None:
             "Scenario instantaneous/not-forecasts framing missing in the "
             "decomposition branch."
         )
+
+
+# ── #318: risk contribution renders from its OWN status ────────────────────────
+# The factor regression runs on the (lagging) Fama-French cache; risk contribution
+# runs on prices. With current prices and a lagging factor file the regression is
+# insufficient while risk contribution is `ok` — and the page used to INFER the
+# latter's status from the former, reading an `ok` result's non-existent min_obs.
+
+def _synthetic_rc(n_days: int):
+    """The REAL run_risk_contribution over synthetic sleeve returns, so its result
+    has the genuine shape for its band (ok at >= 60 days, insufficient below)."""
+    import numpy as np
+    import pandas as pd
+    import src.risk as risk
+    real = risk.run_risk_contribution
+    rng = np.random.default_rng(318)
+    sleeves = ["US Large Core", "Core Fixed Income", "Emerging Markets"]
+    returns = pd.DataFrame(rng.normal(0, 0.01, (n_days, len(sleeves))), columns=sleeves,
+                           index=pd.bdate_range("2026-06-09", periods=n_days))
+    weights = {"US Large Core": 0.5, "Core Fixed Income": 0.3, "Emerging Markets": 0.2}
+    return lambda *a, **k: real(sleeve_returns=returns, weights=weights)
+
+
+def _render_with(monkeypatch, rc_days: int) -> AppTest:
+    import streamlit as st
+    import src.risk as risk
+    lagging = {"status": "insufficient_history", "n": 14, "min_obs": 30}
+    monkeypatch.setattr(risk, "run_portfolio_factor_regression", lambda *a, **k: lagging)
+    monkeypatch.setattr(risk, "run_risk_contribution", _synthetic_rc(rc_days))
+    st.cache_data.clear()
+    return AppTest.from_file("pages/7_Risk.py", default_timeout=90).run()
+
+
+def test_current_prices_with_a_lagging_factor_file_render_risk_contribution(monkeypatch):
+    """The crash condition: regression insufficient (n=14, factor file lags),
+    risk contribution ok (70 days of prices). The page must render the full risk
+    contribution section, not raise KeyError: 'min_obs'."""
+    at = _render_with(monkeypatch, rc_days=70)
+    assert not at.exception, f"Risk page raised: {at.exception}"
+    text = " ".join(str(m.value) for m in (*at.markdown, *at.caption, *at.info))
+    assert "Factor betas are deliberately suppressed" in text      # regression: empty state
+    assert any("Policy / SAA volatility" in str(m.label) for m in at.metric), \
+        "risk contribution is ok, so its section must render in full"
+
+
+def test_both_short_render_both_empty_states(monkeypatch):
+    """Both insufficient: each section shows its own empty state, from its own n."""
+    at = _render_with(monkeypatch, rc_days=40)
+    assert not at.exception, f"Risk page raised: {at.exception}"
+    assert not any("Policy / SAA volatility" in str(m.label) for m in at.metric)
+    infos = " ".join(str(i.value) for i in at.info)
+    assert "40" in infos, f"risk contribution's empty state must state ITS n (40): {infos}"
