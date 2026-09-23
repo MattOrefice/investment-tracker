@@ -31,7 +31,9 @@ from typing import NamedTuple
 
 import pandas as pd
 
-from src.household import compute_embedded_gain, compute_sleeve_by_account
+from src.household import (
+    compute_embedded_gain, compute_sleeve_by_account, sleeve_display_name,
+)
 
 # Distinguishes "argument omitted — resolve it" from an explicit None, which means
 # "known to be unknown". Both are meaningful for ordinary income, so they cannot
@@ -45,15 +47,52 @@ _UNSET = object()
 # an identity nothing here can check — the repo holds no contribution ledger, and
 # an idle Roth balance can equally be a swept dividend or a sale awaiting
 # redeployment. The deploy argument does not depend on how it got there.
+# The SIZE OF THE EFFECT, not urgency adjectives (#309). The buys split in proportion
+# to each sleeve's gap, so every leg closes the same share of its own gap — cash ÷
+# Σgap — and one number states what the trade does. The sentence is then true and
+# calibrated at $450 or $45,000 alike; "every day it sits is compounding you don't
+# get back" was true at any amount and so said nothing about this one.
 _DEPLOY_ROTH_CASH_PROS = (
     "Zero tax, zero friction, one session. {value} is sitting uninvested "
-    "in a money market inside your most valuable account. Every day it "
-    "sits is compounding you don't get back, in the one wrapper where growth is "
-    "never taxed. Every target sleeve is household-underweight against your own "
-    "revealed targets, and the buys are sized to each sleeve's dollar gap, so the "
-    "trade closes an allocation gap and a location gap at once — the largest share "
-    "goes to the deepest underweight, not split by a round number."
+    "in a money market inside your most valuable account, the one wrapper where "
+    "growth is never taxed. Deployed as sized below, it closes {gap_share_closed} of "
+    "every underweight sleeve's gap to target at once — {deploy_largest_sleeve}, the "
+    "deepest underweight, moves from {largest_current} to {largest_after} of the "
+    "household against its {largest_target} target. The buys are sized to each "
+    "sleeve's dollar gap, so the trade closes an allocation gap and a location gap "
+    "together — the largest share goes to the deepest underweight, not split by a "
+    "round number."
 )
+
+# THE DEPLOY FLOOR (#309). floor = DEPLOY_FLOOR_BAND_FRACTION × the smallest SAA
+# tolerance band × household value. The BAND is the anchor; the 10% is a CHOICE, not
+# derived from it. What the floor measures is TOTAL cash against ONE band. It does
+# not bound any single sleeve's move: the buys split across the underweight sleeves,
+# so at the floor the largest sleeve moves far less than 10% of its band (+0.08pp,
+# about 4% of a 2pp band, at the 2026-09-23 gaps).
+DEPLOY_FLOOR_BAND_FRACTION = 0.10
+
+# Rendered INSTEAD of the argument when a real, nonzero balance is below the floor.
+# Not the zero state: at $7.93 "the cash sleeve is empty" is false. It states the
+# balance and the rule, and forbids the reassuring misreading (#261's shape). It
+# deliberately says nothing about how the cash got there — the repo has no
+# contribution ledger, the same reason {value} stopped being "this year's
+# contribution". The action line already says no buy is proposed, so this does not
+# repeat it.
+_DEPLOY_ROTH_CASH_BELOW_FLOOR = (
+    "{value_exact} sits in the Roth's cash sleeve. That is below the deploy floor of "
+    "{deploy_floor} — {floor_fraction} of the tightest drift band, {band_points} "
+    "points of the {household_value} household — and a trade this size would close "
+    "{gap_share_closed} of each underweight sleeve's gap. The Roth is not empty and "
+    "the balance is not lost: it stays in the money market, and this card returns as "
+    "a deploy when the balance reaches the floor."
+)
+
+# The buy tables' number format. Cents, never whole dollars: "$%.0f" printed a
+# $0.40 leg as "$0", a real amount shown as zero. A small leg is possible at ANY
+# balance (a sleeve with a tiny gap gets a tiny share), so this does not rely on the
+# floor.
+DEPLOY_BUY_FORMAT = "$%.2f"
 # Rendered INSTEAD of the pros when the balance is a measured zero. It must not
 # template {value}: there is no figure to state, and printing "$0" is what made
 # the fabricated zero indistinguishable from a real one in the first place.
@@ -345,6 +384,8 @@ _FUND_INTL_TILTS_CONS = (
 # ── Authored group config (scores/statuses are fixed, never computed) ──────────
 # status order for the page: act_now, evaluate, blocked, accepted.
 STATUS_ORDER = ["act_now", "evaluate", "blocked", "accepted"]
+STATUS_LABEL = {"act_now": "Act now", "evaluate": "Evaluate", "blocked": "Blocked",
+                "accepted": "Accepted"}
 
 ACTION_GROUPS: list[dict] = [
     {
@@ -355,6 +396,18 @@ ACTION_GROUPS: list[dict] = [
         "symbols": None, "case_filter": None, "accounts": None,   # informational
         "pros": _DEPLOY_ROTH_CASH_PROS, "cons": _DEPLOY_ROTH_CASH_CONS,
         "zero_state": _DEPLOY_ROTH_CASH_ZERO_STATE,
+        "below_floor_state": _DEPLOY_ROTH_CASH_BELOW_FLOOR,
+        "below_floor_action": "No buy proposed: {value_exact} of Roth cash is below "
+                              "the {deploy_floor} deploy floor.",
+        # The score and status above are the FULL-BAND tier: a deploy that can by
+        # itself move a sleeve through its band is an allocation decision. Below one
+        # full band the balance selects one of these, still AUTHORED here, never
+        # computed (deploy_state only chooses the row). A $500 deploy scoring 10/10
+        # beside a $7,000 one was the same disproportion as $7.93, relocated.
+        "floor_tiers": {
+            "below_floor":    {"score": None, "status": "accepted"},
+            "under_one_band": {"score": 6,    "status": "evaluate"},
+        },
     },
     {
         "key": "clear_roth_non_equity", "title": "Clear misplaced holdings from the Roth",
@@ -596,8 +649,13 @@ def _roth_idle_cash(
     return str(row["pseudonym"]), float(row["current_value"])
 
 
-def deploy_prose_for(group: dict, idle_cash: "float | None") -> str:
-    """The deploy card's body for this balance: the argument, or the zero state.
+def deploy_prose_for(group: dict, idle_cash: "float | None", *, tier: str) -> str:
+    """The deploy card's body for this balance: the argument, the below-floor state,
+    or the zero state.
+
+    `tier` is REQUIRED (from deploy_state). A caller that did not know the floor
+    used to get the full argument for any nonzero balance, which is how $7.93
+    rendered as an urgent deploy.
 
     Raises on None rather than choosing for the caller — an unknown balance is
     not a zero balance, and picking either branch for it would re-open the hole
@@ -608,7 +666,150 @@ def deploy_prose_for(group: dict, idle_cash: "float | None") -> str:
             "idle Roth cash is unresolvable, so neither the deploy argument nor "
             "the zero state is true — refusing to choose one. See _roth_idle_cash."
         )
-    return group["zero_state"] if float(idle_cash) == 0.0 else group["pros"]
+    if float(idle_cash) == 0.0:
+        return group["zero_state"]
+    if tier == "below_floor":
+        return group["below_floor_state"]
+    return group["pros"]
+
+
+def _smallest_band(saa_targets_df: pd.DataFrame) -> float:
+    """The tightest SAA tolerance band, as a fraction. Raises if the frame does not
+    carry `tolerance_band`: a floor computed without its anchor would be a number
+    with no source, so the caller must select the column."""
+    if "tolerance_band" not in saa_targets_df.columns:
+        raise ValueError(
+            "saa_targets_df has no tolerance_band column, so the deploy floor has no "
+            "anchor. Select asset_classes.tolerance_band with the targets.")
+    bands = saa_targets_df["tolerance_band"].dropna()
+    bands = bands[bands > 0]
+    if bands.empty:
+        raise ValueError("no positive tolerance_band among the SAA sleeves; the "
+                         "deploy floor has no anchor")
+    return float(bands.min())
+
+
+def _fmt_share(p: float) -> str:
+    """A share of the gaps, as text. Two decimals under 1% so a small effect does
+    not round to a misleading zero; one decimal above."""
+    pct = p * 100
+    if pct >= 100:
+        return "100%"
+    if 0 < pct < 0.005:
+        return "under 0.01%"
+    return f"{pct:.2f}%" if pct < 1 else f"{pct:.1f}%"
+
+
+def deploy_state(group: dict, deploy: dict, saa_targets_df: pd.DataFrame) -> dict:
+    """Which tier the idle Roth balance selects, and the figures the card states.
+
+    Tiers, both thresholds anchored to the ONE smallest tolerance band:
+      zero            measured 0                   -> the zero state
+      below_floor     0 < cash < floor             -> below-floor state
+      under_one_band  floor <= cash < one band     -> the argument, lower score
+      full_band       cash >= one band             -> the group's own score/status
+    floor = DEPLOY_FLOOR_BAND_FRACTION × band × household value.
+
+    The score and status come from AUTHORED config (group["floor_tiers"], or the
+    group's own keys for the full band). This only selects the row.
+    """
+    cash = deploy["idle_cash"]
+    if cash is None:
+        raise ValueError("idle Roth cash is unresolvable; no tier is true for it")
+    band = _smallest_band(saa_targets_df)
+    hh = float(deploy["household_value"])
+    full_band = band * hh
+    floor = DEPLOY_FLOOR_BAND_FRACTION * full_band
+
+    if cash == 0:
+        tier = "zero"
+    elif cash < floor:
+        tier = "below_floor"
+    elif cash < full_band:
+        tier = "under_one_band"
+    else:
+        tier = "full_band"
+    row = group["floor_tiers"].get(tier) if tier in group["floor_tiers"] else None
+    score, status = (row["score"], row["status"]) if row else (group["score"], group["status"])
+
+    gaps = deploy.get("gaps")
+    share = largest = None
+    if gaps is not None and not gaps.empty and hh > 0:
+        total_gap = float(gaps["gap"].clip(lower=0).sum())
+        share = min(cash / total_gap, 1.0) if total_gap > 0 else None
+        top = gaps.iloc[0]                            # ordered largest gap first
+        buy = float(top["gap"]) * share if share is not None else 0.0
+        largest = {
+            "sleeve": str(top["sleeve"]),
+            "current": float(top["current"]) / hh,
+            "after": (float(top["current"]) + buy) / hh,
+            "target": float(top["target"]) / hh,
+        }
+    return {"tier": tier, "score": score, "status": status, "cash": float(cash),
+            "band": band, "household_value": hh, "full_band": full_band,
+            "floor": floor, "gap_share": share, "largest": largest}
+
+
+_DEPLOY_PLACEHOLDER_KEYS = (
+    "value_exact", "deploy_floor", "floor_fraction", "band_points", "household_value",
+    "gap_share_closed", "deploy_largest_sleeve", "largest_current", "largest_after",
+    "largest_target",
+)
+
+
+def _deploy_placeholders(state: "dict | None") -> dict:
+    """The deploy card's floor and effect figures, formatted. All None without a
+    state, so prose that cites them raises instead of rendering an unstated effect."""
+    if state is None:
+        return dict.fromkeys(_DEPLOY_PLACEHOLDER_KEYS)
+    lg = state["largest"]
+    pct = lambda f: f"{f * 100:.1f}%"
+    return {
+        "value_exact": f"${state['cash']:,.2f}",
+        "deploy_floor": _fmt_dollars(state["floor"]),
+        "floor_fraction": f"{DEPLOY_FLOOR_BAND_FRACTION * 100:g}%",
+        "band_points": f"{state['band'] * 100:g}",
+        "household_value": _fmt_dollars(state["household_value"]),
+        "gap_share_closed": _fmt_share(state["gap_share"]) if state["gap_share"] is not None else None,
+        "deploy_largest_sleeve": sleeve_display_name(lg["sleeve"]) if lg else None,
+        "largest_current": pct(lg["current"]) if lg else None,
+        "largest_after": pct(lg["after"]) if lg else None,
+        "largest_target": pct(lg["target"]) if lg else None,
+    }
+
+
+def deploy_card_text(group: dict, state: dict, resolved: dict) -> dict:
+    """What the deploy card renders for its tier: the subheader, the action line,
+    the status label, the summary caption, the body, and which parts appear.
+
+    Built HERE rather than inline on the page so the tier's effect on the rendered
+    card is testable without a personal-mode book. The page renders exactly these
+    strings.
+    """
+    tier = state["tier"]
+    title = group["title"]
+    subheader = f"{title}  ·  {state['score']}/10" if state["score"] is not None else title
+    status_label = "Below floor" if tier == "below_floor" else STATUS_LABEL[state["status"]]
+    body = deploy_prose_for(group, state["cash"], tier=tier)
+    if tier == "below_floor":
+        action = render_prose_md(group["below_floor_action"], resolved)
+        summary = (f"{resolved['value_exact']} idle Roth cash · a trade this size closes "
+                   f"{resolved['gap_share_closed']} of the gaps")
+    elif tier == "zero":
+        action = "Nothing to deploy — the Roth's cash sleeve is empty."
+        summary = f"{resolved['value']} idle Roth cash · free · zero tax, zero friction"
+    else:
+        action = None          # the page renders group['action'] with the buy tickers
+        summary = f"{resolved['value']} idle Roth cash · free · zero tax, zero friction"
+    return {
+        "subheader": subheader,
+        "action": action,
+        "status_label": status_label,
+        "summary": summary,
+        "body": render_prose_md(body, resolved),
+        "show_against": tier not in ("zero", "below_floor"),
+        "show_buys": tier != "below_floor",   # zero keeps its (empty) table, as before
+    }
 
 
 def household_deploy_gaps(
@@ -747,16 +948,20 @@ def build_roth_deploy_answer(
     _, idle_cash = _roth_idle_cash(sba, accounts_df)
 
     empty = pd.DataFrame(columns=["ticker", "sleeve", "dollar"])
+    hh = float(positions_df["current_value"].sum())
     if idle_cash is None:
         # Unknown, not zero: propagate it rather than rounding it into a figure.
-        return {"idle_cash": None, "sleeves": [], "table": empty, "residual": None}
+        return {"idle_cash": None, "sleeves": [], "table": empty, "residual": None,
+                "gaps": None, "household_value": hh}
     if compositions_df is None or saa_targets_df is None:
-        return {"idle_cash": idle_cash, "sleeves": [], "table": empty, "residual": round(idle_cash, 2)}
+        return {"idle_cash": idle_cash, "sleeves": [], "table": empty,
+                "residual": round(idle_cash, 2), "gaps": None, "household_value": hh}
 
     gaps_df = household_deploy_gaps(
         positions_df, accounts_df, securities_df, compositions_df, saa_targets_df)
     if gaps_df.empty or idle_cash <= 0:
-        return {"idle_cash": idle_cash, "sleeves": [], "table": empty, "residual": round(idle_cash, 2)}
+        return {"idle_cash": idle_cash, "sleeves": [], "table": empty,
+                "residual": round(idle_cash, 2), "gaps": gaps_df, "household_value": hh}
 
     allocs, residual = _gap_proportional_split(idle_cash, gaps_df["gap"].tolist())
     table = pd.DataFrame({
@@ -769,6 +974,9 @@ def build_roth_deploy_answer(
         "sleeves": gaps_df["sleeve"].tolist(),
         "table": table,
         "residual": residual,
+        # For deploy_state: the effect of the trade is stated against these gaps.
+        "gaps": gaps_df,
+        "household_value": hh,
     }
 
 
@@ -850,8 +1058,15 @@ def assert_full_coverage(register: pd.DataFrame) -> None:
 
 
 def _fmt_dollars(x: float) -> str:
+    """Whole dollars, EXCEPT that a nonzero amount that would round to $0 keeps its
+    cents: $0.40 is "$0.40", never "$0", a real amount shown as zero (#309). Narrow
+    on purpose. Every other figure keeps whole dollars, so no card's rendered
+    length moves for a reader-invisible reason."""
     x = float(x)
-    return f"-${abs(x):,.0f}" if x < 0 else f"${x:,.0f}"
+    sign = "-" if x < 0 else ""
+    if 0 < abs(x) < 0.5:
+        return f"{sign}${abs(x):,.2f}"
+    return f"{sign}${abs(x):,.0f}"
 
 
 # Only the table case is unmarked: it is the only basis a reader can verify unaided.
@@ -1491,10 +1706,15 @@ def resolve_placeholders(
     register: pd.DataFrame,
     roth_idle_cash: float | None = None,
     compositions_df: pd.DataFrame | None = None,
+    tier_state: "dict | None" = None,
 ) -> dict[str, str | None]:
     """Resolve every placeholder for a group. A key maps to a formatted string, or
     None if it cannot resolve (empty subset) — render_prose raises if the prose
     references a None key.
+
+    tier_state (from deploy_state) supplies the deploy card's effect and floor
+    figures. Omit it and those resolve to None, so the deploy prose raises rather
+    than stating an effect it did not compute.
 
     value/count/embedded_gain measure over the group's `population` holdings;
     annual_benefit is register-based; headroom_* and the account-level values
@@ -1526,7 +1746,8 @@ def resolve_placeholders(
     }
     if group["key"] == "deploy_roth_cash":
         v = None if roth_idle_cash is None else _fmt_dollars(roth_idle_cash)
-        return {**base, "value": v, "count": None, "embedded_gain": None, "annual_benefit": None}
+        return {**base, "value": v, "count": None, "embedded_gain": None,
+                "annual_benefit": None, **_deploy_placeholders(tier_state)}
 
     pop = _pop_holdings(group, positions_df, accounts_df, register)
     value = _fmt_dollars(pop["current_value"].sum()) if not pop.empty else None
