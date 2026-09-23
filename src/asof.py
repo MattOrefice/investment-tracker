@@ -341,9 +341,15 @@ def as_of_live_line(
     if lag <= 0 and not gap:
         return f"Live data as of {format_long_date(ref)}."
 
-    line = f"Prices through {format_long_date(served)}"
+    # WHICH frontier, stated (#265). Two definitions, both kept because they answer
+    # different questions: a coverage record's frontier_served is "how current is
+    # what THIS PAGE served" (it may include today's bar); the committed frontier is
+    # "the latest SETTLED close every holding has" (strictly before today). Two pages
+    # on one book can therefore differ by a day, and each says which it means.
+    basis = "as served to this page" if coverage is not None else "settled closes"
+    line = f"Prices through {format_long_date(served)} ({basis})"
     if lag > 0:
-        line += f" — {lag} days behind"
+        line += f" — {lag} day{'' if lag == 1 else 's'} behind"
     if gap:
         line += (", and " if lag > 0 else " — ")
         line += (f"{len(gap)} of {len(coverage.requested)} holdings have "
