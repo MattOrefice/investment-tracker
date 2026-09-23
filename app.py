@@ -25,7 +25,7 @@ else:
     # against `securities` and reports symbols the location register would silently
     # drop. Before this, the call was bare and anything it learned died here.
     _boot = bootstrap_personal_db()  # base schema + all migrations + all seeds
-    _unmapped_notice = unmapped_holdings_notice(_boot.get("unmapped_holdings") or {})
+    _unmapped_notice = unmapped_holdings_notice(_boot["unmapped_holdings"])
 
 
 def _inject_global_styles():
