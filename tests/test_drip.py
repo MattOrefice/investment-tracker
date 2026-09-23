@@ -358,6 +358,9 @@ def test_current_market_value_is_all_shares_raw_close_not_return_series(minimal_
             {"close": 100.0, "adj_close": 98.0}, index=[d.date() for d in rng]
         )
     monkeypatch.setattr(H, "get_prices", _fake_prices)
+    # The look-back anchor reads the price cache (#302); this DB has none and
+    # get_prices is faked, so pin it at the module boundary as well.
+    monkeypatch.setattr(H, "look_back_start", lambda t, d: d)
 
     mv     = get_current_market_value("2025-07-01")
     pv_end = float(get_portfolio_value_series("2025-05-01", "2025-07-01", account_id=1).iloc[-1])

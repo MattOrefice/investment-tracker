@@ -51,6 +51,34 @@ class ValueSeries(NamedTuple):
     coverage: PriceCoverage
 
 
+_LOOK_BACK_DAYS = 7
+
+
+def look_back_start(price_ticker: str, date_str: str) -> str:
+    """Start of the price look-back for ``price_ticker`` on ``date_str`` (#302).
+
+    Looks back from the NEWEST STORED price on or before ``date_str``, not from
+    ``date_str`` itself. From ``date_str`` alone, a cache more than a week behind the
+    calendar left the window empty whenever the gap could not be fetched (offline, or
+    a failed fetch), so every holding went unresolved and the page rendered "No
+    committed price data" for a book that HAS prices, just older ones. From the newest
+    stored price, get_prices returns those stored rows and fetches the gap when it can,
+    and the coverage record's frontier_served says how old what was served is, so the
+    banner discloses the lag instead of the page going empty.
+
+    Unchanged for a historical ``date_str`` (the newest stored price on or before it is
+    within the week) and for a book with no stored price for this ticker at all.
+    """
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT MAX(price_date) FROM prices WHERE ticker = ? AND price_date <= ?",
+            (price_ticker, date_str),
+        ).fetchone()
+    anchor = row[0] if row and row[0] else date_str
+    return (date.fromisoformat(min(anchor, date_str))
+            - timedelta(days=_LOOK_BACK_DAYS)).isoformat()
+
+
 def _price_and_status(
     ticker: str,
     start: str,
@@ -576,8 +604,8 @@ def _sleeve_weights_impl(date_str: str) -> "tuple[pd.DataFrame, list[TickerStatu
         ).fetchall()
         target_weights = {r["name"]: r["target_weight"] for r in target_rows}
 
-    # Look back up to 5 trading days to find the most recent price
-    look_back = (date.fromisoformat(date_str) - timedelta(days=7)).isoformat()
+    # Look back up to 5 trading days from the newest STORED price (#302); per ticker,
+    # because each ticker's cache can end on a different day.
 
     values_by_sleeve: dict[str, float] = {}
     for ticker, row in holdings.iterrows():
@@ -603,7 +631,7 @@ def _sleeve_weights_impl(date_str: str) -> "tuple[pd.DataFrame, list[TickerStatu
             except Exception:
                 price = 1.0
         else:
-            p, st = _price_and_status(ticker, look_back, date_str)
+            p, st = _price_and_status(ticker, look_back_start(ticker, date_str), date_str)
             try:
                 price = float(p["close"].iloc[-1]) if not p.empty else 0.0
             except Exception:
@@ -696,7 +724,6 @@ def _current_market_value_impl(
     if holdings.empty:
         return 0.0, statuses
 
-    look_back = (date.fromisoformat(d) - timedelta(days=7)).isoformat()
     total = 0.0
     for ticker, row in holdings.iterrows():
         shares = float(row["net_shares"])
@@ -715,7 +742,7 @@ def _current_market_value_impl(
             except Exception:
                 price = 1.0
         else:
-            p, st = _price_and_status(ticker, look_back, d)
+            p, st = _price_and_status(ticker, look_back_start(ticker, d), d)
             try:
                 price = float(p["close"].iloc[-1]) if not p.empty else 0.0
             except Exception:

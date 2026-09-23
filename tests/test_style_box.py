@@ -248,6 +248,7 @@ def test_get_non_us_equity_data_contains_vea_iemg(no_ambient_db):
 
     with patch("src.positioning.get_holdings_on_date", return_value=holdings_df), \
          patch("src.positioning.get_prices", return_value=mock_prices), \
+         patch("src.positioning.look_back_start", return_value="2026-03-24"), \
          patch("src.positioning.get_portfolio_account_id", return_value=1):
         result = get_non_us_equity_data("2026-03-31")
 
