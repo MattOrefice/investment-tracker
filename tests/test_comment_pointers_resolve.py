@@ -65,8 +65,8 @@ RETIRED_BUT_RECORDED = {
 # comments.
 
 
-def _module_level_names() -> set[str]:
-    """Every name ASSIGNED at any level in src/, read from the AST.
+def _module_level_names(root: pathlib.Path) -> set[str]:
+    """Every name ASSIGNED at any level in `root`'s modules, read from the AST.
 
     TWO BRANCHES, and both earned their place by measurement rather than by argument.
     The right question is not "how many names does this branch match" but "how many
@@ -91,7 +91,7 @@ def _module_level_names() -> set[str]:
     error twice, one line apart, the second made while correcting the first.
     """
     names: set[str] = set()
-    for f in SRC.glob("*.py"):
+    for f in root.glob("*.py"):
         try:
             tree = ast.parse(f.read_text(encoding="utf-8"))
         except SyntaxError:  # pragma: no cover - a broken src/ fails louder elsewhere
@@ -106,15 +106,29 @@ def _module_level_names() -> set[str]:
     return names
 
 
-def _comment_mentions():
-    """(file, line, symbol) for every underscore-bearing capital in a src/ COMMENT."""
-    for f in sorted(SRC.glob("*.py")):
+def _comment_mentions(root: pathlib.Path):
+    """(file, line, symbol) for every underscore-bearing capital in a COMMENT under `root`.
+
+    `root` is REQUIRED, with no default, so the check and its positive control call the
+    same code with the directory spelled out at the call site, and a probe needs a
+    directory rather than a monkeypatch of `pathlib.Path.glob` for the whole process."""
+    for f in sorted(root.glob("*.py")):
         text = f.read_text(encoding="utf-8")
         for tok in tokenize.generate_tokens(io.StringIO(text).readline):
             if tok.type != tokenize.COMMENT:
                 continue
             for m in _CONST.finditer(tok.string):
                 yield f.name, tok.start[0], m.group(0)
+
+
+def _dangling(root: pathlib.Path) -> list[tuple[str, int, str]]:
+    """THE DECISION, in one place: a mention is flagged when it neither resolves to an
+    assigned name under `root` nor sits in RETIRED_BUT_RECORDED. The real check and the
+    positive control both call this, so the control exercises the step that FLAGS, not
+    only the step that scans."""
+    names = _module_level_names(root)
+    return [(f, line, sym) for f, line, sym in _comment_mentions(root)
+            if sym not in names and sym not in RETIRED_BUT_RECORDED]
 
 
 # ── the contract ──────────────────────────────────────────────────────────────
@@ -124,12 +138,7 @@ def test_every_comment_pointer_resolves():
     silently stopped being true — and three instances of a reference decaying this way
     are on record (#237's moved line number, #228's four copies, #291's two pointers).
     """
-    names = _module_level_names()
-    dangling = [
-        f"{f}:{line} names {sym!r}"
-        for f, line, sym in _comment_mentions()
-        if sym not in names and sym not in RETIRED_BUT_RECORDED
-    ]
+    dangling = [f"{f}:{line} names {sym!r}" for f, line, sym in _dangling(SRC)]
     assert not dangling, (
         "a comment points at a symbol that does not resolve in src/. Either the symbol "
         "was renamed or deleted and the comment was not updated, or the comment is a "
@@ -141,7 +150,7 @@ def test_the_sweep_is_not_vacuous():
     """Every assertion above is worthless if the scan finds nothing to check. The
     underscore filter is aggressive by design, so this pins that it still admits real
     symbols rather than having narrowed to zero."""
-    mentions = list(_comment_mentions())
+    mentions = list(_comment_mentions(SRC))
     # A FLOOR WITH HEADROOM, not the measurement. src/ comments carried 34 such mentions
     # on 2026-08-23; the floor is set well below that because the failure this guards is
     # the pattern matching NOTHING (0, or near it), not the population shrinking a
@@ -153,26 +162,36 @@ def test_the_sweep_is_not_vacuous():
         "pattern has stopped matching and the sweep is passing on a near-empty set")
     assert len({f for f, _, _ in mentions}) >= 3, (
         "all mentions come from fewer than three files — the scan is not reaching src/")
-    names = _module_level_names()
+    names = _module_level_names(SRC)
     resolving = sum(1 for _, _, s in mentions if s in names)
     assert resolving >= len(mentions) * 0.5, (
         f"only {resolving} of {len(mentions)} mentions resolve — _module_level_names is "
         "under-populated, which would make the check fire on almost everything")
 
 
-def test_a_planted_dangling_pointer_is_caught(tmp_path, monkeypatch):
+def test_a_planted_dangling_pointer_is_flagged(tmp_path):
     """THE POSITIVE CONTROL. `test_every_comment_pointer_resolves` passes today because
     there are no dangling pointers, which is indistinguishable from a sweep that cannot
-    see one. This plants one and requires it to be found."""
-    probe = tmp_path / "probe.py"
-    probe.write_text("# see SOME_DELETED_CONSTANT for the rationale\nX = 1\n",
-                     encoding="utf-8")
-    monkeypatch.setattr(pathlib.Path, "glob",
-                        lambda self, pat: iter([probe]) if str(self) == str(SRC)
-                        else pathlib.Path.glob(self, pat), raising=False)
-    found = [s for _, _, s in _comment_mentions()]
-    assert "SOME_DELETED_CONSTANT" in found, (
-        "a planted dangling pointer was not seen by the sweep")
+    see one — or one that sees it and never flags it.
+
+    So the probe carries all three outcomes the decision can reach, and requires the
+    FLAGGED set to be exactly the dangling one: a pointer to a name assigned in the
+    probe must resolve, an allowlisted record must be exempt, and only the deleted
+    name may be flagged. Asserting only that the planted name is SCANNED stays green
+    with the flagging step deleted outright."""
+    (tmp_path / "probe.py").write_text(
+        "# see SOME_DELETED_CONSTANT for the rationale\n"
+        "# see LIVE_PROBE_CONSTANT below\n"
+        "# REPLACES FEDERALLY_EXEMPT_SLEEVES, which was deleted\n"
+        "LIVE_PROBE_CONSTANT = 1\n",
+        encoding="utf-8")
+    scanned = {s for _, _, s in _comment_mentions(tmp_path)}
+    assert scanned == {"SOME_DELETED_CONSTANT", "LIVE_PROBE_CONSTANT",
+                       "FEDERALLY_EXEMPT_SLEEVES"}, (
+        f"the probe's three mentions were not all scanned: {scanned}")
+    flagged = [s for _, _, s in _dangling(tmp_path)]
+    assert flagged == ["SOME_DELETED_CONSTANT"], (
+        f"expected only the deleted name flagged, got {flagged}")
 
 
 def test_emphasis_words_are_not_treated_as_symbols():
@@ -191,7 +210,7 @@ def test_every_allowlisted_symbol_is_genuinely_gone():
     """An allowlist entry for a symbol that still resolves is an exemption doing nothing
     — and worse, it would suppress a real dangling pointer if that symbol were later
     deleted for a different reason."""
-    names = _module_level_names()
+    names = _module_level_names(SRC)
     live = [s for s in RETIRED_BUT_RECORDED if s in names]
     assert not live, (
         f"{live} still resolve in src/ — remove them from RETIRED_BUT_RECORDED, which "
@@ -207,7 +226,7 @@ def test_every_allowlisted_symbol_records_why():
 def test_the_allowlist_is_still_needed():
     """Non-vacuity in the other direction: if nothing in src/ mentions these any more,
     the exemptions are dead weight and should go."""
-    mentioned = {s for _, _, s in _comment_mentions()}
+    mentioned = {s for _, _, s in _comment_mentions(SRC)}
     unused = [s for s in RETIRED_BUT_RECORDED if s not in mentioned]
     assert not unused, (
         f"{unused} are allowlisted but no comment mentions them — the exemption "
@@ -256,17 +275,22 @@ def test_the_thematic_comment_keeps_the_reason_the_caption_is_mandatory():
     # pin satisfied by a helper's definition: presence is not assertion.
     assert re.search(r"caption is (mandatory|required)", c), (
         f"the comment no longer says a caption is MANDATORY: {c!r}")
-    # And the invariant must be stated about the live rule, not only recalled in the
-    # #186 record paragraph below it, which also contains the word "exceeds".
-    assert "always fewer" in c, (
-        "the comment no longer states that the register rows are always fewer than the "
-        "population — the invariant that motivates the caption")
+    # And the reason: the expander shows a SUBSET of the population. Stated as "only
+    # the mislocation rows among those symbols", which filter_register_for_group makes
+    # true by construction (it starts from `isin(group["symbols"])`) — so the comment
+    # claims nothing CI cannot see. That the rows are strictly FEWER is a fact about
+    # the personal book, checked separately below.
+    assert re.search(r"only the mislocation rows among those symbols", c), (
+        "the comment no longer says the expander lists a subset of the population — "
+        "the reason the caption is needed")
 
 
-def test_the_invariant_the_comment_states_actually_holds():
-    """Assert the claim, not just its presence. The comment says the matched-symbol
-    population exceeds the register rows; if that ever stopped being true the comment
-    would be wrong in a way no prose check could see."""
+def test_the_caption_reconciles_a_real_gap_in_the_personal_book():
+    """A PERSONAL-MODE OBSERVATION, not a pin on the comment — it skips in CI. The
+    comment claims only that the rows are a subset of the population, which holds by
+    construction. This checks the stronger fact that makes the caption earn its place
+    in the real book: the population strictly EXCEEDS the rows, so the two numbers the
+    caption reconciles actually differ."""
     import pandas as pd
     import src.household as hh
     import src.location_actions as la
@@ -290,6 +314,8 @@ def test_the_invariant_the_comment_states_actually_holds():
         compositions_df=comp)
     grp = next(g for g in la.ACTION_GROUPS if g.get("key") == "thematic_sprawl")
     rows = la.filter_register_for_group(reg, grp)
+    assert set(rows["symbol"]) <= set(grp["symbols"]), (
+        "register rows outside the group's symbols — the subset the comment states")
     assert len(grp["symbols"]) > len(rows), (
         f"the population ({len(grp['symbols'])}) no longer exceeds the register rows "
         f"({len(rows)}) — the comment's invariant has stopped holding")
