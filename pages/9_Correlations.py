@@ -475,13 +475,14 @@ with col:
         if _recent:
             extended = st.checkbox(
                 f"Extended history ({_n_total - len(_recent)} sleeves, excludes "
-                f"{_excl_names} → reaches ~{_ext_start[:4]})",
+                f"{_excl_names} → returns from ~{_ext_start[:4]})",
                 value=False, key="corr_avg_extended",
                 help=(
                     f"Drops {_excl_names} (benchmark series starting "
                     f"{', '.join(_firsts[s] for s in _recent)}) so the common "
-                    f"history extends back to {_ext_start} and the 2008 crisis "
-                    "becomes visible."
+                    f"return history starts {_ext_start}. The plotted line starts "
+                    f"one {window}-day window after the returns begin, so its first "
+                    "point is later than that."
                 ),
             )
         else:
@@ -606,9 +607,12 @@ with col:
                     f"**History constraint:** the full {_n_total}-sleeve common window "
                     f"starts {_full_start} ({_constraining} benchmark series start), so the "
                     "default view covers the 2020 and 2022 stress episodes but not 2008. "
-                    f"Enable *Extended history* to drop {_excl_names} and reach "
-                    f"~{_ext_start[:4]}, making the 2008 crisis visible. Correlations are "
-                    "non-stationary — the trailing window reflects only recent co-movement."
+                    f"Enable *Extended history* to drop {_excl_names}: its returns "
+                    f"start {_ext_start}. The line above starts **{x_min}**, one "
+                    f"{window}-day window after its own returns begin — the disclosed "
+                    "start is the first PLOTTED point, not the first return (#258). "
+                    "Correlations are non-stationary — the trailing window reflects "
+                    "only recent co-movement."
                 )
 
     st.divider()
