@@ -652,6 +652,35 @@ def _unlisted_sleeve_error(sleeve_key: str, symbol: str, *, underlying_of: str =
     )
 
 
+# HOW WELL EACH BASIS IS VERIFIED, least first (#297). A blend's yield is derived
+# from its components, and "look-through" alone hides what those components rest on,
+# so the blend names its LEAST-verified component. The ordering is a stated choice:
+#   authored     a judgement, no measurement behind it
+#   proxy        a named benchmark's TTM distributions (measured, but the choice of
+#                benchmark is authored, and candidates spread by up to 85%)
+#   constructed  arithmetic on published series (reproducible from its inputs)
+#   structural   a fact about the asset (no cash flow to yield)
+BASIS_VERIFICATION_ORDER = ("authored", "proxy", "constructed", "structural")
+
+
+def blend_weakest_basis(symbol: str, compositions_df: "pd.DataFrame | None") -> "str | None":
+    """The least-verified basis among a blend's components, or None when it has no
+    usable composition. Uses the same basis resolution the yield uses, so the two
+    cannot disagree about a component."""
+    if compositions_df is None or compositions_df.empty or not symbol:
+        return None
+    mix = compositions_df[compositions_df["fund_symbol"] == symbol]
+    bases = []
+    for under in mix["underlying_sleeve"].astype(str):
+        try:
+            _y, b = _assumed_yield_with_source(under)
+        except KeyError:
+            return None
+        if b in BASIS_VERIFICATION_ORDER:
+            bases.append(b)
+    return min(bases, key=BASIS_VERIFICATION_ORDER.index) if bases else None
+
+
 def _assumed_yield_with_source(
     sleeve_key: str,
     symbol: str = "",
@@ -1066,6 +1095,11 @@ def build_location_register(
             # the basis — see location_actions.drag_coverage.
             "assumed_yield": sleeve_yield,
             "yield_basis":   yield_basis,
+            # For a blend, the least-verified basis among its components (#297), so an
+            # authored component is never hidden behind "look-through". None otherwise.
+            "yield_basis_weakest": (
+                blend_weakest_basis(str(row["symbol"]), compositions_df)
+                if yield_basis == "look_through" else None),
             # Provenance of the RATE multiplicand, exactly as yield_basis is of the
             # yield. Both multiplicands are authored, so both declare themselves;
             # carrying one and not the other would say the rate is self-evident.
@@ -1077,7 +1111,8 @@ def build_location_register(
         })
 
     cols = ["holding", "symbol", "account", "sleeve", "case", "current_value",
-            "annual_benefit", "assumed_yield", "yield_basis", "tax_character",
+            "annual_benefit", "assumed_yield", "yield_basis", "yield_basis_weakest",
+            "tax_character",
             "embedded_gain", "cost_to_realize", "is_free", "payback_months"]
     if not rows:
         return pd.DataFrame(columns=cols)
