@@ -117,9 +117,12 @@
   and fail after. Since #269 the suite's price writes go to a
   per-session copy, so running the suite no longer advances the cache.
   Only rendering a page that fetches prices with the network up does.
-  Until #302 is fixed, a personal-mode count is a function of the tree,
-  the environment AND how stale tracker.db's prices are. Record the
-  newest price date and the run date with any baseline.
+  #302's PRODUCT half (#338) fixes the mechanism: the look-back now runs
+  from the newest STORED price, not the calendar, and 16 of the 19 pass
+  on a cache five weeks stale. The TEST half (a frozen fixture book) is
+  still open, so keep recording the newest price date and the run date
+  with any baseline until it lands: the render tests still read the
+  real book.
 - "Guards" means the read-only attribute set on data/demo.db,
   data/tracker.db and every `git ls-files data` entry, to prove a
   diagnostic did not mutate tracked data. RUN THE SUITE GUARDS-UP.

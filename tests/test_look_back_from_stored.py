@@ -6,7 +6,6 @@ empty whenever the gap could not be fetched: every holding unresolved, and the p
 rendering "No committed price data" for a book that HAS prices, just older ones.
 Network blocked throughout: this is the offline case.
 """
-import sqlite3
 from datetime import date, timedelta
 
 import pytest
@@ -25,21 +24,21 @@ def offline(monkeypatch):
 
 
 def _newest_stored() -> str:
-    c = sqlite3.connect(f"file:{db.DB_PATH}?mode=ro", uri=True)
-    try:
+    # Through get_connection, the SAME connection path the code under test uses: the
+    # suite redirects write-mode opens of data/*.db to a per-session copy, which an
+    # earlier test's fetch can advance (in CI, with the network up), so a direct
+    # read-only open of the tracked file can see an older book than the code does.
+    with db.get_connection() as c:
         return c.execute("SELECT MAX(price_date) FROM prices").fetchone()[0]
-    finally:
-        c.close()
 
 
 def test_look_back_start_anchors_on_the_newest_stored_price(use_demo_db):
     from src.holdings import look_back_start
     newest = _newest_stored()
     far = (date.fromisoformat(newest) + timedelta(days=60)).isoformat()
-    c = sqlite3.connect(f"file:{db.DB_PATH}?mode=ro", uri=True)
-    ticker, t_newest = c.execute(
-        "SELECT ticker, MAX(price_date) FROM prices GROUP BY ticker LIMIT 1").fetchone()
-    c.close()
+    with db.get_connection() as c:
+        ticker, t_newest = c.execute(
+            "SELECT ticker, MAX(price_date) FROM prices GROUP BY ticker LIMIT 1").fetchone()
     far_t = (date.fromisoformat(t_newest) + timedelta(days=60)).isoformat()
     assert look_back_start(ticker, far_t) == (
         date.fromisoformat(t_newest) - timedelta(days=7)).isoformat()
