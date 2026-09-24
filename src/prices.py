@@ -392,9 +392,14 @@ def get_prices(
     """
     end = end_date or date.today().isoformat()
 
+    # Closes only. adj_close is NULL in storage since #339 and derived below from the
+    # whole frame, so reading it only carried an all-NULL column into the gap-fill
+    # concats, where pandas warns on an all-NA entry: 604 of 774 suite warnings came
+    # from the trailing one (#356). A column the cache simply lacks does not warn.
+    # The column stays in the schema; dropping it would migrate the committed demo.db.
     with get_connection() as conn:
         rows = conn.execute(
-            """SELECT price_date, close, adj_close
+            """SELECT price_date, close
                FROM prices
                WHERE ticker = ? AND price_date >= ? AND price_date <= ?
                ORDER BY price_date""",
@@ -422,8 +427,8 @@ def get_prices(
         return fresh[in_window]
 
     cached = pd.DataFrame(
-        [(r["price_date"], r["close"], r["adj_close"]) for r in rows],
-        columns=["price_date", "close", "adj_close"],
+        [(r["price_date"], r["close"]) for r in rows],
+        columns=["price_date", "close"],
     )
     cached.index = pd.to_datetime(cached["price_date"]).dt.date
     cached = cached.drop(columns=["price_date"])

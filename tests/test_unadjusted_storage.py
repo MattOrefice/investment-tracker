@@ -237,3 +237,56 @@ def test_a_window_past_the_cache_is_fetched_contiguously(book, monkeypatch):
         prices.get_prices("T", "2026-06-20", "2026-06-25")
     p1 = datetime.fromtimestamp(asked[0][0], tz=timezone.utc).date()
     assert p1 == date(2026, 6, 6), f"fetch started {p1}, leaving a hole after 06-05"
+
+
+# ── #356: the gap-fill concats never meet the column #339 made NULL ───────────
+
+def _serve_bar(monkeypatch, day: date, close: float):
+    """The provider serves one settled bar on ``day``, with its adjclose."""
+    ts = int(datetime(day.year, day.month, day.day, 20, 0, tzinfo=timezone.utc).timestamp())
+    ind = {"quote": [{"close": [close]}], "adjclose": [{"adjclose": [close]}]}
+
+    class _Resp:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"chart": {"result": [{"meta": {}, "timestamp": [ts], "indicators": ind}]}}
+
+    monkeypatch.setattr(prices._SESSION, "get", lambda *a, **k: _Resp())
+    monkeypatch.setattr(prices, "unsettled_bar_date", lambda result: None)
+
+
+def _read_with_future_warnings_as_errors(*args):
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FutureWarning)
+        return prices.get_prices(*args)
+
+
+def test_a_trailing_gap_read_concatenates_without_a_future_warning(book, monkeypatch):
+    """Every trailing-gap read concatenated the cached frame, whose adj_close is all
+    NULL since #339, with the fetched bars, and pandas warns on an all-NA entry: 604 of
+    774 suite warnings came from that one line (#356). The read no longer carries the
+    NULL column into the concat and derives adj_close after, as before, so what it
+    returns does not change."""
+    _serve_bar(monkeypatch, date(2026, 6, 8), 104.0)
+    out = _read_with_future_warnings_as_errors("T", "2026-06-01", "2026-06-08")
+    assert list(out.columns) == ["close", "adj_close"]
+    assert out.index.tolist() == D + [date(2026, 6, 8)]          # the gap WAS filled
+    assert out["close"].tolist() == CLOSES + [104.0]
+    assert str(out["adj_close"].dtype) == "float64"
+    # The stored 06-04 dividend still adjusts the closes before it, and only those.
+    assert out["adj_close"].iloc[0] == pytest.approx(100.0 * (1 - 1.02 / 102.0), rel=1e-12)
+    assert out["adj_close"].iloc[-1] == 104.0
+
+
+def test_a_leading_gap_read_concatenates_without_a_future_warning(book, monkeypatch):
+    """The leading-gap concat has the same shape: the fetched bars before the cache,
+    then the cache with its NULL adj_close."""
+    _serve_bar(monkeypatch, date(2026, 5, 29), 99.0)
+    out = _read_with_future_warnings_as_errors("T", "2026-05-29", "2026-06-05")
+    assert out.index.tolist() == [date(2026, 5, 29)] + D          # the gap WAS filled
+    assert out["close"].tolist() == [99.0] + CLOSES
+    assert str(out["adj_close"].dtype) == "float64"
+    assert out["adj_close"].iloc[0] == pytest.approx(99.0 * (1 - 1.02 / 102.0), rel=1e-12)
