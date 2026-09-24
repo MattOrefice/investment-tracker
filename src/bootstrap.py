@@ -278,7 +278,7 @@ def bootstrap_personal_db() -> dict:
     #    that would trip that guard and silently drop the whole SAA taxonomy (which
     #    seed_securities then needs to map its ETFs to an asset_class_id). The order
     #    is dictated by the seeds' own guards, not preference.
-    seed_saa.seed()                                    # asset_classes (INSERT OR IGNORE)
+    seed_saa.seed()                                    # asset_classes (skips if non-empty; #347)
 
     # 3. All pending migrations (generic discovery; each idempotent) — adds the
     #    parking-lot class + securities sleeve columns + fund_compositions table.
