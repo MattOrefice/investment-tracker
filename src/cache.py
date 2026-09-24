@@ -202,22 +202,26 @@ class LockCoverageError(ValueError):
 
 
 def _short_coverage(statuses: "list[TickerStatus]", end: date) -> "list[str]":
-    """The lines naming each ticker whose served prices stop short of ``end``.
+    """One line per distinct gap, naming its missing dates and every ticker in it.
 
-    Read through the coverage record: frontier_served is the MIN over what was
-    served, so stale_days beyond the tolerance means at least one ticker is short.
-    Empty when the lock may proceed."""
+    Grouped because a failed fetch leaves every ticker short by the same dates, and
+    29 copies of one sentence bury the tickers. Read through the coverage record:
+    frontier_served is the MIN over what was served, so stale_days beyond the
+    tolerance means at least one ticker is short. Empty when the lock may proceed."""
     from src.asof import QUARTER_END_COVERAGE_DAYS
     cov = coverage_from_statuses(statuses, end.isoformat())
     if cov.stale_days is None or cov.stale_days <= QUARTER_END_COVERAGE_DAYS:
         return []
     floor = end - timedelta(days=QUARTER_END_COVERAGE_DAYS)
-    lines = []
+    by_last: dict[str, list[str]] = {}
     for s in statuses:
         if s.resolved and s.served_through and date.fromisoformat(s.served_through) < floor:
-            first_missing = date.fromisoformat(s.served_through) + timedelta(days=1)
-            lines.append(f"{s.ticker}: prices end {s.served_through}, missing "
-                         f"{first_missing.isoformat()} to {end.isoformat()}")
+            by_last.setdefault(s.served_through, []).append(s.ticker)
+    lines = []
+    for last in sorted(by_last):
+        first_missing = date.fromisoformat(last) + timedelta(days=1)
+        lines.append(f"prices end {last}, missing {first_missing.isoformat()} to "
+                     f"{end.isoformat()} for {', '.join(sorted(by_last[last]))}")
     return lines
 
 

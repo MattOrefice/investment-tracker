@@ -185,7 +185,9 @@ def test_a_quarter_the_data_does_not_reach_is_refused_naming_the_dates(tmp_path,
         with pytest.raises(LockCoverageError) as exc:
             capture_quarter_snapshot("2026Q3")
         msg = str(exc.value)
-        assert "VOO: prices end 2026-07-20, missing 2026-07-21 to 2026-09-30" in msg
+        gap = next(line for line in msg.split("Short: ")[1].split("; ")
+                   if line.startswith("prices end 2026-07-20, missing 2026-07-21 to 2026-09-30 for "))
+        assert "VOO" in gap and "SPY" in gap, "every short ticker is named under its dates"
         assert "Nothing was locked" in msg
         assert get_quarter_snapshot("2026Q3") == (None, None)
     finally:
@@ -207,8 +209,9 @@ def test_coverage_allows_the_frontier_caps_weekend_tolerance_and_no_more(days_sh
     lines = _short_coverage(statuses, end)
     assert bool(lines) is refused
     if refused:
-        assert lines == [f"VTV: prices end {served}, missing "
-                         f"{(end - timedelta(days=days_short - 1)).isoformat()} to 2026-09-30"]
+        assert lines == [f"prices end {served}, missing "
+                         f"{(end - timedelta(days=days_short - 1)).isoformat()} to 2026-09-30 "
+                         f"for VTV"]
 
 
 def test_a_persisted_lock_is_served_as_written(book):
