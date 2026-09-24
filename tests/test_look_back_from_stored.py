@@ -73,9 +73,9 @@ def test_a_stale_cache_offline_still_values_positioning(use_demo_db, offline):
 
 def test_a_stale_cache_offline_still_prices_the_lots(use_demo_db, offline):
     """The tax-lot inventory's current prices: the same look-back, the same stale case."""
-    from src.tax_lots import get_lot_inventory
+    from src.tax_lots import get_lot_inventory, taxable_accounts
     far = (date.fromisoformat(_newest_stored()) + timedelta(days=60)).isoformat()
-    lots = get_lot_inventory(as_of=far)
+    lots = get_lot_inventory(as_of=far, account_ids=[a["account_id"] for a in taxable_accounts()])
     etf = lots[lots["ticker"] != "SPAXX"]
     assert not etf.empty and (etf["current_price"] > 0).all(), (
         "lots priced at zero offline on a stale cache: "

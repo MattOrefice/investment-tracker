@@ -16,6 +16,8 @@ from src.tax_lots import (
     get_sleeve_rollup,
     lot_count_label,
     summary_metrics,
+    taxable_accounts,
+    unledgered_taxable_notice,
 )
 from src.harvest import (
     HARVEST_ACTION_THRESHOLD,
@@ -34,7 +36,9 @@ TODAY = date.today().isoformat()
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def _load_lots(as_of: str) -> pd.DataFrame:
-    return get_lot_inventory(as_of)
+    # Every taxable account (#362); relief inside is per account.
+    return get_lot_inventory(
+        as_of, account_ids=[a["account_id"] for a in taxable_accounts()])
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -103,6 +107,22 @@ with st.expander("How to read this page", expanded=False):
         "which sleeves have accumulated the largest unrealized gain exposure "
         "(highest rebalancing-cost friction)."
     )
+
+# Scope (#362): every taxable account. A lot in an IRA, a workplace plan or an HSA
+# carries no capital-gains consequence, so tax-advantaged accounts are not shown. A
+# taxable account whose lots are not in the ledger is DISCLOSED, before the empty
+# state, because an empty section would read as "no lots".
+_taxable = taxable_accounts()
+_account_names = {a["account_id"]: a["name"] for a in _taxable}
+st.caption(
+    "Scope: every taxable account"
+    + (f" ({', '.join(a['name'] for a in _taxable)})" if _taxable else "")
+    + ". IRAs, workplace plans and HSAs are not shown: a lot there carries no "
+    "capital-gains consequence."
+)
+_unledgered = unledgered_taxable_notice([a["name"] for a in _taxable if not a["trades"]])
+if _unledgered:
+    st.warning(_unledgered)
 
 lots = _load_lots(TODAY)
 
@@ -263,8 +283,10 @@ else:
 
     # Lot source: title-case for display
     display["lot_source_display"] = display["lot_source"].str.title()
+    display["account_display"] = display["account_id"].map(_account_names)
 
     display_cols = {
+        "account_display":       "Account",
         "ticker":                "Ticker",
         "sleeve":                "Sleeve",
         "trade_date":            "Purchase Date",
@@ -342,6 +364,7 @@ with st.expander("Tax-Loss Harvest Candidates", expanded=_has_candidates):
             )
             rows.append(
                 {
+                    "Account":              _account_names.get(c["account_id"], "—"),
                     "Ticker":               c["ticker"],
                     "Sleeve":               c["sleeve"],
                     "Tax Status":           c["tax_status"],
@@ -359,6 +382,7 @@ with st.expander("Tax-Loss Harvest Candidates", expanded=_has_candidates):
             use_container_width=True,
             hide_index=True,
             column_config={
+                "Account":               st.column_config.TextColumn("Account"),
                 "Ticker":                st.column_config.TextColumn("Ticker"),
                 "Sleeve":                st.column_config.TextColumn("Sleeve"),
                 "Tax Status":            st.column_config.TextColumn("Tax Status"),

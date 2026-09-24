@@ -154,7 +154,7 @@ def compute_harvest_candidates(
 
     Returns:
         List of dicts, one per qualifying lot, sorted by estimated_tax_benefit desc.
-        Each dict keys: lot_id, ticker, sleeve, shares, tax_status,
+        Each dict keys: lot_id, account_id, ticker, sleeve, shares, tax_status,
         cost_basis_per_share, current_price, market_value, unrealized_loss,
         unrealized_loss_pct, estimated_tax_benefit, replacement_ticker,
         replacement_rationale, wash_sale_start_date, wash_sale_end_date.
@@ -199,6 +199,9 @@ def compute_harvest_candidates(
         candidates.append(
             {
                 "lot_id":                int(lot["trade_id"]),
+                # The account the lot sits in: a harvest is a sale in ONE account, and
+                # the page can show several taxable accounts (#362).
+                "account_id":            lot.get("account_id"),
                 "ticker":                ticker,
                 "sleeve":                str(lot["sleeve"]),
                 "shares":                float(lot["shares"]),
