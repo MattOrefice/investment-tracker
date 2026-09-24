@@ -117,12 +117,15 @@
   and fail after. Since #269 the suite's price writes go to a
   per-session copy, so running the suite no longer advances the cache.
   Only rendering a page that fetches prices with the network up does.
-  #302's PRODUCT half (#338) fixes the mechanism: the look-back now runs
-  from the newest STORED price, not the calendar, and 16 of the 19 pass
-  on a cache five weeks stale. The TEST half (a frozen fixture book) is
-  still open, so keep recording the newest price date and the run date
-  with any baseline until it lands: the render tests still read the
-  real book.
+  #302's PRODUCT half (#338) fixed the mechanism: the look-back runs from
+  the newest STORED price, not the calendar. Its TEST half moved those
+  render tests, and #187's modules, onto the FROZEN TEST BOOK
+  (tests/fixtures/frozen_book.db, built by tools/build_frozen_book.py from
+  the public demo.db only, never tracker.db). They render a copy, offline,
+  with date.today() pinned to the book's next day (FROZEN_TODAY in
+  tests/conftest.py), so they no longer read the real book or the
+  calendar, and they run in CI. To change the book, re-run the builder
+  deliberately and review it like any data PR.
 - "Guards" means the read-only attribute set on data/demo.db,
   data/tracker.db and every `git ls-files data` entry, to prove a
   diagnostic did not mutate tracked data. RUN THE SUITE GUARDS-UP.
@@ -147,11 +150,12 @@
   `Set-ItemProperty data/tracker.db -Name IsReadOnly -Value $false`,
   then confirm it reads False and that the 14 tracked entries still read
   True.
-- Two red tests are DELIBERATE and load-bearing: #177
+- ONE red test is DELIBERATE and load-bearing: #177
   (`test_exactly_the_saa_tickers_are_flagged`, the only live signal
-  that the personal book has diverged from its documented taxonomy)
-  and the twelve mode-sensitive render tests enumerated in #187. Do
-  not "fix" either. Any failure beyond those is real.
+  that the personal book has diverged from its documented taxonomy).
+  Do not "fix" it. #187's mode-sensitive render tests were CLOSED by
+  rendering them against the frozen test book (#302), so they are no
+  longer expected red. Any failure beyond #177 is real.
 
 ## History baseline (post-2026-06-08 reorg)
 - History was reorganized twice on 2026-06-08, both as

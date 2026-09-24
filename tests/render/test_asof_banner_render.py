@@ -20,7 +20,12 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent.parent
-TRACKER_DB = ROOT / "data" / "tracker.db"
+# The FROZEN TEST BOOK, not the owner's tracker.db (#302 test half): every scratch
+# copy below starts from tests/fixtures/frozen_book.db (public origin, #304 format),
+# and today is pinned to the book's next day, so nothing here depends on the real
+# book or the date, and the module runs in CI.
+FROZEN_BOOK = ROOT / "tests" / "fixtures" / "frozen_book.db"
+pytestmark = pytest.mark.usefixtures("frozen_clock_module")
 KILL = ("VOO", "VEA")
 
 # Any element carrying one of these is a banner element. The legacy render emits
@@ -100,15 +105,15 @@ def _in_state_one(page: str, db, today: date) -> bool:
 
 
 def _skip_without_personal_inputs():
-    from src.household_data import find_latest_positions_csv
-    if (find_latest_positions_csv() is None or not TRACKER_DB.exists()
-            or not (ROOT / "private" / "account_map.json").exists()):
-        pytest.skip("personal-mode inputs absent")
+    # The frozen test book is COMMITTED (#302 test half), so absent is a failure,
+    # never a skip. These tests used to copy the owner's tracker.db and skip without
+    # the positions CSV and account map, so they never ran in CI.
+    assert FROZEN_BOOK.exists(), f"the frozen test book is missing: {FROZEN_BOOK}"
 
 
 def _scratch(tmp_path, mode):
     db = tmp_path / f"{mode}.db"
-    shutil.copyfile(TRACKER_DB, db)
+    shutil.copyfile(FROZEN_BOOK, db)
     os.chmod(db, 0o644)
     if mode == "partial":
         conn = sqlite3.connect(db)

@@ -528,3 +528,110 @@ def no_ambient_db(tmp_path, monkeypatch):
     monkeypatch.setattr(db, "DB_PATH", empty)
     monkeypatch.setattr(db, "_migrated_paths", set(), raising=False)
     return empty
+
+
+# ── The FROZEN TEST BOOK (#302, test half) ─────────────────────────────────────
+# tests/fixtures/frozen_book.db, built by tools/build_frozen_book.py from the PUBLIC
+# demo.db (never tracker.db), in #304's format, trimmed, with nothing date-keyed.
+# Render tests that used to copy the owner's real book use this instead, so they
+# run in CI and do not depend on the real book or on how stale its prices are.
+# ALWAYS through a copy, with the network blocked: a live fetch would append
+# today's prices and make the book depend on the date, and an in-place open would
+# mutate a committed fixture.
+FROZEN_BOOK = _ROOT / "tests" / "fixtures" / "frozen_book.db"
+
+
+def point_at_frozen_book(mp: "pytest.MonkeyPatch", tmp_dir: Path) -> Path:
+    """Copy the frozen book into ``tmp_dir``, point src.db at the copy, and block
+    the network. Returns the copy's path."""
+    import socket
+    import src.db
+    import src.prices
+    copy = tmp_dir / "frozen_book.db"
+    shutil.copyfile(FROZEN_BOOK, copy)
+    os.chmod(copy, 0o644)
+
+    def _offline(*_a, **_k):
+        raise OSError("network blocked: the frozen book is offline by design (#302)")
+
+    mp.setattr(socket, "getaddrinfo", _offline)
+    mp.setattr(src.prices._SESSION, "get", _offline)
+    mp.setattr(src.db, "DB_PATH", copy)
+    mp.setattr(src.db, "_migrated_paths", set())
+    src.prices._reset_trailing_memo()
+    return copy
+
+
+# The day these renders run "as of": the day after the frozen book's frontier
+# (2026-07-20). A frozen book alone does not make a render date-independent: the
+# pages read date.today() 79 times (YTD, quarter reportability, benchmark coverage
+# "as of today"), so against a fixed book the SAME render would change with the
+# calendar. Pinning today to the book's own next day is what makes "nothing depends
+# on the date" true. test_frozen_book.py checks the pin against the book.
+FROZEN_TODAY = __import__("datetime").date(2026, 7, 21)
+
+import datetime as _dt  # noqa: E402
+
+_REAL_DATE = _dt.date
+
+
+class _PinnedDateMeta(type):
+    def __instancecheck__(cls, obj):
+        # A real date (from pandas, sqlite, arithmetic) must still pass
+        # isinstance(x, date) wherever `date` is now the pinned class.
+        return isinstance(obj, _REAL_DATE)
+
+
+class _PinnedDate(_REAL_DATE, metaclass=_PinnedDateMeta):
+    """datetime.date with today() pinned. Everything else is inherited."""
+    _pin = FROZEN_TODAY
+
+    @classmethod
+    def today(cls):
+        return _REAL_DATE(cls._pin.year, cls._pin.month, cls._pin.day)
+
+
+def pin_today(mp: "pytest.MonkeyPatch", day=FROZEN_TODAY) -> None:
+    """Make date.today() return ``day`` for code run under ``mp``: the datetime
+    module (so a page script's `from datetime import date` at exec gets it) and
+    every loaded src/tests/pages module that bound the real `date` at import.
+    datetime.now() is NOT pinned: its three uses (the unsettled-bar check, reached
+    only by a fetch; snapshot capture time; Macro's "Last updated" caption) are not
+    reached by an offline frozen-book render."""
+    _PinnedDate._pin = day
+    mp.setattr(_dt, "date", _PinnedDate)
+    for name, mod in list(sys.modules.items()):
+        if (name.startswith(("src", "tests", "pages")) or name.startswith("test_"))                 and getattr(mod, "date", None) is _REAL_DATE:
+            mp.setattr(mod, "date", _PinnedDate)
+
+
+def unpin_leftovers() -> "list[str]":
+    """Restore the real `date` in any module that bound the PINNED class. A module
+    first imported while a pin was active took `from datetime import date` from the
+    patched datetime module; the monkeypatch only restores what it patched, so
+    without this that module would read the pinned day for the rest of the run."""
+    fixed = []
+    for name, mod in list(sys.modules.items()):
+        if getattr(mod, "date", None) is _PinnedDate:
+            setattr(mod, "date", _REAL_DATE)
+            fixed.append(name)
+    return fixed
+
+
+@pytest.fixture(scope="module")
+def frozen_book_module(tmp_path_factory):
+    """Module-scoped: a copy of the frozen book, offline, with today pinned to the
+    book's next day. For modules whose rendered-page fixture is module-scoped."""
+    with pytest.MonkeyPatch.context() as mp:
+        pin_today(mp)
+        yield point_at_frozen_book(mp, tmp_path_factory.mktemp("frozen_book"))
+    unpin_leftovers()
+
+
+@pytest.fixture(scope="module")
+def frozen_clock_module():
+    """Only the pinned clock, for modules that copy the frozen book per test."""
+    with pytest.MonkeyPatch.context() as mp:
+        pin_today(mp)
+        yield FROZEN_TODAY
+    unpin_leftovers()

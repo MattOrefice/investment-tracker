@@ -28,6 +28,10 @@
 *.db.*
 # demo.db is committed intentionally (paper trades for Streamlit Cloud)
 !data/demo.db
+# The frozen test book (#302): built ONLY from the public demo.db by
+# tools/build_frozen_book.py. tests/test_frozen_book.py asserts its public origin
+# and that every OTHER .db stays ignored. One named file, never a pattern.
+!tests/fixtures/frozen_book.db
 
 # Fidelity exports — personal portfolio data, never committed.
 # Matched ANYWHERE, not just under data/uploads/: an export dragged to the repo

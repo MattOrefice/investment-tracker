@@ -33,7 +33,12 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent.parent
-TRACKER_DB = ROOT / "data" / "tracker.db"
+# The FROZEN TEST BOOK, not the owner's tracker.db (#302 test half): every scratch
+# copy below starts from tests/fixtures/frozen_book.db (public origin, #304 format),
+# and today is pinned to the book's next day, so nothing here depends on the real
+# book or the date, and the module runs in CI.
+FROZEN_BOOK = ROOT / "tests" / "fixtures" / "frozen_book.db"
+pytestmark = pytest.mark.usefixtures("frozen_clock_module")
 # NOT a literal date. A full-suite run has network, so other tests advance
 # tracker.db's price cache mid-run and every scratch copy taken afterwards inherits
 # the newer frontier. Hardcoding the date made these tests pass alone and fail in
@@ -54,10 +59,10 @@ def _pages_dir() -> Path:
 
 
 def _skip_without_personal_inputs():
-    from src.household_data import find_latest_positions_csv
-    if (find_latest_positions_csv() is None or not TRACKER_DB.exists()
-            or not (ROOT / "private" / "account_map.json").exists()):
-        pytest.skip("personal-mode inputs absent")
+    # The frozen test book is COMMITTED (#302 test half), so absent is a failure,
+    # never a skip. These tests used to copy the owner's tracker.db and skip without
+    # the positions CSV and account map, so they never ran in CI.
+    assert FROZEN_BOOK.exists(), f"the frozen test book is missing: {FROZEN_BOOK}"
 
 
 def _render(page: str, mode: str, tmp_path, monkeypatch):
@@ -68,7 +73,7 @@ def _render(page: str, mode: str, tmp_path, monkeypatch):
     import src.prices
 
     db = tmp_path / f"{mode}.db"
-    shutil.copyfile(TRACKER_DB, db)
+    shutil.copyfile(FROZEN_BOOK, db)
     os.chmod(db, 0o644)
     if mode == "partial":
         conn = sqlite3.connect(db)
@@ -270,7 +275,7 @@ def test_page2_three_producers_report_the_same_unresolved_set(tmp_path, monkeypa
     import requests
 
     db = tmp_path / "agree.db"
-    shutil.copyfile(TRACKER_DB, db)
+    shutil.copyfile(FROZEN_BOOK, db)
     os.chmod(db, 0o644)
     conn = sqlite3.connect(db)
     conn.execute(f"DELETE FROM prices WHERE ticker IN ({','.join('?' * len(KILL))})", KILL)
