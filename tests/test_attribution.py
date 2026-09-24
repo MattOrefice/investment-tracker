@@ -690,14 +690,18 @@ def test_identity_bf_sum_reconciles_to_stage2(_no_live_fetch):
     r_p_total_excash, so the sum is r_p_total_incl ≈ r_p_ps within the same tolerance
     that held pre-38b-2.
 
-    r_p_ps uses inception-based portfolio value series sliced to the period, matching
-    the Performance page's _benchmark_period_return(pv, bf_period) call.
+    r_p_ps is the book's daily-linked TWR over the period, matching the Performance
+    page's period_return("daily", pv, cf, bf_period) call (#349). It was an end-over-
+    start value ratio, copied from the page; that copy could not see the page counting
+    deposits as return, because this book has no deposit in any window, where the two
+    agree exactly. The bridge holds against the TWR only on such a book: BF holds the
+    start-of-window holdings fixed, so a deposit mid-window moves the TWR and not BF.
     """
     import datetime
     import pandas as pd
     from src.attribution import brinson_fachler_period
-    from src.holdings import get_portfolio_value_series, last_real_price_date
-    from src.returns import period_bounds
+    from src.holdings import get_external_cashflow_series, get_portfolio_value_series, last_real_price_date
+    from src.returns import period_bounds, period_return
 
     INCEPTION = "2025-05-01"
     # Anchor on the HOLDINGS' common frontier captured at import (no live fetch), NOT
@@ -726,6 +730,8 @@ def test_identity_bf_sum_reconciles_to_stage2(_no_live_fetch):
     real_end = last_real_price_date(INCEPTION, TODAY)
     real_end_d = datetime.date.fromisoformat(real_end)
     pv_real = pv_full[pv_full.index <= pd.Timestamp(real_end)]
+    cf_real = (get_external_cashflow_series(INCEPTION, TODAY, account_id=1)
+               .reindex(pv_real.index).fillna(0.0))
 
     for label in ("SI", "1Y", "YTD", "3M", "1M"):
         start, end = period_bounds(label, real_end_d, INCEPTION)
@@ -737,7 +743,7 @@ def test_identity_bf_sum_reconciles_to_stage2(_no_live_fetch):
         if bf_df.empty:
             pytest.skip(f"BF result empty for {label} — skipped in local/empty-DB mode")
 
-        r_p_ps        = _bpr_helper(pv_real, label)
+        r_p_ps        = period_return("daily", pv_real, cf_real, label)
         bf_r_p_excash = float((bf_df["w_p"] * bf_df["r_p"]).sum())
         cash_drag     = float(bf_df.attrs.get("cash_drag", 0.0))
         bridged       = bf_r_p_excash + cash_drag

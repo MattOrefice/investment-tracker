@@ -268,7 +268,8 @@ def test_two_stage_reconciliation_uses_price_series(performance_app: AppTest) ->
     with _r_p_bf (BF-internal price-appreciation return) instead of the portfolio
     price-series TWR, creating a ~316 bps Stage 2 residual vs. the price series.
     The reconciliation caption showed '⚠ residual: N bps'. Fixed code uses
-    _benchmark_period_return(pv, period) throughout; algebra residual is 0.00 bps.
+    price-series returns throughout (the portfolio's daily-linked TWR since #349,
+    _benchmark_period_return for the benchmarks); algebra residual is 0.00 bps.
     """
     if not performance_app.metric:
         pytest.skip("No portfolio data — skipped in local/empty-DB mode")
