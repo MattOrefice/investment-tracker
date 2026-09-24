@@ -139,11 +139,51 @@ def _copy_for(path: Path) -> Path:
     return _redirect_copies[path]
 
 
+# LEAK DETECTION, DETERMINISTIC (#340). Every connection the redirect opens is held
+# here by a STRONG reference, with the phase it was opened in and the test that
+# opened it. Before this, a leaked connection was caught only if garbage collection
+# had not yet closed it by session end: a short run reported test_seed's leak and
+# the full suite, where GC ran first, reported clean. Python 3.11's sqlite3 emits no
+# ResourceWarning for an unclosed connection (that arrived in 3.13), so there is no
+# warning to promote to an error. Holding the reference means GC cannot close the
+# leak before it is checked. Never gc.collect() before a check: that closes the leak
+# and hides it.
+_open_redirected: "list[tuple[sqlite3.Connection, str, str]]" = []
+_phase = "collection"
+_current_test = "<collection>"
+
+
+def _is_open(conn: sqlite3.Connection) -> bool:
+    try:
+        conn.execute("SELECT 1")
+        return True
+    except sqlite3.ProgrammingError:
+        return False
+
+
 def _redirecting_connect(target, *args, **kwargs):
     path, is_write = _classify(target, kwargs)
     if path is None or path not in _TRACKED_DBS or not is_write or _allow_real_db:
         return _real_connect(target, *args, **kwargs)
-    return _real_connect(str(_copy_for(path)), *args, **kwargs)
+    conn = _real_connect(str(_copy_for(path)), *args, **kwargs)
+    _open_redirected.append((conn, _phase, _current_test))
+    return conn
+
+
+def _take_leaks(select) -> "list[str]":
+    """Close and return every still-open registered connection that `select` picks,
+    and drop every closed one, so the registry stays small over a full run."""
+    leaks, keep = [], []
+    for conn, phase, test in _open_redirected:
+        if not _is_open(conn):
+            continue
+        if select(phase, test):
+            leaks.append(f"{test} ({phase})")
+            conn.close()
+        else:
+            keep.append((conn, phase, test))
+    _open_redirected[:] = keep
+    return leaks
 
 
 # Installed at MODULE BODY, not in a fixture or hook, and that is deliberate: the
@@ -309,13 +349,38 @@ def pytest_configure(config):
 
 
 def pytest_runtest_setup(item):
-    global _allow_real_db
+    global _allow_real_db, _phase, _current_test
     _allow_real_db = item.get_closest_marker(_REAL_DB_MARKER) is not None
+    _phase, _current_test = "setup", item.nodeid
 
 
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_call(item):
+    global _phase
+    _phase = "call"
+    yield
+    _phase = "teardown"
+
+
+_LEAK_HEADLINE = "connection to a tracked-book copy left open (#340)"
+
+
+@pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_teardown(item, nextitem):
-    global _allow_real_db
+    global _allow_real_db, _phase
+    yield
     _allow_real_db = False
+    _phase = "between"
+    # A connection this test's BODY opened must be closed by the end of its own
+    # teardown. Setup-phase opens are exempt here (a module- or session-scoped
+    # fixture can legitimately hold one across tests); those are checked at
+    # session end instead.
+    leaks = _take_leaks(lambda phase, test: phase == "call" and test == item.nodeid)
+    if leaks:
+        raise AssertionError(
+            f"{_LEAK_HEADLINE}: {item.nodeid} opened {len(leaks)} connection(s) to a "
+            "redirected tracked-DB copy and never closed them. `with sqlite3.connect(...)"
+            " as c:` commits but does NOT close; use contextlib.closing or get_connection.")
 
 
 def remove_tree_reporting(path: Path) -> "list[str]":
@@ -370,9 +435,24 @@ def pytest_collection_finish(session):
             capture()
 
 
+_session_leaks: "list[str]" = []
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Session-end leak check for connections opened OUTSIDE a test body (collection,
+    fixture setup): still open now means nothing will close them. Fails the run."""
+    _session_leaks.extend(_take_leaks(lambda phase, test: True))
+    if _session_leaks and session.exitstatus == 0:
+        session.exitstatus = pytest.ExitCode.TESTS_FAILED
+
+
 def pytest_terminal_summary(terminalreporter, exitstatus, config):
     """Clean up HERE rather than only in pytest_unconfigure, because this is the
     last point where a failure can still be printed where the reader looks."""
+    if _session_leaks:
+        terminalreporter.write_sep("!", _LEAK_HEADLINE + " — at session end", red=True)
+        for line in _session_leaks:
+            terminalreporter.write_line(f"  opened by {line}", red=True)
     failures = _cleanup_redirect_dir()
     if failures:
         terminalreporter.write_sep("!", _CLEANUP_HEADLINE, red=True)

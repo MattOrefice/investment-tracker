@@ -5,6 +5,7 @@ Connects directly to demo.db rather than via get_connection() to avoid the
 cached TRACKER_MODE state that other test modules may have set at import time.
 """
 import sqlite3
+from contextlib import contextmanager
 import sys
 import pathlib
 
@@ -13,10 +14,19 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 _DEMO_DB = pathlib.Path(__file__).resolve().parent.parent / "data" / "demo.db"
 
 
+@contextmanager
 def _conn():
+    """A connection that is CLOSED on exit (#340). A bare sqlite3 connection used as
+    `with conn:` commits but never closes, and this one is a write-mode open of the
+    tracked demo.db, so the suite redirects it to a per-session copy that the leaked
+    handle then kept open past session end."""
     conn = sqlite3.connect(str(_DEMO_DB))
     conn.row_factory = sqlite3.Row
-    return conn
+    try:
+        with conn:
+            yield conn
+    finally:
+        conn.close()
 
 
 def test_demo_inception_trades_sum_to_1000():
