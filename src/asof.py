@@ -1,5 +1,5 @@
 """Shared as-of date utilities — banner text for every Streamlit page."""
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 # A quarter-end is "priceable" if committed data reaches within this many calendar
 # days of it. Deliberately the same window as src.attribution._last_adj_price's
@@ -347,6 +347,19 @@ def as_of_live_line(
     # "the latest SETTLED close every holding has" (strictly before today). Two pages
     # on one book can therefore differ by a day, and each says which it means.
     basis = "as served to this page" if coverage is not None else "settled closes"
+
+    # The demo's daily refresh (#368 item 3), when it has run in this process. After
+    # a success that reached this date, the date is as current as settled closes
+    # allow: "N days behind" would misreport it, so the line says when it was fetched
+    # instead. After a failure, the line says so, what is served in its place, and
+    # when it retries: a failed fetch must never read as a quiet old date.
+    from src.demo_refresh import state as _refresh_state
+    refresh = _refresh_state()
+    if (refresh is not None and refresh.status == "fetched" and not gap
+            and refresh.served_through and served >= date.fromisoformat(refresh.served_through)):
+        return (f"Prices through {format_long_date(served)} ({basis}, fetched "
+                f"{_when(refresh.attempted_at)}).")
+
     line = f"Prices through {format_long_date(served)} ({basis})"
     if lag > 0:
         line += f" — {lag} day{'' if lag == 1 else 's'} behind"
@@ -354,7 +367,21 @@ def as_of_live_line(
         line += (", and " if lag > 0 else " — ")
         line += (f"{len(gap)} of {len(coverage.requested)} holdings have "
                  "no committed price")
+    if refresh is not None and refresh.status == "failed":
+        instead = (f"prices last fetched {_when(refresh.fetched_before)}"
+                   if refresh.fetched_before else "the committed snapshot")
+        line += (f". The daily price fetch failed {_when(refresh.attempted_at)}; "
+                 f"serving {instead} until it retries after "
+                 f"{_when(refresh.next_attempt_at)}")
     return line + "."
+
+
+def _when(t: "datetime | str") -> str:
+    """'September 24, 2026 at 21:30 UTC' for a datetime or an ISO string."""
+    if isinstance(t, str):
+        t = datetime.fromisoformat(t)
+    t = t.astimezone(timezone.utc)
+    return f"{format_long_date(t.date())} at {t:%H:%M} UTC"
 
 
 def as_of_report_line(

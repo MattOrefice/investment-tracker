@@ -390,7 +390,36 @@ def _seed_runtime_cache(committed: Path, cache: Path) -> None:
                 names = ", ".join(cols)
                 conn.execute(f"INSERT INTO runtime_{name} ({names}) "
                              f"SELECT {names} FROM committed.{name}")
-        conn.execute("INSERT OR REPLACE INTO runtime_meta VALUES ('seeded_from', ?)", (ident,))
+        # A new seed drops every fetched row, so the record of past fetches goes too:
+        # the refresh reads it to say what a failed fetch is serving instead.
+        conn.execute("DELETE FROM runtime_meta")
+        conn.execute("INSERT INTO runtime_meta VALUES ('seeded_from', ?)", (ident,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def runtime_meta(key: str) -> "str | None":
+    """A value the demo's runtime recorded in its cache, or None (no cache, no key)."""
+    if _RUNTIME_CACHE is None:
+        return None
+    conn = sqlite3.connect(str(_RUNTIME_CACHE[1]))
+    try:
+        row = conn.execute("SELECT value FROM runtime_meta WHERE key = ?", (key,)).fetchone()
+        return row[0] if row else None
+    except sqlite3.OperationalError:
+        return None
+    finally:
+        conn.close()
+
+
+def set_runtime_meta(key: str, value: str) -> None:
+    if _RUNTIME_CACHE is None:
+        return
+    conn = sqlite3.connect(str(_RUNTIME_CACHE[1]))
+    try:
+        conn.execute("CREATE TABLE IF NOT EXISTS runtime_meta (key TEXT PRIMARY KEY, value TEXT)")
+        conn.execute("INSERT OR REPLACE INTO runtime_meta VALUES (?, ?)", (key, value))
         conn.commit()
     finally:
         conn.close()

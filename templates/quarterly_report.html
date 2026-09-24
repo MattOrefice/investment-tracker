@@ -498,6 +498,7 @@
 {# ── Page 7: Macro Context — no forced break, continues after Benchmark Attr ── #}
 <section class="no-break">
   <h2 style="margin-top: 20pt;">Macro Context</h2>
+  {% if macro and macro.as_of %}<p class="muted">{{ macro.as_of }}</p>{% endif %}
 
   <table class="data-table">
     <thead>
@@ -545,6 +546,7 @@
 {# ── Page 8: Asset Evaluation ─────────────────────────────────────────────── #}
 <section>
   <h2>Asset Evaluation &mdash; Case Study: Bitcoin</h2>
+  {% if asset_eval and asset_eval.as_of %}<p class="muted">{{ asset_eval.as_of }}</p>{% endif %}
 
   {# Gated on DISPOSITION, not on uni_rows (#250). The old gate suppressed the
      whole section whenever the univariate table was empty, discarding the

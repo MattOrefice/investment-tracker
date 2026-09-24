@@ -1130,10 +1130,14 @@ def _build_macro_section() -> dict:
             return "N/A"
 
     macro: dict = {}
+    # Each reading's own latest observation, for the section's as-of line: the macro
+    # context is live by design, not locked to the report's quarter (#368).
+    observed: dict[str, str] = {}
 
     try:
         cape_val = current_cape()
         cape_s   = get_cape_series()
+        observed["CAPE"] = _obs_date(cape_s)
         # HANDLE None, DO NOT CATCH ITS TypeError. percentile() returns None on an
         # empty series BY CONTRACT, and its docstring names this caller's obligation:
         # "those that can [receive an empty series] must handle None". The previous
@@ -1183,6 +1187,7 @@ def _build_macro_section() -> dict:
     try:
         yc     = get_series("T10Y2Y", "1990-01-01")
         yc_val = float(yc.dropna().iloc[-1])
+        observed["10Y-2Y"] = _obs_date(yc)
         note   = ("Positive slope — normalized rate environment."
                   if yc_val > 0 else
                   "Inverted — historically precedes recession; supports duration exposure.")
@@ -1195,6 +1200,7 @@ def _build_macro_section() -> dict:
     try:
         ff     = get_series("DFF", "1990-01-01")
         ff_val = float(ff.dropna().iloc[-1])
+        observed["Fed funds"] = _obs_date(ff)
         macro["fed_funds"] = {
             "value": f"{ff_val:.2f}%", "percentile": _pct_str(ff, ff_val),
             "note":  "Current rate level relative to post-1990 history.",
@@ -1205,6 +1211,7 @@ def _build_macro_section() -> dict:
     try:
         hy     = get_series("BAMLH0A0HYM2", "2023-05-01")
         hy_val = float(hy.dropna().iloc[-1])
+        observed["HY OAS"] = _obs_date(hy)
         macro["hy_spread"] = {
             "value": f"{hy_val:.2f}%", "percentile": _pct_str(hy, hy_val),
             "note":  "ICE BofA HY OAS; percentile relative to May 2023+ window (FRED restriction).",
@@ -1212,7 +1219,27 @@ def _build_macro_section() -> dict:
     except Exception:
         macro["hy_spread"] = {"value": "N/A", "percentile": "N/A", "note": "Data unavailable."}
 
+    macro["as_of"] = (
+        "Live, not locked to the report's quarter: each reading is its latest "
+        "observation when this report was generated ("
+        + (", ".join(f"{k} {v}" for k, v in observed.items() if v) or "none available")
+        + ")."
+    )
     return macro
+
+
+def _obs_date(series) -> "str | None":
+    """A series' latest observation date, ISO, or None when its index carries no date.
+
+    NEVER RAISES. It runs inside each indicator's try block, whose broad except turns
+    any exception into "Data unavailable": an as-of line that failed would silently
+    knock out the very reading it describes (caught by
+    test_exec_and_macro_cape_stances_never_contradict, whose stub has an integer index)."""
+    try:
+        last = series.dropna().index[-1]
+        return (last.date() if hasattr(last, "date") else last).isoformat()
+    except Exception:                                    # noqa: BLE001
+        return None
 
 
 def _build_thesis_section(start_date: str, end_date: str, *, account_id: int) -> dict:
@@ -1452,6 +1479,13 @@ def _build_asset_eval_section() -> dict:
                 "failure_reason": f"{type(exc).__name__}: {exc}"}
 
     result = {k: (list(v) if isinstance(v, list) else v) for k, v in _empty.items()}
+    # Live by design, not locked to the report's quarter (#368): say through when.
+    # The common end of the three series, since every figure here reads all three.
+    _through = min(pd.Timestamp(s.index.max()) for s in (btc_ret, slv_ret, spy_ret) if not s.empty)
+    result["as_of"] = (
+        f"Live, not locked to the report's quarter: returns from {ae.SAMPLE_START} "
+        f"through {_through.date().isoformat()}."
+    )
 
     # Bitcoin's OWN realized 2022 drawdown, for the table caption (#276). Computed
     # here rather than inside 5h because it is a property of the candidate asset, not

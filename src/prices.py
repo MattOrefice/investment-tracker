@@ -271,6 +271,20 @@ def fetch_prices(
     return df
 
 
+# Whether a read may go to the network to fill a gap the cache does not cover. Off
+# only once the demo's daily refresh has taken over fetching (src.demo_refresh):
+# then the refresh fetches on its own schedule and a read serves what the cache
+# holds, so a failed fetch is retried on a timer and never on every render. A
+# ticker with no cached rows at all (a candidate typed on the Research page) is
+# still fetched on read: nothing else will fetch it.
+_GAP_FETCH = True
+
+
+def set_gap_fetch(enabled: bool) -> None:
+    global _GAP_FETCH
+    _GAP_FETCH = bool(enabled)
+
+
 # Process-local memo for the TRAILING gap fetch only, keyed on (ticker, start, end).
 # Once the in-flight bar stopped being cached, `cached_end < end` stays true for the
 # rest of an open session, so every get_prices call re-issued the same request — 14
@@ -468,7 +482,7 @@ def get_prices(
     cached_end   = _to_iso(cached.index.max())
 
     # Fetch any missing leading data
-    if cached_start > start_date:
+    if cached_start > start_date and _GAP_FETCH:
         pre_end = _to_iso(cached.index.min() - timedelta(days=1))
         try:
             pre = fetch_prices(ticker, start_date, pre_end)
@@ -477,7 +491,7 @@ def get_prices(
             pass
 
     # Fetch any missing trailing data
-    if cached_end < end:
+    if cached_end < end and _GAP_FETCH:
         post_start = _to_iso(cached.index.max() + timedelta(days=1))
         try:
             post = _fetch_trailing_memoized(ticker, post_start, end)
@@ -600,9 +614,12 @@ def get_dividends(ticker: str, start_date: str, end_date: str) -> pd.Series:
                 return []
 
     rows = _query_cache()
-    if not rows:
+    if not rows and _GAP_FETCH:
         # Prices may be cached but dividends not yet (first run after migration).
         # Re-fetch prices — fetch_prices now also stores dividends as a side effect.
+        # Gated like the gap fills: a window with no dividends at all re-fetched on
+        # every call, which under the daily refresh is exactly the per-render retry
+        # it exists to prevent.
         try:
             fetch_prices(ticker, start_date, end)
             rows = _query_cache()
