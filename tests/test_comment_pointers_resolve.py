@@ -55,6 +55,9 @@ RETIRED_BUT_RECORDED = {
     "FEDERALLY_EXEMPT_SLEEVES": "deleted at #278, replaced by SLEEVE_TAX_CHARACTER; the "
                                 "comments record the replacement and the rate/eligibility "
                                 "split that motivated it",
+    "EQUITY_SLEEVES": "deleted at #212, replaced by a category derived per sleeve "
+                      "(taxonomy for SAA sleeves, OFF_SAA_SLEEVE_CATEGORY for the rest); "
+                      "the comments record the hand-kept set and how it failed silently",
 }
 
 # COMMENTS ONLY, deliberately. Adding docstrings raises the non-resolving count from 3 to

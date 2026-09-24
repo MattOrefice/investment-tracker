@@ -118,6 +118,10 @@ with get_connection() as conn:
         "WHERE parent_id IS NOT NULL AND target_weight > 0",
         conn,
     )
+    # The WHOLE tree, roots included: a sleeve's category is its class's root, which
+    # is what decides which sleeves count as equity (household.equity_sleeves, #212).
+    asset_classes_df = pd.read_sql_query(
+        "SELECT asset_class_id, name, parent_id FROM asset_classes", conn)
 
 # Single source of truth: accounts holding money that isn't a household asset
 # (e.g. unvested/forfeitable employer contributions) are dropped here, once, so
@@ -371,7 +375,8 @@ for group in _ordered_groups:
     resolved = resolve_placeholders(group, positions_df, accounts_df, securities_df, register,
                                     roth_idle_cash=_roth_idle_cash,
                                     compositions_df=compositions_df,
-                                    tier_state=_deploy_tier)
+                                    tier_state=_deploy_tier,
+                                    asset_classes_df=asset_classes_df)
     _card = (deploy_card_text(group, _deploy_tier, resolved)
              if group["key"] == "deploy_roth_cash" else None)
 

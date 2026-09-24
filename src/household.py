@@ -102,6 +102,163 @@ def look_through_position(
     )
 
 
+def _taxonomy_roots(asset_classes_df: pd.DataFrame):
+    """(root_of, parent, roots): a class id's root NAME, each id's parent id (None
+    for a root), and the set of root names."""
+    ac = asset_classes_df.set_index("asset_class_id")
+    parent = {int(i): (None if pd.isna(p) else int(p)) for i, p in ac["parent_id"].items()}
+    name = {int(i): str(n) for i, n in ac["name"].items()}
+
+    def root_of(class_id: int) -> str:
+        seen: set[int] = set()
+        while parent[class_id] is not None:
+            if class_id in seen:
+                raise ValueError(f"asset_classes has a parent cycle through id {class_id}")
+            seen.add(class_id)
+            class_id = parent[class_id]
+        return name[class_id]
+
+    return root_of, parent, {name[i] for i, p in parent.items() if p is None}
+
+
+def sleeve_categories(
+    securities_df: pd.DataFrame, asset_classes_df: pd.DataFrame,
+) -> dict[str, str]:
+    """Every sleeve that has a category, mapped to it, from EXACTLY ONE source (#212).
+
+    A category is a ROOT of the SAA taxonomy (an ``asset_classes`` row with no
+    parent). Two sources supply it, each authoritative for its own sleeves:
+
+    * **the taxonomy**, for an SAA sleeve: one whose ``is_in_saa=1`` security is filed
+      under an SAA class (a row WITH a parent). The category is that class's root.
+      This is the selection ``compute_household_allocation`` maps sleeves to SAA
+      names with, so a sleeve the Household View shows as SAA is one read from here.
+    * **``OFF_SAA_SLEEVE_CATEGORY``** in ``src/location_config.py``, for the rest.
+
+    RAISES on a sleeve with BOTH sources, on a declared category that is not a root of
+    this taxonomy (so "category" means one thing whichever source supplies it), and
+    on an SAA sleeve whose in-SAA securities sit under different roots.
+
+    A sleeve with NEITHER source is simply absent. That is an error only for a HELD
+    sleeve, and only the caller knows what is held: see ``equity_sleeves``.
+    """
+    from src.location_config import OFF_SAA_SLEEVE_CATEGORY
+
+    root_of, parent, roots = _taxonomy_roots(asset_classes_df)
+
+    filed: dict[str, dict[str, list[str]]] = {}
+    in_saa = securities_df[(securities_df["is_in_saa"] == 1)
+                           & securities_df["sleeve_category"].notna()]
+    for sleeve, class_id, ticker in zip(in_saa["sleeve_category"],
+                                        in_saa["asset_class_id"], in_saa["ticker"]):
+        if pd.isna(class_id) or parent.get(int(class_id)) is None:
+            continue   # parked under a root, or dangling: the taxonomy files it nowhere
+        filed.setdefault(str(sleeve), {}).setdefault(root_of(int(class_id)), []).append(
+            str(ticker))
+
+    split = {s: r for s, r in filed.items() if len(r) > 1}
+    if split:
+        raise ValueError(
+            f"the taxonomy files these SAA sleeves under more than one root: {split}. "
+            f"A sleeve has one category; refile the securities that disagree."
+        )
+    from_taxonomy = {s: next(iter(r)) for s, r in filed.items()}
+
+    both = sorted(set(from_taxonomy) & set(OFF_SAA_SLEEVE_CATEGORY))
+    if both:
+        detail = ", ".join(
+            f"{s!r} (taxonomy: {from_taxonomy[s]!r} via "
+            f"{'/'.join(filed[s][from_taxonomy[s]])}; declared: "
+            f"{OFF_SAA_SLEEVE_CATEGORY[s]!r})" for s in both)
+        raise ValueError(
+            f"sleeve category has two sources for {detail}. The taxonomy is "
+            f"authoritative for an SAA sleeve: delete its line from "
+            f"OFF_SAA_SLEEVE_CATEGORY in src/location_config.py. Two copies of one "
+            f"fact are free to drift apart (#212)."
+        )
+
+    bad = {s: c for s, c in OFF_SAA_SLEEVE_CATEGORY.items() if c not in roots}
+    if bad:
+        raise ValueError(
+            f"OFF_SAA_SLEEVE_CATEGORY in src/location_config.py declares {bad}, but "
+            f"this taxonomy's roots are {sorted(roots)}. A declared category must be "
+            f"one of them, so that 'category' means one thing whichever source "
+            f"supplies it (#212)."
+        )
+    return {**from_taxonomy, **OFF_SAA_SLEEVE_CATEGORY}
+
+
+def equity_sleeves(
+    held: dict[str, str],
+    securities_df: pd.DataFrame,
+    asset_classes_df: pd.DataFrame,
+) -> frozenset[str]:
+    """The HELD sleeves whose category is Equity (``sleeve_categories``).
+
+    ``held`` maps each held sleeve to one symbol that holds it, which the error names.
+
+    RAISES if a held sleeve has no category. The hand-kept set this replaced let
+    ``.isin()`` drop an unknown sleeve from an equity denominator silently, and the
+    error grew with the position (#212). The message names the step that clears it:
+    the pending migration for a sleeve in ``PENDING_TAXONOMY_SLEEVES``, otherwise the
+    declaration.
+    """
+    from src.location_config import EQUITY_CATEGORY, PENDING_TAXONOMY_SLEEVES
+
+    _root_of, _parent, roots = _taxonomy_roots(asset_classes_df)
+    if EQUITY_CATEGORY not in roots:
+        raise ValueError(
+            f"the taxonomy has no {EQUITY_CATEGORY!r} root (roots: {sorted(roots)}), so "
+            f"no sleeve could be equity. Refusing to return an empty equity set."
+        )
+    categories = sleeve_categories(securities_df, asset_classes_df)
+
+    missing = sorted(s for s in held if s not in categories)
+    if missing:
+        class_name = dict(zip(asset_classes_df["asset_class_id"], asset_classes_df["name"]))
+
+        def _where(sleeve: str) -> str:
+            flagged = securities_df[(securities_df["sleeve_category"] == sleeve)
+                                    & (securities_df["is_in_saa"] == 1)]
+            return "; ".join(
+                f"{t} is flagged is_in_saa=1 but still filed under "
+                f"{class_name.get(c, f'asset_class_id {c}')!r}"
+                for t, c in zip(flagged["ticker"], flagged["asset_class_id"]))
+
+        def _named(sleeves: list[str]) -> str:
+            return ", ".join(f"{s!r} (held via {held[s]})" for s in sleeves)
+
+        lines = []
+        # One sentence per pending STEP, not per sleeve: the three tilts share one
+        # migration, and repeating it three times buries the instruction.
+        by_step: dict[str, list[str]] = {}
+        for s in missing:
+            if s in PENDING_TAXONOMY_SLEEVES:
+                by_step.setdefault(PENDING_TAXONOMY_SLEEVES[s], []).append(s)
+        for step, sleeves in by_step.items():
+            where = "; ".join(w for w in map(_where, sleeves) if w)
+            lines.append(
+                f"{_named(sleeves)}: SAA sleeves the taxonomy has not filed yet"
+                f"{' (' + where + ')' if where else ''}. The step that clears this is "
+                f"{step}. Do NOT declare them in OFF_SAA_SLEEVE_CATEGORY: that clears "
+                f"this error now and becomes a second source of their category when "
+                f"the split lands.")
+        for s in (s for s in missing if s not in PENDING_TAXONOMY_SLEEVES):
+            where = _where(s)
+            lines.append(
+                f"{_named([s])}: no category{' (' + where + ')' if where else ''}. The "
+                f"taxonomy files it under no SAA class, and OFF_SAA_SLEEVE_CATEGORY in "
+                f"src/location_config.py does not declare it. Declare it there as one "
+                f"of {sorted(roots)}; or, if it belongs in the SAA, file its security "
+                f"under an SAA class instead.")
+        raise ValueError(
+            "Cannot size equity. " + " | ".join(lines) + " There is no default: an "
+            "unknown sleeve silently leaving an equity denominator is the defect #212 "
+            "removed."
+        )
+    return frozenset(s for s in held if categories[s] == EQUITY_CATEGORY)
+
+
 def compute_household_allocation(
     positions_df: pd.DataFrame,
     accounts_df: pd.DataFrame,
