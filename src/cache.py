@@ -7,12 +7,13 @@ regardless of retroactive adj_close adjustments from the upstream data provider.
 import io
 import json
 from contextlib import contextmanager
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import NamedTuple, Optional
 
 import pandas as pd
 
 import src.prices as _prices_module
+from src.coverage import TickerStatus, coverage_from_statuses
 from src.db import get_connection
 
 _QUARTER_ENDS = {
@@ -87,6 +88,43 @@ class SnapshotFrames(NamedTuple):
     # absent from the frames is read LIVE by snapshot_price_context, so a report
     # under a "Prices locked" cover is partly unlocked; this is what says so.
     gaps: tuple = ()
+    # The rule the lock was taken under: QUARTER_END_RULE, or None for a lock
+    # persisted before rules were recorded. Persisted locks stay as written, so the
+    # report says a quarter was restated only when its lock carries the rule.
+    rule: "str | None" = None
+
+
+# Every lock captured from #368 on: prices AND dividends through the quarter's last
+# day. Stored in the lock's payload so a reader can tell which rule produced it.
+QUARTER_END_RULE = "quarter_end"
+
+# The day the quarter-end rule took effect. A RECORD, not a data frontier: it
+# governs no lock and no read. It dates the restatement of quarters that closed
+# before it, which were reported under the old reads (live prices, later dividends
+# included). A quarter closing on or after it was never reported that way.
+QUARTER_END_RULE_SINCE = date(2026, 9, 24)
+
+
+def restatement_note(quarter_id: "str | None", snap: "SnapshotFrames | None") -> "str | None":
+    """One line for a report whose quarter this rule restated, or None.
+
+    Only when the lock in use carries the quarter-end rule AND the quarter closed
+    before the rule took effect. Measured on the demo book, each of the five quarters
+    that closed before it moved in 31 to 60 formatted figures; the note states what
+    moved and why without a magnitude, which differs by quarter and by book."""
+    end = _parse_quarter_end(quarter_id) if quarter_id else None
+    if end is None or snap is None or getattr(snap, "rule", None) != QUARTER_END_RULE:
+        return None
+    if end >= QUARTER_END_RULE_SINCE:
+        return None
+    return (
+        f"Restated {QUARTER_END_RULE_SINCE.strftime('%B')} {QUARTER_END_RULE_SINCE.day}, "
+        f"{QUARTER_END_RULE_SINCE.year}: this quarter now locks at its close on "
+        f"{end.strftime('%B')} {end.day}, {end.year}, using only prices and dividends "
+        f"through that day. Earlier versions of this report read prices live and "
+        f"counted dividends paid after the quarter closed, so some returns, weights and "
+        f"attribution effects differ slightly from those versions."
+    )
 
 
 def _as_frames(snap) -> SnapshotFrames:
@@ -150,14 +188,68 @@ def get_quarter_snapshot(quarter_id: str) -> tuple:
 
     close = _frame(blob["close"]) if "close" in blob else None
     gaps = tuple(tuple(g) for g in blob.get("gaps", []))
-    return (SnapshotFrames(adj_close=_frame(blob["adj_close"]), close=close, gaps=gaps),
+    return (SnapshotFrames(adj_close=_frame(blob["adj_close"]), close=close, gaps=gaps,
+                           rule=blob.get("rule")),
             row["captured_at"])
 
 
+class LockCoverageError(ValueError):
+    """A quarter was asked to lock before its data reaches the quarter's end.
+
+    Raised by capture_quarter_snapshot INSTEAD of persisting a lock. Its message
+    names every short ticker and its missing dates, so the page can show it as it
+    stands rather than as a generic generation failure."""
+
+
+def _short_coverage(statuses: "list[TickerStatus]", end: date) -> "list[str]":
+    """One line per distinct gap, naming its missing dates and every ticker in it.
+
+    Grouped because a failed fetch leaves every ticker short by the same dates, and
+    29 copies of one sentence bury the tickers. Read through the coverage record:
+    frontier_served is the MIN over what was served, so stale_days beyond the
+    tolerance means at least one ticker is short. Empty when the lock may proceed."""
+    from src.asof import QUARTER_END_COVERAGE_DAYS
+    cov = coverage_from_statuses(statuses, end.isoformat())
+    if cov.stale_days is None or cov.stale_days <= QUARTER_END_COVERAGE_DAYS:
+        return []
+    floor = end - timedelta(days=QUARTER_END_COVERAGE_DAYS)
+    by_last: dict[str, list[str]] = {}
+    for s in statuses:
+        if s.resolved and s.served_through and date.fromisoformat(s.served_through) < floor:
+            by_last.setdefault(s.served_through, []).append(s.ticker)
+    lines = []
+    for last in sorted(by_last):
+        first_missing = date.fromisoformat(last) + timedelta(days=1)
+        lines.append(f"prices end {last}, missing {first_missing.isoformat()} to "
+                     f"{end.isoformat()} for {', '.join(sorted(by_last[last]))}")
+    return lines
+
+
 def capture_quarter_snapshot(quarter_id: str) -> tuple:
-    """
-    Pull adj_close for all tickers from inception through snapshot_date,
-    persist in quarter_snapshots, and return (snap_df, captured_at_str).
+    """Lock a completed quarter and return (SnapshotFrames, captured_at_str).
+
+    Every holding's and benchmark constituent's close and total-return level, from
+    inception through the quarter's last day, persisted in quarter_snapshots.
+
+    THE LOCK RULE (#368, option B): a quarter locks at its own end, using only
+    prices AND DIVIDENDS through its last day. dividend_adjusted anchors on every
+    stored dividend unless told otherwise, so a lock taken without the cutoff moved
+    whenever a later ex-date arrived, and depended on when it was captured. With it,
+    a lock is the same whenever it is computed and whatever is fetched afterwards.
+
+    COVERAGE, OR NO LOCK. A ticker whose prices stop short of the quarter's end,
+    beyond QUARTER_END_COVERAGE_DAYS (the frontier cap's own allowance for a weekend
+    or holiday close), means the data does not reach the quarter yet: after
+    September 30, a container whose fetch failed would otherwise lock Q3 on prices
+    ending July 20. That REFUSES with LockCoverageError, naming each short ticker's
+    missing dates, and persists nothing.
+
+    A ticker with NO usable prices at all stays what #204 made it, a disclosed gap
+    read live and named on the cover. That is a different fact: the symbol cannot
+    be priced from any source (the personal book holds 46 household-only symbols
+    with no price rows), and refusing on it would make every personal lock
+    impossible.
+
     Raises ValueError if the quarter has not yet ended.
     """
     end = _parse_quarter_end(quarter_id)
@@ -172,21 +264,36 @@ def capture_quarter_snapshot(quarter_id: str) -> tuple:
     tickers, gaps = _get_all_snapshot_tickers()
     adj: dict = {}
     raw: dict = {}
+    statuses: list[TickerStatus] = []
     for ticker in tickers:
         try:
             df = _prices_module.get_prices(ticker, inception_str, end_str)
             if df is None or df.empty:
                 gaps.append((ticker, "no price data through the quarter end"))
                 continue
-            adj[ticker] = df["adj_close"]
+            # The rule: dividends through the quarter's last day, never later ones.
+            # Recomputed from close rather than taken from the frame, whose adj_close
+            # is anchored on every stored dividend.
+            adj[ticker] = (_prices_module.dividend_adjusted(ticker, df, through=end_str)
+                           if "close" in df.columns else df["adj_close"])
             # BOTH bases now. Storing adj_close alone left a raw-close consumer
             # unservable, and the reader papered over that by aliasing (#193).
             if "close" in df.columns:
                 raw[ticker] = df["close"]
+            statuses.append(TickerStatus(ticker, True,
+                                         served_through=max(df.index).isoformat()))
         except Exception as exc:                     # noqa: BLE001
             # One bad ticker does not fail the quarter, and is not dropped
             # silently either: it is stored as a disclosed gap (#204).
             gaps.append((ticker, f"{type(exc).__name__}: {exc}"[:200]))
+
+    short = _short_coverage(statuses, end)
+    if short:
+        raise LockCoverageError(
+            f"Cannot lock {quarter_id}: the price data does not reach the quarter's "
+            f"end ({end_str}), so a lock now would freeze the quarter on older prices. "
+            f"Nothing was locked. Short: " + "; ".join(short) + "."
+        )
 
     if not adj:
         raise RuntimeError(f"No price data fetched for snapshot {quarter_id}.")
@@ -198,7 +305,8 @@ def capture_quarter_snapshot(quarter_id: str) -> tuple:
         raw_df.index = pd.to_datetime(raw_df.index).date
     snap_df = SnapshotFrames(adj_close=adj_df,
                              close=raw_df if not raw_df.empty else None,
-                             gaps=tuple((str(t), str(r)) for t, r in gaps))
+                             gaps=tuple((str(t), str(r)) for t, r in gaps),
+                             rule=QUARTER_END_RULE)
 
     captured_at = datetime.now().isoformat(timespec="seconds")
     # Two top-level keys, one flat frame each — see SnapshotFrames for why this is
@@ -207,6 +315,7 @@ def capture_quarter_snapshot(quarter_id: str) -> tuple:
     if snap_df.close is not None:
         payload["close"] = json.loads(raw_df.to_json(orient="split", date_format="iso"))
     payload["gaps"] = [list(g) for g in snap_df.gaps]
+    payload["rule"] = QUARTER_END_RULE
     blob = json.dumps(payload)  # write-guard-exempt: portfolio snapshot cache, not user-mutable data
 
     _ensure_table()
@@ -224,18 +333,23 @@ def capture_quarter_snapshot(quarter_id: str) -> tuple:
 @contextmanager
 def snapshot_price_context(snap_df: pd.DataFrame):
     """
-    Monkey-patches src.prices.get_prices to serve prices from snap_df.
-    Tickers absent from snap_df fall back to the original get_prices.
-    Restores original on exit even if an exception is raised.
+    Serve prices from snap_df to EVERY get_prices call made inside the block.
+    Tickers absent from snap_df, and windows it holds no rows for, read the cache as
+    usual. Released on exit even if an exception is raised.
 
-    snap_df: wide DataFrame, index=datetime.date objects, columns=tickers (adj_close values).
+    Sets src.prices._PRICE_LOCK, which get_prices consults on each call. It used to
+    monkey-patch the src.prices.get_prices attribute instead, and every report
+    section imports that function by name, so none of them saw the lock (#368).
+
+    snap_df: a SnapshotFrames, or a wide adj_close frame (index=datetime.date
+    objects, columns=tickers).
     """
-    original_get_prices = _prices_module.get_prices
     frames = _as_frames(snap_df)
 
     def _snapshot_reader(ticker: str, start_date: str, end_date: Optional[str] = None):
+        """The locked frame, or None to fall through to the cache."""
         if ticker not in frames.adj_close.columns:
-            return original_get_prices(ticker, start_date, end_date)
+            return None
 
         end = end_date or date.today().isoformat()
         col = frames.adj_close[ticker].dropna()
@@ -245,7 +359,7 @@ def snapshot_price_context(snap_df: pd.DataFrame):
         filtered = col[mask]
 
         if filtered.empty:
-            return original_get_prices(ticker, start_date, end)
+            return None
 
         # Serve ONLY the bases this snapshot actually holds. The old code returned
         # the one stored series under BOTH names, which turned "cannot serve this"
@@ -256,8 +370,8 @@ def snapshot_price_context(snap_df: pd.DataFrame):
             data["close"] = frames.close[ticker].reindex(filtered.index).values
         return pd.DataFrame(data, index=filtered.index)
 
-    _prices_module.get_prices = _snapshot_reader
+    token = _prices_module._PRICE_LOCK.set(_snapshot_reader)
     try:
         yield
     finally:
-        _prices_module.get_prices = original_get_prices
+        _prices_module._PRICE_LOCK.reset(token)
