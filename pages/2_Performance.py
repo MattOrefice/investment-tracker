@@ -42,6 +42,7 @@ from src.holdings import (
 from src.performance import compute_risk_metrics
 from src.reports import generate_quarterly_report_bytes
 from src.sleeve_config import international_sleeves
+from src.tax_lots import open_lot_cost_basis
 from src.returns import annualize, clamped_period_bounds, period_bounds, period_return, period_window_predates_inception, twr_daily_linked, twr_index
 from src.positioning import get_effective_duration
 from src.rebalance import compute_drift
@@ -520,11 +521,11 @@ with col:
     )
 
     # ── Reconciliation note ────────────────────────────────────────────────
-    with get_connection() as _rc:
-        _cost_row = _rc.execute(
-            "SELECT SUM(shares * price) FROM trades WHERE LOWER(action) = 'buy'"
-        ).fetchone()
-    _cost_basis    = float(_cost_row[0] or 0.0)
+    # What the lots still held in this account cost, sales relieving the oldest lots
+    # first: the Tax Lots page's method, not a second copy. The old query summed every
+    # buy in every account and never subtracted a sale (#357); on the demo book that
+    # kept the VEA shares sold in the Phase 39 restructure ($130.61) in the cost basis.
+    _cost_basis    = open_lot_cost_basis(account_id=_ACCT_ID, as_of=TODAY)
     _series_start  = float(pv.iloc[0])
     if _cost_basis > 0 and _series_start > 0:
         _unrealized  = current_mv - _cost_basis
@@ -537,8 +538,9 @@ with col:
         _abs_ret_pct = port_si * 100
         _twr_pct     = port_si * 100
         st.caption(
-            f"Reconciliation: **\\${_cost_basis:,.0f} cost basis** (all lots, incl "
-            f"reinvested DRIP) → **\\${current_mv:,.0f} current value** (every share held, "
+            f"Reconciliation: **\\${_cost_basis:,.0f} cost basis** (lots still held, incl "
+            f"reinvested DRIP; a sale relieves the oldest lots first, as on the Tax Lots "
+            f"page) → **\\${current_mv:,.0f} current value** (every share held, "
             f"incl DRIP, at market close; **\\${_unrealized:+,.0f}** unrealized gain). "
             f"Returns — absolute ({_abs_ret_pct:.1f}%) and cumulative TWR ({_twr_pct:.1f}%) — "
             f"use the dividend-adjusted total-return series (adj_close × actual non-DRIP "
