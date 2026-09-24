@@ -10,8 +10,16 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 
+# Rendered against the FROZEN TEST BOOK (#302 test half, #187): a copy of
+# tests/fixtures/frozen_book.db, offline, in every mode. These tests anchor authored
+# content and page branches; against the owner's real book they failed in personal
+# mode (#187) because that book takes different branches, and they skipped nothing
+# in CI only because demo.db happened to be the configured book there.
+pytestmark = pytest.mark.usefixtures("frozen_book_module")
+
+
 @pytest.fixture(scope="module")
-def factor_profile_app() -> AppTest:
+def factor_profile_app(frozen_book_module) -> AppTest:
     """Run the Factor Profile page once and return the rendered AppTest object."""
     at = AppTest.from_file("pages/4_Factor_Profile.py", default_timeout=120)
     at.run()
