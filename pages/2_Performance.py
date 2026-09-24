@@ -967,7 +967,10 @@ with col:
 
     # ── Stage 1 + Stage 2 tiles ─────────────────────────────────────────────────────
     if not bf_df.empty:
-        # BF-internal returns (price-appreciation only; used for BF chart detail)
+        # BF-internal returns: weighted sums over the decomposition's sleeve rows. They
+        # INCLUDE dividends, like every BF return: each sleeve is valued at adj_close,
+        # which get_prices derives on read from close and the stored dividends (#339).
+        # _r_b_bf, the SAA blend, is Stage 1 and 2's benchmark side (_r_b_ps below).
         _r_p_bf  = float((bf_df["w_p"] * bf_df["r_p"]).sum())
         _r_b_bf  = float((bf_df["w_b"] * bf_df["r_b"]).sum())
         # Price-series returns (total return incl. dividends; drives Stage 1/2 tiles).
