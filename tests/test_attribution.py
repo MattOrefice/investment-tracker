@@ -1005,6 +1005,20 @@ def test_price_gap_helper_returns_none_not_zero(monkeypatch, caplog):
     )
 
 
+
+def _without_rows_near(frame, day, window_days=5):
+    """``frame`` minus its rows in [day - window_days, day]: a price gap at ``day``
+    expressed as DATA, not as a call shape (#304). BF reads each ticker's two ends
+    in ONE get_prices call, so an injector keyed on a per-endpoint call no longer
+    fires; one that removes the rows does, whatever reads them."""
+    import datetime
+    import pandas as pd
+    d = datetime.date.fromisoformat(day)
+    idx = [x if isinstance(x, datetime.date) else pd.Timestamp(x).date() for x in frame.index]
+    keep = [not (d - datetime.timedelta(days=window_days) <= x <= d) for x in idx]
+    return frame[keep]
+
+
 def test_price_gap_excludes_sleeve_start_price(monkeypatch):
     """PATH A: a held ticker's START price is missing beyond the window — the
     sleeve must be EXCLUDED from the period's attribution (flagged in
@@ -1026,12 +1040,10 @@ def test_price_gap_excludes_sleeve_start_price(monkeypatch):
     real_get_prices = attr_mod.get_prices
 
     def _gap_start(ticker, start, end, *a, **k):
-        # _last_adj_price(ticker, start_date) calls get_prices(ticker,
-        # start_date-5d, start_date) -- match on the END bound (the actual
-        # queried date), not the internal window's start bound.
-        if ticker == GAPPED_TICKER and end == INCEPTION:
-            return pd.DataFrame()
-        return real_get_prices(ticker, start, end, *a, **k)
+        # Remove the rows in [INCEPTION-5d, INCEPTION], the backward window the
+        # start price is read from, whatever call reads them.
+        frame = real_get_prices(ticker, start, end, *a, **k)
+        return _without_rows_near(frame, INCEPTION) if ticker == GAPPED_TICKER else frame
 
     monkeypatch.setattr(attr_mod, "get_prices", _gap_start)
 
@@ -1082,9 +1094,8 @@ def test_price_gap_excludes_sleeve_end_price(monkeypatch):
     real_get_prices = attr_mod.get_prices
 
     def _gap_end(ticker, start, end, *a, **k):
-        if ticker == GAPPED_TICKER and end == TODAY:
-            return pd.DataFrame()
-        return real_get_prices(ticker, start, end, *a, **k)
+        frame = real_get_prices(ticker, start, end, *a, **k)
+        return _without_rows_near(frame, TODAY) if ticker == GAPPED_TICKER else frame
 
     monkeypatch.setattr(attr_mod, "get_prices", _gap_end)
 
@@ -1135,14 +1146,12 @@ def test_price_gap_bil_guard_handles_missing_period_price(monkeypatch, use_demo_
     real_get_prices = attr_mod.get_prices
 
     def _gap_bil_period_start(ticker, start, end, *a, **k):
-        # bil_period_start = _last_adj_price("BIL", start_date) calls
-        # get_prices("BIL", start_date-5d, start_date) -- match on the END bound
-        # (== start_date == INCEPTION here) so this targets ONLY the period-start
-        # price, not bil_inception (a FORWARD-window _first_adj_price call whose
-        # end bound is portfolio_inception+5d, not portfolio_inception itself).
-        if ticker == "BIL" and end == INCEPTION:
-            return pd.DataFrame()
-        return real_get_prices(ticker, start, end, *a, **k)
+        # Remove BIL's rows in [INCEPTION-5d, INCEPTION]: the BACKWARD window
+        # bil_period_start reads (start_date == INCEPTION here). bil_inception reads
+        # FORWARD from inception, so it still finds the next trading day and only
+        # the period-start price gaps.
+        frame = real_get_prices(ticker, start, end, *a, **k)
+        return _without_rows_near(frame, INCEPTION) if ticker == "BIL" else frame
 
     monkeypatch.setattr(attr_mod, "get_prices", _gap_bil_period_start)
 

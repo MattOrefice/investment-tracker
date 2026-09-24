@@ -162,3 +162,78 @@ def test_demo_book_holds_each_dividend_once():
              and (date.fromisoformat(b[1]) - date.fromisoformat(a[1])).days <= 5
              and (a[0], a[1], b[1]) not in PROVIDER_RECORDED]
     assert not twins, twins
+
+
+# ── the race, and why a return comes from ONE read (#304) ──────────────────────
+
+def _serve_a_bar_and_a_dividend(monkeypatch):
+    """The provider serves a new bar on 06-08 and a dividend going ex that day; the
+    fetch stores both, exactly as get_prices' trailing fetch does."""
+    ts = int(datetime(2026, 6, 8, 20, 0, tzinfo=timezone.utc).timestamp())
+
+    class _Resp:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"chart": {"result": [{
+                "meta": {}, "timestamp": [ts],
+                "indicators": {"quote": [{"close": [104.0]}],
+                               "adjclose": [{"adjclose": [104.0]}]},
+                "events": {"dividends": {str(ts): {"amount": 2.08, "date": ts}}}}]}}
+
+    monkeypatch.setattr(prices._SESSION, "get", lambda *a, **k: _Resp())
+    monkeypatch.setattr(prices, "unsettled_bar_date", lambda result: None)
+
+
+_TRUE_RATIO = 104.0 / (100.0 * (1 - 1.02 / 102.0) * (1 - 2.08 / 104.0))
+
+
+def test_two_reads_straddling_a_new_dividend_disagree(book, monkeypatch):
+    """The fault, reproduced offline: read the start (the cache has no 06-08 dividend
+    yet), then read the end (its fetch stores it). The two levels sit on different
+    dividend sets and the ratio misses the dividend. This is the contrast that makes
+    the one-read test below mean something."""
+    _serve_a_bar_and_a_dividend(monkeypatch)
+    start_first = prices.get_prices("T", "2026-06-01", "2026-06-01")["adj_close"].iloc[0]
+    end_later = prices.get_prices("T", "2026-06-06", "2026-06-08")["adj_close"].iloc[-1]
+    assert end_later / start_first != pytest.approx(_TRUE_RATIO, rel=1e-6)
+    assert end_later / start_first == pytest.approx(104.0 / (100.0 * (1 - 1.02 / 102.0)), rel=1e-12)
+
+
+def test_one_read_gets_the_dividend_that_arrives_during_it(book, monkeypatch):
+    """A FRESH book: the dividend is stored by this very read's fetch, and the ratio
+    still includes it, because get_prices adjusts after its own fetch."""
+    from src.attribution import _adj_prices_one_read, _last_on_or_before
+    _serve_a_bar_and_a_dividend(monkeypatch)
+    k = sqlite3.connect(book)
+    assert k.execute("SELECT COUNT(*) FROM dividends WHERE ex_date = '2026-06-08'").fetchone() == (0,)
+    k.close()
+    one = _adj_prices_one_read("T", "2026-06-01", "2026-06-08", window_days=0)
+    ratio = _last_on_or_before(one, "2026-06-08", 0) / _last_on_or_before(one, "2026-06-01", 0)
+    assert ratio == pytest.approx(_TRUE_RATIO, rel=1e-12)
+
+
+def test_a_window_past_the_cache_is_fetched_contiguously(book, monkeypatch):
+    """A read whose window touches no cached row widens its fetch to meet the cache,
+    so no hole is left for a dividend or a prior close to fall into. The caller still
+    gets only the window it asked for."""
+    asked = []
+
+    class _Resp:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"chart": {"result": [{"meta": {}, "timestamp": [],
+                                          "indicators": {"quote": [{"close": []}]}}]}}
+
+    def _get(url, params=None, timeout=None):
+        asked.append((params["period1"], params["period2"]))
+        return _Resp()
+
+    monkeypatch.setattr(prices._SESSION, "get", _get)
+    with pytest.raises(ValueError):          # the stub serves no bars
+        prices.get_prices("T", "2026-06-20", "2026-06-25")
+    p1 = datetime.fromtimestamp(asked[0][0], tz=timezone.utc).date()
+    assert p1 == date(2026, 6, 6), f"fetch started {p1}, leaving a hole after 06-05"

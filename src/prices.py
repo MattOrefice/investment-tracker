@@ -402,9 +402,24 @@ def get_prices(
         ).fetchall()
 
     if not rows:
-        fresh = fetch_prices(ticker, start_date, end)
+        # Fetch CONTIGUOUSLY with what is cached (#304). A window that touches no
+        # cached row would otherwise store a disjoint block and leave a hole between
+        # it and the cache: the hole's dividends are never stored, and a dividend
+        # just after it is scaled against the stale close before the hole instead of
+        # the true prior close. So widen the fetch to meet the cache on whichever
+        # side it lies, then return only the requested window.
+        with get_connection() as conn:
+            before, after = conn.execute(
+                "SELECT (SELECT MAX(price_date) FROM prices WHERE ticker = ? AND price_date < ?),"
+                "       (SELECT MIN(price_date) FROM prices WHERE ticker = ? AND price_date > ?)",
+                (ticker, start_date, ticker, end),
+            ).fetchone()
+        lo = _to_iso(date.fromisoformat(before) + timedelta(days=1)) if before else start_date
+        hi = _to_iso(date.fromisoformat(after) - timedelta(days=1)) if after else end
+        fresh = fetch_prices(ticker, min(lo, start_date), max(hi, end))
         fresh["adj_close"] = dividend_adjusted(ticker, fresh)
-        return fresh
+        in_window = [(_to_iso(d) >= start_date) and (_to_iso(d) <= end) for d in fresh.index]
+        return fresh[in_window]
 
     cached = pd.DataFrame(
         [(r["price_date"], r["close"], r["adj_close"]) for r in rows],
