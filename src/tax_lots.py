@@ -74,6 +74,28 @@ def compute_unrealized_gl_pct(gl: float, cost_basis_total: float) -> float:
     return gl / cost_basis_total
 
 
+# A share remainder this small is float noise, not shares: a lot relieved down to it is
+# CLOSED (#364). Relief used to compare float share counts exactly, so selling exactly
+# what an account held left lots of ~1e-16 shares open (0.3 - 0.1 is
+# 0.19999999999999998, which is less than a 0.2-share lot) and Tax Lots rendered
+# 0.000000-share rows instead of its empty state.
+#
+# Anchored to the data, measured 2026-09-24:
+#   * the owner's ledger (Fidelity CSV) records at most 3 decimals; its smallest lot is
+#     0.019 shares;
+#   * the demo book's DRIP lots are computed quantities carried at full float precision,
+#     and its smallest lot is 0.000932 shares, BELOW Fidelity's 0.001 grain. So the
+#     floor to stay under is the smallest real lot in any book, not 0.001.
+#   * float noise: holdings are at most ~10^3 shares, so one subtraction errs by up to
+#     ~1e-13 and a hundred lots by up to ~1e-11; the slivers seen were 1e-17 to 2e-16.
+# 1e-9 sits about six orders of magnitude below 0.000932 and at least two above
+# accumulated noise.
+# Not Decimal: quantities are stored as binary REAL, DRIP quantities sit on no decimal
+# grid, and a sell can itself be a float sum, so exact decimal arithmetic on the stored
+# values would still leave a remainder that needs a tolerance.
+_SHARE_TOLERANCE = 1e-9
+
+
 def _fifo_open_lots(buys: pd.DataFrame, total_sell_shares: float) -> pd.DataFrame:
     """
     Apply FIFO lot matching. Returns open lot rows with shares adjusted for partial closes.
@@ -88,17 +110,21 @@ def _fifo_open_lots(buys: pd.DataFrame, total_sell_shares: float) -> pd.DataFram
 
     Returns:
         DataFrame of remaining open lots. Empty DataFrame if all lots are closed.
+
+    Share counts are never compared exactly: a remainder within _SHARE_TOLERANCE is
+    zero, so a sale of exactly what is held closes every lot (#364).
     """
-    if total_sell_shares <= 0:
+    if total_sell_shares <= _SHARE_TOLERANCE:
         return buys.copy().reset_index(drop=True)
 
     remaining = total_sell_shares
     open_rows = []
 
     for _, lot in buys.sort_values(["trade_date", "trade_id"]).iterrows():
-        if remaining <= 0:
+        if remaining <= _SHARE_TOLERANCE:
             open_rows.append(lot.to_dict())
-        elif remaining >= lot["shares"]:
+        elif remaining >= lot["shares"] - _SHARE_TOLERANCE:
+            # Closed, including when the sale falls short of the lot by float noise.
             remaining -= lot["shares"]
         else:
             row = lot.to_dict()

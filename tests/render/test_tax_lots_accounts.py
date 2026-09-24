@@ -143,22 +143,41 @@ def test_the_page_shows_taxable_accounts_and_discloses_the_one_without_lots(pyte
     assert SECOND in set(cands["Account"]), cands
 
 
+def _account_1_sells_everything(book) -> None:
+    """Account 1 sells, per ticker, exactly what it holds (buys less sales, as SQL sums
+    them), so no lot is open, and it stays the portfolio account (it still has a
+    ledger)."""
+    con = sqlite3.connect(book)
+    with con:
+        held = con.execute(
+            "SELECT ticker, SUM(CASE WHEN LOWER(action) = 'buy' THEN shares ELSE -shares END) "
+            "FROM trades WHERE account_id = 1 GROUP BY ticker").fetchall()
+        for ticker, shares in held:
+            if shares > 0:
+                assert con.execute(
+                    "INSERT INTO trades (account_id, ticker, trade_date, action, shares, price, "
+                    "fees, notes, lot_source) VALUES (1, ?, '2026-07-01', 'Sell', ?, 1.0, 0, "
+                    "'#364 test: sell everything', 'Manual')", (ticker, shares)).rowcount == 1
+    con.close()
+
+
 def test_the_disclosure_survives_an_empty_lot_table(pytestconfig, tmp_path):
-    """The page's empty state ("No lot data available") must not stand alone while a
-    taxable account is CSV-fed, or that account reads as holding nothing. The lot
-    inventory is stubbed empty: an account that has sold everything should produce
-    exactly this, but today FIFO leaves 1e-16-share slivers open after an exact
-    full sale (a separate defect), so a real sell-everything book would not reach the
-    empty state at all."""
-    import pandas as pd
-    import src.tax_lots
+    """Account 1 has sold everything, so no ledger lot is open, and the other taxable
+    account is CSV-fed. The page's empty state ("No lot data available") must not
+    stand alone, or the CSV-fed account reads as holding nothing.
 
-    def body(book):
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(src.tax_lots, "get_lot_inventory", lambda *a, **k: pd.DataFrame())
-            return _render_page_12()
+    On the REAL inventory. This used to stub it empty, because FIFO left 1e-16-share
+    slivers open after an exact full sale and the page never reached its empty state
+    (#364). With that fixed, the stub came out."""
+    def setup(book):
+        _scoped_book(book)
+        _account_1_sells_everything(book)
 
-    at = _with_frozen_book(pytestconfig, tmp_path, _scoped_book, body)
+    at = _with_frozen_book(pytestconfig, tmp_path, setup, lambda book: _render_page_12())
+    lot_tables = [d.value for d in at.dataframe if "Purchase Date" in d.value.columns]
+    assert not lot_tables, (
+        f"a full-position sale rendered {len(lot_tables[0])} lot rows (largest "
+        f"{lot_tables[0]['Shares'].max():.3g} shares) instead of the empty state (#364)")
     assert any("No lot data available" in str(i.value) for i in at.info), "not the empty state"
     notes = [str(w.value) for w in at.warning if "whose lots are not shown" in str(w.value)]
     assert len(notes) == 1 and f"**{TOD}**" in notes[0], notes

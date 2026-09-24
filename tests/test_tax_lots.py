@@ -11,6 +11,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 from src.tax_lots import (
     HARVEST_MATERIALITY_THRESHOLD,
     _LT_THRESHOLD_DAYS,
+    _SHARE_TOLERANCE,
     _fifo_open_lots,
     apply_sleeve_filter,
     compute_days_held,
@@ -180,6 +181,25 @@ def test_fifo_all_closed_returns_empty():
     buys = _make_buys((1, "2025-01-01", 10.0, 100.0))
     result = _fifo_open_lots(buys, 10.0)
     assert result.empty
+
+
+def test_fifo_a_sale_of_exactly_what_is_held_closes_every_lot():
+    """#364. 0.3 - 0.1 is 0.19999999999999998, less than a 0.2-share lot, so an exact
+    comparison kept that lot open with 2.8e-17 shares. The sale is exactly the
+    holding; nothing is open."""
+    buys = _make_buys((1, "2025-01-01", 0.1, 100.0), (2, "2025-06-01", 0.2, 110.0))
+    assert 0.3 - 0.1 < 0.2, "the float case no longer reproduces the sliver"
+    assert _fifo_open_lots(buys, 0.3).empty
+
+
+@pytest.mark.parametrize("left", [0.001, 0.000932], ids=["fidelity-grain", "smallest-demo-drip-lot"])
+def test_fifo_a_real_remainder_is_never_rounded_away(left):
+    """The tolerance sits far below any real quantity: Fidelity's 0.001-share grain,
+    and the smallest lot in any book (a demo DRIP lot of 0.000932 shares)."""
+    assert _SHARE_TOLERANCE < left / 1000
+    buys = _make_buys((1, "2025-01-01", 1.0, 100.0))
+    result = _fifo_open_lots(buys, 1.0 - left)
+    assert len(result) == 1 and result.iloc[0]["shares"] == pytest.approx(left, abs=1e-12)
 
 
 # ── Sleeve roll-up reconciliation ─────────────────────────────────────────────
