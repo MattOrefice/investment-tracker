@@ -41,7 +41,7 @@ from src.holdings import (
 from src.performance import compute_risk_metrics
 from src.reports import generate_quarterly_report_bytes
 from src.sleeve_config import international_sleeves
-from src.returns import annualize, clamped_period_bounds, period_bounds, period_return, period_window_predates_inception, twr_daily_linked
+from src.returns import annualize, clamped_period_bounds, period_bounds, period_return, period_window_predates_inception, twr_daily_linked, twr_index
 from src.positioning import get_effective_duration
 from src.rebalance import compute_drift
 from src.ui_helpers import render_footer, render_page_header
@@ -384,9 +384,6 @@ with col:
     alpha_sp    = port_si - sp500_si
     alpha_bl    = port_si - blended_si
     ytd_return  = period_return("daily", pv, cf, "YTD")
-    # current_val: endpoint of the total-return series (adj_close × non-DRIP) —
-    # used ONLY for the adj_close-basis absolute-return reconciliation below.
-    current_val = float(pv.iloc[-1])
     # current_mv: true current account market value (ALL shares incl DRIP × raw
     # close) — the dollar figure to DISPLAY. Display-only; never feeds a return.
     current_mv, _mv_cov = current_market_value_with_coverage(TODAY)
@@ -470,7 +467,13 @@ with col:
             sliced = s[(s.index >= _q_ts_start) & (s.index <= _q_ts_end)]
             return float(sliced.iloc[-1] / sliced.iloc[0] - 1) if len(sliced) >= 2 else 0.0
 
-        _q_port     = _q_ret(pv)
+        # The portfolio's quarter is its TWR over the same slice, not _q_ret: an end-
+        # over-start ratio is right for the benchmarks (no flows) and wrong for pv,
+        # which steps up on every deposit, so a mid-quarter deposit read as return
+        # (#349). The quarterly PDF has always used twr_daily_linked here.
+        _q_pv       = pv[(pv.index >= _q_ts_start) & (pv.index <= _q_ts_end)]
+        _q_port     = (twr_daily_linked(_q_pv, cf.reindex(_q_pv.index).fillna(0.0))
+                       if len(_q_pv) >= 2 else 0.0)
         _q_sp       = _q_ret(sp)
         _q_bl       = _q_ret(bl)
         _q_alpha_sp = _q_port - _q_sp
@@ -524,7 +527,13 @@ with col:
     _series_start  = float(pv.iloc[0])
     if _cost_basis > 0 and _series_start > 0:
         _unrealized  = current_mv - _cost_basis
-        _abs_ret_pct = (current_val / _series_start - 1) * 100
+        # The absolute return is the since-inception TWR, not current_val / pv[0] − 1.
+        # Phase 11 set its denominator to pv.iloc[0] so that it would equal the TWR by
+        # construction (docs/phase_11_diagnostic.md §2.1; README: "TWR equals absolute
+        # return for the lump-sum case"). A value ratio keeps that identity only while
+        # nothing is deposited: on the owner's book it read 107.6% beside a 3.2% TWR,
+        # the new money counted as return (#349).
+        _abs_ret_pct = port_si * 100
         _twr_pct     = port_si * 100
         st.caption(
             f"Reconciliation: **\\${_cost_basis:,.0f} cost basis** (all lots, incl "
@@ -813,8 +822,10 @@ with col:
     # ──────────────────────────────────────────────────────────────────────
     st.markdown("### Cumulative Return Since Inception")
 
-    # Normalize all series to start at 1.0 for return comparison
-    pv_norm = pv / float(pv.iloc[0])
+    # Normalize all series to start at 1.0 for return comparison. The portfolio's is
+    # its TWR growth of $1, not pv / pv[0]: the benchmarks carry no flows, but pv
+    # steps up on every deposit, which that ratio would draw as a gain (#349).
+    pv_norm = twr_index(pv, cf)
     sp_norm = sp / float(sp.iloc[0])
     bl_norm = bl / float(bl.iloc[0])
 

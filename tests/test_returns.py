@@ -7,7 +7,7 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from src.returns import twr_daily_linked, twr_modified_dietz, annualize, period_return
+from src.returns import twr_daily_linked, twr_index, twr_modified_dietz, annualize, period_return
 
 
 def _series(values, cfs, start="2025-01-01"):
@@ -153,3 +153,18 @@ def test_flow_blind_zeros_overstate_return():
     assert blind == pytest.approx(0.65, abs=1e-10)
     assert aware == pytest.approx(0.134375, abs=1e-10)
     assert blind > aware  # the miscounted contribution inflated the return
+
+
+def test_twr_index_is_twr_daily_linked_kept_as_a_series():
+    """twr_index (the chart's portfolio line, #349) is twr_daily_linked's chain kept as
+    a series: it starts at 1.0, ends at 1 + twr_daily_linked, and a deposit is netted
+    rather than drawn as a gain. The zero prior value mirrors twr_daily_linked's skip."""
+    v, cf = _series([0.0, 100.0, 110.0, 260.0, 247.0], [100.0, 0.0, 0.0, 150.0, 0.0])
+    idx = twr_index(v, cf)
+    assert list(idx.index) == list(v.index)
+    assert idx.iloc[0] == 1.0
+    assert idx.iloc[-1] - 1 == pytest.approx(twr_daily_linked(v, cf), abs=1e-12)
+    # By hand: day 2 +10%, day 3 (260 - 110 - 150) / 110 = 0, day 4 -5%.
+    assert idx.iloc[-1] == pytest.approx(1.10 * 1.0 * 0.95, abs=1e-12)
+    # A value ratio would call the 150 deposit a gain.
+    assert v.iloc[-1] / v.iloc[1] - 1 == pytest.approx(1.47, abs=1e-12)
