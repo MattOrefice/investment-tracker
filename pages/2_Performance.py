@@ -971,7 +971,13 @@ with col:
         _r_p_bf  = float((bf_df["w_p"] * bf_df["r_p"]).sum())
         _r_b_bf  = float((bf_df["w_b"] * bf_df["r_b"]).sum())
         # Price-series returns (total return incl. dividends; drives Stage 1/2 tiles).
-        _r_p_ps  = _benchmark_period_return(pv, bf_period)
+        # The PORTFOLIO side is the book's own daily-linked TWR over the window, not
+        # _benchmark_period_return: that is an end-over-start value ratio, right for a
+        # benchmark (a normalised series with no flows) and wrong for pv, a dollar
+        # series that steps up on every deposit. On a book with one deposit in the
+        # window it reported the new money as return: Stage 2 read +10295 bps beside
+        # a 3.16% SI TWR (#349). Same slicing as the returns table's period_return.
+        _r_p_ps  = period_return("daily", pv, cf, bf_period)
         _r_b_ps  = _r_b_bf  # target weights x period returns; matches BF decomposition
         _naive_r = _benchmark_period_return(naive, bf_period)
 
