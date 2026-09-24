@@ -114,6 +114,22 @@ def twr_daily_linked(values: pd.Series, cashflows: pd.Series) -> float:
     return cumulative - 1.0
 
 
+def twr_index(values: pd.Series, cashflows: pd.Series) -> pd.Series:
+    """Growth of $1 under the chain-linked daily TWR, one value per observation.
+
+    twr_daily_linked's chain, kept as a series rather than collapsed to its end: the
+    first observation is the starting NAV (1.0), a zero prior value contributes no
+    return, and ``twr_index(v, cf).iloc[-1] - 1`` equals ``twr_daily_linked(v, cf)``.
+    For plotting cumulative return on a book with deposits, where
+    ``values / values.iloc[0]`` draws every deposit as a gain (#349).
+    """
+    v = values.astype(float)
+    cf = cashflows.reindex(v.index).fillna(0.0).astype(float)
+    prev = v.shift(1)
+    r = ((v - prev - cf) / prev).where(prev != 0.0, 0.0).fillna(0.0)
+    return (1.0 + r).cumprod()
+
+
 def twr_modified_dietz(values: pd.Series, cashflows: pd.Series) -> float:
     """
     Modified Dietz approximation to TWR.
