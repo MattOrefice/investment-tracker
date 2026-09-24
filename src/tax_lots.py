@@ -112,35 +112,91 @@ def _fifo_open_lots(buys: pd.DataFrame, total_sell_shares: float) -> pd.DataFram
 
 
 def _open_lots(trades: pd.DataFrame) -> pd.DataFrame:
-    """FIFO-relieve each ticker's buys by that ticker's sells; the lots left open.
+    """FIFO-relieve each (account, ticker)'s buys by that account's sales of that
+    ticker; the lots left open.
+
+    Relief is per account, ALWAYS (#362): a lot belongs to one account, so a sale in
+    one account must never close another account's lot. Grouped by ticker alone, a
+    sale in a second account relieved the first account's older lots.
 
     The ONE relief path. get_lot_inventory (the Tax Lots page) and
     open_lot_cost_basis (the Performance page's cost basis) both call it, so the two
     cannot disagree about which lots a sale closed (#357).
 
-    ``trades``: rows with trade_id, ticker, trade_date, action, shares, price and
-    lot_source. Returns the open lots with a ``ticker`` column, empty if none.
+    ``trades``: rows with account_id, trade_id, ticker, trade_date, action, shares,
+    price and lot_source. Returns the open lots with ``account_id`` and ``ticker``
+    columns, empty if none.
     """
     if trades.empty:
         return pd.DataFrame()
+    if "account_id" not in trades.columns:
+        raise ValueError("_open_lots needs account_id: relief is per account (#362)")
     buys = trades[trades["action"].str.lower() == "buy"]
     sells = trades[trades["action"].str.lower() == "sell"]
     open_lots: list[pd.DataFrame] = []
-    for ticker, ticker_buys in buys.groupby("ticker"):
-        sold = float(sells.loc[sells["ticker"] == ticker, "shares"].sum())
+    for (account_id, ticker), acct_buys in buys.groupby(["account_id", "ticker"]):
+        sold = float(sells.loc[(sells["account_id"] == account_id)
+                               & (sells["ticker"] == ticker), "shares"].sum())
         still_open = _fifo_open_lots(
-            ticker_buys[["trade_id", "trade_date", "shares", "price", "lot_source"]].copy(),
+            acct_buys[["trade_id", "trade_date", "shares", "price", "lot_source"]].copy(),
             sold,
         )
         if not still_open.empty:
+            still_open["account_id"] = account_id
             still_open["ticker"] = ticker
             open_lots.append(still_open)
     return pd.concat(open_lots, ignore_index=True) if open_lots else pd.DataFrame()
 
 
+def taxable_accounts() -> "list[dict]":
+    """The Tax Lots page's scope (#362): every active TAXABLE account, with how many
+    trades the ledger holds for it. A lot in an IRA, a workplace plan or an HSA carries
+    no capital-gains consequence, so tax-advantaged accounts are not in scope. A
+    taxable account with no ledger trades (the CSV-fed TOD book) IS in scope and is
+    disclosed rather than silently absent: see unledgered_taxable_notice.
+
+    Returns [{account_id, name, trades}], ordered by account_id.
+    """
+    with get_connection() as conn:
+        rows = conn.execute(
+            """SELECT a.account_id,
+                      COALESCE(a.display_name, a.name) AS name,
+                      (SELECT COUNT(*) FROM trades t WHERE t.account_id = a.account_id) AS trades
+               FROM accounts a
+               WHERE a.tax_treatment = 'taxable' AND a.is_active = 1
+               ORDER BY a.account_id"""
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def unledgered_taxable_notice(names: "list[str]") -> "Optional[str]":
+    """The disclosure for taxable accounts whose lots the page cannot show (#362).
+
+    Their positions reach the app from the custodian's positions export, which carries
+    no lots, so nothing about them is in the trade ledger. Omitted silently, such an
+    account reads as "no lots, no harvestable losses": absence presenting as an
+    all-clear. This says which accounts, why, and what the page leaves out.
+    """
+    if not names:
+        return None
+    if len(names) == 1:
+        who, verb, its, holds = f"**{names[0]}**", "is a taxable account", "its", "it holds"
+    else:
+        who = "**" + "**, **".join(names[:-1]) + "** and **" + names[-1] + "**"
+        verb, its, holds = "are taxable accounts", "their", "they hold"
+    return (
+        f"{who} {verb} whose lots are not shown. {its.capitalize()} per-lot history "
+        f"(purchase dates and prices) is not in the trade ledger: {its} positions come "
+        f"from the custodian's positions export, which carries no lots. So {its} holdings "
+        f"are left out of the lot table, the short/long-term gain split, the sleeve "
+        f"summary and the harvest candidates below. That absence does not mean {holds} "
+        f"no lots or no harvestable losses."
+    )
+
+
 # ── DB-backed functions ───────────────────────────────────────────────────────
 
-def get_lot_inventory(as_of: Optional[str] = None) -> pd.DataFrame:
+def get_lot_inventory(as_of: Optional[str] = None, *, account_ids: "list[int]") -> pd.DataFrame:
     """
     Return per-lot detail for all open positions as of as_of (ISO date string).
 
@@ -150,16 +206,30 @@ def get_lot_inventory(as_of: Optional[str] = None) -> pd.DataFrame:
     Returns DataFrame with columns:
         trade_id, ticker, sleeve, trade_date, days_held, shares,
         cost_basis_per_share, cost_basis_total, current_price, market_value,
-        unrealized_gl, unrealized_gl_pct, tax_status, days_to_lt, lot_source
+        unrealized_gl, unrealized_gl_pct, tax_status, days_to_lt, lot_source,
+        account_id
     Returns empty DataFrame if no trades exist.
+
+    ``account_ids`` is required (#362, the #139 contract): the Tax Lots page passes
+    every taxable account (taxable_accounts). Reading every account mixed IRA lots in
+    with taxable ones and let one account's sale relieve another's lots.
     """
+    if account_ids is None:
+        raise ValueError(
+            "account_ids is required: the lot inventory is account-scoped and will not "
+            "silently read every account. The Tax Lots page passes taxable_accounts().")
+    account_ids = [int(a) for a in account_ids]
+    if not account_ids:
+        return pd.DataFrame()
     as_of_str = as_of or date.today().isoformat()
     as_of_date = date.fromisoformat(as_of_str)
+    marks = ",".join("?" * len(account_ids))
 
     with get_connection() as conn:
         rows = conn.execute(
             """
             SELECT
+                t.account_id,
                 t.trade_id,
                 t.ticker,
                 t.trade_date,
@@ -171,10 +241,10 @@ def get_lot_inventory(as_of: Optional[str] = None) -> pd.DataFrame:
             FROM trades t
             JOIN securities s   ON t.ticker = s.ticker
             JOIN asset_classes ac ON s.asset_class_id = ac.asset_class_id
-            WHERE t.trade_date <= ?
+            WHERE t.trade_date <= ? AND t.account_id IN ({marks})
             ORDER BY t.ticker, t.trade_date, t.trade_id
-            """,
-            (as_of_str,),
+            """.format(marks=marks),
+            (as_of_str, *account_ids),
         ).fetchall()
 
     if not rows:
@@ -240,6 +310,7 @@ def get_lot_inventory(as_of: Optional[str] = None) -> pd.DataFrame:
             "shares", "cost_basis_per_share", "cost_basis_total",
             "current_price", "market_value", "unrealized_gl",
             "unrealized_gl_pct", "tax_status", "days_to_lt", "lot_source",
+            "account_id",
         ]
     ].reset_index(drop=True)
 
@@ -260,7 +331,7 @@ def open_lot_cost_basis(*, account_id: int, as_of: Optional[str] = None) -> floa
     as_of_str = as_of or date.today().isoformat()
     with get_connection() as conn:
         rows = conn.execute(
-            """SELECT trade_id, ticker, trade_date, action, shares, price,
+            """SELECT account_id, trade_id, ticker, trade_date, action, shares, price,
                       COALESCE(lot_source, 'initial') AS lot_source
                FROM trades
                WHERE account_id = ? AND trade_date <= ?
