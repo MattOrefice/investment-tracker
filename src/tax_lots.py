@@ -111,6 +111,33 @@ def _fifo_open_lots(buys: pd.DataFrame, total_sell_shares: float) -> pd.DataFram
     return pd.DataFrame(open_rows).reset_index(drop=True)
 
 
+def _open_lots(trades: pd.DataFrame) -> pd.DataFrame:
+    """FIFO-relieve each ticker's buys by that ticker's sells; the lots left open.
+
+    The ONE relief path. get_lot_inventory (the Tax Lots page) and
+    open_lot_cost_basis (the Performance page's cost basis) both call it, so the two
+    cannot disagree about which lots a sale closed (#357).
+
+    ``trades``: rows with trade_id, ticker, trade_date, action, shares, price and
+    lot_source. Returns the open lots with a ``ticker`` column, empty if none.
+    """
+    if trades.empty:
+        return pd.DataFrame()
+    buys = trades[trades["action"].str.lower() == "buy"]
+    sells = trades[trades["action"].str.lower() == "sell"]
+    open_lots: list[pd.DataFrame] = []
+    for ticker, ticker_buys in buys.groupby("ticker"):
+        sold = float(sells.loc[sells["ticker"] == ticker, "shares"].sum())
+        still_open = _fifo_open_lots(
+            ticker_buys[["trade_id", "trade_date", "shares", "price", "lot_source"]].copy(),
+            sold,
+        )
+        if not still_open.empty:
+            still_open["ticker"] = ticker
+            open_lots.append(still_open)
+    return pd.concat(open_lots, ignore_index=True) if open_lots else pd.DataFrame()
+
+
 # ── DB-backed functions ───────────────────────────────────────────────────────
 
 def get_lot_inventory(as_of: Optional[str] = None) -> pd.DataFrame:
@@ -154,28 +181,15 @@ def get_lot_inventory(as_of: Optional[str] = None) -> pd.DataFrame:
         return pd.DataFrame()
 
     df = pd.DataFrame([dict(r) for r in rows])
-    buys_all = df[df["action"].str.lower() == "buy"].copy()
-    sells_all = df[df["action"].str.lower() == "sell"].copy()
+    buys_all = df[df["action"].str.lower() == "buy"]
 
     # Sleeve lookup (first buy for each ticker carries the correct sleeve)
     sleeve_map = buys_all.groupby("ticker")["sleeve"].first().to_dict()
 
-    open_lots: list[pd.DataFrame] = []
-    for ticker, ticker_buys in buys_all.groupby("ticker"):
-        sell_shares = sells_all.loc[sells_all["ticker"] == ticker, "shares"].sum()
-        open = _fifo_open_lots(
-            ticker_buys[["trade_id", "trade_date", "shares", "price", "lot_source"]].copy(),
-            float(sell_shares),
-        )
-        if not open.empty:
-            open["ticker"] = ticker
-            open["sleeve"] = sleeve_map[ticker]
-            open_lots.append(open)
-
-    if not open_lots:
+    lots = _open_lots(df)
+    if lots.empty:
         return pd.DataFrame()
-
-    lots = pd.concat(open_lots, ignore_index=True)
+    lots["sleeve"] = lots["ticker"].map(sleeve_map)
 
     # Date / holding-period columns
     lots["purchase_date"] = pd.to_datetime(lots["trade_date"]).dt.date
@@ -228,6 +242,33 @@ def get_lot_inventory(as_of: Optional[str] = None) -> pd.DataFrame:
             "unrealized_gl_pct", "tax_status", "days_to_lt", "lot_source",
         ]
     ].reset_index(drop=True)
+
+
+def open_lot_cost_basis(*, account_id: int, as_of: Optional[str] = None) -> float:
+    """What the lots still held in ONE account cost: each open lot's shares x price,
+    DRIP lots included, sales relieving the oldest lots first. The Tax Lots page's
+    method (_open_lots), not a second one.
+
+    Account-scoped, and the account is required (#139's contract: a None account
+    raises rather than reading every account). The Performance page's cost basis
+    summed every buy in every account and never subtracted a sale (#357). No
+    securities join: a cost basis needs no sleeve, and the caption's own query never
+    dropped a ticker for lacking one.
+    """
+    from src.holdings import _require_account_id
+    account_id = _require_account_id(account_id)
+    as_of_str = as_of or date.today().isoformat()
+    with get_connection() as conn:
+        rows = conn.execute(
+            """SELECT trade_id, ticker, trade_date, action, shares, price,
+                      COALESCE(lot_source, 'initial') AS lot_source
+               FROM trades
+               WHERE account_id = ? AND trade_date <= ?
+               ORDER BY ticker, trade_date, trade_id""",
+            (account_id, as_of_str),
+        ).fetchall()
+    lots = _open_lots(pd.DataFrame([dict(r) for r in rows]))
+    return float((lots["shares"] * lots["price"]).sum()) if not lots.empty else 0.0
 
 
 def get_sleeve_rollup(lots: pd.DataFrame) -> pd.DataFrame:
