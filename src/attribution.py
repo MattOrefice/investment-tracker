@@ -191,6 +191,58 @@ def _last_adj_price(ticker: str, up_to_date: str, window_days: int = 5) -> Optio
     return None
 
 
+def _adj_prices_one_read(
+    ticker: str, lo: str, hi: str, window_days: int = 5,
+) -> "Optional[pd.Series]":
+    """Total-return prices for ``ticker`` over [lo − window_days, hi + window_days],
+    from ONE get_prices read (#304).
+
+    A return is a ratio of two prices. Adjusting for dividends on read makes a
+    price's level depend on every dividend stored after it, and a read can store a
+    new dividend (the fetch that fills its window). Two endpoints from two separate
+    reads could therefore sit on two different dividend sets: the earlier read
+    adjusted before the dividend arrived, the later one after. That is how one BF
+    period valued VEA's inception on one set and its end on another (36.7 bps).
+    From one read they share one set, because get_prices adjusts after its own
+    fetch, so the ratio is right whenever the dividend arrived. None when the read
+    raised, which the caller records as a gap.
+    """
+    a = (date.fromisoformat(lo) - timedelta(days=window_days)).isoformat()
+    b = (date.fromisoformat(hi) + timedelta(days=window_days)).isoformat()
+    try:
+        p = get_prices(ticker, a, b)
+    except Exception:
+        logging.exception("Price lookup failed for %s in [%s, %s]", ticker, a, b)
+        return None
+    if p.empty:
+        return p["close"].astype(float)
+    adj = p["adj_close"].where(p["adj_close"] > 0, p["close"]).astype(float)
+    adj.index = [d if isinstance(d, date) else pd.Timestamp(d).date() for d in adj.index]
+    return adj.sort_index()
+
+
+def _last_on_or_before(series: "Optional[pd.Series]", day: str,
+                       window_days: int = 5) -> Optional[float]:
+    """The last price on or before ``day`` within ``window_days``: _last_adj_price's
+    window, read from an already-fetched series instead of a new read."""
+    if series is None:
+        return None
+    d = date.fromisoformat(day)
+    w = series[(series.index <= d) & (series.index >= d - timedelta(days=window_days))]
+    return float(w.iloc[-1]) if len(w) else None
+
+
+def _first_on_or_after(series: "Optional[pd.Series]", day: str,
+                       window_days: int = 5) -> Optional[float]:
+    """The first price on or after ``day`` within ``window_days``: _first_adj_price's
+    window, read from an already-fetched series instead of a new read."""
+    if series is None:
+        return None
+    d = date.fromisoformat(day)
+    w = series[(series.index >= d) & (series.index <= d + timedelta(days=window_days))]
+    return float(w.iloc[0]) if len(w) else None
+
+
 def price_gap_notice(price_gaps: list[tuple[str, str]]) -> str:
     """Single-source user-facing notice for a period whose attribution excluded one
     or more sleeves because a held ticker's price could not be found within the
@@ -374,12 +426,13 @@ def brinson_fachler_period(
 
     # BIL prices anchored at portfolio inception so SPAXX weight reflects
     # the full historical appreciation of cash since launch.
-    bil_inception    = _first_adj_price("BIL", portfolio_inception)
-    # _last_adj_price (backward-fill) aligns with get_portfolio_value_series()
-    # which uses ffill() — both return the prior trading-day close for non-trading
-    # start dates (e.g. YTD start = Jan 1).
-    bil_period_start = _last_adj_price("BIL", start_date)
-    bil_period_end   = _last_adj_price("BIL", end)
+    # All three BIL levels from ONE read (#304), so they share one dividend set.
+    # Backward-fill at start/end aligns with get_portfolio_value_series()'s ffill():
+    # both return the prior trading-day close for non-trading start dates.
+    _bil = _adj_prices_one_read("BIL", min(portfolio_inception, start_date), end)
+    bil_inception    = _first_on_or_after(_bil, portfolio_inception)
+    bil_period_start = _last_on_or_before(_bil, start_date)
+    bil_period_end   = _last_on_or_before(_bil, end)
     for _bil_date, _bil_price in (
         (portfolio_inception, bil_inception),
         (start_date, bil_period_start),
@@ -414,8 +467,11 @@ def brinson_fachler_period(
             start_values[sleeve] = start_values.get(sleeve, 0.0) + shares * p_start
             end_values[sleeve]   = end_values.get(sleeve, 0.0)   + shares * p_end
         else:
-            p_start = _last_adj_price(ticker, start_date)  # backward-fill matches pv ffill
-            p_end   = _last_adj_price(ticker, end)
+            # Both ends from ONE read (#304): a ratio of two separate reads can
+            # straddle a dividend stored between them. Backward-fill matches pv ffill.
+            _px = _adj_prices_one_read(ticker, start_date, end)
+            p_start = _last_on_or_before(_px, start_date)
+            p_end   = _last_on_or_before(_px, end)
             if p_start is None:
                 price_gaps.append((ticker, start_date))
             if p_end is None:

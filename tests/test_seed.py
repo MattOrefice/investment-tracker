@@ -74,8 +74,9 @@ def test_drip_increases_portfolio_value():
     DRIP (dividend reinvestment) must produce a higher portfolio value than
     raw adj_close × inception-shares-only at the same end date.
 
-    The no-DRIP baseline is computed directly from demo.db (inception shares ×
-    adj_close from the prices cache) so this comparison is not circular.
+    The no-DRIP baseline is inception shares × the total-return price at END, read
+    per ticker through get_prices rather than the value series, so this comparison is
+    not circular.
     Requires price cache to be populated; skips on cold start.
     """
     import src.db as _db_mod
@@ -115,14 +116,14 @@ def test_drip_increases_portfolio_value():
                 if ticker == "SPAXX" or net <= 0:
                     no_drip_value += net  # SPAXX is valued at $1/share
                     continue
-                price_row = conn.execute(
-                    """SELECT adj_close FROM prices
-                       WHERE ticker = ? AND price_date <= ? AND adj_close IS NOT NULL
-                       ORDER BY price_date DESC LIMIT 1""",
-                    (ticker, END),
-                ).fetchone()
-                if price_row:
-                    no_drip_value += net * float(price_row["adj_close"])
+                # Through get_prices, where the total-return basis is DERIVED (#304):
+                # the cache stores raw closes only, so a direct `adj_close IS NOT
+                # NULL` read finds nothing and the baseline collapses to the cash leg,
+                # which this assertion would pass vacuously.
+                from src.prices import get_prices, total_return_series
+                tr = total_return_series(get_prices(ticker, INCEPTION, END)).dropna()
+                assert not tr.empty, f"no total-return price for {ticker} to {END}"
+                no_drip_value += net * float(tr.iloc[-1])
 
         if no_drip_value == 0:
             import pytest
