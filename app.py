@@ -18,6 +18,12 @@ from src.ui_helpers import render_footer, render_sidebar_footer
 _unmapped_notice = None
 
 if IS_DEMO:
+    # Before anything reads or writes: everything the demo writes while it runs
+    # (fetched prices and dividends, FRED series, quarter locks) goes to a separate
+    # runtime cache, and demo.db is opened read-only. It used to take all four, and
+    # 127 FRED rows from past runs were committed that way (#368).
+    from src.db import use_runtime_cache
+    use_runtime_cache()
     initialize_db()          # demo.db is committed/prebuilt — just ensure base schema
 else:
     from src.bootstrap import bootstrap_personal_db, unmapped_holdings_notice

@@ -28,6 +28,14 @@ import pytest
 
 _ROOT = Path(__file__).resolve().parent.parent
 
+# The demo app's runtime cache (src.db.runtime_cache_path) defaults to a file in the
+# OS temp directory, shared with any local demo run. A test that runs app.py, in
+# process or in a subprocess (which inherits this environment), must neither read
+# what a local run fetched nor leave its own writes there: one private file per
+# session instead (#368).
+os.environ["DEMO_RUNTIME_CACHE"] = str(
+    Path(tempfile.mkdtemp(prefix="demo-runtime-cache-")) / "demo_runtime_cache.db")
+
 # ══════════════════════════════════════════════════════════════════════════════
 # TRACKED-DB WRITE REDIRECT (GitHub #227)
 # ══════════════════════════════════════════════════════════════════════════════

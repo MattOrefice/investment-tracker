@@ -1,8 +1,12 @@
 """Database schema and connection helpers."""
+import hashlib
+import os
 import sqlite3
+import tempfile
+import threading
 from pathlib import Path
 
-from src.config import get_db_path
+from src.config import _ROOT, get_db_path
 
 DB_PATH = get_db_path()
 
@@ -305,9 +309,146 @@ class _ClosingConnection(sqlite3.Connection):
             self.close()
 
 
+# ── The demo app's runtime cache (#368 item 2) ──────────────────────────────────
+# The four tables the demo app writes while it runs: fetched closes and dividends,
+# FRED series, and quarter locks. Each maps to (key columns, {column: type}).
+#
+# With the cache in use (use_runtime_cache), demo.db is opened READ-ONLY and a
+# separate cache file is attached. The cache holds a COPY of these four tables,
+# seeded from demo.db once per demo.db (keyed on its sha256, so a new deploy
+# re-seeds), plus everything the run writes. On each connection the four names are
+# TEMP views of the cache's tables, and a write to one lands in the cache through an
+# INSTEAD OF trigger (INSERT OR REPLACE, so the newest write wins a shared key).
+# Nothing else is redirected: any other write fails on the read-only file rather
+# than changing it. Before this, demo mode wrote all four into demo.db itself, and
+# 127 FRED rows from past runs were committed that way (#368).
+#
+# A COPY, NOT A UNION. A view of cache rows over committed rows was measured first:
+# per-row dedup and the UNION kept SQLite from using an index for MAX(price_date) and
+# for dividend_adjusted's correlated lookups, and six get_prices reads went from
+# 0.03 s to 8 s. A view of one table is flattened into the query and keeps its index.
+#
+# The cache tables carry a `runtime_` prefix because SQLite forbids a qualified
+# target (cache.prices) in trigger DML: the unqualified name must resolve to the
+# cache's table and nothing else.
+_RUNTIME_TABLES = {
+    "prices":            (("ticker", "price_date"),
+                          {"ticker": "TEXT", "price_date": "TEXT", "close": "REAL", "adj_close": "REAL"}),
+    "dividends":         (("ticker", "ex_date"),
+                          {"ticker": "TEXT", "ex_date": "TEXT", "amount": "REAL"}),
+    "macro_cache":       (("series_id", "fetch_date"),
+                          {"series_id": "TEXT", "fetch_date": "TEXT", "data": "TEXT"}),
+    "quarter_snapshots": (("quarter_id",),
+                          {"quarter_id": "TEXT", "snapshot_date": "TEXT", "captured_at": "TEXT",
+                           "snapshot_data": "BLOB"}),
+}
+
+# (committed demo.db, cache file) once use_runtime_cache() has run; None otherwise.
+_RUNTIME_CACHE: "tuple[Path, Path] | None" = None
+_SEEDED: "set[tuple[str, str]]" = set()
+_SEED_LOCK = threading.Lock()
+
+
+def runtime_cache_path() -> Path:
+    """Where the demo app keeps what it fetches: $DEMO_RUNTIME_CACHE, else a file in
+    the OS temp directory. Never under data/: every data/*.db is tracked or
+    treated as tracked (tests/conftest.py), and this file must never be either."""
+    env = os.environ.get("DEMO_RUNTIME_CACHE")
+    if env:
+        return Path(env)
+    return Path(tempfile.gettempdir()) / "investment-tracker" / "demo_runtime_cache.db"
+
+
+def _sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _seed_runtime_cache(committed: Path, cache: Path) -> None:
+    """Copy the four runtime tables from demo.db into the cache, unless the cache was
+    already seeded from this exact demo.db. demo.db is read through a read-only URI."""
+    ident = _sha256(committed)
+    conn = sqlite3.connect(str(cache), uri=True)   # uri: so ATTACH can open demo.db read-only
+    try:
+        conn.execute("CREATE TABLE IF NOT EXISTS runtime_meta (key TEXT PRIMARY KEY, value TEXT)")
+        row = conn.execute("SELECT value FROM runtime_meta WHERE key = 'seeded_from'").fetchone()
+        if row and row[0] == ident:
+            return
+        conn.execute("ATTACH DATABASE ? AS committed",
+                     (f"file:{committed.as_posix()}?mode=ro",))
+        present = {r[0] for r in conn.execute(
+            "SELECT name FROM committed.sqlite_master WHERE type = 'table'")}
+        for name, (key, cols) in _RUNTIME_TABLES.items():
+            conn.execute(f"DROP TABLE IF EXISTS runtime_{name}")
+            conn.execute(f"CREATE TABLE runtime_{name} ("
+                         + ", ".join(f"{c} {t}" for c, t in cols.items())
+                         + f", PRIMARY KEY ({', '.join(key)}))")
+            if name in present:
+                names = ", ".join(cols)
+                conn.execute(f"INSERT INTO runtime_{name} ({names}) "
+                             f"SELECT {names} FROM committed.{name}")
+        conn.execute("INSERT OR REPLACE INTO runtime_meta VALUES ('seeded_from', ?)", (ident,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def use_runtime_cache(cache_path=None, *, committed=None) -> Path:
+    """Send the demo app's runtime writes to a separate cache, never to demo.db.
+
+    Called by app.py in demo mode, before anything reads or writes, on every rerun:
+    the seed runs once per process and demo.db. Applies only to connections whose
+    DB_PATH is ``committed`` (the committed demo.db by default), so a tool that
+    repoints DB_PATH at a book it means to write is unaffected. Returns the cache
+    path."""
+    global _RUNTIME_CACHE
+    demo = Path(committed or (_ROOT / "data" / "demo.db")).resolve()
+    cache = Path(cache_path or runtime_cache_path())
+    with _SEED_LOCK:
+        if (str(demo), str(cache)) not in _SEEDED:
+            cache.parent.mkdir(parents=True, exist_ok=True)
+            _seed_runtime_cache(demo, cache)
+            _SEEDED.add((str(demo), str(cache)))
+        _RUNTIME_CACHE = (demo, cache)
+    return cache
+
+
+_OVERLAY_SQL = "\n".join(
+    f"CREATE TEMP VIEW {name} AS SELECT {', '.join(cols)} FROM cache.runtime_{name};\n"
+    f"CREATE TEMP TRIGGER {name}_insert INSTEAD OF INSERT ON {name} BEGIN "
+    f"INSERT OR REPLACE INTO runtime_{name} ({', '.join(cols)}) "
+    f"VALUES ({', '.join('NEW.' + c for c in cols)}); END;\n"
+    f"CREATE TEMP TRIGGER {name}_delete INSTEAD OF DELETE ON {name} BEGIN "
+    f"DELETE FROM runtime_{name} WHERE {' AND '.join(f'{k} = OLD.{k}' for k in key)}; END;"
+    for name, (key, cols) in _RUNTIME_TABLES.items()
+)
+
+
+def _runtime_overlay_connection(committed: Path, cache: Path):
+    conn = sqlite3.connect(f"file:{committed.as_posix()}?mode=ro", uri=True,
+                           factory=_ClosingConnection)
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.row_factory = sqlite3.Row
+    db_key = str(DB_PATH)
+    if db_key not in _migrated_paths:
+        _auto_migrate(conn)          # write-free on a book that needs nothing (#175)
+        _migrated_paths.add(db_key)
+    conn.execute("ATTACH DATABASE ? AS cache", (str(cache),))
+    conn.executescript(_OVERLAY_SQL)
+    return conn
+
+
 def get_connection():
     """Return a SQLite connection with foreign keys enabled. Used as a context
-    manager it commits (or rolls back) and then closes; see _ClosingConnection."""
+    manager it commits (or rolls back) and then closes; see _ClosingConnection.
+
+    To the committed demo.db while the runtime cache is in use, the connection is
+    the read-only overlay described above _RUNTIME_TABLES."""
+    if _RUNTIME_CACHE is not None and Path(DB_PATH).resolve() == _RUNTIME_CACHE[0]:
+        return _runtime_overlay_connection(*_RUNTIME_CACHE)
     conn = sqlite3.connect(DB_PATH, factory=_ClosingConnection)
     conn.execute("PRAGMA foreign_keys = ON")
     conn.row_factory = sqlite3.Row
