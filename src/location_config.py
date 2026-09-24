@@ -676,9 +676,9 @@ EQUITY_CATEGORY: str = "Equity"
 # once the split lands.
 #
 # Once the split lands these sleeves resolve from the taxonomy and this is never
-# read. tests/test_sleeve_category.py pins the keys to the migration's own
-# NEW_HOLDING_CATEGORIES, so the message cannot name a sleeve the migration does
-# not file.
+# read. tests/test_sleeve_category.py pins the keys to the carrier-to-sleeve table
+# in tools/migrate_saa_phase39.py (which phase 46 reuses), so the message cannot
+# name a sleeve the migration does not file.
 PENDING_TAXONOMY_SLEEVES: dict[str, str] = dict.fromkeys(
     ("intl_quality", "intl_large_value", "intl_small_value"),
     "the phase-46 international split (tools/migrate_saa_phase46_personal_intl_split.py). "
