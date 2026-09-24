@@ -1236,6 +1236,13 @@ def test_benchmark_gap_renormalization_is_numeric_stack_invariant(tmp_path, monk
     window's total-return ratio). A pandas/numpy change must NOT move it — if the stack
     changed and this drifted, that is the real regression the old pin feared. Investigate;
     do NOT re-pin pandas on the strength of it.
+
+    Re-pinned by #304, 0.16754 -> 0.17748, and that is the legitimate kind: demo.db's
+    VNQ series itself changed. Its stored adj_close rows carried two provider anchors
+    either side of 2026-06-09, understating the window's total return by the 0.88%
+    step between them; the cache now stores raw closes and adjusts on read, which
+    reproduces the provider's single-anchor series. The full-coverage figure above
+    (0.28341) predates that too.
     """
     from src.benchmarks import get_sleeve_benchmark_returns
 
@@ -1254,9 +1261,9 @@ def test_benchmark_gap_renormalization_is_numeric_stack_invariant(tmp_path, monk
         f"benchmark_gaps={gaps}"
     )
     real_assets_rb = float(bm.iloc[-1]["Real Assets"])
-    assert real_assets_rb == pytest.approx(0.16753992876945456, abs=1e-12), (
+    assert real_assets_rb == pytest.approx(0.1774754075340974, abs=1e-12), (
         f"renormalized Real Assets benchmark return is {real_assets_rb!r}, expected "
-        "0.16753992876945456. See this test's docstring — a demo.db VNQ refresh updates "
+        "0.1774754075340974. See this test's docstring — a demo.db VNQ refresh updates "
         "the golden; a numeric-stack change that moves it is the regression, not a reason "
         "to re-pin pandas."
     )

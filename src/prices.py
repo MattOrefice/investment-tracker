@@ -10,6 +10,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 from urllib.parse import quote
 
+import numpy as np
 import pandas as pd
 import requests
 
@@ -128,9 +129,15 @@ def fetch_prices(
     end_date: Optional[str] = None,
 ) -> pd.DataFrame:
     """
-    Pull daily close + adj_close from Yahoo Finance v8/chart API, cache in the
-    prices table, and return a DataFrame indexed by datetime.date with columns:
-    close, adj_close.
+    Pull daily close + adj_close from Yahoo Finance v8/chart API, cache the CLOSE
+    and the dividends, and return a DataFrame indexed by datetime.date with columns:
+    close, adj_close (the provider's own adjustment, as fetched).
+
+    The cache stores UNADJUSTED prices (#304): adj_close is written NULL and derived
+    on read by get_prices from close and the dividends table (dividend_adjusted).
+    The provider re-anchors adj_close at every new dividend, so rows cached on
+    different days carried different anchors and a return spanning two fetch dates
+    crossed a seam. A raw close does not move after it settles.
 
     Raises ValueError for malformed, delisted, or unrecognised tickers.
     """
@@ -249,13 +256,8 @@ def fetch_prices(
                 continue
             conn.execute(
                 """INSERT OR REPLACE INTO prices (ticker, price_date, close, adj_close)
-                   VALUES (?, ?, ?, ?)""",
-                (
-                    ticker,
-                    _to_iso(dt),
-                    float(row["close"]),
-                    float(row["adj_close"]) if pd.notna(row["adj_close"]) else None,
-                ),
+                   VALUES (?, ?, ?, NULL)""",
+                (ticker, _to_iso(dt), float(row["close"])),
             )
         # Dividends are ex-date events, not intraday quotes — an ex-date announced
         # during an open session is already final, so they are not gated here.
@@ -304,6 +306,73 @@ def _fetch_trailing_memoized(ticker: str, start: str, end: str) -> pd.DataFrame:
     return df
 
 
+def dividend_adjusted(ticker: str, frame: pd.DataFrame) -> pd.Series:
+    """Total-return prices for ``frame`` (indexed by date, with a ``close`` column),
+    derived from close and the stored dividends (#304).
+
+    The provider's own method: every close BEFORE an ex-date is scaled by
+    ``1 - amount / close_on_the_last_trading_day_before_the_ex_date``, compounded
+    over every later ex-date. Reproduces the provider's adjclose to under 5e-7
+    relative (measured on SPY, SCHP, VEA, BIL, TIP and HYG, 2024 onward).
+
+    Anchored on EVERY stored dividend for the ticker, not only those inside the
+    frame, so two reads with different windows return the same level for the same
+    date. The previous close for an ex-date is taken from ``frame`` when it holds
+    that day and from the cache otherwise; an ex-date with no earlier close
+    anywhere cannot affect any row of ``frame`` and is skipped.
+
+    Only as complete as the dividends table: a missing dividend understates total
+    return, silently. That is why #304 checked completeness for every held ticker
+    before the cache stopped storing the provider's adjustment.
+    """
+    closes = frame["close"].astype(float)
+    if closes.empty:
+        return closes.copy()
+    first = _to_iso(closes.index.min())
+    # Each ex-date with the cache's last close before it, in one query. A book with
+    # no dividends table has recorded no dividends: nothing to adjust for. Checked,
+    # not created — a read must not write.
+    with get_connection() as conn:
+        has_table = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'dividends'"
+        ).fetchone()
+        divs = [] if not has_table else conn.execute(
+            """SELECT d.ex_date, d.amount,
+                      (SELECT MAX(p.price_date) FROM prices p
+                        WHERE p.ticker = d.ticker AND p.price_date < d.ex_date) AS pd,
+                      (SELECT p.close FROM prices p
+                        WHERE p.ticker = d.ticker AND p.price_date < d.ex_date
+                        ORDER BY p.price_date DESC LIMIT 1) AS pc
+                 FROM dividends d WHERE d.ticker = ? AND d.ex_date > ?
+                ORDER BY d.ex_date""",
+            (ticker, first),
+        ).fetchall()
+    # Vectorised: each ex-date's multiplier lands at the position of its first row ON
+    # or after the ex-date, and a row's factor is the product of every multiplier at a
+    # LATER position (a reverse cumulative product). O(n + k) rather than a scan of
+    # the frame per dividend; get_prices runs this on every read.
+    dates = np.array(closes.index, dtype="datetime64[D]")
+    vals = closes.to_numpy()
+    g = np.ones(len(vals) + 1)
+    for ex_iso, amount, cache_date, cache_close in divs:
+        pos = int(np.searchsorted(dates, np.datetime64(ex_iso, "D"), side="left"))
+        # The last close before the ex-date, from the frame or the cache, whichever
+        # is later (the frame may end before this ex-date); the frame wins a tie.
+        cands = []
+        if pos > 0:
+            cands.append((_to_iso(closes.index[pos - 1]), 1, float(vals[pos - 1])))
+        if cache_date is not None:
+            cands.append((cache_date, 0, float(cache_close)))
+        if not cands:
+            continue
+        prev = max(cands)[2]
+        if prev > 0:
+            g[pos] *= 1.0 - float(amount) / prev
+    factor = np.cumprod(g[::-1])[::-1][1:]
+    factor = pd.Series(factor, index=closes.index)
+    return closes * factor
+
+
 def get_prices(
     ticker: str,
     start_date: str,
@@ -312,6 +381,10 @@ def get_prices(
     """
     Return cached prices, fetching only gaps from yfinance.
     Returns DataFrame indexed by datetime.date with columns: close, adj_close.
+
+    adj_close is DERIVED here, on read, from close and the dividends table
+    (dividend_adjusted, #304), for cached and freshly fetched rows alike, so every
+    row a caller sees shares one anchor.
 
     The bar of a currently-open session is served but never cached (see
     fetch_prices / unsettled_bar_date), so a live mark still reaches the caller
@@ -329,7 +402,9 @@ def get_prices(
         ).fetchall()
 
     if not rows:
-        return fetch_prices(ticker, start_date, end)
+        fresh = fetch_prices(ticker, start_date, end)
+        fresh["adj_close"] = dividend_adjusted(ticker, fresh)
+        return fresh
 
     cached = pd.DataFrame(
         [(r["price_date"], r["close"], r["adj_close"]) for r in rows],
@@ -367,6 +442,7 @@ def get_prices(
     if cached.index.duplicated().any():
         cached = cached[~cached.index.duplicated(keep="last")]
 
+    cached["adj_close"] = dividend_adjusted(ticker, cached)
     return cached
 
 
