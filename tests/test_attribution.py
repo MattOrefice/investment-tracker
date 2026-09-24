@@ -538,9 +538,9 @@ def test_holdings_frontier_floors_before_today():
 def test_identity_ps_two_stage_si_60_40():
     """Price-series Stage1+Stage2=Total within 0.05 bps for SI period vs 60/40 naive.
 
-    Phase 10.1 regression pin. Pre-fix code used _r_p_bf (BF-internal,
-    price-appreciation only) for Stage 2. With price-series inputs, algebra
-    residual must be < 1e-10 (exact by construction).
+    Phase 10.1 regression pin. Pre-fix code used _r_p_bf (BF-internal, and
+    dividend-inclusive like every BF return) for Stage 2. With price-series
+    inputs, algebra residual must be < 1e-10 (exact by construction).
     Skips when price data is unavailable (local empty-DB mode).
     """
     import datetime

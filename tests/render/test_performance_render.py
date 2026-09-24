@@ -265,8 +265,9 @@ def test_two_stage_reconciliation_uses_price_series(performance_app: AppTest) ->
     """Stage 1/2 reconciliation caption must use price-series methodology with 0.00 bps residual.
 
     Phase 10.1 regression pin. Pre-fix code called compute_two_stage_attribution()
-    with _r_p_bf (BF-internal price-appreciation return) instead of the portfolio
-    price-series TWR, creating a ~316 bps Stage 2 residual vs. the price series.
+    with _r_p_bf (the BF-internal return, dividend-inclusive like every BF return)
+    instead of the portfolio price-series TWR, creating a ~316 bps Stage 2 residual
+    vs. the price series.
     The reconciliation caption showed '⚠ residual: N bps'. Fixed code uses
     price-series returns throughout (the portfolio's daily-linked TWR since #349,
     _benchmark_period_return for the benchmarks); algebra residual is 0.00 bps.
