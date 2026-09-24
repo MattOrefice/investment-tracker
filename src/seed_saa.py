@@ -336,6 +336,14 @@ def seed():
             "SELECT COUNT(*) FROM asset_classes"
         ).fetchone()[0]
 
+        # THE SOLE GUARD AGAINST DUPLICATION (#347). This runs from bootstrap on every
+        # personal-mode start, and asset_classes has no unique constraint beyond its
+        # primary key, which these inserts do not supply. So nothing in the SCHEMA
+        # stops a second run from inserting every parent and sleeve again. `INSERT OR
+        # IGNORE` would not help: with no constraint to violate, it ignores nothing. It
+        # was used here once, read like deduplication, and provided none. Remove this
+        # check and the next start silently doubles the taxonomy.
+        # tests/test_seed_saa_idempotent.py pins it.
         if existing > 0:
             print("Asset classes already seeded, skipping.")
             return
@@ -344,7 +352,7 @@ def seed():
         for p in PARENTS:
             conn.execute(
                 """
-                INSERT OR IGNORE INTO asset_classes
+                INSERT INTO asset_classes
                     (name, target_weight, tolerance_band, rationale, benchmark_ticker)
                 VALUES (?, ?, ?, ?, ?)
                 """,
@@ -363,7 +371,7 @@ def seed():
             sort_order = SORT_ORDERS.get(sc["name"])
             conn.execute(
                 """
-                INSERT OR IGNORE INTO asset_classes
+                INSERT INTO asset_classes
                     (name, parent_id, target_weight, tolerance_band, sort_order, rationale, benchmark_ticker)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
