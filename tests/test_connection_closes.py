@@ -133,3 +133,52 @@ def test_an_open_connection_is_reported_not_hidden(tmp_path, pytestconfig):
     finally:
         held.close()
     assert remove(d) == []
+
+
+# ── a leaked connection is caught DETERMINISTICALLY (#340) ─────────────────────
+# Python 3.11's sqlite3 emits no ResourceWarning for an unclosed connection, so the
+# redirect holds every connection it opens by a strong reference and checks it after
+# the opening test's teardown. Before this, a leak was caught only when garbage
+# collection had not yet closed it: test_seed leaked in every run, and only short
+# runs said so.
+
+def _demo_db():
+    from pathlib import Path
+    return Path(__file__).resolve().parent.parent / "data" / "demo.db"
+
+
+def test_garbage_collection_cannot_close_a_leak_before_it_is_checked(pytestconfig, request):
+    """The determinism the old check lacked: drop every reference the test holds and
+    collect, and the redirected connection is STILL open in the registry."""
+    import gc
+    conftest = _conftest_plugin(pytestconfig)
+    sqlite3.connect(str(_demo_db())).execute("SELECT 1")   # leaked on purpose
+    gc.collect()   # here to PROVE the point; the harness itself never collects
+    mine = [c for c, phase, test in conftest._open_redirected
+            if test == request.node.nodeid and conftest._is_open(c)]
+    assert len(mine) == 1 and mine[0].execute("SELECT 1").fetchone() == (1,)
+    mine[0].close()   # this test's own leak, closed so its teardown check passes
+
+
+def test_the_check_reports_and_closes_an_open_connection_and_drops_closed_ones(pytestconfig):
+    conftest = _conftest_plugin(pytestconfig)
+    leaked, closed = sqlite3.connect(":memory:"), sqlite3.connect(":memory:")
+    closed.close()
+    conftest._open_redirected.extend([(leaked, "call", "T::leaks"), (closed, "call", "T::clean")])
+    assert conftest._take_leaks(lambda phase, test: test.startswith("T::")) == ["T::leaks (call)"]
+    assert not conftest._is_open(leaked), "the check must close what it reports"
+    assert all(t not in ("T::leaks", "T::clean") for _c, _p, t in conftest._open_redirected)
+
+
+def test_a_setup_phase_connection_is_left_for_the_session_end_check(pytestconfig):
+    """A fixture broader than one test may hold a connection across tests, so a
+    per-test check that flagged setup-phase opens would misfire."""
+    conftest = _conftest_plugin(pytestconfig)
+    held = sqlite3.connect(":memory:")
+    conftest._open_redirected.append((held, "setup", "T::fixture"))
+    try:
+        per_test = lambda phase, test: phase == "call" and test == "T::fixture"
+        assert conftest._take_leaks(per_test) == []
+        assert any(c is held for c, _p, _t in conftest._open_redirected)
+    finally:
+        conftest._take_leaks(lambda phase, test: test == "T::fixture")
