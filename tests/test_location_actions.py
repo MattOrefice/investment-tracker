@@ -89,6 +89,25 @@ def _live_saa():
     return comps, targets
 
 
+def _live_taxonomy():
+    """The whole asset_classes tree, loaded exactly as page 14 loads it: the taxonomy
+    household.equity_sleeves reads a sleeve's category from (#212)."""
+    conn = sqlite3.connect(str(TRACKER_DB))
+    ac = pd.read_sql_query("SELECT asset_class_id, name, parent_id FROM asset_classes", conn)
+    conn.close()
+    return ac
+
+
+def _live_equity_sleeves(sec):
+    """Every sleeve whose category is Equity on the live book. Read through
+    sleeve_categories, the category function itself, NOT through equity_sleeves: the
+    tests below re-derive the held-sleeve filtering by a different route."""
+    from src.household import sleeve_categories
+    from src.location_config import EQUITY_CATEGORY
+    return {s for s, c in sleeve_categories(sec, _live_taxonomy()).items()
+            if c == EQUITY_CATEGORY}
+
+
 def _live_tier(pos, acct, sec):
     """The deploy answer and its tier, built exactly as page 14 builds them."""
     comps, targets = _live_saa()
@@ -167,7 +186,8 @@ def test_no_two_groups_render_identical_prose():
     rendered = []
     for g in ACTION_GROUPS:
         resolved = resolve_placeholders(g, pos, acct, sec, reg, roth_idle_cash=deploy["idle_cash"],
-                                        compositions_df=comps, tier_state=tier)
+                                        compositions_df=comps, tier_state=tier,
+                                        asset_classes_df=_live_taxonomy())
         rendered.append(render_prose(g["pros"], resolved))
         rendered.append(render_prose(g["cons"], resolved))
     assert len(set(rendered)) == len(rendered), (
@@ -622,7 +642,8 @@ def _rendered_all():
     out = {}
     for g in ACTION_GROUPS:
         r = resolve_placeholders(g, pos, acct, sec, reg, roth_idle_cash=dep["idle_cash"],
-                                 compositions_df=comps, tier_state=tier)
+                                 compositions_df=comps, tier_state=tier,
+                                 asset_classes_df=_live_taxonomy())
         out[g["key"]] = (render_prose_md(g["pros"], r), render_prose_md(g["cons"], r), r, g)
     return out
 
@@ -981,7 +1002,7 @@ def test_household_placeholders_resolve_from_positions():
     import re
     from src.location_actions import _household_placeholders
     pos, acct, sec, _reg = _live()   # skips without the personal CSV + tracker.db
-    hp = _household_placeholders(pos, acct, sec)
+    hp = _household_placeholders(pos, acct, sec, _live_taxonomy())
     for k in ("trad_ira_equity", "pretax_capacity", "workplace_plan_value", "pretax_capacity_after"):
         assert re.fullmatch(r"\$[\d,]+", hp[k]), f"{k} not a formatted $ value: {hp[k]!r}"
     _d = lambda s: int(s.replace("$", "").replace(",", ""))
@@ -992,17 +1013,17 @@ def test_household_placeholders_resolve_from_positions():
 
 def test_trad_ira_equity_excludes_non_equity_sleeves():
     """Equity capacity is equity sleeves only — bond/real-asset holdings in the
-    Traditional IRA must not inflate it (enumerated, not substring-inferred)."""
+    Traditional IRA must not inflate it (by category, never a substring of the name)."""
     from src.location_actions import _household_placeholders, _fmt_dollars
-    from src.location_config import EQUITY_SLEEVES
     pos, acct, sec, _reg = _live()
+    eq_sleeves = _live_equity_sleeves(sec)
     tt = acct.set_index("pseudonym")["tax_treatment"].to_dict()
     trad = pos[pos["pseudonym"].map(tt) == "traditional_ira"].merge(
         sec[["ticker", "sleeve_category"]], left_on="symbol", right_on="ticker", how="left")
     total = float(trad["current_value"].sum())
-    equity = float(trad[trad["sleeve_category"].isin(EQUITY_SLEEVES)]["current_value"].sum())
+    equity = float(trad[trad["sleeve_category"].isin(eq_sleeves)]["current_value"].sum())
     assert equity < total, "the Traditional IRA holds non-equity that must be excluded"
-    hp = _household_placeholders(pos, acct, sec)
+    hp = _household_placeholders(pos, acct, sec, _live_taxonomy())
     assert hp["trad_ira_equity"] == _fmt_dollars(equity)
 
 
@@ -1277,7 +1298,7 @@ def test_every_group_action_line_renders_live():
     dep = build_roth_deploy_answer(pos, acct, sec, comp, tgt)
     for g in ACTION_GROUPS:
         r = resolve_placeholders(g, pos, acct, sec, reg, roth_idle_cash=dep["idle_cash"],
-                                 compositions_df=comp)
+                                 compositions_df=comp, asset_classes_df=_live_taxonomy())
         if g["key"] == "deploy_roth_cash":
             r = {**r, **deploy_targets_split(dep)}
         rendered = render_prose_md(g["action"], r)   # raises on any unresolved placeholder
@@ -1597,10 +1618,10 @@ def _independent_lookthrough_equity(pos, sec, comps, symbols=None):
 
     A holding with rows in fund_compositions contributes one row per underlying
     sleeve at that sleeve's weight; anything else contributes its own
-    securities.sleeve_category at weight 1. Then keep EQUITY_SLEEVES only, and
+    securities.sleeve_category at weight 1. Then keep the equity sleeves only, and
     optionally restrict to a symbol list (the card's numerator).
     """
-    from src.location_config import EQUITY_SLEEVES
+    eq_sleeves = _live_equity_sleeves(sec)
     sleeve_of = sec.set_index("ticker")["sleeve_category"].to_dict()
     w = comps[["fund_symbol", "underlying_sleeve", "weight"]].rename(
         columns={"fund_symbol": "symbol"})
@@ -1613,7 +1634,7 @@ def _independent_lookthrough_equity(pos, sec, comps, symbols=None):
     )
     # The decomposition must conserve dollars, or the denominator is meaningless.
     assert abs(float(m["dollars"].sum()) - float(pos["current_value"].sum())) < 1.0
-    eq = m[m["sleeve"].isin(EQUITY_SLEEVES)]
+    eq = m[m["sleeve"].isin(eq_sleeves)]
     if symbols is not None:
         eq = eq[eq["symbol"].isin(symbols)]
     return float(eq["dollars"].sum())
@@ -1635,7 +1656,8 @@ def _thematic_live_frames():
 def test_thematic_equity_share_matches_independent_derivation_live():
     pos, acct, sec, reg, comps = _thematic_live_frames()
     g = next(x for x in ACTION_GROUPS if x["key"] == "thematic_sprawl")
-    r = resolve_placeholders(g, pos, acct, sec, reg, compositions_df=comps)
+    r = resolve_placeholders(g, pos, acct, sec, reg, compositions_df=comps,
+                             asset_classes_df=_live_taxonomy())
 
     denom = _independent_lookthrough_equity(pos, sec, comps)
     numer = _independent_lookthrough_equity(pos, sec, comps, symbols=set(g["symbols"]))
@@ -1649,15 +1671,16 @@ def test_thematic_share_denominator_is_look_through_not_as_held():
     stated basis, and the Household View defaults to it. As-held would read ~19.8%
     against look-through's ~11.5% — an 8pp gap, and a card contradicting the
     methodology note on the same data."""
-    from src.location_config import EQUITY_SLEEVES
     pos, acct, sec, reg, comps = _thematic_live_frames()
+    eq_sleeves = _live_equity_sleeves(sec)
     g = next(x for x in ACTION_GROUPS if x["key"] == "thematic_sprawl")
-    r = resolve_placeholders(g, pos, acct, sec, reg, compositions_df=comps)
+    r = resolve_placeholders(g, pos, acct, sec, reg, compositions_df=comps,
+                             asset_classes_df=_live_taxonomy())
 
     as_held = pos.merge(sec[["ticker", "sleeve_category"]], left_on="symbol",
                         right_on="ticker", how="left")
     as_held_equity = float(
-        as_held[as_held["sleeve_category"].isin(EQUITY_SLEEVES)]["current_value"].sum())
+        as_held[as_held["sleeve_category"].isin(eq_sleeves)]["current_value"].sum())
     lt_equity = _independent_lookthrough_equity(pos, sec, comps)
     assert lt_equity > as_held_equity, (
         "fixture assumption: the household holds funds-of-funds whose equity is "
@@ -1673,8 +1696,8 @@ def test_thematic_share_numerator_is_a_strict_subset_of_its_denominator():
     sleeve, so it stays in the card's {count}/{value} and out of the percentage.
     Without this the figure would put $238 of crypto over an equity base and stop
     being a proportion at all."""
-    from src.location_config import EQUITY_SLEEVES
     pos, acct, sec, reg, comps = _thematic_live_frames()
+    eq_sleeves = _live_equity_sleeves(sec)
     g = next(x for x in ACTION_GROUPS if x["key"] == "thematic_sprawl")
     syms = set(g["symbols"])
 
@@ -1686,7 +1709,7 @@ def test_thematic_share_numerator_is_a_strict_subset_of_its_denominator():
     sleeve_of = sec.set_index("ticker")["sleeve_category"].to_dict()
     non_equity = float(
         pos[pos["symbol"].isin(syms)
-            & ~pos["symbol"].map(sleeve_of).isin(EQUITY_SLEEVES)]["current_value"].sum())
+            & ~pos["symbol"].map(sleeve_of).isin(eq_sleeves)]["current_value"].sum())
     assert non_equity > 0, (
         "fixture assumption: the card holds at least one non-equity symbol — if this "
         "is now false, the cons clause naming the exclusion is false too"
@@ -1700,13 +1723,13 @@ def test_thematic_non_equity_holdings_are_named_in_the_cons_prose():
     table cannot reach the share unless the prose says which holdings the equity
     percentage leaves out — and if the advisor buys another non-equity name into
     this list, this fails until the prose accounts for it."""
-    from src.location_config import EQUITY_SLEEVES
     pos, _acct, sec, _reg, _comps = _thematic_live_frames()
+    eq_sleeves = _live_equity_sleeves(sec)
     g = next(x for x in ACTION_GROUPS if x["key"] == "thematic_sprawl")
     sleeve_of = sec.set_index("ticker")["sleeve_category"].to_dict()
     held = pos[pos["symbol"].isin(set(g["symbols"]))]
     non_equity = sorted({
-        s for s in set(held["symbol"]) if sleeve_of.get(s) not in EQUITY_SLEEVES
+        s for s in set(held["symbol"]) if sleeve_of.get(s) not in eq_sleeves
     })
     assert non_equity, (
         "no card symbol is outside the equity sleeves any more — the cons clause "
@@ -1714,7 +1737,7 @@ def test_thematic_non_equity_holdings_are_named_in_the_cons_prose():
     )
     for sym in non_equity:
         assert sym in g["cons"], (
-            f"{sym} is in the card's symbol list but outside EQUITY_SLEEVES, so it is "
+            f"{sym} is in the card's symbol list but outside the equity sleeves, so it is "
             f"excluded from {{thematic_equity_share}} — the cons prose must name it"
         )
 
@@ -1726,7 +1749,8 @@ def test_thematic_cons_states_both_scopes_so_the_arithmetic_closes():
     numerator, and the denominator it is a share of."""
     pos, acct, sec, reg, comps = _thematic_live_frames()
     g = next(x for x in ACTION_GROUPS if x["key"] == "thematic_sprawl")
-    r = resolve_placeholders(g, pos, acct, sec, reg, compositions_df=comps)
+    r = resolve_placeholders(g, pos, acct, sec, reg, compositions_df=comps,
+                             asset_classes_df=_live_taxonomy())
     cons = render_prose_md(g["cons"], r)
 
     for key in ("value", "thematic_equity_value", "lookthrough_equity_value",

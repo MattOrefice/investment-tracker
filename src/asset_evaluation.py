@@ -684,8 +684,8 @@ def equity_sleeve_names() -> list[str]:
     (the `c in cols` filter dropped them without error). Call-time (not
     import-time) so importing this module never opens the database and the
     set tracks the phase-46 split within a warm process. Distinct on purpose
-    from location_config.EQUITY_SLEEVES, which is a frozenset of sleeve
-    *category keys* — this returns display names for the correlation views."""
+    from household.equity_sleeves, which returns household sleeve *category
+    keys* — this returns display names for the correlation views."""
     return [s for s in sleeve_names() if s not in BOND_SLEEVES and s != "Real Assets"]
 
 

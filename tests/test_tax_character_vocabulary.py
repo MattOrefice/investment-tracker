@@ -296,9 +296,11 @@ def test_muni_in_state_is_declared_and_unused():
 
 
 def test_hedged_equity_is_equity_exposure_with_ordinary_character():
-    """The disagreement that made a fix keyed on EQUITY_SLEEVES wrong by 4x. The two
-    axes must be allowed to disagree, and this is the row where they do."""
-    assert "hedged_equity" in lc.EQUITY_SLEEVES
+    """The disagreement that made a fix keyed on the equity set wrong by 4x. The two
+    axes must be allowed to disagree, and this is the row where they do. The equity
+    set was the hand-kept EQUITY_SLEEVES until #212; hedged_equity is off-SAA, so its
+    Equity category is now a declaration."""
+    assert lc.OFF_SAA_SLEEVE_CATEGORY["hedged_equity"] == lc.EQUITY_CATEGORY
     assert lc.SLEEVE_TAX_CHARACTER["hedged_equity"] == "ordinary"
 
 

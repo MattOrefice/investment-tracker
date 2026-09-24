@@ -1573,13 +1573,17 @@ def _pop_holdings(
 
 def _household_placeholders(
     positions_df: pd.DataFrame, accounts_df: pd.DataFrame, securities_df: pd.DataFrame,
+    asset_classes_df: pd.DataFrame | None = None,
 ) -> dict[str, str | None]:
     """Account-level placeholders derived straight from positions (not register
     rows), available to every group. A value is None (→ render_prose raises) only
-    when the underlying account is absent — never a $0 fallback.
+    when an input is absent — never a $0 fallback.
 
-      trad_ira_equity        Σ current_value of EQUITY_SLEEVES holdings in the
-                             Traditional IRA (equity sleeves enumerated, not inferred)
+      trad_ira_equity        Σ current_value of the Traditional IRA's holdings in
+                             an equity sleeve (household.equity_sleeves: taxonomy
+                             for SAA sleeves, declared for off-SAA ones). None
+                             without asset_classes_df, since there is then no
+                             category to read
       pretax_capacity        Traditional IRA total current_value
       workplace_plan_value   total of the specific rollable 401(k) account
                              (ROLLOVER_SOURCE_PSEUDONYM) — a definition, not an
@@ -1590,7 +1594,8 @@ def _household_placeholders(
                              pre-tax capacity can shelter, given pre-tax's ~25%
                              target share of that book: pretax_capacity / 0.25
     """
-    from src.location_config import EQUITY_SLEEVES, ROLLOVER_SOURCE_PSEUDONYM
+    from src.household import equity_sleeves
+    from src.location_config import ROLLOVER_SOURCE_PSEUDONYM
     tt = accounts_df.set_index("pseudonym")["tax_treatment"].to_dict()
     pos = positions_df.copy()
     pos["_tt"] = pos["pseudonym"].map(tt)
@@ -1599,10 +1604,15 @@ def _household_placeholders(
     pretax_capacity = float(trad["current_value"].sum()) if not trad.empty else None
 
     trad_ira_equity = None
-    if not trad.empty:
+    if not trad.empty and asset_classes_df is not None:
         sec = securities_df[["ticker", "sleeve_category"]]
         joined = trad.merge(sec, left_on="symbol", right_on="ticker", how="left")
-        eq = joined[joined["sleeve_category"].isin(EQUITY_SLEEVES)]
+        # A symbol missing from securities has no sleeve at all. That is the
+        # unmapped-holdings check's job (bootstrap, #217), not a category question.
+        mapped = joined[joined["sleeve_category"].notna()].drop_duplicates("sleeve_category")
+        eq_set = equity_sleeves(dict(zip(mapped["sleeve_category"], mapped["symbol"])),
+                                securities_df, asset_classes_df)
+        eq = joined[joined["sleeve_category"].isin(eq_set)]
         trad_ira_equity = float(eq["current_value"].sum())
 
     # The rollable 401(k) is identified by pseudonym — never by comparing balances.
@@ -1644,11 +1654,15 @@ def _thematic_equity_figures(
     positions_df: pd.DataFrame,
     securities_df: pd.DataFrame,
     compositions_df: pd.DataFrame | None,
+    asset_classes_df: pd.DataFrame | None = None,
 ) -> dict[str, str | None]:
     """The thematic book's household weight, as the three figures its prose needs:
 
-      lookthrough_equity_value  Σ EQUITY_SLEEVES dollars across the household, every
-                                fund-of-funds decomposed into its underlying sleeves
+      lookthrough_equity_value  Σ equity-sleeve dollars across the household, every
+                                fund-of-funds decomposed into its underlying sleeves.
+                                Equity is household.equity_sleeves, which RAISES on
+                                a held sleeve with no category rather than dropping
+                                it from this denominator (#212)
       thematic_equity_value     the same sum restricted to the thematic card's own
                                 authored symbol list
       thematic_equity_share     the second as a percent of the first
@@ -1676,15 +1690,15 @@ def _thematic_equity_figures(
 
     Returns None values when there is no compositions frame — the caller did not ask
     for household look-through, and a share computed on some other basis is worse than
-    no share, so render_prose raises. Same contract as roth_idle_cash.
+    no share, so render_prose raises. Same contract as roth_idle_cash. Likewise with
+    no asset_classes_df: without the taxonomy there is no category to read.
     """
     none = {"lookthrough_equity_value": None, "thematic_equity_value": None,
             "thematic_equity_share": None}
-    if compositions_df is None or positions_df.empty:
+    if compositions_df is None or asset_classes_df is None or positions_df.empty:
         return none
 
-    from src.household import look_through_position
-    from src.location_config import EQUITY_SLEEVES
+    from src.household import equity_sleeves, look_through_position
 
     symbols = set(next(
         (g["symbols"] for g in ACTION_GROUPS if g["key"] == "thematic_sprawl"), None) or [])
@@ -1700,7 +1714,10 @@ def _thematic_equity_figures(
         parts.append(part)
     decomposed = pd.concat(parts, ignore_index=True)
 
-    equity = decomposed[decomposed["sleeve"].isin(EQUITY_SLEEVES)]
+    first = decomposed.drop_duplicates("sleeve")
+    eq_set = equity_sleeves(dict(zip(first["sleeve"], first["symbol"])),
+                            securities_df, asset_classes_df)
+    equity = decomposed[decomposed["sleeve"].isin(eq_set)]
     denominator = float(equity["dollar_value"].sum())
     numerator = float(equity[equity["symbol"].isin(symbols)]["dollar_value"].sum())
     if denominator <= 0 or numerator <= 0:
@@ -1725,6 +1742,7 @@ def resolve_placeholders(
     roth_idle_cash: float | None = None,
     compositions_df: pd.DataFrame | None = None,
     tier_state: "dict | None" = None,
+    asset_classes_df: pd.DataFrame | None = None,
 ) -> dict[str, str | None]:
     """Resolve every placeholder for a group. A key maps to a formatted string, or
     None if it cannot resolve (empty subset) — render_prose raises if the prose
@@ -1741,6 +1759,10 @@ def resolve_placeholders(
     compositions_df (the fund_compositions table) is needed only for the thematic
     card's household look-through figures; omit it and those resolve to None, which
     makes render_prose raise rather than render a share on the wrong basis.
+
+    asset_classes_df (the whole asset_classes table: id, name, parent_id) is the
+    taxonomy that says which sleeves are equity, for {trad_ira_equity} and the
+    thematic figures. Omit it and those resolve to None, the same contract.
     """
     hr = capital_gains_headroom(register)
     base = {
@@ -1755,12 +1777,14 @@ def resolve_placeholders(
         # without hardcoding either dollar amount.
         "loss_side_benefit": _group_annual_benefit(register, "relocate_loss_side"),
         "gain_side_benefit": _group_annual_benefit(register, "relocate_gain_side"),
-        **_household_placeholders(positions_df, accounts_df, securities_df),
+        **_household_placeholders(positions_df, accounts_df, securities_df,
+                                  asset_classes_df),
         # Keyed off the thematic card by name, like group_2_title and the sibling
         # benefit figures above — so the household thematic weight means the same
         # thing whichever card cites it, rather than following whichever group is
         # being resolved.
-        **_thematic_equity_figures(positions_df, securities_df, compositions_df),
+        **_thematic_equity_figures(positions_df, securities_df, compositions_df,
+                                   asset_classes_df),
     }
     if group["key"] == "deploy_roth_cash":
         v = None if roth_idle_cash is None else _fmt_dollars(roth_idle_cash)

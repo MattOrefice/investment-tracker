@@ -467,9 +467,10 @@ SLEEVE_TAX_CHARACTER: dict[str, str] = {
     "floating_rate":           "ordinary",
     "multi_sector_fi":         "ordinary",
     "liquid_alt":              "ordinary",
-    # Covered-call and ELN income is ordinary. The sleeve sits in EQUITY_SLEEVES for
-    # EXPOSURE and is taxed as ordinary for CHARACTER — the two axes disagreeing here
-    # is the reason #278 exists, and why a fix keyed on EQUITY_SLEEVES was wrong by 4x.
+    # Covered-call and ELN income is ordinary. The sleeve is Equity by category
+    # (OFF_SAA_SLEEVE_CATEGORY) for EXPOSURE and is taxed as ordinary for CHARACTER.
+    # The two axes disagreeing here is the reason #278 exists, and why a fix keyed on
+    # the equity set (then the hand-kept EQUITY_SLEEVES, #212) was wrong by 4x.
     "hedged_equity":           "ordinary",
     # Blends — see the simplification note above.
     "multi_asset":             "ordinary",
@@ -602,17 +603,90 @@ HSA_CONTRIB_LIMIT_SELF_2026: float = 4_400.0       # self-only HDHP coverage
 HSA_CONTRIB_LIMIT_FAMILY_2026: float = 8_750.0     # family HDHP coverage
 HSA_CATCHUP_55_2026: float = 1_000.0               # additional, age 55+
 
-# Equity sleeves, ENUMERATED EXPLICITLY — never inferred from a substring match on
-# the sleeve name. Used to size an account's absorbable-equity capacity. Excludes
-# fixed income, real assets, cash, multi-asset/target-date blends, liquid alts,
-# and crypto. USER-EDITABLE.
-EQUITY_SLEEVES: frozenset[str] = frozenset({
-    "us_large_core", "us_large_quality", "us_large_value", "us_large_growth",
-    "us_small_core", "us_small_value", "us_mid_cap",
-    "us_sector_tech", "us_sector_healthcare",
-    "intl_developed", "intl_all_exus", "emerging_markets",
-    "hedged_equity", "single_stock", "thematic",
-})
+# ── Sleeve category: where "equity" comes from (#212) ──────────────────────────
+# A sleeve's CATEGORY is a root of the SAA taxonomy (asset_classes rows with no
+# parent): Equity, Income, Real Assets, Cash, or the 'Other / Non-SAA' parking lot.
+# Every held sleeve takes it from EXACTLY ONE of two sources, resolved by
+# household.sleeve_categories:
+#
+#   SAA sleeves: from the taxonomy. A sleeve whose is_in_saa=1 security is filed
+#     under an SAA class takes that class's root. Nothing here names them, so the
+#     three intl tilts become Equity when the phase-46 split files IDHQ / AVIV /
+#     AVDV under International Quality / Large Value / Small Value, with no edit.
+#
+#   Off-SAA sleeves: declared below. Their securities sit in the parking lot, which
+#     says what a sleeve is NOT (in the SAA), never what it is.
+#
+# A held sleeve with NEITHER source raises. So does a sleeve with BOTH: when a
+# declared sleeve enters the taxonomy, delete its line here, or the two copies of
+# one fact can drift apart.
+#
+# This replaced a hand-kept EQUITY_SLEEVES set. A new sleeve name fell out of it
+# silently: the three intl tilts were missing, and `.isin()` dropped them from the
+# thematic card's equity denominator without a word. USER-EDITABLE.
+OFF_SAA_SLEEVE_CATEGORY: dict[str, str] = {
+    # ── Equity ─────────────────────────────────────────────────────────────────
+    "us_large_growth":      "Equity",
+    "us_small_core":        "Equity",
+    "us_mid_cap":           "Equity",
+    "us_sector_tech":       "Equity",
+    "us_sector_healthcare": "Equity",
+    "intl_all_exus":        "Equity",
+    # Covered-call and ELN income is ordinary (SLEEVE_TAX_CHARACTER), but the
+    # EXPOSURE is equity, and exposure is what a category states. See #278.
+    "hedged_equity":        "Equity",
+    "single_stock":         "Equity",
+    "thematic":             "Equity",
+    # ── Income ─────────────────────────────────────────────────────────────────
+    "core_fi_credit":       "Income",
+    "high_yield_fi":        "Income",
+    "high_yield_muni":      "Income",
+    "floating_rate":        "Income",
+    "multi_sector_fi":      "Income",
+    # ── Real Assets ────────────────────────────────────────────────────────────
+    "real_assets_gold":     "Real Assets",
+    # ── Cash ───────────────────────────────────────────────────────────────────
+    # SPAXX carries is_in_saa=1 but is filed under the parking lot, not under
+    # 'Cash / SPAXX', so the taxonomy gives this sleeve no category. If SPAXX is
+    # ever filed there, the both-sources raise will say to delete this line.
+    "cash":                 "Cash",
+    # ── None of the four ───────────────────────────────────────────────────────
+    # Two blends, a liquid alt and crypto are none of Equity / Income / Real Assets
+    # / Cash. 'Other / Non-SAA' is the root the taxonomy already files every one of
+    # their securities under, so this restates the taxonomy rather than inventing a
+    # fifth category. The blends still count toward equity where it matters: the
+    # thematic card looks through them to their underlying sleeves.
+    "multi_asset":          "Other / Non-SAA",
+    "target_date":          "Other / Non-SAA",
+    "liquid_alt":           "Other / Non-SAA",
+    "crypto":               "Other / Non-SAA",
+}
+
+# The root that makes a sleeve equity. A NAME, the same one migrate_saa_phase39
+# resolves the Equity parent by. The resolver raises if the taxonomy has no root by
+# this name, because an equity set derived against a missing root is empty, and
+# empty is the silent answer this replaced.
+EQUITY_CATEGORY: str = "Equity"
+
+# SAA sleeves that a PENDING migration will file in the taxonomy, mapped to the
+# step that files them. This is used ONLY to word the no-source error for the gap
+# between holding a carrier and the migration running. It is never a source of
+# category: a sleeve here still raises until the taxonomy files it. Declaring one
+# of these above instead would clear the error and then become a second source
+# once the split lands.
+#
+# Once the split lands these sleeves resolve from the taxonomy and this is never
+# read. tests/test_sleeve_category.py pins the keys to the migration's own
+# NEW_HOLDING_CATEGORIES, so the message cannot name a sleeve the migration does
+# not file.
+PENDING_TAXONOMY_SLEEVES: dict[str, str] = dict.fromkeys(
+    ("intl_quality", "intl_large_value", "intl_small_value"),
+    "the phase-46 international split (tools/migrate_saa_phase46_personal_intl_split.py). "
+    "It files IDHQ, AVIV and AVDV under International Quality, Large Value and Small "
+    "Value. It runs at app start, once acct_01's trade ledger holds a buy of all "
+    "three, and it runs once per process: log any missing carrier buy on the Trade "
+    "Log page, then restart the app",
+)
 
 
 # ── Account directability ──────────────────────────────────────────────────────
