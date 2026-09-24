@@ -91,7 +91,7 @@ def _load_portfolio(_v: int = _PORTFOLIO_CACHE_V):
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def _load_benchmarks(start_val: float):
+def _load_benchmarks(start_val: float, end: str):
     """Gaps are captured off .attrs BEFORE the *start_val multiply, and returned as
     plain values rather than relied upon to survive on the Series.
 
@@ -106,8 +106,12 @@ def _load_benchmarks(start_val: float):
     disclosure channel on it would put the disclosure itself on an unstable
     footing — which is also why PriceCoverage travels as an explicit return value
     (see src/coverage.py)."""
-    sp_raw = get_sp500_series(INCEPTION, TODAY)
-    bl_raw = get_custom_blended_series(INCEPTION, TODAY)
+    # Through ``end``, the settled frontier C, NOT today (#343): coverage is judged
+    # at the requested end, and the page shows every series only through C, so
+    # judging it at the calendar reported a gap in data the page never displays
+    # (offline, or with a cache more than five days behind). #338's precedent.
+    sp_raw = get_sp500_series(INCEPTION, end)
+    bl_raw = get_custom_blended_series(INCEPTION, end)
     sp_gaps = sp_raw.attrs.get("benchmark_gaps", [])
     bl_gaps = bl_raw.attrs.get("benchmark_gaps", [])
     sp = sp_raw * start_val
@@ -116,8 +120,9 @@ def _load_benchmarks(start_val: float):
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def _load_naive_benchmark(start_val: float, kind: str = "60_40"):
-    naive_raw  = get_naive_series(kind, INCEPTION, TODAY)
+def _load_naive_benchmark(start_val: float, end: str, kind: str = "60_40"):
+    # Through the settled frontier, not today (#343): see _load_benchmarks.
+    naive_raw  = get_naive_series(kind, INCEPTION, end)
     naive_gaps = naive_raw.attrs.get("benchmark_gaps", [])
     naive = naive_raw * start_val
     return naive, naive_gaps
@@ -357,7 +362,7 @@ with col:
 
     with st.spinner("Loading benchmark data…"):
         start_val = float(pv.iloc[0])
-        sp, bl, _sp_gaps, _bl_gaps = _load_benchmarks(start_val)
+        sp, bl, _sp_gaps, _bl_gaps = _load_benchmarks(start_val, _C)
         sp = sp[sp.index <= _C_ts]   # anchor benchmark series on the settled frontier (C)
         bl = bl[bl.index <= _C_ts]
 
@@ -691,7 +696,7 @@ with col:
         _bl_for_metrics = sp / float(sp.iloc[0])
         _risk_bm_label  = "S&P 500 (SPY)"
     else:
-        _naive_60_40 = _load_naive_benchmark(start_val, "60_40")
+        _naive_60_40 = _load_naive_benchmark(start_val, _C, "60_40")
         _naive_60_40 = _naive_60_40[_naive_60_40.index <= _C_ts]
         _bl_for_metrics = _naive_60_40 / float(_naive_60_40.iloc[0])
         _risk_bm_label  = "60/40 (60% SPY / 40% AGG)"
@@ -885,7 +890,7 @@ with col:
         help="Stage 1 measures the SAA design effect relative to this baseline.",
     )
     naive_kind   = _NAIVE_OPTIONS[_naive_sel]
-    naive, _naive_gaps = _load_naive_benchmark(start_val, naive_kind)
+    naive, _naive_gaps = _load_naive_benchmark(start_val, _C, naive_kind)
     naive        = naive[naive.index <= _C_ts]   # settled frontier (C)
     _naive_label = (
         "60/40 naive baseline (60% SPY, 40% AGG)"
