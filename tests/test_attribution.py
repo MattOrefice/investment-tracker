@@ -677,85 +677,111 @@ def test_identity_ps_two_stage_si_spy():
     )
 
 
-def test_identity_bf_sum_reconciles_to_stage2(_no_live_fetch):
-    """Ex-cash BF portfolio return + cash drag must reconcile with the actual TWR
-    within 0.5 bps for all windows (Phase 38b-2 bridge).
+# Planted by the deposit case: inside 3M, YTD, 1Y and SI on the frozen book (anchor
+# 2026-07-20), outside 1M (2026-06-20 onward), so both kinds of window are exercised.
+_STAGE2_DEPOSIT = ("2026-06-01", "VOO", 300.0)
 
-    Phase 10.2 regression pin, updated for Phase 38b-2. BF weights are now ex-cash
-    (operational SPAXX float excluded), so the BF portfolio return is the INVESTED
-    (strategic) return. The operational cash drag is exposed on bf_df.attrs. The
-    bridge that keeps the Performance page reconciliation ✓:
-      bf_r_p_excash + cash_drag  ==  r_p_ps   (actual incl-cash portfolio return)
-    because cash_drag = r_p_total_incl − r_p_total_excash and bf_r_p_excash =
-    r_p_total_excash, so the sum is r_p_total_incl ≈ r_p_ps within the same tolerance
-    that held pre-38b-2.
 
-    r_p_ps is the book's daily-linked TWR over the period, matching the Performance
-    page's period_return("daily", pv, cf, bf_period) call (#349). It was an end-over-
-    start value ratio, copied from the page; that copy could not see the page counting
-    deposits as return, because this book has no deposit in any window, where the two
-    agree exactly. The bridge holds against the TWR only on such a book: BF holds the
-    start-of-window holdings fixed, so a deposit mid-window moves the TWR and not BF.
+def _frozen_conftest(config):
+    return next(p for p in config.pluginmanager.get_plugins()
+                if getattr(p, "FROZEN_TODAY", None) is not None)
+
+
+@pytest.mark.parametrize("deposit", [False, True], ids=["no-deposit", "deposit-mid-window"])
+def test_identity_bf_sum_reconciles_to_stage2(deposit, pytestconfig, tmp_path):
+    """The page's Stage 2 agrees with Stage 2 computed from first principles, and the
+    BF bridge holds against the same independent return (Phase 38b-2, #349).
+
+    WHY THE RIGHT-HAND SIDE IS INDEPENDENT. This test used to compare BF with a copy of
+    the page's portfolio-return expression. It passed while the page reported Stage 2
+    at +10295 bps on a 3.2% book, because the copy made the page's mistake (an end-over-
+    start value ratio on a series with deposits in it) and this book had no deposit to
+    expose it. After #350 it copied the corrected expression and was exactly as blind
+    to the next defect. Now the reference is tests/first_principles.py: positions and
+    flows from the ledger, valued at the window ends and flow dates, chained between
+    flows. None of it calls src.holdings or src.returns.
+
+    For every attribution window the page offers:
+      * PAGE: the rendered Stage 2 tile = independent portfolio TWR − SAA blend, where
+        the SAA blend is read off the page's rendered BF table (Σ Bench Wt × Bench Ret,
+        which is exactly the tile's benchmark side). Tile rounds to 1 bp.
+      * BRIDGE: on a window with no external flow, ex-cash BF return + cash drag =
+        the independent TWR within 0.5 bps. On a window WITH a flow the bridge cannot
+        hold: BF values the start-of-window holdings, so it never sees what the
+        deposit bought. That window is the page's disclosure case, not a failure.
+
+    Run on the frozen book twice: as built (no flow after inception, so every window
+    checks the bridge) and with one deposit planted mid-window (so a value ratio and
+    the TWR differ by thousands of bps, and a page that confused them fails here).
     """
-    import datetime
-    import pandas as pd
+    import streamlit as st
+    from streamlit.testing.v1 import AppTest
     from src.attribution import brinson_fachler_period
-    from src.holdings import get_external_cashflow_series, get_portfolio_value_series, last_real_price_date
-    from src.returns import period_bounds, period_return
+    from tests import first_principles as fp
 
-    INCEPTION = "2025-05-01"
-    # Anchor on the HOLDINGS' common frontier captured at import (no live fetch), NOT
-    # date.today() and NOT the global cache MAX — the latter over-promises whenever a
-    # non-holding/sibling-advanced ticker reaches a later date than the holdings, which
-    # made this fail on the first local run after the shared cache had been ragged-
-    # advanced. The identity holds on the committed prices by construction; the
-    # _no_live_fetch fixture keeps the cache fixed under the test.
-    TODAY = _captured_frontier()
-
+    conftest = _frozen_conftest(pytestconfig)
+    seen = {}
     try:
-        pv_full = get_portfolio_value_series(INCEPTION, TODAY, account_id=1)
-    except Exception as exc:
-        pytest.skip(f"Portfolio data unavailable: {exc}")
+        with pytest.MonkeyPatch.context() as mp:
+            conftest.pin_today(mp)
+            book_path = conftest.point_at_frozen_book(mp, tmp_path)
+            if deposit:
+                fp.plant_deposit(book_path, *_STAGE2_DEPOSIT)
+            st.cache_data.clear()
+            at = AppTest.from_file("pages/2_Performance.py", default_timeout=180).run()
+            assert not at.exception, f"page raised: {at.exception}"
+            book = fp.Book(account_id=1)
+            for label in fp.WINDOWS:
+                [r for r in at.radio if r.key == "bf_period"][0].set_value(label).run()
+                assert not at.exception, f"page raised on {label}: {at.exception}"
+                tile = {m.label: m.value for m in at.metric}["Stage 2: Implementation"]
+                bf_tbl = next(d.value for d in at.dataframe if "Bench Wt" in d.value.columns)
+                saa = float((bf_tbl["Bench Wt"] * bf_tbl["Bench Ret"].fillna(0.0)).sum()) / 10_000
+                start, end = book.window(label)
+                bf = brinson_fachler_period(start, end, account_id=1)
+                assert not bf.empty, f"BF empty for {label} on the frozen book"
+                seen[label] = {
+                    "tile_bps": int(str(tile).replace(" bps", "")),
+                    "saa": saa,
+                    "twr": book.twr(start, end),
+                    "value_ratio": book.value_ratio(start, end),
+                    "flows": book.flows(start, end),
+                    "bridged": float((bf["w_p"] * bf["r_p"]).sum())
+                               + float(bf.attrs.get("cash_drag", 0.0)),
+                }
+    finally:
+        conftest.unpin_leftovers()
+        st.cache_data.clear()
 
-    if pv_full.dropna().empty:
-        pytest.skip("Portfolio data empty — skipped in local/empty-DB mode")
+    # PREMISE: the deposit case must contain a window the deposit distorts, and every
+    # case must contain a flow-free window, or one half of this test checks nothing.
+    flow_windows = [w for w, s in seen.items() if s["flows"]]
+    if deposit:
+        assert flow_windows and all(
+            abs(seen[w]["value_ratio"] - seen[w]["twr"]) > 0.10 for w in flow_windows
+        ), {w: (seen[w]["value_ratio"], seen[w]["twr"]) for w in flow_windows}
+    else:
+        assert not flow_windows, f"the frozen book gained a flow: {flow_windows}"
+    assert any(not s["flows"] for s in seen.values())
 
-    # Anchor every window on the LAST REAL price date — NOT pv_full.index[-1], which is
-    # forward-filled to today. Clip the value series to that frontier so both
-    # reconciliation sides slice to the same real endpoint. This makes the test
-    # date-independent: it previously failed whenever CI ran with today > the last
-    # traded day (after the UTC rollover, on weekends/holidays), because the value
-    # series ffilled to today while the BF side used real prices — a 15-42 bps gap on
-    # the short 1M window.
-    real_end = last_real_price_date(INCEPTION, TODAY)
-    real_end_d = datetime.date.fromisoformat(real_end)
-    pv_real = pv_full[pv_full.index <= pd.Timestamp(real_end)]
-    cf_real = (get_external_cashflow_series(INCEPTION, TODAY, account_id=1)
-               .reindex(pv_real.index).fillna(0.0))
-
-    for label in ("SI", "1Y", "YTD", "3M", "1M"):
-        start, end = period_bounds(label, real_end_d, INCEPTION)
-        try:
-            bf_df = brinson_fachler_period(start, end, account_id=1)
-        except Exception as exc:
-            pytest.skip(f"BF data unavailable for {label}: {exc}")
-
-        if bf_df.empty:
-            pytest.skip(f"BF result empty for {label} — skipped in local/empty-DB mode")
-
-        r_p_ps        = period_return("daily", pv_real, cf_real, label)
-        bf_r_p_excash = float((bf_df["w_p"] * bf_df["r_p"]).sum())
-        cash_drag     = float(bf_df.attrs.get("cash_drag", 0.0))
-        bridged       = bf_r_p_excash + cash_drag
-        gap_bps = abs(bridged - r_p_ps) * 10_000
-
-        assert gap_bps < 0.5, (
-            f"Ex-cash BF return + cash drag ({bridged*10000:.1f} bps = "
-            f"{bf_r_p_excash*10000:.1f} strategic {cash_drag*10000:+.1f} drag) diverges from "
-            f"price series ({r_p_ps*10000:.1f} bps) by {gap_bps:.2f} bps for {label} window. "
-            f"The cash-drag bridge in brinson_fachler_period() may have failed — check "
-            f"the cash_drag attr and the ex-cash weight normalization."
+    for label, s in seen.items():
+        independent_bps = (s["twr"] - s["saa"]) * 10_000
+        assert abs(s["tile_bps"] - independent_bps) <= 0.6, (
+            f"{label}: the page's Stage 2 tile is {s['tile_bps']:+d} bps, but the book's "
+            f"time-weighted return from first principles ({s['twr']:.4%}) less the SAA "
+            f"blend ({s['saa']:.4%}) is {independent_bps:+.2f} bps. The page's portfolio "
+            f"return is not the book's TWR (a value ratio here would read "
+            f"{s['value_ratio']:.4%}; #349)."
         )
+        if not s["flows"]:
+            gap_bps = abs(s["bridged"] - s["twr"]) * 10_000
+            assert gap_bps < 0.5, (
+                f"Ex-cash BF return + cash drag ({s['bridged']*10000:.1f} bps) diverges "
+                f"from the book's independent TWR ({s['twr']*10000:.1f} bps) by "
+                f"{gap_bps:.2f} bps for the {label} window, which holds no external flow. "
+                f"The cash-drag bridge in brinson_fachler_period() may have failed — "
+                f"check the cash_drag attr and the ex-cash weight normalization."
+            )
 
 
 @pytest.mark.parametrize("sim_today_offset_days", [0, 1, 3])
