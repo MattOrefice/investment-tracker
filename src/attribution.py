@@ -280,6 +280,54 @@ def benchmark_gap_notice(benchmark_gaps: list[tuple[str, str, str]]) -> str:
     )
 
 
+def stage2_reconciliation(
+    gap_bps: float, window_start: str, window_flows: "dict[str, float]",
+) -> "tuple[str, Optional[str]]":
+    """The Performance page's "vs. Stage 2" check, conditioned on the window (#349).
+
+    Brinson-Fachler holds the holdings at the START of the window fixed; Stage 2's
+    portfolio side is the book's time-weighted return, which follows every purchase.
+    Over a window with no external flow the two must agree, so the check keeps its
+    0.5 bps threshold and its warning: a gap there means something is wrong. Over a
+    window holding a deposit or withdrawal they cannot agree, because BF never sees
+    what the flow bought or sold, and a warning there presents a known limitation as
+    a failure (+17.59 bps on the owner's book once Stage 2 became the TWR). That
+    window gets a disclosure instead, and no glyph.
+
+    ``window_flows``: ISO date -> signed external flow, for days strictly AFTER
+    ``window_start`` (a flow on the first day is the starting value, as in the TWR).
+    Returns (the fragment for the BF summary line, the disclosure or None).
+    """
+    from src.asof import format_long_date
+
+    flows = {d: a for d, a in window_flows.items() if a}
+    if not flows:
+        ok = abs(gap_bps) < 0.5
+        return f"vs. Stage 2: {'✓' if ok else '⚠'} {gap_bps:+.2f} bps", None
+
+    days = sorted(flows)
+    if all(a > 0 for a in flows.values()):
+        noun, did = "deposit", "bought"
+    elif all(a < 0 for a in flows.values()):
+        noun, did = "withdrawal", "sold"
+    else:
+        noun, did = "deposit or withdrawal", "bought or sold"
+    named = [format_long_date(d) for d in days]
+    when = named[0] if len(named) == 1 else ", ".join(named[:-1]) + " and " + named[-1]
+    plural = "s" if len(days) > 1 else ""
+    fragment = f"vs. Stage 2: {gap_bps:+.2f} bps, not comparable (a {noun} in this window)"
+    disclosure = (
+        f"**Attribution cannot see the {noun}{plural} of {when}.** Brinson-Fachler holds "
+        f"the holdings at the start of the window ({format_long_date(window_start)}) "
+        f"fixed for the whole window, so it cannot attribute what an intra-window "
+        f"{noun} {did}. Stage 2 is the book's time-weighted return, which does include "
+        f"them from the day they were {did}, so the two differ by {gap_bps:+.2f} bps "
+        f"here. That gap is this limitation, not an error: over a window with no "
+        f"{noun}, they agree within 0.5 bps."
+    )
+    return fragment, disclosure
+
+
 def brinson_fachler_period(
     start_date: str,
     end_date: str | None = None,

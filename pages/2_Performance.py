@@ -24,6 +24,7 @@ from src.attribution import (
     brinson_fachler_period,
     compute_two_stage_attribution,
     price_gap_notice,
+    stage2_reconciliation,
 )
 from src.benchmarks import get_custom_blended_series, get_naive_60_40_series, get_naive_series, get_sp500_series
 from src.db import get_connection
@@ -1227,8 +1228,15 @@ with col:
 
         # Bridge: strategic active (ex-cash) + cash drag must equal the actual
         # portfolio active (Stage 2 basis) within 0.5 bps — keeps the reconciliation ✓.
+        # Only over a window with no external flow: BF holds the start-of-window
+        # holdings fixed and never sees what a deposit bought, so over a window holding
+        # one the gap is that limitation and is disclosed rather than warned (#349).
         _bf_s2_gap_bps = (total_active / 100 - (_r_p_ps - _r_b_ps)) * 10_000
-        _bf_reconciled = abs(_bf_s2_gap_bps) < 0.5
+        _bf_window_cf = cf[(cf.index > pd.Timestamp(_bf_start)) & (cf.index <= pd.Timestamp(_bf_end))]
+        _s2_check, _s2_disclosure = stage2_reconciliation(
+            _bf_s2_gap_bps, _bf_start,
+            {d.date().isoformat(): float(a) for d, a in _bf_window_cf.items()},
+        )
         st.caption(
             f"**BF decomposition:**  "
             f"Strategic active (ex-cash): {ex_cash_active:+.2f}%  &nbsp;·&nbsp;  "
@@ -1236,8 +1244,10 @@ with col:
             f"Total active vs SAA blend: {total_active:+.2f}%  &nbsp;·&nbsp;  "
             f"Sum of effects: {sum_effects:+.1f} bps  &nbsp;·&nbsp;  "
             f"Algebra check: {'✓' if reconciled else '⚠'}  &nbsp;·&nbsp;  "
-            f"vs. Stage 2: {'✓' if _bf_reconciled else '⚠'} {_bf_s2_gap_bps:+.2f} bps"
+            f"{_s2_check}"
         )
+        if _s2_disclosure:
+            st.caption(_s2_disclosure)
 
         # A data gap excludes a sleeve from the BF decomposition above, but that
         # sleeve still contributes to the Stage 1/2 portfolio return (computed
