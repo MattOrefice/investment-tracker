@@ -6,8 +6,9 @@ internal timezone-fetch triggers.
 """
 import re
 import time
+from contextvars import ContextVar
 from datetime import date, datetime, timedelta, timezone
-from typing import Optional
+from typing import Callable, Optional
 from urllib.parse import quote
 
 import numpy as np
@@ -306,9 +307,15 @@ def _fetch_trailing_memoized(ticker: str, start: str, end: str) -> pd.DataFrame:
     return df
 
 
-def dividend_adjusted(ticker: str, frame: pd.DataFrame) -> pd.Series:
+def dividend_adjusted(ticker: str, frame: pd.DataFrame, *,
+                      through: Optional[str] = None) -> pd.Series:
     """Total-return prices for ``frame`` (indexed by date, with a ``close`` column),
     derived from close and the stored dividends (#304).
+
+    ``through`` (ISO date) admits only dividends with an ex-date on or before it. A
+    quarter lock passes its own last day, so the lock's levels cannot move when a
+    later dividend arrives: without it, every ex-date after the quarter rescales the
+    quarter's levels (#368). Omitted, every stored dividend counts, as before.
 
     The provider's own method: every close BEFORE an ex-date is scaled by
     ``1 - amount / close_on_the_last_trading_day_before_the_ex_date``, compounded
@@ -344,8 +351,9 @@ def dividend_adjusted(ticker: str, frame: pd.DataFrame) -> pd.Series:
                         WHERE p.ticker = d.ticker AND p.price_date < d.ex_date
                         ORDER BY p.price_date DESC LIMIT 1) AS pc
                  FROM dividends d WHERE d.ticker = ? AND d.ex_date > ?
+                  AND (? IS NULL OR d.ex_date <= ?)
                 ORDER BY d.ex_date""",
-            (ticker, first),
+            (ticker, first, through, through),
         ).fetchall()
     # Vectorised: each ex-date's multiplier lands at the position of its first row ON
     # or after the ex-date, and a row's factor is the product of every multiplier at a
@@ -373,6 +381,20 @@ def dividend_adjusted(ticker: str, frame: pd.DataFrame) -> pd.Series:
     return closes * factor
 
 
+# The price lock in force for the current context, or None. Set only by
+# cache.snapshot_price_context, as a reader that returns a frame, or None for "not
+# locked: read the cache as usual".
+#
+# CONSULTED INSIDE get_prices, NOT BY REPLACING IT. Every consumer module does
+# `from src.prices import get_prices` and so holds this function object; swapping
+# the module attribute, which is how the lock used to work, reached only callers
+# that looked the name up on the module at call time. No report section did, so a
+# PDF read live prices under a lock nothing read (#368: corrupting VOO in the DB
+# after capture moved 86 "locked" figures). A ContextVar is also per-session:
+# the attribute swap was process-global, visible to every concurrent visitor.
+_PRICE_LOCK: ContextVar[Optional[Callable]] = ContextVar("price_lock", default=None)
+
+
 def get_prices(
     ticker: str,
     start_date: str,
@@ -389,7 +411,16 @@ def get_prices(
     The bar of a currently-open session is served but never cached (see
     fetch_prices / unsettled_bar_date), so a live mark still reaches the caller
     while the DB holds settled closes only.
+
+    Inside cache.snapshot_price_context, a locked ticker is served from the lock
+    and never from the cache (see _PRICE_LOCK).
     """
+    lock = _PRICE_LOCK.get()
+    if lock is not None:
+        locked = lock(ticker, start_date, end_date)
+        if locked is not None:
+            return locked
+
     end = end_date or date.today().isoformat()
 
     # Closes only. adj_close is NULL in storage since #339 and derived below from the

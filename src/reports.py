@@ -24,6 +24,7 @@ from src.attribution import benchmark_gap_notice, brinson_fachler_period, price_
 from src.cache import (
     capture_quarter_snapshot,
     get_quarter_snapshot,
+    restatement_note,
     is_quarter_complete,
     label_to_quarter_id,
     snapshot_price_context,
@@ -1910,9 +1911,14 @@ def generate_quarterly_report_bytes(
         pos_data         = _build_positioning_section(end_date)             if has_trades else None
         factor_data      = _build_factor_section(end_date)                 if has_trades else None
         bench_attr_data  = _build_benchmark_section(start_date, end_date)  if has_trades else None
-        macro_data       = _build_macro_section()
         thesis_data      = _build_thesis_section(start_date, end_date, account_id=report_acct)
-        asset_eval_data  = _build_asset_eval_section()
+    # LIVE BY DESIGN, so built OUTSIDE the lock. Both read through today (the macro
+    # dashboard, and candidate returns that include tickers the lock does not
+    # carry); inside a working lock, the locked tickers' series would stop at the
+    # quarter's end while the rest ran to today. They sat inside the block harmlessly
+    # only while the lock reached no caller (#368).
+    macro_data       = _build_macro_section()
+    asset_eval_data  = _build_asset_eval_section()
 
     css_content = (TEMPLATES_DIR / "report_styles.css").read_text(encoding="utf-8")
 
@@ -1950,6 +1956,9 @@ def generate_quarterly_report_bytes(
         # Series the lock could not capture: read live, so the cover says so (#204).
         snapshot_gaps        = list(getattr(snap_df, "gaps", ()) or ()),
         staleness_note       = staleness_note,
+        # Quarters that closed before the quarter-end lock rule are restated by it,
+        # and say so; None for any other report (#368).
+        restatement_note     = restatement_note(quarter_id, snap_df),
         has_trades           = has_trades,
         inception_date       = inception_str,
         si_days              = si_days_report,

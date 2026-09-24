@@ -40,6 +40,7 @@ from src.holdings import (
     last_settled_price_date,
 )
 from src.performance import compute_risk_metrics
+from src.cache import LockCoverageError
 from src.reports import generate_quarterly_report_bytes
 from src.sleeve_config import international_sleeves
 from src.tax_lots import open_lot_cost_basis
@@ -350,6 +351,11 @@ with col:
                         mime="application/pdf",
                         key="report_download",
                     )
+                except LockCoverageError as _lock_refused:
+                    # A REFUSAL, not a failure: the prices do not reach the quarter's
+                    # end yet, and the message names which tickers and dates (#368).
+                    # "Try again later" would hide the one fact that says when.
+                    st.error(str(_lock_refused))
                 except Exception:
                     logging.exception("Quarterly report generation failed")
                     st.error("Report generation failed — please try again later.")

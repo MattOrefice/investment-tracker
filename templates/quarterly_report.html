@@ -24,6 +24,9 @@
     {% if staleness_note %}
     <p class="cover-staleness">{{ staleness_note }}</p>
     {% endif %}
+    {% if restatement_note %}
+    <p class="cover-staleness">{{ restatement_note }}</p>
+    {% endif %}
   </div>
 
   <h2>Executive Summary</h2>
@@ -847,10 +850,11 @@
           Both thresholds must be satisfied for &ldquo;Within&rdquo; status.</dd>
 
           <dt>Price Data</dt>
-          <dd>Daily adjusted-close from the price provider, cached in SQLite. Adjusted close reflects
-          splits and dividends (total-return basis). Gaps forward-filled from last trading day.
-          {% if snapshot_captured_at %}Quarter prices locked at {{ snapshot_captured_at }} to prevent
-          retroactive adj_close adjustments from the price feed from shifting historical report numbers.{% endif %}</dd>
+          <dd>Daily closes from the price provider, cached in SQLite; total-return levels are derived
+          from those closes and the recorded dividends. Gaps forward-filled from last trading day.
+          {% if snapshot_captured_at %}Quarter prices locked {{ snapshot_captured_at }}, using only prices
+          and dividends through the quarter's last day, so a later dividend or a later price update
+          cannot shift this report's numbers.{% endif %}</dd>
 
           <dt>CAPE (Shiller P/E)</dt>
           <dd>Robert Shiller / Yale (econ.yale.edu). Monthly observations; most recent month shown.

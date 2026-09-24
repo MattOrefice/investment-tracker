@@ -112,35 +112,49 @@ def test_snapshot_price_context_returns_snapshot_values():
     )
 
 
-def test_snapshot_price_context_restores_original():
-    """Original get_prices is restored after context exits."""
+def test_snapshot_price_context_releases_the_lock_on_exit():
+    """The lock is in force inside the block and released after it.
+
+    Migrated (#368): this asserted that the get_prices ATTRIBUTE was swapped and
+    then restored. That swap was the defect: consumers hold their own binding, so
+    it reached none of them. The lock is now a ContextVar and the function is never
+    replaced; what the test protected, the lock ending with its block, is asserted
+    on the ContextVar itself."""
     import src.prices as prices_mod
 
     original = prices_mod.get_prices
     snap_df = pd.DataFrame({"VOO": [100.0]}, index=[date(2026, 1, 2)])
 
     with snapshot_price_context(snap_df):
-        assert prices_mod.get_prices is not original
+        assert prices_mod._PRICE_LOCK.get() is not None
+        assert list(prices_mod.get_prices("VOO", "2026-01-02", "2026-01-02")["adj_close"]) == [100.0]
 
+    assert prices_mod._PRICE_LOCK.get() is None
     assert prices_mod.get_prices is original
 
 
-def test_snapshot_price_context_restores_on_exception():
-    """get_prices is restored even when the body raises."""
+def test_snapshot_price_context_releases_the_lock_on_exception():
+    """The lock is released even when the body raises. Migrated with the test
+    above: it asserted the attribute was restored, which now holds vacuously."""
     import src.prices as prices_mod
 
-    original = prices_mod.get_prices
     snap_df = pd.DataFrame({"VOO": [100.0]}, index=[date(2026, 1, 2)])
 
     with pytest.raises(RuntimeError):
         with snapshot_price_context(snap_df):
             raise RuntimeError("boom")
 
-    assert prices_mod.get_prices is original
+    assert prices_mod._PRICE_LOCK.get() is None
 
 
 def test_snapshot_price_context_lock_survives_mutation(monkeypatch):
-    """Snapshot values are unchanged even when the underlying get_prices is replaced."""
+    """Snapshot values win over the live cache: a locked ticker never reaches it.
+
+    Migrated (#368): this replaced the get_prices attribute with a "mutated live"
+    reader and then called the attribute, so it proved the lock on the one path the
+    lock reached and on no path a report section uses. The live cache is made
+    unreadable instead; a locked read that consulted it would fail here. The
+    name-bound path is tests/test_quarter_lock.py's."""
     import src.prices as prices_mod
 
     snap_df = pd.DataFrame(
@@ -148,19 +162,14 @@ def test_snapshot_price_context_lock_survives_mutation(monkeypatch):
         index=[date(2026, 1, 2), date(2026, 1, 3)],
     )
 
-    def mutated_live(ticker, start, end=None):
-        return pd.DataFrame(
-            {"close": [999.0, 999.0], "adj_close": [999.0, 999.0]},
-            index=[date(2026, 1, 2), date(2026, 1, 3)],
-        )
+    def _no_cache(*_a, **_k):
+        raise AssertionError("a locked read consulted the live cache")
 
-    # Simulate live cache being mutated before entering snapshot context
-    monkeypatch.setattr(prices_mod, "get_prices", mutated_live)
+    monkeypatch.setattr(prices_mod, "get_connection", _no_cache)
 
     with snapshot_price_context(snap_df):
         result = prices_mod.get_prices("VOO", "2026-01-02", "2026-01-03")
 
-    # Snapshot (100, 102) must win over live cache (999, 999)
     assert list(result["adj_close"]) == [100.0, 102.0]
 
 
