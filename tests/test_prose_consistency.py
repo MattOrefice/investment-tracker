@@ -726,19 +726,82 @@ def test_sleeve_weights_match_db(use_demo_db):
         )
 
 
-def test_ex_cash_denominator_drops_cash_and_sums_to_one():
+def _cents(dollars: float) -> int:
+    return round(dollars * 100)
+
+
+def _assert_cash_bridge(attrs: dict) -> None:
+    """invested_value = total_value − cash_mv, to the precision the attrs carry.
+
+    get_sleeve_weights_on_date computes invested = total − cash_mv UNROUNDED, then
+    rounds all three to cents SEPARATELY. The difference below is therefore a whole
+    number of cents, and three roundings of at most half a cent each bound it by 1.5
+    cents, so the only values it can take are 0 and ±1 cent. A one-cent drift is the
+    rounding. Two cents or more is a broken sum. Compared in integer cents, because
+    in dollars the 1-cent case lands a float's width either side of 0.01, which is
+    how the old strict `< 0.01` failed on an unchanged SHA (#359).
+    """
+    drift = _cents(attrs["invested_value"]) - (
+        _cents(attrs["total_value"]) - _cents(attrs["cash_mv"]))
+    assert abs(drift) <= 1, (
+        f"invested_value {attrs['invested_value']} != total_value "
+        f"{attrs['total_value']} - cash_mv {attrs['cash_mv']}: off by {drift} cents, "
+        "more than three cent-roundings can produce"
+    )
+
+
+# The values the CI push run of 35e23af produced (run 36026519453, attempt 1): the
+# rounding drift at exactly one cent, which the old check read as 0.010000000000218.
+_CI_FLAKE = {"invested_value": 1334.56, "total_value": 1355.65, "cash_mv": 21.08}
+
+
+def test_the_bridge_accepts_the_rounding_that_failed_ci():
+    """#359. The old check rejected this; the rounding produced it legitimately."""
+    old = abs(_CI_FLAKE["invested_value"]
+              - (_CI_FLAKE["total_value"] - _CI_FLAKE["cash_mv"])) < 0.01
+    assert old is False, "the case no longer reproduces the old failure"
+    _assert_cash_bridge(_CI_FLAKE)
+
+
+@pytest.mark.parametrize("invested", [1334.55, 1334.59, 1355.65],
+                         ids=["2-cents-under", "2-cents-over", "cash-not-subtracted"])
+def test_the_bridge_still_rejects_a_broken_sum(invested):
+    """Two cents is the smallest drift rounding cannot produce, so it must fail, as
+    must the gross break (cash never subtracted)."""
+    with pytest.raises(AssertionError, match="more than three cent-roundings"):
+        _assert_cash_bridge({**_CI_FLAKE, "invested_value": invested})
+
+
+def _frozen_conftest(config):
+    return next(p for p in config.pluginmanager.get_plugins()
+                if getattr(p, "FROZEN_TODAY", None) is not None)
+
+
+def test_ex_cash_denominator_drops_cash_and_sums_to_one(pytestconfig, tmp_path):
     """get_sleeve_weights_on_date measures strategic weights ex-cash (Phase 38a).
 
-    Cash / SPAXX must NOT be a strategic row; the 9 strategic weights are a share
-    of invested value (sum ~1.0); operational cash is exposed on .attrs with
+    Cash / SPAXX must NOT be a strategic row; the strategic weights are a share of
+    invested value (sum ~1.0); operational cash is exposed on .attrs with
     invested_value = total_value - cash_mv.
+
+    On #342's frozen book, offline, with today pinned. It used to read the configured
+    book at date.today(): live prices in CI, so the rounding drift moved with the
+    market and an unchanged SHA went red then green (#359).
     """
     from datetime import date
-    from src.holdings import get_sleeve_weights_on_date
+    conftest = _frozen_conftest(pytestconfig)
+    try:
+        with pytest.MonkeyPatch.context() as mp:
+            conftest.pin_today(mp)
+            conftest.point_at_frozen_book(mp, tmp_path)
+            from src.holdings import get_sleeve_weights_on_date
+            sw = get_sleeve_weights_on_date(date.today().isoformat())
+    finally:
+        conftest.unpin_leftovers()
 
-    sw = get_sleeve_weights_on_date(date.today().isoformat())
-    if sw.empty:
-        return  # no holdings in this DB — nothing to assert
+    # PREMISE: the frozen book holds SPAXX, so there is cash to exclude.
+    assert not sw.empty, "the frozen book produced no sleeve weights"
+    assert sw.attrs.get("cash_mv", 0) > 0, "the frozen book holds no cash; the ex-cash split is untested"
 
     assert "Cash / SPAXX" not in sw.index, "cash must be excluded from strategic rows"
     assert abs(sw["Actual Weight"].sum() - 1.0) < 0.01, (
@@ -746,7 +809,7 @@ def test_ex_cash_denominator_drops_cash_and_sums_to_one():
     )
     for key in ("total_value", "cash_mv", "invested_value", "cash_weight_of_total"):
         assert key in sw.attrs, f"operational-cash attr '{key}' missing from sleeve frame"
-    assert abs(sw.attrs["invested_value"] - (sw.attrs["total_value"] - sw.attrs["cash_mv"])) < 0.01
+    _assert_cash_bridge(sw.attrs)
 
 
 # ── Stale nine/ten-sleeve strings must not return to rendered prose ────────────
