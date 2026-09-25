@@ -1456,7 +1456,11 @@ with col:
         ig_data_start = ig_bps.index[0]
 
         ig_start    = "1800-01-01"
-        ig_pctile_w = _window_pctile(ig_bps, current_ig, ig_start)
+        # .value: _window_pctile returns a WindowedPctile since aaf5d32, and this
+        # panel missed the change; round() on the tuple crashed the page whenever
+        # FRED answered (#372). The Max sentinel never falls back, so there is no
+        # scope to disclose here, unlike the windowed panels.
+        ig_pctile_w = _window_pctile(ig_bps, current_ig, ig_start).value
         ig_data     = ig_bps
 
         fig_ig = go.Figure()
@@ -1530,7 +1534,8 @@ with col:
         hy_data_start  = hy_bps.index[0]
 
         hy_start    = "1800-01-01"
-        hy_pctile_w = _window_pctile(hy_bps, current_hy, hy_start)
+        # .value: see the IG panel (#372).
+        hy_pctile_w = _window_pctile(hy_bps, current_hy, hy_start).value
         hy_data     = hy_bps
         fig_hy = go.Figure()
         _add_recession_shading(fig_hy, rec_periods or [], hy_data_start.isoformat())
@@ -1588,7 +1593,8 @@ with col:
         ccc_data_start = ccc_bps.index[0]
 
         ccc_start    = "1800-01-01"
-        ccc_pctile_w = _window_pctile(ccc_bps, current_ccc, ccc_start)
+        # .value: see the IG panel (#372).
+        ccc_pctile_w = _window_pctile(ccc_bps, current_ccc, ccc_start).value
         ccc_data     = ccc_bps
 
         fig_ccc = go.Figure()
