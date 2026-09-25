@@ -25,6 +25,13 @@ if IS_DEMO:
     from src.db import use_runtime_cache
     use_runtime_cache()
     initialize_db()          # demo.db is committed/prebuilt — just ensure base schema
+    # The daily price refresh, BEFORE the landing page reads its date (#368 item 3):
+    # settled closes and dividends past the snapshot, into the runtime cache. It runs
+    # when due (the next close after a success, a timer after a failure) and returns
+    # at once otherwise; the banner reports what it served and whether it failed.
+    from src.demo_refresh import refresh_if_due
+    with st.spinner("Fetching the latest settled prices…"):
+        refresh_if_due()
 else:
     from src.bootstrap import bootstrap_personal_db, unmapped_holdings_notice
     # The result is USED, not discarded: bootstrap reconciles the newest holdings CSV

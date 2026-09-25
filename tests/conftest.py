@@ -35,6 +35,9 @@ _ROOT = Path(__file__).resolve().parent.parent
 # session instead (#368).
 os.environ["DEMO_RUNTIME_CACHE"] = str(
     Path(tempfile.mkdtemp(prefix="demo-runtime-cache-")) / "demo_runtime_cache.db")
+# And the demo's daily price refresh never runs in the suite: tests keep reading
+# fixed data (#368 item 3). A test of the refresh turns it on for itself.
+os.environ["DEMO_DAILY_FETCH"] = "0"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TRACKED-DB WRITE REDIRECT (GitHub #227)
