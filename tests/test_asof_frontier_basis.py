@@ -3,7 +3,7 @@
 A coverage record's frontier is "how current is what THIS PAGE served" (it may include
 today); the committed frontier is "the latest SETTLED close every holding has"
 (strictly before today). Two pages on one book can differ by a day, so each banner
-says which it means. And "1 days behind" is fixed.
+says which it means. And "1 days behind" is fixed (it counts weekdays now: "1 weekday").
 """
 from datetime import date
 
@@ -28,10 +28,13 @@ def test_a_coverage_record_says_as_served_to_this_page():
     assert "(as served to this page)" in line and "settled" not in line, line
 
 
-def test_one_day_behind_is_singular_and_two_is_plural():
-    assert "— 1 day behind" in as_of_live_line(TODAY, frontier="2026-08-17")
-    assert "1 days" not in as_of_live_line(TODAY, frontier="2026-08-17")
-    assert "— 2 days behind" in as_of_live_line(TODAY, frontier="2026-08-16")
+def test_one_weekday_behind_is_singular_and_two_is_plural():
+    """TODAY is a Tuesday, so Monday's close is the latest expected (the count is of
+    missing closes since #368's follow-up): Friday's frontier misses one, Thursday's
+    two."""
+    assert "— 1 weekday behind" in as_of_live_line(TODAY, frontier="2026-08-14")
+    assert "1 weekdays" not in as_of_live_line(TODAY, frontier="2026-08-14")
+    assert "— 2 weekdays behind" in as_of_live_line(TODAY, frontier="2026-08-13")
 
 
 def test_state_one_is_unchanged_when_fully_current():

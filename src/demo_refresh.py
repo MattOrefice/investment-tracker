@@ -68,6 +68,13 @@ def state() -> Optional[RefreshState]:
     return _STATE
 
 
+def is_session(d: date) -> bool:
+    """Whether New York holds a session on ``d``, by this module's calendar: every
+    weekday. There is no holiday table, so a market holiday counts as a session.
+    The banner's freshness count (asof.as_of_live_line) uses the same calendar."""
+    return d.weekday() < 5
+
+
 def next_close_after(t: datetime) -> datetime:
     """The next weekday New York close (plus the publish margin) after ``t``, in UTC.
     A holiday is not skipped: an attempt on one finds nothing new and succeeds."""
@@ -75,7 +82,7 @@ def next_close_after(t: datetime) -> datetime:
     c = ny.replace(hour=16, minute=0, second=0, microsecond=0) + _PUBLISH_MARGIN
     if c <= ny:
         c += timedelta(days=1)
-    while c.weekday() >= 5:
+    while not is_session(c.date()):
         c += timedelta(days=1)
     return c.astimezone(timezone.utc)
 

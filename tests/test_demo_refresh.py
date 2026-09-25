@@ -129,14 +129,14 @@ def _state(status, served, before=None, attempted=NOW):
     (_state("fetched", "2026-09-23"), "2026-09-23",
      "Prices through September 23, 2026 (settled closes, fetched September 24, 2026 at 22:00 UTC)."),
     (_state("failed", "2026-07-20"), "2026-07-20",
-     "Prices through July 20, 2026 (settled closes) — 66 days behind. The daily price fetch "
+     "Prices through July 20, 2026 (settled closes) — 47 weekdays behind. The daily price fetch "
      "failed September 24, 2026 at 22:00 UTC; serving the committed snapshot until it "
      "retries after September 24, 2026 at 22:30 UTC."),
     (_state("failed", "2026-09-22", before="2026-09-23T21:05+00:00"), "2026-09-22",
-     "Prices through September 22, 2026 (settled closes) — 2 days behind. The daily price "
+     "Prices through September 22, 2026 (settled closes) — 1 weekday behind. The daily price "
      "fetch failed September 24, 2026 at 22:00 UTC; serving prices last fetched "
      "September 23, 2026 at 21:05 UTC until it retries after September 24, 2026 at 22:30 UTC."),
-    (None, "2026-07-20", "Prices through July 20, 2026 (settled closes) — 66 days behind."),
+    (None, "2026-07-20", "Prices through July 20, 2026 (settled closes) — 47 weekdays behind."),
 ])
 def test_the_banner_states_the_date_served_its_basis_and_any_failure(monkeypatch, st, frontier, text):
     monkeypatch.setattr(refresh, "_STATE", st)
@@ -148,7 +148,7 @@ def test_a_fetch_that_did_not_reach_this_page_still_reads_behind(monkeypatch):
     older date keeps its honest lag."""
     monkeypatch.setattr(refresh, "_STATE", _state("fetched", "2026-09-23"))
     assert as_of_live_line(date(2026, 9, 24), frontier="2026-09-19") == (
-        "Prices through September 19, 2026 (settled closes) — 5 days behind.")
+        "Prices through September 19, 2026 (settled closes) — 3 weekdays behind.")
 
 
 # ── the landing page, end to end ──────────────────────────────────────────────
