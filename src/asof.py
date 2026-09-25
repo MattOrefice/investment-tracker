@@ -300,18 +300,27 @@ def as_of_live_line(
 
       1 fully current   frontier == today and nothing unresolved -> the original
                         "Live data as of <date>." sentence, unchanged
-      2 stale           frontier < today                        -> "Prices through
-                        <date> — N days behind."
+      2 past            frontier < today                        -> "Prices through
+                        <date>", plus "— N weekdays behind" when closes are missing
       3 incomplete      something unresolved (needs a record)   -> as state 2, plus
                         "N of M holdings have no committed price"
       4 nothing         no frontier at all                      -> "No committed
                         price data." — absence must never present as freshness,
                         the same rule staleness_note applies above.
 
+    THE COUNT IS OF MISSING CLOSES, not of calendar days. The rule is settled closes
+    strictly before today, so the latest close expected is the last session before
+    today, and a frontier there is current: it gets no count. Counting calendar days
+    called that "1 day behind", and a Monday "3 days behind". N is the sessions after
+    the frontier and before today (_sessions_missing), by demo_refresh's calendar:
+    weekdays, with no holiday table, so the day after a market holiday reads one
+    behind. It says "weekdays" because that is what it counts.
+
     NO THRESHOLD, deliberately. staleness_note tolerates 70/45 days because it
     guards a refresh cycle and a committed factor file is expected to lag. Prices
-    are expected to be current, so any lag is worth stating — and a threshold here
-    would recreate the very defect this fixes for every lag below its cutoff.
+    are expected to be current, so any missing close is worth stating — and a
+    threshold here would recreate the very defect this fixes for every lag below
+    its cutoff.
 
     ``frontier`` omitted means "resolve it" (via committed_price_frontier, ~2ms);
     ``frontier=None`` means "known to be absent" and gives state 4. ``coverage``
@@ -350,9 +359,9 @@ def as_of_live_line(
 
     # The demo's daily refresh (#368 item 3), when it has run in this process. After
     # a success that reached this date, the date is as current as settled closes
-    # allow: "N days behind" would misreport it, so the line says when it was fetched
-    # instead. After a failure, the line says so, what is served in its place, and
-    # when it retries: a failed fetch must never read as a quiet old date.
+    # allow, so the line says when it was fetched. After a failure, the line says so,
+    # what is served in its place, and when it retries: a failed fetch must never
+    # read as a quiet old date.
     from src.demo_refresh import state as _refresh_state
     refresh = _refresh_state()
     if (refresh is not None and refresh.status == "fetched" and not gap
@@ -360,11 +369,12 @@ def as_of_live_line(
         return (f"Prices through {format_long_date(served)} ({basis}, fetched "
                 f"{_when(refresh.attempted_at)}).")
 
+    missing = _sessions_missing(served, ref)
     line = f"Prices through {format_long_date(served)} ({basis})"
-    if lag > 0:
-        line += f" — {lag} day{'' if lag == 1 else 's'} behind"
+    if missing:
+        line += f" — {missing} weekday{'' if missing == 1 else 's'} behind"
     if gap:
-        line += (", and " if lag > 0 else " — ")
+        line += (", and " if missing else " — ")
         line += (f"{len(gap)} of {len(coverage.requested)} holdings have "
                  "no committed price")
     if refresh is not None and refresh.status == "failed":
@@ -374,6 +384,18 @@ def as_of_live_line(
                  f"serving {instead} until it retries after "
                  f"{_when(refresh.next_attempt_at)}")
     return line + "."
+
+
+def _sessions_missing(served: date, today: date) -> int:
+    """Closes the settled-closes rule expects by ``today`` that ``served`` lacks: the
+    sessions after ``served`` and before ``today``, by demo_refresh.is_session. Zero
+    when ``served`` is the last session before today, or later."""
+    from src.demo_refresh import is_session
+    day, n = served + timedelta(days=1), 0
+    while day < today:
+        n += is_session(day)
+        day += timedelta(days=1)
+    return n
 
 
 def _when(t: "datetime | str") -> str:
