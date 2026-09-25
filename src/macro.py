@@ -2,8 +2,9 @@
 import json
 import math
 import sys
+import threading
 import time
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import NamedTuple, Optional
 
 import pandas as pd
@@ -22,6 +23,36 @@ class FREDFetchError(Exception):
         super().__init__(
             f"FRED series '{series_id}' fetch failed after {len(_FRED_RETRY_DELAYS) + 1} attempts: {cause}"
         )
+
+
+class FREDRetryWait(Exception):
+    """A series whose last fetch failed, asked for again before its retry time.
+
+    Raised by get_series on the demo's fetch timer instead of fetching: nothing was
+    requested from FRED. The first failure raises it too, so every panel reports the
+    failure the same way, with the time it retries."""
+    def __init__(self, series_id: str, failed_at: datetime, retry_at: datetime, reason: str):
+        from src.asof import _when
+        self.series_id = series_id
+        self.failed_at = failed_at
+        self.retry_at = retry_at
+        self.reason = reason
+        super().__init__(
+            f"FRED fetch for '{series_id}' failed {_when(failed_at)} ({reason}); "
+            f"it retries after {_when(retry_at)}."
+        )
+
+
+# The demo's retry timer, applied to FRED (#368 item 3's rule for prices): after a
+# series fails, get_series does not fetch it again until demo_refresh.RETRY_AFTER has
+# passed, so a failure is retried on a timer, never on every page render. Per series,
+# so one failing series never holds back the others. series_id -> (failed_at, reason).
+_FAILED: "dict[str, tuple[datetime, str]]" = {}
+_FAILED_LOCK = threading.Lock()
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
 
 _CACHE_DDL = """
 CREATE TABLE IF NOT EXISTS macro_cache (
@@ -74,6 +105,11 @@ def get_series(series_id: str, start_date: str = "1990-01-01") -> pd.Series:
     """
     Return series from 24h SQLite cache; fetches fresh from FRED if stale or
     if the cached window doesn't cover the requested start_date.
+
+    On the demo's fetch timer (demo_refresh.enabled()), a failed fetch raises
+    FREDRetryWait, and so does every call for that series until
+    demo_refresh.RETRY_AFTER has passed, without fetching. Off it (personal mode, the
+    suite), a failure raises as it always did and the next call fetches again.
     """
     _ensure_cache_table()
     today = date.today().isoformat()
@@ -97,7 +133,26 @@ def get_series(series_id: str, start_date: str = "1990-01-01") -> pd.Series:
             return s[s.index >= start_date]
         # Cache hit but coverage is insufficient — re-fetch and overwrite
 
-    raw = fetch_fred_series(series_id, start_date)
+    from src import demo_refresh
+    timed = demo_refresh.enabled()
+    if timed:
+        with _FAILED_LOCK:
+            failed = _FAILED.get(series_id)
+        if failed is not None:
+            retry_at = failed[0] + demo_refresh.RETRY_AFTER
+            if _now() < retry_at:
+                raise FREDRetryWait(series_id, failed[0], retry_at, failed[1])
+    try:
+        raw = fetch_fred_series(series_id, start_date)
+    except Exception as exc:
+        if not timed:
+            raise
+        failed_at = _now()
+        reason = f"{type(exc).__name__}: {exc}"[:160]
+        with _FAILED_LOCK:
+            _FAILED[series_id] = (failed_at, reason)
+        raise FREDRetryWait(series_id, failed_at,
+                            failed_at + demo_refresh.RETRY_AFTER, reason) from exc
     payload = {
         "dates":  [str(d.date()) for d in raw.index],
         "values": [float(v) if pd.notna(v) else None for v in raw.values],

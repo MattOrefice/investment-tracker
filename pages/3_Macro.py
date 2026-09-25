@@ -341,7 +341,9 @@ with col:
         with st.container(border=True):
             st.markdown(f"**{panel_title}** — data temporarily unavailable")
             st.caption(f"{type(exc).__name__}: {exc}")
-            if st.button("Retry", key=retry_key):
+            # On the demo's fetch timer the caption says when FRED is retried, and
+            # nothing on a page fetches before then, so a Retry button would do nothing.
+            if not isinstance(exc, macro.FREDRetryWait) and st.button("Retry", key=retry_key):
                 _load_fred.clear()
                 st.rerun()
 
