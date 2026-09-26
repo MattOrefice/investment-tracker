@@ -281,3 +281,32 @@ def test_the_template_renders_a_pending_section(book):
     src = Path(tmpl.filename).read_text(encoding="utf-8")
     assert "{% elif factor_pending %}" in src and "{% elif bench_pending %}" in src
     assert "{{ factor_pending }}" in src and "{{ bench_pending }}" in src
+
+
+# ── the demo ships its locks ──────────────────────────────────────────────────
+
+COMMITTED = ("2025Q2", "2025Q3", "2025Q4", "2026Q1", "2026Q2")
+
+
+def test_the_demo_ships_its_completed_quarters_locked_with_every_input(monkeypatch):
+    """A fresh demo container rebuilds from the repo, so a lock that lived only in
+    its runtime cache was re-taken from whatever files were committed then. These
+    were locked by tools/lock_demo_quarters.py before the 2026-09-25 refresh."""
+    import src.db as db
+    from src.cache import INPUTS_RULE, QUARTER_END_RULE, _parse_quarter_end, get_quarter_snapshot
+    from src.input_lock import ALL_INPUTS, DIVIDENDS, ETF_METADATA
+    root = Path(__file__).resolve().parent.parent
+    monkeypatch.setattr(db, "DB_PATH", root / "data" / "demo.db")
+    monkeypatch.setattr(db, "_RUNTIME_CACHE", None)
+    con = sqlite3.connect(f"file:{(root / 'data' / 'demo.db').as_posix()}?mode=ro", uri=True)
+    ids = [r[0] for r in con.execute("SELECT quarter_id FROM quarter_snapshots ORDER BY quarter_id")]
+    con.close()
+    assert tuple(ids) == COMMITTED
+    for qid in COMMITTED:
+        snap = get_quarter_snapshot(qid)[0]
+        end = pd.Timestamp(_parse_quarter_end(qid))
+        assert snap.rule == QUARTER_END_RULE and snap.inputs_rule == INPUTS_RULE, qid
+        assert set(snap.inputs) == set(ALL_INPUTS) and snap.inputs_pending == {}, qid
+        for name, value in snap.inputs.items():
+            if name not in (DIVIDENDS, ETF_METADATA):
+                assert value.index.max() <= end, (qid, name)
