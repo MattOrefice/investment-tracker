@@ -116,3 +116,15 @@ def test_current_cape_above_30():
         f"Current CAPE {current_cape():.1f} is unexpectedly low — "
         "likely serving the stale Sep 2023 Yale fallback instead of live multpl.com data"
     )
+
+
+def test_one_row_per_month_the_fresher_reading_wins():
+    """multpl's top row is today's intra-month reading beside the month's own row;
+    both normalise to the month. The 2026-09-25 refresh wrote both (#382's PR)."""
+    html = ("<table><thead><tr><th>Date</th><th>Value</th></tr></thead><tbody>"
+            "<tr><td>Sep 25, 2026</td><td>41.48</td></tr>"
+            "<tr><td>Sep 1, 2026</td><td>40.90</td></tr>"
+            "<tr><td>Aug 1, 2026</td><td>41.13</td></tr></tbody></table>")
+    df = _parse_multpl(html)
+    assert not df["date"].duplicated().any()
+    assert list(df["cape"]) == [41.13, 41.48]
