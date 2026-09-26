@@ -516,7 +516,9 @@ def interpret_excess_cape(value: float, percentile: float) -> str:
         f"percentile must be a fraction 0.0–1.0, got {percentile} "
         f"(units bug? if 0–100 scale, divide by 100 at call site)"
     )
-    pct_label = f"{percentile:.0%}"
+    # An ordinal: "at the 0% percentile" read as a share, not a rank (audit item 9).
+    from src.prose_helpers import ordinal
+    pct_label = ordinal(percentile * 100)
     if percentile < ECY_EXTREME_LOW_PCT:
         return (
             f"ECY of {value:.2f}% is at extreme compression — at the {pct_label} percentile of "

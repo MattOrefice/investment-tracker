@@ -13,6 +13,7 @@ from src import asset_evaluation as ae
 from src.asof import as_of_banner
 from src.macro import get_recession_periods
 from src.prices import is_valid_ticker
+from src.prose_helpers import a_or_an
 from src.ui_helpers import render_footer, render_page_header
 render_page_header()
 
@@ -351,7 +352,8 @@ with col:
                     st.plotly_chart(fig_rs, width="stretch", config={"displayModeBar": False})
                     _rs_cur = float(roll_set.iloc[-1])
                     st.caption(
-                        f"{cand_ticker}'s average rolling 60-day correlation to the nine SAA "
+                        f"{cand_ticker}'s average rolling 60-day correlation to the "
+                        f"{len(_scr_sleeves.columns)} SAA "
                         f"sleeves (recession-shaded). Current ρ ≈ {_rs_cur:+.2f} vs the "
                         f"full-sample average of {avg_corr:+.2f}. A line that rises in the "
                         "shaded stress windows means the candidate's diversification weakens "
@@ -708,7 +710,6 @@ with col:
             )
 
         with right_col:
-            delta_bps = (sharpe_unc_with - sharpe_unc_no) * 10_000
             st.metric(
                 "Sharpe without BTC (unconstrained)",
                 f"{sharpe_unc_no:.3f}",
@@ -716,7 +717,7 @@ with col:
             st.metric(
                 "Sharpe with BTC (unconstrained)",
                 f"{sharpe_unc_with:.3f}",
-                delta=f"{delta_bps:+.0f} bps",
+                delta=f"{sharpe_unc_with - sharpe_unc_no:+.3f}",
             )
             st.caption(
                 "Unconstrained Sharpe = √[(μ−rf)'Σ⁻¹(μ−rf)] × √252 — "
@@ -745,7 +746,9 @@ with col:
         w_con_with  = mv["w_con_with"]
         sharpe_con_no   = mv["sharpe_con_no"]
         sharpe_con_with = mv["sharpe_con_with"]
-        delta_bps_con   = (sharpe_con_with - sharpe_con_no) * 10_000
+        delta_sharpe_con = sharpe_con_with - sharpe_con_no
+        _years = (btc_ret.index[-1] - btc_ret.index[0]).days / 365.25
+        _years_s = f"{_years:.1f}"
 
         con_tbl = pd.DataFrame({
             "Sleeve":        sleeves_list + ["BTC"],
@@ -782,10 +785,10 @@ with col:
             f"Under realistic institutional constraints (max 25% per sleeve), "
             f"{btc_wt_note}. "
             f"The constrained Sharpe rises from {sharpe_con_no:.3f} (without BTC) "
-            f"to {sharpe_con_with:.3f} (with BTC), an improvement of {delta_bps_con:.0f} bps. "
+            f"to {sharpe_con_with:.3f} (with BTC), a change of {delta_sharpe_con:+.3f}. "
             "This result is driven by BTC's high expected return over the sample period — "
             "it does not account for estimation error in the mean, which is extremely large "
-            "for a 7-year history of a volatile, regime-shifting asset. "
+            f"for {a_or_an(_years_s)} {_years_s}-year history of a volatile, regime-shifting asset. "
             "See section 5g for the SAA-anchored marginal contribution analysis, "
             "which is the primary analytical frame."
         )
@@ -906,8 +909,10 @@ with col:
             dd_10  = float(dd_10_row["Max DD"].iloc[0])
             mdd22_0  = float(dd_0_row["2022 MDD"].iloc[0])
             mdd22_10 = float(dd_10_row["2022 MDD"].iloc[0])
+            _dd_verb = ("deepens" if dd_10 < dd_0 else "narrows" if dd_10 > dd_0
+                        else "leaves unchanged")
             dd_note = (
-                f"Adding a 10% BTC allocation widens portfolio maximum drawdown "
+                f"Adding a 10% BTC allocation {_dd_verb} portfolio maximum drawdown "
                 f"from {dd_0:.1%} to {dd_10:.1%} over the full sample. "
                 f"In 2022 specifically — when BTC fell approximately 65% and equities "
                 f"sold off simultaneously — the portfolio max drawdown during that calendar year "
@@ -1005,13 +1010,13 @@ with col:
             _saa_sh0  = float(_rows_0["sharpe"].iloc[0])
             _saa_sh10 = float(_rows_10["sharpe"].iloc[0])
             if _saa_sh10 > _saa_sh0:
-                _delta_bps_saa = (_saa_sh10 - _saa_sh0) * 10_000
                 _mvo_ok = bool(mv and mv["sharpe_con_with"] > mv["sharpe_con_no"])
                 _mvo_note = " — MVO sanity check directionally consistent" if _mvo_ok else ""
                 args_for.append(
                     f"Sharpe-improving against SAA target weights at 10% allocation "
                     f"({_saa_sh0:.3f} → {_saa_sh10:.3f}, "
-                    f"+{_delta_bps_saa:.0f} bps over the 2018-present sample){_mvo_note}"
+                    f"{_saa_sh10 - _saa_sh0:+.3f} over the {ae.SAMPLE_START[:4]}-present "
+                    f"sample){_mvo_note}"
                 )
 
     if not corr.empty:
@@ -1026,12 +1031,22 @@ with col:
                 "co-movement spikes during stress precisely when a hedge is most valuable"
             )
 
+    # The drawdown bullet's inputs, built as the PDF builds them (src/reports.py).
+    _max_drawdown, _drawdown_argument = ae.max_drawdown, ae.drawdown_argument
+    _port: dict = {}
+    if not dd_sens.empty:
+        _b, _t = dd_sens.iloc[0], dd_sens.iloc[-1]
+        if not np.isnan(_b["2022 MDD"]) and not np.isnan(_t["2022 MDD"]):
+            _port = {"max_dd": float(_b["Max DD"]), "alloc_top": str(_t["BTC Alloc"]),
+                     "mdd22_lo": float(_b["2022 MDD"]), "mdd22_hi": float(_t["2022 MDD"])}
+    _btc_2022 = _max_drawdown(btc_ret.loc["2022-01-01":"2022-12-31"])
+    _btc_2022_s = None if np.isnan(_btc_2022) else f"{_btc_2022:.1%}"
+
     args_against.extend([
-        "Maximum historical drawdown exceeding 80% — three separate episodes since 2018; "
-        "2022 coincided with equity and bond losses (no diversification benefit when needed)",
-        "Capital gains tax treatment: BTC is a commodity under US tax law, "
-        "generating short-term ordinary income on positions held under 12 months "
-        "and long-term gains on positions held over 12 months — unfavorable vs. ETFs "
+        _drawdown_argument(_max_drawdown(btc_ret), _btc_2022_s, _port, ae.SAMPLE_START),
+        "Capital gains tax treatment: the IRS treats bitcoin as property (Notice 2014-21), "
+        "so a sale is a capital gain or loss, short-term at ordinary rates within 12 months "
+        "and long-term after — unfavorable vs. ETFs "
         "which qualify for in-kind creation/redemption",
         "Operational complexity: self-custody introduces key management risk "
         "and exchange-held BTC introduces counterparty risk (FTX 2022). The "
@@ -1042,8 +1057,8 @@ with col:
         "mechanics that mirror commodity ETF wrappers. The remaining "
         "operational considerations are the expense drag (real over a multi-year "
         "hold) and tax classification: spot Bitcoin ETFs are structured as "
-        "grantor trusts, so they pass through as direct commodity ownership "
-        "for tax purposes — no qualified-dividend treatment, no wash-sale rule "
+        "grantor trusts, so they pass through as direct ownership of the bitcoin, "
+        "property for tax purposes — no qualified-dividend treatment, no wash-sale rule "
         "applicability under current IRS guidance",
         "No intrinsic cash flow, earnings, or fundamental anchor for valuation — "
         "expected return is purely sentiment-driven, making MV inputs highly unreliable",
