@@ -60,8 +60,8 @@ def _load_cape_sentence() -> str:
         return cape_valuation_sentence(cv, s.index[-1].strftime("%B %Y"), pct,
                                        earlier_years_at_or_above(s, cv))
     except Exception:
-        return ("Strategic asset allocation reflects US equity valuations; the CAPE "
-                "reading could not be loaded for this render.")
+        return ("US equity valuations could not be read: the CAPE series did not load "
+                "for this render.")
 
 
 def load_saa_data():
@@ -146,11 +146,11 @@ with col:
     # falls materially below 40. The valuation sentence before it is derived. See
     # test_saa_thesis_above_40_cape_reference_still_relevant.
     st.markdown(
-        f"{_load_cape_sentence()} It is balanced against a normalized 2/10 yield curve "
-        f"and HY credit spreads that do not yet signal stress. "
-        f"The portfolio sustains {round(_equity_wt * 100)}% equity weight rather than timing "
-        f"valuation — historical CAPE readings above 40 are associated with low or negative forward "
-        f"10-year real returns, but valuation alone has historically been a poor market-timing signal."
+        f"{_load_cape_sentence()} The allocation balances them against a normalized 2/10 "
+        f"yield curve and HY credit spreads that do not yet signal stress. "
+        f"It sustains {round(_equity_wt * 100)}% in equity rather than timing valuation: CAPE "
+        f"readings above 40 are associated with low or negative forward 10-year real returns, but "
+        f"valuation alone has been a poor market-timing signal."
     )
     # Factor-tilt prose is derived from the sleeves PRESENT IN THIS BOOK, so it
     # describes what is actually held rather than a frozen taxonomy. On the demo
@@ -162,9 +162,7 @@ with col:
         items = list(items)
         if len(items) <= 1:
             return items[0] if items else ""
-        if len(items) == 2:
-            return f"{items[0]} and {items[1]}"
-        return ", ".join(items[:-1]) + f", and {items[-1]}"
+        return ", ".join(items[:-1]) + f" and {items[-1]}"
 
     _holds = sleeve_holdings()
     _us_tilts = [t for _s in ("US Large Quality", "US Large Value", "US Small Cap")
@@ -175,26 +173,25 @@ with col:
 
     if _intl_tilt_tickers:
         st.markdown(
-            "The framework is designed to deliver returns through factor and geographic diversification "
-            "rather than market-timing calls. Style tilts target factors with positive long-run premia — "
-            "quality, value, and small-cap value — and they are expressed on both sides of the book: "
-            f"{_and_join(_us_tilts)} in the US; {_and_join(_intl_tilt_tickers)} internationally, in the "
-            "same proportions. The premia these screens target are documented in international data on the "
-            "same terms as domestic. Expressing them only at home would be home bias rather than a view."
+            "The framework seeks returns from factor and geographic diversification rather than "
+            "market-timing calls. Its style tilts target three factors with positive long-run premia "
+            "(quality, value and small-cap value) on both sides of the book, in the same proportions: "
+            f"{_and_join(_us_tilts)} in the US; {_and_join(_intl_tilt_tickers)} internationally. "
+            "International data documents these premia on the same terms as domestic data, so holding "
+            "them only at home would be home bias."
         )
     else:
         _intl_core_tickers = [t for _s in _intl_sleeve_names for t in _holds.get(_s, [])]
         st.markdown(
-            "The framework is designed to deliver returns through factor and geographic diversification "
-            "rather than market-timing calls. Style tilts target factors with positive long-run premia — "
-            "quality, value, and small-cap value — expressed in the US book: "
-            f"{_and_join(_us_tilts)}. Developed international is held as a single cap-weighted sleeve "
-            f"({_and_join(_intl_core_tickers)}); the factor tilts are expressed domestically. The premia "
-            "these screens target are documented in international data on the same terms as domestic."
+            "The framework seeks returns from factor and geographic diversification rather than "
+            "market-timing calls. Its style tilts target three factors with positive long-run premia "
+            f"(quality, value and small-cap value) in the US book: {_and_join(_us_tilts)}. Developed "
+            f"international is a single cap-weighted sleeve ({_and_join(_intl_core_tickers)}), and the "
+            "tilts are domestic. International data documents these premia on the same terms as "
+            "domestic data."
         )
     st.markdown(
-        "These are structural positions, not a response to current valuations. A tilt whose case "
-        "depended on today's multiples would be a tactical trade in strategic clothing."
+        "The tilts are structural: none of them depends on today's valuations."
     )
     # The sleeves as the split defines them: four on the demo book, one on the
     # personal book. "International Developed (20%)" named a sleeve the demo does not have.
@@ -206,12 +203,12 @@ with col:
         _intl_phrase = f"{_intl_sleeve_names[0]} ({round(_intl_dev_wt * 100)}%)"
     st.markdown(
         f"{_intl_phrase} and Emerging Markets "
-        f"({round(_em_wt * 100)}%) provide valuation diversification at meaningfully lower CAPE "
-        f"levels. Real Assets ({round(_real_wt * 100)}%) provides inflation-correlated "
-        f"diversification with different risk drivers than equity or duration. Core Fixed Income "
-        f"({round(_core_fi_wt * 100)}%) provides duration as recession ballast and rebalancing "
-        f"optionality; TIPS ({round(_tips_wt * 100)}%) adds real-yield exposure to hedge the "
-        f"unhedged inflation tail."
+        f"({round(_em_wt * 100)}%) diversify valuation, at CAPE levels well below the US. Real "
+        f"Assets ({round(_real_wt * 100)}%) adds inflation-correlated diversification with risk "
+        f"drivers unlike equity's or duration's. Core Fixed Income ({round(_core_fi_wt * 100)}%) "
+        f"holds duration as recession ballast and a source of rebalancing; TIPS "
+        f"({round(_tips_wt * 100)}%) adds real-yield exposure against the inflation tail nothing "
+        f"else hedges."
     )
     st.divider()
 
@@ -304,9 +301,9 @@ with col:
                 # the hardcoded "9" was stale on the demo render.
                 _n_strategic = sum(1 for sc in sub_classes if sc["target_weight"] > 0)
                 _cash_note = (
-                    f"Operational cash: **${_cash_mv:,.0f}** · {_cash_pct:.1f}% of total — "
-                    f"SPAXX float, untargeted and held outside the ex-cash SAA (the {_n_strategic} "
-                    "strategic sleeves above are measured as a share of invested value)."
+                    f"Operational cash: **${_cash_mv:,.0f}**, {_cash_pct:.1f}% of total. SPAXX "
+                    f"float, untargeted and outside the ex-cash SAA; the {_n_strategic} strategic "
+                    "sleeves above are shares of invested value."
                 )
     except Exception:
         _band_line = ""
@@ -403,11 +400,11 @@ with col:
         )
     with st.expander("Implementation note", expanded=False):
         st.caption(
-            "This SAA reflects the policy framework applied to a paper-trade portfolio simulated "
-            "from May 2025 inception. The author's brokerage account holds a partial implementation; "
-            "analytics on this site treat the SAA as fully implemented at target weights using the "
-            "listed ETFs and blended benchmarks. Methodology (Brinson-Fachler attribution, factor "
-            "regressions, macro regime monitoring) is real; the position sizing is paper-portfolio."
+            "The SAA is applied to a paper-trade portfolio simulated from May 2025 inception. The "
+            "author's brokerage account holds a partial implementation; this site treats the SAA as "
+            "fully implemented at target weights, with the listed ETFs and blended benchmarks. The "
+            "methodology (Brinson-Fachler attribution, factor regressions, macro regime monitoring) is "
+            "real; the position sizing is paper."
         )
     st.divider()
 
@@ -482,13 +479,12 @@ with col:
 
     st.markdown(
         "Endowments achieve institutional-grade returns through heavy allocations to private equity, "
-        "venture capital, and hedge funds — strategies that depend on 25+ year manager relationships, "
-        "proprietary deal flow, and multi-year illiquidity tolerance. None are replicable in a retail "
-        "brokerage account. This portfolio substitutes liquid factor ETFs (AVUV for small-cap value, "
-        "SPHQ for quality, VEA/IEMG for international and EM) to capture related risk premia through "
-        "public markets — at the cost of forgoing the illiquidity premium. The comparison is contextual "
-        "— to demonstrate institutional analytical framing — not aspirational. The goal is "
-        "institutional analytical framing applied at retail scale — not return replication."
+        "venture capital and hedge funds. Those strategies depend on 25+ year manager relationships, "
+        "proprietary deal flow and multi-year illiquidity tolerance, and none is replicable in a retail "
+        "brokerage account. This portfolio uses liquid factor ETFs instead (AVUV for small-cap value, "
+        "SPHQ for quality, VEA and IEMG for international and EM) to capture related risk premia in "
+        "public markets, and gives up the illiquidity premium. The comparison is context: the goal "
+        "is institutional analytical framing applied at retail scale, not return replication."
     )
     st.caption(
         "Sources: Yale Investments Office Annual Report FY2024 (yale.edu/investments); "

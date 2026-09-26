@@ -85,7 +85,7 @@ def test_thesis_three_paragraphs(saa_app: AppTest) -> None:
     all_md = [m.value for m in saa_app.markdown]
     para1_found = any("sustains" in m and "market-timing signal" in m for m in all_md)
     para2_found = any("factor and geographic diversification" in m and "market-timing calls" in m for m in all_md)
-    para3_found = any("unhedged inflation tail" in m for m in all_md)
+    para3_found = any("inflation tail nothing else hedges" in m for m in all_md)
     assert para1_found, (
         "Thesis paragraph 1 (equity weight / market-timing signal) not found as distinct markdown block — "
         "Phase 42 Item 1 regression: thesis may have been collapsed back into one paragraph."

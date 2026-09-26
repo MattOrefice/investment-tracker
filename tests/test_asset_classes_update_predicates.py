@@ -105,6 +105,13 @@ def _rules():
          "UPDATE asset_classes SET parent_id = ?, target_weight = ?, tolerance_band = ?, "
          "sort_order = ?, rationale = ?, benchmark_ticker = ? WHERE asset_class_id = ?"):
             "primary-key",
+        # The writing sweep's rationale copy (item 14): keyed on a sleeve's name AND its
+        # current text, so at most one row per sleeve; zero on a book whose text differs.
+        ("tools/migrate_saa_rationale_copy.py",
+         "UPDATE asset_classes SET rationale = ? WHERE name = ? AND parent_id IS NOT NULL "
+         "AND rationale = ?"): lambda conn: [
+            ((s["name"], s["rationale"]), "at-most-one")
+            for s in _mod("src.seed_saa").SUB_CLASSES if s.get("rationale")],
         # src/db.py's _auto_migrate heal: the f-string's literal part (the WHERE is the
         # module constant _REAL_ASSETS_LEGACY_WHERE, checked below with its real text).
         ("src/db.py", "UPDATE asset_classes SET benchmark_ticker = 'VNQ (60%) + DBC (40%)'"):

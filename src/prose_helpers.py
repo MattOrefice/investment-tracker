@@ -63,9 +63,8 @@ def cape_valuation_sentence(value: float, as_of: str, pct: float,
     ``earlier_years`` is shiller.earlier_years_at_or_above(series, value). A level
     reached before in more than three separate stretches is not rare enough to name.
     """
-    s = (f"Strategic asset allocation reflects US equity valuations that are "
-         f"{percentile_label(pct)}: CAPE {value:.1f} as of {as_of}, the "
-         f"{ordinal(pct)} percentile of the Shiller record")
+    s = (f"US equity valuations are {percentile_label(pct)}: CAPE is {value:.1f} as of "
+         f"{as_of}, the {ordinal(pct)} percentile of the Shiller record")
     if not earlier_years:
         return s + ", above every earlier reading."
     ys = sorted(set(earlier_years))
