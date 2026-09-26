@@ -429,6 +429,11 @@ def load_factors(region: str) -> pd.DataFrame:
             f"Unknown factor region '{region}'. "
             f"Valid regions: {list(_FACTOR_CONFIG)}"
         )
+    # A quarter lock serves the rows it locked (#382), and never the file.
+    from src.input_lock import FF5_DEVELOPED_EXUS, FF5_US, locked
+    held = locked(FF5_US if region == "us" else FF5_DEVELOPED_EXUS)
+    if held is not None:
+        return held.copy()
     cache: Path = _FACTOR_CONFIG[region]["cache"]
     if not cache.exists():
         raise FileNotFoundError(
@@ -505,11 +510,38 @@ def _fetch_umd() -> pd.Series:
     return _parse_momentum_csv_text(raw_text)
 
 
+def hyg_credit_series(inception: str, end_date: str) -> pd.Series:
+    """The HYG total-return series regress_fi_sleeve's CREDIT proxy reads, as it reads
+    it: the committed parquet when present, else the price layer. What a quarter lock
+    captures for the FI regression (#382)."""
+    if _HYG_CACHE.exists():
+        try:
+            df = pd.read_parquet(_HYG_CACHE)
+            df.index = pd.to_datetime(df.index)
+            return df["adj_close"]
+        except Exception:
+            pass
+    p = get_prices("HYG", inception, end_date)
+    p.index = pd.to_datetime(p.index)
+    return total_return_series(p)
+
+
+def hyg_credit_series_locked() -> "pd.Series | None":
+    """The locked HYG series inside a quarter lock, else None (read as usual)."""
+    from src.input_lock import HYG, locked
+    held = locked(HYG)
+    return held.copy() if held is not None else None
+
+
 def load_umd_factor() -> pd.Series:
     """Return Ken French daily Momentum (UMD / Mom) factor as a decimal Series.
 
     Reads the COMMITTED cache only — same policy as load_factors: refresh is
     tools/refresh_market_data.py's job, never the loader's."""
+    from src.input_lock import UMD, locked
+    held = locked(UMD)
+    if held is not None:
+        return held.copy()
     if not _UMD_CACHE.exists():
         raise FileNotFoundError(
             f"Committed momentum data missing: {_UMD_CACHE}. Restore it from "
@@ -1038,13 +1070,11 @@ def regress_fi_sleeve(inception: str, end_date: str) -> Optional[dict]:
 
     # TERM and CREDIT factor proxies
     def _ret(ticker: str) -> pd.Series:
-        if ticker == "HYG" and _HYG_CACHE.exists():
-            try:
-                df = pd.read_parquet(_HYG_CACHE)
-                df.index = pd.to_datetime(df.index)
-                return df["adj_close"].reindex(date_range).ffill().pct_change().iloc[1:]
-            except Exception:
-                pass
+        if ticker == "HYG":
+            # Inside a quarter lock, the HYG series the lock captured (#382).
+            held = hyg_credit_series_locked()
+            s = held if held is not None else hyg_credit_series(inception, end_date)
+            return s.reindex(date_range).ffill().pct_change().iloc[1:]
         p = get_prices(ticker, inception, end_date)
         p.index = pd.to_datetime(p.index)
         return total_return_series(p).reindex(date_range).ffill().pct_change().iloc[1:]
@@ -1355,20 +1385,15 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
         if dev else "N/A"
     )
 
-    lag_str = "N/A"
-    if us and us.get("sample_end"):
-        try:
-            _lag_days = (date.today() - date.fromisoformat(us["sample_end"])).days
-            lag_str   = f"{_lag_days}-calendar-day publication lag (factor data ends {us['sample_end']})"
-        except Exception:
-            pass
+    from src.asof import data_vintage
+    lag_str = data_vintage("Fama-French factor", factor_frontier("us"))
 
     # Committed-data staleness (threshold-gated): the frontier is the DATA's
     # last row, never file mtime. Auto-refresh was removed — age is surfaced
     # here (and on the Factor Profile banner), not silently "fixed" at read.
     from src.asof import MARKET_DATA_STALE_DAYS_FACTORS, staleness_note
     _stale_note = staleness_note(
-        "Ken French factor", factor_frontier("us"), MARKET_DATA_STALE_DAYS_FACTORS
+        "Fama-French factor", factor_frontier("us"), MARKET_DATA_STALE_DAYS_FACTORS
     )
 
     # Committed-vintage disclosure: N/A only when the momentum file is missing
@@ -1384,7 +1409,7 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
         "on US federal holidays — its return series shows zero by forward-fill, not by "
         "market observation. The Dev FF dataset includes those holidays (international "
         "markets open); excluding them keeps both regression calendars consistent. "
-        f"Sample sizes reflect the overlap with the most recent available factor data ({lag_str}).",
+        f"Sample sizes reflect the overlap with the factor data. {lag_str}",
 
         "Methodology: each equity sleeve is regressed against its own region-appropriate "
         "FF5 factor set — US factors for the US sleeve, Developed ex-US factors for VEA. "
@@ -1423,8 +1448,7 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
         "Mom loading is expected and confirms the construction is tax-aware.",
 
         "Momentum (UMD) vintage: Mom loadings are computed against the Ken French "
-        "momentum series as committed in this repository (data through "
-        f"{_umd_f.isoformat() if _umd_f else 'N/A'}). Loadings shift between "
+        f"momentum series. {data_vintage('Momentum factor', _umd_f)} Loadings shift between "
         "refreshes chiefly because the sample extends and only secondarily because "
         "the source revises history — at the 2026-08 refresh, for example, the "
         "added quarter moved the rendered Mom loadings by 0.02–0.07 while a source "

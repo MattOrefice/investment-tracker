@@ -596,6 +596,15 @@ def get_dividends(ticker: str, start_date: str, end_date: str) -> pd.Series:
     """
     end = end_date or date.today().isoformat()
 
+    # A quarter lock serves the dividends it locked, through the quarter's last day
+    # (#382), for every ticker it holds; others read the cache as usual.
+    from src.input_lock import DIVIDENDS, locked
+    held = locked(DIVIDENDS)
+    if held is not None and ticker in held:
+        s = held[ticker]
+        keep = [(d.isoformat() >= start_date) and (d.isoformat() <= end) for d in s.index]
+        return s[keep].copy()
+
     def _query_cache() -> list:
         with get_connection() as conn:
             try:

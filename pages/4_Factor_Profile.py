@@ -7,7 +7,7 @@ import pandas as pd
 
 st.set_page_config(page_title="Factor Profile", layout="wide")
 
-from src.asof import as_of_banner, format_long_date
+from src.asof import as_of_banner, data_vintage, format_long_date
 from src.config import get_demo_banner_text, IS_DEMO
 from src.positioning import build_style_box_figure, get_non_us_equity_data, get_style_box_data
 from src.style_box import STYLE_BOX_CAPTION
@@ -51,7 +51,7 @@ with col:
     _frontiers = [f for f in (factor_frontier("us"), factor_frontier("developed_exus"),
                               umd_frontier()) if f is not None]
     _ff_note = staleness_note(
-        "Ken French factor",
+        "Fama-French factor",
         min(_frontiers) if _frontiers else None,
         MARKET_DATA_STALE_DAYS_FACTORS,
     )
@@ -196,11 +196,12 @@ with col:
         st.caption(f"Sample window: {win}")
 
     _price_date = committed_price_frontier()
+    from src.factors import factor_frontier as _ff_end
     st.caption(
-        "Regression windows end at the most recent date with published Fama-French "
-        "factor data — a publication lag; "
-        + (f"prices through {format_long_date(_price_date)}" if _price_date
-           else "the latest stored prices")
+        "Regression windows end with the factor data. "
+        f"{data_vintage('Fama-French factor', _ff_end('us'))} "
+        + (f"Prices through {format_long_date(_price_date)}" if _price_date
+           else "The latest stored prices")
         + " are shown in the Performance page KPI strip."
     )
 
@@ -461,10 +462,8 @@ with col:
         st.caption(
             "Data: Ken French Data Library, Dartmouth (mba.tuck.dartmouth.edu). "
             "US factors cached at data/ff_factors_us.csv; Developed ex-US at "
-            "data/ff_factors_developed_exus.csv; Global at data/ff_factors_global.csv; "
-            "Momentum (UMD) at data/ff_umd_us.csv. "
-            "Each refreshed when the cache is older than 7 days or the most recent "
-            "factor date exceeds 35 days lag."
+            "data/ff_factors_developed_exus.csv; Momentum (UMD) at data/ff_umd_us.csv. "
+            "Committed copies, refreshed by hand and never fetched on read."
         )
         st.caption(
             "The equity style profile uses a 3×3 size-by-style grid format. "

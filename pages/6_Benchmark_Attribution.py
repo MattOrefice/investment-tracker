@@ -7,7 +7,7 @@ import pandas as pd
 
 st.set_page_config(page_title="Benchmark Attribution", layout="wide")
 
-from src.asof import as_of_banner, format_long_date
+from src.asof import as_of_banner, data_vintage, format_long_date
 from src.attribution import benchmark_gap_notice, brinson_fachler_period, price_gap_notice
 from src.config import get_demo_banner_text, IS_DEMO
 from src.holdings import (committed_price_frontier, get_inception_date,
@@ -143,16 +143,15 @@ with col:
     c3.metric("Observations", str(result["T"]))
     c4.metric("NW Lags (L)",  str(result["nw_lags"]))
     st.caption(f"Sample window: {window_str}")
-    _lag_days = (date.today() - d_end).days
     # The price date the banner names and the Performance page computes through.
     _price_date = committed_price_frontier()
+    from src.factors import factor_frontier
     st.caption(
-        f"Regression window ends at the most recent date with published "
-        f"Fama-French factor data ({d_end.strftime('%B')} {d_end.day}, "
-        f"{d_end.year}) — a {_lag_days}-calendar-day publication lag; "
-        + (f"prices through {format_long_date(_price_date)} are shown on the "
+        "The regression window ends with the factor data. "
+        f"{data_vintage('Fama-French factor', factor_frontier('us'))} "
+        + (f"Prices through {format_long_date(_price_date)} are shown on the "
            "Performance page." if _price_date else
-           "the Performance page shows the latest stored prices.")
+           "The Performance page shows the latest stored prices.")
     )
     st.caption(interpret_benchmark_attribution(result))
 
@@ -204,7 +203,6 @@ with col:
             "Portfolio returns: get_portfolio_value_series (adj_close basis). "
             "Benchmark returns: get_custom_blended_series (SAA target-weight basket). "
             "RF, HML, SMB, RMW: Ken French US daily factors (mba.tuck.dartmouth.edu). "
-            "Cached at data/ff_factors_us.csv; refreshed when older than 7 days or "
-            "most recent factor date exceeds 35-day publication lag."
+            "A committed copy, refreshed by hand and never fetched on read."
         )
     render_footer()

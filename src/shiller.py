@@ -82,6 +82,11 @@ def _parse_multpl(html_content: str) -> pd.DataFrame:
 
     df = pd.DataFrame(rows)
     df["date"] = pd.to_datetime(df["date"])
+    # The table is newest-first, and its top row is today's intra-month reading
+    # (e.g. 'Sep 25, 2026') beside the month's own row ('Sep 1, 2026'). Both
+    # normalise to the same month; keep the fresher, as trailing_pe does. Without
+    # this the 2026-09-25 refresh wrote two 2026-09-01 rows.
+    df = df.drop_duplicates(subset="date", keep="first")
     return df.sort_values("date").reset_index(drop=True)
 
 
@@ -194,6 +199,12 @@ def get_cape_series() -> pd.Series:
     deleted it outright. Staleness is surfaced via cape_frontier() +
     asof.staleness_note on every consumer, not silently repaired here.
     """
+    # A quarter lock serves the CAPE series it locked, through the quarter's last
+    # month (#382): a locked report cites the quarter-end reading, not today's.
+    from src.input_lock import CAPE, locked
+    held = locked(CAPE)
+    if held is not None:
+        return held.copy()
     if not _CACHE_CSV.exists():
         raise FileNotFoundError(
             f"Committed CAPE data missing: {_CACHE_CSV}. Restore it from git, "
