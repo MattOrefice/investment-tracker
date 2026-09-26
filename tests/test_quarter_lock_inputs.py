@@ -92,10 +92,6 @@ def _revise_every_input(tmp_path, monkeypatch, book):
     umd.index.name = "date"
     umd.to_csv(rev / "umd.csv")
     monkeypatch.setattr(factors, "_UMD_CACHE", rev / "umd.csv")
-    hyg = pd.read_parquet(factors._HYG_CACHE)
-    hyg["adj_close"] = hyg["adj_close"] * (1 + 0.001 * pd.Series(range(len(hyg)), index=hyg.index))
-    hyg.to_parquet(rev / "hyg.parquet")
-    monkeypatch.setattr(factors, "_HYG_CACHE", rev / "hyg.parquet")
     cape = pd.read_csv(shiller._CACHE_CSV)
     cape["cape"] = cape["cape"] * 0.5
     cape.to_csv(rev / "cape.csv", index=False)
@@ -112,6 +108,11 @@ def _revise_every_input(tmp_path, monkeypatch, book):
     con = sqlite3.connect(book)
     with con:
         con.execute("DELETE FROM dividends WHERE ticker = 'VOO'")
+        # HYG is a price since #386, revised in the price layer. A ramp, not a
+        # constant: a uniform scale cancels in the returns the regression reads.
+        assert con.execute(
+            "UPDATE prices SET close = close * (1 + 0.0005 * (julianday(price_date) - "
+            "julianday('2025-05-01'))) WHERE ticker = 'HYG'").rowcount
     con.close()
 
 
@@ -138,7 +139,10 @@ def test_the_lock_holds_every_input_through_the_quarter_end(book, tmp_path, monk
     """#371's rule for every input: data through the quarter's last day. The files
     here run past the quarter, so a lock that kept later rows would be caught."""
     from src.cache import capture_quarter_snapshot, get_quarter_snapshot
-    from src.input_lock import ALL_INPUTS, CAPE, DIVIDENDS, ETF_METADATA, FF5_US
+    from src.input_lock import ALL_INPUTS, CAPE, DIVIDENDS, ETF_METADATA, FF5_US, HYG
+    from src.prices import get_prices
+    assert max(get_prices("HYG", "2026-06-01", "2026-09-30").index) > date(2026, 6, 30), (
+        "premise: the price layer holds HYG past the quarter")
     _factor_files_through(tmp_path, monkeypatch, "2026-09-30")
     _cape_through(tmp_path, monkeypatch, "2026-09-01")
     from src.factors import load_factors
@@ -158,6 +162,7 @@ def test_the_lock_holds_every_input_through_the_quarter_end(book, tmp_path, monk
     assert snap.inputs[CAPE].index.max() == pd.Timestamp("2026-06-01"), (
         "CAPE's quarter-end observation is the quarter's last monthly reading")
     assert snap.inputs[FF5_US].index.max() == pd.Timestamp("2026-06-30")
+    assert snap.inputs[HYG].index.max() == pd.Timestamp("2026-06-30")
 
 
 def test_the_executive_summary_cites_the_quarter_end_cape_and_says_it_was_restated(book):
@@ -234,7 +239,7 @@ def test_on_october_1_the_factor_sections_wait_for_french_and_then_lock(book, tm
     already locked."""
     from src import reports
     from src.cache import capture_quarter_snapshot, complete_quarter_inputs, get_quarter_snapshot
-    from src.input_lock import CAPE, FF5_DEVELOPED_EXUS, FF5_US, UMD
+    from src.input_lock import CAPE, ETF_METADATA, FF5_DEVELOPED_EXUS, FF5_US, UMD
     pin_today(monkeypatch, date(2026, 10, 1))
     _extend_prices_through(book, "2026-09-30")
     _factor_files_through(tmp_path, monkeypatch, "2026-08-31")
@@ -245,6 +250,9 @@ def test_on_october_1_the_factor_sections_wait_for_french_and_then_lock(book, tm
     assert {FF5_US, FF5_DEVELOPED_EXUS, UMD} <= set(snap.inputs_pending)
     assert snap.inputs_pending[FF5_US] == "2026-08-31"
     assert CAPE in snap.inputs, "CAPE has its September reading, so it locks now"
+    # #386: the committed fact-sheet file is dated April 15, outside Q3, so the
+    # style box waits for it too.
+    assert snap.inputs_pending[ETF_METADATA] == "2026-04-15"
     factor_note = reports._pending_note(snap, "factor")
     assert factor_note == ("Pending: this section locks when the factor data covers the "
                            "quarter. The Fama-French factor data on file ends August 31, "
@@ -268,11 +276,25 @@ def test_on_october_1_the_factor_sections_wait_for_french_and_then_lock(book, tm
     df.loc[df["date"] == "2026-09-01", "cape"] = 99.0      # ...that must not reach Q3
     df.to_csv(shiller._CACHE_CSV, index=False)
     done = complete_quarter_inputs("2026Q3")
-    assert done.inputs_pending == {} and {FF5_US, FF5_DEVELOPED_EXUS, UMD} <= set(done.inputs)
+    assert done.inputs_pending == {ETF_METADATA: "2026-04-15"}, "the fact sheets still wait"
+    assert {FF5_US, FF5_DEVELOPED_EXUS, UMD} <= set(done.inputs)
     assert done.inputs[FF5_US].index.max() == pd.Timestamp("2026-09-30")
     pd.testing.assert_series_equal(done.inputs[CAPE], locked_cape)
     pd.testing.assert_frame_equal(done.adj_close, locked_prices)
     assert reports._pending_note(done, "factor") is None
+
+    # September's fact sheets arrive: the style box locks, and French stays put.
+    from src import style_box
+    meta = json.loads(Path(style_box._META_PATH).read_text())
+    for k, v in meta.items():
+        if isinstance(v, dict):
+            v["as_of"] = "2026-09-30"
+    (tmp_path / "meta_q3.json").write_text(json.dumps(meta))
+    monkeypatch.setattr(style_box, "_META_PATH", tmp_path / "meta_q3.json")
+    locked_ff = done.inputs[FF5_US].copy()
+    final = complete_quarter_inputs("2026Q3")
+    assert final.inputs_pending == {} and ETF_METADATA in final.inputs
+    pd.testing.assert_frame_equal(final.inputs[FF5_US], locked_ff)
 
 
 def test_the_template_renders_a_pending_section(book):
@@ -281,6 +303,9 @@ def test_the_template_renders_a_pending_section(book):
     src = Path(tmpl.filename).read_text(encoding="utf-8")
     assert "{% elif factor_pending %}" in src and "{% elif bench_pending %}" in src
     assert "{{ factor_pending }}" in src and "{{ bench_pending }}" in src
+    # #386: the style box's pending line and the HYG correction on the cover (both
+    # rendered for real in tests/test_hyg_price_layer.py).
+    assert "{{ pos.style_box_pending }}" in src and "{{ input_corrections_note }}" in src
 
 
 # ── the demo ships its locks ──────────────────────────────────────────────────

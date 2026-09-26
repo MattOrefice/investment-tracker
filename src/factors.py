@@ -81,12 +81,6 @@ _BEME_CACHE        = _CACHE_DIR / "ff_beme_breakpoints.csv"
 _BEME_PCTILES      = list(range(5, 101, 5))  # 20 columns: p5, p10, …, p100
 _BEME_REFRESH_DAYS = 30  # annual data; refetch monthly at most
 
-# HYG adjusted price history — a PINNED committed input, not a cache: no code
-# path writes it (the writer was removed long ago) and adjusted closes re-derive
-# on every distribution, so the snapshot is not reproducible from the network.
-# Documented in data/cache/README.md. Do not add a refresh path for it.
-_HYG_CACHE = _CACHE_DIR / "prices_hyg.parquet"
-
 _CACHE_PATH = _FACTOR_CONFIG["us"]["cache"]  # backward-compatible alias
 
 _FF_RETRY_DELAYS = (1, 3, 9)  # seconds between Ken French download retry attempts (tool-only)
@@ -511,16 +505,13 @@ def _fetch_umd() -> pd.Series:
 
 
 def hyg_credit_series(inception: str, end_date: str) -> pd.Series:
-    """The HYG total-return series regress_fi_sleeve's CREDIT proxy reads, as it reads
-    it: the committed parquet when present, else the price layer. What a quarter lock
-    captures for the FI regression (#382)."""
-    if _HYG_CACHE.exists():
-        try:
-            df = pd.read_parquet(_HYG_CACHE)
-            df.index = pd.to_datetime(df.index)
-            return df["adj_close"]
-        except Exception:
-            pass
+    """The HYG total-return series regress_fi_sleeve's CREDIT proxy reads: the price
+    layer, as for every other ETF and as the Risk page's credit factor already read it.
+
+    Until #386 it read data/cache/prices_hyg.parquet, a committed file that ended
+    2026-05-05 while nothing refreshed it, so Q2 2026's regression held HYG flat for
+    the quarter's last eight weeks. A quarter lock captures this series, cut at the
+    quarter's end and gated on coverage like the French data (src.cache)."""
     p = get_prices("HYG", inception, end_date)
     p.index = pd.to_datetime(p.index)
     return total_return_series(p)
