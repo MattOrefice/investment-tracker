@@ -127,15 +127,15 @@ def _state(status, served, before=None, attempted=NOW):
 
 @pytest.mark.parametrize("st, frontier, text", [
     (_state("fetched", "2026-09-23"), "2026-09-23",
-     "Prices through September 23, 2026 (settled closes, fetched September 24, 2026 at 22:00 UTC)."),
+     "Prices through September 23, 2026 (settled closes, fetched September 24, 2026 at 6:00 PM ET)."),
     (_state("failed", "2026-07-20"), "2026-07-20",
      "Prices through July 20, 2026 (settled closes) — 47 weekdays behind. The daily price fetch "
-     "failed September 24, 2026 at 22:00 UTC; serving the committed snapshot until it "
-     "retries after September 24, 2026 at 22:30 UTC."),
+     "failed September 24, 2026 at 6:00 PM ET; serving the committed snapshot until it "
+     "retries after September 24, 2026 at 6:30 PM ET."),
     (_state("failed", "2026-09-22", before="2026-09-23T21:05+00:00"), "2026-09-22",
      "Prices through September 22, 2026 (settled closes) — 1 weekday behind. The daily price "
-     "fetch failed September 24, 2026 at 22:00 UTC; serving prices last fetched "
-     "September 23, 2026 at 21:05 UTC until it retries after September 24, 2026 at 22:30 UTC."),
+     "fetch failed September 24, 2026 at 6:00 PM ET; serving prices last fetched "
+     "September 23, 2026 at 5:05 PM ET until it retries after September 24, 2026 at 6:30 PM ET."),
     (None, "2026-07-20", "Prices through July 20, 2026 (settled closes) — 47 weekdays behind."),
 ])
 def test_the_banner_states_the_date_served_its_basis_and_any_failure(monkeypatch, st, frontier, text):

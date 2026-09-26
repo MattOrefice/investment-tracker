@@ -19,7 +19,13 @@ import pandas as pd
 import plotly.graph_objects as go
 import plotly.io as pio
 
-from src.asof import most_recent_reportable_quarter, quarter_staleness_note
+from src.asof import (
+    ET,
+    format_long_date,
+    most_recent_reportable_quarter,
+    quarter_staleness_note,
+    today_et,
+)
 from src.attribution import benchmark_gap_notice, brinson_fachler_period, price_gap_notice
 from src.cache import (
     capture_quarter_snapshot,
@@ -1879,6 +1885,18 @@ def _build_methodology_vars() -> dict:
 
 # ── Main public function ──────────────────────────────────────────────────────
 
+def report_dates(snapshot_captured_at: Optional[str],
+                 now: Optional[datetime] = None) -> "tuple[str, Optional[str]]":
+    """The cover's two dates, both in New York time: the day the report was generated
+    and the day the quarter's prices were locked. On the public demo the server's clock
+    is UTC, so its own date is a day ahead from 8 PM ET."""
+    locked = None
+    if snapshot_captured_at:
+        locked = format_long_date(
+            datetime.fromisoformat(snapshot_captured_at).astimezone(ET).date())
+    return format_long_date(today_et(now)), locked
+
+
 def _make_report_env() -> Environment:
     """Jinja environment for the PDF templates, with autoescape ON (audit #6).
 
@@ -1959,14 +1977,7 @@ def generate_quarterly_report_bytes(
     env  = _make_report_env()
     tmpl = env.get_template("quarterly_report.html")
 
-    # Cross-platform date formatting (%-d fails on Windows)
-    today = date.today()
-    gen_date = f"{today.strftime('%B')} {today.day}, {today.year}"
-
-    snapshot_display: Optional[str] = None
-    if snapshot_captured_at:
-        snap_dt = datetime.fromisoformat(snapshot_captured_at)
-        snapshot_display = f"{snap_dt.strftime('%B')} {snap_dt.day}, {snap_dt.year}"
+    gen_date, snapshot_display = report_dates(snapshot_captured_at)
 
     inception_str   = get_inception_date(account_id=report_acct)
     si_days_report  = (date.fromisoformat(end_date) - date.fromisoformat(inception_str)).days
