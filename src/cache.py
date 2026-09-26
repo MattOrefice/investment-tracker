@@ -116,6 +116,10 @@ class SnapshotFrames(NamedTuple):
     # Inputs a later correction replaced because the lock had taken them short of
     # the quarter, by src.input_lock name: {"was_through", "restated_on"} (#386).
     input_corrections: "dict | None" = None
+    # The blended benchmarks' rule the lock's report measures with: BLENDED_RULE for a
+    # lock taken from #383 on; None before, when each figure held its own window's
+    # basket, and those reports keep that construction (window_start_baskets).
+    benchmark_rule: "str | None" = None
 
 
 # Every lock captured from #368 on: prices AND dividends through the quarter's last
@@ -368,6 +372,29 @@ def restate_short_hyg(quarter_id: str, restated_on: date) -> "tuple[str, str] | 
     return old, new
 
 
+def _blended_rule() -> str:
+    """The blended benchmarks' rule a lock taken now records (#383)."""
+    from src.benchmarks import BLENDED_RULE
+    return BLENDED_RULE
+
+
+def benchmark_construction_note(snap: "SnapshotFrames | None") -> "str | None":
+    """The cover line for a quarter lock taken before the blended benchmarks' quarterly
+    rule, stating the construction its benchmark figures used (#383), or None."""
+    from src.benchmarks import BLENDED_RULE
+    if snap is None or getattr(snap, "quarter_end", None) is None:
+        return None
+    if getattr(snap, "benchmark_rule", None) == BLENDED_RULE:
+        return None
+    return (
+        "The Custom Blended figures in this report hold the SAA target-weight basket "
+        "bought at the start of each period shown: the quarter from its start, each "
+        "trailing period from its own start, and the since-inception chart and "
+        "regression from inception. Reports from Q3 2026 rebalance it to target "
+        "weights at the start of each calendar quarter and chain-link the quarters."
+    )
+
+
 def input_corrections_note(snap: "SnapshotFrames | None") -> "str | None":
     """The cover line for a lock whose HYG input was corrected (#386), or None."""
     fix = ((getattr(snap, "input_corrections", None) or {}).get(HYG)
@@ -458,7 +485,8 @@ def get_quarter_snapshot(quarter_id: str) -> tuple:
                            rule=blob.get("rule"), quarter_end=row["snapshot_date"],
                            inputs=inputs, inputs_pending=blob.get("inputs_pending"),
                            inputs_rule=blob.get("inputs_rule"),
-                           input_corrections=blob.get("input_corrections")),
+                           input_corrections=blob.get("input_corrections"),
+                           benchmark_rule=blob.get("benchmark_rule")),
             row["captured_at"])
 
 
@@ -620,7 +648,8 @@ def capture_quarter_snapshot(quarter_id: str) -> tuple:
                              gaps=tuple((str(t), str(r)) for t, r in gaps),
                              rule=QUARTER_END_RULE, quarter_end=end_str,
                              inputs={k: _dec(v) for k, v in in_enc.items()},
-                             inputs_pending=in_pending, inputs_rule=INPUTS_RULE)
+                             inputs_pending=in_pending, inputs_rule=INPUTS_RULE,
+                             benchmark_rule=_blended_rule())
 
     # Aware UTC, so the report can show the moment in New York time whatever machine
     # recorded it. Older rows are naive local time; reports reads both.
@@ -636,6 +665,7 @@ def capture_quarter_snapshot(quarter_id: str) -> tuple:
     payload["inputs_through"] = in_through
     payload["inputs_pending"] = in_pending
     payload["inputs_rule"] = INPUTS_RULE
+    payload["benchmark_rule"] = _blended_rule()
     blob = json.dumps(payload)  # write-guard-exempt: portfolio snapshot cache, not user-mutable data
 
     _ensure_table()
@@ -698,6 +728,11 @@ def snapshot_price_context(snap_df: pd.DataFrame):
             stack.enter_context(input_context(frames.inputs or {},
                                               frames.inputs_pending or {},
                                               frames.quarter_end))
+            # A lock taken before the blended benchmarks' quarterly rule measures each
+            # figure with its own window's basket, as its report was built (#383).
+            from src.benchmarks import BLENDED_RULE, window_start_baskets
+            if frames.benchmark_rule != BLENDED_RULE:
+                stack.enter_context(window_start_baskets())
             yield
     finally:
         _prices_module._PRICE_LOCK.reset(token)

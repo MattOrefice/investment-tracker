@@ -29,6 +29,7 @@ from src.asof import (
 from src.attribution import benchmark_gap_notice, brinson_fachler_period, price_gap_notice
 from src.cache import (
     SECTION_INPUTS,
+    benchmark_construction_note,
     capture_quarter_snapshot,
     complete_quarter_inputs,
     get_quarter_snapshot,
@@ -39,7 +40,7 @@ from src.cache import (
     label_to_quarter_id,
     snapshot_price_context,
 )
-from src.benchmarks import get_custom_blended_series, get_sp500_series
+from src.benchmarks import blended_rule_note, get_custom_blended_series, get_sp500_series
 from src.config import IS_DEMO
 from src.db import get_connection
 from src.drip import distribution_gaps_for_holdings, drip_distribution_gap_notice
@@ -2082,6 +2083,11 @@ def generate_quarterly_report_bytes(
         restatement_note     = restatement_note(quarter_id, snap_df),
         inputs_restatement_note = inputs_restatement_note(quarter_id, snap_df),
         input_corrections_note = input_corrections_note(snap_df),
+        # A lock from before #383 states the construction its benchmark figures used;
+        # every other report states the rule in its methodology.
+        benchmark_construction_note = benchmark_construction_note(snap_df),
+        blended_rule_note    = (None if benchmark_construction_note(snap_df)
+                                else blended_rule_note()),
         factor_pending       = factor_pending,
         bench_pending        = bench_pending,
         has_trades           = has_trades,

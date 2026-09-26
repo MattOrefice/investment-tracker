@@ -1,5 +1,7 @@
 """Benchmark series construction for performance attribution."""
 import logging
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import date
 
 import pandas as pd
@@ -158,9 +160,111 @@ def _benchmarks_for(sleeve_weights: dict[str, float]) -> dict[str, list[tuple[st
     return bench
 
 
+# ── The blended benchmarks' rebalancing rule (#383) ────────────────────────────
+# ONE series per blended benchmark: the basket is reset to its target weights at the
+# start of every calendar quarter (the prior quarter's last day, the base a quarter
+# report measures from), held through the quarter, and the quarters are chain-linked.
+# Every window reads that series, so a quarter's slice is exactly the basket bought
+# at the quarter's start: how every locked quarterly report measured its quarter.
+# Before the rule each surface bought its own basket at the start of whatever window
+# it measured, so a year never equalled its four quarters, and the Performance page
+# (one basket held from inception) disagreed with the report (#383).
+BLENDED_RULE = "quarterly_reset"
+BLENDED_RULE_SINCE = date(2026, 9, 26)
+
+
+def blended_rule_note() -> str:
+    """The rule as the site states it wherever it describes a blended benchmark."""
+    d = BLENDED_RULE_SINCE
+    return (f"rebalanced to target weights at the start of each calendar quarter and "
+            f"chain-linked (the rule since {d.strftime('%B')} {d.day}, {d.year})")
+
+
+# Inside a quarter lock taken before the rule, each figure reads the basket held from
+# its own window's start, as that report was built: a locked figure does not move for
+# a change of method (#383). Entered by cache.snapshot_price_context.
+_WINDOW_START_BASKETS: ContextVar[bool] = ContextVar("window_start_baskets", default=False)
+
+
+@contextmanager
+def window_start_baskets():
+    token = _WINDOW_START_BASKETS.set(True)
+    try:
+        yield
+    finally:
+        _WINDOW_START_BASKETS.reset(token)
+
+
+def _quarter_anchor(d: date) -> date:
+    """The latest calendar quarter-end on or before ``d``."""
+    for y in (d.year, d.year - 1):
+        for m, day in ((12, 31), (9, 30), (6, 30), (3, 31)):
+            if date(y, m, day) <= d:
+                return date(y, m, day)
+    raise AssertionError(d)
+
+
+def _next_quarter_end(q: date) -> date:
+    y, m = (q.year + 1, 3) if q.month == 12 else (q.year, q.month + 3)
+    return date(y, m, 31 if m in (3, 12) else 30)
+
+
+def _quarterly_reset(build, start_date: str, end_date: str | None) -> pd.Series:
+    """Chain-link ``build(segment_start, segment_end)`` baskets over calendar quarters,
+    and return the window [start_date, end_date] normalized to 1.0 at its start.
+
+    The segments start at the quarter-end on or before start_date, so a window's
+    reading does not depend on where the window starts: every caller reads one series.
+    Gaps from every segment ride on .attrs["benchmark_gaps"]; a segment that can price
+    nothing makes the whole window an explicit NaN sentinel, never a flat line."""
+    end = end_date or date.today().isoformat()
+    s_d, e_d = date.fromisoformat(start_date), date.fromisoformat(end)
+    date_range = pd.date_range(start=start_date, end=end, freq="D")
+    bounds = [_quarter_anchor(s_d)]
+    while _next_quarter_end(bounds[-1]) < e_d:
+        bounds.append(_next_quarter_end(bounds[-1]))
+    bounds.append(e_d)
+
+    gaps: list = []
+    parts: list[pd.Series] = []
+    level = 1.0
+    for a, b in zip(bounds, bounds[1:]):
+        seg = build(a.isoformat(), b.isoformat())
+        gaps.extend(g for g in seg.attrs.get("benchmark_gaps", []) if g not in gaps)
+        first = seg.first_valid_index()
+        if first is None or not seg[first] > 0:
+            out = pd.Series(float("nan"), index=date_range)
+            out.attrs["benchmark_gaps"] = gaps
+            return out
+        rel = seg / seg[first] * level
+        rel[rel.index < first] = level     # a non-trading quarter start holds the level
+        parts.append(rel if not parts else rel.iloc[1:])
+        level = float(rel.iloc[-1])
+    chain = pd.concat(parts)
+    window = chain[chain.index >= pd.Timestamp(s_d)]
+    out = window / window.iloc[0]
+    out.attrs["benchmark_gaps"] = gaps
+    return out
+
+
 def get_custom_blended_series(start_date: str, end_date: str | None = None) -> pd.Series:
     """
-    Daily value series for a $1-normalized SAA benchmark.
+    Daily value series for the $1-normalized custom blended SAA benchmark: the ONE
+    series every figure reads, rebalanced to target weights at each calendar quarter
+    start and chain-linked (#383, see BLENDED_RULE). Returns the window
+    [start_date, end_date] starting at 1.0, gaps on .attrs["benchmark_gaps"].
+
+    Inside a quarter lock taken before the rule (window_start_baskets), the basket
+    bought at start_date and held, as those reports were built.
+    """
+    if _WINDOW_START_BASKETS.get():
+        return _fresh_basket_series(start_date, end_date)
+    return _quarterly_reset(_fresh_basket_series, start_date, end_date)
+
+
+def _fresh_basket_series(start_date: str, end_date: str | None = None) -> pd.Series:
+    """
+    One quarter's segment of the blended benchmark, and the whole of it before #383.
 
     Allocates $1 across benchmark tickers at target weights on start_date,
     then marks to market daily using adj_close prices.  Returns a Series
@@ -305,18 +409,26 @@ def get_sleeve_benchmark_returns(
 
 def get_naive_60_40_series(start_date: str, end_date: str | None = None) -> pd.Series:
     """
-    $1-normalized daily return series for a 60/40 naive benchmark.
+    $1-normalized daily value series for the 60/40 naive benchmark (60% SPY, 40% AGG),
+    under the blended benchmarks' one rule: rebalanced to 60/40 at the start of each
+    calendar quarter and chain-linked (#383). Returns a Series indexed by
+    pd.Timestamp starting at 1.0 on start_date.
 
-    Computes as 0.6 × daily SPY return + 0.4 × daily AGG return at the return
-    level (not a portfolio simulation — avoids rebalancing-frequency assumptions).
-    Returns a Series indexed by pd.Timestamp starting at 1.0 on start_date.
+    It weighted daily returns before #383, which is a DAILY rebalance, not the absence
+    of a rebalancing assumption its docstring claimed.
 
-    A leg unpriceable near a window bound (see _component_series) is dropped
+    A leg unpriceable near a segment bound (see _component_series) is dropped
     and the surviving leg's weight renormalizes to 1.0, flagged on
     .attrs["benchmark_gaps"] as (label, ticker, bound) 3-tuples; both legs
     missing yields an explicit NaN sentinel, never a fabricated flat 0% return.
     """
-    end = end_date or date.today().isoformat()
+    return _quarterly_reset(_naive_basket_series, start_date, end_date)
+
+
+def _naive_basket_series(start_date: str, end_date: str) -> pd.Series:
+    """One quarter's 60/40 segment: $0.60 of SPY and $0.40 of AGG bought at start_date
+    and held, the same mechanics as the blended SAA basket (_fresh_basket_series)."""
+    end = end_date
     date_range = pd.date_range(start=start_date, end=end, freq="D")
 
     spy = _get_price_series("SPY", start_date, end, col="adj_close")
@@ -342,15 +454,15 @@ def get_naive_60_40_series(start_date: str, end_date: str | None = None) -> pd.S
         out.attrs["benchmark_gaps"] = gaps
         return out
 
-    total_wt  = sum(wt for _, wt in legs)
-    naive_ret = pd.Series(0.0, index=date_range)
+    total_wt = sum(wt for _, wt in legs)
+    value = pd.Series(0.0, index=date_range)
     for leg_series, wt in legs:
-        naive_ret = naive_ret + (wt / total_wt) * leg_series.pct_change().fillna(0.0)
+        p = leg_series.reindex(date_range)
+        p0 = float(p.ffill().bfill().iloc[0])
+        value = value + p.ffill() * ((wt / total_wt) / p0)
 
-    cumulative = (1 + naive_ret).cumprod()
-
-    first = float(cumulative.iloc[0]) if not cumulative.empty else 1.0
-    out = cumulative / first if first > 0 else cumulative
+    first = value.first_valid_index()
+    out = value / value[first] if first is not None and value[first] > 0 else value
     out.attrs["benchmark_gaps"] = gaps
     return out
 

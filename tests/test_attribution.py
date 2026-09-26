@@ -262,15 +262,20 @@ def test_stage1_hand_calculation():
 
 
 def test_naive_benchmark_60_40_composition():
-    """60/40 series = 0.6 * daily_SPY_return + 0.4 * daily_AGG_return to floating-point tolerance.
+    """60/40 series = $0.60 of SPY and $0.40 of AGG bought at each calendar quarter's
+    base and held, the quarters chained (#383's rule for every blended benchmark), to
+    floating-point tolerance.
 
-    Regression pin: Phase 9. Uses actual price data from the cache (requires demo.db with AGG prices).
-    Skips gracefully if AGG data is absent.
+    Regression pin: Phase 9, migrated by #383. It pinned 0.6 x daily SPY return + 0.4 x
+    daily AGG return, a DAILY rebalance. The window now crosses the December 31 reset,
+    so the rebalance itself is what is checked. Uses actual price data from the cache
+    (requires demo.db with AGG prices). Skips gracefully if AGG data is absent.
     """
+    import pandas as pd
     from src.benchmarks import get_naive_60_40_series, _get_price_series
 
     start = "2025-11-03"
-    end   = "2025-12-31"
+    end   = "2026-02-27"
 
     try:
         naive = get_naive_60_40_series(start, end)
@@ -282,11 +287,21 @@ def test_naive_benchmark_60_40_composition():
     if spy.isnull().all() or agg.isnull().all():
         pytest.skip("SPY or AGG price series empty — prices not in cache")
 
-    spy_ret      = spy.pct_change().fillna(0.0)
-    agg_ret      = agg.pct_change().fillna(0.0)
-    expected_ret = 0.6 * spy_ret + 0.4 * agg_ret
-    expected     = (1 + expected_ret).cumprod()
-    expected     = expected / float(expected.iloc[0])
+    spy_q = _get_price_series("SPY", "2025-09-30", end).ffill()
+    agg_q = _get_price_series("AGG", "2025-09-30", end).ffill()
+    reset = pd.Timestamp("2025-12-31")
+
+    def _basket(base):
+        return 0.6 * spy_q / spy_q[base] + 0.4 * agg_q / agg_q[base]
+
+    q4 = _basket(pd.Timestamp("2025-09-30"))
+    q1 = _basket(reset) * q4[reset]
+    chained = q4.where(q4.index <= reset, q1)
+    expected = chained[chained.index >= pd.Timestamp(start)]
+    expected = expected / float(expected.iloc[0])
+    daily = (1 + 0.6 * spy.pct_change().fillna(0.0) + 0.4 * agg.pct_change().fillna(0.0)).cumprod()
+    assert abs(float(daily.iloc[-1] / daily.iloc[0]) - float(expected.iloc[-1])) > 1e-6, (
+        "premise: a daily rebalance and the quarterly rule differ over this window")
 
     common = naive.dropna().index.intersection(expected.dropna().index)
     assert len(common) >= 10, f"Fewer than 10 common dates: {len(common)}"
@@ -295,7 +310,7 @@ def test_naive_benchmark_60_40_composition():
         naive.loc[common].values,
         expected.loc[common].values,
         rtol=1e-8,
-        err_msg="Naive 60/40 series does not match 0.6*SPY_ret + 0.4*AGG_ret",
+        err_msg="Naive 60/40 series does not match the 60/40 basket reset each quarter",
     )
 
 
@@ -703,8 +718,10 @@ def test_identity_bf_sum_reconciles_to_stage2(deposit, pytestconfig, tmp_path):
 
     For every attribution window the page offers:
       * PAGE: the rendered Stage 2 tile = independent portfolio TWR − SAA blend, where
-        the SAA blend is read off the page's rendered BF table (Σ Bench Wt × Bench Ret,
-        which is exactly the tile's benchmark side). Tile rounds to 1 bp.
+        the SAA blend is rebuilt from first principles under #383's rule (rebalanced to
+        target weights each calendar quarter, chained). It used to be read off the
+        page's BF table (Σ Bench Wt × Bench Ret, one basket held from the window's
+        start), which was the tile's benchmark side until #383. Tile rounds to 1 bp.
       * BRIDGE: on a window with no external flow, ex-cash BF return + cash drag =
         the independent TWR within 0.5 bps. On a window WITH a flow the bridge cannot
         hold: BF values the start-of-window holdings, so it never sees what the
@@ -736,13 +753,15 @@ def test_identity_bf_sum_reconciles_to_stage2(deposit, pytestconfig, tmp_path):
                 assert not at.exception, f"page raised on {label}: {at.exception}"
                 tile = {m.label: m.value for m in at.metric}["Stage 2: Implementation"]
                 bf_tbl = next(d.value for d in at.dataframe if "Bench Wt" in d.value.columns)
-                saa = float((bf_tbl["Bench Wt"] * bf_tbl["Bench Ret"].fillna(0.0)).sum()) / 10_000
                 start, end = book.window(label)
+                saa = fp.quarterly_blend_return(start, end)
+                held = float((bf_tbl["Bench Wt"] * bf_tbl["Bench Ret"].fillna(0.0)).sum()) / 10_000
                 bf = brinson_fachler_period(start, end, account_id=1)
                 assert not bf.empty, f"BF empty for {label} on the frozen book"
                 seen[label] = {
                     "tile_bps": int(str(tile).replace(" bps", "")),
                     "saa": saa,
+                    "held": held,
                     "twr": book.twr(start, end),
                     "value_ratio": book.value_ratio(start, end),
                     "flows": book.flows(start, end),

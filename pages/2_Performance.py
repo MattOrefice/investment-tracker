@@ -26,7 +26,13 @@ from src.attribution import (
     price_gap_notice,
     stage2_reconciliation,
 )
-from src.benchmarks import get_custom_blended_series, get_naive_60_40_series, get_naive_series, get_sp500_series
+from src.benchmarks import (
+    blended_rule_note,
+    get_custom_blended_series,
+    get_naive_60_40_series,
+    get_naive_series,
+    get_sp500_series,
+)
 from src.db import get_connection
 from src.drip import distribution_gaps_for_holdings, drip_distribution_gap_notice
 from src.factors import run_sleeve_regressions
@@ -525,7 +531,8 @@ with col:
         f"{_non_eq_pct*100:.0f}% of the SAA is non-equity (Fixed Income + Real Assets + Cash), "
         f"{_non_us_eq*100:.0f}% is non-US equity. The Custom Blended benchmark — a target-weighted "
         "basket of cap-weighted indices in the same SAA — is the more meaningful "
-        "to isolate implementation alpha from SAA-design effects."
+        "to isolate implementation alpha from SAA-design effects. "
+        f"It is {blended_rule_note()}."
     )
 
     # ── Reconciliation note ────────────────────────────────────────────────
@@ -954,7 +961,10 @@ with col:
         f"(AVUV at {_wt_ussc*100:.0f}%), emerging markets ({_wt_em*100:.0f}%), "
         f"real assets ({_wt_real*100:.0f}%), TIPS ({_wt_tips*100:.0f}%), and the overall "
         f"~{_wt_equity*100:.0f}/{_non_eq_pct*100:.0f} equity-vs-other-assets risk posture — measured as the SAA-blended benchmark's "
-        f"return spread over a {_naive_label}. This isolates what the "
+        f"return spread over a {_naive_label}. "
+        + (f"Both blends are {blended_rule_note()}. " if naive_kind == "60_40"
+           else f"The SAA blend is {blended_rule_note()}. ")
+        + "This isolates what the "
         "allocation thesis itself contributed, separate from execution. Stage 2 (Implementation, "
         "decomposed via Brinson-Fachler below) captures two effects relative to the SAA's sleeve "
         "targets: **allocation effect** — over/underweights from SAA targets, primarily driven by "
@@ -1011,7 +1021,12 @@ with col:
         # window it reported the new money as return: Stage 2 read +10295 bps beside
         # a 3.16% SI TWR (#349). Same slicing as the returns table's period_return.
         _r_p_ps  = period_return("daily", pv, cf, bf_period)
-        _r_b_ps  = _r_b_bf  # target weights x period returns; matches BF decomposition
+        # The SAA side is the ONE blended series, rebalanced each calendar quarter
+        # (#383), like the naive side and the tiles above. _r_b_bf holds one basket
+        # from the window's start; the difference is the blend's quarterly rebalancing,
+        # which the sleeve breakdown and the Brinson-Fachler check below state.
+        _r_b_ps  = _benchmark_period_return(bl, bf_period)
+        _rebal   = _r_b_ps - _r_b_bf
         _naive_r = _benchmark_period_return(naive, bf_period)
 
         _ts = compute_two_stage_attribution(
@@ -1123,10 +1138,23 @@ with col:
             st.plotly_chart(_fig_s1, width='stretch')
 
             _sleeve_sum_bps = sum(_sleeve_vals_bps)
+            _rebal_bps = _rebal * 10_000
+            if abs(_rebal_bps) >= 0.5:
+                # The sleeve contributions hold the window-start weights; Stage 1
+                # reads the blend rebalanced each quarter (#383).
+                _sum_line = (
+                    f"Stage 1 sleeve contributions sum to {_sign(_sleeve_sum_bps)}{_sleeve_sum_bps:.0f} bps; "
+                    f"the SAA blend\u2019s quarterly rebalancing adds {_sign(_rebal_bps)}{_rebal_bps:.0f} bps "
+                    f"(Stage 1 {_sign(_ts1_bps)}{_ts1_bps:.0f} bps). "
+                )
+            else:
+                _sum_line = (
+                    f"Stage 1 sleeve contributions sum to {_sign(_sleeve_sum_bps)}{_sleeve_sum_bps:.0f} bps "
+                    f"(= Stage 1 {_sign(_ts1_bps)}{_ts1_bps:.0f} bps). "
+                )
             st.caption(
-                f"Stage 1 sleeve contributions sum to {_sign(_sleeve_sum_bps)}{_sleeve_sum_bps:.0f} bps "
-                f"(= Stage 1 {_sign(_ts1_bps)}{_ts1_bps:.0f} bps). "
-                f"Each sleeve\u2019s contribution = SAA target weight \u00d7 (sleeve benchmark return \u2212 {_naive_short} return)."
+                _sum_line
+                + f"Each sleeve\u2019s contribution = SAA target weight \u00d7 (sleeve benchmark return \u2212 {_naive_short} return)."
             )
 
         st.caption(
@@ -1249,7 +1277,9 @@ with col:
         # Only over a window with no external flow: BF holds the start-of-window
         # holdings fixed and never sees what a deposit bought, so over a window holding
         # one the gap is that limitation and is disclosed rather than warned (#349).
-        _bf_s2_gap_bps = (total_active / 100 - (_r_p_ps - _r_b_ps)) * 10_000
+        # Against the basket BF itself holds (_r_b_bf): Stage 2's quarterly
+        # rebalancing is stated separately below, not read as a gap (#383).
+        _bf_s2_gap_bps = (total_active / 100 - (_r_p_ps - _r_b_bf)) * 10_000
         _bf_window_cf = cf[(cf.index > pd.Timestamp(_bf_start)) & (cf.index <= pd.Timestamp(_bf_end))]
         _s2_check, _s2_disclosure = stage2_reconciliation(
             _bf_s2_gap_bps, _bf_start,
@@ -1266,6 +1296,13 @@ with col:
         )
         if _s2_disclosure:
             st.caption(_s2_disclosure)
+        if abs(_rebal * 10_000) >= 0.5:
+            st.caption(
+                f"Stage 2 is measured against the SAA blend rebalanced each calendar "
+                f"quarter. Over this window that rebalancing is {_rebal * 10_000:+.1f} bps, "
+                f"which Brinson-Fachler cannot see: it holds one set of weights from the "
+                f"window\u2019s start. The check above compares net of it."
+            )
 
         # A data gap excludes a sleeve from the BF decomposition above, but that
         # sleeve still contributes to the Stage 1/2 portfolio return (computed

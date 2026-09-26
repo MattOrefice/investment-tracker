@@ -1547,7 +1547,8 @@ def run_benchmark_attribution_regression(
     Model: (R_p − RF) ~ (R_b − RF) + HML + SMB + RMW
 
       R_p: daily portfolio total return from get_portfolio_value_series
-      R_b: daily custom blended SAA benchmark return from get_custom_blended_series
+      R_b: daily custom blended SAA benchmark return from get_custom_blended_series:
+           the one series, rebalanced to target weights each calendar quarter (#383)
       RF:  Ken French US daily risk-free rate
       HML, SMB, RMW: Ken French US FF5 style factors (CMA excluded — see methodology)
 
