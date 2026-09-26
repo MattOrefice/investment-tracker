@@ -40,7 +40,14 @@ def _tiles():
     st.cache_data.clear()
     at = AppTest.from_file(str(ROOT / "pages" / "2_Performance.py"), default_timeout=300).run()
     assert not at.exception, [str(e.value) for e in at.exception]
-    return {m.label: (m.value, m.delta) for m in at.metric if "Q2 2026" in m.label}
+    # The benchmark returns moved from the tiles' deltas to captions (audit item 7), so
+    # the tiles are read with the captions that carry them.
+    tiles = {m.label: (m.value, m.delta) for m in at.metric if "Q2 2026" in m.label}
+    # The since-inception row's captions (" SI") are live and move with a revision.
+    caps = tuple(str(c.value) for c in at.caption
+                 if str(c.value).startswith(("S&P 500: ", "Blended: "))
+                 and not str(c.value).endswith(" SI"))
+    return tiles, caps
 
 
 def _pdf():
@@ -53,13 +60,16 @@ def _pdf():
         return reports._build_executive_summary(Q2[1], Q2[2])
 
 
-def _assert_agree(tiles, pdf):
-    assert tiles["Q2 2026 return"] == (pdf["portfolio_return_pct"],
-                                       f"{pdf['sp500_return_pct']} S&P 500")
-    assert tiles["vs. S&P 500 — Q2 2026"] == (pdf["alpha_sp_str"],
-                                             f"S&P 500: {pdf['sp500_return_pct']}")
-    assert tiles["vs. Custom Blended — Q2 2026"] == (pdf["alpha_bl_str"],
-                                                    f"Blended: {pdf['blended_return_pct']}")
+def _assert_agree(shown, pdf):
+    tiles, caps = shown
+    assert {k: v for k, (v, _d) in tiles.items()} == {
+        "Q2 2026 return": pdf["portfolio_return_pct"],
+        "vs. S&P 500 — Q2 2026": pdf["alpha_sp_str"],
+        "vs. Custom Blended — Q2 2026": pdf["alpha_bl_str"],
+    }
+    assert not [d for _v, d in tiles.values() if d], "a quarter tile carries a delta again"
+    assert f"S&P 500: {pdf['sp500_return_pct']}" in caps, caps
+    assert f"Blended: {pdf['blended_return_pct']}" in caps, caps
 
 
 def test_the_page_and_the_pdf_agree_on_every_q2_figure(book):
