@@ -194,6 +194,12 @@ def get_cape_series() -> pd.Series:
     deleted it outright. Staleness is surfaced via cape_frontier() +
     asof.staleness_note on every consumer, not silently repaired here.
     """
+    # A quarter lock serves the CAPE series it locked, through the quarter's last
+    # month (#382): a locked report cites the quarter-end reading, not today's.
+    from src.input_lock import CAPE, locked
+    held = locked(CAPE)
+    if held is not None:
+        return held.copy()
     if not _CACHE_CSV.exists():
         raise FileNotFoundError(
             f"Committed CAPE data missing: {_CACHE_CSV}. Restore it from git, "

@@ -63,6 +63,11 @@ STYLE_BOX_CAPTION = (
 
 
 def _load_metadata() -> dict:
+    # A quarter lock serves the metadata it locked (#382).
+    from src.input_lock import ETF_METADATA, locked
+    held = locked(ETF_METADATA)
+    if held is not None:
+        return json.loads(json.dumps(held))
     with open(_META_PATH) as f:
         return json.load(f)
 

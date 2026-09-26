@@ -6,7 +6,7 @@ regardless of retroactive adj_close adjustments from the upstream data provider.
 """
 import io
 import json
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from datetime import date, datetime, timedelta, timezone
 from typing import NamedTuple, Optional
 
@@ -15,6 +15,17 @@ import pandas as pd
 import src.prices as _prices_module
 from src.coverage import TickerStatus, coverage_from_statuses
 from src.db import get_connection
+from src.input_lock import (
+    ALL_INPUTS,
+    CAPE,
+    DIVIDENDS,
+    ETF_METADATA,
+    FF5_DEVELOPED_EXUS,
+    FF5_US,
+    HYG,
+    UMD,
+    input_context,
+)
 
 _QUARTER_ENDS = {
     "Q1": (3, 31),
@@ -92,6 +103,16 @@ class SnapshotFrames(NamedTuple):
     # persisted before rules were recorded. Persisted locks stay as written, so the
     # report says a quarter was restated only when its lock carries the rule.
     rule: "str | None" = None
+    # The quarter's last day, ISO. None only for a bare frame built outside a capture.
+    quarter_end: "str | None" = None
+    # Every NON-PRICE input the locked sections read (#382), decoded, by
+    # src.input_lock name. None for a lock that predates inputs.
+    inputs: "dict | None" = None
+    # Inputs whose data did not cover the quarter when locked, with the date their
+    # data ended then. Their sections render as pending and never read live data.
+    inputs_pending: "dict | None" = None
+    # INPUTS_RULE for a lock that holds its inputs; None before #382.
+    inputs_rule: "str | None" = None
 
 
 # Every lock captured from #368 on: prices AND dividends through the quarter's last
@@ -125,6 +146,156 @@ def restatement_note(quarter_id: "str | None", snap: "SnapshotFrames | None") ->
         f"counted dividends paid after the quarter closed, so some returns, weights and "
         f"attribution effects differ slightly from those versions."
     )
+
+
+# #382: a lock keeps every input its sections read, not only prices, each through
+# the quarter's last day. Recorded in the payload like QUARTER_END_RULE.
+INPUTS_RULE = "inputs_quarter_end"
+
+# The day inputs began to be locked. A RECORD, like QUARTER_END_RULE_SINCE: it dates
+# the one figure this restated in quarters that closed before it, the executive
+# summary's CAPE reading, which had been read live when a report was generated.
+INPUTS_RULE_SINCE = date(2026, 9, 26)
+
+# The earliest input row a lock keeps. The price lock reads from the same date.
+_INPUT_START = "2020-01-01"
+
+# Which inputs each locked section reads, from the census in #382's PR. The factor
+# and benchmark sections render as pending while any of theirs is pending.
+SECTION_INPUTS = {
+    "executive_summary": (CAPE, DIVIDENDS),
+    "positioning": (ETF_METADATA,),
+    "factor": (FF5_US, FF5_DEVELOPED_EXUS, UMD, HYG),
+    "benchmark": (FF5_US,),
+}
+
+
+def inputs_restatement_note(quarter_id: "str | None", snap: "SnapshotFrames | None") -> "str | None":
+    """One line for a quarter whose report this rule restated, or None.
+
+    Only when the lock carries INPUTS_RULE, holds a CAPE series, and the quarter
+    closed before the rule took effect. What moved is the executive summary's CAPE
+    reading, now the quarter's last monthly observation instead of the latest one."""
+    end = _parse_quarter_end(quarter_id) if quarter_id else None
+    if (end is None or snap is None or getattr(snap, "inputs_rule", None) != INPUTS_RULE
+            or (snap.inputs or {}).get(CAPE) is None):
+        return None
+    if end >= INPUTS_RULE_SINCE:
+        return None
+    last = snap.inputs[CAPE].index.max()
+    return (
+        f"Restated {INPUTS_RULE_SINCE.strftime('%B')} {INPUTS_RULE_SINCE.day}, "
+        f"{INPUTS_RULE_SINCE.year}: this quarter now locks every input its report "
+        f"reads, not only prices. Its CAPE reading is the quarter's last monthly "
+        f"observation, {last.strftime('%B')} {last.year}; earlier versions of this "
+        f"report cited the latest CAPE on file when they were generated."
+    )
+
+
+# ── Exact encoding for locked inputs ──────────────────────────────────────────
+# NOT to_json: its default keeps ten significant digits, which would make a locked
+# regression differ from the same regression on the file it locked. Python floats
+# through json.dumps round-trip exactly.
+
+def _enc_frame(df: pd.DataFrame) -> dict:
+    return {"kind": "frame", "index": [pd.Timestamp(d).isoformat() for d in df.index],
+            "index_name": df.index.name, "columns": [str(c) for c in df.columns],
+            "data": df.values.tolist()}
+
+
+def _enc_series(s: pd.Series, index_kind: str) -> dict:
+    idx = ([pd.Timestamp(d).isoformat() for d in s.index] if index_kind == "datetime"
+           else [d.isoformat() for d in s.index])
+    return {"kind": "series", "index_kind": index_kind, "index": idx,
+            "index_name": s.index.name, "name": s.name,
+            "data": [float(v) for v in s.tolist()]}
+
+
+def _dec(payload):
+    kind = payload["kind"]
+    if kind == "frame":
+        idx = pd.DatetimeIndex(pd.to_datetime(payload["index"]), name=payload["index_name"])
+        return pd.DataFrame(payload["data"], index=idx, columns=payload["columns"],
+                            dtype=float)
+    if kind == "series":
+        if payload["index_kind"] == "datetime":
+            idx = pd.DatetimeIndex(pd.to_datetime(payload["index"]), name=payload["index_name"])
+        else:
+            idx = pd.Index([date.fromisoformat(d) for d in payload["index"]], dtype=object,
+                           name=payload["index_name"])
+        return pd.Series(payload["data"], index=idx, name=payload["name"], dtype=float)
+    if kind == "json":
+        return payload["data"]
+    if kind == "dividends":
+        return {t: _dec(p) for t, p in payload["data"].items()}
+    raise ValueError(f"unknown locked-input kind {kind!r}")
+
+
+def _capture_inputs(end: date, tickers: "list[str]",
+                    only: "tuple | None" = None) -> "tuple[dict, dict, dict]":
+    """(encoded, through, pending) for every input, or only those in ``only``.
+
+    Each input as its section's reader returns it, cut at the quarter's last day
+    (#371's rule, applied to every input). An input whose data stops short of the
+    quarter is PENDING instead: the French factors (and momentum) when they end
+    more than QUARTER_END_COVERAGE_DAYS before the quarter does, and CAPE when it has
+    no reading for the quarter's last month. French publishes about a month late,
+    so on October 1 a Q3 lock holds prices and CAPE while its factor sections wait.
+
+    HYG is locked as read, without a coverage gate: its committed parquet is a
+    static file the refresh does not update, and gating on it would leave the FI
+    regression pending for good. Its end date is recorded."""
+    from src import factors, shiller, style_box
+    from src.asof import QUARTER_END_COVERAGE_DAYS
+
+    want = set(only or ALL_INPUTS)
+    end_ts = pd.Timestamp(end)
+    start_ts = pd.Timestamp(_INPUT_START)
+    floor = end - timedelta(days=QUARTER_END_COVERAGE_DAYS)
+    enc: dict = {}
+    through: dict = {}
+    pending: dict = {}
+
+    def cut(obj):
+        return obj[(obj.index >= start_ts) & (obj.index <= end_ts)]
+
+    def gate(name, obj, last, covered, encode):
+        if covered:
+            enc[name] = encode(obj)
+            through[name] = last.isoformat()
+        else:
+            pending[name] = last.isoformat() if last is not None else None
+
+    for name, region in ((FF5_US, "us"), (FF5_DEVELOPED_EXUS, "developed_exus")):
+        if name in want:
+            df = cut(factors.load_factors(region))
+            last = df.index.max().date() if len(df) else None
+            gate(name, df, last, last is not None and last >= floor, _enc_frame)
+    if UMD in want:
+        s = cut(factors.load_umd_factor())
+        last = s.index.max().date() if len(s) else None
+        gate(UMD, s, last, last is not None and last >= floor,
+             lambda x: _enc_series(x, "datetime"))
+    if HYG in want:
+        s = cut(factors.hyg_credit_series(_INPUT_START, end.isoformat()))
+        if len(s):
+            enc[HYG] = _enc_series(s, "datetime")
+            through[HYG] = s.index.max().date().isoformat()
+    if CAPE in want:
+        s = shiller.get_cape_series()
+        s = s[s.index <= end_ts]
+        last = s.index.max().date() if len(s) else None
+        gate(CAPE, s, last, last is not None and last >= date(end.year, end.month, 1),
+             lambda x: _enc_series(x, "datetime"))
+    if ETF_METADATA in want:
+        enc[ETF_METADATA] = {"kind": "json", "data": style_box._load_metadata()}
+    if DIVIDENDS in want:
+        divs = {}
+        for t in tickers:
+            s = _prices_module.get_dividends(t, _INPUT_START, end.isoformat())
+            divs[t] = _enc_series(s, "date")
+        enc[DIVIDENDS] = {"kind": "dividends", "data": divs}
+    return enc, through, pending
 
 
 def _as_frames(snap) -> SnapshotFrames:
@@ -167,7 +338,8 @@ def get_quarter_snapshot(quarter_id: str) -> tuple:
     _ensure_table()
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT snapshot_data, captured_at FROM quarter_snapshots WHERE quarter_id = ?",
+            "SELECT snapshot_data, captured_at, snapshot_date FROM quarter_snapshots "
+            "WHERE quarter_id = ?",
             (quarter_id,),
         ).fetchone()
     if row is None:
@@ -188,9 +360,54 @@ def get_quarter_snapshot(quarter_id: str) -> tuple:
 
     close = _frame(blob["close"]) if "close" in blob else None
     gaps = tuple(tuple(g) for g in blob.get("gaps", []))
+    inputs = ({k: _dec(v) for k, v in blob["inputs"].items()}
+              if "inputs" in blob else None)
     return (SnapshotFrames(adj_close=_frame(blob["adj_close"]), close=close, gaps=gaps,
-                           rule=blob.get("rule")),
+                           rule=blob.get("rule"), quarter_end=row["snapshot_date"],
+                           inputs=inputs, inputs_pending=blob.get("inputs_pending"),
+                           inputs_rule=blob.get("inputs_rule")),
             row["captured_at"])
+
+
+def complete_quarter_inputs(quarter_id: str) -> "SnapshotFrames | None":
+    """Lock whatever inputs a quarter's lock is still waiting on, now that their data
+    may cover it, and return the lock. Never re-locks an input already locked, so a
+    locked input cannot move. A lock from before #382 gets every input captured now.
+    None when the quarter has no lock."""
+    _ensure_table()
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT snapshot_data, snapshot_date, captured_at FROM quarter_snapshots "
+            "WHERE quarter_id = ?",
+            (quarter_id,),
+        ).fetchone()
+    if row is None:
+        return None
+    blob = json.loads(row["snapshot_data"])
+    if "adj_close" not in blob:
+        return get_quarter_snapshot(quarter_id)[0]      # a bare legacy frame: leave it
+    if blob.get("inputs_rule") == INPUTS_RULE:
+        todo = tuple(blob.get("inputs_pending") or {})
+    else:
+        todo = ALL_INPUTS
+    if not todo:
+        return get_quarter_snapshot(quarter_id)[0]
+    end = date.fromisoformat(row["snapshot_date"])
+    tickers = list(blob["adj_close"].get("columns", []))
+    enc, through, pending = _capture_inputs(end, tickers, only=todo)
+    blob.setdefault("inputs", {}).update(enc)
+    blob.setdefault("inputs_through", {}).update(through)
+    blob["inputs_pending"] = pending
+    blob["inputs_rule"] = INPUTS_RULE
+    # INSERT OR REPLACE, keeping the lock's own date and capture time: the demo's
+    # runtime cache serves quarter_snapshots through a view that takes inserts and
+    # deletes only (src.db, #373).
+    with get_connection() as conn:
+        conn.execute(
+            """INSERT OR REPLACE INTO quarter_snapshots
+               (quarter_id, snapshot_date, captured_at, snapshot_data) VALUES (?, ?, ?, ?)""",
+            (quarter_id, row["snapshot_date"], row["captured_at"], json.dumps(blob)))
+    return get_quarter_snapshot(quarter_id)[0]
 
 
 class LockCoverageError(ValueError):
@@ -303,10 +520,14 @@ def capture_quarter_snapshot(quarter_id: str) -> tuple:
     raw_df = pd.DataFrame(raw)
     if not raw_df.empty:
         raw_df.index = pd.to_datetime(raw_df.index).date
+    # Every other input the locked sections read, through the same day (#382).
+    in_enc, in_through, in_pending = _capture_inputs(end, sorted(adj))
     snap_df = SnapshotFrames(adj_close=adj_df,
                              close=raw_df if not raw_df.empty else None,
                              gaps=tuple((str(t), str(r)) for t, r in gaps),
-                             rule=QUARTER_END_RULE)
+                             rule=QUARTER_END_RULE, quarter_end=end_str,
+                             inputs={k: _dec(v) for k, v in in_enc.items()},
+                             inputs_pending=in_pending, inputs_rule=INPUTS_RULE)
 
     # Aware UTC, so the report can show the moment in New York time whatever machine
     # recorded it. Older rows are naive local time; reports reads both.
@@ -318,6 +539,10 @@ def capture_quarter_snapshot(quarter_id: str) -> tuple:
         payload["close"] = json.loads(raw_df.to_json(orient="split", date_format="iso"))
     payload["gaps"] = [list(g) for g in snap_df.gaps]
     payload["rule"] = QUARTER_END_RULE
+    payload["inputs"] = in_enc
+    payload["inputs_through"] = in_through
+    payload["inputs_pending"] = in_pending
+    payload["inputs_rule"] = INPUTS_RULE
     blob = json.dumps(payload)  # write-guard-exempt: portfolio snapshot cache, not user-mutable data
 
     _ensure_table()
@@ -374,6 +599,12 @@ def snapshot_price_context(snap_df: pd.DataFrame):
 
     token = _prices_module._PRICE_LOCK.set(_snapshot_reader)
     try:
-        yield
+        # And every non-price input the lock holds (#382). A lock from before
+        # inputs were locked holds none, and its sections read inputs as before.
+        with ExitStack() as stack:
+            stack.enter_context(input_context(frames.inputs or {},
+                                              frames.inputs_pending or {},
+                                              frames.quarter_end))
+            yield
     finally:
         _prices_module._PRICE_LOCK.reset(token)

@@ -27,6 +27,9 @@
     {% if restatement_note %}
     <p class="cover-staleness">{{ restatement_note }}</p>
     {% endif %}
+    {% if inputs_restatement_note %}
+    <p class="cover-staleness">{{ inputs_restatement_note }}</p>
+    {% endif %}
   </div>
 
   <h2>Executive Summary</h2>
@@ -386,6 +389,8 @@
     Full regression methodology in the Methodology &amp; Data Sources section.
   </p>
 
+  {% elif factor_pending %}
+  <div class="empty-banner">{{ factor_pending }}</div>
   {% else %}
   <div class="empty-banner">
     Factor data unavailable — requires at least 30 trading days of aligned portfolio
@@ -487,6 +492,8 @@
     Full regression methodology in the Methodology &amp; Data Sources section.
   </p>
 
+  {% elif bench_pending %}
+  <div class="empty-banner">{{ bench_pending }}</div>
   {% else %}
   <div class="empty-banner">
     Benchmark attribution regression unavailable &mdash; requires at least 30 aligned trading

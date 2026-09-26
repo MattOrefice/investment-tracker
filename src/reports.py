@@ -28,8 +28,11 @@ from src.asof import (
 )
 from src.attribution import benchmark_gap_notice, brinson_fachler_period, price_gap_notice
 from src.cache import (
+    SECTION_INPUTS,
     capture_quarter_snapshot,
+    complete_quarter_inputs,
     get_quarter_snapshot,
+    inputs_restatement_note,
     restatement_note,
     is_quarter_complete,
     label_to_quarter_id,
@@ -454,6 +457,14 @@ def _cape_reading_sentence(cape_val: float, cape_pct: float) -> str:
         f"CAPE stands at {cape_val:.1f}x, in the {cape_pct:.0f}th percentile — "
         f"{label} versus history."
     )
+    # Inside a quarter lock the reading is the quarter's last monthly observation by
+    # design (#382), so it says which month, never that the data is stale.
+    from src.input_lock import CAPE, locked
+    held = locked(CAPE)
+    if held is not None:
+        last = held.index.max()
+        return sentence[:-1] + (f" ({last.strftime('%B')} {last.year}, the quarter's "
+                                f"last monthly reading).")
     from src.asof import MARKET_DATA_STALE_DAYS_VALUATION, staleness_note
     from src.shiller import cape_frontier
     frontier = cape_frontier()
@@ -544,9 +555,14 @@ def _build_executive_summary(start_date: str, end_date: str) -> dict:
 
     cape_val = cape_pct = None
     _cape_failure: Optional[str] = None
+    from src.input_lock import InputPending
     try:
         cape_val = current_cape()
         cape_pct = percentile(get_cape_series(), cape_val)
+    except InputPending as exc:
+        cape_val = cape_pct = None
+        _cape_failure = (f"CAPE for the quarter's last month is not yet on file (the "
+                         f"series ends {exc.through}); the reading locks when it is.")
     except Exception as exc:
         logging.exception("Executive-summary CAPE reading failed")
         cape_val = cape_pct = None
@@ -1897,6 +1913,26 @@ def report_dates(snapshot_captured_at: Optional[str],
     return format_long_date(today_et(now)), locked
 
 
+def _pending_note(snap, section: str) -> Optional[str]:
+    """The pending line for a locked section whose inputs are still pending, or None.
+
+    French publishes a month's factors about a month after it ends, so on October 1
+    the Q3 factor and benchmark sections wait for them rather than lock on two-thirds
+    of the quarter (#382)."""
+    pending = (getattr(snap, "inputs_pending", None) or {}) if snap is not None else {}
+    waiting = [n for n in SECTION_INPUTS[section] if n in pending]
+    if not waiting:
+        return None
+    ends = [pending[n] for n in waiting if pending[n]]
+    through = min(ends) if ends else None
+    q_end = getattr(snap, "quarter_end", None)
+    data = (f"The Fama-French factor data on file ends {format_long_date(through)}"
+            if through else "No Fama-French factor data is on file for the quarter")
+    closed = f"; the quarter ended {format_long_date(q_end)}" if q_end else ""
+    return (f"Pending: this section locks when the factor data covers the quarter. "
+            f"{data}{closed}.")
+
+
 def _make_report_env() -> Environment:
     """Jinja environment for the PDF templates, with autoescape ON (audit #6).
 
@@ -1953,6 +1989,15 @@ def generate_quarterly_report_bytes(
         snap_df, snapshot_captured_at = get_quarter_snapshot(quarter_id)
         if snap_df is None:
             snap_df, snapshot_captured_at = capture_quarter_snapshot(quarter_id)
+        else:
+            # Lock any input the lock was still waiting on, if its data now covers
+            # the quarter (#382). Inputs already locked never move.
+            snap_df = complete_quarter_inputs(quarter_id) or snap_df
+
+    # A section whose inputs have not covered the quarter renders as pending, with
+    # the date its data ends, rather than locking on part of the quarter (#382).
+    factor_pending = _pending_note(snap_df, "factor")
+    bench_pending = _pending_note(snap_df, "benchmark")
 
     ctx = snapshot_price_context(snap_df) if snap_df is not None else nullcontext()
     with ctx:
@@ -1961,8 +2006,10 @@ def generate_quarterly_report_bytes(
         perf_data        = _build_performance_section(start_date, end_date) if has_trades else None
         attr_data        = _build_attribution_section(start_date, end_date) if has_trades else None
         pos_data         = _build_positioning_section(end_date)             if has_trades else None
-        factor_data      = _build_factor_section(end_date)                 if has_trades else None
-        bench_attr_data  = _build_benchmark_section(start_date, end_date)  if has_trades else None
+        factor_data      = (_build_factor_section(end_date)
+                            if has_trades and not factor_pending else None)
+        bench_attr_data  = (_build_benchmark_section(start_date, end_date)
+                            if has_trades and not bench_pending else None)
         thesis_data      = _build_thesis_section(start_date, end_date, account_id=report_acct)
     # LIVE BY DESIGN, so built OUTSIDE the lock. Both read through today (the macro
     # dashboard, and candidate returns that include tickers the lock does not
@@ -2004,6 +2051,9 @@ def generate_quarterly_report_bytes(
         # Quarters that closed before the quarter-end lock rule are restated by it,
         # and say so; None for any other report (#368).
         restatement_note     = restatement_note(quarter_id, snap_df),
+        inputs_restatement_note = inputs_restatement_note(quarter_id, snap_df),
+        factor_pending       = factor_pending,
+        bench_pending        = bench_pending,
         has_trades           = has_trades,
         inception_date       = inception_str,
         si_days              = si_days_report,

@@ -429,6 +429,11 @@ def load_factors(region: str) -> pd.DataFrame:
             f"Unknown factor region '{region}'. "
             f"Valid regions: {list(_FACTOR_CONFIG)}"
         )
+    # A quarter lock serves the rows it locked (#382), and never the file.
+    from src.input_lock import FF5_DEVELOPED_EXUS, FF5_US, locked
+    held = locked(FF5_US if region == "us" else FF5_DEVELOPED_EXUS)
+    if held is not None:
+        return held.copy()
     cache: Path = _FACTOR_CONFIG[region]["cache"]
     if not cache.exists():
         raise FileNotFoundError(
@@ -505,11 +510,38 @@ def _fetch_umd() -> pd.Series:
     return _parse_momentum_csv_text(raw_text)
 
 
+def hyg_credit_series(inception: str, end_date: str) -> pd.Series:
+    """The HYG total-return series regress_fi_sleeve's CREDIT proxy reads, as it reads
+    it: the committed parquet when present, else the price layer. What a quarter lock
+    captures for the FI regression (#382)."""
+    if _HYG_CACHE.exists():
+        try:
+            df = pd.read_parquet(_HYG_CACHE)
+            df.index = pd.to_datetime(df.index)
+            return df["adj_close"]
+        except Exception:
+            pass
+    p = get_prices("HYG", inception, end_date)
+    p.index = pd.to_datetime(p.index)
+    return total_return_series(p)
+
+
+def hyg_credit_series_locked() -> "pd.Series | None":
+    """The locked HYG series inside a quarter lock, else None (read as usual)."""
+    from src.input_lock import HYG, locked
+    held = locked(HYG)
+    return held.copy() if held is not None else None
+
+
 def load_umd_factor() -> pd.Series:
     """Return Ken French daily Momentum (UMD / Mom) factor as a decimal Series.
 
     Reads the COMMITTED cache only — same policy as load_factors: refresh is
     tools/refresh_market_data.py's job, never the loader's."""
+    from src.input_lock import UMD, locked
+    held = locked(UMD)
+    if held is not None:
+        return held.copy()
     if not _UMD_CACHE.exists():
         raise FileNotFoundError(
             f"Committed momentum data missing: {_UMD_CACHE}. Restore it from "
@@ -1038,13 +1070,11 @@ def regress_fi_sleeve(inception: str, end_date: str) -> Optional[dict]:
 
     # TERM and CREDIT factor proxies
     def _ret(ticker: str) -> pd.Series:
-        if ticker == "HYG" and _HYG_CACHE.exists():
-            try:
-                df = pd.read_parquet(_HYG_CACHE)
-                df.index = pd.to_datetime(df.index)
-                return df["adj_close"].reindex(date_range).ffill().pct_change().iloc[1:]
-            except Exception:
-                pass
+        if ticker == "HYG":
+            # Inside a quarter lock, the HYG series the lock captured (#382).
+            held = hyg_credit_series_locked()
+            s = held if held is not None else hyg_credit_series(inception, end_date)
+            return s.reindex(date_range).ffill().pct_change().iloc[1:]
         p = get_prices(ticker, inception, end_date)
         p.index = pd.to_datetime(p.index)
         return total_return_series(p).reindex(date_range).ffill().pct_change().iloc[1:]
