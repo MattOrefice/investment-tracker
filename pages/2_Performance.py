@@ -46,7 +46,7 @@ from src.holdings import (
     last_settled_price_date,
     spaxx_modeled_income,
 )
-from src.performance import compute_risk_metrics
+from src.performance import compute_risk_metrics, one_year_overlap_note
 from src.cache import LockCoverageError
 from src.reports import generate_quarterly_report_bytes
 from src.sleeve_config import international_sleeves
@@ -395,6 +395,12 @@ with col:
 
     _saa_parents, _saa_sleeves = _load_sleeve_targets()
     _non_eq_pct = 1.0 - _require_saa_weight(_saa_parents, "Equity", kind="parent")
+    # The non-equity parents the SAA actually targets. "(Fixed Income + Real Assets +
+    # Cash)" named a Cash parent whose target is 0.
+    _non_eq_names = " + ".join(
+        {"Income": "Fixed Income"}.get(n, n)
+        for n, w in sorted(_saa_parents.items(), key=lambda kv: -kv[1])
+        if n != "Equity" and w > 0)
     _non_us_eq  = (sum(_require_saa_weight(_saa_sleeves, _s)
                        for _s in international_sleeves())
                    + _require_saa_weight(_saa_sleeves, "Emerging Markets"))
@@ -421,16 +427,6 @@ with col:
     # Module-level, because the risk section renders in a separate block far
     # below and must gate on the same fact rather than re-deriving it.
     globals()["_PAGE_COVERAGE_GAP"] = _COV_GAP
-
-    def _tile_delta(value):
-        """A portfolio-derived DELTA, or nothing at all.
-
-        Suppressing the value and leaving the delta renders "— (-59.97% SI
-        cumulative)" — the same fabricated figure, one field over, now with the
-        authority of sitting beside an explicit non-answer. None removes the delta
-        rather than blanking it, so there is no empty affordance to misread.
-        """
-        return None if _COV_GAP else value
 
     def _tile(value: str) -> str:
         """A portfolio-derived figure, or the suppression marker.
@@ -492,13 +488,16 @@ with col:
         except LockCoverageError as _q_exc:
             st.info(str(_q_exc))
         else:
+            # No deltas. The return tile's delta was the S&P 500's return, so a quarter
+            # that trailed the S&P by 290 bp showed a green up-arrow; the two "vs." tiles
+            # carried benchmark returns in the delta slot too, with grey arrows. The
+            # benchmark returns are captions now, under the tiles that compare to them.
             q1, q2, q3 = st.columns(3)
-            q1.metric(f"{_q_label} return", _tile(_qf["portfolio_return_pct"]),
-                      f"{_qf['sp500_return_pct']} S&P 500")
-            q2.metric(f"vs. S&P 500 — {_q_label}", _tile(_qf["alpha_sp_str"]),
-                      f"S&P 500: {_qf['sp500_return_pct']}", delta_color="off")
-            q3.metric(f"vs. Custom Blended — {_q_label}", _tile(_qf["alpha_bl_str"]),
-                      f"Blended: {_qf['blended_return_pct']}", delta_color="off")
+            q1.metric(f"{_q_label} return", _tile(_qf["portfolio_return_pct"]))
+            q2.metric(f"vs. S&P 500 — {_q_label}", _tile(_qf["alpha_sp_str"]))
+            q2.caption(f"S&P 500: {_qf['sp500_return_pct']}")
+            q3.metric(f"vs. Custom Blended — {_q_label}", _tile(_qf["alpha_bl_str"]))
+            q3.caption(f"Blended: {_qf['blended_return_pct']}")
 
     st.divider()
 
@@ -514,21 +513,19 @@ with col:
     )
     m1, m2, m3, m4 = st.columns(4)
 
-    inception_delta_pct = f"{port_si*100:+.1f}% since inception"
-    m1.metric(f"{_PORTFOLIO_ACCT['display_name']} value", _tile(f"${current_mv:,.0f}"),
-              _tile_delta(inception_delta_pct))
-    m2.metric("vs. S&P 500 (since inception)",    _bps(alpha_sp),
-              f"S&P 500: {_pct(sp500_si)} SI",
-              delta_color="off")
-    m3.metric("vs. Custom Blended (since inception)", _bps(alpha_bl),
-              f"Blended: {_pct(blended_si)} SI",
-              delta_color="off")
-    m4.metric(f"YTD return ({TODAY[:4]})",    _tile(_pct(ytd_return)),
-              _tile_delta(f"{_pct(port_si)} SI cumulative"))
+    # No deltas, as in the quarter row. The value and YTD tiles carried the portfolio's
+    # since-inception return as a delta, with a green arrow that read as a comparison;
+    # that figure leads the summary line above. The benchmark returns are captions.
+    m1.metric(f"{_PORTFOLIO_ACCT['display_name']} value", _tile(f"${current_mv:,.0f}"))
+    m2.metric("vs. S&P 500 (since inception)",    _bps(alpha_sp))
+    m2.caption(f"S&P 500: {_pct(sp500_si)} SI")
+    m3.metric("vs. Custom Blended (since inception)", _bps(alpha_bl))
+    m3.caption(f"Blended: {_pct(blended_si)} SI")
+    m4.metric(f"YTD return ({TODAY[:4]})",    _tile(_pct(ytd_return)))
 
     st.caption(
         f"Underperformance vs. S&P 500 reflects intentional diversification: "
-        f"{_non_eq_pct*100:.0f}% of the SAA is non-equity (Fixed Income + Real Assets + Cash), "
+        f"{_non_eq_pct*100:.0f}% of the SAA is non-equity ({_non_eq_names}), "
         f"{_non_us_eq*100:.0f}% is non-US equity. The Custom Blended benchmark — a target-weighted "
         "basket of cap-weighted indices in the same SAA — is the more meaningful "
         "to isolate implementation alpha from SAA-design effects. "
@@ -556,7 +553,8 @@ with col:
         # the new money counted as return (#349).
         _abs_ret_pct = port_si * 100
         _twr_pct     = port_si * 100
-        st.caption(
+        _rec_box = st.expander("Reconciliation: cost basis to current value", expanded=False)
+        _rec_box.caption(
             f"Reconciliation: **\\${_cost_basis:,.2f} cost basis** (lots still held, incl "
             f"reinvested DRIP; a sale relieves the oldest lots first, as on the Tax Lots "
             f"page) + **{'+' if _unrealized >= 0 else '−'}\\${abs(_unrealized):,.2f} "
@@ -805,9 +803,11 @@ with col:
             _r3.metric("Beta",             _fmt_ratio(_m["beta"]))
             _r4.metric("Active Ret (ann.)", _fmt_pct(_m["active_return_pct"]))
 
-        st.caption(
+        st.expander("How these metrics are computed", expanded=False).caption(
             "Std Dev: annualized return volatility (trading days only, ddof=1). "
-            "Sharpe and Sortino use RF = 4.5% (current cash yield). "
+            "Sharpe and Sortino use RF = 4.5%, a fixed assumption rather than the "
+            "current bill yield. Sortino divides by the downside deviation: the root mean "
+            "square of returns below the risk-free rate, over every trading day. "
             "Benchmark metrics computed from the same return series used in the vs-benchmark "
             "statistics below, over the selected window. "
             f"Tracking error, information ratio, beta, and active return vs. {_risk_bm_label}. "
@@ -821,18 +821,13 @@ with col:
             "convention (CFA, GIPS IR supplement) and would yield a higher IR — arithmetic mean "
             "≥ geometric mean by Jensen's inequality."
         )
-        _18mo_days = 548   # 18 × 30.44 calendar days
-        _months_si = round(si_days / 30.44)
         _n_1m      = _m_1m.get("n_days", 0) if _m_1m else 0
         _n_3m      = _m_3m.get("n_days", 0) if _m_3m else 0
 
         _disc_parts = []
-        if si_days < _18mo_days:
-            _disc_parts.append(
-                f"Inception period ({_months_si} months) overlaps substantially with the "
-                "trailing 12 months. Max DD, TE, and IR will diverge from Since Inception "
-                "once the portfolio crosses 18 months of history."
-            )
+        _overlap = one_year_overlap_note(si_days)
+        if _overlap:
+            _disc_parts.append(_overlap)
         _disc_parts.append(
             f"Risk ratios at 1M and 3M windows reflect "
             f"{_n_1m or 21} and {_n_3m or 63} trading days respectively; "
@@ -1051,25 +1046,15 @@ with col:
         _tot_bps = _ts["total"]  * 10_000
         _sign = lambda v: "+" if v >= 0 else ""
 
+        # Descriptions as captions, not deltas: in the delta slot each carried a grey
+        # up-arrow, including under a negative Stage 2 (2026-09-25 audit, item 7).
         _tc1, _tc2, _tc3 = st.columns(3)
-        _tc1.metric(
-            "Stage 1: SAA Design",
-            _bps(_ts["stage1"]),
-            "SAA blend vs. 60/40",
-            delta_color="off",
-        )
-        _tc2.metric(
-            "Stage 2: Implementation",
-            _bps(_ts["stage2"]),
-            "Portfolio vs. SAA blend",
-            delta_color="off",
-        )
-        _tc3.metric(
-            f"Total: Portfolio vs. {_naive_short}",
-            _bps(_ts["total"]),
-            "Stage 1 + Stage 2",
-            delta_color="off",
-        )
+        _tc1.metric("Stage 1: SAA Design", _bps(_ts["stage1"]))
+        _tc1.caption("SAA blend vs. 60/40")
+        _tc2.metric("Stage 2: Implementation", _bps(_ts["stage2"]))
+        _tc2.caption("Portfolio vs. SAA blend")
+        _tc3.metric(f"Total: Portfolio vs. {_naive_short}", _bps(_ts["total"]))
+        _tc3.caption("Stage 1 + Stage 2")
 
         # Stage1+Stage2=Total by construction (price-series throughout); residual is floating-point only
         _resid_bps = _ts["algebra_residual"] * 10_000

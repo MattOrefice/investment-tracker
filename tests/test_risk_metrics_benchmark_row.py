@@ -60,8 +60,11 @@ def test_benchmark_row_metrics_match_standalone_computation():
         (bench_excess.mean() / bench_excess.std(ddof=1)) * math.sqrt(252)
     )
     bench_neg = bench_excess[bench_excess < 0]
+    # Downside deviation over EVERY observation, shortfalls below zero only. This
+    # restated the old losing-days-only form until the Sortino fix (audit item 7).
+    downside = np.minimum(bench_excess.to_numpy(), 0.0)
     expected_sortino = (
-        (bench_excess.mean() / math.sqrt((bench_neg ** 2).mean())) * math.sqrt(252)
+        (bench_excess.mean() / math.sqrt(float(np.mean(downside ** 2)))) * math.sqrt(252)
         if len(bench_neg) > 1 else float("nan")
     )
 

@@ -37,6 +37,13 @@ def _bday_series(returns: np.ndarray, start: str = "2025-01-01") -> pd.Series:
     return pd.Series(10_000.0 * np.cumprod(1.0 + returns), index=idx)
 
 
+# Sortino / Sharpe on a roughly normal daily series with a small drift. The standard
+# downside deviation (every observation, shortfalls only) is about 1/sqrt(2) of the
+# standard deviation there, so the ratio sits near 1.41; measured 1.20-1.55 across the
+# seeds below. The losing-days-only form it replaced gives about 1.0.
+SORTINO_RATIO_BOUNDS = (1.15, 1.75)
+
+
 # ── 2.3  Risk-adjusted metric coherence ──────────────────────────────────────
 
 @pytest.mark.bound
@@ -65,14 +72,20 @@ def test_bound_sortino_gte_sharpe_positive_excess_return():
         f"Sortino ({m['sortino']:.3f}) < Sharpe ({m['sharpe']:.3f}) for a positive-mean series. "
         "Expected Sortino ≥ Sharpe when mean excess return > 0."
     )
+    lo, hi = SORTINO_RATIO_BOUNDS
+    assert lo <= m["sortino"] / m["sharpe"] <= hi, (
+        f"Sortino / Sharpe = {m['sortino'] / m['sharpe']:.3f}, outside {SORTINO_RATIO_BOUNDS}. "
+        "About 1.0 is the losing-days-only semi-deviation."
+    )
 
 
 @pytest.mark.bound
-def test_bound_sortino_gte_sharpe_negative_excess_return():
-    """When mean excess return < 0 (underperforming), Sortino ≥ Sharpe still holds.
+def test_bound_sortino_below_sharpe_negative_excess_return():
+    """When mean excess return < 0, Sortino is MORE negative than Sharpe.
 
-    With negative mean: large downside outlier increases semi-dev more than total std,
-    making Sortino a less negative number than Sharpe.
+    The downside deviation is smaller than the standard deviation, so dividing the same
+    negative mean by it gives a larger magnitude. This test used to assert the reverse
+    ("Sortino ≥ Sharpe still holds"), which only the losing-days-only form satisfied.
     """
     rng = np.random.default_rng(2)
     port_ret   = rng.normal(-0.001, 0.01, 300)  # negative mean
@@ -86,15 +99,22 @@ def test_bound_sortino_gte_sharpe_negative_excess_return():
     if math.isnan(m["sortino"]):
         pytest.skip("Sortino undefined; bound doesn't apply")
 
-    assert m["sortino"] >= m["sharpe"], (
-        f"Sortino ({m['sortino']:.3f}) < Sharpe ({m['sharpe']:.3f}) for negative-mean series. "
-        "Expected Sortino ≥ Sharpe in all cases."
+    assert m["sortino"] <= m["sharpe"] < 0, (
+        f"Sortino ({m['sortino']:.3f}) > Sharpe ({m['sharpe']:.3f}) for a negative-mean series."
+    )
+    lo, hi = SORTINO_RATIO_BOUNDS
+    assert lo <= m["sortino"] / m["sharpe"] <= hi, (
+        f"Sortino / Sharpe = {m['sortino'] / m['sharpe']:.3f}, outside {SORTINO_RATIO_BOUNDS}."
     )
 
 
 @pytest.mark.bound
-def test_bound_sortino_gte_sharpe_multiple_seeds():
-    """Sortino ≥ Sharpe across 20 random seeds, both positive and negative mean excess returns."""
+def test_bound_sortino_to_sharpe_ratio_multiple_seeds():
+    """Sortino / Sharpe within SORTINO_RATIO_BOUNDS across 20 seeds, either sign of drift.
+
+    The same sign, and a larger magnitude. It asserted Sortino ≥ Sharpe on every seed
+    until the Sortino fix, which the negative-drift seeds now fail by design.
+    """
     failures = []
     for seed in range(20):
         rng = np.random.default_rng(seed)
@@ -106,12 +126,14 @@ def test_bound_sortino_gte_sharpe_multiple_seeds():
         m  = compute_risk_metrics(pv, bl)
         if not m or math.isnan(m.get("sortino", float("nan"))):
             continue
-        if m["sortino"] < m["sharpe"] - 0.001:  # 0.001 tolerance for float precision
+        lo, hi = SORTINO_RATIO_BOUNDS
+        if not lo <= m["sortino"] / m["sharpe"] <= hi:
             failures.append(
-                f"seed={seed}: Sortino={m['sortino']:.3f} < Sharpe={m['sharpe']:.3f}"
+                f"seed={seed}: Sortino={m['sortino']:.3f}, Sharpe={m['sharpe']:.3f}"
             )
     assert not failures, (
-        f"Sortino < Sharpe in {len(failures)} / 20 seeds:\n" + "\n".join(failures)
+        f"Sortino / Sharpe outside {SORTINO_RATIO_BOUNDS} in {len(failures)} / 20 seeds:\n"
+        + "\n".join(failures)
     )
 
 

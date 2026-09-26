@@ -26,6 +26,29 @@ def _window_cutoff(window: str, anchor_end: "pd.Timestamp") -> "pd.Timestamp | N
     return None  # "SI" = full inception series
 
 
+def one_year_overlap_note(si_days: int) -> "str | None":
+    """What a young portfolio's 1 Year window shares with Since Inception, or None.
+
+    The note used to say Max DD, TE and IR "will diverge from Since Inception once the
+    portfolio crosses 18 months", which was already untrue at 17: the two windows
+    differ as soon as there is more than a year of history. What is true is how much
+    they share, so that is what it says, while the overlap is more than half.
+    """
+    months = round(si_days / 30.44)
+    if si_days <= 365:
+        return (f"The portfolio is {months} months old, so the 1 Year window and Since "
+                "Inception cover the same days.")
+    if si_days < 730:
+        return (f"The 1 Year window is the last 12 of the {months} months since inception, "
+                "so it shares most of its data with Since Inception.")
+    return None
+
+
+def _downside_deviation(excess: pd.Series) -> float:
+    """Root mean square of min(excess, 0) over all observations (target 0)."""
+    return math.sqrt((excess.clip(upper=0.0) ** 2).mean())
+
+
 def compute_risk_metrics(
     pv: pd.Series,
     bl: pd.Series,
@@ -39,7 +62,9 @@ def compute_risk_metrics(
     Args:
         pv:         Daily portfolio value series (absolute dollars, DatetimeIndex).
         bl:         Daily benchmark series (any scale, DatetimeIndex).
-        rf_annual:  Annual risk-free rate as decimal. Default 4.5% (current cash yield).
+        rf_annual:  Annual risk-free rate as decimal. Default 4.5%, a fixed assumption,
+                    not the current bill yield. Deriving it from the 3-month bill series
+                    is open (2026-09-25 audit, item 7).
         window:     "SI" = full inception history; "1Y" / "3M" / "1M" = trailing
                     calendar-day windows; "YTD" = year-to-date from Jan 1.
         cashflows:  Optional daily net external-flow series (signed dollars,
@@ -121,10 +146,15 @@ def compute_risk_metrics(
     # Sharpe (annualized)
     sharpe = (excess_ret.mean() / excess_ret.std(ddof=1)) * math.sqrt(252)
 
-    # Sortino — semi-deviation of excess returns below zero
+    # Sortino: mean excess return over the downside deviation, the root mean square of
+    # min(excess, 0) taken over EVERY observation (Sortino and Price, 1994). It used
+    # to average the squared shortfalls over the losing days only, which for a
+    # roughly symmetric series is about the standard deviation itself, so Sortino
+    # read almost exactly Sharpe (1.84 beside 1.86 on the demo's since-inception
+    # window). The standard form runs about 1.4x Sharpe on such a series.
     neg = excess_ret[excess_ret < 0]
     if len(neg) > 1:
-        sortino = (excess_ret.mean() / math.sqrt((neg ** 2).mean())) * math.sqrt(252)
+        sortino = (excess_ret.mean() / _downside_deviation(excess_ret)) * math.sqrt(252)
     else:
         sortino = float("nan")
 
@@ -163,7 +193,7 @@ def compute_risk_metrics(
     _bench_neg      = bench_excess[bench_excess < 0]
     if len(_bench_neg) > 1:
         bench_sortino = (
-            (bench_excess.mean() / math.sqrt((_bench_neg ** 2).mean())) * math.sqrt(252)
+            (bench_excess.mean() / _downside_deviation(bench_excess)) * math.sqrt(252)
         )
     else:
         bench_sortino = float("nan")

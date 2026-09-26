@@ -1,86 +1,68 @@
-"""Layer 3: metric tile arrow direction matches the sign of the comparison value.
+"""Layer 3: a metric tile's arrow must agree with the sign of what it compares.
 
-Streamlit st.metric determines the arrow direction from the delta string:
-  - starts with '-' → ↓ (red)
-  - any other prefix  → ↑ (green)
-
-Tiles q1 and m4 on the Performance page use format strings where the numeric
-value now leads:
-  f"{_pct(benchmark_val)} S&P 500"   (q1 delta)
-  f"{_pct(port_si)} SI cumulative"   (m4 delta)
-
-_pct(negative) produces "-X.XX%" which starts with '-' → correct ↓
-_pct(positive) produces "X.XX%"  which starts with a digit → correct ↑
+Streamlit draws a delta's arrow from its string: up unless it starts with "-". The
+Performance page put benchmark returns and labels in the delta slot, so a Q2 that
+trailed the S&P 500 by 290 bp showed a green up-arrow under "15.12% S&P 500", the YTD
+tile a green arrow under the since-inception return, and the Stage 2 tile a grey
+up-arrow under a negative figure (2026-09-25 audit, item 7). This file used to check
+the format of those strings on a copy of them. It now reads the rendered page: no
+return tile carries a delta, the benchmark returns are captions, and any delta left
+is a signed figure, so its arrow is its sign.
 """
 from __future__ import annotations
 
+import os
+import shutil
+from pathlib import Path
+
 import pytest
 
+import src.db as db
+import src.prices as prices
 
-def _pct(v: float, decimals: int = 2) -> str:
-    """Mirror of pages/2_Performance.py::_pct."""
-    return f"{v * 100:.{decimals}f}%"
+ROOT = Path(__file__).resolve().parent.parent
 
-
-# ── delta format helpers ───────────────────────────────────────────────────────
-
-def _q1_delta(sp_return: float) -> str:
-    return f"{_pct(sp_return)} S&P 500"
+RETURN_TILES = ("return", "vs. S&P 500", "vs. Custom Blended", "value", "YTD return",
+                "Stage 1", "Stage 2", "Total: Portfolio vs.")
 
 
-def _m4_delta(si_cumulative: float) -> str:
-    return f"{_pct(si_cumulative)} SI cumulative"
+@pytest.fixture(scope="module")
+def performance(tmp_path_factory):
+    import streamlit as st
+    from streamlit.testing.v1 import AppTest
+    import src.config as config
+    mp = pytest.MonkeyPatch()
+    copy = tmp_path_factory.mktemp("perf") / "demo.db"
+    shutil.copyfile(ROOT / "data" / "demo.db", copy)
+    os.chmod(copy, 0o644)
+    mp.setattr(db, "DB_PATH", copy)
+    mp.setattr(db, "_migrated_paths", set())
+    mp.setattr(db, "_RUNTIME_CACHE", None)
+    mp.setattr(prices._SESSION, "get", lambda *a, **k: (_ for _ in ()).throw(OSError("offline")))
+    mp.setattr(config, "IS_DEMO", True)
+    st.cache_data.clear()
+    at = AppTest.from_file(str(ROOT / "pages" / "2_Performance.py"), default_timeout=600).run()
+    assert not at.exception, [str(e.value) for e in at.exception]
+    yield at
+    st.cache_data.clear()
+    mp.undo()
 
 
-# ── arrow direction tests ──────────────────────────────────────────────────────
-
-@pytest.mark.parametrize("sp_return", [-0.05, -0.001, -0.5, -0.0001])
-def test_q1_delta_negative_starts_with_minus(sp_return):
-    """Negative S&P 500 comparison → delta string starts with '-' → ↓ arrow."""
-    delta = _q1_delta(sp_return)
-    assert delta.startswith("-"), (
-        f"q1 delta for S&P {sp_return:.4f} is {delta!r}; "
-        "must start with '-' so Streamlit renders a ↓ arrow."
-    )
+def test_no_return_tile_carries_a_delta(performance):
+    tiles = [m for m in performance.metric if any(k in m.label for k in RETURN_TILES)]
+    assert len(tiles) >= 10, [m.label for m in tiles]
+    assert not [(m.label, m.delta) for m in tiles if m.delta], \
+        "a return tile carries a delta, and its arrow reads as a verdict"
 
 
-@pytest.mark.parametrize("sp_return", [0.05, 0.001, 0.3, 0.0])
-def test_q1_delta_nonnegative_does_not_start_with_minus(sp_return):
-    """Non-negative S&P 500 comparison → delta string does NOT start with '-' → ↑ arrow."""
-    delta = _q1_delta(sp_return)
-    assert not delta.startswith("-"), (
-        f"q1 delta for S&P {sp_return:.4f} is {delta!r}; "
-        "must not start with '-' for a non-negative return."
-    )
+def test_the_benchmark_returns_are_captions(performance):
+    caps = [str(c.value) for c in performance.caption]
+    for head in ("S&P 500: ", "Blended: "):
+        assert sum(c.startswith(head) for c in caps) == 2, (head, caps)   # quarter and SI
 
 
-@pytest.mark.parametrize("si_return", [-0.10, -0.002, -0.999])
-def test_m4_delta_negative_starts_with_minus(si_return):
-    """Negative SI cumulative return → delta string starts with '-' → ↓ arrow."""
-    delta = _m4_delta(si_return)
-    assert delta.startswith("-"), (
-        f"m4 delta for SI {si_return:.4f} is {delta!r}; "
-        "must start with '-' so Streamlit renders a ↓ arrow."
-    )
-
-
-@pytest.mark.parametrize("si_return", [0.27, 0.001, 0.0])
-def test_m4_delta_nonnegative_does_not_start_with_minus(si_return):
-    """Non-negative SI cumulative return → delta string does NOT start with '-' → ↑ arrow."""
-    delta = _m4_delta(si_return)
-    assert not delta.startswith("-"), (
-        f"m4 delta for SI {si_return:.4f} is {delta!r}; "
-        "must not start with '-' for a non-negative return."
-    )
-
-
-def test_q1_delta_format_contains_sp500_label():
-    """q1 delta string must contain 'S&P 500' as contextual label."""
-    delta = _q1_delta(0.05)
-    assert "S&P 500" in delta, f"q1 delta {delta!r} missing 'S&P 500' label."
-
-
-def test_m4_delta_format_contains_si_label():
-    """m4 delta string must contain 'SI cumulative' as contextual label."""
-    delta = _m4_delta(0.27)
-    assert "SI cumulative" in delta, f"m4 delta {delta!r} missing 'SI cumulative' label."
+def test_any_delta_left_leads_with_its_sign(performance):
+    """The arrow is drawn from the first character, so a delta must start with its sign."""
+    deltas = [(m.label, str(m.delta)) for m in performance.metric if m.delta]
+    assert deltas, "premise: the page still shows a delta somewhere (the FI duration)"
+    assert all(d.startswith(("+", "-")) for _l, d in deltas), deltas
