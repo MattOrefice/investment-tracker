@@ -21,6 +21,8 @@ from streamlit.testing.v1 import AppTest
 SECOND = "Second Taxable"      # a taxable account WITH ledger trades
 TOD = "Individual Taxable (TOD)"
 IRA = "Traditional IRA"
+# The frozen book's own account, labelled as demo.db labels it.
+BOOK = "Paper-trade portfolio"
 
 
 def _frozen_conftest(config):
@@ -139,7 +141,7 @@ def test_the_page_shows_taxable_accounts_and_discloses_the_one_without_lots(pyte
 
     table = next(d.value for d in at.dataframe if "Purchase Date" in d.value.columns)
     shown = set(table["Account"])
-    assert shown == {"Personal Fidelity", SECOND}, shown          # no IRA, no TOD rows
+    assert shown == {BOOK, SECOND}, shown          # no IRA, no TOD rows
     scope = next(str(c.value) for c in at.caption if str(c.value).startswith("Scope:"))
     assert TOD in scope and IRA not in scope, scope
 
@@ -195,7 +197,7 @@ def test_the_frozen_book_needs_no_disclosure(pytestconfig, tmp_path):
     at = _with_frozen_book(pytestconfig, tmp_path, None, lambda book: _render_page_12())
     assert not [w for w in at.warning if "whose lots are not shown" in str(w.value)]
     table = next(d.value for d in at.dataframe if "Purchase Date" in d.value.columns)
-    assert set(table["Account"]) == {"Personal Fidelity"}
+    assert set(table["Account"]) == {BOOK}
 
 
 # ── the pieces, directly ─────────────────────────────────────────────────────
