@@ -388,7 +388,7 @@ def as_of_live_line(
     if lag <= 0 and not gap:
         # A page whose coverage record saw the open session's bar lands here, so this
         # is the state that most needs the unsettled-price sentence (#160, item 4i).
-        return f"Live data as of {format_long_date(ref)}." + _live_mark_sentence()
+        return f"Live data as of {format_long_date(ref)}." + _live_mark_sentence(ref)
 
     missing = _sessions_missing(served, ref)
     line = f"Prices through {format_long_date(served)} ({basis})"
@@ -404,10 +404,10 @@ def as_of_live_line(
         line += (f". The daily price fetch failed {_when(refresh.attempted_at)}; "
                  f"serving {instead} until it retries after "
                  f"{_when(refresh.next_attempt_at)}")
-    return line + "." + _live_mark_sentence()
+    return line + "." + _live_mark_sentence(ref)
 
 
-def _live_mark_sentence() -> str:
+def _live_mark_sentence(today: date) -> str:
     """The banner's sentence for an open session's bar ("Current values include
     today's unsettled price, quoted at 11:02 AM ET."), when this process has served
     one that no stored close covers; else "".
@@ -417,12 +417,25 @@ def _live_mark_sentence() -> str:
     a price that is not a close, while the lines above describe settled closes. The
     time is the quote's, in ET, and it is the earliest one served: a process keeps
     serving the bar it fetched, so the price can be hours old. Returns use settled
-    closes only (holdings.last_settled_price_date) and do not include it."""
+    closes only (holdings.last_settled_price_date) and do not include it.
+
+    Only TODAY's bars count, and only for tickers the current value is priced from.
+    The record is per process, so without both it named a bar the book does not hold
+    (BTC-USD trades around the clock, and Asset Evaluation fetches it) and, the next
+    day, yesterday's bar as today's. If the holdings cannot be read, every mark of
+    today's counts: a spurious sentence is safer than a missing one."""
     from src.prices import live_marks
-    marks = live_marks()
+    marks = {t: m for t, m in live_marks().items() if m.get("date") == today.isoformat()}
     if not marks:
         return ""
-    from src.holdings import committed_price_frontier
+    from src.holdings import committed_price_frontier, valuation_tickers
+    try:
+        held = valuation_tickers(today.isoformat())
+    except Exception:
+        held = set(marks)
+    marks = {t: m for t, m in marks.items() if t in held}
+    if not marks:
+        return ""
     stored = committed_price_frontier()
     newer = [m for m in marks.values()
              if stored is None or date.fromisoformat(m["date"]) > (

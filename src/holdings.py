@@ -768,6 +768,14 @@ def _current_market_value_impl(
     return round(total, 2), statuses
 
 
+def valuation_tickers(date_str: Optional[str] = None) -> "set[str]":
+    """The tickers the current market value is priced from: every holding in the
+    portfolio account, with SPAXX read as BIL, its price proxy (_spaxx_price)."""
+    d = date_str or date.today().isoformat()
+    holdings = get_holdings_on_date(d, account_id=get_portfolio_account_id())
+    return {"BIL" if t == "SPAXX" else str(t) for t in holdings.index}
+
+
 def _spaxx_price(d: str) -> "tuple[float, TickerStatus]":
     """SPAXX's value per share for the current market value: BIL's total return,
     normalized to $1.00 at inception. SPAXX holds its $1.00 NAV and pays its income

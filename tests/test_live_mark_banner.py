@@ -126,6 +126,43 @@ def test_a_page_whose_coverage_saw_the_bar_says_so_too(book, monkeypatch):
     assert "Current values include today’s unsettled price, quoted at " in line, line
 
 
+def _mark(ticker, day):
+    prices._LIVE_MARKS[ticker] = {"date": day.isoformat(),
+                                  "quoted_at": datetime.now(timezone.utc).isoformat()}
+
+
+def test_only_todays_marks_for_held_tickers_are_named(book, monkeypatch):
+    """The record is per process. A bar for a ticker the book does not hold (BTC-USD
+    trades around the clock; Asset Evaluation fetches it), or yesterday's bar, must not
+    make the banner claim one. Before this, the full suite showed it: 19 banner tests
+    red, from a bar an earlier test served."""
+    from src import asof
+    import src.holdings as holdings
+    today = date(2026, 7, 21)                  # the frozen book's next day
+    # Stored through the Friday before, so yesterday (Monday) is newer than any stored
+    # close: only the date rule can keep its mark out.
+    stored = "2026-07-17"
+    monkeypatch.setattr(holdings, "committed_price_frontier", lambda *a, **k: stored)
+    held = holdings.valuation_tickers(today.isoformat())
+    assert "VOO" in held and "BTC-USD" not in held, held
+    assert ("BIL" in held) == ("SPAXX" in holdings.get_holdings_on_date(
+        today.isoformat(), account_id=holdings.get_portfolio_account_id()).index)
+
+    _mark("BTC-USD", today)
+    _mark("VOO", today - timedelta(days=1))
+    assert "unsettled" not in asof.as_of_live_line(today, frontier=stored)
+    _mark("VOO", today)
+    assert "Current values include today’s unsettled price" in asof.as_of_live_line(
+        today, frontier=stored)
+
+
+def test_the_record_is_reset_for_every_test(request):
+    """The reset is autouse (tests/conftest.py). Registration is what makes it hold for
+    a test that never asks for it, so that is what this checks."""
+    assert "_no_live_marks_carried_between_tests" in request.fixturenames
+    assert prices._LIVE_MARKS == {}
+
+
 @pytest.mark.parametrize("page", ["7_Risk.py", "2_Performance.py"])
 def test_the_page_banner_says_so_after_the_page_serves_the_bar(book, monkeypatch, page):
     """Rendered, in personal mode during a staged open session. The record starts
