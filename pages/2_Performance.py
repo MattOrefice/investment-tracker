@@ -1024,9 +1024,10 @@ with col:
         # The SAA side is the ONE blended series, rebalanced each calendar quarter
         # (#383), like the naive side and the tiles above. _r_b_bf is Brinson-Fachler's
         # benchmark: one basket held from the window's start. The sleeve breakdown and
-        # the BF check below state the difference between the two. It is NOT all
-        # rebalancing: on a window starting on a non-trading day the held basket is
-        # bought at the next close and skips that day's return (#391).
+        # the BF check below state the difference between the two. Since #391 both
+        # start from the last close on or before the window's first day, so it is the
+        # blend's quarterly rebalancing; before, a window starting on a day with no
+        # close bought the held basket at the next close and skipped that day.
         _r_b_ps  = _benchmark_period_return(bl, bf_period)
         _rebal   = _r_b_ps - _r_b_bf
         _naive_r = _benchmark_period_return(naive, bf_period)

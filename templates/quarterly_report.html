@@ -36,6 +36,9 @@
     {% if benchmark_construction_note %}
     <p class="cover-staleness">{{ benchmark_construction_note }}</p>
     {% endif %}
+    {%- if window_base_note %}
+    <p class="cover-staleness">{{ window_base_note }}</p>
+    {%- endif %}
   </div>
 
   <h2>Executive Summary</h2>

@@ -254,8 +254,8 @@ def test_the_rule_and_its_date_are_stated_where_the_blend_is_described(book):
 @pytest.mark.parametrize("window", ["SI", "YTD"])
 def test_the_stages_state_the_two_benchmarks_apart(book, window):
     """SI spans quarters; YTD also starts on a non-trading day (January 1), where the
-    held basket skips the year's first trading day (#391). Either way the page states
-    the difference between the two benchmarks, never as rebalancing alone."""
+    held basket skipped the year's first trading day until #391. The page states the
+    difference between the two benchmarks without naming its cause."""
     import streamlit as st
     from streamlit.testing.v1 import AppTest
     st.cache_data.clear()

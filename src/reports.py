@@ -176,6 +176,65 @@ def build_bf_cross_reference(
 
 
 _PERIODS = ["1M", "3M", "YTD", "1Y", "SI"]
+
+
+def _window_starts(inception: str, end_date: str) -> dict:
+    """Each performance-table window's first day, capped at inception so a benchmark
+    never extends into pre-portfolio history."""
+    end_d, incep_d = date.fromisoformat(end_date), date.fromisoformat(inception)
+    return {
+        "SI":  inception,
+        "1Y":  max(end_d - timedelta(days=365),  incep_d).isoformat(),
+        "YTD": max(date(end_d.year - 1, 12, 31), incep_d).isoformat(),
+        "3M":  max(end_d - timedelta(days=90),   incep_d).isoformat(),
+        "1M":  max(end_d - timedelta(days=30),   incep_d).isoformat(),
+    }
+
+
+# The day #391's correction took effect: a benchmark window starting on a day with no
+# close is measured from the last close before it, not the next one.
+WINDOW_BASE_FIX_SINCE = date(2026, 9, 26)
+_WINDOW_WORDS = {"1M": "1-month", "3M": "3-month", "YTD": "year-to-date",
+                 "1Y": "1-year", "SI": "since-inception"}
+
+
+def window_base_note(snap, inception: str, end_date: str) -> Optional[str]:
+    """The cover line for a quarter lock taken before the blended benchmarks'
+    quarterly rule whose performance table moved under #391's correction, or None.
+
+    Such a report measures each Custom Blended row with a basket bought at its window's
+    first day. When that day had no close (a weekend or market holiday), the basket was
+    bought at the NEXT close, and the window left out that day's move. The days are
+    found in the lock's own SPY closes, not a calendar. A lock under the quarterly rule
+    reads one chained series and was never affected."""
+    if not benchmark_construction_note(snap):
+        return None
+    adj = getattr(snap, "adj_close", None)
+    if adj is None or "SPY" not in adj.columns:
+        return None
+    closes = sorted(d for d, v in adj["SPY"].items() if v == v)
+    have = set(closes)
+
+    def _long(d: date) -> str:
+        return f"{d.strftime('%B')} {d.day}, {d.year}"
+
+    parts = []
+    for key, start in _window_starts(inception, end_date).items():
+        day = date.fromisoformat(start)
+        if day in have:
+            continue
+        before = [d for d in closes if d < day]
+        after = [d for d in closes if d > day]
+        if not before or not after:
+            continue
+        parts.append(f"The {_WINDOW_WORDS[key]} Custom Blended period began on {_long(day)}, "
+                     f"a day with no close; its return was measured from the next close, "
+                     f"{_long(after[0])}, and left out that day's move. It is now measured "
+                     f"from the last close before the period, {_long(before[-1])}.")
+    if not parts:
+        return None
+    on = WINDOW_BASE_FIX_SINCE
+    return f"Restated {_long(on)} to correct an error. " + " ".join(parts)
 _PERIOD_LABELS = {
     "1M": "1 Month", "3M": "3 Months",
     "YTD": "YTD", "1Y": "1 Year", "SI": "Since Inception",
@@ -779,20 +838,11 @@ def _build_performance_section(start_date: str, end_date: str) -> dict:
     sp = sp_raw * start_val
     bl = bl_raw * start_val
 
-    end_d   = date.fromisoformat(end_date)
-    incep_d = date.fromisoformat(inception)
-
     def _bl_period_return(period: str) -> float:
         # Fresh blended series per period so weights reset at the period start
         # (no 7-month inception drift). Capped at inception for 1Y/SI so we
         # never extend the benchmark into pre-portfolio history.
-        ps = {
-            "SI":  inception,
-            "1Y":  max(end_d - timedelta(days=365),  incep_d).isoformat(),
-            "YTD": max(date(end_d.year - 1, 12, 31), incep_d).isoformat(),
-            "3M":  max(end_d - timedelta(days=90),   incep_d).isoformat(),
-            "1M":  max(end_d - timedelta(days=30),   incep_d).isoformat(),
-        }.get(period, inception)
+        ps = _window_starts(inception, end_date).get(period, inception)
         s = get_custom_blended_series(ps, end_date)
         return float(s.iloc[-1] / s.iloc[0] - 1) if len(s) >= 2 else 0.0
 
@@ -2118,6 +2168,7 @@ def generate_quarterly_report_bytes(
         # A lock from before #383 states the construction its benchmark figures used;
         # every other report states the rule in its methodology.
         benchmark_construction_note = benchmark_construction_note(snap_df),
+        window_base_note     = window_base_note(snap_df, inception_str, end_date),
         blended_rule_note    = (None if benchmark_construction_note(snap_df)
                                 else blended_rule_note()),
         factor_pending       = factor_pending,

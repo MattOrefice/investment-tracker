@@ -2,7 +2,7 @@
 import logging
 from contextlib import contextmanager
 from contextvars import ContextVar
-from datetime import date
+from datetime import date, timedelta
 
 import pandas as pd
 
@@ -14,10 +14,14 @@ from src.sleeve_config import sleeve_benchmarks as _derive_benchmarks
 # _first_adj_price/_last_adj_price 5-day tolerance in src/attribution.py: a
 # component with no real price within this many days of each window bound is
 # an explicit data gap, never folded in as a flat/fabricated series. The end
-# bound matches the portfolio convention exactly (last price in [end-5, end]);
-# the start bound is forward-tolerant (first price in [start, start+5]) by
-# construction, since get_prices is bounded below by the window start and
-# cannot return the prior close the portfolio side would back-fill from.
+# bound matches the portfolio convention exactly (last price in [end-5, end]).
+# The START is based on the last close on or before the window's first day, as
+# the portfolio side is (#391): a window starting on a weekend or market holiday
+# begins from the prior close, found in the data, not from a calendar. It used to
+# be forward-tolerant (first price in [start, start+5]), so such a window skipped
+# its first trading day: YTD missed January 2 (80 bps of the page's YTD gap). The
+# forward tolerance survives only for a component with no close before the window
+# (its history begins inside it), where there is nothing earlier to base on.
 _COVERAGE_WINDOW_DAYS = 5
 
 # Sleeve → benchmark mapping is DERIVED from asset_classes.benchmark_ticker at
@@ -75,8 +79,12 @@ def _component_series(
     date_range = pd.date_range(start=start_date, end=end_date, freq="D")
     if ticker == "SPAXX":
         return pd.Series(1.0, index=date_range), []
+    # Read from _COVERAGE_WINDOW_DAYS before the window, so the last close on or
+    # before its first day is in hand (#391).
+    lookback = (date.fromisoformat(start_date)
+                - timedelta(days=_COVERAGE_WINDOW_DAYS)).isoformat()
     try:
-        p = get_prices(ticker, start_date, end_date)
+        p = get_prices(ticker, lookback, end_date)
     except Exception:
         logging.exception(
             "Benchmark price lookup failed for %s in [%s, %s]",
@@ -93,12 +101,14 @@ def _component_series(
     # dedups on the cache-concat path) — dedup here so reindex can't raise.
     p = p[~p.index.duplicated(keep="last")]
     series = total_return_series(p)
-    first_real = series.first_valid_index()
+    start_ts = pd.Timestamp(start_date)
+    base = series[series.index <= start_ts].dropna()          # a close on or before day 1
+    first_real = series[series.index >= start_ts].first_valid_index()
     last_real = series.last_valid_index()
     gaps: list[str] = []
-    if first_real is None or (
-        first_real - pd.Timestamp(start_date)
-    ).days > _COVERAGE_WINDOW_DAYS:
+    if base.empty and (first_real is None or (
+        first_real - start_ts
+    ).days > _COVERAGE_WINDOW_DAYS):
         gaps.append(start_date)
     if last_real is None or (
         pd.Timestamp(end_date) - last_real
@@ -110,7 +120,10 @@ def _component_series(
             ticker, ", ".join(gaps), start_date, end_date,
         )
         return None, gaps
-    return series.reindex(date_range).ffill().bfill(), gaps
+    # Forward-filled from the lookback, so day 1 reads the last close on or before
+    # it; bfill only for a component whose history begins inside the window.
+    full = pd.date_range(start=lookback, end=end_date, freq="D")
+    return series.reindex(full).ffill().bfill().reindex(date_range), gaps
 
 
 def get_sp500_series(start_date: str, end_date: str | None = None) -> pd.Series:
