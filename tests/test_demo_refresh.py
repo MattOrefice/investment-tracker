@@ -61,7 +61,8 @@ def test_a_fetch_moves_the_frontier_to_the_latest_settled_close(demo):
     answer()
     st = refresh.refresh_if_due(NOW)
     assert st.status == "fetched" and st.failed == ()
-    assert st.served_through == "2026-09-23", "settled closes before today, as the banner reads them"
+    assert st.served_through == "2026-09-24", (
+        "the latest settled close, as the banner reads it: today's, stored after the close")
     assert st.next_attempt_at == datetime(2026, 9, 25, 20, 30, tzinfo=timezone.utc), (
         "after a success: the next New York close plus the publish margin")
     assert len(set(calls)) == len(calls) > 30, "every ticker the demo prices, once"

@@ -4,9 +4,11 @@ The Performance page clips every displayed period series (portfolio value +
 benchmarks) to the last SETTLED trading day, so a live mid-session partial
 intraday bar is never used as a period-window endpoint — which would swing the
 displayed 1M/3M returns by the half-day move (~1:1) and make the surfaces
-mutually inconsistent. C always excludes today; on a settled window it equals
-last_real_price_date, so the deterministic BF reconciliation test (which anchors
-on last_real) is unaffected.
+mutually inconsistent. C is the latest STORED close on or before today: stored bars
+are settled closes only (#160), so today's close counts once stored and an open
+session's bar never does (tests/test_one_price_date.py pins both). On a settled
+window it equals last_real_price_date, so the deterministic BF reconciliation test
+(which anchors on last_real) is unaffected.
 """
 import datetime
 
@@ -20,11 +22,13 @@ INC = "2025-05-01"
 _SETTLED_END = (datetime.date.today() - datetime.timedelta(days=8)).isoformat()
 
 
-def test_settled_anchor_excludes_today():
-    """C is always strictly before today, so an in-progress (partial intraday)
-    today-bar can never be a displayed period-window endpoint."""
+def test_settled_anchor_never_passes_today():
+    """C is never after today. It used to be strictly before today, from when a
+    partial intraday bar could be cached; since #160 nothing unsettled is stored,
+    so a stored close dated today is today's close and C may name it (the
+    2026-09-25 audit's one rule)."""
     c = last_settled_price_date(INC)
-    assert c < datetime.date.today().isoformat()
+    assert c <= datetime.date.today().isoformat()
 
 
 def test_settled_equals_real_on_settled_window():

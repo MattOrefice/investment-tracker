@@ -38,6 +38,7 @@ from src.holdings import (
     portfolio_value_series_with_coverage,
     sleeve_weights_with_coverage,
     last_settled_price_date,
+    spaxx_modeled_income,
 )
 from src.performance import compute_risk_metrics
 from src.cache import LockCoverageError
@@ -535,7 +536,11 @@ with col:
     _cost_basis    = open_lot_cost_basis(account_id=_ACCT_ID, as_of=TODAY)
     _series_start  = float(pv.iloc[0])
     if _cost_basis > 0 and _series_start > 0:
-        _unrealized  = current_mv - _cost_basis
+        # Current value = cost basis + unrealized G/L on the lots + the SPAXX income
+        # the valuation models above its $1.00 NAV. The unrealized figure is therefore
+        # the Tax Lots page's, and the two pages' values differ by the SPAXX line alone.
+        _spaxx_income = spaxx_modeled_income(TODAY)
+        _unrealized  = current_mv - _cost_basis - _spaxx_income
         # The absolute return is the since-inception TWR, not current_val / pv[0] − 1.
         # Phase 11 set its denominator to pv.iloc[0] so that it would equal the TWR by
         # construction (docs/phase_11_diagnostic.md §2.1; README: "TWR equals absolute
@@ -545,10 +550,14 @@ with col:
         _abs_ret_pct = port_si * 100
         _twr_pct     = port_si * 100
         st.caption(
-            f"Reconciliation: **\\${_cost_basis:,.0f} cost basis** (lots still held, incl "
+            f"Reconciliation: **\\${_cost_basis:,.2f} cost basis** (lots still held, incl "
             f"reinvested DRIP; a sale relieves the oldest lots first, as on the Tax Lots "
-            f"page) → **\\${current_mv:,.0f} current value** (every share held, "
-            f"incl DRIP, at market close; **\\${_unrealized:+,.0f}** unrealized gain). "
+            f"page) + **{'+' if _unrealized >= 0 else '−'}\\${abs(_unrealized):,.2f} "
+            f"unrealized G/L** on those lots (as on the Tax Lots page) + "
+            f"**\\${_spaxx_income:,.2f} money-market income** on SPAXX, modeled at "
+            f"BIL's total return (the ledger records SPAXX at its \\$1.00 NAV) = "
+            f"**\\${current_mv:,.2f} current value** (every share held, incl DRIP, at "
+            f"the latest close). "
             f"Returns — absolute ({_abs_ret_pct:.1f}%) and cumulative TWR ({_twr_pct:.1f}%) — "
             f"use the dividend-adjusted total-return series (adj_close × actual non-DRIP "
             f"shares), which counts dividend income once and is restated retroactively as "

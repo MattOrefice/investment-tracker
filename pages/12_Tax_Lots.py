@@ -24,6 +24,7 @@ from src.harvest import (
     HARVEST_PCT_THRESHOLD,
     compute_harvest_candidates,
 )
+from src.holdings import spaxx_modeled_income
 from src.prices import get_prices
 from src.config import get_demo_banner_text, IS_DEMO
 from src.ui_helpers import demo_portfolio_phrase, render_footer, render_page_header
@@ -179,10 +180,15 @@ with c3:
         delta=_fmt_signed_pct(gl_pct),
         delta_color="normal",
     )
+# Net by character, so the two tiles sum to the total: they were gross gains, with
+# the losses nowhere on the tiles. LT is the total less ST in whole cents, so the
+# figures a reader adds up agree to the cent.
+_gl_cents = round(metrics["unrealized_gl_total"] * 100)
+_st_cents = round(metrics["unrealized_st_net"] * 100)
 with c4:
-    st.metric("ST Unrealized Gain", _fmt_dollar(metrics["unrealized_st_gain"]))
+    st.metric("ST Unrealized G/L", _fmt_signed_dollar(_st_cents / 100))
 with c5:
-    st.metric("LT Unrealized Gain", _fmt_dollar(metrics["unrealized_lt_gain"]))
+    st.metric("LT Unrealized G/L", _fmt_signed_dollar((_gl_cents - _st_cents) / 100))
 with c6:
     if harvest_n == 0:
         st.metric("Harvest Candidate Pool", "$0.00")
@@ -193,6 +199,15 @@ with c6:
             f"n={harvest_n} material {lot_count_label(harvest_n).split()[1]} "
             f"(threshold: ${HARVEST_MATERIALITY_THRESHOLD:.0f}/lot)"
         )
+
+_spaxx_income = spaxx_modeled_income(date.today().isoformat())
+if round(_spaxx_income, 2):
+    st.caption(
+        f"SPAXX is valued at its \\$1.00 NAV, as its lots are recorded. The Performance "
+        f"page's current value is \\${_spaxx_income:,.2f} higher: it adds the "
+        f"money-market income modeled at BIL's total return, which the ledger does not "
+        f"record as shares. Unrealized G/L is the same on both pages."
+    )
 
 st.divider()
 

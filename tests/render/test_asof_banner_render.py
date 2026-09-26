@@ -252,19 +252,19 @@ def test_partial_banner_differs_from_control_banner(page, tmp_path, monkeypatch)
             f"{page}: the banner is identical with two holdings unpriced: {control}")
 
 
-def test_state_one_is_reachable_on_coverage_pages_and_not_on_the_others(tmp_path):
-    """Non-vacuity for the derivation itself, and the asymmetry #265 describes.
+def test_state_one_is_reachable_on_every_page(tmp_path):
+    """Non-vacuity for the derivation itself.
 
     `_in_state_one` returning False everywhere would silently disable the
     equality branch above and restore the old behaviour with no test failing. So
-    pin both halves against a deterministically-current cache:
+    pin it against a deterministically-current cache.
 
-      1_SAA / 2_Performance  reach state 1 — their frontier is
-                             coverage.frontier_served, which includes today
-      8_Research             CANNOT — committed_price_frontier excludes today by
-                             construction, so its banner reports a day behind on a
-                             perfectly fresh cache (that cross-page contradiction
-                             is #265, and is a product question, not this test's)
+    This test used to pin #265's asymmetry: 8_Research could NOT reach state 1,
+    because committed_price_frontier excluded today and the coverage pages'
+    frontier did not. It said to update it deliberately if that ever changed. The
+    2026-09-25 audit made the two one rule (stored closes on or before today), so a
+    fully current cache puts every page in state 1, the committed-frontier page
+    included. #265's cross-page contradiction is resolved.
 
     Pinning a past date in the fixture instead would make this test impossible to
     write, which is the argument for deriving.
@@ -278,10 +278,9 @@ def test_state_one_is_reachable_on_coverage_pages_and_not_on_the_others(tmp_path
         "if this fails the equality branch is unreachable and the fix is inert"
     )
     assert _in_state_one("2_Performance.py", db, today)
-    assert not _in_state_one("8_Research.py", db, today), (
-        "a page with no coverage record cannot reach state 1 — committed_price_"
-        "frontier excludes today. If this ever passes, the two frontier definitions "
-        "have converged and #265 is resolved; update this test deliberately."
+    assert _in_state_one("8_Research.py", db, today), (
+        "a page with no coverage record reaches state 1 on a current cache now that "
+        "committed_price_frontier includes today's stored close (#265 resolved)"
     )
 
 

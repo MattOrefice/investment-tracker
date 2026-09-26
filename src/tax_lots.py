@@ -422,7 +422,11 @@ def summary_metrics(lots: pd.DataFrame) -> dict:
     Returns dict with keys:
         cost_basis_total, market_value_total, unrealized_gl_total,
         unrealized_gl_pct, unrealized_st_gain, unrealized_lt_gain,
-        unrealized_loss
+        unrealized_loss, unrealized_st_net, unrealized_lt_net
+
+    The ``_gain`` keys are GROSS (gains only) and ``unrealized_loss`` holds the
+    losses; the ``_net`` keys are each character's net, so they sum to
+    ``unrealized_gl_total``.
     """
     _zero: dict = {
         "cost_basis_total":   0.0,
@@ -432,6 +436,8 @@ def summary_metrics(lots: pd.DataFrame) -> dict:
         "unrealized_st_gain": 0.0,
         "unrealized_lt_gain": 0.0,
         "unrealized_loss":    0.0,
+        "unrealized_st_net":  0.0,
+        "unrealized_lt_net":  0.0,
     }
     if lots.empty:
         return _zero
@@ -452,6 +458,8 @@ def summary_metrics(lots: pd.DataFrame) -> dict:
             (lots["tax_status"] == "LT") & (lots["unrealized_gl"] > 0), "unrealized_gl"
         ].sum(),
         "unrealized_loss": lots.loc[lots["unrealized_gl"] < 0, "unrealized_gl"].sum(),
+        "unrealized_st_net": lots.loc[lots["tax_status"] == "ST", "unrealized_gl"].sum(),
+        "unrealized_lt_net": lots.loc[lots["tax_status"] == "LT", "unrealized_gl"].sum(),
     }
 
 

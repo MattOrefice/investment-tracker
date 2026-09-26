@@ -6,6 +6,7 @@ st.set_page_config(page_title="Capital Deployment", layout="wide")
 import pandas as pd
 from datetime import date, timedelta
 
+from src.asof import as_of_banner
 from src.config import get_demo_banner_text, IS_DEMO, is_write_enabled
 from src.db import get_connection
 from src.holdings import sleeve_weights_with_coverage, get_holdings_on_date, get_portfolio_account, get_portfolio_account_id
@@ -144,6 +145,10 @@ st.caption(
     "account each deployment is *logged to* is chosen in the Deploy section below and "
     "may differ."
 )
+# The drift below is priced like every other page's figures, so it names the same
+# price date. A slot, filled once the coverage record is known (as on the SAA page).
+_asof_slot = st.empty()
+_asof_slot.caption(as_of_banner())
 
 with st.expander("How to read this page", expanded=False):
     st.markdown(
@@ -177,6 +182,7 @@ _gap_note = data.get("gap_note")
 # The record itself, not just its rendered marker: the sizing functions need to
 # tell "not held" from "held but unpriced", which the price dict alone cannot.
 _coverage = data["coverage"]
+_asof_slot.caption(as_of_banner(coverage=_coverage))
 
 if sleeve_df.empty:
     # Three different conditions land here and the old single sentence ("No

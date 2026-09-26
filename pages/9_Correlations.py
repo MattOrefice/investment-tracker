@@ -250,7 +250,9 @@ with col:
             st.plotly_chart(fig, width="stretch")
 
             st.caption(
-                f"Matrix computed on the trailing {window} trading days ending {TODAY}. "
+                # The date the matrix's data actually ends on, not the calendar's.
+                f"Matrix computed on the trailing {window} trading days ending "
+                f"{pd.Timestamp(returns_df.tail(window).index[-1]).date().isoformat()}. "
                 "Diagonal entries = 1.0 (trivially). Off-diagonal entries: "
                 "values near 0 indicate diversification; values near ±1 indicate "
                 "high co-movement."

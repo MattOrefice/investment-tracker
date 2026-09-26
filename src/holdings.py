@@ -255,9 +255,15 @@ def committed_price_frontier(
     """The holdings' COMMON committed price frontier — DB only, NEVER a fetch.
 
     ``MIN`` over the portfolio's holdings of each holding's ``MAX(price_date)``
-    strictly before ``today``: the latest date on which EVERY holding the report
+    on or before ``today``: the latest date on which EVERY holding the report
     consumes has a real, already-stored price. Returns an ISO date string, or
     ``None`` when no holding has any committed price.
+
+    THE PRICE DATE: one rule for the banner and the numbers. Stored bars are settled
+    closes only (fetch_prices never caches the bar of an open session, #160), and in
+    the demo every page reads only what is stored. So the numbers use every stored
+    close through today, including today's once its session has closed and the
+    refresh has stored it, and this names that same date.
 
     Three deliberate choices, each load-bearing:
 
@@ -265,9 +271,10 @@ def committed_price_frontier(
       over-promises: one ticker reaching a later date does not make the portfolio
       priceable there. The report consumes every holding, so the honest frontier
       is the one they all clear.
-    - **``price_date < today``**, so a partial same-day bar written by a live
-      mid-session fetch can never present itself as a settled frontier (the same
-      reasoning as ``last_settled_price_date``).
+    - **``price_date <= today``.** This used to exclude today, so a partial
+      same-day bar written by a live mid-session fetch could not present itself as
+      settled. #160 stopped such bars being written, and the exclusion then only
+      made the banner a day behind numbers that already used today's close.
     - **No fetch.** This answers "what does the committed data already support",
       which is precisely the question a gap-filling read would destroy by going
       and filling the gap. It is also called on every page render, so it must
@@ -278,9 +285,20 @@ def committed_price_frontier(
     a cap built on this from being the thing that takes down a report: a DB with
     no holdings or no prices has no figures to misdate in the first place.
     """
+    frontiers = _stored_frontiers(today, account_id=account_id)
+    return min(frontiers) if frontiers else None
+
+
+def _stored_frontiers(
+    today: "date | str | None" = None, *, account_id: Optional[int] = None,
+    start: Optional[str] = None,
+) -> "list[str]":
+    """Each holding's latest STORED (so settled) close on or before ``today``: the
+    one rule behind both committed_price_frontier (the lowest, which every holding
+    clears) and last_settled_price_date (the highest, which a window anchors on).
+    DB only, never a fetch."""
     ref = today or date.today()
-    if isinstance(ref, str):
-        ref = date.fromisoformat(ref)
+    ref = date.fromisoformat(ref) if isinstance(ref, str) else ref
     ref_iso = ref.isoformat()
 
     try:
@@ -288,47 +306,54 @@ def committed_price_frontier(
             account_id = get_portfolio_account_id()
         holdings = get_holdings_on_date(ref_iso, account_id=account_id)
     except Exception:
-        # No resolvable portfolio account / no ledger — see the docstring.
-        return None
+        # No resolvable portfolio account / no ledger — see committed_price_frontier.
+        return []
     if holdings.empty:
-        return None
+        return []
 
     frontiers: list[str] = []
     with get_connection() as conn:
         for ticker in holdings.index:
             price_ticker = "BIL" if ticker == "SPAXX" else ticker  # SPAXX proxied via BIL
             row = conn.execute(
-                "SELECT MAX(price_date) FROM prices WHERE ticker = ? AND price_date < ?",
-                (price_ticker, ref_iso),
+                "SELECT MAX(price_date) FROM prices WHERE ticker = ? AND price_date <= ? "
+                "AND price_date >= ?",
+                (price_ticker, ref_iso, start or "0000-00-00"),
             ).fetchone()
             # A holding with no committed price at all is an already-surfaced
             # price gap (see brinson_fachler_period's price_gaps), not a frontier
             # signal — skip it rather than collapsing the frontier to nothing.
             if row and row[0]:
                 frontiers.append(row[0])
-    return min(frontiers) if frontiers else None
+    return frontiers
 
 
 def last_settled_price_date(start_date: str, end_date: Optional[str] = None) -> str:
     """Last COMPLETE settled trading day — the anchor for DISPLAYED period returns.
 
-    Unlike last_real_price_date (which can return *today* when a live mid-session
-    fetch has cached a partial intraday bar), this excludes the current day so an
-    in-progress bar is never used as a period-window endpoint — which would swing
-    displayed 1M/3M returns by the intraday move (~1:1). Simple, robust proxy: the
-    last real price date strictly before today (always settled). Trade-off: on a
-    fully-settled today (post-close) the display is one day stale rather than
-    risking a timezone-fragile post-close check — robustness over cleverness.
+    The latest STORED close across the holdings, on or before ``end_date`` and
+    today: the same rule as committed_price_frontier (see its docstring), so
+    a window ends on the date the banner names. Stored bars are settled closes only
+    (#160), so an in-progress bar is never a window endpoint, which would swing
+    displayed 1M/3M returns by the intraday move. A live mark that a personal-mode
+    read serves for an open session is not stored, so it never anchors a window.
+
+    This used to cap at yesterday, from when a partial bar could be cached: on a
+    settled today (post-close) the display was a day stale while the current-value
+    figure beside it already used today's close.
 
     On frozen/committed data (frontier < today) this EQUALS last_real_price_date,
     so the deterministic BF reconciliation test (which anchors on last_real) is
     unaffected.
     """
-    today = date.today()
-    end = end_date or today.isoformat()
-    yesterday = (today - timedelta(days=1)).isoformat()
-    cap = min(end, yesterday)  # ISO strings compare lexicographically
-    return last_real_price_date(start_date, cap)
+    today = date.today().isoformat()
+    cap = min(end_date or today, today)  # ISO strings compare lexicographically
+    # The served read first, as always: where gap fills are on (personal mode) it
+    # fetches and stores any settled close the cache lacks. Then the anchor is what
+    # is STORED, so a served-but-unstored live bar cannot be it.
+    served = last_real_price_date(start_date, cap)
+    frontiers = _stored_frontiers(cap, start=start_date)
+    return min(served, max(frontiers)) if frontiers else served
 
 
 def get_portfolio_value_series(
@@ -728,19 +753,8 @@ def _current_market_value_impl(
     for ticker, row in holdings.iterrows():
         shares = float(row["net_shares"])
         if ticker == "SPAXX":
-            p, st = _price_and_status(ticker, "2025-05-01", d, price_ticker="BIL")
+            price, st = _spaxx_price(d)
             statuses.append(st)
-            try:
-                if not p.empty:
-                    bil = total_return_series(p)
-                    p0  = bil.first_valid_index()
-                    if p0 is not None and float(bil[p0]) > 0:
-                        bil = bil / float(bil[p0])
-                    price = float(bil.ffill().iloc[-1])
-                else:
-                    price = 1.0
-            except Exception:
-                price = 1.0
         else:
             p, st = _price_and_status(ticker, look_back_start(ticker, d), d)
             try:
@@ -752,6 +766,37 @@ def _current_market_value_impl(
             statuses.append(st)
         total += shares * price
     return round(total, 2), statuses
+
+
+def _spaxx_price(d: str) -> "tuple[float, TickerStatus]":
+    """SPAXX's value per share for the current market value: BIL's total return,
+    normalized to $1.00 at inception. SPAXX holds its $1.00 NAV and pays its income
+    as new shares, which the ledger does not record, so this models that income."""
+    p, st = _price_and_status("SPAXX", "2025-05-01", d, price_ticker="BIL")
+    try:
+        if not p.empty:
+            bil = total_return_series(p)
+            p0  = bil.first_valid_index()
+            if p0 is not None and float(bil[p0]) > 0:
+                bil = bil / float(bil[p0])
+            return float(bil.ffill().iloc[-1]), st
+        return 1.0, st
+    except Exception:
+        return 1.0, st
+
+
+def spaxx_modeled_income(date_str: Optional[str] = None) -> float:
+    """What the current market value adds for SPAXX above its $1.00 NAV: the
+    money-market income modeled at BIL's total return (see _spaxx_price). The
+    Performance page's current value includes it; the Tax Lots page values SPAXX
+    at NAV, as its lots are recorded. The two pages' market values differ by exactly
+    this, and their unrealized gains do not differ at all. 0.0 with no SPAXX held."""
+    d = date_str or date.today().isoformat()
+    holdings = get_holdings_on_date(d, account_id=get_portfolio_account_id())
+    if "SPAXX" not in holdings.index:
+        return 0.0
+    price, _st = _spaxx_price(d)
+    return float(holdings.loc["SPAXX", "net_shares"]) * (price - 1.0)
 
 
 def get_inception_date(

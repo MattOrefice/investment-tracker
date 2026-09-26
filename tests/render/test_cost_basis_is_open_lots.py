@@ -43,9 +43,10 @@ def _render(pytestconfig, tmp_path, page: str, setup=None):
     return at, book
 
 
-def _performance_cost_basis(at) -> int:
+def _performance_cost_basis(at) -> float:
+    # In cents since the reconciliation ties to the cent (2026-09-25 audit, item 3).
     cap = next(str(c.value) for c in at.caption if "cost basis**" in str(c.value))
-    return int(re.search(r"\\\$([\d,]+) cost basis\*\*", cap).group(1).replace(",", ""))
+    return float(re.search(r"\\\$([\d,]+\.\d\d) cost basis\*\*", cap).group(1).replace(",", ""))
 
 
 def _tax_lots_cost_basis(at) -> float:
@@ -73,8 +74,8 @@ def test_the_performance_cost_basis_is_the_tax_lots_cost_basis(pytestconfig, tmp
     assert all_buys - expected > 100, "the sale no longer moves the cost basis; nothing is tested"
 
     assert tax_lots == pytest.approx(expected, abs=0.005), (tax_lots, expected)
-    assert _performance_cost_basis(perf) == round(expected), (
-        f"the Performance caption reads ${_performance_cost_basis(perf):,} cost basis, the "
+    assert _performance_cost_basis(perf) == pytest.approx(expected, abs=0.005), (
+        f"the Performance caption reads ${_performance_cost_basis(perf):,.2f} cost basis, the "
         f"Tax Lots page ${tax_lots:,.2f}: the caption is not relieving the sale "
         f"(summing every buy would read ${all_buys:,.0f}; #357)."
     )
