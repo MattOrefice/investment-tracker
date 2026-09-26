@@ -118,8 +118,10 @@ def test_correlations_names_the_date_its_matrix_ends_on(book):
 
 
 @pytest.mark.parametrize("page, phrase", [
-    ("6_Benchmark_Attribution.py", "prices through July 20, 2026 are shown on the Performance page"),
-    ("4_Factor_Profile.py", "prices through July 20, 2026 are shown in the Performance page KPI strip"),
+    # Item 4 of the 2026-09-25 audit made the factor vintage its own sentence, so the
+    # price date now opens the next one: "Prices", not "; prices".
+    ("6_Benchmark_Attribution.py", "Prices through July 20, 2026 are shown on the Performance page"),
+    ("4_Factor_Profile.py", "Prices through July 20, 2026 are shown in the Performance page KPI strip"),
 ])
 def test_the_regression_pages_name_the_price_date_not_today(book, page, phrase):
     caps = _render(page)
