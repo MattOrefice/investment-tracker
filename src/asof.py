@@ -353,27 +353,29 @@ def as_of_live_line(
     lag = (ref - served).days
     gap = tuple(coverage.unresolved) if coverage is not None else ()
 
-    if lag <= 0 and not gap:
-        return f"Live data as of {format_long_date(ref)}."
-
-    # WHICH frontier, stated (#265). Two definitions, both kept because they answer
-    # different questions: a coverage record's frontier_served is "how current is
-    # what THIS PAGE served" (it may include today's bar); the committed frontier is
-    # "the latest SETTLED close every holding has" (strictly before today). Two pages
-    # on one book can therefore differ by a day, and each says which it means.
+    # WHICH frontier, stated (#265). A coverage record's frontier_served is "how
+    # current is what THIS PAGE served"; the committed frontier is "the latest
+    # SETTLED close every holding has". Both include today's close once it is stored
+    # (the 2026-09-25 audit made them one rule), so they differ only where a
+    # personal-mode read served an open session's bar, which is never stored.
     basis = "as served to this page" if coverage is not None else "settled closes"
 
     # The demo's daily refresh (#368 item 3), when it has run in this process. After
     # a success that reached this date, the date is as current as settled closes
-    # allow, so the line says when it was fetched. After a failure, the line says so,
-    # what is served in its place, and when it retries: a failed fetch must never
-    # read as a quiet old date.
+    # allow, so the line says when it was fetched, ahead of state 1: once the
+    # refresh stores today's close the frontier IS today, and the fetch time is the
+    # part the reader needs. After a failure, the line says so, what is served in
+    # its place, and when it retries: a failed fetch must never read as a quiet old
+    # date.
     from src.demo_refresh import state as _refresh_state
     refresh = _refresh_state()
     if (refresh is not None and refresh.status == "fetched" and not gap
             and refresh.served_through and served >= date.fromisoformat(refresh.served_through)):
         return (f"Prices through {format_long_date(served)} ({basis}, fetched "
                 f"{_when(refresh.attempted_at)}).")
+
+    if lag <= 0 and not gap:
+        return f"Live data as of {format_long_date(ref)}."
 
     missing = _sessions_missing(served, ref)
     line = f"Prices through {format_long_date(served)} ({basis})"

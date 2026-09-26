@@ -7,7 +7,7 @@ import pandas as pd
 
 st.set_page_config(page_title="Factor Profile", layout="wide")
 
-from src.asof import as_of_banner
+from src.asof import as_of_banner, format_long_date
 from src.config import get_demo_banner_text, IS_DEMO
 from src.positioning import build_style_box_figure, get_non_us_equity_data, get_style_box_data
 from src.style_box import STYLE_BOX_CAPTION
@@ -28,7 +28,7 @@ from src.factors import (
     run_sleeve_regressions_mom,
     sig_marker,
 )
-from src.holdings import get_inception_date, get_portfolio_account_id
+from src.holdings import committed_price_frontier, get_inception_date, get_portfolio_account_id
 
 if IS_DEMO:
     st.info(get_demo_banner_text())
@@ -195,10 +195,13 @@ with col:
         )
         st.caption(f"Sample window: {win}")
 
+    _price_date = committed_price_frontier()
     st.caption(
         "Regression windows end at the most recent date with published Fama-French "
-        "factor data — a publication lag; live prices through today are shown in "
-        "the Performance page KPI strip."
+        "factor data — a publication lag; "
+        + (f"prices through {format_long_date(_price_date)}" if _price_date
+           else "the latest stored prices")
+        + " are shown in the Performance page KPI strip."
     )
 
     for key in _SLEEVE_ORDER:

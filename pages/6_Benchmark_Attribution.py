@@ -7,10 +7,11 @@ import pandas as pd
 
 st.set_page_config(page_title="Benchmark Attribution", layout="wide")
 
-from src.asof import as_of_banner
+from src.asof import as_of_banner, format_long_date
 from src.attribution import benchmark_gap_notice, brinson_fachler_period, price_gap_notice
 from src.config import get_demo_banner_text, IS_DEMO
-from src.holdings import get_inception_date, get_portfolio_account, get_portfolio_account_id
+from src.holdings import (committed_price_frontier, get_inception_date,
+                          get_portfolio_account, get_portfolio_account_id)
 from src.factors import (
     alpha_ci_str,
     build_benchmark_methodology,
@@ -143,13 +144,15 @@ with col:
     c4.metric("NW Lags (L)",  str(result["nw_lags"]))
     st.caption(f"Sample window: {window_str}")
     _lag_days = (date.today() - d_end).days
+    # The price date the banner names and the Performance page computes through.
+    _price_date = committed_price_frontier()
     st.caption(
         f"Regression window ends at the most recent date with published "
         f"Fama-French factor data ({d_end.strftime('%B')} {d_end.day}, "
         f"{d_end.year}) — a {_lag_days}-calendar-day publication lag; "
-        f"live prices through {date.today().strftime('%B')} "
-        f"{date.today().day}, {date.today().year} are shown on the "
-        f"Performance page."
+        + (f"prices through {format_long_date(_price_date)} are shown on the "
+           "Performance page." if _price_date else
+           "the Performance page shows the latest stored prices.")
     )
     st.caption(interpret_benchmark_attribution(result))
 
