@@ -318,7 +318,7 @@ def as_of_live_line(
       1 fully current   frontier == today and nothing unresolved -> the original
                         "Live data as of <date>." sentence, unchanged
       2 past            frontier < today                        -> "Prices through
-                        <date>", plus "— N weekdays behind" when closes are missing
+                        <date>", plus "— N trading days behind" when closes are missing
       3 incomplete      something unresolved (needs a record)   -> as state 2, plus
                         "N of M holdings have no committed price"
       4 nothing         no frontier at all                      -> "No committed
@@ -330,8 +330,9 @@ def as_of_live_line(
     today, and a frontier there is current: it gets no count. Counting calendar days
     called that "1 day behind", and a Monday "3 days behind". N is the sessions after
     the frontier and before today (_sessions_missing), by demo_refresh's calendar:
-    weekdays, with no holiday table, so the day after a market holiday reads one
-    behind. It says "weekdays" because that is what it counts.
+    weekdays that are not NYSE holidays (demo_refresh.NYSE_HOLIDAYS). It said
+    "weekdays" while it counted weekdays; with the holiday table it counts trading
+    days, and says so (2026-09-25 audit, item 12).
 
     NO THRESHOLD, deliberately. staleness_note tolerates 70/45 days because it
     guards a refresh cycle and a committed factor file is expected to lag. Prices
@@ -393,7 +394,7 @@ def as_of_live_line(
     missing = _sessions_missing(served, ref)
     line = f"Prices through {format_long_date(served)} ({basis})"
     if missing:
-        line += f" — {missing} weekday{'' if missing == 1 else 's'} behind"
+        line += f" — {missing} trading day{'' if missing == 1 else 's'} behind"
     if gap:
         line += (", and " if missing else " — ")
         line += (f"{len(gap)} of {len(coverage.requested)} holdings have "

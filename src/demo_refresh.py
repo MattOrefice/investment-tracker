@@ -68,16 +68,35 @@ def state() -> Optional[RefreshState]:
     return _STATE
 
 
+# NYSE full-day closures, as nyse.com/markets/hours-calendars listed them on
+# 2026-09-26 (observed dates where a holiday falls on a weekend; no New Year's closure
+# in 2028, when January 1 is a Saturday). Static, so no calendar dependency. Early
+# closes are sessions. Outside these years every weekday counts as a session, the
+# rule before this table, so tests/test_market_holidays.py fails from January 1 of
+# the last year listed: extend the table from the same page before then.
+NYSE_HOLIDAY_YEARS = (2026, 2028)
+NYSE_HOLIDAYS = frozenset(date.fromisoformat(d) for d in (
+    "2026-01-01", "2026-01-19", "2026-02-16", "2026-04-03", "2026-05-25",
+    "2026-06-19", "2026-07-03", "2026-09-07", "2026-11-26", "2026-12-25",
+    "2027-01-01", "2027-01-18", "2027-02-15", "2027-03-26", "2027-05-31",
+    "2027-06-18", "2027-07-05", "2027-09-06", "2027-11-25", "2027-12-24",
+    "2028-01-17", "2028-02-21", "2028-04-14", "2028-05-29", "2028-06-19",
+    "2028-07-04", "2028-09-04", "2028-11-23", "2028-12-25",
+))
+
+
 def is_session(d: date) -> bool:
-    """Whether New York holds a session on ``d``, by this module's calendar: every
-    weekday. There is no holiday table, so a market holiday counts as a session.
-    The banner's freshness count (asof.as_of_live_line) uses the same calendar."""
-    return d.weekday() < 5
+    """Whether New York holds a session on ``d``: a weekday that is not an NYSE
+    holiday (NYSE_HOLIDAYS). The banner's freshness count (asof.as_of_live_line) uses
+    the same calendar. Before the table, a market holiday counted as a session, so the
+    day after one read a current frontier as a close behind (2026-09-25 audit, item 12).
+    """
+    return d.weekday() < 5 and d not in NYSE_HOLIDAYS
 
 
 def next_close_after(t: datetime) -> datetime:
-    """The next weekday New York close (plus the publish margin) after ``t``, in UTC.
-    A holiday is not skipped: an attempt on one finds nothing new and succeeds."""
+    """The next New York session's close (plus the publish margin) after ``t``, in
+    UTC. Holidays in NYSE_HOLIDAYS are skipped."""
     ny = t.astimezone(_NY)
     c = ny.replace(hour=16, minute=0, second=0, microsecond=0) + _PUBLISH_MARGIN
     if c <= ny:

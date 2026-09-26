@@ -69,7 +69,7 @@ def test_state2_stale_withdraws_the_freshness_claim():
     assert "August 10, 2026" in line
     # Sunday against Monday's frontier: Tuesday to Friday's closes are missing. The
     # count is of missing closes, not the six calendar days it once read.
-    assert "4 weekdays behind" in line, f"the size of the lag is the actionable part: {line!r}"
+    assert "4 trading days behind" in line, f"the size of the lag is the actionable part: {line!r}"
     assert MARKER_SIGNATURE not in line, "nothing is unresolved in state 2"
 
 
