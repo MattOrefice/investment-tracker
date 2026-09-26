@@ -50,7 +50,7 @@ _BASE = {
     "sample_start": "2018-01-01", "uni_rows": [], "corr_chart_b64": None,
     "corr_prose": None, "rolling_chart_b64": None, "rolling_prose": None,
     "con_rows": [], "sharpe_con_no": None, "sharpe_con_with": None,
-    "delta_bps_con": None, "msc_chart_b64": None, "dd_rows": [],
+    "delta_sharpe_con": None, "msc_chart_b64": None, "dd_rows": [],
     "btc_2022_mdd": None,
     "args_for": [], "args_against": [], "conclusion": "x",
     "disposition": "computed", "failure_reason": None, "unavailable": [],

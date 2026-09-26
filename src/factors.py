@@ -196,8 +196,10 @@ def _sleeve_label(spec: dict) -> str:
 # holdings); they are priced on demand via get_prices, exactly like VEA.
 #
 # N-PORT as-of: the affirmative "no Korea position" clearance for the two Avantis
-# funds is an OBSERVED snapshot from the most recent public holdings filing, not a
-# mandate constraint. Refresh this date when a newer Avantis N-PORT is filed.
+# funds is an OBSERVED snapshot from a public holdings filing, not a mandate
+# constraint. The text says it is the latest filing READ here, not the latest filed:
+# it called this "the most recent" after the June 30, 2026 filings were out (audit
+# item 9). Refresh the date when a newer Avantis N-PORT has been read.
 _NPORT_ASOF = "March 31, 2026"
 
 _INTL_TILT_SLEEVES = [
@@ -1306,8 +1308,8 @@ def build_intl_tilt_disclosure(entry: dict) -> list[str]:
             "half of 2026 and steps down to roughly 2% after the June "
             "reconstitution. A residual channel that rises and falls with an index "
             "rebalance is the signature of a universe mismatch, not persistent "
-            "skill — which is exactly why the weight is described as a mechanism "
-            "here rather than pinned as a number the residual could be 'corrected' by."
+            "skill — which is why the weights above are dated, not a constant the "
+            "residual could be 'corrected' by."
         )
         paras.append(
             "One residual channel is genuinely about the screen, not the universe: "
@@ -1326,7 +1328,8 @@ def build_intl_tilt_disclosure(entry: dict) -> list[str]:
     paras.append(
         f"**The Korea excuse does not apply to {fund} — do not over-extend it here.** "
         f"Unlike IDHQ, the universe channel does not explain this residual. As of the "
-        f"most recent Avantis N-PORT holdings disclosure (period ending {_NPORT_ASOF}), "
+        f"Avantis N-PORT holdings disclosure for the period ending {_NPORT_ASOF}, the "
+        f"latest read here, "
         f"{fund} held **no South Korea position** — an absence *observed* in the filing, "
         f"not one the mandate prohibits: {fund} is actively managed and could add Korea "
         f"at a future reconstitution. The {control} control ({cidx}) carves Korea out on "
@@ -1897,14 +1900,17 @@ def interpret_benchmark_attribution(result: dict) -> str:
 
     # Style tilt sentences — meaning only, no specific β or t-stat values
     style_parts = []
-    for fname, beta, tstat, context in [
-        ("HML", b_hml, t_hml, "value tilt (VTV, AVUV)"),
-        ("SMB", b_smb, t_smb, "small-cap tilt (AVUV)"),
-        ("RMW", b_rmw, t_rmw, "profitability tilt (SPHQ, AVUV)"),
+    for fname, beta, tstat, context, noun in [
+        ("HML", b_hml, t_hml, "value tilt (VTV, AVUV)", "value"),
+        ("SMB", b_smb, t_smb, "small-cap tilt (AVUV)", "small-cap"),
+        ("RMW", b_rmw, t_rmw, "profitability tilt (SPHQ, AVUV)", "profitability"),
     ]:
         if abs(tstat) >= _T_SIG:
-            direction = "positive" if beta > 0 else "negative"
-            style_parts.append(f"{fname}: {direction} {context}")
+            if beta > 0:
+                style_parts.append(f"{fname}: positive {context}")
+            else:
+                style_parts.append(
+                    f"{fname}: negative, less {noun} exposure than the SAA benchmark carries")
 
     if style_parts:
         style_sentence = (
@@ -1979,10 +1985,17 @@ def interpret_correlations(corr: pd.DataFrame) -> str:
     low_parts = [
         f"{a} × {b} (ρ = {r:.2f})" for a, b, r in lowest
     ]
+    negative = [(a, b) for a, b, r in pairs if r < 0]
+    shared = set.intersection(*({a, b} for a, b in negative)) if negative else set()
+    tail = ""
+    if len(negative) > len(lowest):
+        tail = (f" {len(negative)} of the {len(pairs)} pairs are negatively correlated"
+                + (f", every one involving {sorted(shared)[0]}" if len(shared) == 1 else "")
+                + ".")
     low_sentence = (
         f"The most meaningful return offsets are {' and '.join(low_parts)}: "
-        "the only pairs where structural differences in risk exposure, "
-        "not just style tilts, drive genuine diversification."
+        "pairs where structural differences in risk exposure, "
+        "not just style tilts, drive genuine diversification." + tail
     ) if low_parts else ""
 
     sentences = [s for s in [high_sentence, low_sentence] if s]

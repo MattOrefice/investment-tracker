@@ -64,12 +64,13 @@ def _savings_caption(bm_er, h_er):
         return None
     h_val = h_er if h_er is not None else 0.0
     bps = round((bm_er - h_val) * 10_000)
+    unit = "bp" if abs(bps) == 1 else "bps"      # "saves 1 bps" (audit item 9)
     if bps == 0:
         return "Holding matches benchmark"
     elif bps > 0:
-        return f"Holding saves {bps} bps annually vs. benchmark"
+        return f"Holding saves {bps} {unit} annually vs. benchmark"
     else:
-        return f"Holding costs {abs(bps)} bps more than benchmark"
+        return f"Holding costs {abs(bps)} {unit} more than benchmark"
 
 
 def _pair_benchmarks_holdings(holdings, benchmarks, bm_ticker_str):

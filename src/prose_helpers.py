@@ -36,6 +36,18 @@ def year_ranges(years: "list[int]") -> str:
     return ", ".join(parts[:-1]) + f", and {parts[-1]}"
 
 
+def a_or_an(number_text: str) -> str:
+    """The article for a phrase that starts with a number: "an 8.7-year", "an 11-day",
+    "a 7-year". By sound, so 8, 11, 18 and 80–89 take "an"."""
+    digits = number_text.lstrip("+-").split(".")[0].replace(",", "")
+    if not digits.isdigit():
+        return "a"
+    if digits.startswith("8") or digits in ("11", "18") or (
+            len(digits) in (5, 6) and digits[:2] in ("11", "18")):
+        return "an"
+    return "a"
+
+
 def ordinal(n: float) -> str:
     """99.1 -> "99th"; 1 -> "1st"; 12 -> "12th"."""
     n = int(round(n))

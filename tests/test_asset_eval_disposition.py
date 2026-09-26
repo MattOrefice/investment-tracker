@@ -34,7 +34,7 @@ _BASE = {
     "sample_start": SAMPLE_START, "uni_rows": [], "corr_chart_b64": None,
     "corr_prose": None, "rolling_chart_b64": None, "rolling_prose": None,
     "con_rows": [], "sharpe_con_no": None, "sharpe_con_with": None,
-    "delta_bps_con": None, "msc_chart_b64": None, "dd_rows": [],
+    "delta_sharpe_con": None, "msc_chart_b64": None, "dd_rows": [],
     # Added by #276, and caught the same way #249's key below was: the
     # premise-check went red on the full suite the moment the builder grew it.
     # Second time that guard has earned its keep, which is the argument for

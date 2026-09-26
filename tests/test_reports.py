@@ -697,7 +697,9 @@ def test_exec_cape_sentence_reports_regime_not_allocation():
                              (16.0, 50.0, "Moderate"), (13.0, 20.0, "Below-average")]:
         s = _cape_reading_sentence(cape, pct)
         assert f"{label} versus history" in s, s
-        assert f"in the {pct:.0f}th percentile" in s, s
+        # An ordinal. This pinned f"{pct:.0f}th", the "62th" the audit's item 9 fixed.
+        from src.prose_helpers import ordinal
+        assert f"in the {ordinal(pct)} percentile" in s, s
         low = s.lower()
         # no allocation verb — never the old unconditional conclusion, in either direction
         for banned in ("supporting the diversification", "diversif", "us equity",

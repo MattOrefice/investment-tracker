@@ -698,7 +698,7 @@
   </table>
   {% if asset_eval.sharpe_con_no and asset_eval.sharpe_con_with %}
   <p class="muted">Constrained Sharpe: {{ asset_eval.sharpe_con_no }} (w/o BTC) &rarr;
-  {{ asset_eval.sharpe_con_with }} (w/ BTC), {{ asset_eval.delta_bps_con }} bps.
+  {{ asset_eval.sharpe_con_with }} (w/ BTC), a change of {{ asset_eval.delta_sharpe_con }}.
   Driven by BTC&rsquo;s realized return over the 2018&ndash;present sample;
   not a forward-looking result (sample-period mean estimates are unreliable for a volatile,
   regime-shifting asset).</p>

@@ -515,9 +515,10 @@ def _cape_reading_sentence(cape_val: float, cape_pct: float) -> str:
     versus history" at the 20th). Carries an as-of clause whenever the committed
     CAPE series is stale (data frontier past the valuation threshold) — the
     stance must not read as current when its input is months old."""
+    from src.prose_helpers import ordinal
     label, _ = _cape_regime(int(round(cape_pct)))
     sentence = (
-        f"CAPE stands at {cape_val:.1f}x, in the {cape_pct:.0f}th percentile — "
+        f"CAPE stands at {cape_val:.1f}x, in the {ordinal(cape_pct)} percentile — "
         f"{label} versus history."
     )
     # Inside a quarter lock the reading is the quarter's last monthly observation by
@@ -1201,7 +1202,8 @@ def _build_benchmark_section(start_date: str, end_date: str) -> Optional[dict]:
 def _build_macro_section() -> dict:
     def _pct_str(series, val):
         try:
-            return f"{percentile(series, val):.0f}th"
+            from src.prose_helpers import ordinal
+            return ordinal(percentile(series, val))
         except Exception:
             return "N/A"
 
@@ -1230,7 +1232,8 @@ def _build_macro_section() -> dict:
                      f"{cape_val:.1f}x against, so no valuation reading is drawn from "
                      f"it; valuations {_regime_action}.")
         else:
-            pct_str  = f"{_raw_pct:.0f}th"
+            from src.prose_helpers import ordinal
+            pct_str  = ordinal(_raw_pct)          # "{:.0f}th" printed "1th" (item 9)
             pct_int  = int(round(_raw_pct))
             _regime, _regime_action = _cape_regime(pct_int)
             _note = f"{_regime} vs. history ({pct_str}); valuations {_regime_action}."
@@ -1424,58 +1427,10 @@ def _build_positioning_section(end_date: str, style_pending: Optional[str] = Non
     }
 
 
-def _max_drawdown(returns) -> float:
-    """Worst peak-to-trough loss of a daily return series, as a NEGATIVE fraction.
-
-    Signed, and deliberately so: every drawdown figure in this section's table is
-    signed, and the decision-framework sentence sets one against another. A
-    magnitude here would read as the same quantity as the table's while carrying
-    the opposite sign convention, which is the confusion #276 exists to remove.
-
-    NaN on an empty series rather than 0.0 — a zero drawdown is a real and very
-    different claim from an unmeasured one.
-    """
-    s = returns.dropna()
-    if s.empty:
-        return float("nan")
-    cum = (1 + s).cumprod()
-    return float((cum / np.maximum.accumulate(cum) - 1).min())
-
-
-def _drawdown_argument(btc_mdd: float, btc_2022: str | None,
-                       port: dict, sample_start: str) -> str:
-    """The case-against drawdown bullet, in one of TWO forms (#276).
-
-    The figure was never the defect. ">80%" was TRUE — -81.5% over this report's
-    own sample — and stale-proofing it by derivation alone would have fixed a
-    correct number and left the confusion untouched, because what it never said is
-    WHOSE drawdown. It renders directly under a table whose Max DD column is the
-    PORTFOLIO's and four times smaller, so the two read as a contradiction.
-
-    FULL form when the sweep ran: names Bitcoin's own figure, names the table's as
-    something else, and sizes what a BTC allocation did to 2022.
-
-    REDUCED form when 5h failed: Bitcoin's own figure still renders (btc_ret is
-    guaranteed past the loader guard), and the missing portfolio contrast is
-    declared ABSENT. That last clause is load-bearing — a contrast that quietly
-    vanishes reads as no contrast, i.e. as though the allocation cost nothing.
-    """
-    head = (f"Bitcoin's own maximum drawdown is {btc_mdd:.1%} over "
-            f"{sample_start}–present")
-    if port and btc_2022:
-        return (
-            f"{head} — not the {port['max_dd']:.1%} in the table above, which is "
-            f"the portfolio's. Its 2022 drawdown of {btc_2022} came while equities "
-            f"and bonds fell together, deepening the portfolio's own 2022 drawdown "
-            f"from {port['mdd22_lo']:.1%} at 0% allocation to {port['mdd22_hi']:.1%} "
-            f"at {port['alloc_top']} — no diversification benefit when it was most "
-            f"needed"
-        )
-    return (
-        f"{head}. The portfolio-level comparison — how much a BTC allocation "
-        f"deepened the 2022 drawdown — is not available this run: the drawdown "
-        f"sweep did not produce data. Absent, not zero"
-    )
+# Moved to src/asset_evaluation.py so the Asset Evaluation page can share them
+# without importing this module (audit item 9); the names stay here for callers.
+from src.asset_evaluation import drawdown_argument as _drawdown_argument  # noqa: E402
+from src.asset_evaluation import max_drawdown as _max_drawdown  # noqa: E402
 
 
 def _build_asset_eval_section() -> dict:
@@ -1531,7 +1486,7 @@ def _build_asset_eval_section() -> dict:
         "con_rows":         [],
         "sharpe_con_no":    None,
         "sharpe_con_with":  None,
-        "delta_bps_con":    None,
+        "delta_sharpe_con": None,
         "msc_chart_b64":    None,
         "dd_rows":          [],
         # Bitcoin's OWN 2022 drawdown, for the table caption. The caption used to
@@ -1696,7 +1651,7 @@ def _build_asset_eval_section() -> dict:
             w_con_with      = mv_result["w_con_with"]
             sharpe_con_no   = mv_result["sharpe_con_no"]
             sharpe_con_with = mv_result["sharpe_con_with"]
-            delta_bps_con   = (sharpe_con_with - sharpe_con_no) * 10_000
+            delta_sharpe_con = sharpe_con_with - sharpe_con_no
             btc_wt_con      = float(w_con_with[-1])
 
             for i, s in enumerate(sleeves_list):
@@ -1712,7 +1667,8 @@ def _build_asset_eval_section() -> dict:
             })
             result["sharpe_con_no"]   = f"{sharpe_con_no:.3f}"
             result["sharpe_con_with"] = f"{sharpe_con_with:.3f}"
-            result["delta_bps_con"]   = f"{delta_bps_con:+.0f}"
+            # A Sharpe ratio is not in basis points (audit item 9).
+            result["delta_sharpe_con"] = f"{delta_sharpe_con:+.3f}"
     except Exception:
         result["unavailable"].append("mv")
 
@@ -1793,7 +1749,6 @@ def _build_asset_eval_section() -> dict:
                 saa_sh0  = float(rows_0["sharpe"].iloc[0])
                 saa_sh10 = float(rows_10["sharpe"].iloc[0])
                 if saa_sh10 > saa_sh0:
-                    delta_saa = (saa_sh10 - saa_sh0) * 10_000
                     mvo_ok    = bool(
                         mv_result
                         and mv_result.get("sharpe_con_with", 0) > mv_result.get("sharpe_con_no", 0)
@@ -1802,7 +1757,7 @@ def _build_asset_eval_section() -> dict:
                     args_for.append(
                         f"Sharpe-improving against SAA target weights at 10% allocation "
                         f"({saa_sh0:.3f} → {saa_sh10:.3f}, "
-                        f"+{delta_saa:.0f} bps over {ae.SAMPLE_START}–present){mvo_note}"
+                        f"{saa_sh10 - saa_sh0:+.3f} over {ae.SAMPLE_START}–present){mvo_note}"
                     )
 
         if not corr.empty:

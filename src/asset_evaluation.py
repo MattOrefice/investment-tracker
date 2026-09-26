@@ -966,3 +966,57 @@ def interpret_candidate_diversification(
         f"{ticker}'s average correlation to the SAA sleeves is ρ ≈ {avg_corr:+.2f}, driven by "
         f"{top_str} — it {verdict}. {offset_clause}{tail}"
     )
+
+
+def max_drawdown(returns) -> float:
+    """Worst peak-to-trough loss of a daily return series, as a NEGATIVE fraction.
+
+    Signed, and deliberately so: every drawdown figure in this section's table is
+    signed, and the decision-framework sentence sets one against another. A
+    magnitude here would read as the same quantity as the table's while carrying
+    the opposite sign convention, which is the confusion #276 exists to remove.
+
+    NaN on an empty series rather than 0.0 — a zero drawdown is a real and very
+    different claim from an unmeasured one.
+    """
+    s = returns.dropna()
+    if s.empty:
+        return float("nan")
+    cum = (1 + s).cumprod()
+    return float((cum / np.maximum.accumulate(cum) - 1).min())
+
+
+def drawdown_argument(btc_mdd: float, btc_2022: str | None,
+                       port: dict, sample_start: str) -> str:
+    """The case-against drawdown bullet, in one of TWO forms (#276).
+
+    The figure was never the defect. ">80%" was TRUE — -81.5% over this report's
+    own sample — and stale-proofing it by derivation alone would have fixed a
+    correct number and left the confusion untouched, because what it never said is
+    WHOSE drawdown. It renders directly under a table whose Max DD column is the
+    PORTFOLIO's and four times smaller, so the two read as a contradiction.
+
+    FULL form when the sweep ran: names Bitcoin's own figure, names the table's as
+    something else, and sizes what a BTC allocation did to 2022.
+
+    REDUCED form when 5h failed: Bitcoin's own figure still renders (btc_ret is
+    guaranteed past the loader guard), and the missing portfolio contrast is
+    declared ABSENT. That last clause is load-bearing — a contrast that quietly
+    vanishes reads as no contrast, i.e. as though the allocation cost nothing.
+    """
+    head = (f"Bitcoin's own maximum drawdown is {btc_mdd:.1%} over "
+            f"{sample_start}–present")
+    if port and btc_2022:
+        return (
+            f"{head} — not the {port['max_dd']:.1%} in the table above, which is "
+            f"the portfolio's. Its 2022 drawdown of {btc_2022} came while equities "
+            f"and bonds fell together, deepening the portfolio's own 2022 drawdown "
+            f"from {port['mdd22_lo']:.1%} at 0% allocation to {port['mdd22_hi']:.1%} "
+            f"at {port['alloc_top']} — no diversification benefit when it was most "
+            f"needed"
+        )
+    return (
+        f"{head}. The portfolio-level comparison — how much a BTC allocation "
+        f"deepened the 2022 drawdown — is not available this run: the drawdown "
+        f"sweep did not produce data. Absent, not zero"
+    )

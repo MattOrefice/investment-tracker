@@ -123,7 +123,7 @@ class TestExcessCapeSnapshot:
         """Bottom-decile ECY — extreme compression, muted forward return signal."""
         result = interpret_excess_cape(0.48, 0.05)
         expected = (
-            "ECY of 0.48% is at extreme compression — at the 5% percentile of "
+            "ECY of 0.48% is at extreme compression — at the 5th percentile of "
             "the Jan 2003+ history, equities offer essentially no real-yield premium "
             "over bonds. This historically precedes muted forward equity returns; the "
             "Core Fixed Income and TIPS sleeves are competitively priced relative to "
@@ -135,7 +135,7 @@ class TestExcessCapeSnapshot:
         """Mid-distribution ECY — near historical median, balanced equity/bond tradeoff."""
         result = interpret_excess_cape(2.50, 0.50)
         expected = (
-            "ECY of 2.50% is near the historical median (at the 50% percentile). "
+            "ECY of 2.50% is near the historical median (at the 50th percentile). "
             "Equities offer a moderate real-yield premium over bonds — neither a "
             "strong valuation tailwind nor headwind for forward returns."
         )
@@ -145,7 +145,7 @@ class TestExcessCapeSnapshot:
         """Top-decile ECY — unusually wide premium, historically undervalued signal."""
         result = interpret_excess_cape(5.00, 0.95)
         expected = (
-            "ECY of 5.00% is unusually wide — at the 95% percentile of the "
+            "ECY of 5.00% is unusually wide — at the 95th percentile of the "
             "Jan 2003+ history, equities offer a large real-yield premium over bonds. "
             "This has historically signalled materially undervalued equity markets."
         )
@@ -449,7 +449,7 @@ class TestCorrelationsSnapshot:
             "The most meaningful return offsets are "
             "US Small Cap × Core Fixed Income (ρ = 0.05) and "
             "US Large Quality × Core Fixed Income (ρ = 0.08): "
-            "the only pairs where structural differences in risk exposure, "
+            "pairs where structural differences in risk exposure, "
             "not just style tilts, drive genuine diversification."
         )
         assert result == expected
