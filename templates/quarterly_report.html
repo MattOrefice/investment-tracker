@@ -411,6 +411,9 @@
   <div style="text-align: center; margin: 8px 0 4px;">
     <img src="data:image/png;base64,{{ pos.style_box_b64 }}" style="max-width: 360px;" alt="Equity Style Profile" />
     <p style="font-size: 0.85em; color: #666; margin: 2px 0 0;">{{ pos.style_box_caption }}</p>
+    {%- if pos.style_box_dated %}
+    <p style="font-size: 0.85em; color: #666; margin: 2px 0 0;">{{ pos.style_box_dated }}</p>
+    {%- endif %}
   </div>
   {% else %}
   <div class="empty-banner">{{ pos.style_box_pending }}</div>
