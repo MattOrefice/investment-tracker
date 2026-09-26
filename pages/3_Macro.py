@@ -88,6 +88,18 @@ def _non_us_equity_pct() -> str:
 _NON_US_PCT = _non_us_equity_pct()
 
 
+def _sleeve_pct(name: str) -> str:
+    """One SAA sleeve's target, to one decimal, from the DB (audit item 5): the page
+    said "the 6% TIPS sleeve" and "7% small-cap and 8% value" beside targets of 4.1%,
+    8.2% and 9.2%. A numberless phrase if the DB cannot answer."""
+    try:
+        from src.sleeve_config import strategic_sleeve_weights
+        w = strategic_sleeve_weights().get(name)
+        return f"{w * 100:.1f}%" if w else "its"
+    except Exception:
+        return "its"
+
+
 def _window_pctile(series: pd.Series, current_val: float, w_start: str):
     """Returns macro.WindowedPctile — .value plus the window it actually used."""
     return macro.window_pctile(series, current_val, w_start)
@@ -303,15 +315,23 @@ with col:
     st.caption(as_of_banner())
 
     hdr_l, hdr_r = st.columns([3, 1])
-    with hdr_l:
-        st.caption(
+    def _header_note(credit_since: "str | None") -> str:
+        credit = (f"Credit percentiles use the history FRED provides, which begins "
+                  f"{credit_since}." if credit_since else
+                  "Credit percentiles use the history FRED provides, stated on each credit panel.")
+        return (
             f"Last updated: {_when(datetime.now().astimezone())}. "
             "Data: FRED & Shiller. Percentile basis varies by panel and is labeled on each: the "
             "macro-indicator percentiles (growth, inflation, rates, the dollar) are window-relative "
             "— toggle a panel's selector to recompute against that window — while the valuation "
-            "(CAPE/ECY full leg), credit, factor-regime, value-spread, and financial-conditions "
-            "percentiles are measured against full history."
+            "(CAPE/ECY full leg), factor-regime, value-spread, and financial-conditions "
+            f"percentiles are measured against full history. {credit}"
         )
+
+    with hdr_l:
+        # A slot: credit's start is known only once the series load below (audit item 5).
+        _hdr_note = st.empty()
+        _hdr_note.caption(_header_note(None))
     with hdr_r:
         if not IS_DEMO and st.button("Force refresh", type="secondary",
                      help="Bypass the cache and re-fetch macro data from FRED. "
@@ -374,6 +394,13 @@ with col:
         dtwexbgs,    _dtwex_err  = _try_fred("DTWEXBGS",          "2006-01-01")
         nfci,        _nfci_err   = _try_fred("NFCI",              "1971-01-01")
 
+    # Credit covers only what FRED publishes for the ICE BofA series (from Sep 2023 when
+    # this was written), not the full history the header used to claim.
+    _credit_starts = [s.dropna().index[0] for s in (hy_oas, ig_oas, ccc_oas)
+                      if s is not None and not s.dropna().empty]
+    if _credit_starts:
+        _hdr_note.caption(_header_note(min(_credit_starts).strftime("%B %Y")))
+
     # ── Compute rate volatility from DGS10 (VXTLT not in the price cache) ──
     rate_vol_21 = None
     if dgs10 is not None:
@@ -408,28 +435,27 @@ with col:
         "Mid-cycle":   ("#1A3A5C", "#E8EFF7"),
         "Late-cycle":  ("#7B5C00", "#FDF5E0"),
     }
+    # What each regime has meant historically. The verdict's REASONS come first, from
+    # macro.regime_explanation: the signals that fired, with their values against the
+    # classifier's thresholds. These used to restate the rule as a fact ("the yield curve
+    # is inverted or labor markets are historically tight") beside a +0.31% curve.
     _REGIME_PROSE = {
         "Recession":   (
-            "Output is contracting and the NBER has declared a recession. "
             "Quality equities and intermediate duration have historically held up best. "
             "Avoid adding cyclical risk; focus on rebalancing into weakness."
         ),
         "Early-cycle": (
-            "The economy is recovering from a downturn: unemployment remains elevated "
-            "but the yield curve is no longer inverted. Historically the strongest phase "
-            "for small-cap and value factor returns. The SAA's 7% small-cap and 8% value "
-            "sleeves are positioned for this environment."
+            "Historically the strongest phase for small-cap and value factor returns. "
+            f"The SAA's {_sleeve_pct('US Small Cap')} small-cap and "
+            f"{_sleeve_pct('US Large Value')} value sleeves are positioned for this environment."
         ),
         "Mid-cycle":   (
-            "Growth is moderate, the yield curve is positively sloped, and labor markets "
-            "are neither too tight nor too loose. "
             "The regime indicators on this page inform context; the SAA itself is policy-driven "
             "and not adjusted in response to regime classification."
         ),
         "Late-cycle":  (
-            "The yield curve is inverted or labor markets are historically tight — both "
-            "signal late-expansion risk. Quality and inflation-linked assets (TIPS, Real Assets) "
-            "have historically held up better in this phase. Duration should be watched carefully."
+            "Quality and inflation-linked assets (TIPS, Real Assets) have historically held up "
+            "better in this phase. Duration should be watched carefully."
         ),
     }
 
@@ -477,7 +503,8 @@ with col:
                 f"Current Regime: {_verdict.label}</span></div>",
                 unsafe_allow_html=True,
             )
-            st.caption(_REGIME_PROSE[_verdict.label])
+            st.caption(macro.regime_explanation(_verdict.label, _cur_t10y2y, _cur_unrate)
+                       + " " + _REGIME_PROSE[_verdict.label])
             st.caption(_coverage_line(_verdict))
 
         # WHY HERE. _rec_err and _usrec_err were captured at the load site and never
@@ -498,16 +525,18 @@ with col:
             # st.columns(3) already rendered "—" for absence; USREC was the odd one out.
             st.metric("NBER Recession (USREC)",
                       "—" if _cur_usrec is None
-                      else ("Active" if _cur_usrec >= 0.5 else "None"),
+                      else ("Active" if _cur_usrec >= 0.5 else "No recession"),
                       help="1 = NBER-declared recession; 0 = expansion; — = unavailable")
         with sig_m:
             st.metric("Yield Curve (10Y–2Y)",
                       f"{_cur_t10y2y:+.2f}%" if _cur_t10y2y is not None else "—",
-                      help="Negative = inverted; < -0.25% triggers Late-cycle")
+                      help=f"Negative = inverted; < {macro.REGIME_CURVE_TRIGGER:+.2f}% "
+                           "triggers Late-cycle")
         with sig_r:
             st.metric("Unemployment Rate",
                       f"{_cur_unrate:.1f}%" if _cur_unrate is not None else "—",
-                      help="> 5.5% = Early-cycle; < 4.2% = Late-cycle trigger")
+                      help=f"> {macro.REGIME_UNRATE_EARLY:.1f}% = Early-cycle; "
+                           f"< {macro.REGIME_UNRATE_TIGHT:.1f}% = Late-cycle trigger")
 
         with st.expander("How regimes transition", expanded=False):
             st.caption(
@@ -612,7 +641,10 @@ with col:
 
         gdp_clean   = gdp_gr.dropna()
         current_gdp = float(gdp_clean.iloc[-1])
-        gdp_as_of   = gdp_clean.index[-1].strftime("%b %Y")
+        # FRED dates a quarterly observation by the quarter's first day: 2026-04-01 is
+        # Q2 2026, not "Apr 2026" (audit item 5).
+        _gdp_q      = gdp_clean.index[-1]
+        gdp_as_of   = f"Q{(_gdp_q.month - 1) // 3 + 1} {_gdp_q.year}"
 
         gdp_window = st.radio(
             "Window", ["10Y", "20Y", "Max"],
@@ -722,24 +754,24 @@ with col:
             f"{_ordinal(ur_pctile_w)} percentile of {ur_scope}"
         )
 
-        if ur_pctile_w < 30:
-            _ur_interp = (
-                f"Unemployment at {current_ur:.1f}% is in the {_ordinal(ur_pctile_w)} percentile "
-                f"of {ur_scope} — historically low, consistent with a tight labor market "
-                "and late-cycle conditions. Low unemployment has historically preceded cyclical peaks."
-            )
-        elif ur_pctile_w < 60:
-            _ur_interp = (
-                f"Unemployment at {current_ur:.1f}% is in the {_ordinal(ur_pctile_w)} percentile "
-                f"of {ur_scope} — near the historical median for that basis, "
-                "consistent with a mid-cycle labor market."
-            )
+        # Cycle language on the REGIME CLASSIFIER's thresholds, so this panel and the
+        # verdict above cannot disagree (audit item 5): it called 4.1% "mid-cycle" by its
+        # window percentile while the classifier read the same 4.1% as tight. The
+        # percentile stays, as where the reading sits in its window, not as a phase.
+        if current_ur < macro.REGIME_UNRATE_TIGHT:
+            _ur_rule = (f"below the regime classifier's {macro.REGIME_UNRATE_TIGHT:.1f}% "
+                        "tight-labor threshold, a late-cycle signal")
+        elif current_ur > macro.REGIME_UNRATE_EARLY:
+            _ur_rule = (f"above the classifier's {macro.REGIME_UNRATE_EARLY:.1f}% early-cycle "
+                        "threshold, consistent with recessionary or early-recovery conditions")
         else:
-            _ur_interp = (
-                f"Unemployment at {current_ur:.1f}% is in the {_ordinal(ur_pctile_w)} percentile "
-                f"of {ur_scope} — elevated relative to recent history, "
-                "potentially consistent with recessionary or early-recovery conditions."
-            )
+            _ur_rule = (f"between the classifier's {macro.REGIME_UNRATE_TIGHT:.1f}% and "
+                        f"{macro.REGIME_UNRATE_EARLY:.1f}% thresholds, neither tight nor slack "
+                        "by its rule")
+        _ur_interp = (
+            f"Unemployment at {current_ur:.1f}% is in the {_ordinal(ur_pctile_w)} percentile "
+            f"of {ur_scope}, {_ur_rule}."
+        )
         st.caption(
             _ur_interp + " "
             "Rising unemployment from a cyclical low is a key recession coincident indicator."
@@ -992,7 +1024,7 @@ with col:
             f"over 10 years (nominal 10Y yield minus TIPS yield, FRED-computed). "
             f"Compared to Core CPI at {_cpi_ref}, the market is {_be_framing}. "
             f"Breakeven is the hurdle rate for TIPS-vs-nominal-Treasury outperformance — "
-            f"directly relevant to the 6% TIPS sleeve."
+            f"directly relevant to the {_sleeve_pct('TIPS')} TIPS sleeve."
         )
         st.divider()
     else:
@@ -1360,32 +1392,36 @@ with col:
 
         fig_rv = go.Figure()
         _add_recession_shading(fig_rv, rec_periods or [], rv_start)
+        # In basis points: the volatility of daily changes in a YIELD, so 0.79 (percentage
+        # points) is 79 bp, not "0.79%" (audit item 5).
+        rv_bp         = rv_data * 100.0
+        current_rv_bp = current_rv * 100.0
         fig_rv.add_trace(go.Scatter(
-            x=rv_data.index, y=rv_data.values,
-            mode="lines", name="Rate Vol (%)",
+            x=rv_bp.index, y=rv_bp.values,
+            mode="lines", name="Rate vol (bp)",
             line=dict(color=_C["primary"], width=1.5),
         ))
         _add_current_annotation(
-            fig_rv, current_rv,
-            f"Current {current_rv:.2f}% ({_ordinal(rv_pctile_w)} pct, {rv_scope_short})",
+            fig_rv, current_rv_bp,
+            f"Current {current_rv_bp:.0f} bp ({_ordinal(rv_pctile_w)} pct, {rv_scope_short})",
         )
         _apply_style(fig_rv)
-        fig_rv.update_yaxes(title_text="Annualized Vol (%)")
-        _yr = _tight_yrange(rv_data, [current_rv])
+        fig_rv.update_yaxes(title_text="Annualized vol (bp)")
+        _yr = _tight_yrange(rv_bp, [current_rv_bp])
         if _yr:
             _yr[0] = max(0.0, _yr[0])
             fig_rv.update_yaxes(range=_yr)
         st.plotly_chart(fig_rv, width='stretch')
-        st.metric("Rate Volatility (10Y Realized)", f"{current_rv:.2f}%")
+        st.metric("Rate Volatility (10Y Realized)", f"{current_rv_bp:.0f} bp")
         st.caption(
             f"As of {rv_as_of} · {_ordinal(rv_pctile_w)} percentile of {rv_scope}  \n"
-            "Rolling 21-day stdev of daily DGS10 changes, annualized (×√252). "
+            "Rolling 21-day stdev of daily DGS10 changes, annualized (×√252), in basis points. "
             "MOVE Index proxy — VXTLT (CBOE TLT vol) not available via the price cache."
         )
 
         if rv_pctile_w > 70:
             _rv_interp = (
-                f"Rate volatility at {current_rv:.2f}% (annualized) is elevated — "
+                f"Rate volatility at {current_rv_bp:.0f} bp (annualized) is elevated — "
                 f"{_ordinal(rv_pctile_w)} percentile of {rv_scope}. "
                 "Elevated rate vol compresses carry strategies, widens bid-ask spreads in credit, "
                 "and creates an environment where active duration management adds more value "
@@ -1393,14 +1429,14 @@ with col:
             )
         elif rv_pctile_w > 30:
             _rv_interp = (
-                f"Rate volatility at {current_rv:.2f}% (annualized) is moderate — "
+                f"Rate volatility at {current_rv_bp:.0f} bp (annualized) is moderate — "
                 f"{_ordinal(rv_pctile_w)} percentile of {rv_scope}. "
                 "Moderate rate vol is consistent with a stable rate environment where "
                 "passive duration earns carry without significant mark-to-market risk."
             )
         else:
             _rv_interp = (
-                f"Rate volatility at {current_rv:.2f}% (annualized) is low — "
+                f"Rate volatility at {current_rv_bp:.0f} bp (annualized) is low — "
                 f"{_ordinal(rv_pctile_w)} percentile of {rv_scope}. "
                 "Low rate vol compresses manager dispersion in fixed income; "
                 "passive duration harvesting is sufficient and active duration management "
@@ -2051,26 +2087,24 @@ with col:
 
     # ── Excess CAPE Yield ─────────────────────────────────────────────────────
 
-    if cape_ok and (dgs10 is not None) and (t10yie is not None):
+    # The real 10Y is DFII10 here as on its own panel: ONE source (audit item 5). ECY read
+    # nominal minus breakeven (2.84%) while the Real 10Y panel read DFII10 (2.85%).
+    if cape_ok and (dfii10 is not None) and not dfii10.dropna().empty:
         st.markdown("#### Excess CAPE Yield (ECY)")
 
-        dgs10_clean  = dgs10.dropna()
-        t10yie_clean = t10yie.dropna()
-        current_dgs10  = float(dgs10_clean.iloc[-1])
-        current_t10yie = float(t10yie_clean.iloc[-1])
-        current_ecy    = macro.compute_ecy(cape_val, current_dgs10, current_t10yie)
+        _real_clean = dfii10.dropna()
+        _real_rate  = float(_real_clean.iloc[-1])
+        current_ecy = macro.compute_ecy_real(cape_val, _real_rate)
 
         _ecy_start = "2003-01-01"
-        _dgs10_m   = dgs10_clean.loc[_ecy_start:].resample("MS").mean()
-        _t10yie_m  = t10yie_clean.loc[_ecy_start:].resample("MS").mean()
+        _real_m    = _real_clean.loc[_ecy_start:].resample("MS").mean()
         _cape_m    = cape_series.dropna().loc[_ecy_start:]
-        _ecy_df    = pd.concat([_cape_m, _dgs10_m, _t10yie_m], axis=1).dropna()
-        _ecy_df.columns = ["cape", "dgs10", "t10yie"]
-        _ecy_hist  = (100.0 / _ecy_df["cape"]) - (_ecy_df["dgs10"] - _ecy_df["t10yie"])
+        _ecy_df    = pd.concat([_cape_m, _real_m], axis=1).dropna()
+        _ecy_df.columns = ["cape", "real10y"]
+        _ecy_hist  = (100.0 / _ecy_df["cape"]) - _ecy_df["real10y"]
 
         ecy_since   = _ecy_hist.index[0].strftime("%b %Y")
         _ecy_median = float(_ecy_hist.median())
-        _real_rate  = current_dgs10 - current_t10yie
 
         ecy_window    = st.radio(
             "Window", ["5Y", "10Y", "Max"],
@@ -2123,14 +2157,14 @@ with col:
             f"{_ordinal(ecy_pctile_w)} percentile of {ecy_scope} "
             f"(full history since {ecy_since}: {_ordinal(ecy_pctile)} pct)  \n"
             f"CAPE yield {100/cape_val:.2f}% vs real rate {_real_rate:.2f}% "
-            f"({current_dgs10:.2f}% − {current_t10yie:.2f}%)"
+            f"(DFII10, the 10-year TIPS yield, as on the Real 10-Year panel)"
         )
 
         st.caption(interpret_excess_cape(current_ecy, ecy_pctile / 100))
         st.divider()
 
     elif cape_ok:
-        _panel_error("Excess CAPE Yield (ECY)", _dgs10_err or _t10yie_err, "retry_ecy")
+        _panel_error("Excess CAPE Yield (ECY)", _dfii10_err, "retry_ecy")
         st.divider()
 
     # ═══════════════════════════════════════════════════════════════════════════
@@ -2140,7 +2174,7 @@ with col:
     st.markdown("### Cross-Asset Performance")
     st.caption(
         "Relative performance trends across equity geographies and currency — "
-        "context for the SAA's developed-international and emerging-markets overweights."
+        "context for the SAA's developed-international and emerging-markets allocations."
     )
 
     # ── US vs. International Equity ───────────────────────────────────────────
@@ -2475,6 +2509,23 @@ with col:
 
         ff_val,  ff_dt  = _last_valid(full_frame, ff_col)
         etf_val, etf_dt = _last_valid(full_frame, etf_col)
+
+        def _leg_base(s: pd.Series) -> str:
+            """A leg's own percentile base. The two legs' histories differ: in the demo
+            IWB and IWF are priced only from April 2025, so their 12-month spreads begin
+            in April 2026, and an IWM − IWB reading ranked against a few months read
+            "2nd percentile of full history" beside a ~26-year Fama-French base."""
+            s = s.dropna()
+            if s.empty:
+                return "no history"
+            b0, b1 = s.index.min(), s.index.max()
+            months = (b1.year - b0.year) * 12 + (b1.month - b0.month)
+            span = (f"~{round((b1 - b0).days / 365)} years" if months >= 24
+                    else f"{max(months, 1)} month{'s' if months != 1 else ''}")
+            return f"{b0.strftime('%b %Y')}–{b1.strftime('%b %Y')}, {span}"
+
+        _ff_base  = _leg_base(full_frame[ff_col])
+        _etf_base = _leg_base(full_frame[etf_col])
         ff_pct = (
             factor_regime.factor_percentile(full_frame[ff_col].dropna(), ff_val)
             if ff_val is not None else None
@@ -2489,25 +2540,21 @@ with col:
             st.metric(ff_metric, f"{ff_val:+.1f}%" if ff_val is not None else "—",
                       help="Trailing-12M cumulative Fama-French premium (academic long-short).")
             if ff_pct is not None:
-                st.caption(f"{_ordinal(ff_pct)} percentile of full history")
+                st.caption(f"{_ordinal(ff_pct)} percentile of its history ({_ff_base})")
         with _mc2:
             st.metric(etf_metric, f"{etf_val:+.1f}%" if etf_val is not None else "—",
                       help="Trailing-12M long-only ETF proxy relative return.")
             if etf_pct is not None:
-                st.caption(f"{_ordinal(etf_pct)} percentile of full history")
+                st.caption(f"{_ordinal(etf_pct)} percentile of its history ({_etf_base})")
 
         _ff_as_of  = ff_dt.strftime("%b %d, %Y")  if ff_dt  is not None else "n/a"
         _etf_as_of = etf_dt.strftime("%b %d, %Y") if etf_dt is not None else "n/a"
-        if not full_frame.empty:
-            _b0, _b1 = full_frame.index.min(), full_frame.index.max()
-            _base = f"{_b0.strftime('%Y')}–{_b1.strftime('%Y')}, ~{round((_b1 - _b0).days / 365)} years"
-        else:
-            _base = "full available history"
         from src.asof import data_vintage as _data_vintage
         st.caption(
             f"{_data_vintage('Fama-French factor', ff_dt.date() if ff_dt is not None else None)} "
-            f"ETF proxy as of {_etf_as_of}. Percentiles are measured against the full available history "
-            f"({_base}) and do not move with the lookback selector."
+            f"ETF proxy as of {_etf_as_of}. Each percentile is measured against its own series' "
+            f"full available history (Fama-French: {_ff_base}; ETF proxy: {_etf_base}) and does "
+            "not move with the lookback selector."
         )
         if ff_val is not None and etf_val is not None:
             st.caption(factor_regime.interpret_factor(

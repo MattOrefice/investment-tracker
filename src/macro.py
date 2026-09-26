@@ -297,6 +297,13 @@ class RegimeVerdict(NamedTuple):
     missing: tuple[str, ...]
 
 
+# The classifier's thresholds, named once so the verdict and its explanation read the
+# same numbers (audit item 5). Rationale in docs/regime_classifier.md.
+REGIME_UNRATE_EARLY: float = 5.5    # UNRATE above: Early-cycle (with the curve not inverted)
+REGIME_UNRATE_TIGHT: float = 4.2    # UNRATE below: the tight-labor Late-cycle trigger
+REGIME_CURVE_TRIGGER: float = -0.25  # T10Y2Y below, in percent: the inverted-curve trigger
+
+
 def classify_regime(
     usrec: float | None,
     t10y2y: float | None,
@@ -342,17 +349,60 @@ def classify_regime(
     if len(present) < _HEURISTIC_MIN_SIGNALS:
         return _verdict(None)
 
-    unrate_high  = unrate is not None and unrate > 5.5
-    curve_ok     = t10y2y is None or t10y2y > -0.25
+    unrate_high  = unrate is not None and unrate > REGIME_UNRATE_EARLY
+    curve_ok     = t10y2y is None or t10y2y > REGIME_CURVE_TRIGGER
     if unrate_high and curve_ok:
         return _verdict("Early-cycle")
 
-    curve_inv    = t10y2y is not None and t10y2y < -0.25
-    labor_tight  = unrate is not None and unrate < 4.2
+    curve_inv    = t10y2y is not None and t10y2y < REGIME_CURVE_TRIGGER
+    labor_tight  = unrate is not None and unrate < REGIME_UNRATE_TIGHT
     if curve_inv or labor_tight:
         return _verdict("Late-cycle")
 
     return _verdict("Mid-cycle")
+
+
+def regime_explanation(label: str | None, t10y2y: float | None,
+                       unrate: float | None) -> str:
+    """The signals behind a verdict, with their values against classify_regime's own
+    thresholds: what fired, then what did not (audit item 5). Written from the same
+    comparisons the classifier makes, so the explanation cannot contradict the label.
+    It used to be one fixed sentence per label ("the yield curve is inverted or labor
+    markets are historically tight") beside a +0.31% curve."""
+    def _curve() -> str:
+        return (f"the 2/10 curve at {t10y2y:+.2f}%" if t10y2y is not None
+                else "the 2/10 curve (unavailable)")
+
+    def _ur() -> str:
+        return f"unemployment at {unrate:.1f}%" if unrate is not None else "unemployment (unavailable)"
+
+    trig = f"{REGIME_CURVE_TRIGGER:+.2f}%"
+    if label == "Recession":
+        return "Recession: the NBER recession indicator (USREC) reads 1."
+    if label == "Early-cycle":
+        curve = (f"{_curve()} is above the {trig} inversion trigger" if t10y2y is not None
+                 else "the 2/10 curve is unavailable, which the classifier reads as not inverted")
+        return (f"Early-cycle: {_ur()} is above {REGIME_UNRATE_EARLY:.1f}%, and {curve}.")
+    if label == "Late-cycle":
+        fired, quiet = [], []
+        if t10y2y is not None and t10y2y < REGIME_CURVE_TRIGGER:
+            fired.append(f"{_curve()} is below the {trig} inversion trigger")
+        elif t10y2y is not None:
+            quiet.append(f"{_curve()} is above the {trig} inversion trigger")
+        if unrate is not None and unrate < REGIME_UNRATE_TIGHT:
+            fired.append(f"{_ur()} is below the {REGIME_UNRATE_TIGHT:.1f}% tight-labor threshold")
+        elif unrate is not None:
+            quiet.append(f"{_ur()} is at or above the {REGIME_UNRATE_TIGHT:.1f}% "
+                         "tight-labor threshold")
+        text = "Late-cycle: " + " and ".join(fired) + "."
+        if quiet:
+            text += " Not triggered: " + "; ".join(quiet) + "."
+        return text
+    if label == "Mid-cycle":
+        return (f"Mid-cycle: neither late-cycle trigger fired. {_curve()[0].upper()}"
+                f"{_curve()[1:]} is above the {trig} inversion trigger, and {_ur()} is "
+                f"between {REGIME_UNRATE_TIGHT:.1f}% and {REGIME_UNRATE_EARLY:.1f}%.")
+    return ""
 
 
 def get_regime_signals(as_of_date: str | None = None) -> dict:
@@ -400,6 +450,14 @@ def compute_cape_implied_return(cape: float) -> float:
     return -0.070 * math.log(cape / 16.0) + 0.066
 
 
+def compute_ecy_real(cape: float, real10y_pct: float) -> float:
+    """Excess CAPE Yield from the 10-year real yield itself (DFII10, the TIPS yield):
+    ECY = 100 / CAPE − real 10Y. The Macro page reads DFII10 for its real-yield panel
+    and now for ECY too, so the page shows one real 10Y, not DFII10 (2.85%) on one
+    panel and nominal minus breakeven (2.84%) on another (audit item 5)."""
+    return (100.0 / cape) - real10y_pct
+
+
 def compute_ecy(cape: float, t10y_pct: float, t10yie_pct: float) -> float:
     """
     Excess CAPE Yield: equity earnings yield minus 10-year real bond yield.
@@ -436,7 +494,12 @@ HY_SPREAD_WIDE:         float = 600.0
 HY_SPREAD_RECESSIONARY: float = 800.0
 
 # GDP growth rate (QoQ annualized, percent)
-GDP_TREND:       float = 2.5   # CBO long-run potential output
+# The FOMC's longer-run median projection for real GDP growth, Summary of Economic
+# Projections, September 16, 2026 (federalreserve.gov/monetarypolicy/fomcprojtabl20260916.htm).
+# It read 2.5 "(CBO estimate)"; no CBO figure near 2.5% could be found, and CBO's
+# February 2026 outlook has real GDP growth averaging 1.8% a year over 2027-2036.
+GDP_TREND:       float = 2.0
+GDP_TREND_SOURCE: str = "the FOMC's longer-run median projection, September 2026"
 GDP_ABOVE_TREND: float = 3.5   # solidly above trend
 
 
@@ -491,9 +554,16 @@ def interpret_excess_cape(value: float, percentile: float) -> str:
 def interpret_curve_spread(value_bps: float) -> str:
     """Dynamic 1–2 sentence interpretation of the 10Y−2Y yield curve spread (in bps)."""
     if value_bps < CURVE_INVERTED:
+        # The regime classifier counts an inversion only below its trigger (-25 bps), so
+        # a shallower one says so here rather than contradicting the verdict (item 5).
+        buffer = (
+            f" It is above the regime classifier's {REGIME_CURVE_TRIGGER * 100:+.0f} bps "
+            "trigger, so the regime does not count it as inverted."
+            if value_bps > REGIME_CURVE_TRIGGER * 100 else ""
+        )
         return (
             f"The yield curve is inverted at {value_bps:+.0f} bps — short-term rates exceed long-term "
-            "rates. Persistent inversion has preceded each of the last seven US recessions with a "
+            f"rates.{buffer} Persistent inversion has preceded each of the last seven US recessions with a "
             "12–18 month lead time. Allocators watch the un-inversion (curve steepening back above "
             "zero) as the signal that a cutting cycle is underway, not the inversion itself."
         )
@@ -568,15 +638,15 @@ def interpret_gdp_growth(value: float) -> str:
         )
     elif value < GDP_TREND:
         return (
-            f"Real GDP growth of {value:.1f}% is below the long-run potential output trend of "
-            f"~{GDP_TREND:.1f}% (CBO estimate). Below-trend growth is consistent with a late-cycle "
+            f"Real GDP growth of {value:.1f}% is below the long-run trend of "
+            f"~{GDP_TREND:.1f}% ({GDP_TREND_SOURCE}). Below-trend growth is consistent with a late-cycle "
             "slowdown or early recovery, where monetary easing becomes more likely and "
             "duration (Core Fixed Income, TIPS) gains defensive value."
         )
     elif value < GDP_ABOVE_TREND:
         return (
-            f"Real GDP growth of {value:.1f}% is near the long-run potential output trend of "
-            f"~{GDP_TREND:.1f}% — a mid-cycle Goldilocks range. On-trend growth is associated "
+            f"Real GDP growth of {value:.1f}% is near the long-run trend of "
+            f"~{GDP_TREND:.1f}% ({GDP_TREND_SOURCE}) — a mid-cycle Goldilocks range. On-trend growth is associated "
             "with stable corporate earnings and balanced equity risk premiums; "
             "the SAA is calibrated for this baseline environment."
         )
@@ -596,45 +666,40 @@ def interpret_us_vs_intl_spread(spread_pp: float, rolling_mean_pp: float) -> str
     Args:
         spread_pp:       12-month US minus Intl return, in percentage points (+ve = US leads).
         rolling_mean_pp: 5-year rolling mean of that spread, in pp.
+
+    Both are differences of returns, so they are stated in percentage points: "4.6%
+    below its average of 4.6%" read as a garble when the spread was 0.0 (audit item 5).
+    A spread that rounds to zero says the two matched instead of "outperformed by 0.0".
     """
-    direction = "outperformed" if spread_pp >= 0 else "underperformed"
-    abs_spread = abs(spread_pp)
     delta = spread_pp - rolling_mean_pp
+    if abs(spread_pp) < 0.05:
+        lead = ("Over the trailing 12 months, US equities (SPY) and international developed "
+                "(EFA) returned about the same (a spread of 0.0 points).")
+    else:
+        verb = "outperformed" if spread_pp > 0 else "underperformed"
+        lead = (f"Over the trailing 12 months, US equities (SPY) {verb} international "
+                f"developed (EFA) by {abs(spread_pp):.1f} percentage points.")
+    avg = f"its 5-year rolling average of {rolling_mean_pp:+.1f} points"
 
     if delta > 10:
-        mean_context = (
-            f"the spread is {delta:.1f}% above its 5-year rolling average of "
-            f"{rolling_mean_pp:.1f}% — well into extended US-leadership territory. "
-            "Historically such extremes have mean-reverted via valuation convergence "
-            "and dollar cycle turns, supporting the case for the international developed sleeves."
-        )
+        context = (f"That is {delta:.1f} points above {avg}, well into extended "
+                   "US-leadership territory. Historically such extremes have mean-reverted via "
+                   "valuation convergence and dollar cycle turns, supporting the case for the "
+                   "international developed sleeves.")
     elif delta > 3:
-        mean_context = (
-            f"the spread is {delta:.1f}% above its 5-year rolling average of "
-            f"{rolling_mean_pp:.1f}%, indicating continued US leadership."
-        )
+        context = (f"That is {delta:.1f} points above {avg}, indicating continued US "
+                   "leadership.")
     elif delta > -3:
-        mean_context = (
-            f"the spread is near its 5-year rolling average of {rolling_mean_pp:.1f}% — "
-            "US and international relative performance is close to its recent historical norm."
-        )
+        context = (f"That is near {avg}: US and international relative performance is close "
+                   "to its recent historical norm.")
     elif delta > -10:
-        mean_context = (
-            f"the spread is {abs(delta):.1f}% below its 5-year rolling average of "
-            f"{rolling_mean_pp:.1f}%, consistent with international narrowing the performance gap."
-        )
+        context = (f"That is {abs(delta):.1f} points below {avg}, consistent with "
+                   "international narrowing the performance gap.")
     else:
-        mean_context = (
-            f"the spread is {abs(delta):.1f}% below its 5-year rolling average of "
-            f"{rolling_mean_pp:.1f}% — a strong reversal in international's favor, "
-            "consistent with the valuation mean-reversion thesis underlying "
-            "the developed-international allocation."
-        )
-
-    return (
-        f"Over the trailing 12 months, US equities (SPY) have {direction} international "
-        f"developed (EFA) by {abs_spread:.1f}%. On a 5-year rolling basis, {mean_context}"
-    )
+        context = (f"That is {abs(delta):.1f} points below {avg}, a strong reversal in "
+                   "international's favor, consistent with the valuation mean-reversion thesis "
+                   "underlying the developed-international allocation.")
+    return f"{lead} {context}"
 
 
 def interpret_nfci(value: float) -> str:
