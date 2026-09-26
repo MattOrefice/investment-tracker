@@ -229,11 +229,14 @@ class TestInterpretUsVsIntlSpread:
         assert "8.5" in text
         assert "underperformed" in text.lower()
 
-    def test_uses_percent_not_pp(self):
-        # Units convention: interpretation must use "%" not " pp"
+    def test_states_the_spread_in_percentage_points_not_pp(self):
+        # Units convention: no " pp" abbreviation. The spread is a difference of two
+        # returns, so it is in percentage points, spelled out; it read "%" until the
+        # 2026-09-25 audit (item 5), which made "15.0% above its average of 5.0%"
+        # ambiguous between points and a relative change.
         text = interpret_us_vs_intl_spread(6.7, 4.9)
-        assert "%" in text
-        assert " pp" not in text
+        assert "6.7 percentage points" in text
+        assert " pp" not in text and "6.7%" not in text
 
     def test_no_unrendered_placeholders(self):
         for spread, mean in [(20.0, 5.0), (8.0, 5.0), (5.0, 5.0), (-5.0, 5.0), (-15.0, 5.0)]:
