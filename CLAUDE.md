@@ -169,6 +169,9 @@
   longer expected red. Any failure beyond #177 is real.
 
 ## Quarterly close-out
+After the quarter's last close, in this order, in the mode whose book you are
+closing (personal from `.env`; demo with `TRACKER_MODE=demo`). Every step names
+the code that supports it; the two with none are listed at the end.
 - Enter the quarter's ETF fact-sheet figures in `data/etf_metadata.json`: for
   every fund in the file, the figures from its fact sheet dated inside the
   quarter, with `as_of` set to the fact sheet's date. Keep the weighted-average
@@ -176,6 +179,41 @@
   would change what it plots (#388). A quarter lock takes the file only when
   every `as_of` falls inside the quarter (#389), so until then that quarter's
   style box renders as pending. Commit the file; nothing refreshes it.
+- Confirm prices cover the quarter's last close: `python -c "from
+  src.holdings import committed_price_frontier as f; print(f())"` must print
+  the quarter's last trading day or later. Until then a lock is refused
+  (`LockCoverageError`), never taken short, and the report steps back to the
+  previous quarter (`asof.most_recent_reportable_quarter`).
+- Refresh CAPE and trailing P/E for the quarter-end observation: `python
+  tools/refresh_market_data.py --files cape pe`, then commit the diff. The lock
+  takes CAPE once the quarter's last month has a reading.
+- Generate the quarter's report (Performance page, "Most recent completed
+  quarter"). That takes the lock. Prices, dividends, HYG, CAPE and in-quarter
+  fact sheets lock now; the French factors and momentum wait, and the factor and
+  benchmark sections render as pending with the date French ends. `python -c
+  "from src.cache import get_quarter_snapshot as g;
+  print(g('2026Q3')[0].inputs_pending)"` lists what waits (quarter id YYYYQn).
+- When French publishes the quarter's final month (about a month after it
+  ends): `python tools/refresh_market_data.py --files ff_us ff_developed_exus
+  ff_umd`, commit, and generate the report again. That run locks the pending
+  inputs (`cache.complete_quarter_inputs`) without moving anything already
+  locked; confirm `inputs_pending` prints `{}` and the factor and benchmark
+  sections render.
+- Run the lock tests: `python -m pytest -q tests/test_quarter_lock.py
+  tests/test_quarter_lock_inputs.py tests/test_hyg_price_layer.py
+  tests/test_one_blended_series.py tests/test_window_base_close.py
+  tests/test_fact_sheet_dates.py`. Re-baseline a golden only for the reason its
+  docstring names, in its own commit: `test_q2_locked_headline_figures_golden`
+  (frozen book) moves only with the lock rule, and
+  `test_benchmark_gap_renormalization_is_numeric_stack_invariant` only with a
+  demo.db price change inside 2025-05-01 to 2026-07-20.
+- Run the `live_data` tests: `TRACKER_MODE=demo python -m pytest -m live_data -q`.
+- Not yet supported (#397), so not steps: advancing the committed demo snapshot
+  through quarter-end and committing the new quarter's lock (no tool writes
+  prices into `data/demo.db`, and `tools/lock_demo_quarters.py` refuses a
+  quarter its committed prices do not cover), and a committed harness that
+  renders every earlier locked report for a byte-identical diff. Until they
+  exist, the demo's new quarter is locked only in its runtime cache.
 
 ## History baseline (post-2026-06-08 reorg)
 - History was reorganized twice on 2026-06-08, both as

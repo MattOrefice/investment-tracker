@@ -18,6 +18,26 @@ def _section(title: str) -> str:
     return text.split(f"\n## {title}\n", 1)[1].split("\n## ", 1)[0]
 
 
+def test_the_quarterly_close_out_names_the_code_behind_each_step():
+    """Every step names a command or function that exists; the unsupported steps are
+    listed as gaps, not written as steps (audit item 4g)."""
+    import re
+    s = _section("Quarterly close-out")
+    for needle in ("data/etf_metadata.json", "committed_price_frontier",
+                   "refresh_market_data.py --files cape pe",
+                   "refresh_market_data.py --files ff_us ff_developed_exus",
+                   "complete_quarter_inputs", "inputs_pending", "-m live_data",
+                   "Not yet supported (#397)"):
+        assert needle in s.replace("\n  ", " "), needle
+    # The named files and functions exist.
+    for path in re.findall(r"tests/test_\w+\.py|tools/\w+\.py", s):
+        assert (ROOT / path).exists(), path
+    from src import asof, cache, holdings
+    assert callable(holdings.committed_price_frontier)
+    assert callable(cache.complete_quarter_inputs) and callable(cache.get_quarter_snapshot)
+    assert callable(asof.most_recent_reportable_quarter)
+
+
 def test_before_every_push_runs_the_suite_and_the_live_data_tests():
     s = _section("Before every push")
     assert "TRACKER_MODE=demo" in s and "python -m pytest -q" in s
