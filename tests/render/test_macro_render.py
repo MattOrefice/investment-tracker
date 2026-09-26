@@ -283,9 +283,29 @@ def test_cape_vs_trailing_contrast_prose(macro_app: AppTest) -> None:
 
 @pytest.mark.live_data
 def test_forward_pe_panel_renders_seam_state(macro_app: AppTest) -> None:
-    """Forward P/E panel renders; with the committed null template it must
-    show the how-to-populate info state, never an invented number."""
+    """Forward P/E panel: in demo mode with no estimate on file it is HIDDEN, because
+    its text is the maintainer's data-entry procedure (#387, audit item 4). Otherwise
+    it renders, and with the committed null template it shows the how-to-populate
+    info state, never an invented number.
+
+    Until #394 this asserted the heading unconditionally. It is live_data, so the
+    default suite and PR CI never ran it when #387 hid the panel in demo; the
+    scheduled job, which renders in demo mode, went red the next morning."""
+    from src.config import IS_DEMO
+    from src.forward_pe import load_forward_eps
+    try:
+        on_file = load_forward_eps() is not None
+    except Exception:            # the page treats an unusable file as none on file
+        on_file = False
     md = " ".join(m.value for m in macro_app.markdown)
+    metrics = [m.label for m in macro_app.metric]
+    if IS_DEMO and not on_file:
+        text = md + " " + " ".join(str(i.value) for i in macro_app.info)
+        assert "Forward P/E" not in md and "Forward P/E" not in metrics, (
+            "the demo shows the Forward P/E panel with no estimate on file (#387)")
+        assert "forward_eps.json" not in text and "sp-500-eps-est" not in text, (
+            "the demo shows the data-entry procedure (#387)")
+        return
     assert "S&P 500 Forward P/E (next-12-month consensus)" in md, (
         "Forward P/E panel heading not found"
     )

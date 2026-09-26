@@ -48,6 +48,17 @@
 - State root cause in plain English before changes that touch
   multiple files or git history.
 
+## Before every push
+- Run the full CI-style suite on the tip you will push: `TRACKER_MODE=demo
+  python -m pytest -q` in a worktree with no `data/tracker.db`. A targeted run
+  cannot see a relationship between two correct lines (#366, #380, #387).
+- For any PR that changes a rendered page, ALSO run the `live_data` tests in
+  demo mode, as the scheduled job does: `TRACKER_MODE=demo python -m pytest -m
+  live_data -q`. pytest.ini excludes them from the default suite and PR CI, so a
+  PR can break them unseen; #387 hid Macro's Forward P/E panel, a `live_data`
+  test pinned it, and main's scheduled job went red the next morning (#394).
+  They make live calls, so run them with the network up and FRED_API_KEY set.
+
 ## Modes
 - TRACKER_MODE controls demo (Streamlit Cloud, public, paper-trade)
   vs personal (local, real household data in data/tracker.db).
