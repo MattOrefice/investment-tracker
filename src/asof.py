@@ -386,7 +386,9 @@ def as_of_live_line(
                 f"{_when(refresh.attempted_at)}).")
 
     if lag <= 0 and not gap:
-        return f"Live data as of {format_long_date(ref)}."
+        # A page whose coverage record saw the open session's bar lands here, so this
+        # is the state that most needs the unsettled-price sentence (#160, item 4i).
+        return f"Live data as of {format_long_date(ref)}." + _live_mark_sentence()
 
     missing = _sessions_missing(served, ref)
     line = f"Prices through {format_long_date(served)} ({basis})"
@@ -402,7 +404,35 @@ def as_of_live_line(
         line += (f". The daily price fetch failed {_when(refresh.attempted_at)}; "
                  f"serving {instead} until it retries after "
                  f"{_when(refresh.next_attempt_at)}")
-    return line + "."
+    return line + "." + _live_mark_sentence()
+
+
+def _live_mark_sentence() -> str:
+    """The banner's sentence for an open session's bar ("Current values include
+    today's unsettled price, quoted at 11:02 AM ET."), when this process has served
+    one that no stored close covers; else "".
+
+    #160 keeps an open session's bar out of the cache and hands it to the caller, so
+    in personal mode during market hours a current value (Performance, Risk) includes
+    a price that is not a close, while the lines above describe settled closes. The
+    time is the quote's, in ET, and it is the earliest one served: a process keeps
+    serving the bar it fetched, so the price can be hours old. Returns use settled
+    closes only (holdings.last_settled_price_date) and do not include it."""
+    from src.prices import live_marks
+    marks = live_marks()
+    if not marks:
+        return ""
+    from src.holdings import committed_price_frontier
+    stored = committed_price_frontier()
+    newer = [m for m in marks.values()
+             if stored is None or date.fromisoformat(m["date"]) > (
+                 date.fromisoformat(stored) if isinstance(stored, str) else stored)]
+    if not newer:
+        return ""
+    quoted = sorted(m["quoted_at"] for m in newer if m.get("quoted_at"))
+    when = (f", quoted at {datetime.fromisoformat(quoted[0]).astimezone(ET):%I:%M %p} ET"
+            .replace(" at 0", " at ") if quoted else "")
+    return f" Current values include today\u2019s unsettled price{when}."
 
 
 def _sessions_missing(served: date, today: date) -> int:

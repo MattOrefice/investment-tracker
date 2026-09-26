@@ -244,6 +244,15 @@ def fetch_prices(
     # it costs a re-fetch until the session closes; writing it costs a permanently
     # wrong row, because nothing ever re-reads a date at or below cached_end.
     skip_date = unsettled_bar_date(result)
+    if skip_date is not None and any(dt >= skip_date for dt in df.index):
+        # The frame carries the open session's bar: say so, with the time of its quote,
+        # so whatever serves it can tell the reader (#160, audit item 4f).
+        rmt = (result.get("meta") or {}).get("regularMarketTime")
+        df.attrs["unsettled"] = {
+            "date": skip_date.isoformat(),
+            "quoted_at": (datetime.fromtimestamp(rmt, tz=timezone.utc).isoformat()
+                          if isinstance(rmt, (int, float)) and rmt > 0 else None),
+        }
 
     with get_connection() as conn:
         # Auto-migrate: ensure dividends table exists in pre-existing DBs
@@ -278,6 +287,23 @@ def fetch_prices(
 # ticker with no cached rows at all (a candidate typed on the Research page) is
 # still fetched on read: nothing else will fetch it.
 _GAP_FETCH = True
+
+# Open-session bars get_prices has SERVED in this process, by ticker: {"date", "quoted_at"}.
+# #160 keeps them out of the cache but hands them to the caller, so in personal mode
+# during market hours a current value can include today's unsettled price. The banner
+# reads this to say so, with the quote's time (src.asof.as_of_live_line).
+_LIVE_MARKS: dict[str, dict] = {}
+
+
+def live_marks() -> dict:
+    """Open-session bars served so far in this process, by ticker (see _LIVE_MARKS)."""
+    return dict(_LIVE_MARKS)
+
+
+def _note_live_mark(ticker: str, frame: pd.DataFrame) -> None:
+    mark = frame.attrs.get("unsettled")
+    if mark:
+        _LIVE_MARKS[ticker] = dict(mark)
 
 
 def set_gap_fetch(enabled: bool) -> None:
@@ -467,6 +493,7 @@ def get_prices(
         lo = _to_iso(date.fromisoformat(before) + timedelta(days=1)) if before else start_date
         hi = _to_iso(date.fromisoformat(after) - timedelta(days=1)) if after else end
         fresh = fetch_prices(ticker, min(lo, start_date), max(hi, end))
+        _note_live_mark(ticker, fresh)
         fresh["adj_close"] = dividend_adjusted(ticker, fresh)
         in_window = [(_to_iso(d) >= start_date) and (_to_iso(d) <= end) for d in fresh.index]
         return fresh[in_window]
@@ -495,6 +522,7 @@ def get_prices(
         post_start = _to_iso(cached.index.max() + timedelta(days=1))
         try:
             post = _fetch_trailing_memoized(ticker, post_start, end)
+            _note_live_mark(ticker, post)
             cached = pd.concat([cached, post]).sort_index()
         except Exception:
             pass
