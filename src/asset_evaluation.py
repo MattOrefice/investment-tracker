@@ -33,12 +33,19 @@ TRADING_DAYS  = 252
 # an import-time derivation opens the database from `import` itself (pytest
 # collection, a bare REPL import) and freezes the sleeve set before the phase-46
 # international split can rename it. Cash / SPAXX is excluded: near-zero
-# variance distorts correlation and optimisation. Names are abbreviated
-# ("International …" -> "Intl …") for the correlation-matrix display; the same
-# abbreviation is the name bridge test_raw_weights_match_db_targets_and_scale
-# uses to compare these against the full-name DB targets.
+# variance distorts correlation and optimisation. Names used to be abbreviated
+# ("International …" -> "Intl …") for the correlation matrix, so Risk and Correlations
+# said "Intl" where every other page says "International" (audit item 13). They are
+# the DB names now; the function stays as the one place a display name is made.
 def _abbrev(name: str) -> str:
-    return name.replace("International ", "Intl ")
+    return name
+
+
+def fmt_corr(v: float, sign: str = "") -> str:
+    """A correlation to two places, never "-0.00": the page read "Low correlation
+    (-0.00) with Core Fixed Income" (audit item 13). ``sign="+"`` forces a sign."""
+    r = round(float(v), 2) + 0.0
+    return f"{r:{sign}.2f}"
 
 
 def _derive_sleeve_maps() -> tuple[dict, dict]:

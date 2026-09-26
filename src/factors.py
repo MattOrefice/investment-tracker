@@ -284,6 +284,21 @@ def _nw_lags(T: int) -> int:
     return int(4 * (T / 100) ** (2 / 9))
 
 
+# The significance legend under every regression table. Escaped: a caption starting
+# "* p < 0.10" rendered the star as a markdown bullet, and "** p < 0.05 ... ***"
+# paired the stars into bold, so the legend lost its first star (audit item 13).
+SIG_LEGEND = r"\* p < 0.10 &nbsp; \*\* p < 0.05 &nbsp; \*\*\* p < 0.01"
+
+
+def fmt_p(p: float) -> str:
+    """A p-value to three places, unless rounding would carry it onto a threshold its
+    stars say it is below: p = 0.0099 printed "0.010" beside *** (audit item 13)."""
+    for threshold in (0.01, 0.05, 0.10):
+        if p < threshold and round(p, 3) >= threshold:
+            return f"<{threshold:.2f}"
+    return f"{p:.3f}"
+
+
 def sig_marker(p: float) -> str:
     """Return significance asterisk(s) at 10/5/1% levels."""
     if p < 0.01:
@@ -298,7 +313,7 @@ def sig_marker(p: float) -> str:
 def alpha_ci_str(result: dict) -> str:
     """
     Format annualized alpha with 95% Newey-West confidence interval.
-    Returns e.g. '+127 bps/yr [−53, +307]'.
+    Returns e.g. '+127 bps/yr [-53, +307]'.
 
     SE is extracted from result['_hac_bse']['const'] (daily decimal units).
     CI = alpha_bps ± 1.96 × SE_bps where SE_bps = SE_daily × 252 × 10000.
@@ -314,8 +329,8 @@ def alpha_ci_str(result: dict) -> str:
     se_bps = se_daily * 252 * 10_000
     lo     = a_bps - 1.96 * se_bps
     hi     = a_bps + 1.96 * se_bps
-    lo_s   = f"−{abs(lo):.0f}" if lo < 0 else f"+{lo:.0f}"
-    hi_s   = f"−{abs(hi):.0f}" if hi < 0 else f"+{hi:.0f}"
+    lo_s   = f"-{abs(lo):.0f}" if lo < 0 else f"+{lo:.0f}"      # one minus sign (item 13)
+    hi_s   = f"-{abs(hi):.0f}" if hi < 0 else f"+{hi:.0f}"
     return f"{a_bps:+.0f} bps/yr [{lo_s}, {hi_s}]"
 
 
@@ -1419,7 +1434,7 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
         "total return of VOO, VTV, SPHQ, and AVUV, weighted by SAA target proportions "
         "(VOO 35.6%, SPHQ 31.1%, VTV 17.8%, AVUV 15.6% — proportional to the locked "
         "Phase 1 sleeve targets of 16/14/8/7%). Weights are held constant. "
-        "The Developed sleeve is VEA's daily adj_close return.",
+        "The Developed sleeve is VEA's daily adjusted-close return.",
 
         "Universe mismatch — Developed sleeve: VEA tracks FTSE Developed All Cap ex US "
         "(includes Korea, Israel as Developed). Ken French's Developed ex-US universe "
@@ -1656,8 +1671,8 @@ def build_benchmark_prose(
         _se_bps = _se_daily * 252 * 10_000
         _ci_lo  = a_bps - 1.96 * _se_bps
         _ci_hi  = a_bps + 1.96 * _se_bps
-        _lo_s   = f"−{abs(_ci_lo):.0f}" if _ci_lo < 0 else f"+{_ci_lo:.0f}"
-        _hi_s   = f"−{abs(_ci_hi):.0f}" if _ci_hi < 0 else f"+{_ci_hi:.0f}"
+        _lo_s   = f"-{abs(_ci_lo):.0f}" if _ci_lo < 0 else f"+{_ci_lo:.0f}"
+        _hi_s   = f"-{abs(_ci_hi):.0f}" if _ci_hi < 0 else f"+{_ci_hi:.0f}"
         _ci_part = f" (95% CI: [{_lo_s}, {_hi_s}]; t = {t_a:.2f})"
     else:
         _ci_part = f" (t = {t_a:.2f})"
@@ -1748,7 +1763,7 @@ def build_benchmark_methodology(result: Optional[dict]) -> list[str]:
         if result else "N/A"
     )
     return [
-        "R_p: daily portfolio total return (adj_close basis, SPAXX proxied via BIL normalized "
+        "R_p: daily portfolio total return (adjusted-close basis, SPAXX proxied via BIL normalized "
         "to $1.00 at inception). R_b: daily custom blended SAA benchmark return (target-weight "
         "basket: SPY, QUAL, IWD, IWM, EFA, EEM, IEF, TIP, 60% VNQ + 40% DBC, BIL). "
         "RF, HML, SMB, RMW: Ken French US daily factors (Dartmouth). "

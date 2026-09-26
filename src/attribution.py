@@ -300,10 +300,13 @@ def stage2_reconciliation(
     """
     from src.asof import format_long_date
 
+    # Displayed rounded, and "+ 0.0" turns a rounded -0.00 into 0.00: it read
+    # "vs. Stage 2: ✓ -0.00 bps" (audit item 13). The 0.5 bp check reads the raw gap.
+    shown = round(gap_bps, 2) + 0.0
     flows = {d: a for d, a in window_flows.items() if a}
     if not flows:
         ok = abs(gap_bps) < 0.5
-        return f"vs. Stage 2: {'✓' if ok else '⚠'} {gap_bps:+.2f} bps", None
+        return f"vs. Stage 2: {'✓' if ok else '⚠'} {shown:+.2f} bps", None
 
     days = sorted(flows)
     if all(a > 0 for a in flows.values()):
@@ -315,13 +318,13 @@ def stage2_reconciliation(
     named = [format_long_date(d) for d in days]
     when = named[0] if len(named) == 1 else ", ".join(named[:-1]) + " and " + named[-1]
     plural = "s" if len(days) > 1 else ""
-    fragment = f"vs. Stage 2: {gap_bps:+.2f} bps, not comparable (a {noun} in this window)"
+    fragment = f"vs. Stage 2: {shown:+.2f} bps, not comparable (a {noun} in this window)"
     disclosure = (
         f"**Attribution cannot see the {noun}{plural} of {when}.** Brinson-Fachler holds "
         f"the holdings at the start of the window ({format_long_date(window_start)}) "
         f"fixed for the whole window, so it cannot attribute what an intra-window "
         f"{noun} {did}. Stage 2 is the book's time-weighted return, which does include "
-        f"them from the day they were {did}, so the two differ by {gap_bps:+.2f} bps "
+        f"them from the day they were {did}, so the two differ by {shown:+.2f} bps "
         f"here. That gap is this limitation, not an error: over a window with no "
         f"{noun}, they agree within 0.5 bps."
     )

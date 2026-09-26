@@ -245,7 +245,8 @@ def test_correlations_page_imports_shared_sleeve_mapping(use_demo_db):
 
     expected = {
         "US Large Core", "US Large Quality", "US Large Value", "US Small Cap",
-        "Intl Core", "Intl Quality", "Intl Large Value", "Intl Small Value",
+        "International Core", "International Quality", "International Large Value",
+        "International Small Value",
         "Emerging Markets", "Core Fixed Income", "TIPS",
         "Real Assets",
     }

@@ -681,8 +681,9 @@ def test_sleeve_weights_match_db(use_demo_db):
 
     src.asset_evaluation's ex-cash MV-analysis weights must equal the DB strategic
     targets sleeve-for-sleeve, so a change to one cannot silently diverge from the
-    other. The benchmark-proxy subsystem abbreviates 'International ...' to
-    'Intl ...'; this map is the bridge. Pins the demo book (use_demo_db): it
+    other. The benchmark-proxy subsystem abbreviated 'International ...' to
+    'Intl ...' until audit item 13; the names are now the DB's, so this map is the
+    identity it must stay. Pins the demo book (use_demo_db): it
     carries the full 12-sleeve taxonomy this asserts. asset_evaluation derives its
     maps at import (mode-frozen), so we re-derive under the pinned demo DB rather
     than read the module constant captured under the personal default.
@@ -696,10 +697,10 @@ def test_sleeve_weights_match_db(use_demo_db):
         "US Large Quality":  "US Large Quality",
         "US Large Value":    "US Large Value",
         "US Small Cap":      "US Small Cap",
-        "Intl Core":         "International Core",
-        "Intl Quality":      "International Quality",
-        "Intl Large Value":  "International Large Value",
-        "Intl Small Value":  "International Small Value",
+        "International Core":         "International Core",
+        "International Quality":      "International Quality",
+        "International Large Value":  "International Large Value",
+        "International Small Value":  "International Small Value",
         "Emerging Markets":  "Emerging Markets",
         "Core Fixed Income": "Core Fixed Income",
         "TIPS":              "TIPS",

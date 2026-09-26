@@ -636,7 +636,7 @@ with col:
             "**Tickers used:** Each sleeve's SAA benchmark ticker is used for the return "
             f"series ({_bench_enum}). Cash / SPAXX is excluded — its near-zero daily variance "
             "makes correlation estimates unstable.  \n\n"
-            "**Return computation:** Daily log-approximate returns via `adj_close.pct_change()`. "
+            "**Return computation:** Daily log-approximate returns, the adjusted close's daily percentage change. "
             "Weekend and holiday rows (zero-return days on all series simultaneously) are "
             "filtered before computing correlations.  \n\n"
             "**Rolling window:** Pearson correlation over the trailing *N* trading days. "

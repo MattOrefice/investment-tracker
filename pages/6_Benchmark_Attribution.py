@@ -19,6 +19,8 @@ from src.factors import (
     build_benchmark_prose,
     interpret_benchmark_attribution,
     run_benchmark_attribution_regression,
+    SIG_LEGEND,
+    fmt_p,
     sig_marker,
 )
 from src.reports import build_bf_cross_reference
@@ -110,7 +112,7 @@ with col:
         "Factor":       "Alpha (annualized)",
         "Loading (β)":  alpha_ci_str(result),
         "t-stat":       f"{result['t_alpha']:.2f}",
-        "p-value":      f"{p_a:.3f}",
+        "p-value":      fmt_p(p_a),
         "Significance": sig_marker(p_a),
     })
     for f in _BENCH_FACTORS:
@@ -119,7 +121,7 @@ with col:
             "Factor":       f,
             "Loading (β)":  f"{result['betas'][f]:.3f}",
             "t-stat":       f"{result['t_stats'][f]:.2f}",
-            "p-value":      f"{p:.3f}",
+            "p-value":      fmt_p(p),
             "Significance": sig_marker(p),
         })
 
@@ -128,7 +130,7 @@ with col:
         width='stretch',
     )
     st.caption(
-        "* p < 0.10 &nbsp; ** p < 0.05 &nbsp; *** p < 0.01 &nbsp;|&nbsp; "
+        SIG_LEGEND + " &nbsp;|&nbsp; "
         "Standard errors: Newey-West HAC"
     )
 
@@ -202,7 +204,7 @@ with col:
             "return inference."
         )
         st.caption(
-            "Portfolio returns: get_portfolio_value_series (adj_close basis). "
+            "Portfolio returns: the portfolio value series (adjusted-close basis). "
             f"Benchmark returns: the custom blended SAA target-weight basket, {blended_rule_note()}. "
             "RF, HML, SMB, RMW: Ken French US daily factors (mba.tuck.dartmouth.edu). "
             "A committed copy, refreshed by hand and never fetched on read."

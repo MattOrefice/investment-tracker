@@ -448,6 +448,11 @@ def _bm_period_return(series: pd.Series, period: str) -> float:
 # sentinel through to a return value here — these render "—", never the
 # literal string "nan%"/"nan bps".
 
+def _fmt_p(p: float) -> str:
+    from src.factors import fmt_p
+    return fmt_p(p)
+
+
 def _fmt_pct(v: float, decimals: int = 2) -> str:
     if v is None or (isinstance(v, float) and np.isnan(v)):
         return "—"
@@ -1079,7 +1084,7 @@ def _build_factor_section(end_date: str) -> Optional[dict]:
                 "factor":       factor,
                 "beta":         f"{res['betas'][factor]:.3f}",
                 "tstat":        f"{res['t_stats'][factor]:.2f}",
-                "pvalue":       f"{p:.3f}",
+                "pvalue":       _fmt_p(p),
                 "significance": sig_marker(p),
             })
         p_alpha = res["p_alpha"]
@@ -1152,7 +1157,7 @@ def _build_benchmark_section(start_date: str, end_date: str) -> Optional[dict]:
         "factor":       "Alpha (annualized)",
         "beta":         f"{result['alpha_annual_bps']:+.0f} bps/yr",
         "tstat":        f"{result['t_alpha']:.2f}",
-        "pvalue":       f"{p_alpha:.3f}",
+        "pvalue":       _fmt_p(p_alpha),
         "significance": sig_marker(p_alpha),
     })
     for f in _BENCH_FACTORS:
@@ -1161,7 +1166,7 @@ def _build_benchmark_section(start_date: str, end_date: str) -> Optional[dict]:
             "factor":       f,
             "beta":         f"{result['betas'][f]:.3f}",
             "tstat":        f"{result['t_stats'][f]:.2f}",
-            "pvalue":       f"{p:.3f}",
+            "pvalue":       _fmt_p(p),
             "significance": sig_marker(p),
         })
 

@@ -80,7 +80,7 @@ _PORTFOLIO_CACHE_V = 4
 
 _PALETTE = {
     "portfolio": "#2E4057",   # deep navy
-    "sp500":     "#8C9AA6",   # slate gray
+    "sp500":     "#B8742A",   # ochre
     "blended":   "#5C7A5C",   # muted sage
     "alloc":     "#5B7FA6",   # steel blue
     "selection": "#A67B5B",   # warm tan
@@ -555,16 +555,16 @@ with col:
         _twr_pct     = port_si * 100
         _rec_box = st.expander("Reconciliation: cost basis to current value", expanded=False)
         _rec_box.caption(
-            f"Reconciliation: **\\${_cost_basis:,.2f} cost basis** (lots still held, incl "
+            f"Reconciliation: **\\${_cost_basis:,.2f} cost basis** (lots still held, including "
             f"reinvested DRIP; a sale relieves the oldest lots first, as on the Tax Lots "
-            f"page) + **{'+' if _unrealized >= 0 else '−'}\\${abs(_unrealized):,.2f} "
+            f"page) + **{'+' if _unrealized >= 0 else '-'}\\${abs(_unrealized):,.2f} "
             f"unrealized G/L** on those lots (as on the Tax Lots page) + "
             f"**\\${_spaxx_income:,.2f} money-market income** on SPAXX, modeled at "
             f"BIL's total return (the ledger records SPAXX at its \\$1.00 NAV) = "
-            f"**\\${current_mv:,.2f} current value** (every share held, incl DRIP, at "
+            f"**\\${current_mv:,.2f} current value** (every share held, including DRIP, at "
             f"the latest close). "
             f"Returns — absolute ({_abs_ret_pct:.1f}%) and cumulative TWR ({_twr_pct:.1f}%) — "
-            f"use the dividend-adjusted total-return series (adj_close × actual non-DRIP "
+            f"use the dividend-adjusted total-return series (adjusted close × actual non-DRIP "
             f"shares), which counts dividend income once and is restated retroactively as "
             f"dividends accrue. That return series is a different basis from the market-value "
             f"dollar above (which counts the real DRIP shares), so the two are not expected to "

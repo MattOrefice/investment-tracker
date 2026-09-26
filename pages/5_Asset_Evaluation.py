@@ -15,6 +15,8 @@ from src.macro import get_recession_periods
 from src.prices import is_valid_ticker
 from src.prose_helpers import a_or_an
 from src.ui_helpers import render_footer, render_page_header
+
+_c = ae.fmt_corr
 render_page_header()
 
 
@@ -483,7 +485,7 @@ with col:
             zmid=0,
             zmin=-0.5,
             zmax=0.5,
-            text=[[f"{corr[s]:.2f}" for s in _hm_names]],
+            text=[[_c(corr[s]) for s in _hm_names]],
             texttemplate="%{text}",
             showscale=True,
         ))
@@ -512,7 +514,7 @@ with col:
                 f"BTC's correlation with US Large Core is {btc_spy_corr:+.2f} since 2018 — "
                 "meaningfully above zero. "
                 f"The highest sleeve correlation is {highest_sleeve} ({highest_val:+.2f}); "
-                f"the lowest is {lowest_sleeve} ({lowest_val:+.2f}). "
+                f"the lowest is {lowest_sleeve} ({_c(lowest_val, '+')}). "
             )
             hi_lo_note = ""
         else:
@@ -521,13 +523,13 @@ with col:
             )
             hi_lo_note = (
                 f"The highest sleeve correlation is {highest_sleeve} ({highest_val:.2f}) "
-                f"and the lowest is {lowest_sleeve} ({lowest_val:.2f}). "
+                f"and the lowest is {lowest_sleeve} ({_c(lowest_val)}). "
             )
 
         fi_note = ""
         if not np.isnan(fi_corr):
             fi_note = (
-                f"The Core Fixed Income correlation ({fi_corr:.2f}) is near zero, "
+                f"The Core Fixed Income correlation ({_c(fi_corr)}) is near zero, "
                 "which is consistent with Bitcoin offering some diversification relative "
                 "to duration — though this says nothing about behavior during equity stress. "
             )
@@ -535,7 +537,7 @@ with col:
         ra_note = ""
         if not np.isnan(ra_corr):
             ra_note = (
-                f"The Real Assets correlation ({ra_corr:.2f}) is relevant to the 'digital gold' "
+                f"The Real Assets correlation ({_c(ra_corr)}) is relevant to the 'digital gold' "
                 "thesis: if Bitcoin were a genuine inflation hedge or commodity substitute, "
                 "one would expect higher co-movement with this sleeve. "
             )
@@ -975,7 +977,7 @@ with col:
             late_note = ""
             if not np.isnan(late_corr) and not np.isnan(mid_corr):
                 late_note = (
-                    f"The late-cycle correlation ({late_corr:.2f}) versus mid-cycle ({mid_corr:.2f}) "
+                    f"The late-cycle correlation ({_c(late_corr)}) versus mid-cycle ({_c(mid_corr)}) "
                     "comparison is particularly relevant: if Bitcoin behaves as a risk asset "
                     "precisely when the portfolio most needs a hedge, its diversification value "
                     "is fundamentally compromised."
@@ -1022,7 +1024,7 @@ with col:
     if not corr.empty:
         low_corr_sleeves = [s for s in ae.sleeve_names() if not np.isnan(corr.get(s, float("nan"))) and corr[s] < 0.1]
         for s in low_corr_sleeves:
-            args_for.append(f"Low correlation ({corr[s]:.2f}) with {s}")
+            args_for.append(f"Low correlation ({_c(corr[s])}) with {s}")
 
         btc_spy_j = float(corr.get("US Large Core", float("nan")))
         if not np.isnan(btc_spy_j) and btc_spy_j > 0.3:
@@ -1093,16 +1095,16 @@ _, col, _ = st.columns([1, 8, 1])
 with col:
     with st.expander("Methodology", expanded=False):
         st.markdown(
-            "**Data source:** Daily adjusted-close prices retrieved via "
-            "`src/prices.py` (SQLite-cached; refreshes on cache miss). "
-            "Sleeve benchmark prices use the same fetcher and the tickers defined "
-            "in `src/asset_evaluation.sleeve_benchmarks()`.\n\n"
+            "**Data source:** Daily adjusted-close prices from the app's price cache "
+            "(SQLite; refreshed on a cache miss). Sleeve benchmark prices come from "
+            "the same cache, for each sleeve's benchmark tickers.\n\n"
             f"**Date range:** {ae.SAMPLE_START} to present. BTC-USD data available "
             "from approximately 2014; 2018-01-01 is used as the start date because "
             "it precedes the first major post-ICO bear market (2018) and provides a "
             "full bull/bear cycle for statistical estimation.\n\n"
-            "**Return computation:** Daily pct_change on adj_close. BTC adj_close "
-            "equals close (no dividends or splits in the traditional sense).\n\n"
+            "**Return computation:** The daily percentage change of the adjusted close. "
+            "Bitcoin's adjusted close equals its close (no dividends or splits in the "
+            "traditional sense).\n\n"
             f"**Annualization:** {ae.TRADING_DAYS} trading days. Annualized return "
             "uses geometric compounding: (∏(1+r_t))^(252/n) − 1. "
             "Annualized volatility uses sample standard deviation × √252.\n\n"
@@ -1132,9 +1134,9 @@ with col:
             "page uses, not simple division by 252.\n\n"
             "**Regime classification:** FRED USREC (NBER monthly indicator), T10Y2Y "
             "(daily yield-curve spread), and UNRATE (monthly unemployment) are fetched "
-            "via `src/macro.get_series()` and vectorized into four labels: "
+            "from FRED and vectorized into four labels: "
             "Recession, Early-cycle, Mid-cycle, Late-cycle — using the same priority "
-            "ordering as `src/macro.classify_regime()`."
+            "ordering as the Macro page's regime classifier."
         )
 
 render_footer()
