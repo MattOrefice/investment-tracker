@@ -59,12 +59,14 @@ def test_card_descriptions_unchanged():
     """
     src = _app_text()
 
-    # SAA: "the framework treats" was dropped; "SAA is treated" is unique to the new phrasing
-    saa_phrase = "SAA is treated"
-    perf_phrase = "SAA-target-weighted blended benchmark"
+    # Migrated deliberately by the writing sweep (2026-09-25 audit, item 14): the
+    # phrases below are unique to the rewritten cards, so a revert to the Phase 36
+    # copy ("SAA is treated", "SAA-target-weighted blended benchmark", "mean-variance
+    # contribution analysis") fails here.
+    saa_phrase = "No tactical tilts are"
+    perf_phrase = "blended SAA benchmark: summary, cumulative return chart"
     macro_phrase = "CAPE, ECY"
-    # AE trimmed in Phase 36 to one sentence; "mean-variance contribution analysis" is unique
-    ae_phrase = "mean-variance contribution analysis"
+    ae_phrase = "mean-variance contribution."
     # New cards (Phase 36)
     ba_phrase = "Newey-West HAC standard errors"
     fp_phrase = "TERM/CREDIT decomposition"
@@ -141,12 +143,15 @@ def test_new_cards_route_to_correct_pages():
     )
 
 
-def test_intro_prose_policy_driven_not_view_driven():
-    """Landing page intro must use 'policy-driven, not view-driven' framing. Pinned: Phase 36."""
+def test_intro_prose_positions_follow_the_policy():
+    """The intro says the macro dashboard does not set positions. Pinned: Phase 36 as
+    'policy-driven, not view-driven'; the writing sweep (audit item 14) states it without
+    the contrast, and this pins the new sentence deliberately."""
     src = _app_text()
-    assert "policy-driven, not view-driven" in src, (
-        "Intro prose TAA phrase not replaced — 'policy-driven, not view-driven' not found"
+    assert "cross-asset returns; it does not set" in src, (
+        "Intro prose no longer says the dashboard does not set positions"
     )
+    assert "policy-driven, not view-driven" not in src
     assert "warrant any tactical tilt" not in src, (
         "TAA-flavored phrase 'warrant any tactical tilt' still present in app.py"
     )

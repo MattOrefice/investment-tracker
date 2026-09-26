@@ -217,7 +217,7 @@ def _landing_page_render():
     st.markdown(
         f"""
         <h1 class="endow-title">Investment Analytics Tracker</h1>
-        <p class="endow-tagline">Multi-asset portfolio analytics with institutional-grade performance attribution, factor regression, and macro regime monitoring.</p>
+        <p class="endow-tagline">Multi-asset portfolio analytics: performance attribution, factor regression and macro regime monitoring.</p>
         <p><span class="endow-byline">Built by Matt Orefice, CFA</span><span class="endow-byline-suffix"> · Available for buy-side allocator and investment due diligence roles</span></p>
         <p class="endow-recency"><em>{as_of_banner()}</em></p>
         <hr class="endow-rule">
@@ -228,13 +228,13 @@ def _landing_page_render():
     _sleeves = _sleeve_phrase()
     st.markdown(
         f"""
-        <p class="endow-intro">This system maintains a {_sleeves} strategic asset allocation as policy,
-        then measures deviation, attribution, and factor exposure against that policy.
-        Performance is tracked time-weighted against a SAA-target-weighted blended benchmark.
-        Per-sleeve Fama-French 5-factor regressions with Newey-West HAC standard errors decompose
-        excess return into factor exposures and residual selection. A macro regime dashboard provides
-        reference context across growth, inflation, monetary policy, credit, valuation, and cross-asset
-        performance — positioning remains policy-driven, not view-driven.</p>
+        <p class="endow-intro">A {_sleeves} strategic asset allocation is the policy; the site
+        measures drift, attribution and factor exposure against it. Returns are time-weighted and
+        measured against a blended benchmark at the SAA targets. Per-sleeve Fama-French
+        five-factor regressions with Newey-West HAC standard errors split excess return into
+        factor exposure and residual selection. A macro regime dashboard gives context on growth,
+        inflation, monetary policy, credit, valuation and cross-asset returns; it does not set
+        positions.</p>
         <hr class="endow-rule">
         """,
         unsafe_allow_html=True,
@@ -248,8 +248,8 @@ def _landing_page_render():
             <div class="endow-card">
                 <h3 class="endow-card-header">Strategic Asset Allocation</h3>
                 <p class="endow-card-body endow-card-body-clamp">{_sleeves} SAA policy with target weights
-                and tolerance bands. Drift thresholds define when rebalancing is warranted; SAA is treated
-                as policy, not a starting point for tactical tilts.</p>
+                and tolerance bands; the bands set when rebalancing is warranted. No tactical tilts are
+                layered on the targets.</p>
             </div>
             """,
             unsafe_allow_html=True,
@@ -261,9 +261,9 @@ def _landing_page_render():
             """
             <div class="endow-card">
                 <h3 class="endow-card-header">Performance</h3>
-                <p class="endow-card-body endow-card-body-clamp">Time-weighted return vs
-                SAA-target-weighted blended benchmark. Cover narrative, cumulative return chart,
-                and period-by-period Brinson-Fachler attribution.</p>
+                <p class="endow-card-body endow-card-body-clamp">Time-weighted return against the
+                blended SAA benchmark: summary, cumulative return chart and Brinson-Fachler attribution
+                by period.</p>
             </div>
             """,
             unsafe_allow_html=True,
@@ -275,10 +275,9 @@ def _landing_page_render():
             """
             <div class="endow-card">
                 <h3 class="endow-card-header">Benchmark Attribution</h3>
-                <p class="endow-card-body endow-card-body-clamp">Portfolio excess return decomposed via
-                OLS regression against the custom blended benchmark plus three style factors. Newey-West
-                HAC standard errors; alpha is the institutional definition — return after controlling for
-                benchmark beta and style tilts.</p>
+                <p class="endow-card-body endow-card-body-clamp">An OLS regression of portfolio excess
+                return on the custom blended benchmark and three style factors, with Newey-West HAC
+                standard errors. Alpha is the return left after benchmark beta and style tilts.</p>
             </div>
             """,
             unsafe_allow_html=True,
@@ -292,10 +291,9 @@ def _landing_page_render():
             """
             <div class="endow-card">
                 <h3 class="endow-card-header">Factor Profile</h3>
-                <p class="endow-card-body endow-card-body-clamp">Per-sleeve Fama-French 5-factor
-                regressions for US Equity and International Core, TERM/CREDIT decomposition for
-                Fixed Income. Equity Style Profile and FI Duration as supporting risk-characteristic
-                views.</p>
+                <p class="endow-card-body endow-card-body-clamp">Fama-French five-factor regressions
+                for US Equity and International Core, and a TERM/CREDIT decomposition for Fixed Income.
+                Equity style and fixed-income duration views support them.</p>
             </div>
             """,
             unsafe_allow_html=True,
@@ -307,9 +305,9 @@ def _landing_page_render():
             """
             <div class="endow-card">
                 <h3 class="endow-card-header">Macro</h3>
-                <p class="endow-card-body endow-card-body-clamp">Regime classification with dynamic
-                interpretations of CAPE, ECY, yield curve, credit spreads, labor, and growth
-                indicators against historical percentile bands.</p>
+                <p class="endow-card-body endow-card-body-clamp">Regime classification, with CAPE, ECY,
+                the yield curve, credit spreads, labor and growth read against their historical
+                percentiles.</p>
             </div>
             """,
             unsafe_allow_html=True,
@@ -321,9 +319,9 @@ def _landing_page_render():
             """
             <div class="endow-card">
                 <h3 class="endow-card-header">Asset Evaluation</h3>
-                <p class="endow-card-body endow-card-body-clamp">Candidate-asset evaluation framework
-                applied to Bitcoin: univariate statistics, regime-conditional correlation against SAA
-                sleeves, and mean-variance contribution analysis.</p>
+                <p class="endow-card-body endow-card-body-clamp">A candidate-asset framework applied to
+                Bitcoin: univariate statistics, regime-conditional correlation with the SAA sleeves and
+                mean-variance contribution.</p>
             </div>
             """,
             unsafe_allow_html=True,
