@@ -281,14 +281,10 @@ with col:
         st.info(
             "**Why not EFV / SCZ as the controls?** The Ken French Developed ex-US "
             "factor universe includes Canada; MSCI EAFE (EFV, SCZ) excludes it, and "
-            "the tilt funds hold it at ~11–13%. Sizing this over the regression "
-            "window: Canada (EWC) returned about +37.8%/yr versus about +27.7%/yr for "
-            "developed-ex-US — a ~10-point gap. Regressed against these same factors, "
-            "the Canada-holed EFV shows only a ~+20 bps residual while the "
-            "Canada-matched IVLU (shown below) shows ~+270 bps over the same "
-            "large-value window — the missing Canada is most of the difference, a "
-            "~90–250 bps understatement depending on weight. A Canada-holed control "
-            "would therefore read as a clean gauge while hiding the missing-Canada "
+            "the tilt funds hold it at ~11–13%. Canada's return is in the factors "
+            "and in the tilt funds but not in EFV or SCZ, so against these factors a "
+            "Canada-holed control carries a residual the tilt funds do not share. It "
+            "would read as a clean gauge while hiding the missing-Canada "
             "return, so IQLT / IVLU / ISVL are used instead — each matches the factor "
             "universe on both counts (Canada in, Korea out)."
         )
