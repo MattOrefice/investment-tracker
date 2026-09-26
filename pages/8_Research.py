@@ -23,8 +23,10 @@ SPAXX_RATIONALE = (
 SPAXX_HOLDING = {
     "ticker": "SPAXX",
     "name": "Fidelity Government Money Market Fund",
-    "expense_ratio": None,
-    "_er_display": "n/a (money market)",
+    # 0.42% gross and net, per the fund's prospectus dated 2026-06-26. It read "n/a"
+    # and counted as zero, so the page said SPAXX "saves 14 bps" against BIL's 0.14%
+    # when it costs 28 bps more (2026-09-25 audit, item 8).
+    "expense_ratio": 0.0042,
     "security_type": "Money Market Fund",
     "holding_rationale": SPAXX_RATIONALE,
 }
@@ -76,7 +78,10 @@ def _pair_benchmarks_holdings(holdings, benchmarks, bm_ticker_str):
     If a holding's ticker appears in the sleeve's benchmark_ticker string but has no
     separate benchmark row (e.g. VNQ is both holding and benchmark), mark as self-benchmarked.
     """
-    sleeve_bm_tickers = set((bm_ticker_str or "").split("+"))
+    # "VNQ (60%) + DBC (40%)": the tickers, without the weights. Split on "+" alone,
+    # "VNQ (60%) " never matched "VNQ", so VNQ was paired with DBC and shown saving
+    # 73 bps against a commodity fund, while PDBC had no comparison at all.
+    sleeve_bm_tickers = {part.split("(")[0].strip() for part in (bm_ticker_str or "").split("+")}
     bm_by_ticker = {b["ticker"]: b for b in benchmarks}
     used = set()
     pairs = []
@@ -118,6 +123,15 @@ def _comparison_df(bm, h, self_bm=False, show_type=False):
 
 sleeves, secs = load_research_data()
 
+
+def _er_of(ticker: str) -> str:
+    """A security's expense ratio as the tables show it, from the securities table."""
+    er = next((s["expense_ratio"] for s in secs if s["ticker"] == ticker), None)
+    if er is None:
+        raise ValueError(f"no expense ratio for {ticker!r}: the Featured Selections "
+                         "prose quotes it")
+    return f"{er * 100:.2f}%"
+
 holdings_by_class   = defaultdict(list)
 benchmarks_by_class = defaultdict(list)
 for s in secs:
@@ -143,6 +157,10 @@ for sleeve in sleeves:
 
 # Summary stats
 n_holdings = sum(len(d["pairs"]) for d in sleeve_data)
+# The strategic sleeves, and cash apart: "13 sleeves" counted the 0%-target cash line
+# with the twelve every other page names.
+n_strategic = sum(1 for s in sleeves if (s["target_weight"] or 0) > 0)
+has_cash = any(s["name"] == "Cash / SPAXX" for s in sleeves)
 weighted_er = 0.0
 portfolio_savings_bps = 0.0
 for d in sleeve_data:
@@ -168,7 +186,7 @@ with col:
     er_pct = weighted_er * 100
     _savings_250k = round(portfolio_savings_bps / 10_000 * 250_000)
     st.caption(
-        f"{len(sleeves)} sleeves  ·  {n_holdings} holdings  ·  "
+        f"{n_strategic} sleeves{' plus cash' if has_cash else ''}  ·  {n_holdings} holdings  ·  "
         f"{er_pct:.2f}% blended ER  ·  {portfolio_savings_bps:.0f} bps savings vs. benchmarks  ·  "
         f"~\\${_savings_250k:,}/yr in ER savings at \\$250k"
     )
@@ -196,9 +214,10 @@ with col:
             f"the {portfolio_savings_bps:.0f} bps display is rounded.\n"
             "- **Featured Selections** — three holdings selected for analytical "
             "differentiation, not performance. SPHQ represents a deliberate "
-            "methodology bet (accruals screen); IEMG is a pure cost choice "
-            "(0.09% vs 0.70% for identical EM exposure); PDBC is a tax-structure "
-            "decision (C-corp to avoid K-1 filing).\n"
+            "methodology bet (accruals screen); IEMG is a cost choice on a broader "
+            f"index ({_er_of('IEMG')} vs EEM's {_er_of('EEM')}, with the small caps EEM "
+            "leaves out); PDBC is a tax-structure decision (a regulated investment "
+            "company reporting on Form 1099, where DBC, on the same index, issues a K-1).\n"
             "- **Comparison tables** — ticker, name, and expense ratio only. "
             "Tracking difference, index methodology differences, and manager "
             "rationale are in the rationale expanders below each holding."
@@ -213,13 +232,24 @@ with col:
             "bench":    "QUAL",
             "headline": "Accruals screen filters accounting manipulation that QUAL misses.",
         },
+        # IEMG tracks MSCI Emerging Markets IMI (large, mid and small caps); EEM tracks
+        # MSCI Emerging Markets (large and mid). The headline said "identical".
         "IEMG": {
             "bench":    "EEM",
-            "headline": "Identical EM exposure at 0.09% vs EEM's 0.70% — 61 bps of pure fee drag eliminated.",
+            "headline": (f"Broader EM exposure at {_er_of('IEMG')} against EEM's "
+                         f"{_er_of('EEM')}: IEMG's MSCI Emerging Markets IMI adds the small "
+                         "caps EEM's index leaves out."),
         },
+        # From PDBC's prospectus: a regulated investment company, holding its futures
+        # through a wholly-owned Cayman Islands subsidiary, reporting on Form 1099, and
+        # benchmarked to the DBIQ Optimum Yield Diversified Commodity Index, the index DBC
+        # tracks as a commodity pool that issues a K-1. The card compared it with DJP, an
+        # ETN that issues no K-1 either, and called PDBC a C-corp and the only no-K-1 fund.
         "PDBC": {
-            "bench":    "DJP",
-            "headline": "Only broad commodity ETF with no K-1 in a taxable account; C-corp structure avoids partnership filing complexity.",
+            "bench":    "DBC",
+            "headline": (f"The index DBC tracks, held as a regulated investment company: a Form "
+                         f"1099 instead of DBC's K-1, at {_er_of('PDBC')} against "
+                         f"{_er_of('DBC')}."),
         },
     }
     _sec_by_ticker = {s["ticker"]: s for s in secs}
