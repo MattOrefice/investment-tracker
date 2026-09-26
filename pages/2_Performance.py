@@ -51,7 +51,7 @@ from src.cache import LockCoverageError
 from src.reports import generate_quarterly_report_bytes
 from src.sleeve_config import international_sleeves
 from src.tax_lots import open_lot_cost_basis
-from src.returns import annualize, clamped_period_bounds, period_bounds, period_return, period_window_predates_inception, twr_daily_linked, twr_index
+from src.returns import annualize, clamped_period_bounds, period_bounds, period_return, period_window_predates_inception, twr_index
 from src.positioning import get_effective_duration
 from src.rebalance import compute_drift
 from src.ui_helpers import demo_portfolio_phrase, render_footer, render_page_header
@@ -136,6 +136,13 @@ def _load_naive_benchmark(start_val: float, end: str, kind: str = "60_40"):
     naive_gaps = naive_raw.attrs.get("benchmark_gaps", [])
     naive = naive_raw * start_val
     return naive, naive_gaps
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _load_locked_quarter(label: str, start: str, end: str) -> dict:
+    """The quarter's tile figures from its lock (reports.locked_quarter_figures)."""
+    from src.reports import locked_quarter_figures
+    return locked_quarter_figures(label, start, end)
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -475,30 +482,23 @@ with col:
         _q_stale = quarter_staleness_note(INCEPTION, date.fromisoformat(TODAY))
         if _q_stale:
             st.caption(_q_stale)
-        _q_ts_start = pd.Timestamp(_q_start)
-        _q_ts_end   = pd.Timestamp(_q_end)
-
-        def _q_ret(s: pd.Series) -> float:
-            sliced = s[(s.index >= _q_ts_start) & (s.index <= _q_ts_end)]
-            return float(sliced.iloc[-1] / sliced.iloc[0] - 1) if len(sliced) >= 2 else 0.0
-
-        # The portfolio's quarter is its TWR over the same slice, not _q_ret: an end-
-        # over-start ratio is right for the benchmarks (no flows) and wrong for pv,
-        # which steps up on every deposit, so a mid-quarter deposit read as return
-        # (#349). The quarterly PDF has always used twr_daily_linked here.
-        _q_pv       = pv[(pv.index >= _q_ts_start) & (pv.index <= _q_ts_end)]
-        _q_port     = (twr_daily_linked(_q_pv, cf.reindex(_q_pv.index).fillna(0.0))
-                       if len(_q_pv) >= 2 else 0.0)
-        _q_sp       = _q_ret(sp)
-        _q_bl       = _q_ret(bl)
-        _q_alpha_sp = _q_port - _q_sp
-        _q_alpha_bl = _q_port - _q_bl
-
+        # From the quarter's LOCK, built by the PDF's own executive summary, so the
+        # page and the report cannot disagree (#383). These tiles used to compute
+        # the quarter from the live series under a "(locked)" heading: #371's
+        # label-without-a-lock, one level up.
         st.markdown(f"### Quarterly report — {_q_label} (locked)")
-        q1, q2, q3 = st.columns(3)
-        q1.metric(f"{_q_label} return",             _tile(_pct(_q_port)),     f"{_pct(_q_sp)} S&P 500")
-        q2.metric(f"vs. S&P 500 — {_q_label}",      _tile(_bps(_q_alpha_sp)), f"S&P 500: {_pct(_q_sp)}",  delta_color="off")
-        q3.metric(f"vs. Custom Blended — {_q_label}", _tile(_bps(_q_alpha_bl)), f"Blended: {_pct(_q_bl)}", delta_color="off")
+        try:
+            _qf = _load_locked_quarter(_q_label, _q_start.isoformat(), _q_end.isoformat())
+        except LockCoverageError as _q_exc:
+            st.info(str(_q_exc))
+        else:
+            q1, q2, q3 = st.columns(3)
+            q1.metric(f"{_q_label} return", _tile(_qf["portfolio_return_pct"]),
+                      f"{_qf['sp500_return_pct']} S&P 500")
+            q2.metric(f"vs. S&P 500 — {_q_label}", _tile(_qf["alpha_sp_str"]),
+                      f"S&P 500: {_qf['sp500_return_pct']}", delta_color="off")
+            q3.metric(f"vs. Custom Blended — {_q_label}", _tile(_qf["alpha_bl_str"]),
+                      f"Blended: {_qf['blended_return_pct']}", delta_color="off")
 
     st.divider()
 

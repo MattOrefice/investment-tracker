@@ -1921,6 +1921,33 @@ def report_dates(snapshot_captured_at: Optional[str],
     return format_long_date(today_et(now)), locked
 
 
+QUARTER_TILE_KEYS = ("portfolio_return_pct", "sp500_return_pct", "blended_return_pct",
+                     "alpha_sp_str", "alpha_bl_str")
+
+
+def locked_quarter_figures(quarter_label: str, start_date: str, end_date: str) -> dict:
+    """A completed quarter's headline figures exactly as the PDF prints them, built
+    by the PDF's own executive summary inside the quarter's lock (#383).
+
+    The Performance page's "(locked)" tiles read this. They computed the quarter
+    from the page's live series under a "locked" label with no lock behind it: a
+    revision of a close inside the quarter after it locked moved them and not the
+    report. #392 made the live series' quarter slice equal the report's quarter
+    figure; the tiles read the lock anyway, because a tile labelled locked must read
+    the lock even when the numbers agree. Takes the lock the report takes, capturing
+    it first if none exists, so the first view of a quarter locks it just as the
+    first report would. Raises LockCoverageError when the data does not yet reach the
+    quarter's end."""
+    quarter_id = label_to_quarter_id(quarter_label)
+    snap = get_quarter_snapshot(quarter_id)[0]
+    if snap is None:
+        snap, _ = capture_quarter_snapshot(quarter_id)
+    with snapshot_price_context(snap):
+        summary = _build_executive_summary(start_date, end_date)
+    return {k: summary[k] for k in QUARTER_TILE_KEYS}
+
+
+
 # What each pending input is called in a pending line: (what must cover the quarter,
 # its date clause, its missing clause). The French files and momentum share one.
 _FRENCH_PENDING = ("the factor data", "the Fama-French factor data on file ends {}",
