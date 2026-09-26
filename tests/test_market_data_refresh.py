@@ -29,19 +29,32 @@ def test_staleness_note_at_threshold_is_still_fresh():
     assert staleness_note("X", date.today() - timedelta(days=45), 45) is None
 
 
-def test_staleness_note_fires_with_day_count_and_date():
+def test_staleness_note_fires_with_day_count_and_date(monkeypatch):
+    """The 2026-09-25 audit's one wording: the end date, its age, and that the end
+    is this app's last refresh, never a claim about the source's publication. The
+    maintainer's command renders in personal mode only."""
+    import src.config as config
+    from src.asof import format_long_date
     frontier = date.today() - timedelta(days=133)
-    note = staleness_note("Ken French factor", frontier, 70)
-    assert note is not None
-    assert frontier.isoformat() in note
-    assert "133 days behind" in note
+    monkeypatch.setattr(config, "IS_DEMO", False)
+    note = staleness_note("Fama-French factor", frontier, 70)
+    assert note.startswith(f"Fama-French factor data ends {format_long_date(frontier)} "
+                           "(133 days ago), as of this app's last refresh.")
     assert "tools/refresh_market_data.py" in note
+    assert "publication" not in note and "refresh cycle" not in note
+    monkeypatch.setattr(config, "IS_DEMO", True)
+    demo = staleness_note("Fama-French factor", frontier, 70)
+    assert demo == (f"Fama-French factor data ends {format_long_date(frontier)} "
+                    "(133 days ago), as of this app's last refresh.")
 
 
 def test_staleness_note_missing_frontier_is_loud_not_none():
     """Absence must never present as freshness."""
     note = staleness_note("Trailing P/E", None, 45)
     assert note is not None and "missing or unreadable" in note
+    import src.config as config
+    if config.IS_DEMO:
+        assert "tools/" not in note, "no maintainer command renders on the public demo"
 
 
 # ── frontier helpers read the DATA, not mtime ─────────────────────────────────

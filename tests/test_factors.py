@@ -650,7 +650,8 @@ def test_umd_vintage_note_renders_the_committed_frontier_date(monkeypatch):
     notes = build_factor_methodology_notes({})
     vintage = [n for n in notes if n.startswith("Momentum (UMD) vintage:")]
     assert len(vintage) == 1
-    assert "(data through 2031-01-15)" in vintage[0]
+    # The one vintage wording (2026-09-25 audit, item 4).
+    assert "Momentum factor data ends January 15, 2031, as of this app's last refresh." in vintage[0]
     # One refresh cited as evidence — not a claim about the source's
     # general practice.
     assert "the 2026-08 refresh, for example" in vintage[0]
@@ -676,7 +677,7 @@ def test_umd_vintage_note_degrades_to_na_without_a_frontier(monkeypatch):
     monkeypatch.setattr(factors, "umd_frontier", lambda: None)
     notes = build_factor_methodology_notes({})
     vintage = next(n for n in notes if n.startswith("Momentum (UMD) vintage:"))
-    assert "(data through N/A)" in vintage
+    assert "No Momentum factor data is on file." in vintage
 
 
 def test_umd_vintage_note_follows_the_carhart_note_and_tracks_the_data():
@@ -688,7 +689,8 @@ def test_umd_vintage_note_follows_the_carhart_note_and_tracks_the_data():
                    if n.startswith("Momentum (UMD) vintage:"))
     assert vintage == carhart + 1
     committed = load_umd_factor().index[-1].date().isoformat()
-    assert f"(data through {committed})" in notes[vintage]
+    from src.asof import data_vintage
+    assert data_vintage("Momentum factor", date.fromisoformat(committed)) in notes[vintage]
 
 
 def test_run_sleeve_regressions_mom_returns_expected_structure():

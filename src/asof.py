@@ -36,26 +36,37 @@ MARKET_DATA_STALE_DAYS_FACTORS = 70
 MARKET_DATA_STALE_DAYS_VALUATION = 45
 
 
+def data_vintage(label: str, frontier: "date | None") -> str:
+    """The one wording for a committed series' vintage (2026-09-25 audit, item 4):
+    its end date, and that the end is where this app's last refresh of its committed
+    copy stopped. It makes no claim about the source's publication schedule, which
+    the app cannot see: the same sentence was worded three ways, and "a publication
+    lag" was false while the source had published two months the copy lacked."""
+    if frontier is None:
+        return f"No {label} data is on file."
+    return f"{label} data ends {format_long_date(frontier)}, as of this app's last refresh."
+
+
 def staleness_note(label: str, frontier: "date | None", threshold_days: int) -> "str | None":
     """Rendered staleness sentence for a committed market-data series.
 
     Returns None while the data is within ``threshold_days`` of today — fresh
     data renders nothing. A missing frontier (unreadable/absent file) returns a
     loud sentence rather than None: absence must never present as freshness.
+
+    The maintainer's command to fix it is personal-mode only: a visitor to the
+    public demo can do nothing with "Run tools/refresh_market_data.py".
     """
+    from src.config import IS_DEMO
     if frontier is None:
-        return (
-            f"{label} data is unavailable — the committed file is missing or "
-            "unreadable. Restore it from git or run tools/refresh_market_data.py."
-        )
+        note = f"{label} data is unavailable: the committed file is missing or unreadable."
+        return note if IS_DEMO else note + " Restore it from git or run tools/refresh_market_data.py."
     days = (date.today() - frontier).days
     if days <= threshold_days:
         return None
-    return (
-        f"{label} data ends {frontier.isoformat()} — {days} days behind; a "
-        "refresh cycle has been missed. Run tools/refresh_market_data.py and "
-        "commit the result."
-    )
+    note = (f"{label} data ends {format_long_date(frontier)} ({days} days ago), as of this "
+            f"app's last refresh.")
+    return note if IS_DEMO else note + " Run tools/refresh_market_data.py and commit the result."
 
 
 def _quarters_for_year(year: int) -> list[tuple[date, date, str]]:

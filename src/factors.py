@@ -1385,20 +1385,15 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
         if dev else "N/A"
     )
 
-    lag_str = "N/A"
-    if us and us.get("sample_end"):
-        try:
-            _lag_days = (date.today() - date.fromisoformat(us["sample_end"])).days
-            lag_str   = f"{_lag_days}-calendar-day publication lag (factor data ends {us['sample_end']})"
-        except Exception:
-            pass
+    from src.asof import data_vintage
+    lag_str = data_vintage("Fama-French factor", factor_frontier("us"))
 
     # Committed-data staleness (threshold-gated): the frontier is the DATA's
     # last row, never file mtime. Auto-refresh was removed — age is surfaced
     # here (and on the Factor Profile banner), not silently "fixed" at read.
     from src.asof import MARKET_DATA_STALE_DAYS_FACTORS, staleness_note
     _stale_note = staleness_note(
-        "Ken French factor", factor_frontier("us"), MARKET_DATA_STALE_DAYS_FACTORS
+        "Fama-French factor", factor_frontier("us"), MARKET_DATA_STALE_DAYS_FACTORS
     )
 
     # Committed-vintage disclosure: N/A only when the momentum file is missing
@@ -1414,7 +1409,7 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
         "on US federal holidays — its return series shows zero by forward-fill, not by "
         "market observation. The Dev FF dataset includes those holidays (international "
         "markets open); excluding them keeps both regression calendars consistent. "
-        f"Sample sizes reflect the overlap with the most recent available factor data ({lag_str}).",
+        f"Sample sizes reflect the overlap with the factor data. {lag_str}",
 
         "Methodology: each equity sleeve is regressed against its own region-appropriate "
         "FF5 factor set — US factors for the US sleeve, Developed ex-US factors for VEA. "
@@ -1453,8 +1448,7 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
         "Mom loading is expected and confirms the construction is tax-aware.",
 
         "Momentum (UMD) vintage: Mom loadings are computed against the Ken French "
-        "momentum series as committed in this repository (data through "
-        f"{_umd_f.isoformat() if _umd_f else 'N/A'}). Loadings shift between "
+        f"momentum series. {data_vintage('Momentum factor', _umd_f)} Loadings shift between "
         "refreshes chiefly because the sample extends and only secondarily because "
         "the source revises history — at the 2026-08 refresh, for example, the "
         "added quarter moved the rendered Mom loadings by 0.02–0.07 while a source "

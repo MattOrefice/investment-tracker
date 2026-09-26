@@ -1853,12 +1853,13 @@ with col:
         st.error("Trailing P/E data unavailable — please try again later.")
 
     if ttm_ok:
-        # Committed-data staleness surface (same shared prose as CAPE above;
-        # frontier = the series' last month row, so CAPE and P/E read alike).
+        # Committed-data staleness surface (same shared prose as CAPE above). Dated by
+        # the reading's own observation date, the date the panel shows: the warning
+        # read the month-start row ("2026-08-01") beside a panel dated Aug 11.
         from src.asof import MARKET_DATA_STALE_DAYS_VALUATION as _VAL_STALE
         from src.asof import staleness_note as _stale_note_fn
         _ttm_stale = _stale_note_fn(
-            "Trailing P/E", ttm_series.index[-1].date(), _VAL_STALE
+            "Trailing P/E", pd.Timestamp(_ttm_df["obs_date"].iloc[-1]).date(), _VAL_STALE
         )
         if _ttm_stale:
             st.warning(_ttm_stale)
@@ -1938,8 +1939,6 @@ with col:
 
     # ── Forward P/E — live price over a manually-maintained consensus EPS ─────
 
-    st.markdown("#### S&P 500 Forward P/E (next-12-month consensus)")
-
     from src.forward_pe import (
         PRICE_TICKER, STALE_SUPPRESS_DAYS, STALE_WARN_DAYS,
         compute_forward_pe, forward_pe_state, load_forward_eps, staleness_days,
@@ -1951,7 +1950,15 @@ with col:
     except Exception as _e:  # malformed file must render an error, not crash the page
         _fwd_info, _fwd_file_err = None, str(_e)
 
-    if _fwd_file_err:
+    # On the public demo, no estimate on file means no panel: its text is the
+    # maintainer's procedure for entering one, which a visitor cannot follow.
+    _fwd_hidden = IS_DEMO and (_fwd_file_err is not None or _fwd_info is None)
+    if not _fwd_hidden:
+        st.markdown("#### S&P 500 Forward P/E (next-12-month consensus)")
+
+    if _fwd_hidden:
+        pass
+    elif _fwd_file_err:
         st.error(
             f"`data/forward_eps.json` is present but unusable: {_fwd_file_err}. "
             "Fix the file to restore this panel — it is not silently skipped, "
@@ -2039,7 +2046,8 @@ with col:
                         "has averaged."
                     )
 
-    st.divider()
+    if not _fwd_hidden:
+        st.divider()
 
     # ── Excess CAPE Yield ─────────────────────────────────────────────────────
 
@@ -2387,7 +2395,7 @@ with col:
     from src.asof import MARKET_DATA_STALE_DAYS_FACTORS as _FF_STALE
     from src.asof import staleness_note as _ff_stale_note_fn
     from src.factors import factor_frontier as _ff_frontier
-    _ff_stale = _ff_stale_note_fn("Ken French factor", _ff_frontier("us"), _FF_STALE)
+    _ff_stale = _ff_stale_note_fn("Fama-French factor", _ff_frontier("us"), _FF_STALE)
     if _ff_stale:
         st.warning(_ff_stale)
     st.caption(
@@ -2495,9 +2503,10 @@ with col:
             _base = f"{_b0.strftime('%Y')}–{_b1.strftime('%Y')}, ~{round((_b1 - _b0).days / 365)} years"
         else:
             _base = "full available history"
+        from src.asof import data_vintage as _data_vintage
         st.caption(
-            f"Fama-French as of {_ff_as_of} (~1-month publication lag); ETF proxy as of "
-            f"{_etf_as_of}. Percentiles are measured against the full available history "
+            f"{_data_vintage('Fama-French factor', ff_dt.date() if ff_dt is not None else None)} "
+            f"ETF proxy as of {_etf_as_of}. Percentiles are measured against the full available history "
             f"({_base}) and do not move with the lookback selector."
         )
         if ff_val is not None and etf_val is not None:

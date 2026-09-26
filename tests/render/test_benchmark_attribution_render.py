@@ -64,11 +64,16 @@ def test_regression_window_lag_caption_present(ba_app: AppTest) -> None:
     if not ba_app.metric:
         pytest.skip("No portfolio data — skipped in local/empty-DB mode")
     captions = [c.value for c in ba_app.caption]
-    assert any("publication lag" in c.lower() for c in captions), (
-        "Regression window publication-lag caption not found — this caption must "
-        "describe the actual mechanism (FF data publication lag), not a fictitious "
-        "quarter-end lock."
+    # The 2026-09-25 audit (item 4): the window ends with the factor data, and its
+    # end is this app's last refresh. "A publication lag" was false while French
+    # had published two months the committed copy lacked.
+    assert any("end with the factor data" in c or "ends with the factor data" in c
+               for c in captions), (
+        "Regression window caption not found — it must say the window ends with "
+        "the factor data, not a fictitious quarter-end lock."
     )
+    assert any("as of this app's last refresh" in c for c in captions)
+    assert not any("publication lag" in c.lower() for c in captions)
     assert not any("locked quarter-end" in c.lower() or "quarter lock" in c.lower() or "quarter-end lock" in c.lower()
                    for c in captions), (
         "Caption falsely claims a 'locked quarter-end' — the regression is called "

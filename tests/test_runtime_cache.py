@@ -116,11 +116,14 @@ def test_a_quarter_lock_lands_in_the_cache(overlaid, monkeypatch):
     from src.cache import capture_quarter_snapshot, get_quarter_snapshot
     demo, cache, before = overlaid
     monkeypatch.setattr(prices._SESSION, "get", lambda *a, **k: (_ for _ in ()).throw(OSError("offline")))
-    snap, _ = capture_quarter_snapshot("2026Q2")
+    snap, captured_at = capture_quarter_snapshot("2026Q2")
     back, _ = get_quarter_snapshot("2026Q2")
     pd.testing.assert_frame_equal(back.adj_close, snap.adj_close, check_freq=False)
+    # The cache starts with demo.db's committed locks (#382: five quarters ship
+    # locked); the capture is the one it now holds for 2026Q2.
     c = sqlite3.connect(cache)
-    assert c.execute("SELECT quarter_id FROM runtime_quarter_snapshots").fetchall() == [("2026Q2",)]
+    assert c.execute("SELECT captured_at FROM runtime_quarter_snapshots "
+                     "WHERE quarter_id = '2026Q2'").fetchall() == [(captured_at,)]
     c.close()
     assert _sha(demo) == before
 
