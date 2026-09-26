@@ -8,6 +8,7 @@ from datetime import date
 import pandas as pd
 import plotly.graph_objects as go
 from src.asof import as_of_banner
+from src.config import get_demo_banner_text, IS_DEMO
 from src.db import get_connection
 from src.endowment_benchmarks import CATEGORIES, ENTITIES, get_endowment_data
 from src.holdings import get_portfolio_account, sleeve_weights_with_coverage
@@ -17,7 +18,7 @@ from src.prose_helpers import percentile_label
 from src.rebalance import compute_drift, interpret_rebalance_status
 from src.sleeve_config import international_sleeves, sleeve_holdings
 from src.shiller import get_cape_series
-from src.ui_helpers import render_footer, render_page_header
+from src.ui_helpers import demo_portfolio_phrase, render_footer, render_page_header
 render_page_header()
 
 
@@ -110,6 +111,9 @@ def _require_weight(rows, name: str, *, kind: str = "sleeve") -> float:
     )
 
 # ── Header ─────────────────────────────────────────────────────────────────────
+if IS_DEMO:
+    st.info(get_demo_banner_text())
+
 _, col, _ = st.columns([1, 8, 1])
 with col:
     st.title("Strategic Asset Allocation")
@@ -263,6 +267,8 @@ _, col, _ = st.columns([1, 8, 1])
 with col:
     st.subheader("Sleeve Allocation")
     st.caption(
+        f"Actual weights are for the {demo_portfolio_phrase()}; targets are SAA policy."
+        if IS_DEMO else
         f"Actual weights are the **{get_portfolio_account()['display_name']}** "
         "self-directed taxable book (traded ledger); targets are SAA policy. "
         "Retirement and externally-managed accounts are on the Household View."

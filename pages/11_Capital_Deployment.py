@@ -6,7 +6,7 @@ st.set_page_config(page_title="Capital Deployment", layout="wide")
 import pandas as pd
 from datetime import date, timedelta
 
-from src.config import is_write_enabled
+from src.config import get_demo_banner_text, IS_DEMO, is_write_enabled
 from src.db import get_connection
 from src.holdings import sleeve_weights_with_coverage, get_holdings_on_date, get_portfolio_account, get_portfolio_account_id
 from src.coverage import unresolved_marker, empty_book_note, empty_book_state, EMPTY_UNPRICED
@@ -21,7 +21,7 @@ from src.rebalance import (
     SUM_INVARIANT_TOLERANCE,
 )
 from src.trade_writer import build_thesis_lookup, write_trades_batch
-from src.ui_helpers import render_footer, render_page_header, write_guard_toast
+from src.ui_helpers import demo_portfolio_phrase, render_footer, render_page_header, write_guard_toast
 render_page_header()
 
 
@@ -124,6 +124,9 @@ def _load_data(as_of: str) -> dict:
 
 # ── Page ─────────────────────────────────────────────────────────────────────
 
+if IS_DEMO:
+    st.info(get_demo_banner_text())
+
 st.title("Capital Deployment")
 st.caption(
     "Deploy new contributions to maintain SAA policy · "
@@ -133,6 +136,9 @@ st.caption(
     # Scope, not existence (#268): this renders before the data load, so it cannot
     # know whether figures follow. "Are the X book" read as a promise that the
     # empty-book states below then withdrew.
+    f"Allocation and drift figures on this page, when shown, are for the "
+    f"{demo_portfolio_phrase()}."
+    if IS_DEMO else
     f"Allocation and drift figures on this page, when shown, are for the "
     f"**{get_portfolio_account()['display_name']}** self-directed taxable book. The "
     "account each deployment is *logged to* is chosen in the Deploy section below and "
@@ -302,9 +308,12 @@ contrib_cash = st.number_input(
 # longer guesses — the account is chosen here (visibly), defaulting to the book
 # that currently holds the trades so the common taxable-rebalance flow is one
 # click, but shown and changeable so a deployment is never silently mis-filed.
+# Labelled by display_name, as every other page labels an account (the demo's
+# reads "Paper-trade portfolio"); trades are written by account_id, never by label.
 with get_connection() as _conn:
     _dep_accounts = [dict(r) for r in _conn.execute(
-        "SELECT account_id, name FROM accounts WHERE is_active=1 ORDER BY name"
+        "SELECT account_id, COALESCE(display_name, name) AS name FROM accounts "
+        "WHERE is_active=1 ORDER BY name"
     ).fetchall()]
     _trades_acct_row = _conn.execute(
         "SELECT account_id FROM trades GROUP BY account_id ORDER BY COUNT(*) DESC LIMIT 1"

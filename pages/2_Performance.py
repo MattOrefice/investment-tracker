@@ -47,7 +47,7 @@ from src.tax_lots import open_lot_cost_basis
 from src.returns import annualize, clamped_period_bounds, period_bounds, period_return, period_window_predates_inception, twr_daily_linked, twr_index
 from src.positioning import get_effective_duration
 from src.rebalance import compute_drift
-from src.ui_helpers import render_footer, render_page_header
+from src.ui_helpers import demo_portfolio_phrase, render_footer, render_page_header
 render_page_header()
 
 
@@ -500,6 +500,7 @@ with col:
     # ──────────────────────────────────────────────────────────────────────
     st.markdown("### Since inception")
     st.caption(
+        f"Scope: {demo_portfolio_phrase()}." if IS_DEMO else
         f"Scope: **{_PORTFOLIO_ACCT['display_name']}** — the self-directed taxable "
         "book (the traded ledger). Retirement and externally-managed accounts are "
         "not included here; see the Household View for the whole household."

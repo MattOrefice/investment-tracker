@@ -21,6 +21,8 @@ from streamlit.testing.v1 import AppTest
 SECOND = "Second Taxable"      # a taxable account WITH ledger trades
 TOD = "Individual Taxable (TOD)"
 IRA = "Traditional IRA"
+# The frozen book's own account, labelled as demo.db labels it.
+BOOK = "Paper-trade portfolio"
 
 
 def _frozen_conftest(config):
@@ -66,13 +68,18 @@ def _scoped_book(book) -> None:
     con.close()
 
 
-def _with_frozen_book(pytestconfig, tmp_path, setup, body):
+def _with_frozen_book(pytestconfig, tmp_path, setup, body, personal=False):
     import streamlit as st
+    import src.config as config
     conftest = _frozen_conftest(pytestconfig)
     tmp_path.mkdir(parents=True, exist_ok=True)
     try:
         with pytest.MonkeyPatch.context() as mp:
             conftest.pin_today(mp)
+            if personal:
+                # A book with several taxable accounts is a personal-mode state: the
+                # demo has one account and its own scope line (test_demo_portfolio_scope).
+                mp.setattr(config, "IS_DEMO", False)
             book = conftest.point_at_frozen_book(mp, tmp_path)
             if setup:
                 setup(book)
@@ -124,7 +131,8 @@ def test_the_page_shows_taxable_accounts_and_discloses_the_one_without_lots(pyte
         _two_account_book(book)
         _scoped_book(book)
 
-    at = _with_frozen_book(pytestconfig, tmp_path, setup, lambda book: _render_page_12())
+    at = _with_frozen_book(pytestconfig, tmp_path, setup, lambda book: _render_page_12(),
+                           personal=True)
     warnings = [str(w.value) for w in at.warning]
     notes = [w for w in warnings if "whose lots are not shown" in w]
     assert len(notes) == 1 and f"**{TOD}**" in notes[0], warnings
@@ -133,7 +141,7 @@ def test_the_page_shows_taxable_accounts_and_discloses_the_one_without_lots(pyte
 
     table = next(d.value for d in at.dataframe if "Purchase Date" in d.value.columns)
     shown = set(table["Account"])
-    assert shown == {"Personal Fidelity", SECOND}, shown          # no IRA, no TOD rows
+    assert shown == {BOOK, SECOND}, shown          # no IRA, no TOD rows
     scope = next(str(c.value) for c in at.caption if str(c.value).startswith("Scope:"))
     assert TOD in scope and IRA not in scope, scope
 
@@ -189,7 +197,7 @@ def test_the_frozen_book_needs_no_disclosure(pytestconfig, tmp_path):
     at = _with_frozen_book(pytestconfig, tmp_path, None, lambda book: _render_page_12())
     assert not [w for w in at.warning if "whose lots are not shown" in str(w.value)]
     table = next(d.value for d in at.dataframe if "Purchase Date" in d.value.columns)
-    assert set(table["Account"]) == {"Personal Fidelity"}
+    assert set(table["Account"]) == {BOOK}
 
 
 # ── the pieces, directly ─────────────────────────────────────────────────────

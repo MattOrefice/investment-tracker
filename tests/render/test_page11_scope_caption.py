@@ -10,7 +10,10 @@ from streamlit.testing.v1 import AppTest
 def test_page11_scope_caption_is_conditional_not_a_promise():
     at = AppTest.from_file("pages/11_Capital_Deployment.py", default_timeout=90).run()
     assert not at.exception, f"page 11 raised: {at.exception}"
-    caps = [c.value for c in at.caption if "self-directed taxable book" in c.value]
+    # Keyed on the conditional phrase itself, which both modes share: the account
+    # it names differs (the demo's is the paper-trade portfolio).
+    caps = [c.value for c in at.caption
+            if "figures on this page, when shown, are for the" in c.value]
     assert caps, "the scope caption did not render"
     assert "figures on this page, when shown, are for the" in caps[0], caps[0]
     assert "Current allocation and drift are the" not in caps[0], caps[0]

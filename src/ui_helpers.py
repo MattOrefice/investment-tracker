@@ -63,6 +63,17 @@ def render_sidebar_footer() -> None:
         )
 
 
+def demo_portfolio_phrase() -> str:
+    """What a page that reads the portfolio ledger is describing, in demo mode: the
+    paper-trade book, one simulated taxable account. Personal mode keeps each page's
+    own scope line (the self-directed book, and where the household's other accounts
+    are); the demo has no other accounts and no Household View, so it names neither."""
+    from src.config import demo_inception_month
+    from src.holdings import get_portfolio_account
+    return (f"**{get_portfolio_account()['display_name']}**, a simulated taxable account "
+            f"traded from {demo_inception_month()}")
+
+
 def write_guard_toast() -> None:
     """Emit a demo-mode toast when a write action is blocked."""
     st.toast(
