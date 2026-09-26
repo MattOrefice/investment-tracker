@@ -66,13 +66,18 @@ def _scoped_book(book) -> None:
     con.close()
 
 
-def _with_frozen_book(pytestconfig, tmp_path, setup, body):
+def _with_frozen_book(pytestconfig, tmp_path, setup, body, personal=False):
     import streamlit as st
+    import src.config as config
     conftest = _frozen_conftest(pytestconfig)
     tmp_path.mkdir(parents=True, exist_ok=True)
     try:
         with pytest.MonkeyPatch.context() as mp:
             conftest.pin_today(mp)
+            if personal:
+                # A book with several taxable accounts is a personal-mode state: the
+                # demo has one account and its own scope line (test_demo_portfolio_scope).
+                mp.setattr(config, "IS_DEMO", False)
             book = conftest.point_at_frozen_book(mp, tmp_path)
             if setup:
                 setup(book)
@@ -124,7 +129,8 @@ def test_the_page_shows_taxable_accounts_and_discloses_the_one_without_lots(pyte
         _two_account_book(book)
         _scoped_book(book)
 
-    at = _with_frozen_book(pytestconfig, tmp_path, setup, lambda book: _render_page_12())
+    at = _with_frozen_book(pytestconfig, tmp_path, setup, lambda book: _render_page_12(),
+                           personal=True)
     warnings = [str(w.value) for w in at.warning]
     notes = [w for w in warnings if "whose lots are not shown" in w]
     assert len(notes) == 1 and f"**{TOD}**" in notes[0], warnings

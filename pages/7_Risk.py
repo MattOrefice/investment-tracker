@@ -34,7 +34,7 @@ from src.risk import (
     scenario_insufficient_history_message,
     scenario_methodology_notes,
 )
-from src.ui_helpers import render_footer, render_page_header
+from src.ui_helpers import demo_portfolio_phrase, render_footer, render_page_header
 
 render_page_header()
 
@@ -60,6 +60,7 @@ with col:
         "regression, daily excess returns since inception."
     )
     st.caption(
+        f"Scope: {demo_portfolio_phrase()}." if IS_DEMO else
         f"Scope: **{get_portfolio_account()['display_name']}** — the self-directed "
         "taxable book (traded ledger); retirement and externally-managed accounts "
         "are excluded (see Household View)."

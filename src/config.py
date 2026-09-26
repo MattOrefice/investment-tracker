@@ -118,8 +118,8 @@ def is_write_enabled() -> bool:
 IS_DEMO = is_demo()
 
 
-def get_demo_banner_text() -> str:
-    """Return the demo-mode info banner, with inception month sourced from the DB."""
+def demo_inception_month() -> str:
+    """The paper-trade portfolio's first trade month, e.g. 'May 2025', from the DB."""
     inception_month = "May 2025"  # fallback if DB unavailable
     try:
         from src.db import get_connection  # lazy import — avoids circular at module level
@@ -130,8 +130,13 @@ def get_demo_banner_text() -> str:
             inception_month = _date.fromisoformat(_row[0]).strftime("%B %Y")
     except Exception:
         pass
+    return inception_month
+
+
+def get_demo_banner_text() -> str:
+    """Return the demo-mode info banner, with inception month sourced from the DB."""
     return (
-        f"**Demo mode** — analytics computed on a paper-trade portfolio simulated from {inception_month}. "
+        f"**Demo mode** — analytics computed on a paper-trade portfolio simulated from {demo_inception_month()}. "
         "Methodology and inference are real; positions are illustrative."
     )
 

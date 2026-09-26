@@ -20,7 +20,7 @@ from src.factors import (
     sig_marker,
 )
 from src.reports import build_bf_cross_reference
-from src.ui_helpers import render_footer, render_page_header
+from src.ui_helpers import demo_portfolio_phrase, render_footer, render_page_header
 render_page_header()
 
 
@@ -35,6 +35,7 @@ with col:
         "Newey-West HAC standard errors, daily excess returns since inception."
     )
     st.caption(
+        f"Scope: {demo_portfolio_phrase()}." if IS_DEMO else
         f"Scope: **{get_portfolio_account()['display_name']}** — the self-directed "
         "taxable book (traded ledger); retirement and externally-managed accounts "
         "are excluded."

@@ -25,7 +25,8 @@ from src.harvest import (
     compute_harvest_candidates,
 )
 from src.prices import get_prices
-from src.ui_helpers import render_footer, render_page_header
+from src.config import get_demo_banner_text, IS_DEMO
+from src.ui_helpers import demo_portfolio_phrase, render_footer, render_page_header
 render_page_header()
 
 
@@ -77,6 +78,9 @@ def _fmt_signed_pct(v: float) -> str:
 
 # ── Page ──────────────────────────────────────────────────────────────────────
 
+if IS_DEMO:
+    st.info(get_demo_banner_text())
+
 st.title("Tax Lot Inventory")
 st.caption(
     "Per-lot cost basis and unrealized gains, with tax-loss harvest "
@@ -115,6 +119,7 @@ with st.expander("How to read this page", expanded=False):
 _taxable = taxable_accounts()
 _account_names = {a["account_id"]: a["name"] for a in _taxable}
 st.caption(
+    f"Scope: {demo_portfolio_phrase()}." if IS_DEMO else
     "Scope: every taxable account"
     + (f" ({', '.join(a['name'] for a in _taxable)})" if _taxable else "")
     + ". IRAs, workplace plans and HSAs are not shown: a lot there carries no "
