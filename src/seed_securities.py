@@ -211,9 +211,13 @@ HOLDINGS = [
         "expense_ratio": 0.0009,
         "er_source": 'iShares fund page', "er_as_of": _ER_AS_OF,
         "holding_rationale": (
-            "IEMG is the holding because EEM costs 0.70% for identical exposure — seven times more expensive, "
-            "and the largest same-index fee gap in the portfolio at 61 bps. IEMG at 0.09% tracks the same "
-            "MSCI Emerging Markets index with the same ~27% China weight. China inclusion was deliberate: the "
+            # "identical exposure" on "the same index" was wrong: IEMG tracks MSCI EM IMI,
+            # which adds small caps (2026-09-25 audit, item 8;
+            # tools/migrate_research_prose_item8.py carries it into demo.db).
+            "IEMG is the holding because EEM costs 0.70% — seven times more expensive, and the largest fee "
+            "gap in the portfolio at 61 bps. The two are not the same exposure: IEMG at 0.09% tracks MSCI "
+            "Emerging Markets IMI, which adds small caps to the large and mid caps of EEM's MSCI Emerging "
+            "Markets index. China inclusion was deliberate: the "
             "SAA rationale flags governance risk as a watch item but not yet a reason to exit — China trades "
             "at ~10x P/E and the EM valuation thesis meaningfully includes Chinese equities. Excluding China "
             "via EMXC would be a larger active bet than appropriate at current prices.\n\n"
@@ -306,14 +310,15 @@ HOLDINGS = [
             "Among the few broad commodity ETFs that avoid a K-1 (COMT, BCI), PDBC is the one I hold for "
             "its liquidity and track record. Nearly all commodity futures funds are organized as partnerships and "
             "issue K-1s annually — complicating filing, often arriving late, and potentially triggering "
-            "estimated tax requirements. PDBC uses a C-corporation structure instead, eliminating K-1 at "
-            "the cost of a higher ER (0.59%). For a 5% position in a taxable account, tax simplicity is "
-            "worth materially more than the fee difference versus K-1-issuing alternatives. DJP (the "
-            "benchmark) is an exchange-traded note with counterparty risk — used for attribution only, "
-            "never as a holding.\n\n"
+            # From PDBC's prospectus, not "a C-corporation"; the benchmark is DBC, not DJP
+            # (2026-09-25 audit, item 8).
+            "estimated tax requirements. PDBC is a regulated investment company that holds its futures "
+            "through a wholly-owned Cayman Islands subsidiary, so it reports on Form 1099 instead. It is "
+            "benchmarked to the DBIQ Optimum Yield Diversified Commodity Index, the index DBC (the "
+            "benchmark) tracks as a commodity pool that issues a K-1, and it costs 0.59% against DBC's "
+            "0.85%. DBC is used for attribution only, never as a holding.\n\n"
             "**Would revisit if** a broad no-K-1 commodity fund appeared at materially lower cost or with "
-            "better liquidity. The 0.59% is paid for tax structure rather than strategy, so a cheaper "
-            "equivalent would make this holding indefensible on its own terms."
+            "better liquidity."
         ),
     },
 ]
