@@ -667,8 +667,8 @@ def test_saa_thesis_above_40_cape_reference_still_relevant():
         warnings.warn(
             f"Current CAPE ({cv:.1f}x) has dropped below {REVIEW_THRESHOLD}x. "
             "Review the static 'CAPE above 40' sentence in the SAA thesis paragraph "
-            "(pages/1_SAA.py) and the '1929 and 1999 peaks' comparator — both may no "
-            "longer accurately describe current valuation conditions.",
+            "(pages/1_SAA.py): it may no longer describe current valuation conditions. "
+            "The valuation sentence before it, and its precedent years, are derived.",
             UserWarning,
             stacklevel=2,
         )

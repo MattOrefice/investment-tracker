@@ -10,14 +10,14 @@ import plotly.graph_objects as go
 from src.asof import as_of_banner
 from src.config import get_demo_banner_text, IS_DEMO
 from src.db import get_connection
-from src.endowment_benchmarks import CATEGORIES, ENTITIES, get_endowment_data
+from src.endowment_benchmarks import CATEGORIES, entities
 from src.holdings import get_portfolio_account, sleeve_weights_with_coverage
 from src.coverage import unresolved_marker
 from src.macro import percentile as macro_percentile
-from src.prose_helpers import percentile_label
+from src.prose_helpers import cape_valuation_sentence
 from src.rebalance import compute_drift, interpret_rebalance_status
 from src.sleeve_config import international_sleeves, sleeve_holdings
-from src.shiller import get_cape_series
+from src.shiller import earlier_years_at_or_above, get_cape_series
 from src.ui_helpers import demo_portfolio_phrase, render_footer, render_page_header
 render_page_header()
 
@@ -43,23 +43,25 @@ def _safe_md(text):
 
 
 @st.cache_data(ttl=86400, show_spinner=False)
-def _load_cape_label() -> str:
+def _load_cape_sentence() -> str:
+    """The thesis's valuation sentence, from the committed CAPE series.
+
+    The reading always carries its month, so a stale series never reads as a current
+    stance. That replaces the "(CAPE data through …)" suffix, which nested inside the
+    sentence's own parenthesis. A failed read no longer falls back to "elevated
+    historically", a label nothing measured.
+    """
     try:
-        s = get_cape_series()
-        cv = float(s.dropna().iloc[-1])
-        pct = macro_percentile(s.dropna(), cv)
-        label = percentile_label(pct)
-        # Committed-data staleness surface: the CAPE file is refreshed only by
-        # tools/refresh_market_data.py, so a stale series must not read as a
-        # current valuation stance — the label carries its own as-of.
-        from src.asof import MARKET_DATA_STALE_DAYS_VALUATION, staleness_note
-        from src.shiller import cape_frontier
-        frontier = cape_frontier()
-        if staleness_note("Shiller CAPE", frontier, MARKET_DATA_STALE_DAYS_VALUATION):
-            label += f" (CAPE data through {frontier.isoformat()})"
-        return label
+        s = get_cape_series().dropna()
+        cv = float(s.iloc[-1])
+        pct = macro_percentile(s, cv)
+        if pct is None:
+            raise ValueError("empty CAPE series")
+        return cape_valuation_sentence(cv, s.index[-1].strftime("%B %Y"), pct,
+                                       earlier_years_at_or_above(s, cv))
     except Exception:
-        return "elevated historically"
+        return ("Strategic asset allocation reflects US equity valuations; the CAPE "
+                "reading could not be loaded for this render.")
 
 
 def load_saa_data():
@@ -140,14 +142,12 @@ with col:
     _real_wt     = _require_weight(sub_classes, "Real Assets")
     _tips_wt     = _require_weight(sub_classes, "TIPS")
     _core_fi_wt  = _require_weight(sub_classes, "Core Fixed Income")
-    _cape_lbl    = _load_cape_label()
-    # TODO: Static refs "comparable only to the 1929 and 1999 peaks" and "CAPE readings
-    # above 40" should be reviewed if CAPE falls materially below 40 and _cape_lbl no
-    # longer reads "historically extreme". See test_saa_thesis_above_40_cape_reference_still_relevant.
+    # TODO: the static "CAPE readings above 40" sentence should be reviewed if CAPE
+    # falls materially below 40. The valuation sentence before it is derived. See
+    # test_saa_thesis_above_40_cape_reference_still_relevant.
     st.markdown(
-        f"Strategic asset allocation reflects a US equity environment with extreme valuations "
-        f"(CAPE {_cape_lbl} — comparable only to the 1929 and 1999 peaks) balanced against a "
-        f"normalized 2/10 yield curve and HY credit spreads that do not yet signal stress. "
+        f"{_load_cape_sentence()} It is balanced against a normalized 2/10 yield curve "
+        f"and HY credit spreads that do not yet signal stress. "
         f"The portfolio sustains {round(_equity_wt * 100)}% equity weight rather than timing "
         f"valuation — historical CAPE readings above 40 are associated with low or negative forward "
         f"10-year real returns, but valuation alone has historically been a poor market-timing signal."
@@ -196,8 +196,16 @@ with col:
         "These are structural positions, not a response to current valuations. A tilt whose case "
         "depended on today's multiples would be a tactical trade in strategic clothing."
     )
+    # The sleeves as the split defines them: four on the demo book, one on the
+    # personal book. "International Developed (20%)" named a sleeve the demo does not have.
+    if len(_intl_sleeve_names) > 1:
+        _intl_phrase = "The developed-international sleeves (" + ", ".join(
+            f"{_s} {round(_require_weight(sub_classes, _s) * 100)}%"
+            for _s in _intl_sleeve_names) + ")"
+    else:
+        _intl_phrase = f"{_intl_sleeve_names[0]} ({round(_intl_dev_wt * 100)}%)"
     st.markdown(
-        f"International Developed ({round(_intl_dev_wt * 100)}%) and Emerging Markets "
+        f"{_intl_phrase} and Emerging Markets "
         f"({round(_em_wt * 100)}%) provide valuation diversification at meaningfully lower CAPE "
         f"levels. Real Assets ({round(_real_wt * 100)}%) provides inflation-correlated "
         f"diversification with different risk drivers than equity or duration. Core Fixed Income "
@@ -277,6 +285,7 @@ with col:
     _band_line = ""
     _cash_note = ""
     _gap_note = None
+    _weights = None
     try:
         _sw, _sw_cov = sleeve_weights_with_coverage(date.today().isoformat())
         _gap_note = unresolved_marker(_sw_cov)
@@ -336,27 +345,43 @@ with col:
         )
     if _cash_note:
         st.caption(_cash_note)
-    rows = [
-        {
+    # Actual and Drift are the columns the caption above describes. A targeted
+    # sleeve with no holding reads 0.0 actual. Without weights (nothing held, or the
+    # read failed) the columns are left out rather than shown empty.
+    rows = []
+    for sc in sub_classes:
+        row = {
             "Sleeve":      sc["name"],
             "Category":    _dn(sc["parent_name"]),
             "Target (%)":  round(sc["target_weight"] * 100, 1),
-            "Band (±%)":   round(sc["tolerance_band"] * 100, 1),
-            "Benchmark":   sc["benchmark_ticker"] or "—",
         }
-        for sc in sub_classes
-    ]
+        if _weights is not None:
+            _a = float(_weights.get(sc["name"], 0.0))
+            row["Actual (%)"] = round(_a * 100, 1)
+            # "+ 0.0" turns a rounded -0.0 into 0.0.
+            row["Drift (pp)"] = round((_a - sc["target_weight"]) * 100, 1) + 0.0
+        row["Band (±%)"] = round(sc["tolerance_band"] * 100, 1)
+        row["Benchmark"] = sc["benchmark_ticker"] or "—"
+        rows.append(row)
     df = pd.DataFrame(rows)
     st.dataframe(
         df,
         width='stretch',
         hide_index=True,
+        # Tall enough for every sleeve (12 on the demo book) without scrolling:
+        # 35 px a row plus the header, and 3 px of border.
+        height=35 * (len(df) + 1) + 3,
         column_config={
             # Numeric columns right-align by default; whole-percent bands drop the
             # trailing ".0" and both columns are tightened so the figures line up
             # cleanly. Display only — the underlying target and band values are
             # unchanged (targets keep their ex-cash decimal; bands stay ±0.03/±0.02).
             "Target (%)": st.column_config.NumberColumn(format="%.1f", width="small"),
+            "Actual (%)": st.column_config.NumberColumn(format="%.1f", width="small"),
+            "Drift (pp)": st.column_config.NumberColumn(
+                format="%+.1f", width="small",
+                help="Actual minus target in percentage points, computed before rounding, "
+                     "so it can differ by 0.1 from the rounded columns."),
             "Band (±%)":  st.column_config.NumberColumn(format="%.0f", width="small"),
         },
     )
@@ -416,10 +441,11 @@ with col:
         "Cash":                   "#AEAEAE",
     }
 
-    _entity_names = list(ENTITIES.keys())
+    _entities = entities()
+    _entity_names = list(_entities.keys())
     _fig_endo = go.Figure()
     for cat in CATEGORIES:
-        weights = [ENTITIES[e].get(cat, 0.0) for e in _entity_names]
+        weights = [_entities[e].get(cat, 0.0) for e in _entity_names]
         _fig_endo.add_trace(go.Bar(
             name=cat,
             y=_entity_names,

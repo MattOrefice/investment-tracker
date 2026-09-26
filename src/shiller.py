@@ -228,3 +228,22 @@ def cape_frontier() -> "date | None":
 def current_cape() -> float:
     """Return the most recent CAPE value."""
     return float(get_cape_series().dropna().iloc[-1])
+
+
+def earlier_years_at_or_above(series: pd.Series, level: float) -> list[int]:
+    """Calendar years, before the current run, in which CAPE read at or above ``level``.
+
+    The current run is the unbroken stretch of months at or above ``level`` that
+    ends at the latest reading. It is left out so a sentence can say whether the
+    market has been this high BEFORE. Empty when it has not.
+
+    Derived rather than typed: the SAA thesis said "comparable only to the 1929 and
+    1999 peaks" beside a reading of 41, when the 1929 peak was 32.6 and the only
+    earlier months above 40 were January 1999 to September 2000.
+    """
+    s = series.dropna()
+    below = s[s < level]
+    if below.empty:
+        return []
+    earlier = s[s.index <= below.index[-1]]
+    return sorted({int(y) for y in earlier[earlier >= level].index.year})
