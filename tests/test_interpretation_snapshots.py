@@ -256,10 +256,13 @@ class TestGdpGrowthSnapshot:
 
     def test_near_trend_branch(self):
         """Near-trend growth (3.0%) — Goldilocks mid-cycle range."""
+        # The trend was "~2.5%" with no source (the page said "CBO estimate"); it is the
+        # FOMC's longer-run median, cited (2026-09-25 audit, item 5).
         result = interpret_gdp_growth(3.0)
         expected = (
-            "Real GDP growth of 3.0% is near the long-run potential output trend of "
-            "~2.5% — a mid-cycle Goldilocks range. On-trend growth is associated "
+            "Real GDP growth of 3.0% is near the long-run trend of ~2.0% (the FOMC's "
+            "longer-run median projection, September 2026) — a mid-cycle Goldilocks "
+            "range. On-trend growth is associated "
             "with stable corporate earnings and balanced equity risk premiums; "
             "the SAA is calibrated for this baseline environment."
         )
@@ -277,11 +280,13 @@ class TestUsVsIntlSpreadSnapshot:
 
     def test_far_above_mean_branch(self):
         """15 pp above 5-year rolling average — extended US leadership territory."""
+        # A difference of returns is in percentage points, not "%" (item 5; the
+        # sentence also read "by 0.0%" at a tie, see test_macro_accuracy).
         result = interpret_us_vs_intl_spread(20.0, 5.0)
         expected = (
-            "Over the trailing 12 months, US equities (SPY) have outperformed "
-            "international developed (EFA) by 20.0%. On a 5-year rolling basis, "
-            "the spread is 15.0% above its 5-year rolling average of 5.0% — "
+            "Over the trailing 12 months, US equities (SPY) outperformed "
+            "international developed (EFA) by 20.0 percentage points. That is 15.0 "
+            "points above its 5-year rolling average of +5.0 points, "
             "well into extended US-leadership territory. Historically such extremes "
             "have mean-reverted via valuation convergence and dollar cycle turns, "
             "supporting the case for the international developed sleeves."
@@ -292,9 +297,9 @@ class TestUsVsIntlSpreadSnapshot:
         """15 pp below 5-year rolling average — strong international reversal."""
         result = interpret_us_vs_intl_spread(-5.0, 10.0)
         expected = (
-            "Over the trailing 12 months, US equities (SPY) have underperformed "
-            "international developed (EFA) by 5.0%. On a 5-year rolling basis, "
-            "the spread is 15.0% below its 5-year rolling average of 10.0% — "
+            "Over the trailing 12 months, US equities (SPY) underperformed "
+            "international developed (EFA) by 5.0 percentage points. That is 15.0 "
+            "points below its 5-year rolling average of +10.0 points, "
             "a strong reversal in international's favor, consistent with the "
             "valuation mean-reversion thesis underlying the "
             "developed-international allocation."
