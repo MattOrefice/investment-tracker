@@ -251,17 +251,23 @@ def test_the_rule_and_its_date_are_stated_where_the_blend_is_described(book):
     assert "chain-linked (the rule since September 26, 2026)" in readme
 
 
-def test_the_stages_state_the_blend_rebalancing_over_a_multi_quarter_window(book):
+@pytest.mark.parametrize("window", ["SI", "YTD"])
+def test_the_stages_state_the_two_benchmarks_apart(book, window):
+    """SI spans quarters; YTD also starts on a non-trading day (January 1), where the
+    held basket skips the year's first trading day (#391). Either way the page states
+    the difference between the two benchmarks, never as rebalancing alone."""
     import streamlit as st
     from streamlit.testing.v1 import AppTest
     st.cache_data.clear()
     at = AppTest.from_file(str(ROOT / "pages" / "2_Performance.py"), default_timeout=300).run()
-    [r for r in at.radio if r.key == "bf_period"][0].set_value("SI").run()
+    [r for r in at.radio if r.key == "bf_period"][0].set_value(window).run()
     assert not at.exception, [str(e.value) for e in at.exception]
     caps = [str(c.value) for c in at.caption]
-    assert any("the SAA blend’s quarterly rebalancing adds" in c for c in caps)
+    assert any("against one basket held from the window’s start. Stage 1 reads the SAA "
+               "blend rebalanced each calendar quarter," in c for c in caps)
     assert any(c.startswith("Stage 2 is measured against the SAA blend rebalanced each "
-                            "calendar quarter.") for c in caps)
+                            "calendar quarter; Brinson-Fachler holds one basket") for c in caps)
+    assert not any("rebalancing adds" in c or "that rebalancing is" in c for c in caps)
     bf_line = next(c for c in caps if c.startswith("**BF decomposition:**"))
-    assert "vs. Stage 2: ✓" in bf_line, "net of the rebalancing, BF still reconciles"
+    assert "vs. Stage 2: ✓" in bf_line, "net of the difference, BF still reconciles"
     st.cache_data.clear()

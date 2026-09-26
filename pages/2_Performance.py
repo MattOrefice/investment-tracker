@@ -1022,9 +1022,11 @@ with col:
         # a 3.16% SI TWR (#349). Same slicing as the returns table's period_return.
         _r_p_ps  = period_return("daily", pv, cf, bf_period)
         # The SAA side is the ONE blended series, rebalanced each calendar quarter
-        # (#383), like the naive side and the tiles above. _r_b_bf holds one basket
-        # from the window's start; the difference is the blend's quarterly rebalancing,
-        # which the sleeve breakdown and the Brinson-Fachler check below state.
+        # (#383), like the naive side and the tiles above. _r_b_bf is Brinson-Fachler's
+        # benchmark: one basket held from the window's start. The sleeve breakdown and
+        # the BF check below state the difference between the two. It is NOT all
+        # rebalancing: on a window starting on a non-trading day the held basket is
+        # bought at the next close and skips that day's return (#391).
         _r_b_ps  = _benchmark_period_return(bl, bf_period)
         _rebal   = _r_b_ps - _r_b_bf
         _naive_r = _benchmark_period_return(naive, bf_period)
@@ -1140,12 +1142,13 @@ with col:
             _sleeve_sum_bps = sum(_sleeve_vals_bps)
             _rebal_bps = _rebal * 10_000
             if abs(_rebal_bps) >= 0.5:
-                # The sleeve contributions hold the window-start weights; Stage 1
-                # reads the blend rebalanced each quarter (#383).
+                # The sleeve contributions hold one basket from the window's start;
+                # Stage 1 reads the blend rebalanced each quarter (#383).
                 _sum_line = (
-                    f"Stage 1 sleeve contributions sum to {_sign(_sleeve_sum_bps)}{_sleeve_sum_bps:.0f} bps; "
-                    f"the SAA blend\u2019s quarterly rebalancing adds {_sign(_rebal_bps)}{_rebal_bps:.0f} bps "
-                    f"(Stage 1 {_sign(_ts1_bps)}{_ts1_bps:.0f} bps). "
+                    f"Stage 1 sleeve contributions sum to {_sign(_sleeve_sum_bps)}{_sleeve_sum_bps:.0f} bps "
+                    f"against one basket held from the window\u2019s start. Stage 1 reads the SAA blend "
+                    f"rebalanced each calendar quarter, {_sign(_rebal_bps)}{_rebal_bps:.0f} bps apart over "
+                    f"this window (Stage 1 {_sign(_ts1_bps)}{_ts1_bps:.0f} bps). "
                 )
             else:
                 _sum_line = (
@@ -1299,9 +1302,9 @@ with col:
         if abs(_rebal * 10_000) >= 0.5:
             st.caption(
                 f"Stage 2 is measured against the SAA blend rebalanced each calendar "
-                f"quarter. Over this window that rebalancing is {_rebal * 10_000:+.1f} bps, "
-                f"which Brinson-Fachler cannot see: it holds one set of weights from the "
-                f"window\u2019s start. The check above compares net of it."
+                f"quarter; Brinson-Fachler holds one basket from the window\u2019s start. "
+                f"Over this window the two benchmark returns differ by "
+                f"{_rebal * 10_000:+.1f} bps, and the check above compares net of it."
             )
 
         # A data gap excludes a sleeve from the BF decomposition above, but that
