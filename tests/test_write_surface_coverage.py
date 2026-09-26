@@ -28,7 +28,6 @@ from test_market_data_immutability import _tracked_data_files, write_trap  # noq
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 CSV = ROOT / "data" / "shiller_cape.csv"
-PARQUET = ROOT / "data" / "cache" / "prices_hyg.parquet"
 
 
 def _skip_without(path):
@@ -100,11 +99,14 @@ def test_pandas_to_parquet_is_caught(write_trap):
     """Predicted to be the GAP, on the theory that pyarrow opens files in C. It
     does not — it routes through builtins.open and was caught all along. Pinned
     because the prediction was wrong in the direction that matters: reasoning
-    about which surface a library uses is not a substitute for measuring it."""
-    _skip_without(PARQUET)
+    about which surface a library uses is not a substitute for measuring it.
+
+    Aimed at a tracked CSV since #386 retired the only tracked parquet. The trap
+    guards tracked PATHS, not formats, so the writer is still what is measured."""
+    _skip_without(CSV)
     with pytest.raises(AssertionError):
-        pd.DataFrame({"a": [1]}).to_parquet(PARQUET)
-    assert _attempted(write_trap, PARQUET)
+        pd.DataFrame({"a": [1]}).to_parquet(CSV)
+    assert _attempted(write_trap, CSV)
 
 
 # ── the claim that does not decay ─────────────────────────────────────────────

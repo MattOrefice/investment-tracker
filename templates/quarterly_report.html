@@ -30,6 +30,9 @@
     {% if inputs_restatement_note %}
     <p class="cover-staleness">{{ inputs_restatement_note }}</p>
     {% endif %}
+    {% if input_corrections_note %}
+    <p class="cover-staleness">{{ input_corrections_note }}</p>
+    {% endif %}
   </div>
 
   <h2>Executive Summary</h2>
@@ -399,12 +402,16 @@
   </div>
   {% endif %}
 
-  {% if has_trades and pos and pos.style_box_b64 %}
+  {% if has_trades and pos and (pos.style_box_b64 or pos.style_box_pending) %}
   <h3>Equity Style Profile</h3>
+  {% if pos.style_box_b64 %}
   <div style="text-align: center; margin: 8px 0 4px;">
     <img src="data:image/png;base64,{{ pos.style_box_b64 }}" style="max-width: 360px;" alt="Equity Style Profile" />
     <p style="font-size: 0.85em; color: #666; margin: 2px 0 0;">{{ pos.style_box_caption }}</p>
   </div>
+  {% else %}
+  <div class="empty-banner">{{ pos.style_box_pending }}</div>
+  {% endif %}
   {% if pos.non_us %}
   <div style="margin: 8px 0 0; padding: 8px 12px; background: #F7F7F7; border-left: 3px solid #CCCCCC; font-size: 0.85em; page-break-inside: avoid; break-inside: avoid;">
     <strong>Non-US Equity Sleeve</strong>

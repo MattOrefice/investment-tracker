@@ -113,6 +113,9 @@ class SnapshotFrames(NamedTuple):
     inputs_pending: "dict | None" = None
     # INPUTS_RULE for a lock that holds its inputs; None before #382.
     inputs_rule: "str | None" = None
+    # Inputs a later correction replaced because the lock had taken them short of
+    # the quarter, by src.input_lock name: {"was_through", "restated_on"} (#386).
+    input_corrections: "dict | None" = None
 
 
 # Every lock captured from #368 on: prices AND dividends through the quarter's last
@@ -242,9 +245,11 @@ def _capture_inputs(end: date, tickers: "list[str]",
     no reading for the quarter's last month. French publishes about a month late,
     so on October 1 a Q3 lock holds prices and CAPE while its factor sections wait.
 
-    HYG is locked as read, without a coverage gate: its committed parquet is a
-    static file the refresh does not update, and gating on it would leave the FI
-    regression pending for good. Its end date is recorded."""
+    HYG, the FI regression's credit proxy, comes from the price layer with the price
+    rule (dividends through the quarter's last day) and the French gate (#386). The
+    ETF metadata is a hand-kept file of fact-sheet figures, each stamped with its
+    source date; it covers a quarter when every stamp falls inside the quarter, so a
+    file nobody has updated renders the style box as pending rather than locking."""
     from src import factors, shiller, style_box
     from src.asof import QUARTER_END_COVERAGE_DAYS
 
@@ -277,10 +282,10 @@ def _capture_inputs(end: date, tickers: "list[str]",
         gate(UMD, s, last, last is not None and last >= floor,
              lambda x: _enc_series(x, "datetime"))
     if HYG in want:
-        s = cut(factors.hyg_credit_series(_INPUT_START, end.isoformat()))
-        if len(s):
-            enc[HYG] = _enc_series(s, "datetime")
-            through[HYG] = s.index.max().date().isoformat()
+        s = _hyg_through(end)
+        last = s.index.max().date() if len(s) else None
+        gate(HYG, s, last, last is not None and last >= floor,
+             lambda x: _enc_series(x, "datetime"))
     if CAPE in want:
         s = shiller.get_cape_series()
         s = s[s.index <= end_ts]
@@ -288,7 +293,14 @@ def _capture_inputs(end: date, tickers: "list[str]",
         gate(CAPE, s, last, last is not None and last >= date(end.year, end.month, 1),
              lambda x: _enc_series(x, "datetime"))
     if ETF_METADATA in want:
-        enc[ETF_METADATA] = {"kind": "json", "data": style_box._load_metadata()}
+        meta = style_box._load_metadata()
+        stamps = sorted(date.fromisoformat(v["as_of"]) for v in meta.values()
+                        if isinstance(v, dict) and v.get("as_of"))
+        q_start = date(end.year, end.month - 2, 1)
+        oldest = stamps[0] if stamps else None
+        gate(ETF_METADATA, meta, oldest,
+             bool(stamps) and stamps[0] >= q_start and stamps[-1] <= end,
+             lambda x: {"kind": "json", "data": x})
     if DIVIDENDS in want:
         divs = {}
         for t in tickers:
@@ -296,6 +308,86 @@ def _capture_inputs(end: date, tickers: "list[str]",
             divs[t] = _enc_series(s, "date")
         enc[DIVIDENDS] = {"kind": "dividends", "data": divs}
     return enc, through, pending
+
+
+def _hyg_through(end: date) -> pd.Series:
+    """HYG's total-return level from the price layer through ``end``, with dividends
+    through ``end`` only (the price lock's rule), as a datetime-indexed series. Empty
+    when the price layer holds none."""
+    try:
+        df = _prices_module.get_prices("HYG", _INPUT_START, end.isoformat())
+    except Exception:                                    # noqa: BLE001
+        return pd.Series(dtype=float)
+    if df is None or df.empty:
+        return pd.Series(dtype=float)
+    s = (_prices_module.dividend_adjusted("HYG", df, through=end.isoformat())
+         if "close" in df.columns else df["adj_close"])
+    # get_prices stops at ``end``, so the series already ends with the quarter.
+    return pd.Series(s.values, index=pd.to_datetime(list(df.index)), name="adj_close",
+                     dtype=float)
+
+
+def restate_short_hyg(quarter_id: str, restated_on: date) -> "tuple[str, str] | None":
+    """Replace a lock's HYG input taken short of the quarter, and record it (#386).
+
+    Before #386 HYG was locked as read from a committed parquet that ended
+    2026-05-05, with no coverage gate, so a quarter ending after that date locked a
+    credit proxy held flat for its last weeks. This re-reads HYG from the price layer
+    through the quarter's end, only for a lock whose HYG ends before the coverage
+    floor, and records the old end date so the report can say what it corrected.
+    Every other input, the prices and the capture time are left as they are. Returns
+    (old end, new end), or None when the lock's HYG already covered the quarter."""
+    from src.asof import QUARTER_END_COVERAGE_DAYS
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT snapshot_data, snapshot_date, captured_at FROM quarter_snapshots "
+            "WHERE quarter_id = ?", (quarter_id,)).fetchone()
+    if row is None:
+        return None
+    blob = json.loads(row["snapshot_data"])
+    old = (blob.get("inputs_through") or {}).get(HYG)
+    end = date.fromisoformat(row["snapshot_date"])
+    floor = end - timedelta(days=QUARTER_END_COVERAGE_DAYS)
+    if old is None or date.fromisoformat(old) >= floor:
+        return None
+    s = _hyg_through(end)
+    if not len(s) or s.index.max().date() < floor:
+        raise LockCoverageError(
+            f"Cannot restate {quarter_id}'s HYG: the price layer's HYG ends "
+            f"{s.index.max().date() if len(s) else 'nowhere'}, short of {end}.")
+    new = s.index.max().date().isoformat()
+    blob["inputs"][HYG] = _enc_series(s, "datetime")
+    blob["inputs_through"][HYG] = new
+    blob.setdefault("input_corrections", {})[HYG] = {
+        "was_through": old, "restated_on": restated_on.isoformat()}
+    with get_connection() as conn:
+        conn.execute(
+            """INSERT OR REPLACE INTO quarter_snapshots
+               (quarter_id, snapshot_date, captured_at, snapshot_data) VALUES (?, ?, ?, ?)""",
+            (quarter_id, row["snapshot_date"], row["captured_at"], json.dumps(blob)))
+    return old, new
+
+
+def input_corrections_note(snap: "SnapshotFrames | None") -> "str | None":
+    """The cover line for a lock whose HYG input was corrected (#386), or None."""
+    fix = ((getattr(snap, "input_corrections", None) or {}).get(HYG)
+           if snap is not None else None)
+    if not fix:
+        return None
+    on = date.fromisoformat(fix["restated_on"])
+    was = date.fromisoformat(fix["was_through"])
+    q_end = date.fromisoformat(snap.quarter_end)
+
+    def _long(d: date) -> str:
+        return f"{d.strftime('%B')} {d.day}, {d.year}"
+
+    return (
+        f"Restated {_long(on)} to correct an incomplete input. The fixed-income "
+        f"regression's credit proxy, HYG, came from a committed file that ended "
+        f"{_long(was)}, {(q_end - was).days} days before the quarter did, so it was "
+        f"held flat for the rest of the quarter. It now comes from the price data "
+        f"through the quarter's end."
+    )
 
 
 def _as_frames(snap) -> SnapshotFrames:
@@ -365,7 +457,8 @@ def get_quarter_snapshot(quarter_id: str) -> tuple:
     return (SnapshotFrames(adj_close=_frame(blob["adj_close"]), close=close, gaps=gaps,
                            rule=blob.get("rule"), quarter_end=row["snapshot_date"],
                            inputs=inputs, inputs_pending=blob.get("inputs_pending"),
-                           inputs_rule=blob.get("inputs_rule")),
+                           inputs_rule=blob.get("inputs_rule"),
+                           input_corrections=blob.get("input_corrections")),
             row["captured_at"])
 
 

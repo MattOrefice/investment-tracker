@@ -216,15 +216,15 @@ def test_loader_writes_no_tracked_data_even_when_stale(key, write_trap, monkeypa
 
 
 def test_trap_set_covers_the_refresh_family():
-    """Sanity: the git-derived trap set contains the five tool-refreshed files
-    and the pinned parquet — if these ever leave tracking, the guard above
-    guards nothing for them and this fails loudly."""
+    """Sanity: the git-derived trap set contains the five tool-refreshed files —
+    if these ever leave tracking, the guard above guards nothing for them and this
+    fails loudly. The pinned HYG parquet was listed here until #386 retired it:
+    HYG is read from the price layer now, and no tracked file carries it."""
     tracked = _tracked_data_files()
     expected = [
         _ROOT / "data" / "cache" / "ff_factors_us.csv",
         _ROOT / "data" / "cache" / "ff_factors_developed_exus.csv",
         _ROOT / "data" / "cache" / "ff_umd_us.csv",
-        _ROOT / "data" / "cache" / "prices_hyg.parquet",
         _ROOT / "data" / "shiller_cape.csv",
         _ROOT / "data" / "trailing_pe.csv",
     ]

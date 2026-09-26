@@ -32,6 +32,7 @@ from src.cache import (
     capture_quarter_snapshot,
     complete_quarter_inputs,
     get_quarter_snapshot,
+    input_corrections_note,
     inputs_restatement_note,
     restatement_note,
     is_quarter_complete,
@@ -64,6 +65,7 @@ from src.positioning import (
     get_non_us_equity_data, get_style_box_data,
 )
 from src.style_box import STYLE_BOX_CAPTION
+from src.input_lock import ETF_METADATA, FF5_DEVELOPED_EXUS, FF5_US, HYG, UMD
 from src.returns import period_return, twr_daily_linked
 from src.shiller import current_cape, get_cape_series
 
@@ -1332,10 +1334,14 @@ def _build_thesis_section(start_date: str, end_date: str, *, account_id: int) ->
     return {"theses": theses, "trades": trades, "drip_summary": drip_summary}
 
 
-def _build_positioning_section(end_date: str) -> dict:
-    """Build the positioning section (duration + style box) from live portfolio state."""
+def _build_positioning_section(end_date: str, style_pending: Optional[str] = None) -> dict:
+    """Build the positioning section (duration + style box) from live portfolio state.
+
+    ``style_pending`` is the pending line for a quarter whose ETF fact-sheet data did
+    not cover it (#386): the style box renders it instead of the chart, and the rest
+    of the section, built from prices, locks as usual."""
     dur        = get_effective_duration(end_date)
-    style_data = get_style_box_data(end_date)
+    style_data = None if style_pending else get_style_box_data(end_date)
     non_us     = get_non_us_equity_data(end_date)
     fi_dur    = dur["fi_sleeve_duration"]
     agg_dur   = dur["agg_benchmark"]
@@ -1358,6 +1364,7 @@ def _build_positioning_section(end_date: str) -> dict:
         "duration_line":     duration_line,
         "style_box_b64":     style_box_b64,
         "style_box_caption": STYLE_BOX_CAPTION,
+        "style_box_pending": style_pending,
         "non_us":            non_us,
     }
 
@@ -1913,24 +1920,44 @@ def report_dates(snapshot_captured_at: Optional[str],
     return format_long_date(today_et(now)), locked
 
 
-def _pending_note(snap, section: str) -> Optional[str]:
+# What each pending input is called in a pending line: (what must cover the quarter,
+# its date clause, its missing clause). The French files and momentum share one.
+_FRENCH_PENDING = ("the factor data", "the Fama-French factor data on file ends {}",
+                   "no Fama-French factor data is on file for the quarter")
+_PENDING_WORDS = {
+    FF5_US: _FRENCH_PENDING, FF5_DEVELOPED_EXUS: _FRENCH_PENDING, UMD: _FRENCH_PENDING,
+    HYG: ("the HYG price data", "the HYG price data on file ends {}",
+          "no HYG price data is on file for the quarter"),
+    ETF_METADATA: ("the ETF fact-sheet data", "the ETF fact-sheet data on file is dated {}",
+                   "no ETF fact-sheet data is on file"),
+}
+
+
+def _pending_note(snap, section: str, subject: str = "section") -> Optional[str]:
     """The pending line for a locked section whose inputs are still pending, or None.
 
     French publishes a month's factors about a month after it ends, so on October 1
     the Q3 factor and benchmark sections wait for them rather than lock on two-thirds
-    of the quarter (#382)."""
+    of the quarter (#382). HYG and the ETF fact-sheet file wait the same way (#386),
+    and the line names each input that is waiting, with its date."""
     pending = (getattr(snap, "inputs_pending", None) or {}) if snap is not None else {}
     waiting = [n for n in SECTION_INPUTS[section] if n in pending]
     if not waiting:
         return None
-    ends = [pending[n] for n in waiting if pending[n]]
-    through = min(ends) if ends else None
+    groups: dict = {}
+    for n in waiting:
+        groups.setdefault(_PENDING_WORDS[n], []).append(pending[n])
+    whats, clauses = [], []
+    for (what, dated, missing), ends in groups.items():
+        whats.append(what)
+        known = [e for e in ends if e]
+        clauses.append(dated.format(format_long_date(min(known))) if known else missing)
+    verb = "covers" if len(whats) == 1 else "cover"
     q_end = getattr(snap, "quarter_end", None)
-    data = (f"The Fama-French factor data on file ends {format_long_date(through)}"
-            if through else "No Fama-French factor data is on file for the quarter")
     closed = f"; the quarter ended {format_long_date(q_end)}" if q_end else ""
-    return (f"Pending: this section locks when the factor data covers the quarter. "
-            f"{data}{closed}.")
+    data = "; ".join(clauses)
+    return (f"Pending: this {subject} locks when {' and '.join(whats)} {verb} the quarter. "
+            f"{data[0].upper()}{data[1:]}{closed}.")
 
 
 def _make_report_env() -> Environment:
@@ -1998,6 +2025,7 @@ def generate_quarterly_report_bytes(
     # the date its data ends, rather than locking on part of the quarter (#382).
     factor_pending = _pending_note(snap_df, "factor")
     bench_pending = _pending_note(snap_df, "benchmark")
+    style_pending = _pending_note(snap_df, "positioning", subject="style box")
 
     ctx = snapshot_price_context(snap_df) if snap_df is not None else nullcontext()
     with ctx:
@@ -2005,7 +2033,8 @@ def generate_quarterly_report_bytes(
         hold_data        = _build_holdings_section(end_date)              if has_trades else {"rows": [], "chart_b64": None}
         perf_data        = _build_performance_section(start_date, end_date) if has_trades else None
         attr_data        = _build_attribution_section(start_date, end_date) if has_trades else None
-        pos_data         = _build_positioning_section(end_date)             if has_trades else None
+        pos_data         = (_build_positioning_section(end_date, style_pending=style_pending)
+                            if has_trades else None)
         factor_data      = (_build_factor_section(end_date)
                             if has_trades and not factor_pending else None)
         bench_attr_data  = (_build_benchmark_section(start_date, end_date)
@@ -2052,6 +2081,7 @@ def generate_quarterly_report_bytes(
         # and say so; None for any other report (#368).
         restatement_note     = restatement_note(quarter_id, snap_df),
         inputs_restatement_note = inputs_restatement_note(quarter_id, snap_df),
+        input_corrections_note = input_corrections_note(snap_df),
         factor_pending       = factor_pending,
         bench_pending        = bench_pending,
         has_trades           = has_trades,
