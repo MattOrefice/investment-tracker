@@ -395,6 +395,32 @@ def benchmark_construction_note(snap: "SnapshotFrames | None") -> "str | None":
     )
 
 
+def fact_sheet_dated_note(snap: "SnapshotFrames | None") -> "str | None":
+    """The style-box line for a lock whose ETF fact sheets are dated after its quarter
+    ended, or None (#388, leave and disclose).
+
+    #389's gate keeps a lock from Q3 2026 from taking such a file, so this fires only on
+    a lock taken before it: the demo's four quarters from Q2 2025 to Q1 2026 hold fact
+    sheets dated April 15, 2026, and no earlier ones are on file to restate them."""
+    meta = ((getattr(snap, "inputs", None) or {}).get(ETF_METADATA)
+            if snap is not None else None)
+    q_end = getattr(snap, "quarter_end", None) if snap is not None else None
+    if not meta or not q_end:
+        return None
+    end = date.fromisoformat(q_end)
+    late = sorted({date.fromisoformat(v["as_of"]) for v in meta.values()
+                   if isinstance(v, dict) and v.get("as_of")
+                   and date.fromisoformat(v["as_of"]) > end})
+    if not late:
+        return None
+
+    def _long(d: date) -> str:
+        return f"{d.strftime('%B')} {d.day}, {d.year}"
+
+    when = _long(late[0]) if len(late) == 1 else f"{_long(late[0])} to {_long(late[-1])}"
+    return f"The style box uses ETF fact sheets dated {when}, after this quarter ended."
+
+
 def input_corrections_note(snap: "SnapshotFrames | None") -> "str | None":
     """The cover line for a lock whose HYG input was corrected (#386), or None."""
     fix = ((getattr(snap, "input_corrections", None) or {}).get(HYG)

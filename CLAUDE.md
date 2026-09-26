@@ -157,6 +157,15 @@
   rendering them against the frozen test book (#302), so they are no
   longer expected red. Any failure beyond #177 is real.
 
+## Quarterly close-out
+- Enter the quarter's ETF fact-sheet figures in `data/etf_metadata.json`: for
+  every fund in the file, the figures from its fact sheet dated inside the
+  quarter, with `as_of` set to the fact sheet's date. Keep the weighted-average
+  market cap the style box plots; yfinance's fund data reports a median, which
+  would change what it plots (#388). A quarter lock takes the file only when
+  every `as_of` falls inside the quarter (#389), so until then that quarter's
+  style box renders as pending. Commit the file; nothing refreshes it.
+
 ## History baseline (post-2026-06-08 reorg)
 - History was reorganized twice on 2026-06-08, both as
   tree-preserving commit-tree rebuilds (final tree byte-identical):

@@ -32,6 +32,7 @@ from src.cache import (
     benchmark_construction_note,
     capture_quarter_snapshot,
     complete_quarter_inputs,
+    fact_sheet_dated_note,
     get_quarter_snapshot,
     input_corrections_note,
     inputs_restatement_note,
@@ -1335,12 +1336,14 @@ def _build_thesis_section(start_date: str, end_date: str, *, account_id: int) ->
     return {"theses": theses, "trades": trades, "drip_summary": drip_summary}
 
 
-def _build_positioning_section(end_date: str, style_pending: Optional[str] = None) -> dict:
+def _build_positioning_section(end_date: str, style_pending: Optional[str] = None,
+                               style_dated: Optional[str] = None) -> dict:
     """Build the positioning section (duration + style box) from live portfolio state.
 
     ``style_pending`` is the pending line for a quarter whose ETF fact-sheet data did
     not cover it (#386): the style box renders it instead of the chart, and the rest
-    of the section, built from prices, locks as usual."""
+    of the section, built from prices, locks as usual. ``style_dated`` is the line for
+    a lock whose fact sheets are dated after its quarter (#388), shown with the chart."""
     dur        = get_effective_duration(end_date)
     style_data = None if style_pending else get_style_box_data(end_date)
     non_us     = get_non_us_equity_data(end_date)
@@ -1366,6 +1369,7 @@ def _build_positioning_section(end_date: str, style_pending: Optional[str] = Non
         "style_box_b64":     style_box_b64,
         "style_box_caption": STYLE_BOX_CAPTION,
         "style_box_pending": style_pending,
+        "style_box_dated":   style_dated if style_box_b64 else None,
         "non_us":            non_us,
     }
 
@@ -2061,7 +2065,8 @@ def generate_quarterly_report_bytes(
         hold_data        = _build_holdings_section(end_date)              if has_trades else {"rows": [], "chart_b64": None}
         perf_data        = _build_performance_section(start_date, end_date) if has_trades else None
         attr_data        = _build_attribution_section(start_date, end_date) if has_trades else None
-        pos_data         = (_build_positioning_section(end_date, style_pending=style_pending)
+        pos_data         = (_build_positioning_section(end_date, style_pending=style_pending,
+                                                       style_dated=fact_sheet_dated_note(snap_df))
                             if has_trades else None)
         factor_data      = (_build_factor_section(end_date)
                             if has_trades and not factor_pending else None)
