@@ -54,8 +54,8 @@ def test_a_failed_refresh_on_current_data_reports_the_failure_without_a_count(mo
         served_through="2026-09-23", fetched_before="2026-09-23T20:30+00:00"))
     assert as_of_live_line(THU, frontier="2026-09-23") == (
         "Prices through September 23, 2026 (settled closes). The daily price fetch failed "
-        "September 24, 2026 at 20:30 UTC; serving prices last fetched September 23, 2026 "
-        "at 20:30 UTC until it retries after September 24, 2026 at 21:00 UTC.")
+        "September 24, 2026 at 4:30 PM ET; serving prices last fetched September 23, 2026 "
+        "at 4:30 PM ET until it retries after September 24, 2026 at 5:00 PM ET.")
 
 
 def test_a_market_holiday_counts_as_a_session():

@@ -1,5 +1,11 @@
 """Shared as-of date utilities — banner text for every Streamlit page."""
 from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
+
+# Every rendered time is New York time, the market's clock. A named zone, never a
+# fixed offset: it is EDT (UTC-4) from March to November and EST (UTC-5) otherwise,
+# and the label is "ET" for both.
+ET = ZoneInfo("America/New_York")
 
 # A quarter-end is "priceable" if committed data reaches within this many calendar
 # days of it. Deliberately the same window as src.attribution._last_adj_price's
@@ -399,11 +405,19 @@ def _sessions_missing(served: date, today: date) -> int:
 
 
 def _when(t: "datetime | str") -> str:
-    """'September 24, 2026 at 21:30 UTC' for a datetime or an ISO string."""
+    """'September 24, 2026 at 5:30 PM ET' for a datetime or an ISO string: the
+    moment in New York time, whatever zone it was recorded in. A naive value is read
+    as the machine's local time, which is how datetime.now() recorded it."""
     if isinstance(t, str):
         t = datetime.fromisoformat(t)
-    t = t.astimezone(timezone.utc)
-    return f"{format_long_date(t.date())} at {t:%H:%M} UTC"
+    t = t.astimezone(ET)
+    return f"{format_long_date(t.date())} at {t:%I:%M %p}".replace(" at 0", " at ") + " ET"
+
+
+def today_et(now: "datetime | None" = None) -> date:
+    """Today's date in New York, for a date stamped on something a reader keeps (the
+    PDF). The server's own date is UTC on the public demo, a day ahead after 8 PM ET."""
+    return (now or datetime.now(timezone.utc)).astimezone(ET).date()
 
 
 def as_of_report_line(

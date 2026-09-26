@@ -9,7 +9,7 @@ import streamlit as st
 st.set_page_config(page_title="Macro Dashboard", layout="wide")
 
 from src import factor_regime, factor_valuation, macro, shiller
-from src.asof import as_of_banner
+from src.asof import _when, as_of_banner
 from src.config import IS_DEMO
 from src.macro import (
     format_ur_delta,
@@ -305,7 +305,7 @@ with col:
     hdr_l, hdr_r = st.columns([3, 1])
     with hdr_l:
         st.caption(
-            f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M')}. "
+            f"Last updated: {_when(datetime.now().astimezone())}. "
             "Data: FRED & Shiller. Percentile basis varies by panel and is labeled on each: the "
             "macro-indicator percentiles (growth, inflation, rates, the dollar) are window-relative "
             "— toggle a panel's selector to recompute against that window — while the valuation "

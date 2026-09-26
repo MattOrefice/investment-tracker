@@ -7,7 +7,7 @@ regardless of retroactive adj_close adjustments from the upstream data provider.
 import io
 import json
 from contextlib import contextmanager
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import NamedTuple, Optional
 
 import pandas as pd
@@ -308,7 +308,9 @@ def capture_quarter_snapshot(quarter_id: str) -> tuple:
                              gaps=tuple((str(t), str(r)) for t, r in gaps),
                              rule=QUARTER_END_RULE)
 
-    captured_at = datetime.now().isoformat(timespec="seconds")
+    # Aware UTC, so the report can show the moment in New York time whatever machine
+    # recorded it. Older rows are naive local time; reports reads both.
+    captured_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
     # Two top-level keys, one flat frame each — see SnapshotFrames for why this is
     # not a column MultiIndex.
     payload = {"adj_close": json.loads(adj_df.to_json(orient="split", date_format="iso"))}

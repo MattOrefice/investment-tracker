@@ -69,7 +69,7 @@ def test_a_failure_waits_for_the_timer_without_fetching(fred):
     with pytest.raises(macro.FREDRetryWait) as err:
         macro.get_series("DGS10", "1990-01-01")
     assert (err.value.failed_at, err.value.retry_at) == (T0, T0 + refresh.RETRY_AFTER)
-    assert "it retries after September 25, 2026 at 16:30 UTC" in str(err.value)
+    assert "it retries after September 25, 2026 at 12:30 PM ET" in str(err.value)
     assert calls == ["DGS10"]
 
     up["fred"] = True                    # FRED is back, but the wait still holds
@@ -157,7 +157,7 @@ def test_the_macro_page_does_not_fetch_fred_between_renders(page, monkeypatch):
     assert len(calls) == first, "a render inside the wait fetches nothing"
     waits = [c for c in captions if c.startswith("FREDRetryWait:")]
     assert len(waits) == len(unavailable) and not retry
-    assert all("it retries after September 25, 2026 at 16:30 UTC" in c for c in waits)
+    assert all("it retries after September 25, 2026 at 12:30 PM ET" in c for c in waits)
 
     up["fred"] = True
     clock[0] = T0 + refresh.RETRY_AFTER
