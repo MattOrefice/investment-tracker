@@ -38,6 +38,18 @@ def test_the_quarterly_close_out_names_the_code_behind_each_step():
     assert callable(asof.most_recent_reportable_quarter)
 
 
+def test_the_session_close_rule_names_the_command_not_a_count():
+    """#390: the rule said "14 tracked entries" until #389 left 13. It now names the
+    command that produces the set, so no retirement can make it stale."""
+    import re
+    text = (ROOT / "CLAUDE.md").read_text(encoding="utf-8")
+    flat = re.sub(r"\s+", " ", text)
+    counted = re.findall(r"\b\d+ (?:tracked (?:entries|data files)|`git ls-files data` entries)",
+                         flat)
+    assert not counted, counted
+    assert "git ls-files data | Get-Item | Where-Object { -not $_.IsReadOnly }" in flat
+
+
 def test_before_every_push_runs_the_suite_and_the_live_data_tests():
     s = _section("Before every push")
     assert "TRACKER_MODE=demo" in s and "python -m pytest -q" in s
