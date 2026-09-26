@@ -52,12 +52,15 @@ def test_how_to_read_expander_present(trade_log_app: AppTest) -> None:
 def test_hierarchy_bullet(trade_log_app: AppTest) -> None:
     """Hierarchy bullet must explain the trade→thesis→theme lineage.
     Pinned: Phase 47 Item B1."""
+    # It read "every trade is linked to a Position Thesis" while three demo trades had
+    # none; the exceptions are now named at the top (2026-09-25 audit, item 10).
     all_md = " ".join(m.value for m in trade_log_app.markdown)
-    assert "every trade is linked to a Position Thesis" in all_md, (
+    assert "each trade links to a Position Thesis (the vehicle-level rationale" in all_md, (
         "Hierarchy bullet not found — Phase 47 Item B1 regression: "
-        "'every trade is linked to a Position Thesis (the vehicle-level rationale...)' "
+        "'each trade links to a Position Thesis (the vehicle-level rationale...)' "
         "must be present in the How to read expander."
     )
+    assert "Any trade without a thesis is named at the top of the page." in all_md
 
 
 def test_cash_spaxx_five_star_claim(trade_log_app: AppTest) -> None:
