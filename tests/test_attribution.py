@@ -899,7 +899,7 @@ def test_bf_reconciles_when_wall_clock_past_price_frontier(days_past_frontier, _
         )
 
 
-def test_bf_per_sleeve_returns_are_total_return(use_demo_db):
+def test_bf_per_sleeve_returns_are_total_return(pytestconfig, tmp_path):
     """BF per-sleeve r_p IS the adj_close total return — dividends embedded once,
     NOT double-counted by adding DRIP shares on top.
 
@@ -913,24 +913,47 @@ def test_bf_per_sleeve_returns_are_total_return(use_demo_db):
     return), so the pre-fix "price-only" framing was wrong — that ratio already
     includes dividends.
 
-    Pins the demo book (use_demo_db): the single-ticker developed-international
-    sleeve is "International Core" (VEA) on demo. Phase 39 split "International
-    Developed" into four; VEA is now the cap-weighted Core sleeve, still the only
-    holding, so it remains the correct single-ticker tripwire.
+    The single-ticker developed-international sleeve is "International Core" (VEA).
+    Phase 39 split "International Developed" into four; VEA is now the cap-weighted
+    Core sleeve, still the only holding, so it remains the correct single-ticker
+    tripwire.
+
+    ON THE FROZEN BOOK, offline, with today pinned (#375), as #342 and #360 moved
+    theirs. It read the demo book through date.today() with the network open, so a
+    VEA dividend fetched between the BF computation and the price lookup below
+    re-anchored adj_close under one side: the same tree went red and green as the
+    market moved (40.30% against 41.86% on 2026-09-25). The tripwire is a property
+    of the computation, not of the live feed, so fixed data loses nothing it checks;
+    the live-data job would have kept the race.
     """
     import datetime
     from src.attribution import brinson_fachler_period, _last_adj_price
+    from src.db import get_connection
 
     INCEPTION = "2025-05-01"
-    TODAY = datetime.date.today().isoformat()
-
+    conftest = _frozen_conftest(pytestconfig)
     try:
-        bf_df = brinson_fachler_period(INCEPTION, TODAY, account_id=1)
-    except Exception as exc:
-        pytest.skip(f"Data unavailable: {exc}")
+        with pytest.MonkeyPatch.context() as mp:
+            conftest.pin_today(mp)
+            conftest.point_at_frozen_book(mp, tmp_path)
+            TODAY = datetime.date.today().isoformat()
+            bf_df = brinson_fachler_period(INCEPTION, TODAY, account_id=1)
+            with get_connection() as conn:
+                drip_lots = conn.execute(
+                    "SELECT COUNT(*) FROM trades WHERE ticker = 'VEA' AND lot_source = 'drip' "
+                    "AND trade_date > ? AND trade_date <= ?", (INCEPTION, TODAY)).fetchone()[0]
+                ex_dates = conn.execute(
+                    "SELECT COUNT(*) FROM dividends WHERE ticker = 'VEA' AND ex_date > ? "
+                    "AND ex_date <= ?", (INCEPTION, TODAY)).fetchone()[0]
+            p_start = _last_adj_price("VEA", INCEPTION)
+            p_end   = _last_adj_price("VEA", TODAY)
+    finally:
+        conftest.unpin_leftovers()
 
-    if bf_df.empty:
-        pytest.skip("No portfolio data — skipped in local/empty-DB mode")
+    # PREMISE: the window holds VEA dividends and the DRIP lots they bought, or there
+    # is nothing to double-count and the tripwire checks nothing.
+    assert drip_lots > 0 and ex_dates > 0, (drip_lots, ex_dates)
+    assert not bf_df.empty, "BF produced nothing on the frozen book"
 
     # HARD ASSERT, never a skip. This test is the tripwire for DRIP shares being
     # double-counted on top of adj_close. It only works on a single-ticker sleeve,
@@ -952,10 +975,7 @@ def test_bf_per_sleeve_returns_are_total_return(use_demo_db):
     # BF values sleeves at adj_close (total return) using _last_adj_price on both
     # ends. International Core is held via VEA only, so its BF r_p must equal
     # VEA's own adj_close ratio — no DRIP-share inflation layered on top.
-    p_start = _last_adj_price("VEA", INCEPTION)
-    p_end   = _last_adj_price("VEA", TODAY)
-    if p_start is None or p_end is None or p_start <= 0 or p_end <= 0:
-        pytest.skip("VEA price data unavailable")
+    assert p_start and p_end and p_start > 0 and p_end > 0, "the frozen book prices VEA"
 
     r_p_adj_close = p_end / p_start - 1
     gap_bps = abs(r_p_total_return - r_p_adj_close) * 10_000
