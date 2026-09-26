@@ -127,9 +127,21 @@ def get_series(series_id: str, start_date: str = "1990-01-01") -> pd.Series:
             index=pd.to_datetime(payload["dates"]),
             name=series_id,
         )
-        # Only use the cache if it covers the requested start date
-        cached_min = s.dropna().index.min()
-        if not s.dropna().empty and str(cached_min.date()) <= start_date:
+        # Only use the cache if it covers the requested start date. A row records the
+        # start it was fetched from, and covers any request from that date on: its first
+        # observation is the first FRED has on or after it. Judged by the first
+        # observation alone, a series that starts after the requested date (DGS10 from
+        # 1990-01-02 for 1990-01-01, the ICE BofA spreads from 2023 for 1996) never
+        # matched, and 17 of the Macro page's 22 series were fetched again on every
+        # uncached call (#377). Rows written before the start was recorded fall back to
+        # the first-observation check.
+        fetched_from = payload.get("requested_start")
+        if fetched_from is not None:
+            covers = fetched_from <= start_date
+        else:
+            cached_min = s.dropna().index.min()
+            covers = not s.dropna().empty and str(cached_min.date()) <= start_date
+        if covers:
             return s[s.index >= start_date]
         # Cache hit but coverage is insufficient — re-fetch and overwrite
 
@@ -156,6 +168,7 @@ def get_series(series_id: str, start_date: str = "1990-01-01") -> pd.Series:
     payload = {
         "dates":  [str(d.date()) for d in raw.index],
         "values": [float(v) if pd.notna(v) else None for v in raw.values],
+        "requested_start": start_date,
     }
     with get_connection() as conn:
         conn.execute(
