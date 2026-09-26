@@ -180,6 +180,57 @@ def load_all():
 data = load_all()
 c    = data["counts"]
 
+
+def _thesis_gaps(trades: list[dict]) -> "tuple[list[dict], list[str]]":
+    """What the page's "every trade documents a thesis" claim leaves out, from the data:
+    discretionary trades with no position thesis (DRIP lots inherit their holding's),
+    and active theses written for a sleeve this book no longer has.
+
+    On the demo, the IDHQ, AVIV and AVDV buys of the international split carry no
+    thesis, and the two international theses still name the undivided "International
+    Developed" sleeve; the header claimed every trade documented one (2026-09-25 audit,
+    item 10). Linking them would mean writing new theses, so the claim says what is so.
+    """
+    import json
+    unlinked = [t for t in trades
+                if t["lot_source"] != "drip" and not t["position_thesis"]]
+    with get_connection() as conn:
+        sleeves = {r[0] for r in conn.execute("SELECT name FROM asset_classes")}
+        stale = []
+        for title, targets in conn.execute(
+                "SELECT title, target_sleeves FROM theses WHERE status = 'active' "
+                "AND target_sleeves IS NOT NULL ORDER BY thesis_id"):
+            try:
+                names = json.loads(targets)
+            except (TypeError, ValueError):
+                continue
+            if names and not set(names) <= sleeves:
+                stale.append(title)
+    return unlinked, stale
+
+
+def _join(items: list[str]) -> str:
+    return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
+
+
+def _thesis_claim(unlinked: list[dict], stale: list[str]) -> str:
+    claim = ("Every trade documents a position thesis, which rolls up to an investment "
+             "view, which carries theme tags")
+    if unlinked:
+        tickers = list(dict.fromkeys(t["ticker"] for t in unlinked))
+        n = len(unlinked)
+        claim += (f", except {n} trade{'s' if n != 1 else ''}: the {_join(tickers)} "
+                  f"{'trades carry' if n != 1 else 'trade carries'} no thesis")
+    claim += "."
+    if stale:
+        claim += (f" {len(stale)} active thes{'es' if len(stale) != 1 else 'is'} "
+                  f"({_join(stale)}) name{'' if len(stale) != 1 else 's'} a sleeve this "
+                  "book no longer has.")
+    return claim
+
+
+_unlinked, _stale_theses = _thesis_gaps(data["trades"])
+
 # Initialise toggle state before the header renders so the banner is correct
 # on the first load (before the toggle widget inside the tab fires a rerun).
 if "tl_show_drip" not in st.session_state:
@@ -192,10 +243,7 @@ if IS_DEMO:
 _, col, _ = st.columns([1, 8, 1])
 with col:
     st.title("Trade Log & Theses")
-    st.caption(
-        "Every trade documents a position thesis, which rolls up to "
-        "an investment view, which carries theme tags."
-    )
+    st.caption(_thesis_claim(_unlinked, _stale_theses))
     st.caption(as_of_banner())
 
     _show_drip = st.session_state.get("tl_show_drip", False)
@@ -213,10 +261,11 @@ with col:
 
     with st.expander("How to read this page", expanded=False):
         st.markdown(
-            "- **Hierarchy** — every trade is linked to a Position Thesis (the vehicle-level "
+            "- **Hierarchy** — each trade links to a Position Thesis (the vehicle-level "
             "rationale: why this ETF, not just this exposure), which links to an Investment "
             "Thesis (the sleeve-level view: why hold this asset class at this weight), which "
-            "carries Theme tags (the strategic category the view belongs to). The summary line "
+            "carries Theme tags (the strategic category the view belongs to). Any trade "
+            "without a thesis is named at the top of the page. The summary line "
             "counts all three levels independently.\n"
             "- **Conviction stars (1–5)** — 1 = exploratory, 3 = standard position, "
             "4 = high-weight or cross-cycle view, 5 = highest conviction. The scale is used "
@@ -238,7 +287,11 @@ with col:
 
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
-tab_trades, tab_theses, tab_themes = st.tabs(["Trades", "Theses", "Themes"])
+# Inside the content column, like everything above them: the tab row spanned the full
+# width while each tab's body sat in the column (audit item 10).
+_, _tabs_col, _ = st.columns([1, 8, 1])
+with _tabs_col:
+    tab_trades, tab_theses, tab_themes = st.tabs(["Trades", "Theses", "Themes"])
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -559,7 +612,7 @@ _DRIP_TOGGLE_HELP = (
 )
 
 with tab_trades:
-    _, col, _ = st.columns([1, 8, 1])
+    col = st.container()
     with col:
         show_drip = st.toggle(
             "Show DRIP reinvestments",
@@ -643,7 +696,7 @@ with tab_trades:
 # ────────────────────────────────────────────────────────────────────────────
 
 with tab_theses:
-    _, col, _ = st.columns([1, 8, 1])
+    col = st.container()
     with col:
         # ── Investment theses ──────────────────────────────────────────────
         st.subheader("Investment Theses")
@@ -775,7 +828,7 @@ with tab_theses:
 # ────────────────────────────────────────────────────────────────────────────
 
 with tab_themes:
-    _, col, _ = st.columns([1, 8, 1])
+    col = st.container()
     with col:
         themes       = data["themes"]
         theme_theses = data["theme_theses"]
