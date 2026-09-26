@@ -65,7 +65,10 @@ with col:
         "taxable book (traded ledger); retirement and externally-managed accounts "
         "are excluded (see Household View)."
     )
-    st.caption(as_of_banner())
+    # A slot, written again once the current value is priced below: in personal mode
+    # during market hours that read can serve today's unsettled bar (#160, item 4i).
+    _asof_slot = st.empty()
+    _asof_slot.caption(as_of_banner())
     st.divider()
 
     with st.expander("How to read this section", expanded=False):
@@ -345,6 +348,7 @@ with col:
         )
 
     current_mv = get_current_market_value()
+    _asof_slot.caption(as_of_banner())
     scen = run_scenarios(result, current_mv if current_mv and current_mv > 0 else None)
 
     if scen.get("low_confidence"):

@@ -309,6 +309,19 @@ def _tracked_data_content_backstop():
 
 
 @pytest.fixture(autouse=True)
+def _no_live_marks_carried_between_tests(monkeypatch):
+    """Each test starts with an empty record of the open-session bars served.
+
+    src.prices keeps that record per process (_LIVE_MARKS), as a Streamlit server
+    needs: the banner reads it to say a current value includes today's unsettled
+    price (#160, audit item 4i). In a test process it carried a bar one test served
+    into every later banner. 19 banner tests went red in the full suite and none
+    alone, so the reset is autouse: a test that forgets it cannot leak."""
+    import src.prices as prices
+    monkeypatch.setattr(prices, "_LIVE_MARKS", {})
+
+
+@pytest.fixture(autouse=True)
 def _tracked_data_tripwire(request):
     """Per-test: stat-based, so it can name the culprit for ~1% of runtime.
 
