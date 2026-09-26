@@ -618,8 +618,8 @@ with col:
                 "T10Y2Y (10Y minus 2Y Treasury spread), and UNRATE (unemployment rate) — to one of "
                 "four labels: Recession, Late-cycle, Mid-cycle, or Early-cycle. Rules are applied in "
                 "priority order: (1) Recession when USREC = 1; (2) Early-cycle when UNRATE > 5.5% "
-                "and T10Y2Y > −0.25 (labor still healing, curve not inverted); (3) Late-cycle when "
-                "T10Y2Y < −0.25 or UNRATE < 4.2% (inverted curve or historically tight labor); "
+                "and T10Y2Y > -0.25 (labor still healing, curve not inverted); (3) Late-cycle when "
+                "T10Y2Y < -0.25 or UNRATE < 4.2% (inverted curve or historically tight labor); "
                 "(4) Mid-cycle as the default. Full rules and threshold rationale in "
                 "docs/regime_classifier.md. This is a rules-based heuristic, not a forecast or "
                 "trading signal — USREC is declared retroactively by the NBER and may lag actual "
@@ -1830,7 +1830,7 @@ with col:
         fig_cape.add_hline(
             y=max(1.0, cape_median - cape_std),
             line_dash="dot", line_color=_C["ref"], line_width=1,
-            annotation_text=f"−1σ  {cape_median-cape_std:.0f}×",
+            annotation_text=f"-1σ  {cape_median-cape_std:.0f}×",
             annotation_position="right", annotation_font_size=10,
         )
         _add_current_annotation(
@@ -2248,7 +2248,7 @@ with col:
         )
         st.plotly_chart(fig_us, width='stretch')
         st.metric(
-            "Trailing 12M return spread (US − Intl)",
+            "Trailing 12M return spread (US − International)",
             f"{spread_sign}{current_spread_pp:.1f}%",
         )
         st.caption(

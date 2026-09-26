@@ -99,14 +99,11 @@ def test_raw_weights_match_db_targets_and_scale(use_demo_db):
     # normalisation (weights sum to 1.0, every DB sleeve present, none dropped).
     _, weights = ae._derive_sleeve_maps()
 
-    # The benchmark-proxy subsystem abbreviates exactly one family of sleeve names.
-    _AE_ONLY_ALIAS = {
-        "Intl Core":        "International Core",
-        "Intl Quality":     "International Quality",
-        "Intl Large Value": "International Large Value",
-        "Intl Small Value": "International Small Value",
-    }
-    ae_to_db = {a: _AE_ONLY_ALIAS.get(a, a) for a in weights}
+    # The subsystem abbreviated "International ..." to "Intl ..." until the audit's
+    # item 13 made it one name everywhere; the bridge is now the identity, and this
+    # asserts no abbreviated name comes back.
+    assert not [a for a in weights if a.startswith("Intl ")], list(weights)
+    ae_to_db = {a: a for a in weights}
 
     with get_connection() as conn:
         db = {
@@ -694,7 +691,7 @@ def test_equity_sleeves_derived_from_book():
     names = ae.sleeve_names()
     equity = ae.equity_sleeve_names()
 
-    intl = [s for s in names if s.startswith("Intl")]
+    intl = [s for s in names if s.startswith("International")]
     assert intl, "expected at least one international sleeve in the book"
     missing = [s for s in intl if s not in equity]
     assert not missing, f"international sleeves missing from equity_sleeve_names(): {missing}"

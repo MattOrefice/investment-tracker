@@ -16,7 +16,7 @@ st.set_page_config(page_title="Risk", layout="wide")
 
 from src.asof import as_of_banner
 from src.config import get_demo_banner_text, IS_DEMO
-from src.factors import sig_marker
+from src.factors import SIG_LEGEND, fmt_p, sig_marker
 from src.holdings import get_current_market_value, get_inception_date, get_portfolio_account, get_portfolio_account_id
 from src.risk import (
     CREDIT_PROXY_DISCLOSURE,
@@ -35,6 +35,11 @@ from src.risk import (
     scenario_methodology_notes,
 )
 from src.ui_helpers import demo_portfolio_phrase, render_footer, render_page_header
+
+
+def _usd(v: float) -> str:
+    """'+$327' and '-$34': the sign before the dollar sign (audit item 13)."""
+    return f"{'-' if round(v) < 0 else '+'}${abs(v):,.0f}"
 
 render_page_header()
 
@@ -264,7 +269,7 @@ with col:
         "Factor":       "Alpha (annualized)",
         "Beta (β)":     f"{result['alpha_annual_bps']:+.0f} bps",
         "t-stat":       f"{result['t_alpha']:.2f}",
-        "p-value":      f"{result['p_alpha']:.3f}",
+        "p-value":      fmt_p(result['p_alpha']),
         "Significance": sig_marker(result["p_alpha"]),
     }]
     for f in FACTORS:
@@ -273,7 +278,7 @@ with col:
             "Factor":       _FACTOR_LABEL[f],
             "Beta (β)":     f"{result['betas'][f]:+.3f}",
             "t-stat":       f"{result['t_stats'][f]:.2f}",
-            "p-value":      f"{p:.3f}",
+            "p-value":      fmt_p(p),
             "Significance": sig_marker(p),
         })
 
@@ -282,7 +287,7 @@ with col:
         width="stretch",
     )
     st.caption(
-        "* p < 0.10 &nbsp; ** p < 0.05 &nbsp; *** p < 0.01 &nbsp;|&nbsp; "
+        SIG_LEGEND + " &nbsp;|&nbsp; "
         "Standard errors: Newey-West HAC"
     )
 
@@ -357,7 +362,7 @@ with col:
     # Per-scenario cards: factor moves, the translation chain, and total P&L.
     for s in scen["scenarios"]:
         with st.container(border=True):
-            usd = f" &nbsp;·&nbsp; **${s['total_usd']:+,.0f}**" if s["total_usd"] is not None else ""
+            usd = f" &nbsp;·&nbsp; **{_usd(s['total_usd'])}**" if s["total_usd"] is not None else ""
             st.markdown(f"**{s['name']}** — estimated impact **{s['total_pct'] * 100:+.2f}%**{usd}")
             st.caption(s["summary"])
             for leg in s["legs"]:
@@ -370,7 +375,7 @@ with col:
         summary_rows.append({
             "Scenario":            s["name"],
             "Estimated impact":    f"{s['total_pct'] * 100:+.2f}%",
-            "Estimated $ impact":  (f"${s['total_usd']:+,.0f}" if s["total_usd"] is not None else "—"),
+            "Estimated $ impact":  (_usd(s["total_usd"]) if s["total_usd"] is not None else "—"),
         })
     st.dataframe(pd.DataFrame(summary_rows).set_index("Scenario"), width="stretch")
     st.caption(

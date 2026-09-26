@@ -7,7 +7,7 @@ import streamlit as st
 
 st.set_page_config(page_title="Tax Lot Inventory", layout="wide")
 
-from src.asof import as_of_live_line, as_of_report_line
+from src.asof import as_of_banner
 from src.tax_lots import (
     HARVEST_MATERIALITY_THRESHOLD,
     apply_sleeve_filter,
@@ -87,8 +87,7 @@ st.caption(
     "Per-lot cost basis and unrealized gains, with tax-loss harvest "
     "candidate detection and short-term vs long-term gain composition by sleeve."
 )
-st.caption(as_of_live_line())
-st.caption(as_of_report_line())
+st.caption(as_of_banner())
 
 with st.expander("How to read this page", expanded=False):
     st.markdown(

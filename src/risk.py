@@ -382,7 +382,7 @@ STRESS_SCENARIOS = [
         "legs": [{"factor": "RATES", "type": "rates", "delta_bps": 100}],
     },
     {
-        "name": "Equity drawdown: −20%",
+        "name": "Equity drawdown: -20%",
         "summary": "A broad equity-market sell-off.",
         "legs": [{"factor": "Mkt-RF", "type": "equity", "pct": -0.20}],
     },
@@ -394,7 +394,7 @@ STRESS_SCENARIOS = [
     {
         "name": "Risk-off (flight to quality)",
         "summary": (
-            "Equity −15% and HY spreads +200bps, but a −50bps rate RALLY "
+            "Equity -15% and HY spreads +200bps, but a -50bps rate RALLY "
             "cushions the FI sleeve — the diversification-works case."
         ),
         "legs": [
@@ -406,7 +406,7 @@ STRESS_SCENARIOS = [
     {
         "name": "2022-style regime (hedge inverts)",
         "summary": (
-            "Rates +200bps AND equity −20% together — the stock-bond hedge "
+            "Rates +200bps AND equity -20% together — the stock-bond hedge "
             "fails and the losses compound; the diversification-fails case."
         ),
         "legs": [
@@ -426,7 +426,7 @@ INSTANTANEOUS_FRAMING = (
 LINEARITY_CAVEAT = (
     "Linear first-order sensitivity (P&L = β × shock): it assumes the betas are "
     "stable and the response is linear across the shock size. Large moves "
-    "(e.g. −20% equity) involve real non-linearity — convexity and beta "
+    "(e.g. -20% equity) involve real non-linearity — convexity and beta "
     "instability in the tails — that this model does NOT capture. The rates and "
     "credit legs are duration-based translations and likewise do not capture "
     "bond convexity. Read the magnitudes as first-order estimates, not precise "

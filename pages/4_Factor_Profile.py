@@ -26,6 +26,8 @@ from src.factors import (
     run_intl_tilt_regressions,
     run_sleeve_regressions,
     run_sleeve_regressions_mom,
+    SIG_LEGEND,
+    fmt_p,
     sig_marker,
 )
 from src.holdings import committed_price_frontier, get_inception_date, get_portfolio_account_id
@@ -166,7 +168,7 @@ with col:
             "Factor":       "Residual",
             "Loading (β)":  alpha_ci_str(res),
             "t-stat":       f"{res['t_alpha']:.2f}",
-            "p-value":      f"{p_a:.3f}",
+            "p-value":      fmt_p(p_a),
             "Significance": sig_marker(p_a),
         })
         for f in factor_list:
@@ -175,12 +177,12 @@ with col:
                 "Factor":       f,
                 "Loading (β)":  f"{res['betas'][f]:.3f}",
                 "t-stat":       f"{res['t_stats'][f]:.2f}",
-                "p-value":      f"{p:.3f}",
+                "p-value":      fmt_p(p),
                 "Significance": sig_marker(p),
             })
         st.dataframe(pd.DataFrame(rows).set_index("Factor"), width='stretch')
         st.caption(
-            "* p < 0.10 &nbsp; ** p < 0.05 &nbsp; *** p < 0.01 &nbsp;|&nbsp; "
+            SIG_LEGEND + " &nbsp;|&nbsp; "
             f"Standard errors: Newey-West HAC &nbsp;|&nbsp; R² = {res['r_squared']:.3f} &nbsp; "
             f"T = {res['T']} obs"
         )
@@ -361,7 +363,7 @@ with col:
             "Factor":       "Residual",
             "Loading (β)":  alpha_ci_str(fi_result),
             "t-stat":       f"{fi_result['t_alpha']:.2f}",
-            "p-value":      f"{p_a_fi:.3f}",
+            "p-value":      fmt_p(p_a_fi),
             "Significance": sig_marker(p_a_fi),
         })
         for f in ["TERM", "CREDIT"]:
@@ -370,7 +372,7 @@ with col:
                 "Factor":       f,
                 "Loading (β)":  f"{fi_result['betas'][f]:.3f}",
                 "t-stat":       f"{fi_result['t_stats'][f]:.2f}",
-                "p-value":      f"{p:.3f}",
+                "p-value":      fmt_p(p),
                 "Significance": sig_marker(p),
             })
 
@@ -379,7 +381,7 @@ with col:
             width='stretch',
         )
         st.caption(
-            "* p < 0.10 &nbsp; ** p < 0.05 &nbsp; *** p < 0.01 &nbsp;|&nbsp; "
+            SIG_LEGEND + " &nbsp;|&nbsp; "
             f"Standard errors: Newey-West HAC &nbsp;|&nbsp; R² = {fi_result['r_squared']:.3f} &nbsp; "
             f"T = {fi_result['T']} obs"
         )
