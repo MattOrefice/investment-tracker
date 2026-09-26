@@ -9,6 +9,7 @@ st.set_page_config(page_title="Benchmark Attribution", layout="wide")
 
 from src.asof import as_of_banner, data_vintage, format_long_date
 from src.attribution import benchmark_gap_notice, brinson_fachler_period, price_gap_notice
+from src.benchmarks import blended_rule_note
 from src.config import get_demo_banner_text, IS_DEMO
 from src.holdings import (committed_price_frontier, get_inception_date,
                           get_portfolio_account, get_portfolio_account_id)
@@ -53,7 +54,8 @@ with col:
             "relative to the SAA policy benchmark?* The model is:\n\n"
             "> **R_portfolio − RF = α + β₁·(R_benchmark − RF) + β₂·HML + β₃·SMB + β₄·RMW + ε**\n\n"
             "**R_benchmark − RF** is the custom SAA-target-weighted blended benchmark excess "
-            "return (not the S&P 500). **HML, SMB, RMW** are Fama-French style factors. "
+            f"return (not the S&P 500), {blended_rule_note()}. "
+            "**HML, SMB, RMW** are Fama-French style factors. "
             "**Alpha (α)** is the active return unexplained by benchmark beta or factor tilts — "
             "the institutional alpha definition used in endowment and IDD contexts.\n\n"
             "CMA is excluded for this passive/semi-passive implementation — see Methodology for details."
@@ -201,7 +203,7 @@ with col:
         )
         st.caption(
             "Portfolio returns: get_portfolio_value_series (adj_close basis). "
-            "Benchmark returns: get_custom_blended_series (SAA target-weight basket). "
+            f"Benchmark returns: the custom blended SAA target-weight basket, {blended_rule_note()}. "
             "RF, HML, SMB, RMW: Ken French US daily factors (mba.tuck.dartmouth.edu). "
             "A committed copy, refreshed by hand and never fetched on read."
         )

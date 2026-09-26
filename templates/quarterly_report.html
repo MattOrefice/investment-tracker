@@ -33,6 +33,9 @@
     {% if input_corrections_note %}
     <p class="cover-staleness">{{ input_corrections_note }}</p>
     {% endif %}
+    {% if benchmark_construction_note %}
+    <p class="cover-staleness">{{ benchmark_construction_note }}</p>
+    {% endif %}
   </div>
 
   <h2>Executive Summary</h2>
@@ -846,7 +849,8 @@
 
           <dt>Benchmarks</dt>
           <dd>S&amp;P 500: SPY total return (adj_close). Custom Blended: SAA target-weight basket
-          of benchmark tickers ({{ methodology_benchmark_basket }}),
+          of benchmark tickers ({{ methodology_benchmark_basket }}),{% if blended_rule_note %}
+          {{ blended_rule_note }},{% endif %}
           normalized to $1 on inception date.
           Real Assets benchmark uses DBC (Invesco DB Commodity index; K-1-issuing ETF);
           the portfolio holds PDBC (C-corp structure, no K-1 issued). Selection effect

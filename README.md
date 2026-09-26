@@ -29,7 +29,7 @@ Available for buy-side allocator and investment due diligence roles.
 | Information Ratio | 1.24 | Since Inception, vs. Custom Blended |
 | Q1 2026 Active Return | +188 bps vs. blended; +713 bps vs. S&P 500 | Q1 2026 (locked) |
 
-The primary benchmark is the custom SAA-blended basket, not the S&P 500. A small SI shortfall against the S&P 500 is an expected outcome for a portfolio whose 78% equity sleeve closely mirrors broad market beta with modest factor tilts, while the diversifying non-equity sleeves dampen returns during a strong equity tape. See [Methodology](#methodology) for return computation and benchmarking details.
+The primary benchmark is the custom SAA-blended basket, not the S&P 500. It is rebalanced to target weights at the start of each calendar quarter and chain-linked (the rule since September 26, 2026). A small SI shortfall against the S&P 500 is an expected outcome for a portfolio whose 78% equity sleeve closely mirrors broad market beta with modest factor tilts, while the diversifying non-equity sleeves dampen returns during a strong equity tape. See [Methodology](#methodology) for return computation and benchmarking details.
 
 ---
 

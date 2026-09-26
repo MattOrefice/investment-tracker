@@ -104,11 +104,13 @@ def test_stage2_agrees_with_the_books_own_twr_on_the_default_window(page):
     returns = next(d.value for d in page.dataframe if "Portfolio" in d.value.columns)
     twr_3m = _pct(returns.loc["3 Months", "Portfolio"])
 
-    bf = next(d.value for d in page.dataframe if "Bench Wt" in d.value.columns)
-    saa = float((bf["Bench Wt"] * bf["Bench Ret"].fillna(0.0)).sum()) / 10_000
+    # The SAA blend is the one series the returns table reads (#383): rebalanced each
+    # calendar quarter. It was the BF table's Σ Bench Wt × Bench Ret, one basket held
+    # from the window's start, until #383 made the stages read the series.
+    saa = _pct(returns.loc["3 Months", "Custom Blended"])
 
     expected = (twr_3m - saa) * 10_000
-    # The tile rounds to 1 bp and the table to 0.01% (1 bp): at most 1 bp between them.
+    # The tile rounds to 1 bp and each table cell to 0.01%: at most 1.5 bp between them.
     assert abs(stage2 - expected) <= 1.5, (
         f"Stage 2 tile {stage2:+d} bps, but the book's 3M TWR ({twr_3m:.4%}) less the "
         f"SAA blend ({saa:.4%}) is {expected:+.1f} bps. A gap of the deposit's size "

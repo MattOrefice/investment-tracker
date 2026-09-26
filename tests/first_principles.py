@@ -137,3 +137,70 @@ class Book:
     def value_ratio(self, start: str, end: str) -> float:
         """What the page used to report: end value over start value, flows and all."""
         return self.value(end) / self.value(start) - 1.0
+
+
+# ── the blended SAA benchmark, rebuilt (#383) ─────────────────────────────────────
+# The rule, not the product's code: $1 at the SAA target weights, bought at each
+# calendar quarter's first base (the prior quarter's last close), held through the
+# quarter, the quarters chained. Targets and benchmark specs straight from
+# asset_classes; prices from the price layer (a shared input, as above).
+
+def _quarter_ends_between(first: date, last: date) -> "list[date]":
+    out, y = [], first.year - 1
+    while True:
+        for m, d in ((3, 31), (6, 30), (9, 30), (12, 31)):
+            q = date(y, m, d)
+            if q > last:
+                return out
+            if q >= first:
+                out.append(q)
+        y += 1
+
+
+def _blend_weights() -> dict:
+    import re
+    from src.db import get_connection
+    with get_connection() as conn:
+        rows = conn.execute("SELECT target_weight, benchmark_ticker FROM asset_classes "
+                            "WHERE parent_id IS NOT NULL").fetchall()
+    weights: dict = {}
+    for w, spec in rows:
+        if not w:
+            continue
+        legs = re.findall(r"([A-Z]+)\s*\((\d+(?:\.\d+)?)%\)", spec or "")
+        for ticker, pct in (legs or [(spec.strip(), "100")]):
+            weights[ticker] = weights.get(ticker, 0.0) + w * float(pct) / 100
+    return weights
+
+
+def quarterly_blend_return(start: str, end: str) -> float:
+    """The blended SAA benchmark's return over [start, end] under the quarterly rule."""
+    from src.prices import get_prices
+    s_d, e_d = date.fromisoformat(start), date.fromisoformat(end)
+    anchor = max(q for q in _quarter_ends_between(s_d - timedelta(days=100), s_d))
+    bases = [anchor] + [q for q in _quarter_ends_between(anchor + timedelta(days=1), e_d)
+                        if q < e_d]
+    weights = _blend_weights()
+    px = {}
+    for t in weights:
+        p = get_prices(t, anchor.isoformat(), end)
+        s = p["adj_close"].fillna(p["close"]).astype(float)
+        s.index = [d.isoformat() for d in s.index]
+        px[t] = s.sort_index()
+
+    def close(t, day):
+        s = px[t][px[t].index <= day.isoformat()]
+        return float(s.iloc[-1])
+
+    def level(day):
+        """The chained index on ``day``: each quarter's basket grows from its base."""
+        lvl = 1.0
+        for i, base in enumerate(bases):
+            nxt = bases[i + 1] if i + 1 < len(bases) else None
+            stop = day if nxt is None or day <= nxt else nxt
+            lvl *= sum(w * close(t, stop) / close(t, base) for t, w in weights.items())
+            if nxt is None or day <= nxt:
+                return lvl
+        return lvl
+
+    return level(e_d) / level(s_d) - 1.0
