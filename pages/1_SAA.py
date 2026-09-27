@@ -11,10 +11,10 @@ from src.asof import as_of_banner
 from src.config import get_demo_banner_text, IS_DEMO
 from src.db import get_connection
 from src.endowment_benchmarks import CATEGORIES, entities
-from src.holdings import get_portfolio_account, sleeve_weights_with_coverage
+from src.holdings import blend_split, get_portfolio_account, sleeve_weights_with_coverage
 from src.coverage import unresolved_marker
 from src.macro import percentile as macro_percentile
-from src.prose_helpers import cape_valuation_sentence
+from src.prose_helpers import blend_split_sentence, cape_valuation_sentence
 from src.rebalance import compute_drift, interpret_rebalance_status
 from src.sleeve_config import international_sleeves, sleeve_holdings
 from src.shiller import earlier_years_at_or_above, get_cape_series
@@ -421,6 +421,14 @@ with col:
         bm  = sc["benchmark_ticker"] or "—"
         with st.expander(f"{sc['name']} — {pct}% (benchmark: {bm})"):
             _safe_md(sc["rationale"])
+            # A sleeve benchmarked to a blend: its holdings' split against the blend's
+            # legs, derived from the trades and prices (audit item 15c).
+            try:
+                _legs = blend_split(sc["name"], date.today().isoformat())
+            except Exception:
+                _legs = None
+            if _legs:
+                st.caption(blend_split_sentence(_legs))
     st.divider()
 
 # ── Endowment comparison panel ─────────────────────────────────────────────────

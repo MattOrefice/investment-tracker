@@ -91,3 +91,33 @@ def percentile_label(pct: float) -> str:
     if pct > 25:
         return "below the historical median"
     return "historically low"
+
+
+def _list(items: "list[str]") -> str:
+    """"a", "a and b", "a, b, and c": the site's serial comma."""
+    if len(items) <= 2:
+        return " and ".join(items)
+    return ", ".join(items[:-1]) + f", and {items[-1]}"
+
+
+def blend_split_sentence(legs) -> str:
+    """A sleeve's holdings against its blended benchmark, stated as fact and without a
+    reason (audit item 15c): the split bought at inception, the split held today, the
+    blend, and the largest overweight, which attribution reports as selection.
+    ``legs`` is holdings.blend_split's list."""
+    bought = _list([f"{l.holding} {l.inception_weight:.0%}" for l in legs])
+    held = _list([f"{l.holding} {l.current_weight:.0%}" for l in legs])
+    blend = _list([f"{l.leg} {l.leg_weight:.0%}" for l in legs])
+    over = max(legs, key=lambda l: l.inception_weight - l.leg_weight)
+    at_start = round((over.inception_weight - over.leg_weight) * 100)
+    today = round((over.current_weight - over.leg_weight) * 100)
+    text = (f"The sleeve was bought {bought} at inception and holds {held} today, against "
+            f"a benchmark of {blend}.")
+    if at_start == 0:
+        return text + " The inception split matches the benchmark's."
+    against = (f"its {over.leg} leg" if over.leg != over.holding
+               else f"the benchmark's {over.leg} weight")
+    now = (f"{today} today" if today > 0 else "none today" if today == 0
+           else f"an underweight of {-today} today")
+    return (text + f" That is a {at_start}-point overweight in {over.holding} against "
+            f"{against} ({now}), which attribution reports as selection.")

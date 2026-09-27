@@ -150,6 +150,22 @@ def test_the_tilt_lists_keep_the_serial_comma(saa_page):
     assert re.search(rf"{tickers} in the US; {tickers} internationally", para), para
 
 
+def test_real_assets_states_its_split_against_the_blend(saa_page):
+    """Audit item 15c: the Real Assets expander states the sleeve's split against its
+    blended benchmark, derived from the trades and prices; no other sleeve has one."""
+    from datetime import date
+    from src.holdings import blend_split
+    from src.prose_helpers import blend_split_sentence
+    at, _ = saa_page
+    expected = blend_split_sentence(blend_split("Real Assets", date.today().isoformat()))
+    boxes = {e.label: [str(c.value) for c in e.caption] for e in at.expander}
+    real = [k for k in boxes if k.startswith("Real Assets")]
+    assert len(real) == 1 and expected in boxes[real[0]], boxes.get(real[0] if real else "")
+    others = [k for k, v in boxes.items() if k not in real
+              and any("at inception and holds" in c for c in v)]
+    assert others == []
+
+
 def test_a_failed_cape_read_says_so_rather_than_inventing_a_label(tmp_path, monkeypatch):
     import streamlit as st
     from streamlit.testing.v1 import AppTest
