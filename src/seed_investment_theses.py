@@ -206,8 +206,9 @@ SLEEVE_META = {
             "policy is never appropriate in a taxable rebalancing portfolio."
         ),
         "expected_return_scenario": (
-            "Money market yield (~4-5% currently) with zero principal risk; drag offset "
-            "by rebalancing optionality value and avoidance of forced selling."
+            "Money market yield, roughly the Treasury bill rate less the fund's fee, with "
+            "zero principal risk; drag offset by rebalancing optionality value and "
+            "avoidance of forced selling. The Macro page shows the live rate."
         ),
         "themes": [],
         "conviction_override": 5,
