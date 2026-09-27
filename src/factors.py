@@ -1987,12 +1987,16 @@ def interpret_correlations(corr: pd.DataFrame) -> str:
     highest = pairs_sorted[-3:][::-1]   # top 3, highest first
 
     # Highest correlations sentence — lead with allocator conclusion, pairs as evidence
+    # Co-movement means a positive ρ: a small matrix's "top" pairs can be negative.
     high_parts = [
-        f"{a} × {b} (ρ = {r:.2f})" for a, b, r in highest if r < 0.999
+        f"{a} × {b} (ρ = {r:.2f})" for a, b, r in highest if 0 < r < 0.999
     ]
+    high_list = (", ".join(high_parts[:-1]) + ", and " + high_parts[-1]
+                 if len(high_parts) > 2 else " and ".join(high_parts))
     high_sentence = (
-        f"High intra-equity co-movement — {', '.join(high_parts)} — "
-        "means the equity sleeves largely share a single global market beta."
+        "High intra-equity co-movement means the equity sleeves largely share a single "
+        f"global market beta. The top {'pairs are' if len(high_parts) > 1 else 'pair is'} "
+        f"{high_list}."
     ) if high_parts else ""
 
     # Lowest correlations sentence — frame as cross-asset structural difference
@@ -2006,10 +2010,13 @@ def interpret_correlations(corr: pd.DataFrame) -> str:
         tail = (f" {len(negative)} of the {len(pairs)} pairs are negatively correlated"
                 + (f", every one involving {sorted(shared)[0]}" if len(shared) == 1 else "")
                 + ".")
+    # "Return offsets" only when every pair named is negative: a pair at ρ = 0.05
+    # co-moves weakly, it does not offset.
+    low_lead = ("The strongest return offsets are" if all(r < 0 for _a, _b, r in lowest)
+                else "The lowest correlations are")
     low_sentence = (
-        f"The most meaningful return offsets are {' and '.join(low_parts)}: "
-        "pairs where structural differences in risk exposure, "
-        "not just style tilts, drive genuine diversification." + tail
+        f"{low_lead} {' and '.join(low_parts)}: pairs whose diversification comes "
+        "from structural differences in risk exposure rather than style tilts alone." + tail
     ) if low_parts else ""
 
     sentences = [s for s in [high_sentence, low_sentence] if s]

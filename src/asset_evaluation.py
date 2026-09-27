@@ -79,7 +79,7 @@ CONCLUSION = (
     "Bitcoin's sample-period Sharpe improvement is real but almost entirely "
     "attributable to its exceptional 2020–2021 bull market return. "
     "The 2024 spot ETF launches have already partially satisfied the "
-    "operational-risk concern that historically gated institutional adoption — "
+    "operational-risk concern that historically gated institutional adoption: "
     "IBIT, FBTC, and similar wrappers remove the custody and counterparty "
     "frictions that defined the pre-2024 implementation landscape. "
     "The remaining barriers to inclusion are analytical (the post-2020 "
@@ -90,7 +90,7 @@ CONCLUSION = (
     "observable conditions are met:\n"
     "- Rolling 5-year correlation with US Large Core falls below 0.20 "
     "(the pre-2020 baseline established in the rolling BTC–SPY correlation), "
-    "indicating a return to genuine diversification behavior.\n"
+    "indicating a return to diversifying behavior.\n"
     "- A 5–10% allocation produces a positive Sharpe contribution after "
     "explicit tax-drag adjustment (the analytical gap in the constrained "
     "mean-variance analysis).\n"
@@ -842,7 +842,7 @@ def interpret_rolling_correlation(current_value: float, history_series: pd.Serie
     elif current_value >= 0.40:
         level = "moderate: the sleeves share meaningful common market beta but retain some offset"
     else:
-        level = "strong: average co-movement is low and the sleeves are genuinely diversifying"
+        level = "strong: average co-movement is low and the sleeves diversify one another"
 
     # The level band is derived from current_value, which is KNOWN, so it stays
     # truthful either way. Only the historical rank is withheld.
@@ -863,12 +863,12 @@ def interpret_rolling_correlation(current_value: float, history_series: pd.Serie
 
     return (
         f"Average pairwise sleeve correlation is currently ρ ≈ {current_value:+.2f}, "
-        f"{rank} — cross-sleeve "
+        f"{rank}. Cross-sleeve "
         f"diversification is {level}. In stress episodes the equity sleeves converge toward "
-        "+1 (diversification among equity styles evaporates in a crash); the blended average "
+        "+1, and diversification among equity styles evaporates in a crash. The blended average "
         "stays lower only because the bond sleeves decouple from equities, which is the "
         "diversification the fixed-income allocation is there to provide. Correlations are "
-        "non-stationary and tend to rise precisely when diversification is most needed."
+        "non-stationary and tend to rise when diversification is most needed."
     )
 
 
@@ -930,13 +930,14 @@ def interpret_candidate_diversification(
 
     offsets = ps[ps < 0.15].sort_values().head(3)
     if not offsets.empty:
-        off_str = ", ".join(f"{s} ({v:+.2f})" for s, v in offsets.items())
+        from src.prose_helpers import _list
+        off_str = _list([f"{s} ({v:+.2f})" for s, v in offsets.items()])
         if avg_corr < 0.30:
-            offset_clause = f"Its lowest-correlation sleeves are {off_str}. "
+            offset_clause = f"It correlates least with {off_str}. "
         else:
-            offset_clause = f"Only {off_str} offer genuine offset. "
+            offset_clause = f"Offset comes only from {off_str}. "
     else:
-        offset_clause = "No sleeve offers a genuinely low or negative correlation. "
+        offset_clause = "No sleeve offers a low or negative correlation. "
 
     bond_vals = [
         float(per_sleeve[b]) for b in BOND_SLEEVES
@@ -951,35 +952,35 @@ def interpret_candidate_diversification(
                 "offset from the bond sleeves"
             )
             tail = (
-                "As a diversifier it adds little; as an expression of that exposure it is "
-                "largely redundant given the existing SAA equity sleeves."
+                "It adds little as a diversifier and largely duplicates the exposure "
+                "the existing SAA equity sleeves already carry."
             )
         else:
             verdict = (
-                "is redundant across the board — it co-moves even with the bond sleeves and "
+                "is redundant across the board: it co-moves even with the bond sleeves and "
                 "adds little diversification"
             )
             tail = (
                 "It overlaps the existing SAA broadly rather than filling a correlation gap."
             )
     elif avg_corr < 0.30:
-        verdict = "is a genuine diversifier — its co-movement with the existing sleeves is low"
+        verdict = "is a genuine diversifier: its co-movement with the existing sleeves is low"
         tail = (
             "It is additive: it fills a correlation gap the current SAA sleeves do not cover."
         )
     else:
         verdict = (
-            "is a mixed case — partial overlap with the equity sleeves but meaningful offset "
+            "is a mixed case: partial overlap with the equity sleeves but meaningful offset "
             "elsewhere"
         )
         tail = (
-            "It is neither a pure double-down nor a clean diversifier; weigh the specific "
-            "sleeve overlaps against the offsets."
+            "It is neither a pure double-down nor a clean diversifier; the case turns on "
+            "the specific sleeve overlaps set against the offsets."
         )
 
     return (
         f"{ticker}'s average correlation to the SAA sleeves is ρ ≈ {avg_corr:+.2f}, driven by "
-        f"{top_str} — it {verdict}. {offset_clause}{tail}"
+        f"{top_str}. It {verdict}. {offset_clause}{tail}"
     )
 
 
@@ -1023,15 +1024,15 @@ def drawdown_argument(btc_mdd: float, btc_2022: str | None,
             f"{sample_start}–present")
     if port and btc_2022:
         return (
-            f"{head} — not the {port['max_dd']:.1%} in the table above, which is "
+            f"{head}, not the {port['max_dd']:.1%} in the table above, which is "
             f"the portfolio's. Its 2022 drawdown of {btc_2022} came while equities "
-            f"and bonds fell together, deepening the portfolio's own 2022 drawdown "
+            f"and bonds fell together. It deepened the portfolio's own 2022 drawdown "
             f"from {port['mdd22_lo']:.1%} at 0% allocation to {port['mdd22_hi']:.1%} "
-            f"at {port['alloc_top']} — no diversification benefit when it was most "
+            f"at {port['alloc_top']}, with no diversification benefit when it was most "
             f"needed"
         )
     return (
-        f"{head}. The portfolio-level comparison — how much a BTC allocation "
-        f"deepened the 2022 drawdown — is not available this run: the drawdown "
+        f"{head}. The portfolio-level comparison (how much a BTC allocation "
+        f"deepened the 2022 drawdown) is not available this run: the drawdown "
         f"sweep did not produce data. Absent, not zero"
     )

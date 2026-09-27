@@ -13,12 +13,12 @@ render_page_header()
 
 
 SPAXX_RATIONALE = (
-    "SPAXX is Fidelity's default money market fund and the natural cash vehicle — no transaction "
+    "SPAXX is Fidelity's default money market fund and the natural cash vehicle: no transaction "
     "cost and immediate liquidity. It earns roughly the Treasury bill rate less its fee; the Macro "
     "page shows the live rate. BIL exists only for attribution comparison. "
     "The 3% cash weight is operational liquidity: it funds rebalancing trades, covers small drawdowns "
-    "without forced selling, and buffers position friction. Would reduce toward 1% if short rates fall "
-    "materially below 2%."
+    "without forced selling, and buffers position friction. The weight would be reduced toward 1% if "
+    "short rates fell materially below 2%."
 )
 
 SPAXX_HOLDING = {
@@ -183,7 +183,7 @@ if IS_DEMO:
 _, col, _ = st.columns([1, 8, 1])
 with col:
     st.title("Security Research")
-    st.caption("Candidate ETFs by asset class — holdings vs. benchmarks")
+    st.caption("Candidate ETFs by asset class: holdings vs. benchmarks")
     st.caption(as_of_banner())
     er_pct = weighted_er * 100
     _savings_250k = round(portfolio_savings_bps / 10_000 * 250_000)
@@ -196,31 +196,31 @@ with col:
 
     with st.expander("How to read this page", expanded=False):
         st.markdown(
-            "- **Benchmarks** — each sleeve benchmark is the SAA rationale's "
+            "- **Benchmarks**: each sleeve benchmark is the SAA rationale's "
             "attribution target, not always the cheapest passive option. SPY is the "
             "US Large Core benchmark because it's the institutional standard for US "
             "equity, even though VOO is the actual holding at one-third the fee. "
-            "Because each benchmark is style-matched rather than the cap-weighted "
-            "core, a factor tilt can read as *cheaper* than its benchmark here "
-            "(IDHQ vs IQLT, AVIV vs EFV, AVDV vs SCZ) even though the SAA rationales "
-            "note it costs *more* than plain cap-weighted exposure (VEA at 0.03%). "
+            "Each benchmark is style-matched rather than the cap-weighted core, so "
+            "a factor tilt can read as *cheaper* than its benchmark here "
+            "(IDHQ vs IQLT, AVIV vs EFV, AVDV vs SCZ). The SAA rationales note that "
+            "the same tilt costs *more* than plain cap-weighted exposure (VEA at 0.03%). "
             "Both are true: a tilt costs more than a plain index fund and less than "
             "the standard fund for the same style. This page compares to the latter, "
             "so selection measures implementation, not the premium.\n"
-            "- **ER savings** — calculated as "
+            "- **ER savings**: calculated as "
             "`Σ(sleeve_weight × (benchmark_ER − holding_ER)) × portfolio_size`, "
             "sleeve-weighted to reflect actual portfolio allocations. "
             # Derived from the same live values as the headline above, so the
             # example can never restale (it used to hardcode $436/yr / 17 bps).
             f"The \\${_savings_250k:,}/yr figure at \\$250k uses full float precision; "
             f"the {portfolio_savings_bps:.0f} bps display is rounded.\n"
-            "- **Featured Selections** — three holdings selected for analytical "
-            "differentiation, not performance. SPHQ represents a deliberate "
-            "methodology bet (accruals screen); IEMG is a cost choice on a broader "
+            "- **Featured Selections**: three holdings selected for analytical "
+            "differentiation, not performance. SPHQ is a deliberate methodology "
+            "bet (accruals screen). IEMG is a cost choice on a broader "
             f"index ({_er_of('IEMG')} vs EEM's {_er_of('EEM')}, with the small caps EEM "
-            "leaves out); PDBC is a tax-structure decision (a regulated investment "
-            "company reporting on Form 1099, where DBC, on the same index, issues a K-1).\n"
-            "- **Comparison tables** — ticker, name, and expense ratio only. "
+            "leaves out). PDBC is a tax-structure decision: a regulated investment "
+            "company reporting on Form 1099, where DBC, on the same index, issues a K-1.\n"
+            "- **Comparison tables**: ticker, name, and expense ratio only. "
             "Tracking difference, index methodology differences, and manager "
             "rationale are in the rationale expanders below each holding."
         )
@@ -317,7 +317,7 @@ with col:
                 st.caption(f"· {caption}")
 
             if h.get("holding_rationale"):
-                with st.expander(f"{h['ticker']} — rationale"):
+                with st.expander(f"{h['ticker']} rationale"):
                     _safe_md(h["holding_rationale"])
 
         st.markdown("")
@@ -325,20 +325,20 @@ with col:
     st.divider()
     with st.expander("Methodology", expanded=False):
         st.markdown(
-            "**Data sources** — expense ratios from fund issuer prospectuses "
+            "**Data sources**: expense ratios from fund issuer prospectuses "
             "(Vanguard, iShares, Avantis, Invesco, Schwab, Fidelity); "
             "AUM from Morningstar. Sleeve target weights locked at portfolio "
             "inception (May 2025).\n\n"
-            "**ER savings** — calculated as "
+            "**ER savings**: calculated as "
             "`Σ(sleeve_weight × (benchmark_ER − holding_ER)) × portfolio_size`, "
             "sleeve-weighted to reflect actual portfolio exposure. "
             # Derived live (see the identical note in the 'How to read this page'
             # expander) — was hardcoded $436/yr / 17 bps, stale after reseeding.
             f"The \\${_savings_250k:,}/yr figure at \\$250k uses full float precision; "
             f"the {portfolio_savings_bps:.0f} bps summary is rounded.\n\n"
-            "**Benchmark selection** — each sleeve benchmark is the SAA "
-            "rationale's attribution target, not the cheapest passive option "
+            "**Benchmark selection**: each sleeve benchmark is the SAA "
+            "rationale's attribution target rather than the cheapest passive option "
             "available. SPY benchmarks US Large Core because it's the institutional "
-            "standard for that exposure, not because it's the optimal ETF."
+            "standard for that exposure."
         )
     render_footer()

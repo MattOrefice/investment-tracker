@@ -196,8 +196,8 @@ with col:
     with st.expander("How to read this page", expanded=False):
         st.markdown(
             "This page applies a five-step framework to Bitcoin as a worked case study for SAA "
-            "inclusion. The framework is **descriptive, not prescriptive** — numbers reflect the "
-            "2018–present sample period and quantify observed behavior, not a forecast.\n\n"
+            "inclusion. The framework is **descriptive, not prescriptive**: its numbers quantify "
+            "observed behavior over the 2018–present sample period and are not a forecast.\n\n"
             "**Sections in order:** univariate statistics → correlation behavior (full-sample and "
             "rolling) → regime-conditional correlation by NBER cycle phase → mean-variance "
             "contribution (unconstrained and constrained tangency) → drawdown sensitivity table → "
@@ -208,31 +208,33 @@ with col:
             "fit, and expected behavior under different macro regimes. Those factors cannot be "
             "reduced to a Sharpe improvement number.\n\n"
             "**Sample start:** 2018-01-01. Earlier BTC history exists but covers only one "
-            "bull market. Starting from 2018 captures both the 2018 bear, the 2020 COVID crash, "
-            "the 2021 peak, and the 2022 drawdown — a more complete behavioral picture."
+            "bull market. Starting from 2018 captures the 2018 bear, the 2020 COVID crash, "
+            "the 2021 peak, and the 2022 drawdown, which together give a more complete picture "
+            "of the asset's behavior."
         )
     st.markdown(
-        "**Univariate statistics** characterize a candidate asset in isolation: "
+        "**Univariate statistics** characterize a candidate asset in isolation. They are "
         "annualized return, annualized volatility, Sharpe ratio (excess return per unit of risk), "
         "maximum drawdown (peak-to-trough capital loss), skewness (tail asymmetry), "
         "and excess kurtosis (fat-tail risk relative to a normal distribution). "
-        "These metrics establish a baseline before asking how the asset interacts with the existing portfolio."
+        "These metrics set a baseline before the page turns to how the asset interacts with "
+        "the existing portfolio."
     )
     st.markdown(
         "**Correlation behavior** is evaluated at two frequencies. Full-sample Pearson correlation "
         "against each SAA sleeve measures the average co-movement since 2018. Rolling 60-day "
-        "correlation against SPY surfaces regime changes — correlations that look low on average "
-        "can spike toward 1 during market stress, precisely when diversification is most needed. "
-        "All correlation estimates are restricted to equity market trading days; "
-        "BTC trades continuously, so non-trading days are excluded to avoid spurious near-zero "
-        "returns inflating diversification metrics."
+        "correlation against SPY shows regime changes: correlations that look low on average "
+        "can spike toward 1 during market stress, when diversification is most needed. "
+        "All correlation estimates are restricted to equity market trading days. "
+        "BTC trades continuously, so non-trading days are excluded to keep spurious near-zero "
+        "returns from inflating the diversification metrics."
     )
     st.markdown(
         "**Mean-variance impact** is assessed by computing the tangency (maximum-Sharpe) portfolio "
         "with and without the candidate asset. Both unconstrained (closed-form) and constrained "
         "(max 25% per sleeve, SLSQP) solutions are presented. The unconstrained result is shown "
-        "for completeness only — unconstrained MV optimization is highly sensitive to estimation "
-        "error and routinely produces extreme short positions that are not implementable. "
+        "for completeness only: unconstrained MV optimization is highly sensitive to estimation "
+        "error and routinely produces extreme short positions that cannot be implemented. "
         "The constrained result better reflects a realistic institutional allocation."
     )
     st.markdown(
@@ -240,16 +242,15 @@ with col:
         "not a portfolio recommendation. The instability of sample-period mean estimates "
         "and the documented sensitivity of MVO weights to small perturbations (Michaud 1989) "
         "make raw optimizer output unsuitable as an allocation tool. The primary analytical "
-        "frame is marginal contribution against the existing SAA target weights — the question "
-        "is what the candidate does to the actual portfolio, not what it does to a hypothetical "
-        "unconstrained portfolio."
+        "frame is marginal contribution against the existing SAA target weights: what the "
+        "candidate does to the actual portfolio."
     )
     st.markdown(
         "**Decision framework:** this page surfaces tradeoffs, not a single recommendation. "
         "Mean-variance analysis captures return and risk but ignores liquidity, tax treatment, "
-        "operational complexity, and mandate fit — all of which are material considerations "
-        "for a taxable individual investor. A candidate asset that improves constrained portfolio "
-        "Sharpe is a necessary but not sufficient condition for inclusion."
+        "operational complexity, and mandate fit, all of them material considerations "
+        "for a taxable individual investor. An improvement in constrained portfolio Sharpe "
+        "is necessary for inclusion but does not justify it on its own."
     )
     st.divider()
 
@@ -258,9 +259,9 @@ _, col, _ = st.columns([1, 8, 1])
 with col:
     st.header("Candidate Correlation Screen")
     st.caption(
-        "Screen any candidate ticker for its correlation to the existing SAA sleeves — "
-        "the quantitative \"does this diversify or just double down?\" check. This is a "
-        "lightweight, generic screen; the deep five-step framework below is the worked "
+        "Screen any candidate ticker for its correlation to the existing SAA sleeves: a "
+        "quantitative check of whether it diversifies the book or doubles down on it. This is "
+        "a lightweight, generic screen; the five-step framework below is the worked "
         "Bitcoin case study."
     )
 
@@ -280,20 +281,20 @@ with col:
         # string back at the page earns nothing.
         _shown = cand_ticker[:20] + ("…" if len(cand_ticker) > 20 else "")
         st.warning(
-            f"`{_shown}` isn't a valid ticker format — use an exchange-listed "
-            "symbol of up to 15 characters (e.g. QQQ, TLT, BRK-B). Letters, "
+            f"`{_shown}` isn't a valid ticker format. Use an exchange-listed "
+            "symbol of up to 15 characters (e.g. QQQ, TLT, BRK-B): letters, "
             "digits, and `.` `-` `=` `^` only."
         )
     elif _scr_sleeves.empty:
-        st.warning("Sleeve benchmark prices unavailable — check connection or API limits.")
+        st.warning("Sleeve benchmark prices unavailable. Check the connection or API limits.")
     else:
         with st.spinner(f"Screening {cand_ticker}…"):
             cand_ret = _load_candidate_returns(cand_ticker)
 
         if cand_ret.empty:
             st.warning(
-                f"Couldn't fetch data for **{cand_ticker}** — check the symbol "
-                "(e.g. QQQ, TLT, GLD, VNQ). Use a valid exchange-listed ticker."
+                f"Couldn't fetch data for **{cand_ticker}**. Check the symbol "
+                "(e.g. QQQ, TLT, GLD, VNQ) and use a valid exchange-listed ticker."
             )
         else:
             per_sleeve = ae.compute_full_sample_correlations(cand_ret, _scr_sleeves)
@@ -378,7 +379,7 @@ with col:
                         f"sleeves (recession-shaded). Current ρ ≈ {_rs_cur:+.2f} vs the "
                         f"full-sample average of {avg_corr:+.2f}. A line that rises in the "
                         "shaded stress windows means the candidate's diversification weakens "
-                        "exactly when it is most needed."
+                        "when it is most needed."
                     )
 
                 # (d) Stress-vs-normal: regime-conditional correlation vs SPY (reuses 5i helper)
@@ -399,9 +400,9 @@ with col:
                                 )
                                 st.caption(
                                     f"{cand_ticker} vs SPY Pearson correlation conditioned on the "
-                                    "NBER cycle phase (FRED USREC/T10Y2Y/UNRATE). A higher "
-                                    "recession/late-cycle reading than mid-cycle means the "
-                                    "candidate couples to equities precisely in stress."
+                                    "NBER cycle phase (FRED USREC/T10Y2Y/UNRATE). A recession "
+                                    "or late-cycle reading above the mid-cycle one means the "
+                                    "candidate couples to equities in stress."
                                 )
                     except Exception:
                         pass
@@ -409,8 +410,9 @@ with col:
                 st.caption(
                     "Full-sample and rolling correlations are backward-looking and restricted "
                     "to equity trading days since 2018. This screen measures *diversification "
-                    "overlap* with the existing SAA — not expected return, valuation, or fit. "
-                    "A low-correlation result is necessary but not sufficient for inclusion."
+                    "overlap* with the existing SAA; it does not assess expected return, "
+                    "valuation, or fit. A low correlation is necessary for inclusion but does "
+                    "not justify it on its own."
                 )
 
     st.divider()
@@ -456,7 +458,7 @@ if not data_ok:
     _, col, _ = st.columns([1, 8, 1])
     with col:
         st.warning(
-            "Price data unavailable — check internet connection or API rate limits. "
+            "Price data unavailable. Check the internet connection or API rate limits. "
             "All sections below require BTC-USD and sleeve benchmark prices."
         )
     render_footer()
@@ -466,7 +468,7 @@ if not data_ok:
 
 _, col, _ = st.columns([1, 8, 1])
 with col:
-    st.subheader("5a — Univariate Statistics")
+    st.subheader("5a. Univariate Statistics")
 
     if uni_tbl.empty:
         st.info("Univariate table unavailable.")
@@ -500,7 +502,7 @@ with col:
 
 _, col, _ = st.columns([1, 8, 1])
 with col:
-    st.subheader("5b — Full-Sample Correlation vs SAA Sleeves")
+    st.subheader("5b. Full-Sample Correlation vs SAA Sleeves")
 
     if corr.empty:
         st.info("Correlation data unavailable.")
@@ -540,7 +542,7 @@ with col:
             spy_note = (
                 "The full-sample correlation analysis contradicts the uncorrelated-alternative "
                 "narrative that dominated pre-2020 institutional thinking on Bitcoin. "
-                f"BTC's correlation with US Large Core is {btc_spy_corr:+.2f} since 2018 — "
+                f"BTC's correlation with US Large Core since 2018 is {btc_spy_corr:+.2f}, "
                 "meaningfully above zero. "
                 f"The highest sleeve correlation is {highest_sleeve} ({highest_val:+.2f}); "
                 f"the lowest is {lowest_sleeve} ({_c(lowest_val, '+')}). "
@@ -560,14 +562,14 @@ with col:
             fi_note = (
                 f"The Core Fixed Income correlation ({_c(fi_corr)}) is near zero, "
                 "which is consistent with Bitcoin offering some diversification relative "
-                "to duration — though this says nothing about behavior during equity stress. "
+                "to duration. It says nothing about behavior during equity stress. "
             )
 
         ra_note = ""
         if not np.isnan(ra_corr):
             ra_note = (
                 f"The Real Assets correlation ({_c(ra_corr)}) is relevant to the 'digital gold' "
-                "thesis: if Bitcoin were a genuine inflation hedge or commodity substitute, "
+                "thesis: if Bitcoin were an inflation hedge or commodity substitute, "
                 "one would expect higher co-movement with this sleeve. "
             )
 
@@ -579,7 +581,7 @@ with col:
 
 _, col, _ = st.columns([1, 8, 1])
 with col:
-    st.subheader("5c — Rolling 60-Day Correlation: BTC vs SPY")
+    st.subheader("5c. Rolling 60-Day Correlation: BTC vs SPY")
 
     if rolling_corr.empty:
         st.info("Rolling correlation data unavailable.")
@@ -640,9 +642,9 @@ with col:
                 f"{post_2020_avg:.2f} on average, undermining the diversification claim. "
                 "One plausible mechanism: as Bitcoin entered professional portfolios post-2020, "
                 "it began trading with the risk-on/risk-off dynamics that characterize equity "
-                "markets, reducing its value as a genuine diversifier precisely when correlations "
-                "are most costly. The data supports the correlation shift; the institutional-flows "
-                "hypothesis is consistent with the timing but not the only possible explanation."
+                "markets, reducing its value as a diversifier when correlations are most costly. "
+                "The data supports the correlation shift. The institutional-flows hypothesis is "
+                "consistent with the timing but is not the only possible explanation."
             )
 
         st.markdown(pre_note + post_note)
@@ -653,7 +655,7 @@ with col:
 
 _, col, _ = st.columns([1, 8, 1])
 with col:
-    st.subheader("5d — Robustness: Daily vs Weekly Correlations")
+    st.subheader("5d. Robustness: Daily vs Weekly Correlations")
 
     if corr.empty or weekly_corr.empty:
         st.info("Correlation data unavailable.")
@@ -681,11 +683,11 @@ with col:
 
         st.markdown(
             "Weekly correlation uses Friday-to-Friday compounded returns to reduce "
-            "the effect of asynchronous trading across markets — BTC trades continuously "
+            "the effect of asynchronous trading across markets: BTC trades continuously, "
             "while equity benchmarks observe exchange hours and holiday schedules. "
             "Small differences between daily and weekly estimates indicate the results "
             "are not driven by microstructure noise; large differences would suggest "
-            "the daily figure is materially distorted by settlement lags or thin-market days."
+            "settlement lags or thin-market days materially distort the daily figure."
         )
 
         tips_diff = float(diff_corr.get("TIPS", float("nan"))) if "TIPS" in diff_corr.index else float("nan")
@@ -695,7 +697,7 @@ with col:
                 "the magnitude is small but inconsistent with the broader pattern. "
                 "The likely explanation: TIPS trades less actively than equity ETFs, so daily "
                 "readings may understate true co-movement while weekly aggregation captures it. "
-                "This does not change the overall robustness conclusion — the daily-frequency "
+                "The overall robustness conclusion stands: the daily-frequency "
                 "correlations across equity sleeves are not microstructure artifacts."
             )
 
@@ -705,7 +707,7 @@ with col:
 
 _, col, _ = st.columns([1, 8, 1])
 with col:
-    st.subheader("5e — Mean-Variance: Unconstrained Tangency")
+    st.subheader("5e. Mean-Variance: Unconstrained Tangency")
 
     if not mv:
         st.info("Mean-variance analysis unavailable.")
@@ -719,8 +721,8 @@ with col:
         st.markdown(
             "The unconstrained tangency portfolio below assigns extreme long/short positions "
             "because small estimation errors in expected returns are magnified through matrix "
-            "inversion. Read the table as: which assets dominate the tangency frontier in "
-            "mean-variance space, not as actionable allocations."
+            "inversion. The table shows which assets dominate the tangency frontier in "
+            "mean-variance space; its weights are not actionable allocations."
         )
 
         left_col, right_col = st.columns([1, 1])
@@ -751,9 +753,9 @@ with col:
                 delta=f"{sharpe_unc_with - sharpe_unc_no:+.3f}",
             )
             st.caption(
-                "Unconstrained Sharpe = √[(μ−rf)'Σ⁻¹(μ−rf)] × √252 — "
+                "Unconstrained Sharpe = √[(μ−rf)'Σ⁻¹(μ−rf)] × √252, "
                 "the theoretical maximum of the unconstrained efficient frontier. "
-                "Normalized weights are directionally interpretable only."
+                "The normalized weights indicate direction only."
             )
 
         st.caption(
@@ -767,7 +769,7 @@ with col:
 
 _, col, _ = st.columns([1, 8, 1])
 with col:
-    st.subheader("5f — Mean-Variance: Constrained Tangency (max 25%)")
+    st.subheader("5f. Mean-Variance: Constrained Tangency (max 25%)")
 
     if not mv:
         st.info("Mean-variance analysis unavailable.")
@@ -795,17 +797,17 @@ with col:
             use_container_width=True,
         )
         st.caption(
-            "With a 25% per-sleeve cap, the constraint Σw=1 is feasible for any 4+ asset "
-            "universe (4×25%=100%), allowing the optimizer to actually concentrate weights "
-            "based on Sharpe contribution rather than filling uniformly."
+            "With a 25% per-sleeve cap, the constraint Σw=1 is feasible for any universe of "
+            "four or more assets (4×25%=100%), so the optimizer can concentrate weights by "
+            "Sharpe contribution rather than fill them uniformly."
         )
 
         btc_wt_con = float(mv["w_con_with"][-1])
         if btc_wt_con >= 0.249:
             btc_wt_note = (
                 "the mean-variance optimizer fills Bitcoin to its 25% cap, "
-                "driven by BTC's exceptional sample-period realized return — "
-                "not a forward-looking expected return and should not be interpreted as such"
+                "driven by BTC's exceptional sample-period realized return, which is "
+                "not a forward-looking expected return"
             )
         else:
             btc_wt_note = (
@@ -815,19 +817,19 @@ with col:
         st.markdown(
             f"Under realistic institutional constraints (max 25% per sleeve), "
             f"{btc_wt_note}. "
-            f"The constrained Sharpe rises from {sharpe_con_no:.3f} (without BTC) "
-            f"to {sharpe_con_with:.3f} (with BTC), a change of {delta_sharpe_con:+.3f}. "
-            "This result is driven by BTC's high expected return over the sample period — "
-            "it does not account for estimation error in the mean, which is extremely large "
+            f"The constrained Sharpe is {sharpe_con_no:.3f} (without BTC) "
+            f"and {sharpe_con_with:.3f} (with BTC), a change of {delta_sharpe_con:+.3f}. "
+            "This result is driven by BTC's high expected return over the sample period. "
+            "It does not account for estimation error in the mean, which is extremely large "
             f"for {a_or_an(_years_s)} {_years_s}-year history of a volatile, regime-shifting asset. "
-            "See section 5g for the SAA-anchored marginal contribution analysis, "
-            "which is the primary analytical frame."
+            "Section 5g's SAA-anchored marginal contribution analysis is the primary "
+            "analytical frame."
         )
         st.caption(
             f"The {btc_wt_con:.1%} allocation is the sample-period mean-variance optimum. "
             "It does not account for tax treatment, operational complexity, liquidity "
-            "constraints, or out-of-sample expected-return shrinkage — all of which "
-            "the decision framework in Section 5j addresses explicitly."
+            "constraints, or out-of-sample expected-return shrinkage; the decision framework "
+            "in Section 5j addresses all of them explicitly."
         )
 
     st.divider()
@@ -836,7 +838,7 @@ with col:
 
 _, col, _ = st.columns([1, 8, 1])
 with col:
-    st.subheader("5g — Marginal Sharpe Contribution")
+    st.subheader("5g. Marginal Sharpe Contribution")
 
     if msc.empty:
         st.info("Marginal Sharpe curve unavailable.")
@@ -868,7 +870,7 @@ with col:
         st.markdown(
             "This curve is mechanical, not predictive. Any asset with exceptional realized "
             "returns over a sample period will produce a monotonically increasing Sharpe "
-            "contribution curve at low allocations — the shape itself is not evidence of "
+            "contribution curve at low allocations, so the shape itself is not evidence of "
             "an attractive forward-looking opportunity."
         )
         st.plotly_chart(fig_msc, width="stretch", config={"displayModeBar": False})
@@ -885,21 +887,21 @@ with col:
             curve_desc = (
                 f"The Sharpe curve is monotonically increasing across the BTC allocation range, "
                 f"rising from {sharpe_0:.3f} at 0.0% BTC to {sharpe_max:.3f} at {btc_at_max:.1f}% BTC. "
-                "This means each incremental unit of BTC improves the risk-adjusted portfolio "
+                "Each incremental unit of BTC improves the risk-adjusted portfolio "
                 "return within this allocation range, driven primarily by BTC's high realized "
                 "return over the sample period."
             )
         else:
             curve_desc = (
                 f"The Sharpe curve peaks at {btc_at_max:.0f}% BTC allocation ({sharpe_max:.3f}), "
-                f"rising from {sharpe_0:.3f} at 0% and declining thereafter. "
+                f"against {sharpe_0:.3f} at 0%. "
                 "Beyond the peak, BTC's volatility begins to dominate and erodes risk-adjusted returns."
             )
 
         st.markdown(
             curve_desc
-            + " The curve reflects sample-period arithmetic — BTC's realized return since 2018 "
-            "is exceptional and should not be extrapolated as expected return for forward-looking "
+            + " The curve reflects sample-period arithmetic: BTC's realized return since 2018 "
+            "is exceptional and is not an expected return for forward-looking "
             "allocation decisions."
         )
 
@@ -909,7 +911,7 @@ with col:
 
 _, col, _ = st.columns([1, 8, 1])
 with col:
-    st.subheader("5h — Drawdown Sensitivity")
+    st.subheader("5h. Drawdown Sensitivity")
 
     if dd_sens.empty:
         st.info("Drawdown sensitivity data unavailable.")
@@ -945,18 +947,18 @@ with col:
             dd_note = (
                 f"Adding a 10% BTC allocation {_dd_verb} portfolio maximum drawdown "
                 f"from {dd_0:.1%} to {dd_10:.1%} over the full sample. "
-                f"In 2022 specifically — when BTC fell approximately 65% and equities "
-                f"sold off simultaneously — the portfolio max drawdown during that calendar year "
-                f"shifts from {mdd22_0:.1%} (0% BTC) to {mdd22_10:.1%} (10% BTC). "
+                f"In 2022, when BTC fell approximately 65% and equities "
+                f"sold off at the same time, the portfolio's maximum drawdown within that calendar "
+                f"year shifts from {mdd22_0:.1%} (0% BTC) to {mdd22_10:.1%} (10% BTC). "
             )
 
         st.markdown(
             dd_note
             + "2022 is the most important stress-test period for evaluating Bitcoin's "
             "portfolio impact: equities fell roughly 20%, bonds fell 15%, and BTC fell "
-            "over 60% — all simultaneously, eliminating any diversification benefit "
-            "and amplifying drawdown. This joint stress scenario, not the full-sample "
-            "average correlation, is the relevant risk scenario for a risk-aware allocator."
+            "over 60%, all at the same time. That eliminated any diversification benefit "
+            "and amplified drawdown. This joint stress scenario, not the full-sample "
+            "average correlation, is the relevant measure of risk."
         )
 
     st.divider()
@@ -965,12 +967,12 @@ with col:
 
 _, col, _ = st.columns([1, 8, 1])
 with col:
-    st.subheader("5i — Regime-Conditional Correlation")
+    st.subheader("5i. Regime-Conditional Correlation")
 
     try:
         regime_corr = _load_regime_conditional_correlation()
         if regime_corr.empty:
-            st.info("Regime data unavailable — requires FRED API key.")
+            st.info("Regime data unavailable: it requires a FRED API key.")
         else:
             st.dataframe(
                 regime_corr.style.format({
@@ -1006,9 +1008,9 @@ with col:
             late_note = ""
             if not np.isnan(late_corr) and not np.isnan(mid_corr):
                 late_note = (
-                    f"The late-cycle correlation ({_c(late_corr)}) versus mid-cycle ({_c(mid_corr)}) "
-                    "comparison is particularly relevant: if Bitcoin behaves as a risk asset "
-                    "precisely when the portfolio most needs a hedge, its diversification value "
+                    f"The late-cycle correlation ({_c(late_corr)}) against mid-cycle ({_c(mid_corr)}) "
+                    "is the key comparison: if Bitcoin behaves as a risk asset "
+                    "when the portfolio most needs a hedge, its diversification value "
                     "is fundamentally compromised."
                 )
 
@@ -1019,7 +1021,7 @@ with col:
             )
 
     except Exception:
-        st.info("Regime data unavailable — requires FRED API key.")
+        st.info("Regime data unavailable: it requires a FRED API key.")
 
     st.divider()
 
@@ -1027,7 +1029,7 @@ with col:
 
 _, col, _ = st.columns([1, 8, 1])
 with col:
-    st.subheader("5j — Decision Framework Summary")
+    st.subheader("5j. Decision Framework Summary")
 
     # Build argument lists dynamically
     args_for: list[str] = []
@@ -1042,7 +1044,7 @@ with col:
             _saa_sh10 = float(_rows_10["sharpe"].iloc[0])
             if _saa_sh10 > _saa_sh0:
                 _mvo_ok = bool(mv and mv["sharpe_con_with"] > mv["sharpe_con_no"])
-                _mvo_note = " — MVO sanity check directionally consistent" if _mvo_ok else ""
+                _mvo_note = "; the MVO sanity check is directionally consistent" if _mvo_ok else ""
                 args_for.append(
                     f"Sharpe-improving against SAA target weights at 10% allocation "
                     f"({_saa_sh0:.3f} → {_saa_sh10:.3f}, "
@@ -1058,8 +1060,8 @@ with col:
         btc_spy_j = float(corr.get("US Large Core", float("nan")))
         if not np.isnan(btc_spy_j) and btc_spy_j > 0.3:
             args_against.append(
-                f"Equity-like correlation with US Large Core ({btc_spy_j:.2f}) post-2020 — "
-                "co-movement spikes during stress precisely when a hedge is most valuable"
+                f"Equity-like correlation with US Large Core ({btc_spy_j:.2f}) post-2020: "
+                "co-movement spikes during stress, when a hedge is most valuable"
             )
 
     # The drawdown bullet's inputs, built as the PDF builds them (src/reports.py).
@@ -1077,21 +1079,21 @@ with col:
         _drawdown_argument(_max_drawdown(btc_ret), _btc_2022_s, _port, ae.SAMPLE_START),
         "Capital gains tax treatment: the IRS treats bitcoin as property (Notice 2014-21), "
         "so a sale is a capital gain or loss, short-term at ordinary rates within 12 months "
-        "and long-term after — unfavorable vs. ETFs "
+        "and long-term after. That is unfavorable vs. ETFs, "
         "which qualify for in-kind creation/redemption",
         "Operational complexity: self-custody introduces key management risk "
         "and exchange-held BTC introduces counterparty risk (FTX 2022). The "
         "2024 launch of spot Bitcoin ETFs (IBIT, FBTC, BITB) materially reduces "
         "these operational frictions for retail and most institutional "
-        "implementations — Bitcoin can now be held in a standard brokerage "
+        "implementations. Bitcoin can now be held in a standard brokerage "
         "account at 0.12–0.25% expense ratios, with creation/redemption "
         "mechanics that mirror commodity ETF wrappers. The remaining "
-        "operational considerations are the expense drag (real over a multi-year "
-        "hold) and tax classification: spot Bitcoin ETFs are structured as "
-        "grantor trusts, so they pass through as direct ownership of the bitcoin, "
-        "property for tax purposes — no qualified-dividend treatment, no wash-sale rule "
-        "applicability under current IRS guidance",
-        "No intrinsic cash flow, earnings, or fundamental anchor for valuation — "
+        "operational considerations are the expense drag, which is real over a "
+        "multi-year hold, and tax classification. Spot Bitcoin ETFs are structured "
+        "as grantor trusts, so they pass through as direct ownership of the bitcoin, "
+        "which is property for tax purposes. There is no qualified-dividend treatment, "
+        "and the wash-sale rule does not apply under current IRS guidance",
+        "No intrinsic cash flow, earnings, or fundamental anchor for valuation: "
         "expected return is purely sentiment-driven, making MV inputs highly unreliable",
     ])
 
@@ -1114,7 +1116,7 @@ with col:
     )
 
     st.markdown(f"**Conclusion:**\n\n{ae.CONCLUSION}")
-    st.caption("This page will update automatically as new data arrives.")
+    st.caption("This page updates automatically as new data arrives.")
 
     st.divider()
 
@@ -1147,24 +1149,24 @@ with col:
             "window. Weekly resamples to Friday-to-Friday cumulative returns before "
             "correlating.\n\n"
             "**MV optimization:** Unconstrained tangency direction w_raw = Σ⁻¹(μ − rf·1). "
-            "Headline Sharpe reported as √[(μ−rf)'Σ⁻¹(μ−rf)] × √252 — the theoretical "
+            "The headline Sharpe is √[(μ−rf)'Σ⁻¹(μ−rf)] × √252, the theoretical "
             "maximum of the unconstrained efficient frontier, non-negative by construction. "
             "Normalized weights w* = w_raw / (1'w_raw) are shown for directional "
-            "interpretation only; when the normalization denominator is negative, the "
-            "normalized weights flip sign and their portfolio Sharpe is negative — hence "
-            "the information-ratio formula is used for the headline metric instead. "
+            "interpretation only. When the normalization denominator is negative, the "
+            "normalized weights flip sign and their portfolio Sharpe is negative, which is "
+            "why the headline metric uses the information-ratio formula instead. "
             "Constrained tangency uses scipy.optimize.minimize (SLSQP) with bounds "
             "0 ≤ w_i ≤ 25% and Σw = 1, maximizing annualized Sharpe.\n\n"
             f"**Risk-free rate:** {_rf_line()} The Performance page averages the same "
             "series over each of its own windows. "
-            "Converted to daily via geometric compounding, (1+rf)^(1/252) − 1, "
-            "for MV optimization internals — the same convention the Performance "
-            "page uses, not simple division by 252.\n\n"
+            "For the MV optimization it is converted to a daily rate by geometric "
+            "compounding, (1+rf)^(1/252) − 1, the convention the Performance page "
+            "also uses, rather than by simple division by 252.\n\n"
             "**Regime classification:** FRED USREC (NBER monthly indicator), T10Y2Y "
             "(daily yield-curve spread), and UNRATE (monthly unemployment) are fetched "
             "from FRED and vectorized into four labels: "
-            "Recession, Early-cycle, Mid-cycle, Late-cycle — using the same priority "
-            "ordering as the Macro page's regime classifier."
+            "Recession, Early-cycle, Mid-cycle, and Late-cycle. The labels follow the same "
+            "priority ordering as the Macro page's regime classifier."
         )
 
 render_footer()

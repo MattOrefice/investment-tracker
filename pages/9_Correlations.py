@@ -178,8 +178,8 @@ with col:
     st.markdown("## Sleeve Correlations")
     st.caption(
         "Rolling pairwise correlations between SAA sleeve benchmarks. "
-        "Low or negative correlations indicate genuine diversification. "
-        "Window selector controls the lookback for both the heatmap and pair time-series."
+        "Low or negative correlations indicate diversification. "
+        "The window selector sets the lookback for both the heatmap and the pair time-series."
     )
     st.caption(as_of_banner())
 
@@ -187,16 +187,16 @@ with col:
         st.markdown(
             "**Heatmap:** Each cell is the Pearson correlation between two sleeve "
             "benchmarks over the rolling window. Values near +1 mean co-movement; "
-            "near 0 means genuine diversification; below 0 means return offsets.\n\n"
+            "near 0 means diversification; below 0 means return offsets.\n\n"
             "**Window selector:** 60-day default balances responsiveness against noise. "
             "At 30 days, a single volatile week can dominate; at 252 days, the estimate "
             "lags regime changes by up to a year.\n\n"
-            "**Pair time-series:** Select any two sleeves to see how their rolling "
-            "correlation has evolved over time.\n\n"
-            "**Key caveat:** Correlations are not stationary. During equity drawdowns — "
-            "2008, 2020, 2022 — they tend to spike toward +1 across asset classes "
-            "simultaneously, meaning the diversification shown in the heatmap can "
-            "evaporate precisely when it is most needed."
+            "**Pair time-series:** plots how the rolling correlation between any two "
+            "selected sleeves has evolved over time.\n\n"
+            "**Key caveat:** Correlations are not stationary. During equity drawdowns "
+            "(2008, 2020, 2022) they tend to spike toward +1 across asset classes "
+            "simultaneously, so the diversification shown in the heatmap can "
+            "evaporate when it is most needed."
         )
 
     st.divider()
@@ -231,7 +231,7 @@ with col:
         returns_df = _load_daily_returns(load_start)
 
     if returns_df.empty:
-        st.error("Price data unavailable — check internet connection or API limits.")
+        st.error("Price data unavailable. Check the internet connection or API limits.")
         render_footer()
         st.stop()
 
@@ -260,7 +260,7 @@ with col:
             st.caption(
                 "Rolling correlations are not stationary: during equity drawdowns, "
                 "pairs that appear uncorrelated in calm periods tend to converge toward +1, "
-                "reducing diversification benefit precisely when it matters most."
+                "reducing the diversification benefit when it matters most."
             )
 
             # Highlight notable pairs
@@ -333,14 +333,14 @@ with col:
                     st.markdown(
                         f"Bond–equity correlations have shifted materially since 2020. "
                         f"Core Fixed Income's average pairwise correlation with the equity "
-                        f"sleeves was ρ ≈ {pre2020_be:.2f} prior to 2020 — consistent with "
+                        f"sleeves was ρ ≈ {pre2020_be:.2f} before 2020, consistent with "
                         f"the negative-correlation assumption that underpins most 60/40 "
                         f"frameworks. "
                         f"The trailing {window}-day estimate is now ρ ≈ {avg_be:.2f}. "
                         f"This is a regime, not a permanent structural change: when "
                         f"inflation is the dominant macro risk, rising rates move bonds and "
-                        f"equities in the same direction, and the 2022 joint drawdown — "
-                        f"when Core Fixed Income declined alongside equities — is the "
+                        f"equities in the same direction. The 2022 joint drawdown, "
+                        f"when Core Fixed Income declined alongside equities, is the "
                         f"relevant stress test for this allocation."
                     )
                     st.caption(
@@ -600,8 +600,8 @@ with col:
                     f"Intra-equity ρ = average correlation among the {_n_eq_dec} equity "
                     "sleeves; bond–equity ρ = average correlation between the bond sleeves "
                     "(Core Fixed Income, TIPS) and the equity sleeves. The post-2020 rise in "
-                    "bond–equity correlation — bonds no longer offsetting equity drawdowns — "
-                    "is the 60/40-relevant regime shift (the 2022 joint drawdown)."
+                    "bond–equity correlation, with bonds no longer offsetting equity drawdowns, "
+                    "is the regime shift relevant to 60/40 portfolios (the 2022 joint drawdown)."
                 )
 
             if _firsts and _recent:
@@ -609,11 +609,11 @@ with col:
                     f"**History constraint:** the full {_n_total}-sleeve common window "
                     f"starts {_full_start} ({_constraining} benchmark series start), so the "
                     "default view covers the 2020 and 2022 stress episodes but not 2008. "
-                    f"Enable *Extended history* to drop {_excl_names}: its returns "
+                    f"*Extended history* drops {_excl_names}; its returns "
                     f"start {_ext_start}. The line above starts **{x_min}**, one "
-                    f"{window}-day window after its own returns begin — the disclosed "
-                    "start is the first PLOTTED point, not the first return (#258). "
-                    "Correlations are non-stationary — the trailing window reflects "
+                    f"{window}-day window after its own returns begin, so the disclosed "
+                    "start is the first plotted point, not the first return (#258). "
+                    "Correlations are non-stationary: the trailing window reflects "
                     "only recent co-movement."
                 )
 
@@ -634,7 +634,7 @@ with col:
         )
         st.markdown(
             "**Tickers used:** Each sleeve's SAA benchmark ticker is used for the return "
-            f"series ({_bench_enum}). Cash / SPAXX is excluded — its near-zero daily variance "
+            f"series ({_bench_enum}). Cash / SPAXX is excluded: its near-zero daily variance "
             "makes correlation estimates unstable.  \n\n"
             "**Return computation:** Daily log-approximate returns, the adjusted close's daily percentage change. "
             "Weekend and holiday rows (zero-return days on all series simultaneously) are "

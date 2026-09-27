@@ -311,13 +311,13 @@ def interpret_factor(
     # Sentence 1 — Fama-French reading (sign × percentile).
     if ff_pos:
         s1 = (
-            f"Over the trailing year, {v['winner']} {v['verb']} outperformed {v['loser']} — "
+            f"Over the trailing year, {v['winner']} {v['verb']} outperformed {v['loser']}: "
             f"the {v['ff_name']} is {ff_value:+.1f}%, in the {_ordinal(ff_pctile)} "
             f"percentile of its history, {_strength_phrase(ff_pctile, winning=True)}."
         )
     else:
         s1 = (
-            f"Over the trailing year, {v['winner']} {v['verb']} lagged {v['loser']} — "
+            f"Over the trailing year, {v['winner']} {v['verb']} lagged {v['loser']}: "
             f"the {v['ff_name']} is {ff_value:+.1f}%, in the {_ordinal(ff_pctile)} "
             f"percentile of its history, {_strength_phrase(ff_pctile, winning=False)}."
         )
@@ -331,7 +331,7 @@ def interpret_factor(
     else:
         s2 = (
             f" The long-only proxy ({v['proxy_name']}), current to today, reads "
-            f"{etf_value:+.1f}% — the opposite sign, so the most recent month sends "
+            f"{etf_value:+.1f}%, the opposite sign, so the most recent month sends "
             "a mixed signal rather than a clean confirmation."
         )
 

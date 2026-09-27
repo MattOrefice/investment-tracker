@@ -25,17 +25,19 @@ HOLDINGS = [
         "expense_ratio": 0.0003,
         "er_source": 'Vanguard fund page', "er_as_of": _ER_AS_OF,
         "holding_rationale": (
-            "VOO delivers S&P 500 exposure at 0.03% with the best tax efficiency of any large-cap passive "
-            "fund. The benchmark is SPY — used for attribution because it's the institutional standard — but "
-            "SPY's unit investment trust structure prevents internal dividend reinvestment, creating cash drag "
-            "and incremental tax events that accumulate over decades. Vanguard's ETF share class structure "
-            "historically produces fewer capital gains distributions. The difference between VOO and SPY "
-            "compounds quietly; at a 30-year horizon I'm not willing to pay three times the fee for intraday "
-            "liquidity I don't need.\n\n"
-            "**Would revisit if** the SEC grants ETF share-class relief to competing issuers and a materially "
-            "cheaper or more tax-efficient S&P 500 vehicle results. Vanguard's patent expired in May 2023, but "
-            "no competitor has launched under the structure because no relief has been granted — the edge is "
-            "intact until that changes, and it is a regulatory question rather than a permanent moat."
+            "VOO delivers S&P 500 exposure at 0.03% with the best tax efficiency of any large-cap "
+            "passive fund. The benchmark is SPY, used for attribution because it's the institutional "
+            "standard. SPY's unit investment trust structure, however, prevents internal dividend "
+            "reinvestment, creating cash drag and incremental tax events that accumulate over "
+            "decades. Vanguard's ETF share class structure historically produces fewer capital gains "
+            "distributions. The difference between VOO and SPY compounds quietly; at a 30-year "
+            "horizon I'm not willing to pay three times the fee for intraday liquidity I don't need.\n"
+            "\n"
+            "**Would revisit if** the SEC grants ETF share-class relief to competing issuers and a "
+            "materially cheaper or more tax-efficient S&P 500 vehicle results. Vanguard's patent "
+            "expired in May 2023, but no competitor has launched under the structure because no "
+            "relief has been granted. The edge is intact until that changes, and it is a regulatory "
+            "question rather than a permanent moat."
         ),
     },
     {
@@ -46,18 +48,19 @@ HOLDINGS = [
         "expense_ratio": 0.0015,
         "er_source": 'Invesco fund page', "er_as_of": _ER_AS_OF,
         "holding_rationale": (
-            "SPHQ over QUAL was a deliberate methodology choice rooted in accounting quality. QUAL screens on "
-            "ROE, earnings variability, and debt-to-equity. SPHQ adds an accruals ratio screen, which filters "
-            "out companies with aggressive accounting — high accruals relative to assets predict earnings "
-            "reversals, as documented in Sloan (1996) and widely replicated since. CFA training reinforced "
-            "this: accruals manipulation is real and persistent, and a quality screen that ignores it is "
-            "incomplete. The tradeoff is smaller AUM ($6B vs QUAL's $40B), acceptable given SPHQ isn't at "
-            "closure-risk scale. Benchmarking against QUAL creates a natural attribution question over time: "
-            "did the accruals screen add or cost value?\n\n"
-            "**Would revisit if** SPHQ's accruals screen "
-            "fails to demonstrate additive return versus QUAL over a full market cycle (5+ years), "
-            "directly testing whether the Sloan (1996) accounting quality premium persists in a "
-            "live portfolio."
+            "SPHQ over QUAL was a deliberate methodology choice rooted in accounting quality. QUAL "
+            "screens on ROE, earnings variability, and debt-to-equity. SPHQ adds an accruals ratio "
+            "screen, which filters out companies with aggressive accounting: high accruals relative "
+            "to assets predict earnings reversals, as documented in Sloan (1996) and widely "
+            "replicated since. CFA training reinforced this: accruals manipulation is real and "
+            "persistent, and a quality screen that ignores it is incomplete. The tradeoff is smaller "
+            "AUM ($6B vs QUAL's $40B), acceptable given SPHQ isn't at closure-risk scale. "
+            "Benchmarking against QUAL sets up a natural attribution test over time: whether the "
+            "accruals screen adds or costs value.\n"
+            "\n"
+            "**Would revisit if** SPHQ's accruals screen fails to demonstrate additive return versus "
+            "QUAL over a full market cycle (5+ years), directly testing whether the Sloan (1996) "
+            "accounting quality premium persists in a live portfolio."
         ),
     },
     {
@@ -68,16 +71,17 @@ HOLDINGS = [
         "expense_ratio": 0.0004,
         "er_source": 'Vanguard fund page', "er_as_of": _ER_AS_OF,
         "holding_rationale": (
-            "VTV captures the value factor through CRSP's multi-metric methodology — P/B, P/E, P/S, P/CF, "
-            "and dividend yield — rather than Russell's P/B-heavy single metric used in IWD (the benchmark). "
-            "Multi-metric is academically superior: relying solely on P/B overweights asset-heavy industries "
-            "and underweights intangible-rich businesses where book value poorly proxies intrinsic value. "
-            "VTV also costs 0.04% vs IWD's 0.19%. The holding deliberately differs from the benchmark; the "
-            "methodology difference is intentional and defensible.\n\n"
-            "**Would revisit if** the multi-metric value definition stopped distinguishing itself from "
-            "single-metric value over a full cycle, or if profitability-integrated construction proved "
-            "materially better — in which case this sleeve moves to AVLV, the domestic half of the same "
-            "asymmetry AVIV's rationale names."
+            "VTV captures the value factor through CRSP's multi-metric methodology (P/B, P/E, P/S, "
+            "P/CF, and dividend yield) rather than the P/B-heavy single metric Russell uses in IWD, "
+            "the benchmark. Multi-metric is academically superior: relying solely on P/B overweights "
+            "asset-heavy industries and underweights intangible-rich businesses where book value "
+            "poorly proxies intrinsic value. VTV also costs 0.04% vs IWD's 0.19%. The holding differs"
+            " from the benchmark by design.\n"
+            "\n"
+            "**Would revisit if** the multi-metric value definition stopped distinguishing itself "
+            "from single-metric value over a full cycle, or if profitability-integrated construction "
+            "proved materially better. In that case this sleeve moves to AVLV, the domestic half "
+            "of the same asymmetry AVIV's rationale names."
         ),
     },
     {
@@ -88,17 +92,18 @@ HOLDINGS = [
         "expense_ratio": 0.0025,
         "er_source": 'Avantis fund page', "er_as_of": _ER_AS_OF,
         "holding_rationale": (
-            "AVUV is the highest-conviction factor pick in the US book. Avantis (founded by former DFA "
-            "researchers) targets the size, value, and profitability factors simultaneously — empirically, "
-            "the size premium is concentrated almost entirely in profitable small-value firms; unprofitable "
-            "small-caps drag index returns and explain why naive small-cap exposure has looked weak for 15 "
-            "years. The 0.25% ER is a real cost but buys genuine factor exposure rather than index replication. Current "
-            "large-cap valuations structurally improve the relative opportunity in cheap, profitable small "
-            "companies. Attribution is tracked against IWM to test whether the factor tilt earns its fee "
-            "over time.\n\n"
-            "**Would revisit if** size + value + profitability factor returns underperform "
-            "large-cap blend on a rolling 5-year basis, suggesting factor premium decay rather "
-            "than temporary cyclical lag."
+            "AVUV is the highest-conviction factor pick in the US book. Avantis, founded by former "
+            "DFA researchers, targets the size, value, and profitability factors simultaneously. "
+            "Empirically, the size premium is concentrated almost entirely in profitable small-value "
+            "firms; unprofitable small-caps drag index returns and explain why naive small-cap "
+            "exposure has looked weak for 15 years. The 0.25% ER is a real cost, but it buys factor "
+            "exposure rather than index replication. Current large-cap valuations structurally "
+            "improve the relative opportunity in cheap, profitable small companies. Attribution is "
+            "tracked against IWM to test whether the factor tilt earns its fee over time.\n"
+            "\n"
+            "**Would revisit if** size + value + profitability factor returns underperform large-cap "
+            "blend on a rolling 5-year basis, suggesting factor premium decay rather than temporary "
+            "cyclical lag."
         ),
     },
     {
@@ -109,15 +114,17 @@ HOLDINGS = [
         "expense_ratio": 0.0003,
         "er_source": 'Vanguard fund page', "er_as_of": _ER_AS_OF,
         "holding_rationale": (
-            "VEA delivers developed-ex-US exposure at 0.03% versus EFA's 0.32% — ten times more expensive "
-            "for substantially the same asset class. VEA tracks FTSE Developed All Cap ex US, which includes "
-            "Canada (MSCI EAFE excludes it), giving modestly broader coverage. The valuation thesis behind "
-            "this sleeve's weight holds regardless of the Canada distinction; the fee difference is "
-            "indefensible for passive exposure. Vanguard's structure also produces fewer capital gains "
-            "distributions historically.\n\n"
-            "**Would revisit if** a cheaper or more tax-efficient developed ex-US core appeared. At 3 bps "
-            "against a cap-weighted benchmark there is little else to falsify — the position is a cost choice, "
-            "not a view, and the only thing that unseats it is a better instrument for the same exposure."
+            "VEA delivers developed-ex-US exposure at 0.03% versus EFA's 0.32%: EFA is ten times more"
+            " expensive for substantially the same asset class. VEA tracks FTSE Developed All Cap ex "
+            "US, which includes Canada (MSCI EAFE excludes it), giving modestly broader coverage. The"
+            " valuation thesis behind this sleeve's weight holds regardless of the Canada "
+            "distinction; the fee difference is indefensible for passive exposure. Vanguard's "
+            "structure also produces fewer capital gains distributions historically.\n"
+            "\n"
+            "**Would revisit if** a cheaper or more tax-efficient developed ex-US core appeared. At 3"
+            " bps against a cap-weighted benchmark there is little else to falsify. The position is a"
+            " cost choice, not a view, and the only thing that unseats it is a better instrument for "
+            "the same exposure."
         ),
     },
     # The three international tilt holdings (added Phase 39). Holding-level
@@ -133,22 +140,24 @@ HOLDINGS = [
         "expense_ratio": 0.0029,
         "er_source": 'Invesco fund page', "er_as_of": _ER_AS_OF,
         "holding_rationale": (
-            "IDHQ tracks S&P's quality screen of developed ex-US large and mid caps: the same issuer as "
-            "SPHQ, the same index provider, the same three fundamental measures — return on equity, "
-            "accruals, and leverage. That symmetry is the point. The US quality sleeve and the "
-            "international one are the same screen applied to different regions, so a divergence in their "
-            "results is a fact about the regions rather than about two vendors' definitions of quality.\n\n"
-            "The benchmark is IQLT, iShares' MSCI quality index abroad, which reproduces the SPHQ-to-QUAL "
-            "relationship exactly. Cost is a wash — 0.29% against IQLT's 0.30% — so this is not a fee "
-            "decision; it is a methodology one, and it is the same methodology decision already made "
-            "domestically.\n\n"
-            "The known asymmetry: S&P classifies South Korea as developed where MSCI does not, so IDHQ "
-            "holds Korea and IQLT doesn't. That is a real universe difference, disclosed on the Factor "
-            "Profile page, and it moves with each semi-annual reconstitution rather than sitting at a "
-            "fixed weight.\n\n"
-            "**Would revisit if** S&P's quality screen diverged materially from MSCI's over a full cycle, "
-            "which would mean the two are measuring different things and the SPHQ-IDHQ symmetry is "
-            "cosmetic."
+            "IDHQ tracks S&P's quality screen of developed ex-US large and mid caps. It shares SPHQ's"
+            " issuer, index provider, and three fundamental measures: return on equity, accruals, and"
+            " leverage. The symmetry is deliberate. The US quality sleeve and the international one "
+            "are the same screen applied to different regions, so a divergence in their results "
+            "reflects the regions rather than two vendors' definitions of quality.\n"
+            "\n"
+            "The benchmark is IQLT, iShares' MSCI quality index abroad, which reproduces the SPHQ-to-"
+            "QUAL relationship exactly. Cost is a wash (0.29% against IQLT's 0.30%), so this is a "
+            "methodology decision, the same one already made domestically.\n"
+            "\n"
+            "The known asymmetry: S&P classifies South Korea as developed where MSCI does not, so "
+            "IDHQ holds Korea and IQLT doesn't. That is a real universe difference, disclosed on the "
+            "Factor Profile page, and it moves with each semi-annual reconstitution rather than "
+            "sitting at a fixed weight.\n"
+            "\n"
+            "**Would revisit if** S&P's quality screen diverged materially from MSCI's over a full"
+            " cycle, which would mean the two are measuring different things and the SPHQ-IDHQ "
+            "symmetry is cosmetic."
         ),
     },
     {
@@ -159,21 +168,24 @@ HOLDINGS = [
         "expense_ratio": 0.0025,
         "er_source": 'Avantis fund page', "er_as_of": _ER_AS_OF,
         "holding_rationale": (
-            "Value abroad, from the same shop that runs the US small-value sleeve. Avantis integrates "
-            "profitability into its value screen rather than sorting on price alone — the same "
-            "construction as AVUV, applied to international large caps.\n\n"
-            "That is worth naming as an asymmetry rather than hiding: VTV, the US large-value holding, "
-            "tracks a plain cap-weighted value index and does not integrate profitability. So the "
-            "international sleeve holds the more deliberate instrument. If that asymmetry matters, the "
-            "resolution is AVLV in the US rather than EFV abroad — the domestic sleeve is the less "
-            "considered one, not this one.\n\n"
-            "The benchmark is EFV, MSCI's EAFE value index. Holding and benchmark come from different "
-            "index families, exactly as VTV and IWD do, so selection effect measures implementation "
+            "Value abroad, from the same shop that runs the US small-value sleeve. Avantis integrates"
+            " profitability into its value screen rather than sorting on price alone: the same "
+            "construction as AVUV, applied to international large caps.\n"
+            "\n"
+            "This leaves an asymmetry: VTV, the US large-value holding, tracks a plain cap-weighted "
+            "value index and does not integrate profitability. The international sleeve therefore "
+            "holds the more deliberate instrument. If that asymmetry matters, the resolution is AVLV "
+            "in the US rather than EFV abroad, because the domestic sleeve is the less considered "
+            "one.\n"
+            "\n"
+            "The benchmark is EFV, MSCI's EAFE value index. Holding and benchmark come from different"
+            " index families, exactly as VTV and IWD do, so selection effect measures implementation "
             "rather than the value premium itself. At 0.25% against EFV's 0.33%, the profitability "
-            "integration costs nothing relative to the passive alternative.\n\n"
-            "**Would revisit if** the profitability integration proved to be doing the work rather than "
-            "the value screen — in which case the US sleeve moves to AVLV rather than this one moving to "
-            "EFV."
+            "integration costs nothing relative to the passive alternative.\n"
+            "\n"
+            "**Would revisit if** the profitability integration proved to be doing the work rather "
+            "than the value screen. In that case the US sleeve moves to AVLV, and this one stays in "
+            "AVIV rather than moving to EFV."
         ),
     },
     {
@@ -184,23 +196,27 @@ HOLDINGS = [
         "expense_ratio": 0.0036,
         "er_source": 'Avantis fund page', "er_as_of": _ER_AS_OF,
         "holding_rationale": (
-            "The small-value interaction abroad, held for the reason AVUV is held at home: the size "
-            "premium concentrates almost entirely in profitable small-value firms, and unprofitable small "
-            "caps are what made naive small-cap exposure look weak for fifteen years.\n\n"
-            "The benchmark comparison here is weaker than the other two, deliberately. SCZ is iShares' "
-            "EAFE small-cap index — small blend, not small value — because no passive international "
-            "small-value index fund exists at acceptable cost. So the benchmark captures the size "
-            "dimension and not the value tilt, and selection effect for this sleeve carries the value "
-            "premium itself rather than measuring implementation. This is the same compromise the US "
-            "sleeve already makes against IWM, with the same consequence: read the factor exhibit, not "
-            "attribution, for whether the tilt is being paid.\n\n"
-            "At 0.36% it is among the portfolio's costliest positions, and its highest-conviction one — "
-            "the fee buys genuine factor exposure rather than index replication. AVDV holds no South "
-            "Korea — verified at the position level — so the universe mismatch that inflates the "
-            "developed-core residual doesn't apply here.\n\n"
-            "**Would revisit if** the small-value interaction proved materially weaker in developed ex-US "
-            "than domestically, or if a passive international small-value fund appeared at materially "
-            "lower cost."
+            "AVDV is the small-value interaction abroad, held for the reason AVUV is held at home. "
+            "The size premium concentrates almost entirely in profitable small-value firms, and "
+            "unprofitable small caps are what made naive small-cap exposure look weak for fifteen "
+            "years.\n"
+            "\n"
+            "The benchmark comparison here is weaker than the other two, deliberately. SCZ, iShares' "
+            "EAFE small-cap index, is small blend rather than small value; it is the benchmark "
+            "because no passive international small-value index fund exists at acceptable cost. So "
+            "the benchmark captures the size dimension and not the value tilt, and selection effect "
+            "for this sleeve carries the value premium itself rather than measuring implementation. "
+            "This is the same compromise the US sleeve already makes against IWM, with the same "
+            "consequence: the factor exhibit, not attribution, shows whether the tilt is being paid.\n"
+            "\n"
+            "At 0.36% it is among the portfolio's costliest positions and its highest-conviction one;"
+            " the fee buys factor exposure rather than index replication. AVDV holds no South Korea, "
+            "verified at the position level, so the universe mismatch that inflates the developed-"
+            "core residual doesn't apply here.\n"
+            "\n"
+            "**Would revisit if** the small-value interaction proved materially weaker in "
+            "developed ex-US than domestically, or if a passive international small-value fund "
+            "appeared at materially lower cost."
         ),
     },
     {
@@ -214,16 +230,16 @@ HOLDINGS = [
             # "identical exposure" on "the same index" was wrong: IEMG tracks MSCI EM IMI,
             # which adds small caps (2026-09-25 audit, item 8;
             # tools/migrate_research_prose_item8.py carries it into demo.db).
-            "IEMG is the holding because EEM costs 0.70% — seven times more expensive, and the largest fee "
-            "gap in the portfolio at 61 bps. The two are not the same exposure: IEMG at 0.09% tracks MSCI "
-            "Emerging Markets IMI, which adds small caps to the large and mid caps of EEM's MSCI Emerging "
-            "Markets index. China inclusion was deliberate: the "
-            "SAA rationale flags governance risk as a watch item but not yet a reason to exit — China trades "
-            "at ~10x P/E and the EM valuation thesis meaningfully includes Chinese equities. Excluding China "
-            "via EMXC would be a larger active bet than appropriate at current prices.\n\n"
-            "**Would revisit if** ADR "
-            "delisting risk materializes legislatively or if another sector-level government intervention "
-            "occurs."
+            "IEMG is the holding because EEM costs 0.70%: seven times more expensive, and the largest"
+            " fee gap in the portfolio at 61 bps. The two are not the same exposure: IEMG at 0.09% "
+            "tracks MSCI Emerging Markets IMI, which adds small caps to the large and mid caps of "
+            "EEM's MSCI Emerging Markets index. China inclusion was deliberate. The SAA rationale "
+            "flags governance risk as a watch item but not yet a reason to exit: China trades at ~10x"
+            " P/E, and the EM valuation thesis meaningfully includes Chinese equities. Excluding "
+            "China via EMXC would be a larger active bet than appropriate at current prices.\n"
+            "\n"
+            "**Would revisit if** ADR delisting risk materializes legislatively or if another sector-"
+            "level government intervention occurs."
         ),
     },
     {
@@ -234,10 +250,11 @@ HOLDINGS = [
         "expense_ratio": 0.0004,
         "er_source": 'Vanguard fund page', "er_as_of": _ER_AS_OF,
         "holding_rationale": (
-            "VGIT delivers intermediate-term US Treasury exposure at 0.04% versus IEF's 0.15%. Duration is "
-            "modestly shorter (~5.5 years vs IEF's ~7.5 years), appropriate for a 6% sleeve inside a 78% "
-            "growth portfolio. The shorter duration means VGIT underperforms longer-dated Treasuries in a "
-            "flight-to-quality rally but limits drawdown in a rate-selloff — appropriate given the "
+            "VGIT delivers intermediate-term US Treasury exposure at 0.04% versus IEF's 0.15%. "
+            "Duration is modestly shorter (~5.5 years vs IEF's ~7.5 years), appropriate for a 6% "
+            "sleeve inside a 78% growth portfolio. The shorter duration means VGIT underperforms "
+            "longer-dated Treasuries in a flight-to-quality rally but limits drawdown in a "
+            "rate-selloff. "
             # #283. Was "a real after-tax advantage in a high-income-tax jurisdiction
             # like DC". Two errors pointing OPPOSITE ways: the exemption claim was
             # correct and the register contradicted it until #278, while the
@@ -253,16 +270,18 @@ HOLDINGS = [
             # second copy of a config value, which is the mechanism #228 and #284 are
             # both about. "Real, if modest" carries the size without the number: at
             # VGIT's 4.00% assumed yield the advantage is ~12bp/yr.
-            "portfolio's 78% growth allocation. Critically, Treasury interest income is exempt from state "
-            "and local taxes — a "
-            "real, if modest, after-tax advantage at Pennsylvania's flat rate over investment-grade corporate "
-            "bond funds with similar yield. Cost minimization is the dominant selection criterion for a sleeve "
-            "that exists for drawdown buffering and rebalancing optionality, not return.\n\n"
-            "**Would revisit if** nominal Treasuries stopped hedging equity drawdowns across successive "
-            "inflationary episodes. 2022 was one such failure; this sleeve's case rests on it being the "
-            "exception rather than the regime.\n\n"
-            "**Would also revisit if** real yields rose enough to make longer duration compensated for its "
-            "additional volatility."
+            "Critically, Treasury interest income is exempt from state and local taxes: a "
+            "real, if modest, after-tax advantage at Pennsylvania's flat rate over investment-grade "
+            "corporate bond funds with similar yield. Cost minimization is the dominant selection "
+            "criterion for a sleeve that exists for drawdown buffering and rebalancing optionality, "
+            "not return.\n"
+            "\n"
+            "**Would revisit if** nominal Treasuries stopped hedging equity drawdowns across "
+            "successive inflationary episodes. 2022 was one such failure; this sleeve's case rests on"
+            " it being the exception rather than the regime.\n"
+            "\n"
+            "**Would also revisit if** real yields rose enough to make longer duration compensated "
+            "for its additional volatility."
         ),
     },
     {
@@ -307,18 +326,21 @@ HOLDINGS = [
         "expense_ratio": 0.0059,
         "er_source": 'Invesco fund page', "er_as_of": _ER_AS_OF,
         "holding_rationale": (
-            "Among the few broad commodity ETFs that avoid a K-1 (COMT, BCI), PDBC is the one I hold for "
-            "its liquidity and track record. Nearly all commodity futures funds are organized as partnerships and "
-            "issue K-1s annually — complicating filing, often arriving late, and potentially triggering "
+            "Among the few broad commodity ETFs that avoid a K-1 (COMT, BCI), PDBC is the one I hold "
+            "for its liquidity and track record. Nearly all commodity futures funds are organized as "
+            "partnerships and issue K-1s annually, which complicate filing, often arrive late, and "
+            "can trigger estimated tax requirements. "
             # From PDBC's prospectus, not "a C-corporation"; the benchmark is DBC, not DJP
             # (2026-09-25 audit, item 8).
-            "estimated tax requirements. PDBC is a regulated investment company that holds its futures "
-            "through a wholly-owned Cayman Islands subsidiary, so it reports on Form 1099 instead. It is "
-            "benchmarked to the DBIQ Optimum Yield Diversified Commodity Index, the index DBC (the "
-            "benchmark) tracks as a commodity pool that issues a K-1, and it costs 0.59% against DBC's "
-            "0.85%. DBC is used for attribution only, never as a holding.\n\n"
-            "**Would revisit if** a broad no-K-1 commodity fund appeared at materially lower cost or with "
-            "better liquidity."
+            "PDBC is a regulated investment company that "
+            "holds its futures through a wholly-owned Cayman Islands subsidiary, so it reports on "
+            "Form 1099 instead. It is benchmarked to the DBIQ Optimum Yield Diversified Commodity "
+            "Index, the index DBC (the benchmark) tracks as a commodity pool that issues a K-1, and "
+            "it costs 0.59% against DBC's 0.85%. DBC is used for attribution only, never as a "
+            "holding.\n"
+            "\n"
+            "**Would revisit if** a broad no-K-1 commodity fund appeared at materially lower cost or with"
+            " better liquidity."
         ),
     },
 ]

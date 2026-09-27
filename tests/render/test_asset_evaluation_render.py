@@ -41,26 +41,31 @@ def test_how_to_read_sample_start_reasoning(ae_app: AppTest) -> None:
     Pinned: Phase 44 Item 15.
 
     Regression: if the expander content changes, the key institutional claim 'Starting from 2018
-    captures both the 2018 bear, the 2020 COVID crash, the 2021 peak, and the 2022 drawdown' must
-    be preserved verbatim — it is the justification for the sample-period choice.
+    captures the 2018 bear, the 2020 COVID crash, the 2021 peak, and the 2022 drawdown' must
+    be preserved verbatim — it is the justification for the sample-period choice. The 14b
+    writing sweep dropped the "both" before a list of four; the pin now names all four.
     """
     all_md = " ".join(m.value for m in ae_app.markdown)
-    assert "Starting from 2018 captures both the 2018 bear" in all_md, (
+    assert ("Starting from 2018 captures the 2018 bear, the 2020 COVID crash, "
+            "the 2021 peak, and the 2022 drawdown") in all_md, (
         "Sample-start reasoning not found in page markdown — "
         "Phase 44 Item 15: 'How to read this page' expander content may have changed."
     )
 
 
 def test_5c_correlations_most_costly_preserved(ae_app: AppTest) -> None:
-    """Section 5c close must contain 'precisely when correlations are most costly'. Pinned: Phase 44 Item 15.
+    """Section 5c close must say Bitcoin lost diversifier value when correlations are most
+    costly. Pinned: Phase 44 Item 15.
 
     This sentence is the institutional clincher for the rolling-correlation section. If it disappears,
-    the section loses its analytical punchline.
+    the section loses its analytical punchline. The 14b writing sweep dropped the intensifiers
+    ("genuine", "precisely"); the pin now names the whole clause they sat in.
     """
     all_md = " ".join(m.value for m in ae_app.markdown)
-    assert "precisely when correlations are most costly" in all_md, (
+    assert "reducing its value as a diversifier when correlations are most costly" in all_md, (
         "Section 5c closing sentence missing — Phase 44 Item 15: "
-        "'precisely when correlations are most costly' must be preserved verbatim."
+        "'reducing its value as a diversifier when correlations are most costly' must be "
+        "preserved verbatim."
     )
 
 
