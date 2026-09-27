@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>{{ recipient_name }} — {{ period_label }}</title>
+<title>{{ recipient_name }}: {{ period_label }}</title>
 <style>{{ css_content|safe }}</style>
 </head>
 <body>
@@ -79,7 +79,7 @@
   <div class="empty-banner">
     No trades have been logged. This report contains structural information only:
     SAA targets, investment theses, and macro context. Performance and attribution
-    sections will populate after the first trade is recorded.
+    sections populate after the first trade is recorded.
   </div>
   {% endif %}
 </section>
@@ -164,7 +164,7 @@
   {% endif %}
 
   {% else %}
-  <div class="empty-banner">No performance data available. Log your first trade to begin tracking returns.</div>
+  <div class="empty-banner">No performance data available. Return tracking begins with the first logged trade.</div>
   {% endif %}
 
   {# Trades During Period — appended to Performance page #}
@@ -259,7 +259,7 @@
   Sum of effects reconciles to active return within 1 bp (Brinson-Fachler 1985).</p>
   <p class="muted">Weights are measured ex-cash (operational SPAXX float excluded; the
   {{ methodology_sleeve_count }} strategic sleeves sum to 100% and match the benchmark). Operational cash drag this
-  period: <strong>{{ attr.cash_drag_bps }} bps</strong> &mdash; broken out separately so that
+  period: <strong>{{ attr.cash_drag_bps }} bps</strong>, broken out separately so that
   strategic active (ex-cash) + cash drag = total active vs the SAA blend. The reported total
   return is unchanged; only the attribution is decomposed this way.</p>
 
@@ -274,15 +274,15 @@
   <p class="muted"><strong>Benchmark data unavailable this period:</strong>
   {% for gap in attr.benchmark_gaps %}{{ gap.sleeve }} ({{ gap.ticker }}) as of {{ gap.date }}{% if not loop.last %}; {% endif %}{% endfor %}.
   A sleeve whose benchmark could not be priced at all is excluded from the table and
-  totals above rather than measured against a fabricated 0% benchmark; a partially
-  priceable blend is measured on its surviving components; the cash sleeve's figures
-  are unaffected (its benchmark is informational only).</p>
+  totals above rather than measured against a fabricated 0% benchmark. A partially
+  priceable blend is measured on its surviving components. The cash sleeve's figures
+  are unaffected, since its benchmark is informational only.</p>
   {% endif %}
 
   {% if attr.suppressed_drivers %}
   <p class="muted"><strong>Selection-driver commentary omitted for:</strong>
-  {% for s in attr.suppressed_drivers %}{{ s }}{% if not loop.last %}; {% endif %}{% endfor %}
-  &mdash; no holding ticker is mapped to the sleeve (a benchmark-only or unconfigured sleeve),
+  {% for s in attr.suppressed_drivers %}{{ s }}{% if not loop.last %}; {% endif %}{% endfor %}.
+  No holding ticker is mapped to the sleeve (a benchmark-only or unconfigured sleeve),
   so no per-holding return could be stated. The sleeve&rsquo;s attribution row above is unaffected.</p>
   {% endif %}
 
@@ -308,7 +308,7 @@
   <div class="empty-banner"><strong>Attribution could not be computed for this period.</strong>
   {% if attr.failure_reason %}The computation failed with: {{ attr.failure_reason }}.{% endif %}
   No sleeve figures are shown, rather than shown with fabricated returns. This is a failure
-  to measure and not a statement about the quarter — do not read it as an absence of
+  to measure, not a statement about the quarter. It is not evidence of an absence of
   activity.</div>
   {% elif attr and attr.disposition == "no_rows" %}
   <div class="empty-banner"><strong>No attribution to report for this period.</strong>
@@ -322,7 +322,7 @@
 {# ── Page 5: Factor Profile ─────────────────────────────────────────────────── #}
 <section>
   <h2>Factor Profile</h2>
-  <h3>Fama-French 5-Factor Regression &mdash; Per-Sleeve Decomposition</h3>
+  <h3>Fama-French 5-Factor Regression: Per-Sleeve Decomposition</h3>
 
   {% if has_trades and factor and factor.sleeves %}
 
@@ -402,8 +402,8 @@
   <div class="empty-banner">{{ factor_pending }}</div>
   {% else %}
   <div class="empty-banner">
-    Factor data unavailable — requires at least 30 trading days of aligned portfolio
-    and Fama-French returns. Section populates after sufficient portfolio history
+    Factor data unavailable: the regression needs at least 30 trading days of aligned portfolio
+    and Fama-French returns. The section populates after sufficient portfolio history
     and a successful Ken French data fetch.
   </div>
   {% endif %}
@@ -426,12 +426,12 @@
     <strong>Non-US Equity Sleeve</strong>
     <ul style="margin: 4px 0 4px 16px; padding: 0;">
     {% for item in pos.non_us %}
-      <li><strong>{{ item.ticker }}</strong> ({{ item.region_label }}) &mdash; {{ "%.1f"|format(item.weight_pct) }}% of portfolio</li>
+      <li><strong>{{ item.ticker }}</strong> ({{ item.region_label }}): {{ "%.1f"|format(item.weight_pct) }}% of portfolio</li>
     {% endfor %}
     </ul>
     <p style="margin: 4px 0 0; color: #666;">
       Non-US holdings are not directly comparable to US value/growth and market-cap distributions.
-      See Morningstar regional style boxes for international placement methodology.
+      Morningstar&rsquo;s regional style boxes give the placement methodology for international holdings.
     </p>
   </div>
   {% endif %}
@@ -441,7 +441,7 @@
 {# ── Page 6: Benchmark Attribution ─────────────────────────────────────────── #}
 <section>
   <h2>Benchmark Attribution</h2>
-  <h3>Portfolio vs Custom Blended SAA &mdash; R<sub>p</sub> &minus; RF ~ (R<sub>b</sub> &minus; RF) + HML + SMB + RMW</h3>
+  <h3>Portfolio vs Custom Blended SAA: R<sub>p</sub> &minus; RF ~ (R<sub>b</sub> &minus; RF) + HML + SMB + RMW</h3>
 
   {% if has_trades and bench_attr %}
 
@@ -498,8 +498,8 @@
 
   {% if bench_attr.suppressed_drivers %}
   <p class="muted" style="margin-top: 6px;">Cross-reference omitted for:
-  {% for s in bench_attr.suppressed_drivers %}{{ s }}{% if not loop.last %}; {% endif %}{% endfor %}
-  &mdash; no holding ticker is mapped to the sleeve, so no holding-vs-benchmark cross-reference
+  {% for s in bench_attr.suppressed_drivers %}{{ s }}{% if not loop.last %}; {% endif %}{% endfor %}.
+  No holding ticker is mapped to the sleeve, so no holding-vs-benchmark cross-reference
   could be stated for it.</p>
   {% endif %}
 
@@ -512,7 +512,7 @@
   <div class="empty-banner">{{ bench_pending }}</div>
   {% else %}
   <div class="empty-banner">
-    Benchmark attribution regression unavailable &mdash; requires at least 30 aligned trading
+    Benchmark attribution regression unavailable: it needs at least 30 aligned trading
     days of portfolio returns, benchmark returns, and Fama-French factor data.
   </div>
   {% endif %}
@@ -568,7 +568,7 @@
 
 {# ── Page 8: Asset Evaluation ─────────────────────────────────────────────── #}
 <section>
-  <h2>Asset Evaluation &mdash; Case Study: Bitcoin</h2>
+  <h2>Asset Evaluation: Bitcoin Case Study</h2>
   {% if asset_eval and asset_eval.as_of %}<p class="muted">{{ asset_eval.as_of }}</p>{% endif %}
   {% if asset_eval and asset_eval.rf_note %}<p class="muted">{{ asset_eval.rf_note }}</p>{% endif %}
 
@@ -581,8 +581,8 @@
   {% if asset_eval and asset_eval.failure_reason %}The data load failed with:
   <code>{{ asset_eval.failure_reason }}</code>.{% endif %}
   No figures are shown, rather than shown from a partial load.
-  <strong>This is a failure to compute and not a judgement about the asset &mdash; do
-  not read the absent analysis as a negative conclusion.</strong></div>
+  <strong>This is a failure to compute, not a judgement about the asset; the absent
+  analysis is not a negative conclusion.</strong></div>
 
   {% elif asset_eval.disposition == "no_data" %}
   <div class="empty-banner"><strong>Asset evaluation not included: its input return
@@ -596,7 +596,7 @@
   {% if asset_eval.disposition == "partial" %}
   <div class="empty-banner"><strong>Univariate statistics unavailable; the remaining
   analyses are shown.</strong> The summary table could not be built, so it is omitted.
-  The correlation, rolling-correlation and mean-variance results below were computed
+  The correlation, rolling-correlation, and mean-variance results below were computed
   normally and are unaffected.</div>
   {% endif %}
 
@@ -649,12 +649,12 @@
   <p class="muted"><strong>Correlation figures unavailable:</strong>
   {%- if "correlation" in asset_eval.unavailable and "rolling" in asset_eval.unavailable %}
   neither the full-sample sleeve correlations nor the rolling BTC-vs-SPY series
+  could be computed
   {%- elif "correlation" in asset_eval.unavailable %}
-  the full-sample sleeve correlations
+  the full-sample sleeve correlations could not be computed
   {%- else %}
-  the rolling BTC-vs-SPY series
-  {%- endif %}
-  could not be computed, so the accompanying figures are not shown. The chart
+  the rolling BTC-vs-SPY series could not be computed
+  {%- endif %}, so the accompanying figures are not shown. The chart
   placeholder above refers to image rendering and is a separate matter.</p>
   {% endif %}
   {% if asset_eval.corr_prose %}
@@ -700,9 +700,9 @@
   {% if asset_eval.sharpe_con_no and asset_eval.sharpe_con_with %}
   <p class="muted">Constrained Sharpe: {{ asset_eval.sharpe_con_no }} (w/o BTC) &rarr;
   {{ asset_eval.sharpe_con_with }} (w/ BTC), a change of {{ asset_eval.delta_sharpe_con }}.
-  Driven by BTC&rsquo;s realized return over the 2018&ndash;present sample;
-  not a forward-looking result (sample-period mean estimates are unreliable for a volatile,
-  regime-shifting asset).</p>
+  The change is driven by BTC&rsquo;s realized return over the 2018&ndash;present sample
+  and is not a forward-looking result: sample-period mean estimates are unreliable for a
+  volatile, regime-shifting asset.</p>
   {% endif %}
   {% endif %}
 
@@ -716,7 +716,7 @@
   {# TIER 1 (#249). #}
   {% if "drawdown" in asset_eval.unavailable %}
   <p class="muted"><strong>Drawdown sensitivity unavailable.</strong> The allocation
-  sweep could not be computed, so the CAGR, max-drawdown and Sharpe figures across BTC
+  sweep could not be computed, so the CAGR, max-drawdown, and Sharpe figures across BTC
   weights are not shown.</p>
   {% endif %}
   {% if asset_eval.dd_rows %}
@@ -759,13 +759,13 @@
      accurate sleeve-level numbers would still describe something this column does
      not compute. #276. #}
   <p class="muted">The <strong>2022 MDD</strong> column is <strong>realized history, not a
-  hypothetical shock</strong> &mdash; each blend's worst peak-to-trough loss over calendar
+  hypothetical shock</strong>: each blend's worst peak-to-trough loss over calendar
   2022 as it actually happened, from the same daily series as the rest of the table.
   {% if asset_eval.btc_2022_mdd %}That year equities and bonds fell together while Bitcoin
   fell {{ asset_eval.btc_2022_mdd }}, so adding BTC deepened the drawdown instead of
   cushioning it.{% else %}That year equities and bonds fell together, and a BTC allocation
-  deepened the drawdown instead of cushioning it.{% endif %} It is the critical test:
-  diversification value eroded precisely when it was most needed.</p>
+  deepened the drawdown instead of cushioning it.{% endif %} 2022 is the critical test:
+  diversification value eroded in the year it was most needed.</p>
   {% endif %}
 
   <h3>Decision Framework</h3>
@@ -777,7 +777,7 @@
   {% if "marginal_sharpe" in asset_eval.unavailable %}
   <p><strong>Arguments for inclusion: not assessed.</strong> The marginal-Sharpe curve
   could not be computed, so no case for inclusion was evaluated. <strong>The arguments
-  against listed below were not weighed against anything — this is a gap in the
+  against listed below were not weighed against anything. This is a gap in the
   analysis, not a finding about the asset.</strong></p>
   {% elif asset_eval.args_for %}
   <p><strong>Arguments for inclusion:</strong></p>
@@ -819,19 +819,19 @@
           <dd><strong>Size (y-axis):</strong> log<sub>10</sub>(weighted-average market cap in $B),
           additive-shifted so SPY anchors at y=2.0 (Large/Blend centre). Large/Mid boundary ≈ $79B,
           Mid/Small boundary ≈ $7.9B at current calibration.
-          <strong>Value-growth (x-axis):</strong> four-factor fractional-deviation composite &mdash; book-to-price, earnings-to-price,
-          dividend yield, cash-flow-to-price &mdash; each normalised as fractional deviation from SPY
-          (ratio &minus; 1), averaged, then mapped to x with VALUE_SCALE=0.85; SPY/VOO anchors at x=1.0 (Blend centre).
+          <strong>Value-growth (x-axis):</strong> four-factor fractional-deviation composite of book-to-price, earnings-to-price,
+          dividend yield, and cash-flow-to-price. Each is normalised as fractional deviation from SPY
+          (ratio &minus; 1); the four are averaged, then mapped to x with VALUE_SCALE=0.85. SPY/VOO anchors at x=1.0 (Blend centre).
           <strong>Simplification:</strong> 4-factor trailing approximation of Morningstar&rsquo;s
-          proprietary 10-factor score. Treat dot positions as directional indicators of factor tilt,
+          proprietary 10-factor score. Dot positions are directional indicators of factor tilt,
           not precise Morningstar equivalents.
           <strong>Universe:</strong> US equity ETFs only (VOO, VTV, SPHQ, AVUV).</dd>
 
           <dt>Fama-French 5-Factor Regression</dt>
           <dd>Per-sleeve decomposition: each equity sleeve is regressed against its own
-          region-appropriate FF5 factor set — US factors (Ken French Data Library) for the US equity
-          sleeve (VOO, VTV, SPHQ, AVUV), Developed ex-US factors for VEA. Avoids model-misspecification
-          from a single full-portfolio regression where non-US and real-asset returns flow into alpha.
+          region-appropriate FF5 factor set: US factors (Ken French Data Library) for the US equity
+          sleeve (VOO, VTV, SPHQ, AVUV) and Developed ex-US factors for VEA. This avoids the model
+          misspecification of a single full-portfolio regression, where non-US and real-asset returns flow into alpha.
           NW-HAC lags L = floor(4 &times; (T/100)<sup>2/9</sup>).
           Alpha annualized as &alpha;<sub>daily</sub> &times; 252.
           IEMG excluded (no daily EM factor data published by Ken French).</dd>
@@ -839,8 +839,8 @@
           <dt>Benchmark Attribution Regression</dt>
           <dd>Model: (R<sub>p</sub> &minus; RF) ~ (R<sub>b</sub> &minus; RF) + HML + SMB + RMW,
           where R<sub>b</sub> is the daily custom blended SAA benchmark return. The intercept is
-          the active return after controlling for benchmark beta and style tilts &mdash; the
-          institutional alpha definition used by PRINCO and JPM IDD. CMA excluded; for a
+          the active return after controlling for benchmark beta and style tilts, the
+          alpha definition PRINCO and JPM IDD use. CMA excluded; for a
           passive/semi-passive implementation it captures ETF-level capex differences rather than
           a deliberate active tilt. Standard errors: Newey-West HAC.</dd>
         </dl>
