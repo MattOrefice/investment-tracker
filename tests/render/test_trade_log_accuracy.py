@@ -51,14 +51,14 @@ def _claim(at):
 
 
 def test_the_claim_names_the_trades_without_a_thesis(tmp_path, monkeypatch):
-    con = sqlite3.connect(f"file:{(ROOT / 'data' / 'demo.db').as_posix()}?mode=ro", uri=True)
-    unlinked = con.execute(
-        "SELECT ticker FROM trades WHERE thesis_id IS NULL "
-        "AND COALESCE(lot_source, 'initial') != 'drip' ORDER BY trade_date DESC, trade_id DESC"
-    ).fetchall()
-    con.close()
-    assert sorted(t for (t,) in unlinked) == ["AVDV", "AVIV", "IDHQ"], "premise"
-    claim = _claim(_render(tmp_path, monkeypatch))
+    """Migrated deliberately by audit item 15e, which linked the IDHQ, AVIV and AVDV buys
+    to theses in the demo book: the exception path is now exercised on a copy with the
+    three links removed, as the book stood before."""
+    def unlink(c):
+        n = c.execute("UPDATE trades SET thesis_id = NULL WHERE ticker IN ('IDHQ', 'AVIV', "
+                      "'AVDV') AND COALESCE(lot_source, 'initial') != 'drip'").rowcount
+        assert n == 3, "premise: the three international-split buys"
+    claim = _claim(_render(tmp_path, monkeypatch, unlink))
     assert "except 3 trades: the AVDV, AVIV and IDHQ trades carry no thesis." in claim, claim
     assert ("2 active theses (International Developed and International Developed — VEA) "
             "name a sleeve this book no longer has.") in claim
@@ -68,15 +68,28 @@ def test_a_book_with_no_gaps_keeps_the_plain_claim(tmp_path, monkeypatch):
     """The contrast: link the three trades and point the two theses at a sleeve that
     exists, and the sentence is the original one, unqualified."""
     def close_the_gaps(c):
-        n = c.execute("UPDATE trades SET thesis_id = 17 WHERE thesis_id IS NULL AND "
-                      "COALESCE(lot_source, 'initial') != 'drip'").rowcount
-        assert n == 3
+        # Since audit item 15e the book links every trade itself; only the stale sleeve
+        # name is left to close.
+        n = c.execute("SELECT COUNT(*) FROM trades WHERE thesis_id IS NULL AND "
+                      "COALESCE(lot_source, 'initial') != 'drip'").fetchone()[0]
+        assert n == 0
         m = c.execute("UPDATE theses SET target_sleeves = '[\"International Core\"]' "
                       "WHERE target_sleeves = '[\"International Developed\"]'").rowcount
         assert m == 2
     claim = _claim(_render(tmp_path, monkeypatch, close_the_gaps))
     assert claim == ("Every trade documents a position thesis, which rolls up to an "
                      "investment view, which carries theme tags.")
+
+
+def test_the_demo_book_documents_every_trade(tmp_path, monkeypatch):
+    """Audit item 15e: the three international-split buys carry position theses, so the
+    claim's first sentence holds unqualified. The two theses written for the undivided
+    sleeve still name it, and the claim still says so (#406)."""
+    claim = _claim(_render(tmp_path, monkeypatch))
+    assert claim == ("Every trade documents a position thesis, which rolls up to an "
+                     "investment view, which carries theme tags. 2 active theses "
+                     "(International Developed and International Developed — VEA) name "
+                     "a sleeve this book no longer has.")
 
 
 def test_the_tabs_sit_in_the_content_column(tmp_path, monkeypatch):
