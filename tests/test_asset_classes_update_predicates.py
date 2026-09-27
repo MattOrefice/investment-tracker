@@ -112,6 +112,11 @@ def _rules():
          "AND rationale = ?"): lambda conn: [
             ((s["name"], s["rationale"]), "at-most-one")
             for s in _mod("src.seed_saa").SUB_CLASSES if s.get("rationale")],
+        # SPAXX's yield copy (audit item 15b): keyed on the primary key and the current
+        # text, so at most one row by the schema.
+        ("tools/migrate_spaxx_yield_copy.py",
+         "UPDATE asset_classes SET rationale = ? WHERE asset_class_id = ? AND rationale = ?"):
+            "primary-key",
         # src/db.py's _auto_migrate heal: the f-string's literal part (the WHERE is the
         # module constant _REAL_ASSETS_LEGACY_WHERE, checked below with its real text).
         ("src/db.py", "UPDATE asset_classes SET benchmark_ticker = 'VNQ (60%) + DBC (40%)'"):

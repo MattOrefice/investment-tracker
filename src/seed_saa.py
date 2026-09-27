@@ -427,7 +427,8 @@ SUB_CLASSES = [
             "cash is performance drag — 1% of cash held over 30 years costs roughly $2.4k of terminal wealth "
             "per $10k of base capital at 7% real equity returns. 2% handles rebalancing friction (funding "
             "tax-inefficient sleeves without forced sales), small drawdowns without selling at the bottom, and "
-            "occasional opportunistic deployment. SPAXX yields ~4-5% currently, so the drag is muted.\n\n"
+            "occasional opportunistic deployment. SPAXX earns roughly the Treasury bill rate less its "
+            "fee, so the drag is muted; the Macro page shows the live rate.\n\n"
             "**Would increase** closer to retirement or with shorter-duration liabilities.\n"
             "**Would reduce** toward 1-2% if cash yields collapse below 2%."
         ),

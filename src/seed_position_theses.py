@@ -8,7 +8,8 @@ from src.db import get_connection, initialize_db
 
 SPAXX_VEHICLE_RATIONALE = (
     "SPAXX is Fidelity's default money market fund and the natural cash vehicle — no transaction "
-    "cost, immediate liquidity, currently ~4-5% yield. BIL exists only for attribution comparison. "
+    "cost and immediate liquidity. It earns roughly the Treasury bill rate less its fee; the Macro "
+    "page shows the live rate. BIL exists only for attribution comparison. "
     "The 3% cash weight is operational liquidity: it funds rebalancing trades, covers small drawdowns "
     "without forced selling, and buffers position friction. Would reduce toward 1% if short rates fall "
     "materially below 2%."
