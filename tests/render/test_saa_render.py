@@ -100,15 +100,20 @@ def test_thesis_three_paragraphs(saa_app: AppTest) -> None:
 
 
 def test_endowment_closing_asserted_not_defensive(saa_app: AppTest) -> None:
-    """Endowment closing must use asserted framing, not defensive disclaimer. Pinned: Phase 42 Item 2."""
+    """Endowment closing must use asserted framing, not defensive disclaimer. Pinned: Phase 42 Item 2.
+
+    Migrated deliberately by the writing sweep (2026-09-25 audit, item 14a): the owner
+    asked for "institutional analytical framing applied at retail scale" to say what it
+    means, so the pin moved to the plain sentence and the jargon is now forbidden."""
     all_md = " ".join(m.value for m in saa_app.markdown)
     assert "Endowment-return replication at retail scale is not the goal" not in all_md, (
-        "Old defensive disclaimer restored — Phase 42 Item 2: closing should be 'The goal is "
-        "institutional analytical framing applied at retail scale — not return replication.'"
+        "Old defensive disclaimer restored — Phase 42 Item 2."
     )
-    assert "institutional analytical framing applied at retail scale" in all_md, (
+    assert ("the portfolio applies the same allocation framework at retail scale, without "
+            "trying to replicate endowment returns") in all_md, (
         "Asserted framing not found — Phase 42 Item 2 regression."
     )
+    assert "institutional analytical framing" not in all_md
 
 
 def test_us_large_core_anchor_sentence_leads() -> None:

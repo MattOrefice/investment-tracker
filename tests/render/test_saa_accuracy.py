@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import shutil
 from pathlib import Path
 
@@ -137,6 +138,16 @@ def test_the_international_sleeves_are_named_as_the_split_defines_them(saa_page)
     para = next(m for m in _markdown(at) if "inflation tail nothing else hedges" in m)
     assert all(f"{n} " in para for n in names), para
     assert "International Developed (" not in para
+
+
+def test_the_tilt_lists_keep_the_serial_comma(saa_page):
+    """The site's convention is the serial comma (the owner's review of the writing
+    sweep, item 14a). The calibration draft's _and_join had dropped it."""
+    at, _ = saa_page
+    para = next(m for m in _markdown(at) if "positive long-run premia" in m)
+    assert "premia: quality, value, and small-cap value." in para, para
+    tickers = r"[A-Z]{3,5}, [A-Z]{3,5}, and [A-Z]{3,5}"
+    assert re.search(rf"{tickers} in the US; {tickers} internationally", para), para
 
 
 def test_a_failed_cape_read_says_so_rather_than_inventing_a_label(tmp_path, monkeypatch):

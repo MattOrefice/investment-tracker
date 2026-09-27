@@ -162,7 +162,9 @@ with col:
         items = list(items)
         if len(items) <= 1:
             return items[0] if items else ""
-        return ", ".join(items[:-1]) + f" and {items[-1]}"
+        if len(items) == 2:
+            return f"{items[0]} and {items[1]}"
+        return ", ".join(items[:-1]) + f", and {items[-1]}"
 
     _holds = sleeve_holdings()
     _us_tilts = [t for _s in ("US Large Quality", "US Large Value", "US Small Cap")
@@ -174,9 +176,10 @@ with col:
     if _intl_tilt_tickers:
         st.markdown(
             "The framework seeks returns from factor and geographic diversification rather than "
-            "market-timing calls. Its style tilts target three factors with positive long-run premia "
-            "(quality, value and small-cap value) on both sides of the book, in the same proportions: "
-            f"{_and_join(_us_tilts)} in the US; {_and_join(_intl_tilt_tickers)} internationally. "
+            "market-timing calls. Its style tilts target three factors with positive long-run premia: "
+            "quality, value, and small-cap value. They are held in the same proportions on both sides "
+            f"of the book: {_and_join(_us_tilts)} in the US; {_and_join(_intl_tilt_tickers)} "
+            "internationally. "
             "International data documents these premia on the same terms as domestic data, so holding "
             "them only at home would be home bias."
         )
@@ -184,8 +187,9 @@ with col:
         _intl_core_tickers = [t for _s in _intl_sleeve_names for t in _holds.get(_s, [])]
         st.markdown(
             "The framework seeks returns from factor and geographic diversification rather than "
-            "market-timing calls. Its style tilts target three factors with positive long-run premia "
-            f"(quality, value and small-cap value) in the US book: {_and_join(_us_tilts)}. Developed "
+            "market-timing calls. Its style tilts target three factors with positive long-run premia: "
+            "quality, value, and small-cap value. The US book holds them through "
+            f"{_and_join(_us_tilts)}. Developed "
             f"international is a single cap-weighted sleeve ({_and_join(_intl_core_tickers)}), and the "
             "tilts are domestic. International data documents these premia on the same terms as "
             "domestic data."
@@ -479,12 +483,13 @@ with col:
 
     st.markdown(
         "Endowments achieve institutional-grade returns through heavy allocations to private equity, "
-        "venture capital and hedge funds. Those strategies depend on 25+ year manager relationships, "
-        "proprietary deal flow and multi-year illiquidity tolerance, and none is replicable in a retail "
-        "brokerage account. This portfolio uses liquid factor ETFs instead (AVUV for small-cap value, "
-        "SPHQ for quality, VEA and IEMG for international and EM) to capture related risk premia in "
-        "public markets, and gives up the illiquidity premium. The comparison is context: the goal "
-        "is institutional analytical framing applied at retail scale, not return replication."
+        "venture capital, and hedge funds. Those strategies depend on 25+ year manager relationships, "
+        "proprietary deal flow, and multi-year illiquidity tolerance, and none is replicable in a "
+        "retail brokerage account. This portfolio uses liquid factor ETFs instead to capture related "
+        "risk premia in public markets: AVUV for small-cap value, SPHQ for quality, and VEA and IEMG "
+        "for international and EM. It gives up the illiquidity premium. The comparison is context: "
+        "the portfolio applies the same allocation framework at retail scale, without trying to "
+        "replicate endowment returns."
     )
     st.caption(
         "Sources: Yale Investments Office Annual Report FY2024 (yale.edu/investments); "
