@@ -152,21 +152,21 @@ _asof_slot.caption(as_of_banner())
 
 with st.expander("How to read this page", expanded=False):
     st.markdown(
-        "- **Deploy New Cash** — enter a contribution amount and see how it should be "
+        "- **Deploy New Cash**: enter a contribution amount and see how it should be "
         "allocated across sleeves to close drift first, then distribute the remainder "
-        "by SAA target weight. The Suggested \\$ column is editable — adjust amounts to "
+        "by SAA target weight. The Suggested \\$ column is editable: adjust amounts to "
         "match actual broker fills before clicking Execute and Log. Suggested Shares "
         "recompute automatically from the edited dollar amounts.\n"
-        "- **Rebalancing Check** — detects when any sleeve has drifted outside its "
+        "- **Rebalancing Check**: detects when any sleeve has drifted outside its "
         "tolerance band (±3% for major equity sleeves, ±2% for smaller sleeves) and "
         "surfaces corrective buy suggestions. The table is read-only; execute the "
         "suggested trades directly via your broker.\n"
-        "- **Rationale tags** — 'close drift' means the sleeve is below target and "
+        "- **Rationale tags**: 'close drift' means the sleeve is below target and "
         "gets priority allocation; 'above target' means the sleeve has drifted high "
         "and receives no new cash; 'mixed' means the sleeve is below target and also "
         "receives a proportional residual share; 'maintain target' means no drift and "
         "the sleeve receives proportional contribution only.\n"
-        "- **Execute and Log workflow** — edit the Suggested \\$ column to match actual "
+        "- **Execute and Log workflow**: edit the Suggested \\$ column to match actual "
         "broker fills, then click Execute and Log. A confirmation modal shows the final "
         "trade preview before writing to the Trade Log. In demo mode, Execute and Log "
         "is illustrative only and no writes occur."
@@ -362,7 +362,7 @@ if contrib_cash > 0 and not _unfunded and not _gap_note:
     )
 
     if orig_suggestions.empty:
-        st.info("No investable sleeves with known prices — check the securities table.")
+        st.info("No investable sleeves with known prices. Check the securities table.")
     else:
         # Editable table: user adjusts Suggested $ per ticker
         editor_cols = ["Ticker", "Sleeve", "Rationale", "Suggested $"]
@@ -422,8 +422,8 @@ if contrib_cash > 0 and not _unfunded and not _gap_note:
             if abs(diff) > SUM_INVARIANT_TOLERANCE:
                 _btn_help = (
                     f"{'Overallocated' if diff > 0 else 'Underallocated'} by "
-                    f"${abs(diff):,.2f} — reconciliation difference exceeds ${SUM_INVARIANT_TOLERANCE:.2f}; "
-                    "adjust amounts above to match cash to deploy."
+                    f"${abs(diff):,.2f}: the reconciliation difference exceeds ${SUM_INVARIANT_TOLERANCE:.2f}. "
+                    "Adjust amounts above to match cash to deploy."
                 )
             else:
                 _btn_help = "One or more rows have zero or negative shares."
@@ -538,7 +538,7 @@ elif contrib_cash > 0:
     _obj  = "them" if len(_unfunded) != 1 else "it"
     st.warning(
         f"**{', '.join(_unfunded)}** {_verb} an SAA target but no holdings yet, so "
-        f"new cash cannot be allocated to {_obj} — deploying now would leave part of "
+        f"new cash cannot be allocated to {_obj}. Deploying now would leave part of "
         f"the contribution unplaced. Buy **{', '.join(_unfunded_tickers)}** (one share "
         "each is enough), re-import, then deploy. The rest of this page works normally."
     )
@@ -560,15 +560,15 @@ st.caption(
 
 with st.expander("Why this rebalancer is buy-only (tax-aware)", expanded=False):
     st.markdown(
-        "In a taxable account this tool rebalances with **new contributions** — buying "
-        "underweight sleeves — and deliberately does **not** suggest selling overweight "
+        "In a taxable account this tool rebalances with **new contributions** (buying "
+        "underweight sleeves) and deliberately does **not** suggest selling overweight "
         "sleeves. Selling to correct a tolerance-band drift realizes capital gains, and "
         "the tax cost of those gains typically exceeds the tracking error the trade would "
         "fix. Overweight drift is instead closed over time by directing new cash and "
         "dividends toward underweight sleeves; any active trimming is best done inside "
         "tax-advantaged accounts (IRA/401k), where it triggers no current tax. The "
-        "buy-only design is a deliberate tax-aware choice, not a limitation — consistent "
-        "with the same tax-drag and realized-gains discipline applied elsewhere in this "
+        "buy-only design is a deliberate tax-aware choice, consistent with the "
+        "tax-drag and realized-gains discipline applied elsewhere in this "
         "tracker."
     )
 
@@ -685,7 +685,7 @@ if rebal_cash > 0 and not _gap_note:
 
         if _fully_filled and leftover > 0.01:
             st.caption(
-                f"${leftover:,.2f} undeployed — all band-breach shortfalls fully filled. "
+                f"${leftover:,.2f} undeployed: all band-breach shortfalls are fully filled. "
                 "Hold remaining cash or add it to the most underweight sleeve manually."
             )
         elif _fully_filled is False:
@@ -723,7 +723,7 @@ with st.expander("Methodology", expanded=False):
     # re-stales the moment a sleeve crosses the threshold. This table reads the
     # same column compute_drift applies, so the two cannot disagree.
     st.markdown(
-        "**Tiered SAA bands** — larger sleeves carry wider tolerance bands. Each band "
+        "**Tiered SAA bands**: larger sleeves carry wider tolerance bands. Each band "
         "below is read from the database alongside its target, so this table cannot "
         "drift from the bands the rebalancing check actually applies. Tighter bands on "
         "smaller sleeves prevent small absolute drift from compounding into meaningful "
@@ -750,20 +750,20 @@ with st.expander("Methodology", expanded=False):
         },
     )
     st.markdown(
-        "**Contribution priority** — cash flows to below-band sleeves first (close drift), "
+        "**Contribution priority**: cash flows to below-band sleeves first (close drift), "
         "then to in-band sleeves by SAA target weight (maintain allocation). Above-band "
         "sleeves receive no new cash until they return to band naturally or are "
         "rebalanced.\n\n"
-        "**Band-breach detection** — a sleeve is in breach if |actual weight − target "
+        "**Band-breach detection**: a sleeve is in breach if |actual weight − target "
         "weight| > tolerance band. Rebalancing buy suggestions in the Rebalancing Check "
         "section are sized to return the sleeve to its target weight, not to its band "
         "edge. The Rebalancing Check table is read-only; execute suggested trades via "
         "your broker.\n\n"
-        "**Editable suggestions** — the Suggested \\$ column in Deploy New Cash is "
+        "**Editable suggestions**: the Suggested \\$ column in Deploy New Cash is "
         "editable. After editing, the Total allocated / Difference reconciliation panel "
         "updates immediately to flag any mismatch against the entered cash amount. "
         "Suggested Shares recompute from the edited dollar amounts using current prices.\n\n"
-        "**Execute and Log mechanics** — clicking Execute and Log writes the "
+        "**Execute and Log mechanics**: clicking Execute and Log writes the "
         "suggested (or edited) trades to the Trade Log via the same lot-tracking system "
         "used for direct trade entry, with lot_source='Manual' to distinguish from DRIP "
         "reinvestments (lot_source='drip') and inception buys (lot_source='inception')."

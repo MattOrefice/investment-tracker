@@ -16,7 +16,9 @@ SYSTEM_THESES = [
         "level":           "investment",
         "status":          "active",
         "horizon_months":  None,
-        "exit_conditions": "Never closes — operational thesis.",
+        "exit_conditions": (
+            "Never closes: operational thesis."
+        )
     },
     {
         "title": "system:cash_management",
@@ -28,7 +30,9 @@ SYSTEM_THESES = [
         "level":           "investment",
         "status":          "active",
         "horizon_months":  None,
-        "exit_conditions": "Never closes — operational thesis.",
+        "exit_conditions": (
+            "Never closes: operational thesis."
+        )
     },
 ]
 

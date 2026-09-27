@@ -261,24 +261,24 @@ with col:
 
     with st.expander("How to read this page", expanded=False):
         st.markdown(
-            "- **Hierarchy** — each trade links to a Position Thesis (the vehicle-level "
-            "rationale: why this ETF, not just this exposure), which links to an Investment "
-            "Thesis (the sleeve-level view: why hold this asset class at this weight), which "
-            "carries Theme tags (the strategic category the view belongs to). Any trade "
-            "without a thesis is named at the top of the page. The summary line "
+            "- **Hierarchy**: each trade links to a Position Thesis (the vehicle-level "
+            "rationale: why this ETF, not just this exposure). Each Position Thesis links to "
+            "an Investment Thesis (the sleeve-level view: why hold this asset class at this "
+            "weight), which carries Theme tags (the strategic category the view belongs to). "
+            "Any trade without a thesis is named at the top of the page. The summary line "
             "counts all three levels independently.\n"
-            "- **Conviction stars (1–5)** — 1 = exploratory, 3 = standard position, "
+            "- **Conviction stars (1–5)**: 1 = exploratory, 3 = standard position, "
             "4 = high-weight or cross-cycle view, 5 = highest conviction. The scale is used "
             "conservatively: a 5-star thesis requires an airtight structural case. Cash/SPAXX "
-            "is the only 5-star — not because it's the best return idea, but because zero-cash "
-            "is never the right answer in a taxable rebalancing portfolio.\n"
-            "- **Active / Closed / Invalidated** — these are distinct outcomes. Closed = thesis "
+            "is the only 5-star because zero cash is never the right answer in a taxable "
+            "rebalancing portfolio, not because it is the best return idea.\n"
+            "- **Active / Closed / Invalidated**: these are distinct outcomes. Closed = thesis "
             "completed as expected and position was unwound. Invalidated = the original "
             "analytical case was wrong. Exit conditions are expected unwind triggers; "
             "invalidation conditions are the scenarios that prove the original case analytically "
             "wrong. A position can reach its exit without being invalidated, and vice versa. "
-            "Most thesis documentation systems collapse these; keeping them separate is intentional.\n"
-            "- **Themes** — allocator categories, not factor exposures. A position can express "
+            "Most thesis documentation systems collapse the two; this page keeps them separate.\n"
+            "- **Themes**: allocator categories, not factor exposures. A position can express "
             "multiple thematic rationales simultaneously (e.g., REITs are both Drawdown "
             "protection and Regime change)."
         )
@@ -510,7 +510,7 @@ def render_fidelity_import():
     _sel_acct = next((a for a in data["accounts"] if a["name"] == _acct_choice), None)
     if _sel_acct is None:
         st.info(
-            "Choose the account this file was exported from to continue — importing "
+            "Choose the account this file was exported from to continue. Importing "
             "to the wrong account cannot be undone."
         )
         return
@@ -546,7 +546,7 @@ def render_fidelity_import():
     st.caption(summary)
 
     if not to_import:
-        st.success("Nothing new to import — all trade lots in this file are already logged.")
+        st.success("Nothing new to import: all trade lots in this file are already logged.")
         return
 
     preview = pd.DataFrame([{
@@ -569,7 +569,7 @@ def render_fidelity_import():
     )
 
     if st.button(
-        f"Confirm import — {len(to_import)} lot{'s' if len(to_import) != 1 else ''} "
+        f"Confirm import: {len(to_import)} lot{'s' if len(to_import) != 1 else ''} "
         f"→ {_sel_acct['name']}",
         type="primary",
         disabled=not is_write_enabled(),
@@ -599,7 +599,7 @@ def render_fidelity_import():
             )
             st.rerun()
         else:
-            st.error("Import failed — no trades were written (check the write guard).")
+            st.error("Import failed: no trades were written (check the write guard).")
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -806,17 +806,17 @@ with tab_theses:
 
         with st.expander("Methodology", expanded=False):
             st.markdown(
-                "**Thesis taxonomy** — three levels stored separately. Position theses "
+                "**Thesis taxonomy**: three levels stored separately. Position theses "
                 "document why a specific vehicle (e.g., VGIT) is the right implementation "
                 "of an exposure. Investment theses document why a sleeve (e.g., Core Fixed "
                 "Income) is held at a given weight. Themes group investment theses by "
                 "strategic function.\n\n"
-                "**Days held** — computed from the position creation date. All current "
+                "**Days held**: computed from the position creation date. All current "
                 "theses dated 2025-05-01 inception.\n\n"
-                "**Horizon** — stated holding horizon in months, set at thesis creation. "
+                "**Horizon**: stated holding horizon in months, set at thesis creation. "
                 "Standard portfolio positions use 60 months reflecting the strategic "
                 "allocation horizon; tactical positions would use shorter horizons.\n\n"
-                "**Theme assignments** — a single thesis can carry multiple theme tags "
+                "**Theme assignments**: a single thesis can carry multiple theme tags "
                 "when a position serves multiple strategic functions. The distribution of "
                 "tags across the portfolio (active counts per theme on the Themes tab) is "
                 "a diagnostic of how the SAA earns its risk budget."
@@ -839,7 +839,7 @@ with tab_themes:
             st.markdown(
                 "Themes are allocator categories, not return drivers. Each theme represents "
                 "a class of strategy rationale that a portfolio might want explicit exposure "
-                "to or explicit absence of — the same framework institutional investors use "
+                "to or explicit absence of. Institutional investors use the same framework "
                 "to classify manager mandates. A single position can express multiple "
                 "thematic rationales simultaneously: REITs provide both inflation-correlated "
                 "returns (Regime change) and equity-like diversification drag in a portfolio "
