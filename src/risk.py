@@ -276,10 +276,10 @@ def run_portfolio_factor_regression(
 def insufficient_history_message(n: int, min_obs: int = MIN_OBS_FOR_REGRESSION) -> str:
     """Empty-state copy when history is too short for a stable regression."""
     return (
-        f"Insufficient history for factor decomposition — {n} trading "
+        f"Insufficient history for factor decomposition: {n} trading "
         f"day{'s' if n != 1 else ''} available, ~{min_obs} minimum. "
         "Betas are suppressed until the sample is large enough to estimate a "
-        "stable five-factor regression; this section will populate as the "
+        "stable five-factor regression; this section populates as the "
         "portfolio accumulates history."
     )
 
@@ -290,7 +290,7 @@ def low_confidence_caveat(n: int) -> str:
         f"Low-confidence estimate: only {n} aligned trading days "
         f"(below the {LOW_CONFIDENCE_OBS}-observation threshold for a stable "
         "five-factor fit). Betas are shown but carry wide confidence intervals "
-        "and should be read as provisional until the sample grows."
+        "and are provisional until the sample grows."
     )
 
 
@@ -298,16 +298,16 @@ def methodology_notes() -> list[str]:
     """Methodology disclosure bullets for the factor-decomposition section."""
     return [
         "Model: the portfolio's daily excess return is regressed on five factors "
-        "SIMULTANEOUSLY — (R_p − RF) ~ α + β·Mkt-RF + β·SMB + β·HML + β·RATES + "
-        "β·CREDIT. Because all five enter one regression, each beta is a MARGINAL "
+        "simultaneously: (R_p − RF) ~ α + β·Mkt-RF + β·SMB + β·HML + β·RATES + "
+        "β·CREDIT. Because all five enter one regression, each beta is a marginal "
         "exposure: the loading on that factor controlling for the other four. "
         "This is deliberately not five separate univariate regressions, which "
         "would double-count exposure shared across correlated factors.",
 
         "Factors: Mkt-RF, SMB, and HML are Ken French US daily factors "
-        "(Dartmouth) — the same data path the sleeve regressions use. "
+        "(Dartmouth), the same data path the sleeve regressions use. "
         f"{RATES_PROXY_DISCLOSURE} {CREDIT_PROXY_DISCLOSURE} The rates and credit "
-        "legs are ETF-based proxies, disclosed as such — a tradeable stand-in for "
+        "legs are ETF-based proxies, disclosed as such: tradeable stand-ins for "
         "the academic term and credit premia, not the academic series themselves.",
 
         "Returns: the portfolio excess return reuses the settled-frontier-anchored "
@@ -316,12 +316,12 @@ def methodology_notes() -> list[str]:
         "today-bar is never used as the right-edge anchor.",
 
         "Fit: R² is the share of the portfolio's return variance the five factors "
-        "jointly explain; the residual (unexplained) share is 1 − R² — the "
-        "portion the systematic factors do NOT account for. The sample size (n) "
+        "jointly explain; the residual (unexplained) share is 1 − R², the "
+        "portion the systematic factors do not account for. The sample size (n) "
         "and date range are shown so the estimates can be judged in context.",
 
-        "Coverage: the regressand is the portfolio's TOTAL return, which includes "
-        "the Emerging Markets and Real Assets sleeves — asset classes none of "
+        "Coverage: the regressand is the portfolio's total return, which includes "
+        "the Emerging Markets and Real Assets sleeves, asset classes none of "
         "these five factors is built to span. Their return either loads "
         "imperfectly onto the correlated Mkt-RF/CREDIT betas or lands in the "
         "residual, so the residual is not purely security-specific noise; it is "
@@ -332,7 +332,7 @@ def methodology_notes() -> list[str]:
 
         "Insufficient-history handling: fewer than "
         f"{MIN_OBS_FOR_REGRESSION} aligned trading days suppresses the regression "
-        "entirely (an explicit empty state, not unstable coefficients); between "
+        "entirely (an explicit empty state, not unstable coefficients). Between "
         f"{MIN_OBS_FOR_REGRESSION} and {LOW_CONFIDENCE_OBS} the betas are shown "
         "with a small-sample caveat.",
     ]
@@ -394,8 +394,8 @@ STRESS_SCENARIOS = [
     {
         "name": "Risk-off (flight to quality)",
         "summary": (
-            "Equity -15% and HY spreads +200bps, but a -50bps rate RALLY "
-            "cushions the FI sleeve — the diversification-works case."
+            "The diversification-works case: equity -15% and HY spreads +200bps, "
+            "while a -50bps rate rally cushions the FI sleeve."
         ),
         "legs": [
             {"factor": "Mkt-RF", "type": "equity", "pct": -0.15},
@@ -406,8 +406,8 @@ STRESS_SCENARIOS = [
     {
         "name": "2022-style regime (hedge inverts)",
         "summary": (
-            "Rates +200bps AND equity -20% together — the stock-bond hedge "
-            "fails and the losses compound; the diversification-fails case."
+            "The diversification-fails case: rates +200bps and equity -20% together, "
+            "so the stock-bond hedge fails and the losses compound."
         ),
         "legs": [
             {"factor": "RATES",  "type": "rates",  "delta_bps": 200},
@@ -418,18 +418,18 @@ STRESS_SCENARIOS = [
 
 # Disclosures (single source for the page).
 INSTANTANEOUS_FRAMING = (
-    "These are estimated portfolio impacts under an INSTANTANEOUS factor shock — "
-    "not forecasts, not simulated paths, and not probability-weighted. Each "
+    "These are estimated portfolio impacts under an instantaneous factor shock. "
+    "They are not forecasts, simulated paths, or probability-weighted outcomes. Each "
     "number is a point sensitivity: what the book would lose or gain if the "
     "stated move happened at once, holding the estimated betas fixed."
 )
 LINEARITY_CAVEAT = (
     "Linear first-order sensitivity (P&L = β × shock): it assumes the betas are "
     "stable and the response is linear across the shock size. Large moves "
-    "(e.g. -20% equity) involve real non-linearity — convexity and beta "
-    "instability in the tails — that this model does NOT capture. The rates and "
+    "(e.g. -20% equity) involve real non-linearity, convexity and beta "
+    "instability in the tails, that this model does not capture. The rates and "
     "credit legs are duration-based translations and likewise do not capture "
-    "bond convexity. Read the magnitudes as first-order estimates, not precise "
+    "bond convexity. The magnitudes are first-order estimates, not precise "
     "tail outcomes."
 )
 
@@ -542,7 +542,7 @@ def scenario_insufficient_history_message(
 ) -> str:
     """Empty-state copy for the scenario section, inherited from Phase 1."""
     return (
-        "Insufficient history — factor betas unavailable for stress testing "
+        "Insufficient history: factor betas unavailable for stress testing "
         f"({n} trading day{'s' if n != 1 else ''} available, ~{min_obs} minimum). "
         "Scenarios are suppressed until the factor decomposition above can be "
         "estimated; this section populates together with it."
@@ -554,22 +554,22 @@ def scenario_methodology_notes(durations: Optional[dict] = None) -> list[str]:
     durations = durations or _DEFAULT_DURATIONS
     return [
         f"Mechanic: estimated P&L = Σ (factor beta × translated factor move), "
-        "reusing the SAME betas as the decomposition above — the scenario engine "
+        "reusing the same betas as the decomposition above; the scenario engine "
         "does not re-estimate anything.",
 
-        "Translation: equity shocks hit Mkt-RF directly; a yield move is "
+        "Translation: equity shocks hit Mkt-RF directly. A yield move is "
         "translated to the intermediate-Treasury proxy's duration-implied price "
-        "return (≈ −duration × Δyield); a credit-spread move is translated to the "
+        "return (≈ −duration × Δyield), and a credit-spread move to the "
         "high-yield proxy's spread-duration-implied return (≈ −spread duration × "
         "Δspread). The translation chain is shown on every result so the units "
-        "are transparent — not a raw basis-points-times-beta product.",
+        "are transparent, rather than a raw basis-points-times-beta product.",
 
         f"Duration assumptions: IEF modified duration ≈ {durations['rates']:g}y "
         "(from the maintained ETF duration table) and HY spread duration ≈ "
         f"{durations['credit']:g}y (HYG fact sheet, ~3–4y). Both are stated "
         "assumptions, disclosed like the Phase 1 ETF-proxy disclosure.",
 
-        "Curve shape: the rate shock is modeled as a PARALLEL shift — a single "
+        "Curve shape: the rate shock is modeled as a parallel shift: a single "
         "duration point translating a uniform yield change across the curve. It "
         "cannot represent a non-parallel move (curve steepening, flattening, or "
         "twist), which real rate shocks routinely include.",
@@ -579,9 +579,9 @@ def scenario_methodology_notes(durations: Optional[dict] = None) -> list[str]:
         LINEARITY_CAVEAT,
 
         "Scenario magnitudes are illustrative stress sizes chosen to probe "
-        "distinct regimes — including a risk-off case where a flight-to-quality "
-        "rate rally offsets part of the equity loss, and a 2022-style case where "
-        "rates and equity fall together and the usual hedge inverts — not "
+        "distinct regimes. They include a risk-off case, where a flight-to-quality "
+        "rate rally offsets part of the equity loss, and a 2022-style case, where "
+        "rates and equity fall together and the usual hedge inverts. They are not "
         "forecasts or probability-weighted outcomes.",
     ]
 
@@ -744,7 +744,7 @@ def risk_contribution_insufficient_history_message(
 ) -> str:
     """Empty-state copy for the risk-contribution section."""
     return (
-        "Insufficient history for risk decomposition — "
+        "Insufficient history for risk decomposition: "
         f"{n} trading day{'s' if n != 1 else ''} available, ~{min_obs} minimum "
         "for a stable sleeve covariance matrix. A covariance matrix needs more "
         "history than a single regression; contributions are suppressed until "
@@ -758,8 +758,8 @@ def risk_contribution_low_confidence_caveat(n: int) -> str:
         f"Low-confidence estimate: only {n} trading days of sleeve-return "
         f"history (below the {LOW_CONFIDENCE_OBS_RC}-observation threshold for a "
         "stable covariance estimate). Contributions are shown but the "
-        "correlation terms carry wide estimation error and should be read as "
-        "provisional until the sample grows."
+        "correlation terms carry wide estimation error and are provisional "
+        "until the sample grows."
     )
 
 
@@ -769,29 +769,29 @@ def risk_contribution_methodology_notes() -> list[str]:
         "Mechanic: the Euler decomposition of volatility. Portfolio variance is "
         "σ²_p = wᵀΣw; each sleeve's marginal contribution to risk is MCR_i = "
         "(Σw)_i / σ_p and its risk contribution is RC_i = w_i × MCR_i. By Euler's "
-        "theorem the contributions sum EXACTLY to total policy volatility "
-        "(Σ RC_i = σ_p), and the percentage shares sum to 100% — the summation "
+        "theorem the contributions sum exactly to total policy volatility "
+        "(Σ RC_i = σ_p), and the percentage shares sum to 100%; the summation "
         "shown is the correctness check.",
 
         "Why risk share ≠ weight share: the decomposition accounts for "
         "correlation, not just allocation. A high-volatility or highly-correlated "
-        "sleeve contributes MORE risk than its weight; a diversifying "
-        "(low/negative-correlation) sleeve contributes LESS. A 10% allocation is "
+        "sleeve contributes more risk than its weight; a diversifying "
+        "(low/negative-correlation) sleeve contributes less. A 10% allocation is "
         "not 10% of the risk.",
 
         "Inputs: sleeve returns are the SAA sleeve-benchmark series used across "
         "the Correlations and Asset Evaluation pages (single source), anchored on "
-        "the settled trading frontier; the weight vector is the SAA target "
+        "the settled trading frontier. The weight vector is the SAA target "
         "(policy) weights, ex-cash, normalized to 100%. Actual drift from target "
         "is small in this buy-and-hold book.",
 
-        "Covariance: the realized SAMPLE covariance over the since-inception "
-        "window — an estimate, with estimation error concentrated in the "
+        "Covariance: the realized sample covariance over the since-inception "
+        "window, an estimate with estimation error concentrated in the "
         "off-diagonal (correlation) terms. The window and observation count are "
         "shown so the contributions can be judged in context; covariance is "
         "annualized with the √252 convention used elsewhere in the app.",
 
-        "Scope: this decomposes TOTAL VOLATILITY — a symmetric, vol-based risk "
+        "Scope: this decomposes total volatility, a symmetric, vol-based risk "
         "measure. It is not a VaR or downside-risk contribution (those are "
         "different decompositions of different risk measures).",
 
@@ -799,7 +799,7 @@ def risk_contribution_methodology_notes() -> list[str]:
         f"{MIN_OBS_FOR_COVARIANCE} aligned observations, or a singular / "
         "near-singular covariance matrix (more sleeves than data, or collinear "
         "sleeves), shows an explicit empty state rather than unstable or "
-        "ill-defined contributions; between "
+        "ill-defined contributions. Between "
         f"{MIN_OBS_FOR_COVARIANCE} and {LOW_CONFIDENCE_OBS_RC} the contributions "
         "are shown with a small-sample caveat.",
     ]

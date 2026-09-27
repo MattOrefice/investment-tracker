@@ -42,7 +42,7 @@ def test_a_weekend_adds_nothing(today):
     (date(2026, 9, 19), "5 trading days"),       # a Saturday frontier: Monday to Friday
 ])
 def test_the_count_is_the_closes_missing_before_today(frontier, n):
-    assert as_of_live_line(MON, frontier=frontier).endswith(f"(settled closes) — {n} behind.")
+    assert as_of_live_line(MON, frontier=frontier).endswith(f"(settled closes), {n} behind.")
 
 
 def test_a_failed_refresh_on_current_data_reports_the_failure_without_a_count(monkeypatch):
@@ -72,7 +72,7 @@ def test_the_count_uses_the_refresh_calendar(monkeypatch):
     banner follows. Labor Day is in the table now, so the closure taught here is an
     ordinary Thursday, which keeps the contrast."""
     assert as_of_live_line(date(2026, 9, 11), frontier=date(2026, 9, 9)).endswith(
-        "— 1 trading day behind."), "control: Thursday September 10 is a session"
+        ", 1 trading day behind."), "control: Thursday September 10 is a session"
     monkeypatch.setattr(refresh, "is_session",
                         lambda d: d.weekday() < 5 and d != date(2026, 9, 10))
     assert as_of_live_line(date(2026, 9, 11), frontier=date(2026, 9, 9)) == (
@@ -90,10 +90,10 @@ def _cov(frontier, today=FRI):
 
 def test_incomplete_states_the_gap_with_or_without_a_count():
     assert as_of_live_line(FRI, coverage=_cov(THU)) == (
-        "Prices through September 24, 2026 (as served to this page) — 1 of 2 holdings "
+        "Prices through September 24, 2026 (as served to this page), 1 of 2 holdings "
         "have no committed price.")
     assert as_of_live_line(FRI, coverage=_cov(date(2026, 9, 22))) == (
-        "Prices through September 22, 2026 (as served to this page) — 2 trading days behind, "
+        "Prices through September 22, 2026 (as served to this page), 2 trading days behind, "
         "and 1 of 2 holdings have no committed price.")
 
 

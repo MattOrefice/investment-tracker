@@ -112,7 +112,9 @@ def test_absolute_return_caption_is_the_twr(rendered):
     Phase 11 set it up that way (docs/phase_11_diagnostic.md §2.1), and the value ratio
     kept the identity only until the first deposit."""
     at, book = rendered
-    cap = next(str(c.value) for c in at.caption if "Returns — absolute (" in str(c.value))
+    # The locator follows the writing sweep's comma (audit item 14b); the figures it reads
+    # are unchanged.
+    cap = next(str(c.value) for c in at.caption if "Returns, absolute (" in str(c.value))
     shown = float(re.search(r"absolute \((-?\d+\.\d)%\)", cap).group(1))
     twr = float(re.search(r"cumulative TWR \((-?\d+\.\d)%\)", cap).group(1))
     inception, end = book.window("SI")

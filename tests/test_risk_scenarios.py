@@ -152,7 +152,7 @@ def test_scenario_empty_state_copy_pinned():
     """Empty-state copy must lead with the betas-unavailable phrasing (literal)."""
     msg = scenario_insufficient_history_message(0)
     assert msg.startswith(
-        "Insufficient history — factor betas unavailable for stress testing"
+        "Insufficient history: factor betas unavailable for stress testing"
     )
 
 

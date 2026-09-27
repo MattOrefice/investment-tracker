@@ -144,7 +144,7 @@ def test_insufficient_history_message_pins_copy():
     """Empty-state copy must name the count and the ~30 minimum (literal pin)."""
     msg = insufficient_history_message(12)
     assert msg.startswith(
-        "Insufficient history for factor decomposition — 12 trading days "
+        "Insufficient history for factor decomposition: 12 trading days "
         "available, ~30 minimum."
     )
 

@@ -125,8 +125,9 @@ def test_the_demo_labels_follow_the_account(render):
 
 @pytest.mark.parametrize("page, personal", [
     ("1_SAA.py", "Retirement and externally-managed accounts are on the Household View."),
-    ("2_Performance.py", "see the Household View for the whole household."),
-    ("7_Risk.py", "are excluded (see Household View)."),
+    # Performance's and Risk's lines were restated by the writing sweep (item 14b).
+    ("2_Performance.py", "the Household View covers the whole household."),
+    ("7_Risk.py", "are excluded and appear on the Household View."),
     ("12_Tax_Lots.py", "IRAs, workplace plans and HSAs are not shown"),
 ])
 def test_personal_mode_keeps_its_own_scope_lines(render, page, personal):

@@ -259,16 +259,16 @@ def em_disclosure() -> str:
         return (
             "Ken French does not publish daily EM factor data. "
             "Monthly EM factors would yield approximately 12 observations over the current "
-            "1-year window — below the threshold for stable inference. "
+            "1-year window, below the threshold for stable inference. "
             "IEMG provides passive cap-weighted broad EM exposure (~27% China weight at current "
             "index composition). Factor decomposition for this sleeve will be added when the "
             "portfolio accumulates sufficient history (target: 3+ years of monthly data)."
         )
     return (
         "This is the one equity region held at cap weight, and the only equity sleeve "
-        "with no per-sleeve factor regression — by design, not omission. The developed "
+        "with no per-sleeve factor regression, by design. The developed "
         "book tilts toward quality, value, and small value because those exposures can "
-        "be verified against Ken French's daily developed ex-US factor series; no "
+        "be verified against Ken French's daily developed ex-US factor series. No "
         "equivalent daily series exists for emerging markets, and the monthly history "
         "is too short against this portfolio's inception for stable inference. A tilt "
         "here could be asserted but not shown, so the sleeve stays passive: IEMG "
@@ -1211,17 +1211,16 @@ def build_factor_prose(
             f"loads on Mkt-RF_dev at {b_mkt_d:.2f} (t = {t_mkt_d:.2f}), within the "
             f"expected range for a passive cap-weighted developed-markets ETF. "
             f"The {a_bps_d:+.0f} bps annualized alpha (t = {t_a_d:.2f}) is {alpha_sig_d}, "
-            f"but should not be interpreted as skill: "
+            f"and it reflects a universe mismatch, not skill. "
             f"VEA tracks the FTSE Developed All Cap ex US Index, which classifies "
-            f"South Korea as Developed (~3-4% of VEA's holdings); "
+            f"South Korea as Developed (~3-4% of VEA's holdings), while "
             f"Ken French's Developed ex-US factor universe excludes Korea entirely. "
             f"Korean equities returned approximately 95-98% in calendar 2025, "
             f"driven by the AI/semiconductor capex cycle (Samsung Electronics, SK Hynix). "
             f"That excess return falls outside the FF Developed ex-US factor span and "
             f"accumulates in the alpha term. "
-            f"The reported alpha is best read as "
-            f'"unexplained-by-Developed-ex-US-factors return attributable to universe mismatch," '
-            f"not risk-adjusted excess return."
+            f"The reported alpha is therefore return the Developed ex-US factors leave "
+            f"unexplained because of the universe mismatch, not risk-adjusted excess return."
         )
 
     if fi_result:
@@ -1235,12 +1234,14 @@ def build_factor_prose(
 
         lines.append(
             f"The FI sleeve (VGIT 60% / SCHP 40%, {T_fi} trading days) loads on the "
-            f"TERM factor (IEF − BIL duration premium) at {b_term:.3f} (t = {t_term:.2f}) "
-            f"and the CREDIT factor (HYG − IEF spread premium) at {b_credit:.3f} (t = {t_credit:.2f}). "
-            f"The positive TERM loading confirms the sleeve carries meaningful interest-rate duration — "
-            f"consistent with VGIT's ~5.5-year effective duration and SCHP's ~6.8-year duration. "
+            f"TERM factor (IEF − BIL duration premium) at {b_term:.3f} (t = {t_term:.2f}). "
+            f"Its CREDIT factor (HYG − IEF spread premium) loading is {b_credit:.3f} "
+            f"(t = {t_credit:.2f}). "
+            f"The positive TERM loading confirms the sleeve carries meaningful interest-rate "
+            f"duration, consistent with VGIT's ~5.5-year effective duration and SCHP's ~6.8-year "
+            f"duration. "
             f"Annualized alpha of {a_bps_fi:+.0f} bps (t = {t_a_fi:.2f}) captures return "
-            f"not explained by the TERM/CREDIT proxies; at this sample length the confidence "
+            f"not explained by the TERM/CREDIT proxies. At this sample length the confidence "
             f"interval is wide, and the alpha primarily reflects ETF-vs-index tracking "
             f"differences and expense ratios rather than managerial skill."
         )
@@ -1249,7 +1250,7 @@ def build_factor_prose(
         "The Emerging Markets sleeve (IEMG) is excluded from regression analysis: "
         "Ken French does not publish daily EM factor data, and the current "
         "portfolio history is insufficient for a meaningful monthly-frequency regression. "
-        "Real assets (VNQ 60%, DBC 40%) are excluded — no liquid daily factor proxy set spans "
+        "Real assets (VNQ 60%, DBC 40%) are excluded: no liquid daily factor proxy set spans "
         "REIT and commodity exposure simultaneously."
     )
 
@@ -1266,22 +1267,22 @@ def intl_residual_reading_order() -> str:
     international tilt section and mirrors the 'How to read this page' expander.
     """
     return (
-        "**Read a residual in this order — skill last, and least.** "
+        "**A residual is weighed in this order, skill last and least.** "
         "**(1) Sampling noise.** At about one year of daily data the 95% confidence "
         "interval spans hundreds of basis points; most of any single residual estimate "
         "is noise, and the interval shown with each number says so. "
         "**(2) Universe / classification mismatch.** The fund's index and the Ken French "
-        "factor universe classify countries differently — South Korea is developed to "
-        "S&P and FTSE-for-VEA but emerging to Ken French; Canada is in the factor "
-        "universe but out of MSCI EAFE. Returns that fall outside the factor span "
+        "factor universe classify countries differently. South Korea is developed to "
+        "S&P and to FTSE (VEA's index) but emerging to Ken French; Canada is in the "
+        "factor universe but out of MSCI EAFE. Returns that fall outside the factor span "
         "accumulate in the residual with no skill involved. "
         "**(3) Construction differences** between an investable fund and the academic "
-        "factors: the factors are computed gross of foreign dividend withholding while a "
-        "fund reports net-of-withholding NAV; the factors rebalance costlessly and are "
-        "long-short; the fund is long-only, reaches a microcap tail the NYSE-style "
+        "factors. The factors are computed gross of foreign dividend withholding, while a "
+        "fund reports net-of-withholding NAV. The factors rebalance costlessly and are "
+        "long-short. The fund is long-only, reaches a microcap tail the NYSE-style "
         "breakpoints smooth over, and prices across time zones that close before the US "
         "tape (stale pricing). "
-        "**(4) Skill** — considered last, and weighted least, because every item above "
+        "**(4) Skill**, considered last and weighted least, because every item above "
         "produces a non-zero residual without it. Each fund is shown beside a passive, "
         "Canada-matched control so the residual has an investable yardstick: a control "
         "that carries a large residual too is measuring construction, not selection."
@@ -1309,8 +1310,8 @@ def build_intl_tilt_disclosure(entry: dict) -> list[str]:
 
     if kind == "idhq":
         paras.append(
-            f"**Do not read {fund}'s residual as skill — it is largely a universe "
-            f"artifact.** {fund} tracks S&P's Developed ex-US quality universe, which "
+            f"**{fund}'s residual is largely a universe artifact, not skill.** "
+            f"{fund} tracks S&P's Developed ex-US quality universe, which "
             "classifies South Korea as **developed** and holds it; the Ken French "
             "Developed ex-US factor universe (and the "
             f"{control} control) classify Korea as emerging and exclude it entirely. "
@@ -1323,54 +1324,54 @@ def build_intl_tilt_disclosure(entry: dict) -> list[str]:
             "half of 2026 and steps down to roughly 2% after the June "
             "reconstitution. A residual channel that rises and falls with an index "
             "rebalance is the signature of a universe mismatch, not persistent "
-            "skill — which is why the weights above are dated, not a constant the "
-            "residual could be 'corrected' by."
+            "skill. That is why the weights above are dated rather than given as a "
+            "constant the residual could be 'corrected' by."
         )
         paras.append(
-            "One residual channel is genuinely about the screen, not the universe: "
+            "One residual channel does come from the screen rather than the universe. "
             "S&P's quality score and the Fama-French **RMW** (profitability) factor "
-            "are cousins, not the same construct, so the part of the quality "
+            "are related but different constructs, so the part of the quality "
             f"selection that RMW does not span also accrues to the residual. The "
-            f"{control} control ({cidx}) — Canada-included, Korea-excluded on the "
-            "same terms as the factors — removes the Korea channel, so its residual "
-            "is the cleaner read on what an international quality screen actually "
-            "costs against these factors."
+            f"{control} control ({cidx}) includes Canada and excludes Korea on the "
+            "same terms as the factors. It removes the Korea channel, so its residual "
+            "is the cleaner read on what an international quality screen costs "
+            "against these factors."
         )
         return paras
 
     # Avantis funds (AVDV, AVIV) — the "not-Korea" side of the asymmetry.
     israel = entry.get("israel_pct") or "a few"
     paras.append(
-        f"**The Korea excuse does not apply to {fund} — do not over-extend it here.** "
+        f"**The Korea explanation does not apply to {fund}.** "
         f"Unlike IDHQ, the universe channel does not explain this residual. As of the "
         f"Avantis N-PORT holdings disclosure for the period ending {_NPORT_ASOF}, the "
         f"latest read here, "
-        f"{fund} held **no South Korea position** — an absence *observed* in the filing, "
-        f"not one the mandate prohibits: {fund} is actively managed and could add Korea "
-        f"at a future reconstitution. The {control} control ({cidx}) carves Korea out on "
+        f"{fund} held **no South Korea position**. The absence is *observed* in the filing; "
+        f"the mandate does not prohibit Korea, and {fund} is actively managed and could add "
+        f"it at a future reconstitution. The {control} control ({cidx}) carves Korea out on "
         "the same terms as the factors, so the fund-minus-control residual is "
         "Korea-neutral by construction."
     )
     paras.append(
-        f"What remains is **construction, not universe — and it is not a persistent "
-        f"edge.** The fund-minus-control gap should not be read as a repeatable "
+        f"What remains is **construction, not universe, and it is not a persistent "
+        f"edge.** The fund-minus-control gap is not a repeatable "
         f"{fund}-over-control advantage of this size. A material part of it in this "
         f"window is a sector bet: an overweight to materials and gold miners that "
         f"contributed disproportionately and that Avantis characterizes as cyclical "
-        f"and **not repeatable** — as that tilt normalizes the gap should compress, "
-        f"not compound. What is left is persistent but still not skill: an Israel "
-        f"weight of roughly {israel}% (developed, so spanned by the factors, but a "
-        f"source of idiosyncratic country return), the fund's expense ratio and "
-        f"unrecovered foreign dividend-withholding drag on a net-NAV basis, and the "
-        f"deeper microcap tail the NYSE-style breakpoints smooth over."
+        f"and **not repeatable**. As that tilt normalizes, the gap should compress "
+        f"rather than compound. What is left is persistent but still not skill. Israel "
+        f"is roughly {israel}% of the fund: developed, so spanned by the factors, but a "
+        f"source of idiosyncratic country return. The fund's expense ratio and "
+        f"unrecovered foreign dividend-withholding drag, on a net-NAV basis, add to it, "
+        f"as does the deeper microcap tail the NYSE-style breakpoints smooth over."
     )
     paras.append(
         f"Finally, a joint-metric caveat: Avantis integrates value and profitability "
         f"into a **single** selection metric, so {fund}'s **HML** and **RMW** loadings "
         "are not the separable, one-factor-at-a-time exposures a pure sort would show. "
         "The residual absorbs the part of that joint screen the two standalone factors "
-        "do not span — again a construction property, read well before any question of "
-        "skill."
+        "do not span. That is again a construction property, weighed well before any "
+        "question of skill."
     )
     return paras
 
@@ -1415,15 +1416,15 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
         "Both sleeves are restricted to US equity market trading days (dates present "
         "in the Ken French US factor calendar). The Developed sleeve applies this "
         "restriction explicitly: VEA trades on US exchanges and has no price observation "
-        "on US federal holidays — its return series shows zero by forward-fill, not by "
-        "market observation. The Dev FF dataset includes those holidays (international "
+        "on US federal holidays, so its return series shows zero there by forward-fill, "
+        "not by market observation. The Dev FF dataset includes those holidays (international "
         "markets open); excluding them keeps both regression calendars consistent. "
         f"Sample sizes reflect the overlap with the factor data. {lag_str}",
 
         "Methodology: each equity sleeve is regressed against its own region-appropriate "
-        "FF5 factor set — US factors for the US sleeve, Developed ex-US factors for VEA. "
+        "FF5 factor set: US factors for the US sleeve, Developed ex-US factors for VEA. "
         "This per-sleeve approach avoids the model-misspecification problem that inflated "
-        "the alpha estimate in the prior single-portfolio regression: returns from non-US "
+        "the alpha estimate in the prior single-portfolio regression. There, returns from non-US "
         "equity and real-asset sleeves that the US-only factor model cannot span had been "
         "flowing into the alpha term.",
 
@@ -1431,12 +1432,12 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
         "residuals. Lag L is computed per regression as floor(4 × (T/100)^(2/9)).",
 
         "Sleeve return series: the US equity sleeve return is the value-weighted daily "
-        "total return of VOO, VTV, SPHQ, and AVUV, weighted by SAA target proportions "
-        "(VOO 35.6%, SPHQ 31.1%, VTV 17.8%, AVUV 15.6% — proportional to the locked "
-        "Phase 1 sleeve targets of 16/14/8/7%). Weights are held constant. "
+        "total return of VOO, VTV, SPHQ, and AVUV, weighted by SAA target proportions: "
+        "VOO 35.6%, SPHQ 31.1%, VTV 17.8%, and AVUV 15.6%. These are proportional to the "
+        "locked Phase 1 sleeve targets of 16/14/8/7%. Weights are held constant. "
         "The Developed sleeve is VEA's daily adjusted-close return.",
 
-        "Universe mismatch — Developed sleeve: VEA tracks FTSE Developed All Cap ex US "
+        "Universe mismatch, Developed sleeve: VEA tracks FTSE Developed All Cap ex US "
         "(includes Korea, Israel as Developed). Ken French's Developed ex-US universe "
         "excludes Korea (treated as EM in Ken French's classification) and uses a different "
         "Israel categorization. The universe difference contributes to unexplained variance "
@@ -1445,13 +1446,13 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
         "or by using a custom factor set aligned to FTSE Developed All Cap ex US.",
 
         "EM sleeve exclusion: Ken French does not publish daily EM factor data. "
-        "Monthly EM factors would yield approximately 12 observations — below the minimum "
+        "Monthly EM factors would yield approximately 12 observations, below the minimum "
         "for stable inference. EM factor decomposition will be added at 3+ years of history.",
 
         "Carhart Momentum supplement (FF5+MOM): Ken French daily UMD factor "
         "(F-F_Momentum_Factor_daily_CSV.zip) added as a sixth regressor alongside FF5 "
         "to test whether the portfolio systematically loads on the momentum premium. "
-        "The supplementary table is shown for diagnostic purposes — the primary FF5 result "
+        "The supplementary table is diagnostic; the primary FF5 result "
         "is authoritative. Momentum exposure is structurally avoided in this portfolio "
         "for tax-efficiency reasons (high turnover → short-term gains), so a near-zero "
         "Mom loading is expected and confirms the construction is tax-aware.",
@@ -1459,7 +1460,7 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
         "Momentum (UMD) vintage: Mom loadings are computed against the Ken French "
         f"momentum series. {data_vintage('Momentum factor', _umd_f)} Loadings shift between "
         "refreshes chiefly because the sample extends and only secondarily because "
-        "the source revises history — at the 2026-08 refresh, for example, the "
+        "the source revises history. At the 2026-08 refresh, for example, the "
         "added quarter moved the rendered Mom loadings by 0.02–0.07 while a source "
         "revision touching 70% of daily UMD history back to 1926 moved them by "
         "less than 0.001. Neither reflects portfolio changes.",
@@ -1469,7 +1470,7 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
         "post-dates that cutoff; no daily-frequency Global FF5 regression can be produced. "
         "The Developed ex-US factor set is the primary decomposition for the international "
         "sleeve. Global Mkt-RF would include US exposure in any case, making it less precise "
-        "for a developed-ex-US ETF — the Korea universe mismatch is better bounded via the "
+        "for a developed-ex-US ETF, and the Korea universe mismatch is better bounded by the "
         "Developed ex-US result alone.",
     ]
 
@@ -1498,7 +1499,7 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
     else:
         notes.append(
             "Fixed income (VGIT, SCHP): TERM/CREDIT factor model (IEF−BIL duration premium, "
-            "HYG−IEF credit spread premium) in scope — see FI Sleeve panel above. "
+            "HYG−IEF credit spread premium) in scope; the FI Sleeve panel above shows it. "
             "Real assets (VNQ 60%, DBC 40%) remain excluded; no liquid daily factor proxy set "
             "spans REIT and commodity exposure simultaneously."
         )
@@ -1679,8 +1680,8 @@ def build_benchmark_prose(
 
     # Second paragraph: intercept interpretation + optional Brinson-Fachler cross-reference
     second_para = (
-        f"The intercept — active return after controlling for benchmark beta and style tilts — "
-        f"is {a_bps:+.0f} bps/yr{_ci_part}, {sig_label}. "
+        f"The intercept, the active return after controlling for benchmark beta and style "
+        f"tilts, is {a_bps:+.0f} bps/yr{_ci_part}, {sig_label}. "
     )
 
     if is_significant and bhb_top_selection:
@@ -1714,8 +1715,7 @@ def build_benchmark_prose(
         )
 
     second_para += (
-        f"The t-statistic should be interpreted in light of the {T}-observation sample window: "
-        f"confidence intervals around the alpha estimate are wide at this sample length, "
+        f"With {T} observations, the confidence interval around the alpha estimate is wide, "
         f"and persistence of the active return cannot be established without a longer history."
     )
 
@@ -1774,12 +1774,11 @@ def build_benchmark_methodology(result: Optional[dict]) -> list[str]:
         "reflect cross-sleeve return dispersion from active tilts relative to the benchmark "
         "basket. Style betas (HML, SMB, RMW) capture portfolio-wide factor tilts not "
         "explained by benchmark beta. The intercept is the active return component "
-        "unexplained by benchmark beta and style — the PRINCO/JPM IDD institutional "
-        "alpha definition.",
+        "unexplained by benchmark beta and style.",
 
         "CMA (investment factor) is excluded from this regression. For a passive/semi-passive "
         "multi-ETF implementation, CMA primarily captures differences in accruals and capex "
-        "patterns across the constituent ETFs — not a deliberate active tilt. Including it "
+        "patterns across the constituent ETFs, which reflect no deliberate active tilt. Including it "
         "would add collinearity without improving interpretation. HML, SMB, and RMW are "
         "the style factors most informative for this portfolio's deliberate tilts "
         "(value via VTV, size via AVUV, quality/profitability via SPHQ).",
@@ -1904,8 +1903,8 @@ def interpret_benchmark_attribution(result: dict) -> str:
     # Benchmark beta sentence — meaning only, no specific coefficient values
     if abs(b_bench - 1.0) < 0.10:
         bench_sentence = (
-            "The portfolio tracks its SAA policy benchmark closely — consistent with a "
-            "fully-invested passive/semi-passive implementation."
+            "The portfolio tracks its SAA policy benchmark closely, consistent with a "
+            "fully invested passive/semi-passive implementation."
         )
     else:
         bench_sentence = (
@@ -1931,7 +1930,7 @@ def interpret_benchmark_attribution(result: dict) -> str:
         style_sentence = (
             "Residual style tilts beyond the SAA benchmark: "
             + "; ".join(style_parts) + ". "
-            "See the regression table above for loadings and significance."
+            "The regression table above gives the loadings and their significance."
         )
     else:
         style_sentence = (
@@ -1944,15 +1943,15 @@ def interpret_benchmark_attribution(result: dict) -> str:
     if alpha_sig:
         alpha_dir = "positive" if a_bps > 0 else "negative"
         alpha_sentence = (
-            f"The active return intercept is statistically significant — a {alpha_dir} return "
+            f"The active return intercept is statistically significant: a {alpha_dir} return "
             "after accounting for both the SAA benchmark and residual style exposures. "
-            "See the regression table and the Interpretation section below for the full "
-            "alpha estimate with confidence interval."
+            "The regression table and the Interpretation section below give the full "
+            "alpha estimate with its confidence interval."
         )
     else:
         alpha_sentence = (
             "The active return intercept is not statistically significant at the current "
-            "sample length — the portfolio's return is consistent with its SAA benchmark "
+            "sample length: the portfolio's return is consistent with its SAA benchmark "
             "exposure and residual style tilts alone."
         )
 

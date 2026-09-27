@@ -95,7 +95,7 @@ def test_quarterly_snapshot_renders_when_quarter_reportable(performance_app: App
     if not performance_app.metric:
         pytest.skip("No portfolio data — skipped in local/empty-DB mode")
     markdowns = [m.value for m in performance_app.markdown]
-    assert any("Quarterly report —" in m and "(locked)" in m for m in markdowns), (
+    assert any("Quarterly report:" in m and "(locked)" in m for m in markdowns), (
         f"Section 1a '(locked)' quarterly header missing — demo path regressed. "
         f"Markdown headers: {[m for m in markdowns if 'Quarterly' in m]}"
     )
@@ -404,17 +404,20 @@ def test_reconciliation_no_yahoo_finance(performance_app: AppTest) -> None:
 
 
 def test_implementation_alpha_wording(performance_app: AppTest) -> None:
-    """Since-inception caption must use 'isolate implementation alpha from SAA-design effects'.
+    """Since-inception caption must name implementation alpha against SAA-design effects.
     Pinned: Phase 39 (pin corrected Phase 48.1 — page always had 'to isolate', test was
-    pinned against commit message wording 'isolates' which was never in the page code)."""
+    pinned against commit message wording 'isolates' which was never in the page code).
+    Migrated deliberately by the writing sweep (audit item 14b): "is the more meaningful to
+    isolate" became "is the more meaningful benchmark for separating"."""
     if not performance_app.metric:
         pytest.skip("No portfolio data — skipped in local/empty-DB mode")
     captions = [c.value for c in performance_app.caption]
-    assert any("isolate implementation alpha from SAA-design effects" in c for c in captions), (
-        "Since-inception caption missing 'isolate implementation alpha from SAA-design effects' — "
-        "Phase 48.1 corrected pin (Phase 39 Item 8). "
-        "Caption must read: '...is the more meaningful to isolate implementation alpha from SAA-design effects.'"
+    assert any("is the more meaningful benchmark for separating implementation alpha from "
+               "SAA-design effects" in c for c in captions), (
+        "Since-inception caption missing 'separating implementation alpha from SAA-design "
+        "effects' — Phase 39 Item 8, reworded by the sweep (item 14b)."
     )
+    assert not any("more meaningful to isolate" in c for c in captions)
 
 
 def test_cache_rows_not_in_validation_expander(performance_app: AppTest) -> None:
@@ -436,7 +439,7 @@ def test_stage_reconciliation_gap_caption_absent_on_clean_demo(performance_app: 
     if not performance_app.metric:
         pytest.skip("No portfolio data — skipped in local/empty-DB mode")
     captions = [c.value for c in performance_app.caption]
-    assert not any("quantifies that exclusion" in c for c in captions), (
+    assert not any("measures that exclusion" in c for c in captions), (
         "Gap-exclusion caption rendered on the clean (no-gap) demo — should only "
         f"appear under a benchmark/price gap. Captions: {captions}"
     )
@@ -471,7 +474,7 @@ def test_stage_reconciliation_gap_caption_appears_under_gap(monkeypatch) -> None
     assert not at.exception, f"Page raised with an injected benchmark gap: {at.exception}"
 
     captions = [c.value for c in at.caption]
-    assert any("quantifies that exclusion" in c for c in captions), (
+    assert any("measures that exclusion" in c for c in captions), (
         f"Expected gap-exclusion caption not found under an injected gap. Captions: {captions}"
     )
 
@@ -539,7 +542,7 @@ def test_naive_gap_notice_and_unavailable_tiles_under_total_gap(monkeypatch) -> 
     assert any("could not be priced" in i and "Stage 1 and Total" in i for i in infos), (
         f"Expected the baseline-unavailable note for the Stage 1/Total tiles. Infos: {infos}"
     )
-    assert any("Stage 1 sleeve breakdown unavailable" in i for i in infos), (
+    assert any("Stage 1 sleeve breakdown is unavailable" in i for i in infos), (
         f"Expected the Stage 1 sleeve breakdown to be replaced by an unavailable note. Infos: {infos}"
     )
 
@@ -547,7 +550,7 @@ def test_naive_gap_notice_and_unavailable_tiles_under_total_gap(monkeypatch) -> 
     assert "nan" not in all_metrics, f"A metric leaked 'nan' under the injected gap: {all_metrics}"
 
     captions = [c.value for c in at.caption]
-    assert any("Reconciliation unavailable" in c for c in captions), (
+    assert any("Reconciliation is unavailable" in c for c in captions), (
         f"Expected the reconciliation caption to degrade explicitly, got: {captions}"
     )
 

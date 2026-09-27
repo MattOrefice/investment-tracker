@@ -66,9 +66,9 @@ with col:
     )
     st.caption(
         f"Scope: {demo_portfolio_phrase()}." if IS_DEMO else
-        f"Scope: **{get_portfolio_account()['display_name']}** — the self-directed "
+        f"Scope: **{get_portfolio_account()['display_name']}**, the self-directed "
         "taxable book (traded ledger); retirement and externally-managed accounts "
-        "are excluded (see Household View)."
+        "are excluded and appear on the Household View."
     )
     # A slot, written again once the current value is priced below: in personal mode
     # during market hours that read can serve today's unsettled bar (#160, item 4i).
@@ -80,20 +80,20 @@ with col:
         st.markdown(
             "This decomposes the portfolio's **systematic risk** into five factor "
             "exposures. The portfolio's daily excess return is regressed on all "
-            "five factors **at once** — a single multiple regression, not five "
-            "separate ones:\n\n"
+            "five factors **at once**, in a single multiple regression rather than "
+            "five separate ones:\n\n"
             "> **R_portfolio − RF = α + β₁·Mkt-RF + β₂·SMB + β₃·HML + "
             "β₄·RATES + β₅·CREDIT + ε**\n\n"
             "Because the factors enter simultaneously, each **beta is a marginal "
-            "exposure** — the loading on that factor *controlling for the other "
-            "four*. (Five univariate regressions would double-count exposure "
-            "shared across correlated factors.)\n\n"
+            "exposure**: the loading on that factor *controlling for the other "
+            "four*. Five univariate regressions would double-count exposure "
+            "shared across correlated factors.\n\n"
             "- **Market / Size / Value** are the Fama-French US factors.\n"
-            f"- **Rates** — {RATES_PROXY_DISCLOSURE} *(ETF-based proxy.)*\n"
-            f"- **Credit** — {CREDIT_PROXY_DISCLOSURE} *(ETF-based proxy.)*\n\n"
+            f"- **Rates**: {RATES_PROXY_DISCLOSURE} *(ETF-based proxy.)*\n"
+            f"- **Credit**: {CREDIT_PROXY_DISCLOSURE} *(ETF-based proxy.)*\n\n"
             "**R²** is the share of return variance the factors jointly explain; "
             "the **residual (unexplained) share = 1 − R²** is the portion they "
-            "do *not* explain — including any Emerging Markets and Real Assets "
+            "do *not* explain. It includes any Emerging Markets and Real Assets "
             "return the five factors are not built to span, so this residual is "
             "not purely security-specific noise. Sample size (n) and the date "
             "window are shown so the estimates can be judged in context."
@@ -112,7 +112,7 @@ with col:
         result = _get_decomposition(inception, end_date)
     except Exception:  # pragma: no cover - defensive
         logging.exception("Factor decomposition failed")
-        st.error("Factor decomposition unavailable — please try again later.")
+        st.error("Factor decomposition unavailable. Please try again later.")
         st.stop()
 
     def _render_risk_contribution_section() -> None:
@@ -129,21 +129,21 @@ with col:
         st.divider()
         st.subheader("Risk contribution")
         st.caption(
-            "Total policy volatility decomposed into each sleeve's contribution — "
+            "Total policy volatility decomposed into each sleeve's contribution: "
             "risk share beside capital share, because correlation makes them differ."
         )
 
         with st.expander("How to read this section", expanded=False):
             st.markdown(
                 "Policy volatility is split into per-sleeve **risk contributions** "
-                "via the **Euler decomposition** — each sleeve's marginal contribution "
+                "via the **Euler decomposition**: each sleeve's marginal contribution "
                 "to risk weighted by its allocation. The contributions **sum exactly "
                 "to total policy volatility** (and the percentages to 100%); that "
                 "summation is the correctness check.\n\n"
-                "The point is the gap between **risk share and weight share**: a "
+                "What matters is the gap between **risk share and weight share**. A "
                 "high-volatility or highly-correlated sleeve contributes **more** risk "
                 "than its weight, while a diversifying (low/negative-correlation) "
-                "sleeve contributes **less** — *a 10% allocation is not 10% of the "
+                "sleeve contributes **less**: *a 10% allocation is not 10% of the "
                 "risk*. This is a decomposition of **total volatility**, not VaR or "
                 "downside risk, using realized **sample covariance** over the window."
             )
@@ -159,9 +159,9 @@ with col:
 
             st.metric("Policy / SAA volatility (annualized)", f"{rc['portfolio_vol'] * 100:.1f}%")
             st.caption(
-                "Computed from SAA target weights and sleeve-benchmark proxies — this "
+                "Computed from SAA target weights and sleeve-benchmark proxies: this "
                 "is the policy portfolio's volatility, not the realized volatility of "
-                "current holdings (which appears on the Performance page)."
+                "current holdings, which the Performance page shows."
             )
 
             # Grouped horizontal bars: each sleeve's risk share beside its capital
@@ -202,8 +202,8 @@ with col:
                 "Each sleeve's share of risk (navy) beside its share of capital (grey), "
                 "sorted by risk share. Where the navy bar exceeds the grey, the sleeve "
                 "contributes more risk than its weight (a risk concentrator); where it "
-                "falls short, the sleeve diversifies — a sleeve's share of capital is "
-                "not its share of risk. The table below is the precise reference."
+                "falls short, the sleeve diversifies. The table below gives the exact "
+                "figures."
             )
 
             rc_rows = []
@@ -222,17 +222,17 @@ with col:
             _rc_sum_pct = sum(s["risk_pct"] for s in rc["sleeves"]) * 100
             st.caption(
                 f"Euler check: the sleeve risk contributions sum to total policy "
-                f"volatility — Σ RC = {rc['rc_sum_check'] * 100:.2f}% = "
-                f"σ_p ({rc['portfolio_vol'] * 100:.2f}%); risk shares sum to "
-                f"{_rc_sum_pct:.1f}%. The **Risk − Weight** column is the point: where "
-                "it is positive the sleeve carries more risk than capital, where "
-                "negative it diversifies."
+                f"volatility, Σ RC = {rc['rc_sum_check'] * 100:.2f}% = "
+                f"σ_p ({rc['portfolio_vol'] * 100:.2f}%), and risk shares sum to "
+                f"{_rc_sum_pct:.1f}%. In the **Risk − Weight** column, a positive "
+                "figure means the sleeve carries more risk than capital, and a "
+                "negative one means it diversifies."
             )
             st.caption(
                 f"Sample covariance over {rc['n']} trading days since inception, "
-                "annualized (√252). Sample (realized) covariance is an estimate — "
-                "off-diagonal correlation terms especially — so read the shares in "
-                "the context of the window length."
+                "annualized (√252). Sample (realized) covariance is an estimate, the "
+                "off-diagonal correlation terms especially, so the shares carry the "
+                "uncertainty of a window this length."
             )
 
         with st.expander("Risk-contribution methodology & disclosure", expanded=False):
@@ -245,7 +245,7 @@ with col:
     if result["status"] == "insufficient_history":
         st.info(insufficient_history_message(result["n"], result["min_obs"]))
         st.caption(
-            "Factor betas are deliberately suppressed on thin samples — an "
+            "Factor betas are deliberately suppressed on thin samples: an "
             "explicit empty state rather than unstable coefficients, consistent "
             "with the rest of the app's treatment of short histories."
         )
@@ -295,7 +295,7 @@ with col:
     d_start = date.fromisoformat(result["sample_start"])
     d_end   = date.fromisoformat(result["sample_end"])
     window_str = (
-        f"{d_start.strftime('%B')} {d_start.day}, {d_start.year} — "
+        f"{d_start.strftime('%B')} {d_start.day}, {d_start.year} to "
         f"{d_end.strftime('%B')} {d_end.day}, {d_end.year}"
     )
     c1, c2, c3, c4 = st.columns(4)
@@ -306,15 +306,15 @@ with col:
     st.caption(f"Sample window: {window_str}")
     st.caption(
         f"The five factors jointly explain {result['r_squared'] * 100:.1f}% of "
-        f"the portfolio's return variance; the remaining "
-        f"{result['residual_share'] * 100:.1f}% is unexplained — return the "
-        "systematic factors do not account for (including any Emerging "
-        "Markets and Real Assets return the five factors don't span)."
+        f"the portfolio's return variance. The remaining "
+        f"{result['residual_share'] * 100:.1f}% is unexplained: return the "
+        "systematic factors do not account for, including any Emerging "
+        "Markets and Real Assets return the five factors don't span."
     )
 
     # ── Proxy disclosure ──────────────────────────────────────────────────────
     st.caption(
-        f"**Proxy disclosure** — {RATES_PROXY_DISCLOSURE} {CREDIT_PROXY_DISCLOSURE} "
+        f"**Proxy disclosure.** {RATES_PROXY_DISCLOSURE} {CREDIT_PROXY_DISCLOSURE} "
         "Both are tradeable ETF stand-ins for the academic term and credit premia, "
         "disclosed as proxies."
     )
@@ -341,9 +341,9 @@ with col:
             "Each scenario applies the **same factor betas** from the decomposition "
             "above to a set of factor shocks: **estimated P&L = Σ (β × factor "
             "move)**. Yield and spread shocks are **translated to factor returns "
-            "through duration** before the beta is applied — a rate move is a "
-            "duration-implied price return, not a raw basis-point number — and "
-            "the translation chain is shown on every line so the units are "
+            "through duration** before the beta is applied: a rate move becomes a "
+            "duration-implied price return, not a raw basis-point number. The "
+            "translation chain is shown on every line so the units are "
             "transparent.\n\n"
             "These are **instantaneous sensitivities, not forecasts**: what the "
             "book would gain or lose if the move happened at once. They are "
@@ -363,7 +363,7 @@ with col:
     for s in scen["scenarios"]:
         with st.container(border=True):
             usd = f" &nbsp;·&nbsp; **{_usd(s['total_usd'])}**" if s["total_usd"] is not None else ""
-            st.markdown(f"**{s['name']}** — estimated impact **{s['total_pct'] * 100:+.2f}%**{usd}")
+            st.markdown(f"**{s['name']}** &nbsp;·&nbsp; estimated impact **{s['total_pct'] * 100:+.2f}%**{usd}")
             st.caption(s["summary"])
             for leg in s["legs"]:
                 st.markdown(f"- {leg['chain']}")
@@ -379,9 +379,9 @@ with col:
         })
     st.dataframe(pd.DataFrame(summary_rows).set_index("Scenario"), width="stretch")
     st.caption(
-        "Risk-off shows the diversification-works case — a flight-to-quality rate "
-        "rally offsets part of the equity loss; the 2022-style regime shows the "
-        "diversification-fails case — rates and equity fall together and the "
+        "Risk-off is the diversification-works case: a flight-to-quality rate "
+        "rally offsets part of the equity loss. The 2022-style regime is the "
+        "diversification-fails case: rates and equity fall together and the "
         "losses compound."
     )
 

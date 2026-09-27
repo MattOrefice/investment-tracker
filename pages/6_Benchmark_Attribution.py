@@ -40,7 +40,7 @@ with col:
     )
     st.caption(
         f"Scope: {demo_portfolio_phrase()}." if IS_DEMO else
-        f"Scope: **{get_portfolio_account()['display_name']}** — the self-directed "
+        f"Scope: **{get_portfolio_account()['display_name']}**, the self-directed "
         "taxable book (traded ledger); retirement and externally-managed accounts "
         "are excluded."
     )
@@ -50,17 +50,17 @@ with col:
     with st.expander("How to read this page", expanded=False):
         st.markdown(
             "This page is **distinct from the Brinson-Fachler attribution** on the Performance "
-            "page. BF decomposes active return into allocation and selection effects per sleeve — "
-            "*what weights did we hold, and did our ETF choices beat their sleeve benchmarks?*\n\n"
-            "This page asks a different question: *what factor tilts explain portfolio performance "
-            "relative to the SAA policy benchmark?* The model is:\n\n"
+            "page. BF decomposes active return into allocation and selection effects per sleeve: "
+            "the weights held, and whether each ETF beat its sleeve benchmark.\n\n"
+            "This page measures which factor tilts explain portfolio performance relative to the "
+            "SAA policy benchmark. The model is:\n\n"
             "> **R_portfolio − RF = α + β₁·(R_benchmark − RF) + β₂·HML + β₃·SMB + β₄·RMW + ε**\n\n"
             "**R_benchmark − RF** is the custom SAA-target-weighted blended benchmark excess "
             f"return (not the S&P 500), {blended_rule_note()}. "
             "**HML, SMB, RMW** are Fama-French style factors. "
-            "**Alpha (α)** is the active return unexplained by benchmark beta or factor tilts — "
-            "the institutional alpha definition used in endowment and IDD contexts.\n\n"
-            "CMA is excluded for this passive/semi-passive implementation — see Methodology for details."
+            "**Alpha (α)** is the active return unexplained by benchmark beta or factor tilts.\n\n"
+            "CMA is excluded for this passive/semi-passive implementation; the Methodology "
+            "section gives the reason."
         )
 
     end_date  = date.today().isoformat()
@@ -75,13 +75,13 @@ with col:
         result = _get_benchmark_result(inception, end_date)
     except Exception:
         logging.exception("Benchmark attribution regression failed")
-        st.error("Benchmark attribution regression unavailable — please try again later.")
+        st.error("Benchmark attribution regression unavailable. Please try again later.")
         st.stop()
 
     if result is None:
         st.info(
-            "Insufficient data for regression — requires at least 30 aligned trading days. "
-            "Section will populate as portfolio history grows."
+            "Insufficient data for the regression: it needs at least 30 aligned trading days. "
+            "The section populates as the portfolio's history grows."
         )
         st.stop()
 
@@ -92,14 +92,14 @@ with col:
             "| Factor | Definition |\n"
             "|--------|------------|\n"
             "| **Bench-RF** | Custom SAA-target-weighted blended benchmark excess return (vs risk-free) |\n"
-            "| **HML** | High Minus Low — value minus growth (Fama-French) |\n"
-            "| **SMB** | Small Minus Big — small-cap minus large-cap returns |\n"
-            "| **RMW** | Robust Minus Weak — high-profitability minus low-profitability |"
+            "| **HML** | High Minus Low: value minus growth (Fama-French) |\n"
+            "| **SMB** | Small Minus Big: small-cap minus large-cap returns |\n"
+            "| **RMW** | Robust Minus Weak: high-profitability minus low-profitability |"
         )
         st.caption(
             "This regression isolates *residual style tilts beyond the SAA policy benchmark*. "
-            "It is a selection-and-intra-sleeve-tilt model, not a Brinson-Fachler "
-            "allocation/selection decomposition — that lives on the Performance page."
+            "It is a selection-and-intra-sleeve-tilt model; the Brinson-Fachler "
+            "allocation/selection decomposition is on the Performance page."
         )
     st.divider()
 
@@ -138,7 +138,7 @@ with col:
     d_start = date.fromisoformat(result["sample_start"])
     d_end   = date.fromisoformat(result["sample_end"])
     window_str = (
-        f"{d_start.strftime('%B')} {d_start.day}, {d_start.year} — "
+        f"{d_start.strftime('%B')} {d_start.day}, {d_start.year} to "
         f"{d_end.strftime('%B')} {d_end.day}, {d_end.year}"
     )
     c1, c2, c3, c4 = st.columns(4)
@@ -195,11 +195,10 @@ with col:
         st.markdown(
             "- **Alpha confidence intervals**: 95% CI = alpha_bps ± 1.96 × SE_bps, "
             "where SE_bps = HAC standard error of the intercept × 252 × 10,000. "
-            "HAC SEs are authoritative (correct for daily return autocorrelation); "
-            "CI applies to alpha only, not to factor betas. "
-            "Wide CIs at this sample length reflect parameter uncertainty, "
-            f"not a methodological failure — they correctly communicate sample-size limitations "
-            f"rather than model failure: the point estimate is unbiased; the confidence interval "
+            "HAC SEs are authoritative: they correct for daily return autocorrelation. "
+            "The CI applies to alpha only, not to factor betas. "
+            "A wide CI at this sample length reflects parameter uncertainty, "
+            f"not a methodological failure: the point estimate is unbiased, and the interval "
             f"is wide because {result['T']} observations is a short window for risk-adjusted "
             "return inference."
         )

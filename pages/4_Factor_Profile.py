@@ -64,24 +64,25 @@ with col:
     with st.expander("How to read this page", expanded=False):
         st.markdown(
             "Each regressed sleeve uses its **region-appropriate Fama-French factor "
-            "set**: US factors (Ken French Data Library) for the US equity sleeves (VOO, SPHQ, "
-            "VTV, AVUV), and Developed ex-US factors for every developed-international sleeve — "
-            "the cap-weighted core (VEA) and, in the tilted book, the quality / value / "
+            "set**: US factors (Ken French Data Library) for the US equity sleeves: VOO, SPHQ, "
+            "VTV, and AVUV. Developed ex-US factors cover every developed-international sleeve: "
+            "the cap-weighted core (VEA) and, in the tilted book, the quality, value, and "
             "small-value tilt sleeves and their passive controls. "
             "Per-sleeve regressions avoid the model misspecification that arises when non-US "
             "returns flow into a single US-factor model.\n\n"
             "**Residual (labelled α in the academic model):** the return left unexplained by the "
             "factor loadings. It is **not** the amount by which the holding beat a portfolio you "
             "could have bought. The Fama-French factors are long-short, gross-of-cost, "
-            "costlessly-rebalanced academic constructions — **no investable passive portfolio "
-            "matches them** — so a non-zero residual is expected before skill is ever in "
-            "question. Read it in this order, skill last and least: **sampling noise** (the 95% "
-            "CI shown with each residual spans hundreds of bps at ~1 year of data), then "
-            "**universe / classification mismatch** (the fund's index and the factor universe "
-            "treat Korea and Canada differently), then **construction differences** between a "
-            "real fund and the factors (net-of-withholding NAV vs gross factors, long-only vs "
-            "long-short, a microcap tail, stale cross-timezone pricing), and only then — last, "
-            "and weighted least — **skill**. Each tilt fund is shown beside a passive, "
+            "costlessly-rebalanced academic constructions. **No investable passive portfolio "
+            "matches them**, so a non-zero residual is expected before skill is ever in "
+            "question. A residual is weighed in this order, skill last and least. First comes "
+            "**sampling noise**: the 95% CI shown with each residual spans hundreds of bps at "
+            "~1 year of data. Then **universe / classification mismatch**: the fund's index and "
+            "the factor universe treat Korea and Canada differently. Then **construction "
+            "differences** between a real fund and the factors: net-of-withholding NAV vs gross "
+            "factors, long-only vs long-short, a microcap tail, stale cross-timezone pricing. "
+            "Only then, last and weighted least, comes **skill**. Each tilt fund is shown beside "
+            "a passive, "
             "**Canada-matched control**: when the control carries a large residual too, the "
             "residual is measuring construction, not selection.\n\n"
             "**Factor loadings (β):** Mkt-RF captures market beta (>1 = more market risk than "
@@ -129,7 +130,7 @@ with col:
         tilt_results = _get_tilt_results(inception, end_date)
     except Exception:
         logging.exception("Factor regression failed")
-        st.error("Factor regression unavailable — please try again later.")
+        st.error("Factor regression unavailable. Please try again later.")
         st.stop()
 
     # ── Factor definitions panel ─────────────────────────────────────────────
@@ -138,11 +139,11 @@ with col:
         st.markdown(
             "| Factor | Definition |\n"
             "|--------|------------|\n"
-            "| **Mkt-RF** | Market excess return — broad market return minus risk-free rate |\n"
-            "| **SMB** | Small Minus Big — small-cap minus large-cap returns |\n"
-            "| **HML** | High Minus Low — value minus growth (high book-to-market minus low) |\n"
-            "| **RMW** | Robust Minus Weak — high-profitability minus low-profitability firms |\n"
-            "| **CMA** | Conservative Minus Aggressive — low-investment minus high-investment firms |"
+            "| **Mkt-RF** | Market excess return: broad market return minus the risk-free rate |\n"
+            "| **SMB** | Small Minus Big: small-cap minus large-cap returns |\n"
+            "| **HML** | High Minus Low: value minus growth (high book-to-market minus low) |\n"
+            "| **RMW** | Robust Minus Weak: high-profitability minus low-profitability firms |\n"
+            "| **CMA** | Conservative Minus Aggressive: low-investment minus high-investment firms |"
         )
     st.divider()
 
@@ -153,8 +154,8 @@ with col:
 
     if not any_result:
         st.info(
-            "Insufficient data for regression — requires at least 30 aligned trading days. "
-            "Section will populate as portfolio history grows."
+            "Insufficient data for the regression: it needs at least 30 aligned trading days. "
+            "The section populates as the portfolio's history grows."
         )
         st.stop()
 
@@ -192,7 +193,7 @@ with col:
         d_s = date.fromisoformat(r["sample_start"])
         d_e = date.fromisoformat(r["sample_end"])
         win = (
-            f"{d_s.strftime('%B')} {d_s.day}, {d_s.year} — "
+            f"{d_s.strftime('%B')} {d_s.day}, {d_s.year} to "
             f"{d_e.strftime('%B')} {d_e.day}, {d_e.year}"
         )
         st.caption(f"Sample window: {win}")
@@ -216,7 +217,7 @@ with col:
         st.caption(f"Tickers: {', '.join(res['tickers'])}")
 
         if key == "developed_exus":
-            _render_factor_table(res, _FACTORS, label="FF5 — Developed ex-US")
+            _render_factor_table(res, _FACTORS, label="FF5: Developed ex-US")
             _render_fit_metrics(res)
             st.write(build_factor_prose({"us": None, "developed_exus": res})[0])
             res_mom = results_mom.get(key)
@@ -228,14 +229,14 @@ with col:
                     if abs(_mom_t) >= 1.96:
                         st.caption(
                             f"Mom loading of {_mom_b:+.3f} (t = {_mom_t:.2f}) is statistically "
-                            f"significant but economically small — some incidental momentum exposure "
-                            f"leaks through the SPHQ quality factor, but the loading magnitude confirms "
+                            f"significant but economically small. Some incidental momentum exposure "
+                            f"leaks through the SPHQ quality factor, and the loading's size confirms "
                             f"momentum is not a deliberate tilt."
                         )
                     else:
                         st.caption(
                             f"Mom loading of {_mom_b:+.3f} (t = {_mom_t:.2f}) confirms the portfolio "
-                            f"does not carry a systematic momentum tilt — consistent with the tax-aware "
+                            f"carries no systematic momentum tilt, consistent with the tax-aware "
                             f"construction (high momentum turnover → short-term capital gains)."
                         )
         else:
@@ -251,14 +252,14 @@ with col:
                     if abs(_mom_t) >= 1.96:
                         st.caption(
                             f"Mom loading of {_mom_b:+.3f} (t = {_mom_t:.2f}) is statistically "
-                            f"significant but economically small — some incidental momentum exposure "
-                            f"leaks through the SPHQ quality factor, but the loading magnitude confirms "
+                            f"significant but economically small. Some incidental momentum exposure "
+                            f"leaks through the SPHQ quality factor, and the loading's size confirms "
                             f"momentum is not a deliberate tilt."
                         )
                     else:
                         st.caption(
                             f"Mom loading of {_mom_b:+.3f} (t = {_mom_t:.2f}) confirms the portfolio "
-                            f"does not carry a systematic momentum tilt — consistent with the tax-aware "
+                            f"carries no systematic momentum tilt, consistent with the tax-aware "
                             f"construction (high momentum turnover → short-term capital gains)."
                         )
 
@@ -272,23 +273,23 @@ with col:
         if v.get("fund_result") is not None
     }
     if _tilt_renderable:
-        st.subheader("International Tilt Sleeves — fund vs Canada-matched control")
+        st.subheader("International Tilt Sleeves: fund vs Canada-matched control")
         st.caption(
             "Each developed-international tilt sleeve is regressed against the same "
             "Developed ex-US FF5 factors as VEA, and shown beside a passive control "
-            "fund. The controls are Canada-matched (IQLT, IVLU, ISVL) — deliberately "
-            "NOT the SAA attribution benchmarks (EFV, SCZ), which track MSCI EAFE and "
+            "fund. The controls are Canada-matched (IQLT, IVLU, ISVL), and deliberately "
+            "not the SAA attribution benchmarks (EFV, SCZ), which track MSCI EAFE and "
             "exclude Canada."
         )
         st.info(
-            "**Why not EFV / SCZ as the controls?** The Ken French Developed ex-US "
+            "**EFV and SCZ are not the controls.** The Ken French Developed ex-US "
             "factor universe includes Canada; MSCI EAFE (EFV, SCZ) excludes it, and "
             "the tilt funds hold it at ~11–13%. Canada's return is in the factors "
             "and in the tilt funds but not in EFV or SCZ, so against these factors a "
-            "Canada-holed control carries a residual the tilt funds do not share. It "
-            "would read as a clean gauge while hiding the missing-Canada "
-            "return, so IQLT / IVLU / ISVL are used instead — each matches the factor "
-            "universe on both counts (Canada in, Korea out)."
+            "control without Canada carries a residual the tilt funds do not share. It "
+            "would read as a clean gauge while hiding the missing Canada return, so "
+            "IQLT, IVLU, and ISVL are used instead: each matches the factor universe on "
+            "both counts (Canada in, Korea out)."
         )
         st.markdown(intl_residual_reading_order())
         st.divider()
@@ -297,12 +298,12 @@ with col:
             _fr = _entry["fund_result"]
             _cr = _entry["control_result"]
             st.markdown(
-                f"#### {_entry['sleeve']} — {_entry['fund']} "
+                f"#### {_entry['sleeve']}: {_entry['fund']} "
                 f"<span style='font-weight:normal'>({_entry['fund_name']})</span>",
                 unsafe_allow_html=True,
             )
             _render_factor_table(
-                _fr, _FACTORS, label=f"FF5 — {_entry['fund']} (fund)"
+                _fr, _FACTORS, label=f"FF5: {_entry['fund']} (fund)"
             )
             _render_fit_metrics(_fr)
 
@@ -310,7 +311,7 @@ with col:
                 _render_factor_table(
                     _cr, _FACTORS,
                     label=(
-                        f"FF5 — {_entry['control']} control "
+                        f"FF5: {_entry['control']} control "
                         f"({_entry['control_index']}, Canada-matched)"
                     ),
                 )
@@ -320,9 +321,9 @@ with col:
                     f"**Fund-minus-control residual: {_gap:+.0f} bps/yr** "
                     f"({_entry['fund']} {_fr['alpha_annual_bps']:+.0f} − "
                     f"{_entry['control']} {_cr['alpha_annual_bps']:+.0f}). Both residuals "
-                    "carry wide confidence intervals at this sample length; the control's "
-                    "own non-zero residual is the point — it is what construction against "
-                    "the academic factors costs a passive, Canada-matched fund."
+                    "carry wide confidence intervals at this sample length. The control's "
+                    "own non-zero residual shows what construction against the academic "
+                    "factors costs a passive, Canada-matched fund."
                 )
             else:
                 st.caption(
@@ -335,15 +336,16 @@ with col:
             st.divider()
 
     # ── FI sleeve — TERM / CREDIT regression ─────────────────────────────────
-    st.subheader("Fixed Income Sleeve — TERM / CREDIT")
+    st.subheader("Fixed Income Sleeve: TERM / CREDIT")
     st.caption(
         "FI sleeve uses TERM and CREDIT factors; "
         "Carhart momentum supplement not applicable to a duration-driven sleeve."
     )
     if fi_result is None:
         st.warning(
-            "FI factor data temporarily unavailable — requires IEF, BIL, and HYG daily prices "
-            "plus Ken French US risk-free rate. Panel populates once the price series are cached."
+            "FI factor data is temporarily unavailable: the regression needs IEF, BIL, and HYG "
+            "daily prices plus the Ken French US risk-free rate. The panel populates once the "
+            "price series are cached."
         )
         if st.button("Retry", key="retry_fi"):
             _get_fi_result.clear()
@@ -389,7 +391,7 @@ with col:
         d_s = date.fromisoformat(fi_result["sample_start"])
         d_e = date.fromisoformat(fi_result["sample_end"])
         fi_win = (
-            f"{d_s.strftime('%B')} {d_s.day}, {d_s.year} — "
+            f"{d_s.strftime('%B')} {d_s.day}, {d_s.year} to "
             f"{d_e.strftime('%B')} {d_e.day}, {d_e.year}"
         )
         st.caption(f"Sample window: {fi_win}")
@@ -421,12 +423,12 @@ with col:
             st.markdown("**Non-US Equity Sleeves**")
             for item in non_us:
                 st.markdown(
-                    f"- **{item['ticker']}** ({item['region_label']}) — "
+                    f"- **{item['ticker']}** ({item['region_label']}): "
                     f"{item['weight_pct']:.1f}% of portfolio"
                 )
             st.caption(
                 "Non-US holdings are not directly comparable to US value/growth and "
-                "market-cap distributions. See Morningstar regional style boxes for "
+                "market-cap distributions. Morningstar's regional style boxes cover "
                 "international placement methodology."
             )
             if len(non_us) > 2:
@@ -437,9 +439,9 @@ with col:
                     "Regression coverage: the cap-weighted core sleeve (VEA) and "
                     "the three quality/value/small-value tilt sleeves (IDHQ, AVIV, "
                     "AVDV) each carry a per-sleeve factor regression above, against "
-                    "the developed ex-US FF5 series — the tilt sleeves paired with a "
+                    "the developed ex-US FF5 series. Each tilt sleeve is paired with a "
                     "Canada-matched control fund. Emerging Markets has no regression "
-                    "by design (see disclosure above)."
+                    "by design, as the disclosure above explains."
                 )
     else:
         st.info("No equity holdings found.")
@@ -454,8 +456,8 @@ with col:
             "- **Residual (α) confidence intervals**: 95% CI = residual_bps ± 1.96 × SE_bps, "
             "where SE_bps = HAC standard error of the intercept × 252 × 10,000. "
             "CIs apply to the residual (regression intercept) only. Wide CIs at ≤2 years "
-            "of history correctly communicate that the residual estimate is not yet "
-            "stable — this is a feature of honest reporting, not a methodological weakness."
+            "of history show that the residual estimate is not yet stable; they reflect the "
+            "sample length, not a methodological weakness."
         )
         st.caption(
             "Data: Ken French Data Library, Dartmouth (mba.tuck.dartmouth.edu). "
