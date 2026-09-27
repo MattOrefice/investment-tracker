@@ -26,6 +26,16 @@ def _window_cutoff(window: str, anchor_end: "pd.Timestamp") -> "pd.Timestamp | N
     return None  # "SI" = full inception series
 
 
+def window_bounds(window: str, index: "pd.DatetimeIndex") -> "tuple[pd.Timestamp, pd.Timestamp]":
+    """The first and last dates a window's metrics cover: its cutoff, or the series'
+    first date for Since Inception, through the series' last date. The page averages
+    the risk-free rate over exactly these dates (audit item 15a)."""
+    end = index[-1]
+    cutoff = _window_cutoff(window, end)
+    start = index[0] if cutoff is None else max(cutoff, index[0])
+    return start, end
+
+
 def one_year_overlap_note(si_days: int) -> "str | None":
     """What a young portfolio's 1 Year window shares with Since Inception, or None.
 
@@ -62,9 +72,10 @@ def compute_risk_metrics(
     Args:
         pv:         Daily portfolio value series (absolute dollars, DatetimeIndex).
         bl:         Daily benchmark series (any scale, DatetimeIndex).
-        rf_annual:  Annual risk-free rate as decimal. Default 4.5%, a fixed assumption,
-                    not the current bill yield. Deriving it from the 3-month bill series
-                    is open (2026-09-25 audit, item 7).
+        rf_annual:  Annual risk-free rate as decimal; also Sortino's target. The
+                    Performance page passes each window's average 3-month Treasury bill
+                    rate (src.risk_free, audit item 15a). The default, 4.5%, is the
+                    fixed rate the page used before, kept for callers that pass none.
         window:     "SI" = full inception history; "1Y" / "3M" / "1M" = trailing
                     calendar-day windows; "YTD" = year-to-date from Jan 1.
         cashflows:  Optional daily net external-flow series (signed dollars,

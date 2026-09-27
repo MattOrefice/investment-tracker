@@ -70,8 +70,14 @@ def test_the_reconciliation_and_the_metric_notes_sit_in_expanders(performance):
 
 
 def test_the_risk_free_rate_is_not_called_the_current_cash_yield(performance):
+    """Item 7 made the note stop calling a fixed 4.5% "the current cash yield"; item
+    15a replaced the fixed rate with each window's average bill rate, so the pin moved
+    to the rule the note now states (tests/render/test_risk_free_render.py checks the
+    rates themselves)."""
     text = " ".join(_texts(performance))
-    assert "RF = 4.5%, a fixed assumption rather than the current bill yield" in text
+    assert "RF = 4.5%" not in text
+    assert ("Sharpe and Sortino use the window's average 3-month Treasury bill rate "
+            "(FRED DGS3MO) as the risk-free rate.") in text
     assert "current cash yield" not in text
     assert "downside deviation" in text
 

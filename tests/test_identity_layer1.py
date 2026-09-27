@@ -320,27 +320,25 @@ def test_identity_inception_matches_db_min_trade_date():
 # ── 1.5  Risk-free rate consistency ──────────────────────────────────────────
 
 def test_identity_rf_default_matches_caption_disclosure():
-    """The default rf_annual parameter in compute_risk_metrics must equal 4.5% (0.045),
-    matching the 'RF = 4.5%' disclosure in the Performance page caption.
-
-    If the rate is updated in the code without updating the caption (or vice versa),
-    this test fails and forces both to be updated in sync.
+    """The page's disclosure must match the rate its figures use. Migrated deliberately
+    by audit item 15a: the page used to rely on compute_risk_metrics' default (4.5%)
+    and disclose "RF = 4.5%"; it now passes each window's average 3-month bill rate and
+    discloses that rule, so what this pins is that EVERY call on the page passes the
+    rate explicitly (a call that fell back to the default would use a rate the caption
+    does not state) and that the page no longer discloses the fixed rate.
     """
+    import ast
     sig = inspect.signature(compute_risk_metrics)
-    rf_default = sig.parameters["rf_annual"].default
-    assert rf_default == pytest.approx(0.045, abs=1e-10), (
-        f"compute_risk_metrics default rf_annual = {rf_default}, expected 0.045 (4.5%). "
-        "Update both the code default and the caption disclosure in pages/2_Performance.py."
-    )
+    assert sig.parameters["rf_annual"].default == pytest.approx(0.045, abs=1e-10)
 
-    # Also confirm the caption string contains the matching text
     page_path = pathlib.Path(__file__).resolve().parent.parent / "pages" / "2_Performance.py"
     source = page_path.read_text(encoding="utf-8")
-    rf_pct_str = f"{rf_default * 100:.1f}%"  # "4.5%"
-    assert f"RF = {rf_pct_str}" in source, (
-        f"'RF = {rf_pct_str}' not found in pages/2_Performance.py. "
-        "The caption disclosure must match the rf_annual default."
-    )
+    calls = [n for n in ast.walk(ast.parse(source)) if isinstance(n, ast.Call)
+             and getattr(n.func, "id", None) == "compute_risk_metrics"]
+    assert calls, "premise: the page computes risk metrics"
+    assert all(any(k.arg == "rf_annual" for k in c.keywords) for c in calls), (
+        "a compute_risk_metrics call on the page falls back to the default rate")
+    assert "RF = 4.5%" not in source
 
 
 def test_identity_rf_daily_conversion_from_annual():

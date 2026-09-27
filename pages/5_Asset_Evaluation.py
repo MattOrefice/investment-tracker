@@ -61,7 +61,7 @@ def _load_candidate_returns(ticker: str) -> pd.Series:
 @st.cache_data(ttl=3600, show_spinner=False)
 def _load_univariate_table() -> pd.DataFrame:
     try:
-        return ae.build_univariate_table()
+        return ae.build_univariate_table(rf_annual=_rf_annual())
     except Exception:
         return pd.DataFrame()
 
@@ -106,13 +106,32 @@ def _load_weekly_correlations() -> pd.Series:
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def _load_mv_analysis() -> dict:
+def _load_risk_free():
+    """(rate, reason): the sample's average 3-month Treasury bill rate (audit item
+    15a), or None and why there is none."""
     try:
         btc = _load_btc_returns()
         slv = _load_sleeve_returns()
         if btc.empty or slv.empty:
+            return None, "the return series are empty"
+        return ae.sample_risk_free(btc, slv), None
+    except Exception as exc:
+        return None, str(exc)
+
+
+def _rf_annual() -> float:
+    _r = _load_risk_free()[0]
+    return _r.annual if _r is not None else float("nan")
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _load_mv_analysis() -> dict:
+    try:
+        btc = _load_btc_returns()
+        slv = _load_sleeve_returns()
+        if btc.empty or slv.empty or _load_risk_free()[0] is None:
             return {}
-        return ae.compute_mv_analysis(btc, slv, ae.RF_ANNUAL)
+        return ae.compute_mv_analysis(btc, slv, _rf_annual())
     except Exception:
         return {}
 
@@ -122,9 +141,9 @@ def _load_marginal_sharpe_curve() -> pd.DataFrame:
     try:
         btc = _load_btc_returns()
         slv = _load_sleeve_returns()
-        if btc.empty or slv.empty:
+        if btc.empty or slv.empty or _load_risk_free()[0] is None:
             return pd.DataFrame()
-        return ae.compute_marginal_sharpe_curve(btc, slv, ae.sleeve_weights(), ae.RF_ANNUAL)
+        return ae.compute_marginal_sharpe_curve(btc, slv, ae.sleeve_weights(), _rf_annual())
     except Exception:
         return pd.DataFrame()
 
@@ -134,9 +153,9 @@ def _load_drawdown_sensitivity() -> pd.DataFrame:
     try:
         btc = _load_btc_returns()
         slv = _load_sleeve_returns()
-        if btc.empty or slv.empty:
+        if btc.empty or slv.empty or _load_risk_free()[0] is None:
             return pd.DataFrame()
-        return ae.compute_drawdown_sensitivity(btc, slv, ae.sleeve_weights(), rf_annual=ae.RF_ANNUAL)
+        return ae.compute_drawdown_sensitivity(btc, slv, ae.sleeve_weights(), rf_annual=_rf_annual())
     except Exception:
         return pd.DataFrame()
 
@@ -409,6 +428,16 @@ with col:
 btc_ret  = _load_btc_returns()
 slv_ret  = _load_sleeve_returns()
 spy_ret  = _load_spy_returns()
+def _rf_line() -> str:
+    """The rate this page's Sharpe figures use, and where it came from."""
+    from src import risk_free
+    _r, _why = _load_risk_free()
+    if _r is None:
+        return (f"not available ({_why}), so the Sharpe figures and the mean-variance "
+                "analysis are not shown.")
+    return f"{risk_free.describe(_r)}, the sample's own window."
+
+
 uni_tbl  = _load_univariate_table()
 corr     = _load_full_sample_correlations(
     btc_key=TODAY,   # daily cache bust key
@@ -461,7 +490,7 @@ with col:
             "Kurtosis":      "{:.2f}",
         }
         st.dataframe(
-            display_tbl.style.format(fmt),
+            display_tbl.style.format(fmt, na_rep="—"),
             use_container_width=True,
         )
 
@@ -1126,9 +1155,8 @@ with col:
             "the information-ratio formula is used for the headline metric instead. "
             "Constrained tangency uses scipy.optimize.minimize (SLSQP) with bounds "
             "0 ≤ w_i ≤ 25% and Σw = 1, maximizing annualized Sharpe.\n\n"
-            f"**Risk-free rate:** {ae.RF_ANNUAL:.2%} annual ({ae.RF_ANNUAL * 10_000:.0f} bps), "
-            "a static rate used for this page's MV analysis only — matching the "
-            "risk-free rate disclosed on the Performance page's Sharpe/Sortino caption. "
+            f"**Risk-free rate:** {_rf_line()} The Performance page averages the same "
+            "series over each of its own windows. "
             "Converted to daily via geometric compounding, (1+rf)^(1/252) − 1, "
             "for MV optimization internals — the same convention the Performance "
             "page uses, not simple division by 252.\n\n"

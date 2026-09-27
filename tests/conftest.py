@@ -567,9 +567,10 @@ FROZEN_BOOK = _ROOT / "tests" / "fixtures" / "frozen_book.db"
 
 def point_at_frozen_book(mp: "pytest.MonkeyPatch", tmp_dir: Path) -> Path:
     """Copy the frozen book into ``tmp_dir``, point src.db at the copy, and block
-    the network. Returns the copy's path."""
+    the network, FRED included. Returns the copy's path."""
     import socket
     import src.db
+    import src.macro
     import src.prices
     copy = tmp_dir / "frozen_book.db"
     shutil.copyfile(FROZEN_BOOK, copy)
@@ -580,6 +581,9 @@ def point_at_frozen_book(mp: "pytest.MonkeyPatch", tmp_dir: Path) -> Path:
 
     mp.setattr(socket, "getaddrinfo", _offline)
     mp.setattr(src.prices._SESSION, "get", _offline)
+    # FRED's client retries a blocked socket for 13 s per series; offline, it fails at
+    # once, and the risk-free rate reads the book's stored bill series (audit item 15a).
+    mp.setattr(src.macro, "fetch_fred_series", _offline)
     mp.setattr(src.db, "DB_PATH", copy)
     mp.setattr(src.db, "_migrated_paths", set())
     src.prices._reset_trailing_memo()

@@ -1501,6 +1501,9 @@ def _build_asset_eval_section() -> dict:
         # than derived: accurate sleeve-level numbers would still describe
         # something the column does not compute. #276.
         "btc_2022_mdd":     None,
+        # The risk-free rate every Sharpe figure here uses, and where it came from
+        # (audit item 15a): the sample's average 3-month Treasury bill rate.
+        "rf_note":          None,
         "args_for":         [],
         "args_against":     [],
         "conclusion": ae.CONCLUSION,
@@ -1530,6 +1533,16 @@ def _build_asset_eval_section() -> dict:
         f"Live, not locked to the report's quarter: returns from {ae.SAMPLE_START} "
         f"through {_through.date().isoformat()}."
     )
+    # The sample's average 3-month Treasury bill rate (audit item 15a), live like the
+    # returns it is set against. Without it no Sharpe figure can be computed, so the
+    # section says so rather than computing them on a guess.
+    from src import risk_free
+    try:
+        _rf = ae.sample_risk_free(btc_ret, slv_ret)
+    except risk_free.RiskFreeUnavailable as exc:
+        return {**_empty, "disposition": "failed",
+                "failure_reason": f"{type(exc).__name__}: {exc}"}
+    result["rf_note"] = f"Risk-free rate: {risk_free.describe(_rf)}."
 
     # Bitcoin's OWN realized 2022 drawdown, for the table caption (#276). Computed
     # here rather than inside 5h because it is a property of the candidate asset, not
@@ -1542,7 +1555,7 @@ def _build_asset_eval_section() -> dict:
 
     # 5a: Univariate statistics
     try:
-        uni_tbl = ae.build_univariate_table()
+        uni_tbl = ae.build_univariate_table(rf_annual=_rf.annual)
         if not uni_tbl.empty:
             for name, row in uni_tbl.iterrows():
                 result["uni_rows"].append({
@@ -1649,7 +1662,7 @@ def _build_asset_eval_section() -> dict:
     mv_result: dict = {}
     msc: pd.DataFrame = pd.DataFrame()
     try:
-        mv_result = ae.compute_mv_analysis(btc_ret, slv_ret, ae.RF_ANNUAL)
+        mv_result = ae.compute_mv_analysis(btc_ret, slv_ret, _rf.annual)
         if mv_result:
             sleeves_list    = mv_result["sleeves"]
             w_con_no        = mv_result["w_con_no"]
@@ -1679,7 +1692,7 @@ def _build_asset_eval_section() -> dict:
 
     # 5g: Marginal Sharpe curve
     try:
-        msc = ae.compute_marginal_sharpe_curve(btc_ret, slv_ret, ae.sleeve_weights(), ae.RF_ANNUAL)
+        msc = ae.compute_marginal_sharpe_curve(btc_ret, slv_ret, ae.sleeve_weights(), _rf.annual)
         if not msc.empty:
             fig_msc = go.Figure()
             fig_msc.add_trace(go.Scatter(
@@ -1718,7 +1731,7 @@ def _build_asset_eval_section() -> dict:
     _port: dict[str, float] = {}
     try:
         dd_sens = ae.compute_drawdown_sensitivity(
-            btc_ret, slv_ret, ae.sleeve_weights(), rf_annual=ae.RF_ANNUAL
+            btc_ret, slv_ret, ae.sleeve_weights(), rf_annual=_rf.annual
         )
         if not dd_sens.empty:
             for _, row in dd_sens.iterrows():

@@ -46,7 +46,8 @@ from src.holdings import (
     last_settled_price_date,
     spaxx_modeled_income,
 )
-from src.performance import compute_risk_metrics, one_year_overlap_note
+from src import risk_free
+from src.performance import compute_risk_metrics, one_year_overlap_note, window_bounds
 from src.cache import LockCoverageError
 from src.reports import generate_quarterly_report_bytes
 from src.sleeve_config import international_sleeves
@@ -735,11 +736,37 @@ with col:
         _risk_bm_label  = "60/40 (60% SPY / 40% AGG)"
     _bm_row_label = _BM_ROW_LABELS[_risk_bm_kind]
 
-    _m_si  = compute_risk_metrics(pv, _bl_for_metrics, window="SI",  cashflows=cf)
-    _m_1y  = compute_risk_metrics(pv, _bl_for_metrics, window="1Y",  cashflows=cf)
-    _m_ytd = compute_risk_metrics(pv, _bl_for_metrics, window="YTD", cashflows=cf)
-    _m_3m  = compute_risk_metrics(pv, _bl_for_metrics, window="3M",  cashflows=cf)
-    _m_1m  = compute_risk_metrics(pv, _bl_for_metrics, window="1M",  cashflows=cf)
+    # Each window's risk-free rate is the average 3-month Treasury bill rate over the
+    # window's own dates, and Sortino's target is the same rate (audit item 15a). With
+    # no rate at all, Sharpe and Sortino are not shown rather than shown on a guess.
+    try:
+        _bills = risk_free.bill_series()
+        _rf_error = None
+    except risk_free.RiskFreeUnavailable as exc:
+        _bills, _rf_error = None, str(exc)
+
+    def _rf_for(window: str):
+        if _bills is None:
+            return None
+        _lo, _hi = window_bounds(window, pv.index)
+        try:
+            return risk_free.rate_over(_lo, _hi, _bills)
+        except risk_free.RiskFreeUnavailable:
+            return None
+
+    _rf_by_window = {w: _rf_for(w) for w in ("SI", "1Y", "YTD", "3M", "1M")}
+
+    def _metrics(window: str) -> dict:
+        _r = _rf_by_window[window]
+        return compute_risk_metrics(pv, _bl_for_metrics,
+                                    rf_annual=_r.annual if _r else float("nan"),
+                                    window=window, cashflows=cf)
+
+    _m_si  = _metrics("SI")
+    _m_1y  = _metrics("1Y")
+    _m_ytd = _metrics("YTD")
+    _m_3m  = _metrics("3M")
+    _m_1m  = _metrics("1M")
 
     _RISK_WINDOW_LABELS = ["1 Month", "3 Months", "YTD", "1 Year", "Since Inception"]
     _RISK_WINDOW_MAP = {
@@ -749,6 +776,8 @@ with col:
         "1 Year":          _m_1y,
         "Since Inception": _m_si,
     }
+    _RISK_WINDOW_CODES = {"1 Month": "1M", "3 Months": "3M", "YTD": "YTD",
+                          "1 Year": "1Y", "Since Inception": "SI"}
 
     def _fmt_ratio(v) -> str:
         return f"{v:.2f}" if v == v else "—"
@@ -793,6 +822,14 @@ with col:
             _b5.metric("VaR (95%)",      _fmt_pct(_m["bench_var_95_pct"]))
             _b6.metric("CVaR (95%)",     _fmt_pct(_m["bench_cvar_95_pct"]))
 
+            _rf_sel = _rf_by_window[_RISK_WINDOW_CODES[_window_label]]
+            if _rf_sel is not None:
+                st.caption(f"Risk-free rate, {_window_label}: {risk_free.describe(_rf_sel)}.")
+            else:
+                st.caption("Sharpe and Sortino are not shown: "
+                           + (_rf_error or "the 3-month Treasury bill series does not "
+                                           "reach this window") + ".")
+
             st.markdown("---")
 
             # Row 3 — benchmark-relative metrics
@@ -805,9 +842,10 @@ with col:
 
         st.expander("How these metrics are computed", expanded=False).caption(
             "Std Dev: annualized return volatility (trading days only, ddof=1). "
-            "Sharpe and Sortino use RF = 4.5%, a fixed assumption rather than the "
-            "current bill yield. Sortino divides by the downside deviation: the root mean "
-            "square of returns below the risk-free rate, over every trading day. "
+            "Sharpe and Sortino use the window's average 3-month Treasury bill rate "
+            "(FRED DGS3MO) as the risk-free rate. Sortino divides by the downside "
+            "deviation: the root mean square of returns below that rate, over every "
+            "trading day. "
             "Benchmark metrics computed from the same return series used in the vs-benchmark "
             "statistics below, over the selected window. "
             f"Tracking error, information ratio, beta, and active return vs. {_risk_bm_label}. "

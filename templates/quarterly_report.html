@@ -570,6 +570,7 @@
 <section>
   <h2>Asset Evaluation &mdash; Case Study: Bitcoin</h2>
   {% if asset_eval and asset_eval.as_of %}<p class="muted">{{ asset_eval.as_of }}</p>{% endif %}
+  {% if asset_eval and asset_eval.rf_note %}<p class="muted">{{ asset_eval.rf_note }}</p>{% endif %}
 
   {# Gated on DISPOSITION, not on uni_rows (#250). The old gate suppressed the
      whole section whenever the univariate table was empty, discarding the
