@@ -139,3 +139,17 @@ def test_sortino_measures_shortfall_below_the_rate():
     above = compute_risk_metrics(pv, bl, rf_annual=0.20)
     assert np.isnan(at_zero["sortino"])
     assert above["sortino"] < 0 and above["sharpe"] < 0
+
+
+def test_the_asset_evaluation_sample_ends_where_both_series_do(monkeypatch):
+    """Bitcoin trades every day and the sleeves on weekdays; the sample's rate runs to
+    the last day BOTH reach, not the later one. Needs a bill series that covers both ends,
+    which the demo's stored series (ending May 2026) does not, so it is checked here."""
+    import src.asset_evaluation as ae
+    b = _bills([0.01] * 10 + [0.09] * 5, start="2026-01-01")
+    monkeypatch.setattr(risk_free, "bill_series", lambda: b)
+    slv = pd.DataFrame({"x": 1.0}, index=pd.bdate_range("2026-01-01", periods=10))
+    btc = pd.Series(1.0, index=pd.date_range("2026-01-01", b.series.index[-1]))
+    r = ae.sample_risk_free(btc, slv)
+    assert r.through == slv.index[-1].date()
+    assert r.annual == pytest.approx(0.01)
