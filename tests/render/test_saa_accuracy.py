@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import shutil
 from pathlib import Path
 
@@ -120,8 +121,8 @@ def test_the_cape_sentence_is_derived_and_reads_cleanly(saa_page):
     from src.prose_helpers import year_ranges
     s = get_cape_series().dropna()
     cv = float(s.iloc[-1])
-    para = next(m for m in _markdown(at) if m.startswith("Strategic asset allocation reflects"))
-    assert f"CAPE {cv:.1f} as of {s.index[-1].strftime('%B %Y')}" in para
+    para = next(m for m in _markdown(at) if m.startswith("US equity valuations"))
+    assert f"CAPE is {cv:.1f} as of {s.index[-1].strftime('%B %Y')}" in para
     years = _earlier_years_by_loop(s, cv)
     assert years, "premise: CAPE has been this high before"
     assert f"a level reached before only in {year_ranges(years)}." in para, para
@@ -134,9 +135,19 @@ def test_the_international_sleeves_are_named_as_the_split_defines_them(saa_page)
     from src.sleeve_config import international_sleeves
     names = international_sleeves()
     assert len(names) == 4, "premise: the demo book splits developed international"
-    para = next(m for m in _markdown(at) if "unhedged inflation tail" in m)
+    para = next(m for m in _markdown(at) if "inflation tail nothing else hedges" in m)
     assert all(f"{n} " in para for n in names), para
     assert "International Developed (" not in para
+
+
+def test_the_tilt_lists_keep_the_serial_comma(saa_page):
+    """The site's convention is the serial comma (the owner's review of the writing
+    sweep, item 14a). The calibration draft's _and_join had dropped it."""
+    at, _ = saa_page
+    para = next(m for m in _markdown(at) if "positive long-run premia" in m)
+    assert "premia: quality, value, and small-cap value." in para, para
+    tickers = r"[A-Z]{3,5}, [A-Z]{3,5}, and [A-Z]{3,5}"
+    assert re.search(rf"{tickers} in the US; {tickers} internationally", para), para
 
 
 def test_a_failed_cape_read_says_so_rather_than_inventing_a_label(tmp_path, monkeypatch):
@@ -158,9 +169,10 @@ def test_a_failed_cape_read_says_so_rather_than_inventing_a_label(tmp_path, monk
     at = AppTest.from_file(str(ROOT / "pages" / "1_SAA.py"), default_timeout=600).run()
     st.cache_data.clear()
     assert not at.exception
-    para = next(m for m in _markdown(at) if m.startswith("Strategic asset allocation reflects"))
-    assert "the CAPE reading could not be loaded for this render" in para
-    assert "historically" not in para.split("It is balanced")[0]
+    para = next(m for m in _markdown(at) if m.startswith("US equity valuations"))
+    assert para.startswith("US equity valuations could not be read: the CAPE series did not "
+                           "load for this render.")
+    assert "historically" not in para.split("The allocation balances")[0]
 
 
 # ── the helpers, at their edges ──────────────────────────────────────────────
@@ -201,5 +213,5 @@ def test_the_cape_sentence_at_its_edges(years, tail):
     from src.prose_helpers import cape_valuation_sentence
     s = cape_valuation_sentence(41.48, "September 2026", 99.1, years)
     assert s.endswith(tail), s
-    assert s.startswith("Strategic asset allocation reflects US equity valuations that are "
-                        "historically extreme: CAPE 41.5 as of September 2026, the 99th percentile")
+    assert s.startswith("US equity valuations are historically extreme: CAPE is 41.5 as of "
+                        "September 2026, the 99th percentile")
