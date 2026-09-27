@@ -136,13 +136,13 @@ def demo_inception_month() -> str:
 def get_demo_banner_text() -> str:
     """Return the demo-mode info banner, with inception month sourced from the DB."""
     return (
-        f"**Demo mode** — analytics computed on a paper-trade portfolio simulated from {demo_inception_month()}. "
+        f"**Demo mode**: analytics computed on a paper-trade portfolio simulated from {demo_inception_month()}. "
         "Methodology and inference are real; positions are illustrative."
     )
 
 
 # Kept for backward compatibility; pages should prefer get_demo_banner_text().
 DEMO_BANNER_TEXT = (
-    "**Demo mode** — analytics computed on a paper-trade portfolio simulated from May 2025. "
+    "**Demo mode**: analytics computed on a paper-trade portfolio simulated from May 2025. "
     "Methodology and inference are real; positions are illustrative."
 )

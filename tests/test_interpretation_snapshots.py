@@ -369,7 +369,9 @@ class TestSleeveRegressionSnapshot:
 # ── 7. interpret_benchmark_attribution ───────────────────────────────────────
 
 class TestBenchmarkAttributionSnapshot:
-    """Snapshot tests — three benchmark attribution scenarios."""
+    """Snapshot tests — three benchmark attribution scenarios. Migrated deliberately by
+    the writing sweep (audit item 14b): em dashes, the instructions to "see" the table,
+    and "fully-invested" restated; every clause is otherwise the same."""
 
     def test_close_to_1_no_style_tilts_insig_alpha(self):
         """Beta near 1, no significant style tilts, insignificant alpha — typical early period."""
@@ -380,12 +382,12 @@ class TestBenchmarkAttributionSnapshot:
         )
         result = interpret_benchmark_attribution(res)
         expected = (
-            "The portfolio tracks its SAA policy benchmark closely — consistent with a "
-            "fully-invested passive/semi-passive implementation. "
+            "The portfolio tracks its SAA policy benchmark closely, consistent with a "
+            "fully invested passive/semi-passive implementation. "
             "No statistically significant residual style tilts beyond the SAA benchmark "
             "are detected at the current sample length.  "
             "The active return intercept is not statistically significant at the current "
-            "sample length — the portfolio's return is consistent with its SAA benchmark "
+            "sample length: the portfolio's return is consistent with its SAA benchmark "
             "exposure and residual style tilts alone."
         )
         assert result == expected
@@ -400,13 +402,13 @@ class TestBenchmarkAttributionSnapshot:
         )
         result = interpret_benchmark_attribution(res)
         expected = (
-            "The portfolio tracks its SAA policy benchmark closely — consistent with a "
-            "fully-invested passive/semi-passive implementation. "
+            "The portfolio tracks its SAA policy benchmark closely, consistent with a "
+            "fully invested passive/semi-passive implementation. "
             "Residual style tilts beyond the SAA benchmark: "
             "RMW: positive profitability tilt (SPHQ, AVUV). "
-            "See the regression table above for loadings and significance. "
+            "The regression table above gives the loadings and their significance. "
             "The active return intercept is not statistically significant at the current "
-            "sample length — the portfolio's return is consistent with its SAA benchmark "
+            "sample length: the portfolio's return is consistent with its SAA benchmark "
             "exposure and residual style tilts alone."
         )
         assert result == expected
@@ -424,10 +426,10 @@ class TestBenchmarkAttributionSnapshot:
             "cross-sleeve return dispersion or cash drag. "
             "No statistically significant residual style tilts beyond the SAA benchmark "
             "are detected at the current sample length.  "
-            "The active return intercept is statistically significant — a positive return "
+            "The active return intercept is statistically significant: a positive return "
             "after accounting for both the SAA benchmark and residual style exposures. "
-            "See the regression table and the Interpretation section below for the full "
-            "alpha estimate with confidence interval."
+            "The regression table and the Interpretation section below give the full "
+            "alpha estimate with its confidence interval."
         )
         assert result == expected
 

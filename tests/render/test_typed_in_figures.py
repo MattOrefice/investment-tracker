@@ -61,7 +61,10 @@ def asset_evaluation(tmp_path_factory):
 
 def test_the_canada_box_carries_no_figures_from_one_old_window(factor_profile):
     _, text = factor_profile
-    assert "Why not EFV / SCZ as the controls?" in text, "premise: the box renders"
+    # The box's heading was restated by the writing sweep (audit item 14b); the premise
+    # moved with it, so the stale-figure checks below still look inside the box.
+    assert "EFV and SCZ are not the controls." in text, "premise: the box renders"
+    assert "Why not EFV / SCZ as the controls?" not in text
     for stale in ("270 bps", "+20 bps", "90–250", "37.8%", "27.7%"):
         assert stale not in text, stale
 

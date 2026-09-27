@@ -394,9 +394,9 @@ def as_of_live_line(
     missing = _sessions_missing(served, ref)
     line = f"Prices through {format_long_date(served)} ({basis})"
     if missing:
-        line += f" — {missing} trading day{'' if missing == 1 else 's'} behind"
+        line += f", {missing} trading day{'' if missing == 1 else 's'} behind"
     if gap:
-        line += (", and " if missing else " — ")
+        line += ", and " if missing else ", "
         line += (f"{len(gap)} of {len(coverage.requested)} holdings have "
                  "no committed price")
     if refresh is not None and refresh.status == "failed":

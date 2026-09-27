@@ -345,7 +345,7 @@ with col:
             )
 
         if _can_generate and st.button("Generate Report", type="primary", key="gen_report_btn"):
-            with st.spinner("Generating PDF — this takes ~30 seconds for chart rendering…"):
+            with st.spinner("Generating the PDF; chart rendering takes about 30 seconds…"):
                 try:
                     # In-memory generation — no file is written to the shared disk.
                     _pdf_bytes = generate_quarterly_report_bytes(
@@ -373,7 +373,7 @@ with col:
                     st.error(str(_lock_refused))
                 except Exception:
                     logging.exception("Quarterly report generation failed")
-                    st.error("Report generation failed — please try again later.")
+                    st.error("Report generation failed. Please try again later.")
 
     # Empty-state guard — no trades yet
     if pv.empty or float(pv.max()) == 0.0:
@@ -483,7 +483,7 @@ with col:
         # page and the report cannot disagree (#383). These tiles used to compute
         # the quarter from the live series under a "(locked)" heading: #371's
         # label-without-a-lock, one level up.
-        st.markdown(f"### Quarterly report — {_q_label} (locked)")
+        st.markdown(f"### Quarterly report: {_q_label} (locked)")
         try:
             _qf = _load_locked_quarter(_q_label, _q_start.isoformat(), _q_end.isoformat())
         except LockCoverageError as _q_exc:
@@ -508,9 +508,9 @@ with col:
     st.markdown("### Since inception")
     st.caption(
         f"Scope: {demo_portfolio_phrase()}." if IS_DEMO else
-        f"Scope: **{_PORTFOLIO_ACCT['display_name']}** — the self-directed taxable "
+        f"Scope: **{_PORTFOLIO_ACCT['display_name']}**, the self-directed taxable "
         "book (the traded ledger). Retirement and externally-managed accounts are "
-        "not included here; see the Household View for the whole household."
+        "not included; the Household View covers the whole household."
     )
     m1, m2, m3, m4 = st.columns(4)
 
@@ -525,11 +525,11 @@ with col:
     m4.metric(f"YTD return ({TODAY[:4]})",    _tile(_pct(ytd_return)))
 
     st.caption(
-        f"Underperformance vs. S&P 500 reflects intentional diversification: "
-        f"{_non_eq_pct*100:.0f}% of the SAA is non-equity ({_non_eq_names}), "
-        f"{_non_us_eq*100:.0f}% is non-US equity. The Custom Blended benchmark — a target-weighted "
-        "basket of cap-weighted indices in the same SAA — is the more meaningful "
-        "to isolate implementation alpha from SAA-design effects. "
+        f"The gap to the S&P 500 reflects intentional diversification: "
+        f"{_non_eq_pct*100:.0f}% of the SAA is non-equity ({_non_eq_names}), and "
+        f"{_non_us_eq*100:.0f}% is non-US equity. The Custom Blended benchmark, a "
+        "target-weighted basket of cap-weighted indices in the same SAA, is the more meaningful "
+        "benchmark for separating implementation alpha from SAA-design effects. "
         f"It is {blended_rule_note()}."
     )
 
@@ -564,12 +564,12 @@ with col:
             f"BIL's total return (the ledger records SPAXX at its \\$1.00 NAV) = "
             f"**\\${current_mv:,.2f} current value** (every share held, including DRIP, at "
             f"the latest close). "
-            f"Returns — absolute ({_abs_ret_pct:.1f}%) and cumulative TWR ({_twr_pct:.1f}%) — "
+            f"Returns, absolute ({_abs_ret_pct:.1f}%) and cumulative TWR ({_twr_pct:.1f}%), "
             f"use the dividend-adjusted total-return series (adjusted close × actual non-DRIP "
-            f"shares), which counts dividend income once and is restated retroactively as "
-            f"dividends accrue. That return series is a different basis from the market-value "
-            f"dollar above (which counts the real DRIP shares), so the two are not expected to "
-            f"tie out dollar-for-dollar. TWR is the GIPS-correct measure for benchmark comparison."
+            f"shares). That series counts dividend income once and is restated retroactively as "
+            f"dividends accrue. It is a different basis from the market-value dollar above, "
+            f"which counts the real DRIP shares, so the two are not expected to tie out "
+            f"dollar-for-dollar. TWR is the GIPS-correct measure for benchmark comparison."
         )
     # ── End reconciliation note ────────────────────────────────────────────
 
@@ -596,15 +596,15 @@ with col:
                 "computed by chain-linking daily sub-period returns with each day's "
                 "external cash flow netted out.  "
                 "**Modified Dietz** is an approximation that weights each external "
-                "flow by the fraction of the period it was invested — useful when "
-                "daily valuations aren't available, but less precise when cash flows "
+                "flow by the fraction of the period it was invested. It is useful when "
+                "daily valuations aren't available and less precise when cash flows "
                 "are large or volatile.  With no mid-period flows the two methods "
                 "produce nearly identical results."
             ),
         )
         st.caption(
             "Returns net out recorded external cash flows (contributions and "
-            "withdrawals) using end-of-day flow timing — deployed cash is not "
+            "withdrawals) with end-of-day flow timing, so deployed cash is not "
             "counted as market return. The Dietz method uses Modified Dietz "
             "flow weighting."
         )
@@ -797,7 +797,8 @@ with col:
 
         if not _m:
             st.caption(
-                f"Insufficient data for {_window_label} window — requires ≥ 20 trading days."
+                f"Insufficient data for the {_window_label} window: it needs at least 20 "
+                "trading days."
             )
         else:
             # Row 1 — portfolio metrics
@@ -856,8 +857,8 @@ with col:
             "Geometric annualization is used for consistency with the GIPS-linked TWR methodology "
             "(same compounding convention as the cumulative return chart above). "
             "Arithmetic annualization (mean daily active × 252) is the alternative institutional "
-            "convention (CFA, GIPS IR supplement) and would yield a higher IR — arithmetic mean "
-            "≥ geometric mean by Jensen's inequality."
+            "convention (CFA, GIPS IR supplement) and would yield a higher IR, because the "
+            "arithmetic mean is at least the geometric mean (Jensen's inequality)."
         )
         _n_1m      = _m_1m.get("n_days", 0) if _m_1m else 0
         _n_3m      = _m_3m.get("n_days", 0) if _m_3m else 0
@@ -974,8 +975,8 @@ with col:
     if naive.isna().all():
         st.info(
             f"The {_naive_short} baseline could not be priced for any date in "
-            "this window — the Stage 1 and Total tiles below are unavailable "
-            "until the underlying benchmark data gap clears."
+            "this window, so the Stage 1 and Total tiles below are unavailable "
+            "until the benchmark data gap clears."
         )
 
     # Resolved up front rather than inline in the f-string: each of these carried a
@@ -990,26 +991,28 @@ with col:
 
     st.caption(
         "**What the two stages measure.** Stage 1 (SAA design) captures the strategic-tilt "
-        f"contribution of the SAA itself — the value allocation (VTV at {_wt_uslv*100:.0f}%), small-cap value "
-        f"(AVUV at {_wt_ussc*100:.0f}%), emerging markets ({_wt_em*100:.0f}%), "
-        f"real assets ({_wt_real*100:.0f}%), TIPS ({_wt_tips*100:.0f}%), and the overall "
-        f"~{_wt_equity*100:.0f}/{_non_eq_pct*100:.0f} equity-vs-other-assets risk posture — measured as the SAA-blended benchmark's "
-        f"return spread over a {_naive_label}. "
+        f"contribution of the SAA itself. That covers the value allocation (VTV at "
+        f"{_wt_uslv*100:.0f}%), "
+        f"small-cap value (AVUV at {_wt_ussc*100:.0f}%), emerging markets "
+        f"({_wt_em*100:.0f}%), real assets ({_wt_real*100:.0f}%), TIPS "
+        f"({_wt_tips*100:.0f}%), and the overall ~{_wt_equity*100:.0f}/"
+        f"{_non_eq_pct*100:.0f} equity-vs-other-assets risk posture. It is measured as the "
+        f"SAA-blended benchmark's return spread over a {_naive_label}. "
         + (f"Both blends are {blended_rule_note()}. " if naive_kind == "60_40"
            else f"The SAA blend is {blended_rule_note()}. ")
-        + "This isolates what the "
-        "allocation thesis itself contributed, separate from execution. Stage 2 (Implementation, "
-        "decomposed via Brinson-Fachler below) captures two effects relative to the SAA's sleeve "
-        "targets: **allocation effect** — over/underweights from SAA targets, primarily driven by "
-        "drift since this portfolio is not rebalanced intra-quarter; and **selection effect** — the "
-        "chosen ETF return vs. the sleeve benchmark return, typically near-zero for passive ETF "
-        f"holdings. Stage 1 + Stage 2 = Portfolio return vs. {_naive_short} (algebra-checked in the summary tiles). "
-        "Brinson-Fachler holds a single beginning-of-period weight snapshot fixed for the entire "
-        "selected window, so this decomposition is most precise near a quarter-length horizon and "
-        "its accuracy degrades over longer windows (YTD/1Y/SI) as actual weights drift within the "
-        "period. The "
-        "Factor Profile page provides an independent factor-loading view of the same strategic tilts "
-        "(HML, SMB, RMW, CMA loadings on the US sleeve regression)."
+        + "This isolates what the allocation thesis itself contributed, separate from "
+        "execution. Stage 2 (Implementation, decomposed via Brinson-Fachler below) captures "
+        "two effects relative to the SAA's sleeve targets. The **allocation effect** is the "
+        "over- or underweight against SAA targets, driven mainly by drift, since this "
+        "portfolio is not rebalanced intra-quarter. The **selection effect** is the chosen "
+        "ETF's return against the sleeve benchmark's, typically near zero for passive ETF "
+        f"holdings. Stage 1 + Stage 2 = Portfolio return vs. {_naive_short} (algebra-checked "
+        "in the summary tiles). Brinson-Fachler holds one beginning-of-period weight snapshot "
+        "for the whole selected window. The decomposition is therefore most precise near a "
+        "quarter-length horizon, and its accuracy degrades over longer windows (YTD/1Y/SI) as "
+        "actual weights drift within the period. The Factor Profile page gives an independent "
+        "factor-loading view of the same strategic tilts: the HML, SMB, RMW, and CMA "
+        "loadings on the US sleeve regression."
     )
 
     # Attribution anchors on the same settled frontier C as the rest of the page;
@@ -1102,13 +1105,14 @@ with col:
             # term, so an explicit unavailable note replaces it rather than
             # showing "nan bps" anywhere.
             st.caption(
-                "Reconciliation unavailable this period — the naive baseline "
-                "could not be priced (see the benchmark data gap notice above)."
+                "Reconciliation is unavailable this period: the naive baseline could "
+                "not be priced, as the benchmark data gap notice above states."
             )
         else:
             st.caption(
-                f"Reconciliation: {_sign(_ts1_bps)}{_ts1_bps:.0f} + "
-                f"{_sign(_ts2_bps)}{_ts2_bps:.0f} = {_sign(_tot_bps)}{_tot_bps:.0f} bps "
+                f"Reconciliation: {round(_ts1_bps) + 0:+d} "
+                f"{'-' if round(_ts2_bps) < 0 else '+'} {abs(round(_ts2_bps))} = "
+                f"{round(_tot_bps) + 0:+d} bps "
                 f"(price-series methodology; algebra residual: {_resid_bps:.2f} bps). "
                 f"✓ reconciled"
             )
@@ -1119,7 +1123,7 @@ with col:
         # whole chart — skip it rather than plot/annotate an all-NaN bar set.
         if math.isnan(_naive_r):
             st.info(
-                f"Stage 1 sleeve breakdown unavailable — the {_naive_short} "
+                f"The Stage 1 sleeve breakdown is unavailable: the {_naive_short} "
                 "baseline could not be priced this period."
             )
         else:
@@ -1342,8 +1346,8 @@ with col:
                 "from the BF decomposition above. Those sleeves still "
                 "contribute to the Stage 1 + Stage 2 portfolio return, so the "
                 "'vs. Stage 2' check above is expected to drift by roughly the "
-                "excluded sleeve's weight × return differential — the ⚠ "
-                "quantifies that exclusion, not a computation error._"
+                "excluded sleeve's weight × return differential. The ⚠ measures "
+                "that exclusion; it does not flag a computation error._"
             )
 
     st.divider()
@@ -1373,7 +1377,7 @@ with col:
             )
         except ValueError as _drift_err:
             drift_df = None
-            st.error(f"Drift analysis unavailable — {_drift_err}")
+            st.error(f"Drift analysis unavailable: {_drift_err}")
 
         if drift_df is not None:
             # Actual vs. target allocation bar chart — band bars read drift_df["Band"]
@@ -1486,11 +1490,12 @@ with col:
             )
         else:
             _spread_note = (
-                "expected divergence — Modified Dietz approximates the timing of "
-                "mid-period flows, daily linking prices them exactly"
-                if _has_mid_flows else "⚠ unexpectedly large with no recorded flows, check CF data"
+                "expected divergence: Modified Dietz approximates the timing of "
+                "mid-period flows, and daily linking prices them exactly"
+                if _has_mid_flows else ("⚠ unexpectedly large with no recorded flows, "
+                                        "which points to the cash-flow data")
             )
-        st.markdown(f"**Method spread:** {spread_bps:.2f} bps — {_spread_note}")
+        st.markdown(f"**Method spread:** {spread_bps:.2f} bps: {_spread_note}")
         st.markdown("---")
 
         if not bf_df.empty:
@@ -1531,14 +1536,15 @@ with col:
         delta=f"{delta_yr:+.1f} yrs vs Bloomberg US Agg ({agg_dur} yrs)",
         help=(
             "Weighted average duration of Core Fixed Income (VGIT) and TIPS (SCHP) only. "
-            "Cash/SPAXX is excluded — it carries zero duration and is not in the Bloomberg Agg."
+            "Cash/SPAXX is excluded: it carries zero duration and is not in the Bloomberg Agg."
         ),
     )
     st.caption(
         f"FI weight (Core FI + TIPS): {fi_wt}% of portfolio. "
         f"Cash/SPAXX: {cash_wt}% (excluded from duration calculation and from Bloomberg Agg). "
         f"FI sleeve duration is {dur_vs_caption}. "
-        "Duration also flows through equity via discount-rate effects — it's a whole-portfolio consideration. "
+        "Duration also flows through equity via discount-rate effects, so it is a "
+        "whole-portfolio consideration. "
         "Duration sourced from ETF fact-sheet values (VGIT: 5.5 yrs, SCHP: 6.8 yrs per Vanguard/Schwab Q1 2026)."
     )
     render_footer()

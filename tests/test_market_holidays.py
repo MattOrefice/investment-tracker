@@ -50,5 +50,5 @@ def test_the_next_close_skips_a_holiday():
 def test_the_banner_says_trading_days():
     from src.asof import as_of_live_line
     line = as_of_live_line(date(2026, 9, 24), frontier=date(2026, 9, 18))
-    assert line.endswith("— 3 trading days behind."), line
+    assert line.endswith(", 3 trading days behind."), line
     assert "weekday" not in line
