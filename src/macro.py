@@ -762,7 +762,7 @@ def interpret_excess_cape(value: float, percentile: float) -> str:
     pct_label = ordinal(percentile * 100)
     if percentile < ECY_EXTREME_LOW_PCT:
         return (
-            f"ECY of {value:.2f}% is at extreme compression — at the {pct_label} percentile of "
+            f"ECY of {value:.2f}% is at extreme compression: at the {pct_label} percentile of "
             "the Jan 2003+ history, equities offer essentially no real-yield premium over bonds. "
             "This historically precedes muted forward equity returns; the Core Fixed Income and "
             "TIPS sleeves are competitively priced relative to equities on a real-yield basis."
@@ -776,7 +776,7 @@ def interpret_excess_cape(value: float, percentile: float) -> str:
     elif percentile < ECY_HIGH_PCT:
         return (
             f"ECY of {value:.2f}% is near the historical median (at the {pct_label} percentile). "
-            "Equities offer a moderate real-yield premium over bonds — neither a strong valuation "
+            "Equities offer a moderate real-yield premium over bonds, neither a strong valuation "
             "tailwind nor headwind for forward returns."
         )
     elif percentile < ECY_EXTREME_HIGH_PCT:
@@ -788,7 +788,7 @@ def interpret_excess_cape(value: float, percentile: float) -> str:
         )
     else:
         return (
-            f"ECY of {value:.2f}% is unusually wide — at the {pct_label} percentile of the "
+            f"ECY of {value:.2f}% is unusually wide: at the {pct_label} percentile of the "
             "Jan 2003+ history, equities offer a large real-yield premium over bonds. "
             "This has historically signalled materially undervalued equity markets."
         )
@@ -805,14 +805,14 @@ def interpret_curve_spread(value_bps: float) -> str:
             if value_bps > REGIME_CURVE_TRIGGER * 100 else ""
         )
         return (
-            f"The yield curve is inverted at {value_bps:+.0f} bps — short-term rates exceed long-term "
+            f"The yield curve is inverted at {value_bps:+.0f} bps: short-term rates exceed long-term "
             f"rates.{buffer} Persistent inversion has preceded each of the last seven US recessions with a "
             "12–18 month lead time. Allocators watch the un-inversion (curve steepening back above "
             "zero) as the signal that a cutting cycle is underway, not the inversion itself."
         )
     elif value_bps < CURVE_FLAT:
         return (
-            f"The yield curve is flat at {value_bps:+.0f} bps — the 10Y−2Y spread is positive but "
+            f"The yield curve is flat at {value_bps:+.0f} bps: the 10Y−2Y spread is positive but "
             "compressed. A flat curve reflects limited term premium and implies bond markets expect "
             "short rates to remain near current levels; it warrants monitoring for re-inversion."
         )
@@ -826,8 +826,8 @@ def interpret_curve_spread(value_bps: float) -> str:
         return (
             f"The yield curve is steep at {value_bps:+.0f} bps. A steep curve historically reflects "
             "high term premium and often emerges in early-cycle recoveries as short rates are cut "
-            "while long-end inflation expectations remain elevated — historically favorable for "
-            "duration and early-cycle equity returns."
+            "while long-end inflation expectations remain elevated; such a curve has historically "
+            "been favorable for duration and early-cycle equity returns."
         )
 
 
@@ -835,8 +835,8 @@ def interpret_hy_spread(value_bps: float) -> str:
     """Dynamic 1–2 sentence interpretation of HY credit spreads (OAS, in bps)."""
     if value_bps < HY_SPREAD_TIGHT:
         return (
-            f"HY spreads at {value_bps:.0f} bps are historically tight (below {HY_SPREAD_TIGHT:.0f} bps) — "
-            "late-cycle credit market complacency. Tight spreads limit the cushion for further "
+            f"HY spreads at {value_bps:.0f} bps are historically tight (below {HY_SPREAD_TIGHT:.0f} bps), "
+            "a sign of late-cycle credit market complacency. Tight spreads limit the cushion for further "
             f"compression; historical episodes of sub-{HY_SPREAD_TIGHT:.0f} bps spreads have preceded "
             "equity peaks and subsequent spread blowouts."
         )
@@ -865,7 +865,7 @@ def interpret_hy_spread(value_bps: float) -> str:
         return (
             f"HY spreads at {value_bps:.0f} bps are at recessionary levels (above "
             f"{HY_SPREAD_RECESSIONARY:.0f} bps). Credit markets are pricing severe recession "
-            "and elevated default rates — levels that have historically coincided with "
+            "and elevated default rates; such levels have historically coincided with "
             "the most severe equity drawdowns."
         )
 
@@ -877,7 +877,7 @@ def interpret_gdp_growth(value: float) -> str:
             f"Real GDP growth of {value:.1f}% is negative. Two consecutive quarters of negative "
             "growth satisfies the informal recession definition (NBER uses a broader indicator set). "
             "Negative growth is associated with rising unemployment, falling earnings, and "
-            "widening credit spreads — conditions where duration and quality equity historically outperform."
+            "widening credit spreads, conditions in which duration and quality equity historically outperform."
         )
     elif value < GDP_TREND:
         return (
@@ -889,7 +889,7 @@ def interpret_gdp_growth(value: float) -> str:
     elif value < GDP_ABOVE_TREND:
         return (
             f"Real GDP growth of {value:.1f}% is near the long-run trend of "
-            f"~{GDP_TREND:.1f}% ({GDP_TREND_SOURCE}) — a mid-cycle Goldilocks range. On-trend growth is associated "
+            f"~{GDP_TREND:.1f}% ({GDP_TREND_SOURCE}), a mid-cycle Goldilocks range. On-trend growth is associated "
             "with stable corporate earnings and balanced equity risk premiums; "
             "the SAA is calibrated for this baseline environment."
         )
@@ -956,15 +956,15 @@ def interpret_nfci(value: float) -> str:
     """
     if value >= 0.5:
         return (
-            f"NFCI at {value:+.2f} signals financial conditions materially TIGHTER than the "
-            "historical average — elevated composite stress across money, debt, equity, and "
+            f"NFCI at {value:+.2f} signals financial conditions materially tighter than the "
+            "historical average: elevated composite stress across money, debt, equity, and "
             "shadow-banking markets. Tight conditions historically precede credit-spread widening "
             "and pressure on risk assets, favoring a quality bias in the equity sleeves."
         )
     if value <= -0.5:
         return (
-            f"NFCI at {value:+.2f} signals financial conditions materially LOOSER than the "
-            "historical average — accommodative composite conditions across money, debt, equity, "
+            f"NFCI at {value:+.2f} signals financial conditions materially looser than the "
+            "historical average: accommodative composite conditions across money, debt, equity, "
             "and shadow-banking markets, historically supportive of risk assets."
         )
     lean = (
@@ -973,7 +973,7 @@ def interpret_nfci(value: float) -> str:
         else "right at"
     )
     return (
-        f"NFCI at {value:+.2f} is around the historical average ({lean} the long-run norm) — "
+        f"NFCI at {value:+.2f} is around the historical average ({lean} the long-run norm); "
         "financial conditions are neither notably tight nor notably loose."
     )
 

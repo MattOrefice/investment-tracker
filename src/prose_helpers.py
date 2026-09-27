@@ -121,3 +121,29 @@ def blend_split_sentence(legs) -> str:
            else f"an underweight of {-today} today")
     return (text + f" That is a {at_start}-point overweight in {over.holding} against "
             f"{against} ({now}), which attribution reports as selection.")
+
+
+def cape_record_span(series) -> "tuple[int, int]":
+    """(first year, years spanned) of the committed CAPE series: 1871 and 155 as of
+    September 2026. The Macro page said "since 1881" and "145-year" (#401)."""
+    s = series.dropna()
+    first = int(s.index[0].year)
+    return first, int(s.index[-1].year) - first
+
+
+def cape_forty_sentence(series, current: float) -> str:
+    """Which earlier years CAPE reached 40 in, derived from the series (#401), with a
+    trailing space; "" when it never did. The Macro page said "Only the dot-com bubble
+    peak (1999–2001) has sustained CAPE above 40", where the series has no 2001 month at
+    40 and, from May 2026, a current run at 40 too."""
+    from src.shiller import earlier_years_at_or_above
+    earlier = earlier_years_at_or_above(series.dropna(), 40.0)
+    if not earlier:
+        return ""
+    _, years = cape_record_span(series)
+    if current >= 40:
+        return (f"Before the current run, CAPE reached 40 only in {year_ranges(earlier)} "
+                f"in the full {years}-year Shiller record. ")
+    return (f"CAPE has reached 40 only in {year_ranges(earlier)} in the full "
+            f"{years}-year Shiller record. ")
+

@@ -115,7 +115,7 @@ def interpret_value_spread(current_value: float, percentile_fraction: float) -> 
 
     if percentile_fraction >= _PCT_EXTREME_HIGH:
         return (
-            f"The value spread is in the {pct_label} percentile of its history — value "
+            f"The value spread is in the {pct_label} percentile of its history: value "
             "is historically cheap relative to growth, near the widest end of the "
             "record. Wide spreads of this kind have tended to precede value "
             "outperformance and are independent of recent trailing returns: even where "
@@ -124,7 +124,7 @@ def interpret_value_spread(current_value: float, percentile_fraction: float) -> 
         )
     if percentile_fraction >= _PCT_HIGH:
         return (
-            f"The value spread is in the {pct_label} percentile of its history — value "
+            f"The value spread is in the {pct_label} percentile of its history: value "
             "is cheap relative to growth by historical standards. This is a valuation "
             "tailwind for the SAA's value tilt, distinct from the trailing-return read "
             "above: value can be winning on performance and still carry an unusually "
@@ -133,20 +133,20 @@ def interpret_value_spread(current_value: float, percentile_fraction: float) -> 
     if percentile_fraction > _PCT_LOW:
         return (
             f"The value spread is near its historical median (the {pct_label} "
-            "percentile) — value is neither notably cheap nor rich relative to growth. "
+            "percentile): value is neither notably cheap nor rich relative to growth. "
             "The valuation signal is neutral; the SAA's value tilt rests on its "
             "strategic rationale rather than a valuation tailwind, independent of "
             "whatever the trailing-performance read shows."
         )
     if percentile_fraction > _PCT_EXTREME_LOW:
         return (
-            f"The value spread is in the {pct_label} percentile of its history — value "
+            f"The value spread is in the {pct_label} percentile of its history: value "
             "is somewhat richly priced relative to growth, with a below-average "
             "cheapness gap. The valuation tailwind behind the SAA's value tilt is "
             "muted, even if trailing performance has been favorable."
         )
     return (
-        f"The value spread is in the {pct_label} percentile of its history — value is "
+        f"The value spread is in the {pct_label} percentile of its history: value is "
         "richly priced relative to growth by historical standards; the cheapness "
         "tailwind behind the SAA's value tilt is largely absent. A factor can keep "
         "performing while expensive, but a narrow spread offers little mean-reversion "

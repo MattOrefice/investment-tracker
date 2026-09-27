@@ -440,23 +440,26 @@ class TestInterpretCorrelations:
 # ── interpret_nfci (NFCI financial-conditions panel, sign-aware) ──────────────
 
 class TestInterpretNFCI:
-    """NFCI is standardized (mean 0, std 1): positive = TIGHTER conditions,
-    negative = LOOSER, near-zero = around average. The banded interpretation
+    """NFCI is standardized (mean 0, std 1): positive = tighter conditions,
+    negative = looser, near-zero = around average. The banded interpretation
     must respect that sign convention (the opposite of a valuation percentile).
+
+    The band words were capitalised until the 14b writing sweep; the pins follow
+    the lower-case text and keep each band's exclusion of the other.
     """
 
     def test_high_nfci_reads_tighter(self):
         text = interpret_nfci(2.0)
-        assert "TIGHTER" in text and "LOOSER" not in text
+        assert "materially tighter" in text and "looser" not in text
         assert "+2.00" in text
 
     def test_modest_positive_still_tighter_band(self):
         text = interpret_nfci(0.6)
-        assert "TIGHTER" in text
+        assert "materially tighter" in text and "looser" not in text
 
     def test_low_nfci_reads_looser(self):
         text = interpret_nfci(-1.0)
-        assert "LOOSER" in text and "TIGHTER" not in text
+        assert "materially looser" in text and "tighter" not in text
         assert "-1.00" in text
 
     def test_near_zero_reads_average(self):
@@ -473,8 +476,8 @@ class TestInterpretNFCI:
         # Strongly negative -> looser; strongly positive -> tighter; the two differ.
         looser  = interpret_nfci(-2.0)
         tighter = interpret_nfci(2.0)
-        assert "LOOSER" in looser
-        assert "TIGHTER" in tighter
+        assert "materially looser" in looser
+        assert "materially tighter" in tighter
         assert looser != tighter
 
 

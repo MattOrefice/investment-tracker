@@ -190,7 +190,8 @@ def fetch_cape_dataframe() -> pd.DataFrame:
 
 def get_cape_series() -> pd.Series:
     """
-    Date-indexed Series of CAPE values from 1881 through the committed frontier.
+    Date-indexed Series of CAPE values from the committed file's first month (1871)
+    through its frontier. (This line said "from 1881" until #401.)
 
     Reads the COMMITTED CSV only — never fetches, never writes. The tracked
     file is an input, refreshed exclusively by tools/refresh_market_data.py;

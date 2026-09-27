@@ -123,11 +123,11 @@ class TestExcessCapeSnapshot:
         """Bottom-decile ECY — extreme compression, muted forward return signal."""
         result = interpret_excess_cape(0.48, 0.05)
         expected = (
-            "ECY of 0.48% is at extreme compression — at the 5th percentile of "
-            "the Jan 2003+ history, equities offer essentially no real-yield premium "
-            "over bonds. This historically precedes muted forward equity returns; the "
-            "Core Fixed Income and TIPS sleeves are competitively priced relative to "
-            "equities on a real-yield basis."
+            "ECY of 0.48% is at extreme compression: at the 5th percentile of the Jan 2003+ "
+            "history, equities offer essentially no real-yield premium over bonds. This "
+            "historically precedes muted forward equity returns; the Core Fixed Income and "
+            "TIPS sleeves are competitively priced relative to equities on a real-yield "
+            "basis."
         )
         assert result == expected
 
@@ -135,9 +135,9 @@ class TestExcessCapeSnapshot:
         """Mid-distribution ECY — near historical median, balanced equity/bond tradeoff."""
         result = interpret_excess_cape(2.50, 0.50)
         expected = (
-            "ECY of 2.50% is near the historical median (at the 50th percentile). "
-            "Equities offer a moderate real-yield premium over bonds — neither a "
-            "strong valuation tailwind nor headwind for forward returns."
+            "ECY of 2.50% is near the historical median (at the 50th percentile). Equities "
+            "offer a moderate real-yield premium over bonds, neither a strong valuation "
+            "tailwind nor headwind for forward returns."
         )
         assert result == expected
 
@@ -145,9 +145,9 @@ class TestExcessCapeSnapshot:
         """Top-decile ECY — unusually wide premium, historically undervalued signal."""
         result = interpret_excess_cape(5.00, 0.95)
         expected = (
-            "ECY of 5.00% is unusually wide — at the 95th percentile of the "
-            "Jan 2003+ history, equities offer a large real-yield premium over bonds. "
-            "This has historically signalled materially undervalued equity markets."
+            "ECY of 5.00% is unusually wide: at the 95th percentile of the Jan 2003+ history,"
+            " equities offer a large real-yield premium over bonds. This has historically "
+            "signalled materially undervalued equity markets."
         )
         assert result == expected
 
@@ -165,11 +165,11 @@ class TestCurveSpreadSnapshot:
         """Deeply inverted curve — recession lead-time signal."""
         result = interpret_curve_spread(-100.0)
         expected = (
-            "The yield curve is inverted at -100 bps — short-term rates exceed "
-            "long-term rates. Persistent inversion has preceded each of the last seven "
-            "US recessions with a 12–18 month lead time. Allocators watch the "
-            "un-inversion (curve steepening back above zero) as the signal that a "
-            "cutting cycle is underway, not the inversion itself."
+            "The yield curve is inverted at -100 bps: short-term rates exceed long-term "
+            "rates. Persistent inversion has preceded each of the last seven US recessions "
+            "with a 12–18 month lead time. Allocators watch the un-inversion (curve "
+            "steepening back above zero) as the signal that a cutting cycle is underway, not "
+            "the inversion itself."
         )
         assert result == expected
 
@@ -177,10 +177,10 @@ class TestCurveSpreadSnapshot:
         """Flat-but-positive curve — late-cycle caution, re-inversion risk."""
         result = interpret_curve_spread(25.0)
         expected = (
-            "The yield curve is flat at +25 bps — the 10Y−2Y spread is "
-            "positive but compressed. A flat curve reflects limited term premium and "
-            "implies bond markets expect short rates to remain near current levels; "
-            "it warrants monitoring for re-inversion."
+            "The yield curve is flat at +25 bps: the 10Y−2Y spread is positive but "
+            "compressed. A flat curve reflects limited term premium and implies bond markets "
+            "expect short rates to remain near current levels; it warrants monitoring for "
+            "re-inversion."
         )
         assert result == expected
 
@@ -188,10 +188,10 @@ class TestCurveSpreadSnapshot:
         """Steep curve — early-cycle recovery, high term premium."""
         result = interpret_curve_spread(200.0)
         expected = (
-            "The yield curve is steep at +200 bps. A steep curve historically reflects "
-            "high term premium and often emerges in early-cycle recoveries as short "
-            "rates are cut while long-end inflation expectations remain elevated — "
-            "historically favorable for duration and early-cycle equity returns."
+            "The yield curve is steep at +200 bps. A steep curve historically reflects high "
+            "term premium and often emerges in early-cycle recoveries as short rates are cut "
+            "while long-end inflation expectations remain elevated; such a curve has "
+            "historically been favorable for duration and early-cycle equity returns."
         )
         assert result == expected
 
@@ -208,10 +208,10 @@ class TestHySpreadSnapshot:
         """Below-300-bps spreads — late-cycle credit complacency."""
         result = interpret_hy_spread(250.0)
         expected = (
-            "HY spreads at 250 bps are historically tight (below 300 bps) — "
-            "late-cycle credit market complacency. Tight spreads limit the cushion "
-            "for further compression; historical episodes of sub-300 bps spreads have "
-            "preceded equity peaks and subsequent spread blowouts."
+            "HY spreads at 250 bps are historically tight (below 300 bps), a sign of "
+            "late-cycle credit market complacency. Tight spreads limit the cushion for "
+            "further compression; historical episodes of sub-300 bps spreads have preceded "
+            "equity peaks and subsequent spread blowouts."
         )
         assert result == expected
 
@@ -229,10 +229,9 @@ class TestHySpreadSnapshot:
         """Above-800-bps spreads — pricing severe recession and elevated defaults."""
         result = interpret_hy_spread(900.0)
         expected = (
-            "HY spreads at 900 bps are at recessionary levels (above 800 bps). "
-            "Credit markets are pricing severe recession and elevated default rates "
-            "— levels that have historically coincided with the most severe "
-            "equity drawdowns."
+            "HY spreads at 900 bps are at recessionary levels (above 800 bps). Credit markets"
+            " are pricing severe recession and elevated default rates; such levels have "
+            "historically coincided with the most severe equity drawdowns."
         )
         assert result == expected
 
@@ -246,11 +245,11 @@ class TestGdpGrowthSnapshot:
         """Negative real GDP — informal recession definition met."""
         result = interpret_gdp_growth(-1.0)
         expected = (
-            "Real GDP growth of -1.0% is negative. Two consecutive quarters of "
-            "negative growth satisfies the informal recession definition (NBER uses "
-            "a broader indicator set). Negative growth is associated with rising "
-            "unemployment, falling earnings, and widening credit spreads — "
-            "conditions where duration and quality equity historically outperform."
+            "Real GDP growth of -1.0% is negative. Two consecutive quarters of negative "
+            "growth satisfies the informal recession definition (NBER uses a broader "
+            "indicator set). Negative growth is associated with rising unemployment, falling "
+            "earnings, and widening credit spreads, conditions in which duration and quality "
+            "equity historically outperform."
         )
         assert result == expected
 
@@ -261,10 +260,9 @@ class TestGdpGrowthSnapshot:
         result = interpret_gdp_growth(3.0)
         expected = (
             "Real GDP growth of 3.0% is near the long-run trend of ~2.0% (the FOMC's "
-            "longer-run median projection, September 2026) — a mid-cycle Goldilocks "
-            "range. On-trend growth is associated "
-            "with stable corporate earnings and balanced equity risk premiums; "
-            "the SAA is calibrated for this baseline environment."
+            "longer-run median projection, September 2026), a mid-cycle Goldilocks range. "
+            "On-trend growth is associated with stable corporate earnings and balanced equity"
+            " risk premiums; the SAA is calibrated for this baseline environment."
         )
         assert result == expected
 
@@ -443,15 +441,12 @@ class TestCorrelationsSnapshot:
         """Pins the exact 3-sentence output for the canonical sleeve correlation matrix."""
         result = interpret_correlations(_make_corr())
         expected = (
-            "High intra-equity co-movement — "
-            "US Large Core × US Large Quality (ρ = 0.92), "
-            "US Large Core × US Small Cap (ρ = 0.85), "
-            "US Large Quality × US Small Cap (ρ = 0.80) — "
-            "means the equity sleeves largely share a single global market beta.  \n"
-            "The most meaningful return offsets are "
-            "US Small Cap × Core Fixed Income (ρ = 0.05) and "
-            "US Large Quality × Core Fixed Income (ρ = 0.08): "
-            "pairs where structural differences in risk exposure, "
-            "not just style tilts, drive genuine diversification."
+            "High intra-equity co-movement means the equity sleeves largely share a single "
+            "global market beta. The top pairs are US Large Core × US Large Quality (ρ = "
+            "0.92), US Large Core × US Small Cap (ρ = 0.85), and US Large Quality × US Small "
+            "Cap (ρ = 0.80).  \n"
+            "The lowest correlations are US Small Cap × Core Fixed Income (ρ = 0.05) and US "
+            "Large Quality × Core Fixed Income (ρ = 0.08): pairs whose diversification comes "
+            "from structural differences in risk exposure rather than style tilts alone."
         )
         assert result == expected
