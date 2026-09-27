@@ -207,7 +207,7 @@ with col:
         _intl_phrase = f"{_intl_sleeve_names[0]} ({round(_intl_dev_wt * 100)}%)"
     st.markdown(
         f"{_intl_phrase} and Emerging Markets "
-        f"({round(_em_wt * 100)}%) diversify valuation, at CAPE levels well below the US. Real "
+        f"({round(_em_wt * 100)}%) diversify valuation, at CAPE levels meaningfully below the US. Real "
         f"Assets ({round(_real_wt * 100)}%) adds inflation-correlated diversification with risk "
         f"drivers unlike equity's or duration's. Core Fixed Income ({round(_core_fi_wt * 100)}%) "
         f"holds duration as recession ballast and a source of rebalancing; TIPS "

@@ -154,19 +154,21 @@ def test_the_editorial_argument_is_labelled_as_standing():
     assert "independent of every figure above" in src
 
 
-def test_the_commodity_tax_string_is_frozen_and_says_why():
-    """Deliberately NOT rewritten: it is the third in-repo copy of the commodity
-    tax-character claim and #278 may make it derive from a rate vocabulary.
-    Editing it here first mints a fourth copy, which is how this family reproduces.
-    The comment must NAME the issue so the next reader meets the reason rather than
-    an unexplained exception."""
+def test_the_bitcoin_tax_line_is_the_pages_and_says_property():
+    """Migrated deliberately (audit item 15d, resumed run C). This pinned a string frozen
+    pending #278 as the report's statement of COMMODITY tax character. It was bitcoin's
+    line, not a commodity fund's, and the IRS treats bitcoin as property (Notice
+    2014-21), as the Asset Evaluation page already said. The PDF now renders the page's
+    own text, one constant, so the two cannot drift and no fourth copy is minted."""
+    import src.asset_evaluation as ae
     src = pathlib.Path(rp.__file__).read_text(encoding="utf-8")
-    assert ("Commodity tax treatment: short-term ordinary income / long-term "
-            "capital gains, ") in src
-    i = src.index("Commodity tax treatment:")
-    assert "#278" in src[i - 700:i], (
-        "the frozen string carries no comment naming #278 — without it the "
-        "un-derived entry reads as an oversight")
+    i = src.index("args_against.extend([")
+    assert "ae.BITCOIN_TAX_LINE," in src[i:src.index("])", i)]
+    page = (pathlib.Path(rp.__file__).resolve().parent.parent / "pages"
+            / "5_Asset_Evaluation.py").read_text(encoding="utf-8")
+    assert "ae.BITCOIN_TAX_LINE," in page
+    assert "the IRS treats bitcoin as property (Notice 2014-21)" in ae.BITCOIN_TAX_LINE
+    assert "Commodity tax treatment" not in src + page
 
 
 def test_the_unconditional_count_is_still_exactly_three():
@@ -175,7 +177,7 @@ def test_the_unconditional_count_is_still_exactly_three():
     src = pathlib.Path(rp.__file__).read_text(encoding="utf-8")
     i = src.index("args_against.extend([")
     block = src[i:src.index("])", i)]
-    assert block.count('"Commodity tax treatment') == 1
+    assert block.count("ae.BITCOIN_TAX_LINE,") == 1
     assert block.count('"Standing argument') == 1
 
 

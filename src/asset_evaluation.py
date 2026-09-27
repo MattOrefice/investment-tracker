@@ -16,6 +16,17 @@ from src.prices import get_prices, total_return_series
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
+# Bitcoin's tax line in the case against, one text for the Asset Evaluation page and the
+# PDF (audit item 15d). The PDF's copy read "Commodity tax treatment: short-term ordinary
+# income / long-term capital gains, no qualified-dividend treatment", which is a commodity
+# fund's vocabulary, not bitcoin's: the IRS treats bitcoin as property.
+BITCOIN_TAX_LINE = (
+    "Capital gains tax treatment: the IRS treats bitcoin as property (Notice 2014-21), "
+    "so a sale is a capital gain or loss, short-term at ordinary rates within 12 months "
+    "and long-term after. That is unfavorable vs. ETFs, "
+    "which qualify for in-kind creation/redemption"
+)
+
 SAMPLE_START  = "2018-01-01"
 # The DEFAULT rate for callers that pass none: the fixed 4.5% the page used before
 # audit item 15a, equal to src/performance.py's compute_risk_metrics default (pinned

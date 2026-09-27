@@ -1807,14 +1807,11 @@ def _build_asset_eval_section() -> dict:
             _max_drawdown(btc_ret), result["btc_2022_mdd"], _port, ae.SAMPLE_START))
 
         args_against.extend([
-            # FROZEN PENDING #278 — deliberately not rewritten, and not an oversight.
-            # This sentence is the THIRD in-repo statement of commodity tax character,
-            # and the only one that is both correct and rendered. #278 asks whether the
-            # asset-location register should grow a tax-character vocabulary; if it
-            # does, this string must DERIVE from it. Editing it here first would mint a
-            # fourth copy, which is precisely how this family of defect reproduces.
-            "Commodity tax treatment: short-term ordinary income / long-term capital gains, "
-            "no qualified-dividend treatment — unfavorable vs. equity ETFs in taxable accounts",
+            # Bitcoin's tax line, the Asset Evaluation page's own text (audit item 15d).
+            # It was frozen here pending #278 as a commodity tax-character statement,
+            # but it is bitcoin's line, not a commodity fund's: the IRS treats bitcoin as
+            # property (Notice 2014-21). Shared, so the page and the PDF cannot drift.
+            ae.BITCOIN_TAX_LINE,
             # LABELLED AS STANDING (#276). Unlike the drawdown above it, this is not a
             # measurement withheld — it is not measurable, and should not become
             # conditional. Saying so is what lets a reader tell the two apart.

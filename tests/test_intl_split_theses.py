@@ -116,7 +116,7 @@ def test_the_tool_is_idempotent_and_refuses_a_second_link(tmp_path, monkeypatch)
     tool.main()
     con = sqlite3.connect(copy)
     n = con.execute("SELECT COUNT(*) FROM theses WHERE title LIKE 'International % — %' "
-                    "AND level = 'position' AND title != 'International Developed — VEA'"
+                    "AND level = 'position' AND title NOT LIKE '% — VEA'"
                     ).fetchone()[0]
     con.execute("UPDATE trades SET thesis_id = 1 WHERE ticker = 'IDHQ'")
     con.commit()

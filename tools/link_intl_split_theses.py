@@ -34,7 +34,7 @@ DRAFTS = {
              "index provider as SPHQ. Its benchmark, IQLT, reproduces the SPHQ-to-QUAL "
              "relationship, so selection measures the gap between two quality methodologies, "
              "not the premium itself. Would revisit if the international quality premium "
-             "diverged from the domestic one by a wide margin over a full cycle."),
+             "diverged materially from the domestic one over a full cycle."),
     "AVIV": ("International Large Value",
              "Value abroad, on the same terms VTV expresses it at home. AVIV integrates "
              "profitability into its value screen and VTV does not, so this sleeve holds the "
@@ -50,7 +50,7 @@ DRAFTS = {
              "conviction. Its benchmark, SCZ, is small blend rather than small value, because no "
              "passive international small-value index fund exists, so selection here carries "
              "the value premium itself. That premium comes from the factor tilt, not manager "
-             "skill. Would revisit if the small-value interaction proved much weaker in "
+             "skill. Would revisit if the small-value interaction proved materially weaker in "
              "developed ex-US than domestically."),
 }
 

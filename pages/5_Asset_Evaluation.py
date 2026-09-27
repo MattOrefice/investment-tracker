@@ -1077,10 +1077,7 @@ with col:
 
     args_against.extend([
         _drawdown_argument(_max_drawdown(btc_ret), _btc_2022_s, _port, ae.SAMPLE_START),
-        "Capital gains tax treatment: the IRS treats bitcoin as property (Notice 2014-21), "
-        "so a sale is a capital gain or loss, short-term at ordinary rates within 12 months "
-        "and long-term after. That is unfavorable vs. ETFs, "
-        "which qualify for in-kind creation/redemption",
+        ae.BITCOIN_TAX_LINE,
         "Operational complexity: self-custody introduces key management risk "
         "and exchange-held BTC introduces counterparty risk (FTX 2022). The "
         "2024 launch of spot Bitcoin ETFs (IBIT, FBTC, BITB) materially reduces "
