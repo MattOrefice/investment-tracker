@@ -32,6 +32,11 @@ if IS_DEMO:
     from src.demo_refresh import refresh_if_due
     with st.spinner("Fetching the latest settled prices…"):
         refresh_if_due()
+    # The Macro page's FRED series, fetched into today's cache on a background thread
+    # once per process, so a first visit to Macro does not wait for them (audit item
+    # 15f). The landing page does not wait either: the thread starts and returns.
+    from src.macro import warm_cache_in_background
+    warm_cache_in_background()
 else:
     from src.bootstrap import bootstrap_personal_db, unmapped_holdings_notice
     # The result is USED, not discarded: bootstrap reconciles the newest holdings CSV

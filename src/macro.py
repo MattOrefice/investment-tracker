@@ -113,7 +113,21 @@ def get_series(series_id: str, start_date: str = "1990-01-01") -> pd.Series:
     """
     _ensure_cache_table()
     today = date.today().isoformat()
+    cached = _read_cached(series_id, start_date, today)
+    if cached is not None:
+        return cached
+    # One fetch per series at a time (audit item 15f): a page that asks for a series the
+    # startup warm is fetching waits for that fetch and reads its row, rather than
+    # fetching it a second time.
+    with _series_lock(series_id):
+        cached = _read_cached(series_id, start_date, today)
+        if cached is not None:
+            return cached
+        return _fetch_and_store(series_id, start_date, today)
 
+
+def _read_cached(series_id: str, start_date: str, today: str) -> "pd.Series | None":
+    """Today's cached row for the series, if it covers ``start_date``; else None."""
     with get_connection() as conn:
         row = conn.execute(
             "SELECT data FROM macro_cache WHERE series_id = ? AND fetch_date = ?",
@@ -144,7 +158,20 @@ def get_series(series_id: str, start_date: str = "1990-01-01") -> pd.Series:
         if covers:
             return s[s.index >= start_date]
         # Cache hit but coverage is insufficient — re-fetch and overwrite
+    return None
 
+
+_SERIES_LOCKS: "dict[str, threading.Lock]" = {}
+_SERIES_LOCKS_GUARD = threading.Lock()
+
+
+def _series_lock(series_id: str) -> threading.Lock:
+    with _SERIES_LOCKS_GUARD:
+        return _SERIES_LOCKS.setdefault(series_id, threading.Lock())
+
+
+def _fetch_and_store(series_id: str, start_date: str, today: str) -> pd.Series:
+    """Fetch from FRED and write today's row; the demo's retry timer applies."""
     from src import demo_refresh
     timed = demo_refresh.enabled()
     if timed:
@@ -176,6 +203,68 @@ def get_series(series_id: str, start_date: str = "1990-01-01") -> pd.Series:
             (series_id, today, json.dumps(payload)),
         )
     return raw
+
+
+# Every FRED series the Macro page reads, with the start it requests
+# (pages/3_Macro.py's _try_fred calls; tests/test_fred_warm.py holds the two equal).
+# The startup warm fetches exactly these, so it fills the rows the page will read.
+# DGS3MO is also the risk-free rate's series, requested from the same start.
+MACRO_PAGE_SERIES: "tuple[tuple[str, str], ...]" = (
+    ("USREC", "1945-01-01"),
+    ("T10Y2Y", "1976-06-01"),
+    ("DFF", "1954-07-01"),
+    ("BAMLH0A0HYM2", "1996-12-31"),
+    ("BAMLC0A0CM", "1996-01-01"),
+    ("BAMLH0A3HYC", "1996-01-01"),
+    ("DGS10", "1990-01-01"),
+    ("DGS3MO", "1990-01-01"),
+    ("DGS2", "1990-01-01"),
+    ("DGS1", "1990-01-01"),
+    ("DGS5", "1990-01-01"),
+    ("DGS7", "1990-01-01"),
+    ("DGS20", "1990-01-01"),
+    ("DGS30", "1990-01-01"),
+    ("T10YIE", "2003-01-01"),
+    ("DFII10", "2003-01-01"),
+    ("UNRATE", "1948-01-01"),
+    ("A191RL1Q225SBEA", "1947-01-01"),
+    ("CPILFESL", "1957-01-01"),
+    ("CFNAIDIFF", "1967-01-01"),
+    ("DTWEXBGS", "2006-01-01"),
+    ("NFCI", "1971-01-01"),
+)
+
+_WARM_GUARD = threading.Lock()
+_WARM_THREAD: "threading.Thread | None" = None
+
+
+def warm_cache_in_background() -> "threading.Thread | None":
+    """Fetch the Macro page's series into today's cache on a background thread, once
+    per process (audit item 15f). A fresh container's first Macro visit waited about
+    15 seconds for 22 fetches; warmed at startup, it reads cached rows, and a visit
+    that arrives mid-warm waits only for the series still in flight (get_series takes
+    one fetch per series at a time). Returns the thread, or None when it was already
+    started or the demo's fetch timer is off (personal mode, the test suite)."""
+    global _WARM_THREAD
+    from src import demo_refresh
+    if not demo_refresh.enabled():
+        return None
+    with _WARM_GUARD:
+        if _WARM_THREAD is not None:
+            return None
+        _WARM_THREAD = threading.Thread(target=_warm, name="fred-warm", daemon=True)
+    _WARM_THREAD.start()
+    return _WARM_THREAD
+
+
+def _warm() -> None:
+    for series_id, start in MACRO_PAGE_SERIES:
+        try:
+            get_series(series_id, start)
+        except Exception as exc:                          # noqa: BLE001
+            # The page reports its own failures when it reads the series.
+            print(f"[INFO] FRED warm: {series_id} not cached ({type(exc).__name__})",
+                  file=sys.stderr)
 
 
 def clear_macro_cache() -> int:
