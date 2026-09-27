@@ -276,7 +276,7 @@ DEMO_REPORT_DISCLAIMER = (
 )
 
 REAL_ACCOUNT_LABEL = "Personal Brokerage Account"
-DEMO_ACCOUNT_LABEL = "Demo Mode — Simulated Paper-Trade Portfolio"
+DEMO_ACCOUNT_LABEL = "Demo Mode: Simulated Paper-Trade Portfolio"
 
 
 def _account_label(is_demo: bool) -> str:
@@ -523,7 +523,7 @@ def _cape_reading_sentence(cape_val: float, cape_pct: float) -> str:
     from src.prose_helpers import ordinal
     label, _ = _cape_regime(int(round(cape_pct)))
     sentence = (
-        f"CAPE stands at {cape_val:.1f}x, in the {ordinal(cape_pct)} percentile — "
+        f"CAPE stands at {cape_val:.1f}x, in the {ordinal(cape_pct)} percentile: "
         f"{label} versus history."
     )
     # Inside a quarter lock the reading is the quarter's last monthly observation by
@@ -1101,7 +1101,7 @@ def _build_factor_section(end_date: str) -> Optional[dict]:
             "T":                res["T"],
             "nw_lags":          res["nw_lags"],
             "sample_window": (
-                f"{_fmt_date_local(res['sample_start'])} — "
+                f"{_fmt_date_local(res['sample_start'])} to "
                 f"{_fmt_date_local(res['sample_end'])}"
             ),
             "_raw": res,
@@ -1191,7 +1191,7 @@ def _build_benchmark_section(start_date: str, end_date: str) -> Optional[dict]:
         "T":                 result["T"],
         "nw_lags":           result["nw_lags"],
         "sample_window": (
-            f"{_fmt_date_local(result['sample_start'])} — "
+            f"{_fmt_date_local(result['sample_start'])} to "
             f"{_fmt_date_local(result['sample_end'])}"
         ),
         "prose":             build_benchmark_prose(
@@ -1417,9 +1417,10 @@ def _build_positioning_section(end_date: str, style_pending: Optional[str] = Non
         dur_vs = f"{vs_agg} benchmark by {dur_diff:.1f} yrs"
     duration_line = (
         f"Fixed Income sleeve (Core FI + TIPS) effective duration: {fi_dur} yrs "
-        f"vs Bloomberg US Agg: {agg_dur} yrs ({dur_vs}). "
+        f"vs {agg_dur} yrs for the Bloomberg US Agg ({dur_vs}). "
         f"FI weight: {fi_wt}% of portfolio. "
-        f"Cash/SPAXX ({cash_wt}%) excluded — not a duration-bearing asset and excluded from Bloomberg Agg."
+        f"Cash/SPAXX ({cash_wt}%) is excluded: it is not a duration-bearing asset, and the "
+        f"Bloomberg Agg excludes it."
     )
     style_box_b64 = _chart_b64(build_style_box_figure(style_data), 520, 300) if style_data else None
     return {
@@ -1646,12 +1647,12 @@ def _build_asset_eval_section() -> dict:
             if not np.isnan(pre_avg):
                 prose_parts.append(
                     f"Pre-2020 average: {pre_avg:.2f} "
-                    "(consistent with 'uncorrelated alternative' narrative)."
+                    "(consistent with the 'uncorrelated alternative' narrative)."
                 )
             if not np.isnan(post_avg):
                 prose_parts.append(
-                    f"Post-2020 average: {post_avg:.2f} — persistently elevated after "
-                    "institutionalization; correlation rises precisely when diversification "
+                    f"Post-2020 average: {post_avg:.2f}, persistently elevated after "
+                    "institutionalization; correlation rises when diversification "
                     "is most needed."
                 )
             result["rolling_prose"] = " ".join(prose_parts)
@@ -1771,7 +1772,7 @@ def _build_asset_eval_section() -> dict:
                         mv_result
                         and mv_result.get("sharpe_con_with", 0) > mv_result.get("sharpe_con_no", 0)
                     )
-                    mvo_note = " — MVO sanity check directionally consistent" if mvo_ok else ""
+                    mvo_note = "; the MVO sanity check is directionally consistent" if mvo_ok else ""
                     args_for.append(
                         f"Sharpe-improving against SAA target weights at 10% allocation "
                         f"({saa_sh0:.3f} → {saa_sh10:.3f}, "
@@ -1782,8 +1783,8 @@ def _build_asset_eval_section() -> dict:
             btc_spy_j = float(corr.get("US Large Core", float("nan")))
             if not np.isnan(btc_spy_j) and btc_spy_j > 0.3:
                 args_against.append(
-                    f"Equity-like correlation with US Large Core ({btc_spy_j:.2f}) post-2020 — "
-                    "co-movement spikes during stress precisely when a hedge is most valuable"
+                    f"Equity-like correlation with US Large Core ({btc_spy_j:.2f}) post-2020: "
+                    "co-movement spikes during stress, when a hedge is most valuable"
                 )
 
         # DERIVED, and the derivation is not the point — the SUBJECT is (#276).
@@ -1817,9 +1818,9 @@ def _build_asset_eval_section() -> dict:
             # LABELLED AS STANDING (#276). Unlike the drawdown above it, this is not a
             # measurement withheld — it is not measurable, and should not become
             # conditional. Saying so is what lets a reader tell the two apart.
-            "Standing argument, not a measurement — no intrinsic cash flow or fundamental "
-            "valuation anchor: expected return is purely sentiment-driven, making MV inputs "
-            "unreliable for forward-looking allocation. A judgement about the asset class, "
+            "Standing argument, not a measurement: no intrinsic cash flow or fundamental "
+            "valuation anchor, so expected return is purely sentiment-driven and MV inputs "
+            "are unreliable for forward-looking allocation. A judgement about the asset class, "
             "true of any portfolio, and independent of every figure above",
         ])
 
