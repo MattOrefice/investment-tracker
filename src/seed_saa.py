@@ -91,7 +91,7 @@ SUB_CLASSES = [
             "leverage, stable earnings) is the only factor that has strengthened since academic "
             "publication. It is a structural preference for better businesses, not statistical "
             "arbitrage, so it is not arbitraged away. Empirically, quality has delivered equity-like "
-            "returns with substantially lower drawdowns. That matters over a 30+ year compounding "
+            "returns with materially lower drawdowns. That matters over a 30+ year compounding "
             "window, where avoiding deep drawdowns dominates terminal wealth. 14% expresses high "
             "conviction without enough concentration for a factor regime change to severely damage "
             "the portfolio.\n"
@@ -127,7 +127,7 @@ SUB_CLASSES = [
         "rationale": (
             "Size factor exposure, sized modestly because the evidence is the weakest. Small caps "
             "have historically earned a ~1-2% premium over large caps, but the premium has been weak "
-            "since publication and arguably absent for the last 15 years. Small caps do diversify: "
+            "since publication and arguably absent for the last 15 years. Small caps offer genuine diversification: "
             "they are more domestic-economy-leveraged, more interest-rate-sensitive, and less "
             "correlated with mega-cap tech concentration. 7% is enough to matter if the size premium "
             "reasserts, especially with valuation discounts to large caps at multi-decade lows, "
@@ -155,7 +155,7 @@ SUB_CLASSES = [
         "rationale": (
             "The cap-weighted developed ex-US market, held for the reason any core position is held: "
             "it is the region without a view. Every tilt in this book is a deviation from a market "
-            "portfolio, and a deviation only means something if the portfolio it deviates from is "
+            "portfolio, and a deviation is only meaningful if the portfolio it deviates from is "
             "also owned.\n"
             "\n"
             "Core is 34.7% of international equity here, the same share it holds in the US book (17 "
@@ -193,8 +193,8 @@ SUB_CLASSES = [
             "relationship exactly. Selection effect therefore measures what it measures at home: the "
             "gap between two quality methodologies, not the premium itself.\n"
             "\n"
-            "**Would revisit if** the international quality premium diverged from the domestic one by"
-            " a wide margin over a full cycle. That would mean the factor is not the region-"
+            "**Would revisit if** the international quality premium diverged materially from the"
+            " domestic one over a full cycle. That would mean the factor is not the region-"
             "independent phenomenon this position assumes."
         ),
     },
@@ -242,7 +242,7 @@ SUB_CLASSES = [
             "exhibit is where that premium is priced. Attribution will show that premium as "
             "selection. It comes from the factor tilt, not manager skill.\n"
             "\n"
-            "**Would revisit if** the small-value interaction proved much weaker in developed ex-US "
+            "**Would revisit if** the small-value interaction proved materially weaker in developed ex-US "
             "than domestically. Sized at the US mirror, it assumes parity."
         ),
     },
@@ -256,11 +256,11 @@ SUB_CLASSES = [
             "A higher-growth, higher-volatility diversifier. EM equities offer demographic tailwinds,"
             " structurally cheaper valuations, and growth profiles that developed markets do not "
             "have. The 8% weight respects the asymmetric risk: EM has had 50%+ drawdowns several "
-            "times and carries substantial country-specific governance risk, China especially. A "
+            "times and includes meaningful country-specific governance risk, China especially. A "
             "modest position at attractive valuations is preferred to buying after a rally.\n"
             "\n"
             "**Would increase if** EM ex-China valuations become exceptionally cheap.\n"
-            "**Would reduce if** China governance risk worsens substantially or if EM index "
+            "**Would reduce if** China governance risk materially worsens or if EM index "
             "construction concentrates further into a single country.\n"
             "\n"
             "Emerging markets is the one equity region held at cap weight. The developed book tilts "

@@ -33,7 +33,7 @@ SLEEVE_META = {
             "represent over 60% of quality-screened indices."
         ),
         "expected_return_scenario": (
-            "Quality premium of ~1-2% over market annually with substantially lower drawdowns; "
+            "Quality premium of ~1-2% over market annually with materially lower drawdowns; "
             "equity-like returns with a smoother compounding path."
         ),
         "themes": ["Factor tilt"],
@@ -138,7 +138,7 @@ SLEEVE_META = {
     },
     "Emerging Markets": {
         "exit_conditions": (
-            "Would reduce if China governance risk worsens substantially or if EM index construction "
+            "Would reduce if China governance risk materially worsens or if EM index construction "
             "concentrates further into a single country."
         ),
         "invalidation_conditions": (

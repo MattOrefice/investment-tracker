@@ -292,7 +292,11 @@ HOLDINGS = [
         "expense_ratio": 0.0003,
         "er_source": 'Schwab fund page', "er_as_of": _ER_AS_OF,
         "holding_rationale": (
-            "SCHP delivers broad TIPS exposure at 0.03% versus TIP's 0.19% for identical exposure. The "
+            # Not "identical exposure": the two track different index families, per the
+            # funds' own pages and filings, read 2026-09-27 (#406 item 11).
+            "SCHP delivers broad TIPS exposure at 0.03% versus TIP's 0.19%. The two track different "
+            "indexes: SCHP the Bloomberg US Treasury Inflation-Linked Bond Index (Series-L), TIP the "
+            "ICE US Treasury Inflation Linked Bond Index. The "
             "choice of broad TIPS over short-term alternatives (VTIP, STIP) reflects the long-horizon "
             "inflation thesis: at 27, the risk being hedged is not near-term inflation volatility but a "
             "decade of sustained real return erosion. Short-term TIPS protect against current inflation but "

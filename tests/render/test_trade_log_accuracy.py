@@ -1,10 +1,12 @@
 """Trade Log accuracy (2026-09-25 audit, item 10), rendered on the demo book.
 
 The header said every trade documents a position thesis. On the demo the IDHQ, AVIV
-and AVDV buys of the international split carry none, and the international theses
-still name the undivided "International Developed" sleeve. Writing theses for the tilt
-sleeves is authoring, so the claim now says what the data holds. The tab row also sat
-outside the content column that every tab's body used.
+and AVDV buys of the international split carried none, and the international theses
+named the undivided "International Developed" sleeve. Writing theses for the tilt
+sleeves is authoring, so the claim said what the data held. Item 15e wrote the three
+theses, and #406 item 4 rewrote the two international ones for the sleeves the book
+has, so on the demo the claim is now plain; the exception paths are exercised on
+copies. The tab row also sat outside the content column that every tab's body used.
 """
 from __future__ import annotations
 
@@ -58,6 +60,11 @@ def test_the_claim_names_the_trades_without_a_thesis(tmp_path, monkeypatch):
         n = c.execute("UPDATE trades SET thesis_id = NULL WHERE ticker IN ('IDHQ', 'AVIV', "
                       "'AVDV') AND COALESCE(lot_source, 'initial') != 'drip'").rowcount
         assert n == 3, "premise: the three international-split buys"
+        # And the two international theses as they stood before #406 item 4.
+        m = c.execute("UPDATE theses SET target_sleeves = '[\"International Developed\"]', "
+                      "title = CASE thesis_id WHEN 17 THEN 'International Developed — VEA' "
+                      "ELSE title END WHERE thesis_id IN (7, 17)").rowcount
+        assert m == 2
     claim = _claim(_render(tmp_path, monkeypatch, unlink))
     assert "except 3 trades: the AVDV, AVIV and IDHQ trades carry no thesis." in claim, claim
     assert ("2 active theses (International Developed and International Developed — VEA) "
@@ -68,28 +75,27 @@ def test_a_book_with_no_gaps_keeps_the_plain_claim(tmp_path, monkeypatch):
     """The contrast: link the three trades and point the two theses at a sleeve that
     exists, and the sentence is the original one, unqualified."""
     def close_the_gaps(c):
-        # Since audit item 15e the book links every trade itself; only the stale sleeve
-        # name is left to close.
+        # Since audit item 15e the book links every trade itself, and since #406 item 4
+        # no active thesis names a sleeve the book lacks: nothing is left to close.
         n = c.execute("SELECT COUNT(*) FROM trades WHERE thesis_id IS NULL AND "
                       "COALESCE(lot_source, 'initial') != 'drip'").fetchone()[0]
         assert n == 0
-        m = c.execute("UPDATE theses SET target_sleeves = '[\"International Core\"]' "
-                      "WHERE target_sleeves = '[\"International Developed\"]'").rowcount
-        assert m == 2
+        m = c.execute("SELECT COUNT(*) FROM theses WHERE target_sleeves = "
+                      "'[\"International Developed\"]'").fetchone()[0]
+        assert m == 0
     claim = _claim(_render(tmp_path, monkeypatch, close_the_gaps))
     assert claim == ("Every trade documents a position thesis, which rolls up to an "
                      "investment view, which carries theme tags.")
 
 
 def test_the_demo_book_documents_every_trade(tmp_path, monkeypatch):
-    """Audit item 15e: the three international-split buys carry position theses, so the
-    claim's first sentence holds unqualified. The two theses written for the undivided
-    sleeve still name it, and the claim still says so (#406)."""
+    """Audit item 15e linked the three international-split buys to position theses, and
+    #406 item 4 pointed the two theses written for the undivided sleeve at the sleeves
+    the book has (migrated deliberately: this pinned the disclosure that they did not).
+    On the demo the claim is plain."""
     claim = _claim(_render(tmp_path, monkeypatch))
     assert claim == ("Every trade documents a position thesis, which rolls up to an "
-                     "investment view, which carries theme tags. 2 active theses "
-                     "(International Developed and International Developed — VEA) name "
-                     "a sleeve this book no longer has.")
+                     "investment view, which carries theme tags.")
 
 
 def test_the_tabs_sit_in_the_content_column(tmp_path, monkeypatch):

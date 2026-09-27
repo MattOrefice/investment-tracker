@@ -73,8 +73,8 @@ def test_the_pdbc_card_states_what_its_prospectus_says(research):
 
 
 def test_iemg_is_not_called_identical_to_eem(research):
-    # Every text about IEMG or EEM. (SCHP's rationale also says "identical exposure", of
-    # TIP; that claim is not this item's.)
+    # Every text about IEMG or EEM. (SCHP's "identical exposure" to TIP was #406 item
+    # 11's, corrected in tests/test_copy_corrections.py.)
     about = [t for t in _texts(research) if "IEMG" in t or "EEM" in t]
     assert len(about) >= 3, about
     assert not [t for t in about if "identical" in t.lower() or "same-index" in t]

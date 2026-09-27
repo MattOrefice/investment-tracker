@@ -38,7 +38,9 @@ def _cell(book, thesis_id, col):
 @pytest.mark.parametrize("book", BOOKS, ids=lambda p: p.name)
 def test_both_books_carry_every_swept_cell(book):
     new = _tool().NEW
-    assert sum(len(cols) for cols in new.values()) == 52
+    # 52 swept cells, plus thesis 7's exit, invalidation and expected-return cells, which
+    # #406 item 4's rewrite from International Core's rationale sets (two of them cleared).
+    assert sum(len(cols) for cols in new.values()) == 55
     for tid, cols in new.items():
         for col, text in cols.items():
             assert _cell(book, int(tid), col) == text, (book.name, tid, col)
