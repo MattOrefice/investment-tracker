@@ -1,5 +1,6 @@
 """Macro Dashboard — regime indicator panels."""
 import logging
+import time
 from datetime import date, datetime, timedelta
 
 import pandas as pd
@@ -254,13 +255,10 @@ def _load_trailing_pe() -> pd.DataFrame:
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def _load_fred(series_id: str, start_date: str) -> pd.Series:
-    return macro.get_series(series_id, start_date)
-
-
-@st.cache_data(ttl=3600, show_spinner=False)
-def _load_recession_periods() -> list:
-    return macro.get_recession_periods("1945-01-01", TODAY)
+def _load_fred(series_id: str, start_date: str, _deadline: float) -> pd.Series:
+    # _deadline is left out of the cache key (the leading underscore). Only today's rows
+    # are cached: a stored copy served at the deadline arrives as an exception.
+    return macro.get_series_for_page(series_id, start_date, _deadline)
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -345,17 +343,34 @@ with col:
 
     # ── helpers defined inside col ────────────────────────────────────────────
 
+    # Series shown from a stored copy because today's row did not arrive within the
+    # page's wait, with the date each copy was fetched (audit item 15f).
+    _stored_on: "dict[str, str]" = {}
+
     def _try_fred(series_id: str, start_date: str):
         try:
-            return _load_fred(series_id, start_date), None
+            return _load_fred(series_id, start_date, _fred_deadline), None
+        except macro.FREDStillFetching as exc:
+            if exc.stored is not None:
+                _stored_on[series_id] = exc.stored_on
+                return exc.stored, None
+            return None, exc
         except Exception as exc:
             return None, exc
 
-    def _try_rec():
+    def _try_rec(usrec, usrec_err):
+        # From the USREC series loaded above, within the page's wait. Fetching it a
+        # second time here would not be.
+        if usrec is None:
+            return None, usrec_err
         try:
-            return _load_recession_periods(), None
+            return macro.recession_periods(usrec, "1945-01-01", TODAY), None
         except Exception as exc:
             return None, exc
+
+    def _long_date(iso: str) -> str:
+        d = date.fromisoformat(iso)
+        return f"{d:%B} {d.day}, {d.year}"
 
     def _panel_error(panel_title: str, exc: Exception, retry_key: str) -> None:
         with st.container(border=True):
@@ -370,8 +385,11 @@ with col:
     # ── Load all FRED data upfront ────────────────────────────────────────────
 
     with st.spinner("Loading FRED data…"):
-        rec_periods, _rec_err    = _try_rec()
+        # One wait for the whole page: past it, what has not arrived renders from the
+        # stored copies and the background fetch carries on.
+        _fred_deadline = time.monotonic() + macro.PAGE_WAIT_SECONDS
         usrec,       _usrec_err  = _try_fred("USREC",             "1945-01-01")
+        rec_periods, _rec_err    = _try_rec(usrec, _usrec_err)
         t10y2y,      _t10y2y_err = _try_fred("T10Y2Y",           "1976-06-01")
         dff,         _dff_err    = _try_fred("DFF",               "1954-07-01")
         hy_oas,      _hy_oas_err = _try_fred("BAMLH0A0HYM2",     "1996-12-31")
@@ -393,6 +411,15 @@ with col:
         cfnai_diff,  _cfnai_err  = _try_fred("CFNAIDIFF",         "1967-01-01")
         dtwexbgs,    _dtwex_err  = _try_fred("DTWEXBGS",          "2006-01-01")
         nfci,        _nfci_err   = _try_fred("NFCI",              "1971-01-01")
+
+    if _stored_on:
+        st.info(
+            f"Today's FRED data did not arrive within {macro.PAGE_WAIT_SECONDS:.0f} seconds, "
+            f"so {len(_stored_on)} of {len(macro.MACRO_PAGE_SERIES)} series are shown as "
+            "stored, with the date each was fetched: "
+            + ", ".join(f"{sid} ({_long_date(on)})" for sid, on in _stored_on.items())
+            + ". The fetch continues in the background; reload the page to read it."
+        )
 
     # Credit covers only what FRED publishes for the ICE BofA series (from Sep 2023 when
     # this was written), not the full history the header used to claim.
@@ -2730,7 +2757,9 @@ with col:
         def _fred_src(label: str, series: "pd.Series | None") -> str:
             if series is not None:
                 last = series.dropna().index[-1].strftime("%b %d, %Y")
-                return f"**{label}**: last observation **{last}**"
+                stored = _stored_on.get(label.split()[1])
+                copy = f" · stored copy fetched {_long_date(stored)}" if stored else ""
+                return f"**{label}**: last observation **{last}**{copy}"
             return f"**{label}**: unavailable"
 
         _daily = [

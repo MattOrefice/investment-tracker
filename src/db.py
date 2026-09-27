@@ -456,15 +456,37 @@ _OVERLAY_SQL = "\n".join(
 )
 
 
+_MIGRATE_LOCK = threading.Lock()
+
+
+def _migrate_once(conn: sqlite3.Connection) -> None:
+    """Run _auto_migrate on this process's first connection to DB_PATH, once, even when
+    two threads make that first connection at the same moment.
+
+    The check and the migration used to run unlocked. Two threads that both found the
+    path unmigrated both ran every migration's check, both found the same column
+    missing (or present), and the second ALTER failed: "duplicate column name:
+    included_in_household" when #429's warm thread met a test's fresh database, and
+    'no such column: "account_number"' in 18 of 40 trials of two personal-mode
+    sessions opening a book that bootstrap had given that column (#306's m4). The
+    demo cannot reach it: its router migrates demo.db before starting anything else,
+    and the read-only overlay has nothing to migrate. The lock makes the step safe
+    wherever it is reached; the second thread waits, then finds the path done."""
+    db_key = str(DB_PATH)
+    if db_key in _migrated_paths:
+        return
+    with _MIGRATE_LOCK:
+        if db_key not in _migrated_paths:
+            _auto_migrate(conn)
+            _migrated_paths.add(db_key)
+
+
 def _runtime_overlay_connection(committed: Path, cache: Path):
     conn = sqlite3.connect(f"file:{committed.as_posix()}?mode=ro", uri=True,
                            factory=_ClosingConnection)
     conn.execute("PRAGMA foreign_keys = ON")
     conn.row_factory = sqlite3.Row
-    db_key = str(DB_PATH)
-    if db_key not in _migrated_paths:
-        _auto_migrate(conn)          # write-free on a book that needs nothing (#175)
-        _migrated_paths.add(db_key)
+    _migrate_once(conn)              # write-free on a book that needs nothing (#175)
     conn.execute("ATTACH DATABASE ? AS cache", (str(cache),))
     conn.executescript(_OVERLAY_SQL)
     return conn
@@ -481,10 +503,7 @@ def get_connection():
     conn = sqlite3.connect(DB_PATH, factory=_ClosingConnection)
     conn.execute("PRAGMA foreign_keys = ON")
     conn.row_factory = sqlite3.Row
-    db_key = str(DB_PATH)
-    if db_key not in _migrated_paths:
-        _auto_migrate(conn)
-        _migrated_paths.add(db_key)
+    _migrate_once(conn)
     return conn
 
 def initialize_db():

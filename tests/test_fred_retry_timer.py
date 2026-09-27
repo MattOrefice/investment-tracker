@@ -145,15 +145,32 @@ def page(fred, monkeypatch):
     st.cache_data.clear()
 
 
-def test_the_macro_page_does_not_fetch_fred_between_renders(page, monkeypatch):
+def _join_warm() -> None:
+    thread = macro._WARM_THREAD
+    if thread is not None:
+        thread.join(60)
+
+
+@pytest.mark.parametrize("warm", [False, True], ids=["page-fetches", "warm-fetches"])
+def test_the_macro_page_does_not_fetch_fred_between_renders(page, monkeypatch, warm):
+    """Both ways the page reaches FRED: its own fetch (the warm off, as in the suite),
+    and the live demo's, where the startup warm (audit item 15f) fetches and the page
+    waits for it."""
+    if warm:
+        monkeypatch.setenv("DEMO_FRED_WARM", "1")
+        monkeypatch.setattr(macro, "_WARM_THREAD", None)
+        monkeypatch.setattr(macro, "_WARM_DAY", None)
+        monkeypatch.setattr(macro, "_SERIES_LOCKS", {})
     clock, calls, up = page
     _caps, retry, unavailable = _render(monkeypatch)
+    _join_warm()
     first = len(calls)
     assert first >= 20 and len(set(calls)) == first, "each series tried once"
     assert unavailable and not retry, "no Retry button while the timer governs"
 
     clock[0] = T0 + timedelta(minutes=10)
     captions, retry, unavailable = _render(monkeypatch)
+    _join_warm()
     assert len(calls) == first, "a render inside the wait fetches nothing"
     waits = [c for c in captions if c.startswith("FREDRetryWait:")]
     assert len(waits) == len(unavailable) and not retry
@@ -162,6 +179,7 @@ def test_the_macro_page_does_not_fetch_fred_between_renders(page, monkeypatch):
     up["fred"] = True
     clock[0] = T0 + refresh.RETRY_AFTER
     _caps, retry, unavailable = _render(monkeypatch)
+    _join_warm()
     assert len(calls) > first and not unavailable, "after the wait, the page fetches and renders"
 
 
