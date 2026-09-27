@@ -30,6 +30,8 @@ from src.benchmarks import (
     blended_rule_note,
     get_custom_blended_series,
     get_naive_60_40_series,
+    naive_60_40_label,
+    naive_60_40_legs,
     get_naive_series,
     get_sp500_series,
 )
@@ -57,6 +59,10 @@ from src.positioning import get_effective_duration
 from src.rebalance import compute_drift
 from src.ui_helpers import demo_portfolio_phrase, render_footer, render_page_header
 render_page_header()
+
+# The naive benchmark's labels derive from its weights (#406 item 10).
+_6040 = naive_60_40_label()
+_6040_full = f"{_6040} ({naive_60_40_legs()})"
 
 
 _PORTFOLIO_ACCT = get_portfolio_account()   # single source of truth for scope + label
@@ -702,7 +708,7 @@ with col:
     _RISK_BM_OPTIONS = {
         "Custom Blended SAA":        "blended",
         "S&P 500 (SPY)":             "spy",
-        "60/40 (60% SPY / 40% AGG)": "60_40",
+        _6040_full:                  "60_40",
     }
     _risk_bm_sel = st.radio(
         "Compare against",
@@ -721,7 +727,7 @@ with col:
     _BM_ROW_LABELS = {
         "blended": "Custom Blended SAA",
         "spy":     "S&P 500 (SPY)",
-        "60_40":   "60/40",
+        "60_40":   _6040,
     }
     if _risk_bm_kind == "blended":
         _bl_for_metrics = bl / float(bl.iloc[0])
@@ -733,7 +739,7 @@ with col:
         _naive_60_40 = _load_naive_benchmark(start_val, _C, "60_40")
         _naive_60_40 = _naive_60_40[_naive_60_40.index <= _C_ts]
         _bl_for_metrics = _naive_60_40 / float(_naive_60_40.iloc[0])
-        _risk_bm_label  = "60/40 (60% SPY / 40% AGG)"
+        _risk_bm_label  = _6040_full
     _bm_row_label = _BM_ROW_LABELS[_risk_bm_kind]
 
     # Each window's risk-free rate is the average 3-month Treasury bill rate over the
@@ -950,7 +956,7 @@ with col:
     )
 
     _NAIVE_OPTIONS = {
-        "60/40 (60% SPY / 40% AGG)": "60_40",
+        _6040_full: "60_40",
         "S&P 500 (SPY)": "spy",
     }
     _naive_sel = st.radio(
@@ -964,11 +970,11 @@ with col:
     naive, _naive_gaps = _load_naive_benchmark(start_val, _C, naive_kind)
     naive        = naive[naive.index <= _C_ts]   # settled frontier (C)
     _naive_label = (
-        "60/40 naive baseline (60% SPY, 40% AGG)"
+        f"{_6040} naive baseline ({naive_60_40_legs(', ')})"
         if naive_kind == "60_40"
         else "S&P 500 baseline (SPY total return)"
     )
-    _naive_short = "60/40" if naive_kind == "60_40" else "S&P 500"
+    _naive_short = _6040 if naive_kind == "60_40" else "S&P 500"
 
     if _naive_gaps:
         st.warning(benchmark_gap_notice(_naive_gaps))
@@ -1091,7 +1097,9 @@ with col:
         # up-arrow, including under a negative Stage 2 (2026-09-25 audit, item 7).
         _tc1, _tc2, _tc3 = st.columns(3)
         _tc1.metric("Stage 1: SAA Design", _bps(_ts["stage1"]))
-        _tc1.caption("SAA blend vs. 60/40")
+        # The selected naive benchmark, which Stage 1 is measured against: this read
+        # "60/40" whichever was selected (#406 item 10).
+        _tc1.caption(f"SAA blend vs. {_naive_short}")
         _tc2.metric("Stage 2: Implementation", _bps(_ts["stage2"]))
         _tc2.caption("Portfolio vs. SAA blend")
         _tc3.metric(f"Total: Portfolio vs. {_naive_short}", _bps(_ts["total"]))

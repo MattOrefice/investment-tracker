@@ -420,6 +420,21 @@ def get_sleeve_benchmark_returns(
     return df
 
 
+# The naive benchmark's legs and weights, stated once. The labels the Performance page
+# shows ("60/40", "60% SPY / 40% AGG") derive from them (#406 item 10).
+NAIVE_60_40 = (("SPY", 0.6), ("AGG", 0.4))
+
+
+def naive_60_40_label() -> str:
+    """'60/40', from NAIVE_60_40's weights."""
+    return "/".join(f"{w * 100:.0f}" for _, w in NAIVE_60_40)
+
+
+def naive_60_40_legs(sep: str = " / ") -> str:
+    """'60% SPY / 40% AGG', from NAIVE_60_40."""
+    return sep.join(f"{w * 100:.0f}% {t}" for t, w in NAIVE_60_40)
+
+
 def get_naive_60_40_series(start_date: str, end_date: str | None = None) -> pd.Series:
     """
     $1-normalized daily value series for the 60/40 naive benchmark (60% SPY, 40% AGG),
@@ -453,11 +468,12 @@ def _naive_basket_series(start_date: str, end_date: str) -> pd.Series:
     gaps.extend(("60/40 Naive", "SPY", b) for b in spy_gaps)
     gaps.extend(("60/40 Naive", "AGG", b) for b in agg_gaps)
 
+    weights = dict(NAIVE_60_40)
     legs: list[tuple[pd.Series, float]] = []
     if not spy_gaps:
-        legs.append((spy, 0.6))
+        legs.append((spy, weights["SPY"]))
     if not agg_gaps:
-        legs.append((agg, 0.4))
+        legs.append((agg, weights["AGG"]))
 
     if not legs:
         # Both legs gapped: an explicit missing-data sentinel, never the

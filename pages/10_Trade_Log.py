@@ -163,6 +163,16 @@ def load_all():
                 (SELECT COUNT(*) FROM themes)                                                 AS n_themes
         """).fetchone())
 
+    # Thesis prose carries tokens for figures that derive from the data (#406 item 7).
+    from src.prose_figures import render
+    for th in inv_theses + [t for ts in theme_theses.values() for t in ts]:
+        for key in ("view_summary", "exit_conditions", "invalidation_conditions",
+                    "expected_return_scenario"):
+            if key in th:
+                th[key] = render(th[key])
+    for pt in pos_theses:
+        pt["vehicle_rationale"] = render(pt["vehicle_rationale"])
+
     return dict(
         trades=trades,
         inv_theses=inv_theses,

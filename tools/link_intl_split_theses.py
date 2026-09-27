@@ -45,7 +45,9 @@ DRAFTS = {
              "the work rather than the value screen."),
     "AVDV": ("International Small Value",
              "The small-value interaction, held abroad for the reason AVUV is held at home. It "
-             "is the book's smallest sleeve because international is 20% of the portfolio and "
+             "is the book's smallest sleeve because international is "
+             "{{sum:International Core+International Quality+International Large Value+"
+             "International Small Value}} of the portfolio and "
              "small value is 8 of 49 in the US structure: the size is arithmetic, not diminished "
              "conviction. Its benchmark, SCZ, is small blend rather than small value, because no "
              "passive international small-value index fund exists, so selection here carries "
