@@ -46,6 +46,8 @@ _BASE = {
     # (test_the_harness_context_leaves_nothing_undefined_inside_the_section)
     # went red when the builder grew this key — which is what it is for.
     "unavailable": [],
+    # Added by audit item 15a (the risk-free rate's line), and caught the same way.
+    "rf_note": None,
 }
 
 
