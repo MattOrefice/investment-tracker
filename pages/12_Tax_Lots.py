@@ -103,7 +103,7 @@ with st.expander("How to read this page", expanded=False):
         "to match Fidelity DRIP execution. Toggle the filter at top to include or exclude "
         "DRIP lots from the detail table.\n"
         "- **Days to LT filter**: surfaces ST lots approaching the 365-day LT conversion "
-        "threshold. Useful for tax-aware harvesting and rebalancing — selling an ST lot "
+        "threshold. Useful for tax-aware harvesting and rebalancing: selling an ST lot "
         "two days before LT conversion has very different tax treatment than waiting "
         "three days.\n"
         "- **Sleeve Summary**: aggregates lot-level detail to sleeve level, showing how "
@@ -122,7 +122,7 @@ st.caption(
     f"Scope: {demo_portfolio_phrase()}." if IS_DEMO else
     "Scope: every taxable account"
     + (f" ({', '.join(a['name'] for a in _taxable)})" if _taxable else "")
-    + ". IRAs, workplace plans and HSAs are not shown: a lot there carries no "
+    + ". IRAs, workplace plans, and HSAs are not shown: a lot there carries no "
     "capital-gains consequence."
 )
 _unledgered = unledgered_taxable_notice([a["name"] for a in _taxable if not a["trades"]])
@@ -249,7 +249,7 @@ with fc4:
             value=366,
             step=5,
             disabled=True,
-            help="No short-term lots in inventory — filter activates when lots within 1 year of purchase exist.",
+            help="No short-term lots in inventory. The filter activates when lots within 1 year of purchase exist.",
         )
         days_to_lt_max = 366
     else:
@@ -286,7 +286,7 @@ st.divider()
 
 n_filtered = len(filtered)
 _drip_suffix = "" if show_drip else " (DRIP hidden)"
-st.subheader(f"Lot Detail — {lot_count_label(n_filtered)}{_drip_suffix}")
+st.subheader(f"Lot Detail: {lot_count_label(n_filtered)}{_drip_suffix}")
 
 if filtered.empty:
     st.info("No lots match the current filter combination.")
@@ -507,20 +507,20 @@ else:
 
 with st.expander("Methodology", expanded=False):
     st.markdown(
-        "**Marginal tax rate assumptions** — estimates assume a 22% federal marginal "
+        "**Marginal tax rate assumptions**: estimates assume a 22% federal marginal "
         "rate on short-term gains and 15% on long-term gains.\n\n"
-        "**Capital loss offset hierarchy** — capital losses offset capital gains first "
+        "**Capital loss offset hierarchy**: capital losses offset capital gains first "
         "(ST losses against ST gains, LT against LT, then cross-character), then up to "
         "$3,000 of ordinary income per year, with excess carried forward indefinitely.\n\n"
-        "**Wash sale rule** — IRC § 1091 prohibits repurchase of the security or "
+        "**Wash sale rule**: IRC § 1091 prohibits repurchase of the security or "
         "substantially identical securities within 30 days before or after the loss sale.\n\n"
-        "**Cost basis convention for DRIP lots** — DRIP reinvestments are persisted as "
+        "**Cost basis convention for DRIP lots**: DRIP reinvestments are persisted as "
         "separate lot rows using the payment-date closing price as cost basis, matching "
         "Fidelity DRIP execution. Holding period begins on the payment date; long-term "
         "qualification requires holding more than 365 calendar days (day 366+).\n\n"
-        "**What is not modeled** — state taxes; NIIT 3.8% surcharge (applicable above "
-        "relevant income thresholds); replacement security suggestions are educational "
-        "only — consult a tax advisor before executing trades."
+        "**What is not modeled**: state taxes and the NIIT 3.8% surcharge (applicable "
+        "above relevant income thresholds). Replacement security suggestions are "
+        "educational only; consult a tax advisor before executing trades."
     )
 
 render_footer()

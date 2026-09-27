@@ -26,8 +26,9 @@ WASH_SALE_WINDOW_DAYS = 30
 REPLACEMENT_MAP: dict[str, tuple[str | None, str, str]] = {
     "VOO": (
         "IVV",
-        "S&P 500 exposure via different issuer (iShares). Tracks the same index under "
-        "a different fund structure — not substantially identical per standard tax practice.",
+        "S&P 500 exposure via a different issuer (iShares). Tracks the same index under "
+        "a different fund structure, which standard tax practice does not treat as "
+        "substantially identical.",
         "clean",
     ),
     "VTV": (
@@ -40,7 +41,7 @@ REPLACEMENT_MAP: dict[str, tuple[str | None, str, str]] = {
         "DGRO",
         "Quality-tilt via iShares Core Dividend Growth. Different index methodology "
         "(dividend growth + quality screen vs. SPHQ's accruals-adjusted quality screen). "
-        "Factor overlap is partial — monitor exposure drift.",
+        "Factor overlap is partial; monitor exposure drift.",
         "moderate",
     ),
     "AVUV": (
@@ -58,15 +59,15 @@ REPLACEMENT_MAP: dict[str, tuple[str | None, str, str]] = {
     "IDHQ": (
         "IQLT",
         "International quality via iShares MSCI Intl Quality Factor. Different index "
-        "provider (MSCI vs S&P) and screen construction — MSCI sorts on ROE, earnings "
-        "variability and leverage without SPHQ's accruals adjustment. Factor overlap is "
+        "provider (MSCI vs S&P) and screen construction: MSCI sorts on ROE, earnings "
+        "variability, and leverage without SPHQ's accruals adjustment. Factor overlap is "
         "partial, the same relationship SPHQ and QUAL have domestically.",
         "moderate",
     ),
     "AVIV": (
         "DFIV",
         "International large value via Dimensional. Same value-plus-profitability "
-        "targets, different fund family and portfolio construction — the AVUV/DFSV "
+        "targets, different fund family and portfolio construction: the AVUV/DFSV "
         "relationship applied abroad.",
         "clean",
     ),
@@ -91,7 +92,7 @@ REPLACEMENT_MAP: dict[str, tuple[str | None, str, str]] = {
     "SCHP": (
         "VTIP",
         "TIPS via Vanguard Short-Term Inflation-Protected Securities. Different issuer; "
-        "shorter duration (~2.5 years vs ~7 years) — modest duration shift accepted "
+        "shorter duration (~2.5 years vs ~7 years), a modest duration shift accepted "
         "for a 6% sleeve.",
         "moderate",
     ),
@@ -111,7 +112,7 @@ REPLACEMENT_MAP: dict[str, tuple[str | None, str, str]] = {
     ),
     "SPAXX": (
         None,
-        "Cash equivalent money market. No harvest case applies — position carries no "
+        "Cash equivalent money market. No harvest case applies: the position carries no "
         "unrealized loss risk.",
         "clean",
     ),

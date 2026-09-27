@@ -215,7 +215,7 @@ def unledgered_taxable_notice(names: "list[str]") -> "Optional[str]":
         f"(purchase dates and prices) is not in the trade ledger: {its} positions come "
         f"from the custodian's positions export, which carries no lots. So {its} holdings "
         f"are left out of the lot table, the short/long-term gain split, the sleeve "
-        f"summary and the harvest candidates below. That absence does not mean {holds} "
+        f"summary, and the harvest candidates below. That absence does not mean {holds} "
         f"no lots or no harvestable losses."
     )
 

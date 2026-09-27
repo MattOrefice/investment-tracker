@@ -574,13 +574,13 @@ def rebalance_action_text(row: pd.Series) -> str:
         return "—"
     if float(row["Drift"]) > 0:
         return (
-            "Over band — direct new contributions away from this sleeve until the "
+            "Over band: direct new contributions away from this sleeve until the "
             "drift closes; trim only within tax-advantaged accounts. Not sold here: "
             "realizing capital gains to rebalance is tax-inefficient."
         )
     return (
-        "Under band — receives priority allocation from new contributions "
-        "(see the buy suggestions below)."
+        "Under band: receives priority allocation from new contributions, "
+        "sized in the buy suggestions below."
     )
 
 

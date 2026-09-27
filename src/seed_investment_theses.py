@@ -33,7 +33,7 @@ SLEEVE_META = {
             "represent over 60% of quality-screened indices."
         ),
         "expected_return_scenario": (
-            "Quality premium of ~1-2% over market annually with materially lower drawdowns; "
+            "Quality premium of ~1-2% over market annually with substantially lower drawdowns; "
             "equity-like returns with a smoother compounding path."
         ),
         "themes": ["Factor tilt"],
@@ -138,8 +138,8 @@ SLEEVE_META = {
     },
     "Emerging Markets": {
         "exit_conditions": (
-            "Would reduce if China governance risk materially worsens or if EM index "
-            "construction concentrates further into a single country."
+            "Would reduce if China governance risk worsens substantially or if EM index construction "
+            "concentrates further into a single country."
         ),
         "invalidation_conditions": (
             "China ADR delisting materializes legislatively, or EM valuations reach parity "
@@ -202,8 +202,8 @@ SLEEVE_META = {
             "months, increasing deployment into equity sleeves."
         ),
         "invalidation_conditions": (
-            "Operational liquidity thesis never invalidated — size adjusts but a zero-cash "
-            "policy is never appropriate in a taxable rebalancing portfolio."
+            "Operational liquidity thesis never invalidated: size adjusts, but a zero-cash policy is "
+            "never appropriate in a taxable rebalancing portfolio."
         ),
         "expected_return_scenario": (
             "Money market yield, roughly the Treasury bill rate less the fund's fee, with "
