@@ -54,6 +54,7 @@ _BASE = {
     "btc_2022_mdd": None,
     "args_for": [], "args_against": [], "conclusion": "x",
     "disposition": "computed", "failure_reason": None, "unavailable": [],
+    "rf_note": None,
 }
 
 

@@ -17,13 +17,12 @@ from src.prices import get_prices, total_return_series
 # ── Constants ────────────────────────────────────────────────────────────────
 
 SAMPLE_START  = "2018-01-01"
-# 4.5%, matching src/performance.py's compute_risk_metrics default exactly (same
-# rate, same geometric daily-compounding convention: rf_daily = (1+rf)^(1/252)-1
-# — see solve_tangency_unconstrained/solve_tangency_constrained/compute_mv_analysis
-# below). Redeclared here rather than imported because performance.py exposes the
-# rate only as a function-parameter default, not a module constant; the two are
-# pinned equal by tests/test_asset_evaluation.py::test_rf_annual_matches_performance_rf,
-# a cross-source assertion so the two rates cannot silently drift apart again.
+# The DEFAULT rate for callers that pass none: the fixed 4.5% the page used before
+# audit item 15a, equal to src/performance.py's compute_risk_metrics default (pinned
+# by tests/test_asset_evaluation.py::test_rf_annual_matches_performance_rf). The page
+# and the PDF pass sample_risk_free() instead, the sample's average 3-month bill
+# rate. Same geometric daily-compounding convention either way:
+# rf_daily = (1+rf)^(1/252)-1.
 RF_ANNUAL     = 0.045
 TRADING_DAYS  = 252
 
@@ -276,6 +275,15 @@ def compute_univariate_stats(
         "skewness":     float(returns.skew()),
         "kurtosis":     float(returns.kurtosis()),   # excess kurtosis (normal = 0)
     }
+
+
+def sample_risk_free(btc: pd.Series, sleeves: pd.DataFrame):
+    """The sample's risk-free rate: the average 3-month Treasury bill rate from
+    SAMPLE_START to the last day both return series reach (src.risk_free, audit item
+    15a). A risk_free.RiskFreeRate; raises risk_free.RiskFreeUnavailable."""
+    from src import risk_free
+    end = min(pd.Timestamp(btc.index.max()), pd.Timestamp(sleeves.index.max()))
+    return risk_free.rate_over(SAMPLE_START, end)
 
 
 def build_univariate_table(

@@ -34,13 +34,30 @@ def test_public_origin_every_row_that_names_the_book_is_demo_s():
     assert f.execute("SELECT COUNT(*) FROM accounts").fetchone() == (1,)
 
 
-def test_stored_in_304_format_with_nothing_date_keyed():
+def test_stored_in_304_format_with_nothing_date_keyed(pytestconfig):
     f = _ro(FROZEN)
     n, adj = f.execute("SELECT COUNT(*), COUNT(adj_close) FROM prices").fetchone()
     assert n > 0 and adj == 0, f"{adj} of {n} rows carry a stored adjustment"
     assert f.execute("SELECT COUNT(*) FROM dividends").fetchone()[0] > 0
-    assert f.execute("SELECT COUNT(*) FROM macro_cache").fetchone() == (0,), (
-        "macro_cache is keyed on the fetch date; a frozen book must not carry it")
+    # Migrated deliberately by audit item 15a. macro_cache is keyed on the fetch date,
+    # so the book carries none of it EXCEPT the newest stored 3-month bill series: the
+    # risk-free rate reads the newest stored row whatever day it was fetched when FRED
+    # is unavailable (src.risk_free), so that row does not depend on the date. It is
+    # demo.db's own row, and it is not dated on the pinned today, which is the one day
+    # macro.get_series would read it as a same-day cache hit.
+    rows = f.execute("SELECT series_id, fetch_date, data FROM macro_cache").fetchall()
+    assert [(s, d) for s, d, _ in rows] == [(
+        "DGS3MO",
+        _ro(DEMO).execute("SELECT MAX(fetch_date) FROM macro_cache "
+                          "WHERE series_id = 'DGS3MO'").fetchone()[0])], (
+        "macro_cache is keyed on the fetch date; a frozen book carries only the newest "
+        "stored 3-month bill series")
+    assert rows[0][2] == _ro(DEMO).execute(
+        "SELECT data FROM macro_cache WHERE series_id = 'DGS3MO' AND fetch_date = ?",
+        (rows[0][1],)).fetchone()[0], "the row is demo.db's, byte for byte"
+    frozen_today = next(p for p in pytestconfig.pluginmanager.get_plugins()
+                        if getattr(p, "FROZEN_TODAY", None) is not None).FROZEN_TODAY
+    assert rows[0][1] != frozen_today.isoformat()
 
 
 def test_the_book_is_frozen_and_the_pinned_today_is_its_next_day(pytestconfig):

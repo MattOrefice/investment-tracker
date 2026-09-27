@@ -14,7 +14,11 @@ where tracker.db does not exist. This book replaces it for them:
     adjustment is computed from on read. Checked, not assumed: the builder refuses a
     source that still stores adj_close.
   * NOTHING DATE-KEYED. macro_cache rows are keyed on the fetch date and would make a
-    render depend on the day it runs, so they are dropped.
+    render depend on the day it runs, so they are dropped, with ONE exception: the
+    newest stored 3-month Treasury bill series (DGS3MO). src.risk_free reads the
+    newest stored row whatever day it was fetched when FRED is unavailable, as it is
+    in every offline render, so that row does not depend on the day either. Without
+    it the book's Sharpe and Sortino would have no risk-free rate (audit item 15a).
 
 Trimmed to what the pages read: every ticker's prices and dividends from 2024-01-01
 (the book's inception is 2025-05-01; the margin covers trailing windows before it).
@@ -54,7 +58,8 @@ def build(source: Path = SOURCE, target: Path = TARGET) -> Path:
     with c:
         c.execute("DELETE FROM prices WHERE price_date < ?", (FROM,))
         c.execute("DELETE FROM dividends WHERE ex_date < ?", (FROM,))
-        c.execute("DELETE FROM macro_cache")
+        c.execute("DELETE FROM macro_cache WHERE NOT (series_id = 'DGS3MO' AND fetch_date = "
+                  "(SELECT MAX(fetch_date) FROM macro_cache WHERE series_id = 'DGS3MO'))")
     c.execute("VACUUM")
     c.close()
     return target

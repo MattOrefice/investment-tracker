@@ -101,19 +101,18 @@ def test_5j_reevaluation_triggers_present(ae_app: AppTest) -> None:
 
 
 def test_rf_unit_is_bps_not_percent(ae_app: AppTest) -> None:
-    """Methodology must show rf as 450 bps not 4.5 bps. Pinned: Phase 44 Item 9;
-    value corrected 2026-07-07 from 432/4.32 to 450/4.5 when the page's RF was
-    standardized to match the Performance page (see test_asset_evaluation.py::
-    test_rf_annual_matches_performance_rf).
-    """
+    """Methodology must not print a percentage rate as basis points. Pinned: Phase 44
+    Item 9 ("4.5 bps" for 450). Migrated deliberately by audit item 15a: the rate is
+    now the sample's average 3-month bill rate, stated as a percentage with its dates
+    (the exact sentence is checked in tests/render/test_risk_free_render.py), so the
+    fixed "450 bps" is gone and the unit guard stays."""
+    import re
     all_md = " ".join(m.value for m in ae_app.markdown)
-    assert "4.5 bps" not in all_md, (
-        "Rf unit error '4.5 bps' found — should be '450 bps'."
-    )
-    assert "450 bps" in all_md, (
-        "Corrected rf unit '450 bps' not found in Methodology — Phase 44 Item 9 "
-        "regression, or the 2026-07-07 rate standardization was reverted."
-    )
+    assert "4.5 bps" not in all_md and "450 bps" not in all_md
+    assert re.search(r"\*\*Risk-free rate:\*\* (\d+\.\d{2}%, the (average )?3-month "
+                     r"Treasury bill rate|not available)", all_md), (
+        "The methodology no longer states the risk-free rate as a percentage.")
+    assert not re.search(r"\*\*Risk-free rate:\*\* \d+(\.\d+)? bps", all_md)
 
 
 def test_rf_matches_performance_page_consistency_claim(ae_app: AppTest) -> None:
@@ -131,14 +130,15 @@ def test_rf_matches_performance_page_consistency_claim(ae_app: AppTest) -> None:
     all_md = " ".join(m.value for m in ae_app.markdown)
     assert "distinct from the risk-free rate disclosed on the Performance page" not in all_md, (
         "Methodology still claims this page's risk-free rate is 'distinct from' "
-        "the Performance page's — that claim is stale now that both use 4.5% "
-        "geometric. Fix pages/5_Asset_Evaluation.py's caption, not this test."
+        "the Performance page's. Fix pages/5_Asset_Evaluation.py's caption, not this test."
     )
-    assert "matching the risk-free rate disclosed on the Performance page" in all_md, (
-        "Methodology should accurately disclose that this page's risk-free rate "
-        "now matches the Performance page's — the caption text appears to have "
-        "changed; update this pin to match."
-    )
+    # Migrated deliberately by audit item 15a. Both pages now average the same bill
+    # series, each over its own window, so the rates are equal only when the windows
+    # are: the claim is "the same series", and "matching the rate" would be false.
+    assert "matching the risk-free rate disclosed on the Performance page" not in all_md
+    assert ("The Performance page averages the same series over each of its own "
+            "windows.") in all_md, (
+        "Methodology should say the two pages use the same bill series.")
 
 
 def test_5g_mechanical_lead_paragraph(ae_app: AppTest) -> None:

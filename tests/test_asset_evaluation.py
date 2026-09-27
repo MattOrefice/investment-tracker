@@ -381,7 +381,10 @@ def test_weekly_resampling_reduces_rows():
 # way the arithmetic/4.32% mismatch did.
 
 def test_rf_annual_matches_performance_rf():
-    """ae.RF_ANNUAL must equal compute_risk_metrics' default rf_annual — the
+    """Since audit item 15a both pages pass the average 3-month bill rate over their
+    own windows (src.risk_free; tests/render/test_risk_free_render.py), and this pins
+    the two DEFAULTS, the rate a caller that passes none gets.
+    ae.RF_ANNUAL must equal compute_risk_metrics' default rf_annual — the
     same rate disclosed in the Performance page's Sharpe/Sortino caption
     (see test_identity_layer1.py's test_identity_rf_default_matches_caption_disclosure).
     """
