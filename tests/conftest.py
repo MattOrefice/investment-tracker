@@ -21,6 +21,8 @@ import sqlite3
 import sys
 import shutil
 import tempfile
+import threading
+import time
 import warnings
 from pathlib import Path
 
@@ -38,6 +40,11 @@ os.environ["DEMO_RUNTIME_CACHE"] = str(
 # And the demo's daily price refresh never runs in the suite: tests keep reading
 # fixed data (#368 item 3). A test of the refresh turns it on for itself.
 os.environ["DEMO_DAILY_FETCH"] = "0"
+# Nor does the Macro page's background FRED warm (audit item 15f). A test that turned
+# the fetch timer on for the price refresh used to start it too, and the thread outlived
+# that test by 17 more, running their migrations against their own databases (#429).
+# The warm's own tests turn it on for themselves.
+os.environ["DEMO_FRED_WARM"] = "0"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TRACKED-DB WRITE REDIRECT (GitHub #227)
@@ -372,10 +379,66 @@ def pytest_configure(config):
     )
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# NO THREAD OUTLIVES THE TEST THAT STARTED IT (#429)
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# A thread left running reads module globals that later tests repoint. The FRED warm
+# one test started was still alive 17 tests later; between series it opened
+# get_connection(), which reads db.DB_PATH at call time, so it ran _auto_migrate on
+# THAT test's fresh database while the test ran its own. One full run failed with
+# "duplicate column name".
+#
+# So a thread alive after a test's teardown that was not alive before its setup fails
+# that test, with no grace period: a thread that happens to finish quickly has still
+# outlived its test, and whether it finishes quickly depends on the machine (without a
+# FRED key the warm fails fast and ends within half a second; with one, on #429's
+# local run, it was still alive 17 tests later). The thread is then joined, only so the failure cannot run into the next
+# test. Measured 2026-09-27 over the CI-style suite (2629 tests): 4 tests left a thread
+# alive at teardown, 3 of them the PDF's chart render below and 1 the warm.
+#
+# Allowed to outlive, each for a stated reason. Anything else fails by default, so the
+# next background thread is caught without anyone having to list it first.
+THREADS_ALLOWED_TO_OUTLIVE = {
+    # The PDF's chart render gives up on kaleido after 25 s and abandons the thread by
+    # design (a hung kaleido on Windows). It holds the figure and its own result list,
+    # nothing else: no database, no module state.
+    "src.reports._render_chart_to_png.<locals>._render":
+        "abandoned after its 25 s join when kaleido hangs; touches no shared state",
+    # kaleido's reader for its own subprocess's stderr, alive as long as that process.
+    "kaleido.scopes.base.BaseScope._collect_standard_error":
+        "kaleido's stderr reader, alive as long as kaleido's subprocess",
+}
+_THREAD_JOIN_SECONDS = 5.0
+_threads_before: "set[threading.Thread]" = set()
+
+
+def thread_target(t: threading.Thread) -> str:
+    fn = getattr(t, "_target", None)
+    if fn is None:
+        return f"{type(t).__module__}.{type(t).__qualname__}"
+    return f"{getattr(fn, '__module__', '?')}.{getattr(fn, '__qualname__', repr(fn))}"
+
+
+def threads_outliving(before: "set[threading.Thread]") -> "list[threading.Thread]":
+    """Threads alive now that were not in ``before`` and are not allowed to outlive."""
+    return [t for t in threading.enumerate()
+            if t not in before and t.is_alive()
+            and thread_target(t) not in THREADS_ALLOWED_TO_OUTLIVE]
+
+
+def join_for_cleanup(threads: "list[threading.Thread]",
+                     seconds: float = _THREAD_JOIN_SECONDS) -> None:
+    deadline = time.monotonic() + seconds
+    for t in threads:
+        t.join(max(0.0, deadline - time.monotonic()))
+
+
 def pytest_runtest_setup(item):
-    global _allow_real_db, _phase, _current_test
+    global _allow_real_db, _phase, _current_test, _threads_before
     _allow_real_db = item.get_closest_marker(_REAL_DB_MARKER) is not None
     _phase, _current_test = "setup", item.nodeid
+    _threads_before = set(threading.enumerate())
 
 
 @pytest.hookimpl(hookwrapper=True)
@@ -405,6 +468,15 @@ def pytest_runtest_teardown(item, nextitem):
             f"{_LEAK_HEADLINE}: {item.nodeid} opened {len(leaks)} connection(s) to a "
             "redirected tracked-DB copy and never closed them. `with sqlite3.connect(...)"
             " as c:` commits but does NOT close; use contextlib.closing or get_connection.")
+    alive = threads_outliving(_threads_before)
+    if alive:
+        named = [(t.name, thread_target(t)) for t in alive]
+        join_for_cleanup(alive)
+        raise AssertionError(
+            f"{item.nodeid} left {len(alive)} thread(s) running past its teardown: "
+            f"{named}. A thread that outlives its test reads globals later tests repoint "
+            "(db.DB_PATH) and acts on their databases (#429). Join it before the test "
+            "ends, or keep the test from starting it.")
 
 
 def remove_tree_reporting(path: Path) -> "list[str]":

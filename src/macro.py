@@ -1,6 +1,7 @@
 """FRED macro data fetcher with 24-hour SQLite cache."""
 import json
 import math
+import os
 import sys
 import threading
 import time
@@ -170,17 +171,27 @@ def _series_lock(series_id: str) -> threading.Lock:
         return _SERIES_LOCKS.setdefault(series_id, threading.Lock())
 
 
+def _retry_wait(series_id: str) -> "FREDRetryWait | None":
+    """The wait a failed series is in while its retry time has not come; else None."""
+    from src import demo_refresh
+    with _FAILED_LOCK:
+        failed = _FAILED.get(series_id)
+    if failed is None:
+        return None
+    retry_at = failed[0] + demo_refresh.RETRY_AFTER
+    if _now() < retry_at:
+        return FREDRetryWait(series_id, failed[0], retry_at, failed[1])
+    return None
+
+
 def _fetch_and_store(series_id: str, start_date: str, today: str) -> pd.Series:
     """Fetch from FRED and write today's row; the demo's retry timer applies."""
     from src import demo_refresh
     timed = demo_refresh.enabled()
     if timed:
-        with _FAILED_LOCK:
-            failed = _FAILED.get(series_id)
-        if failed is not None:
-            retry_at = failed[0] + demo_refresh.RETRY_AFTER
-            if _now() < retry_at:
-                raise FREDRetryWait(series_id, failed[0], retry_at, failed[1])
+        wait = _retry_wait(series_id)
+        if wait is not None:
+            raise wait
     try:
         raw = fetch_fred_series(series_id, start_date)
     except Exception as exc:
@@ -234,27 +245,57 @@ MACRO_PAGE_SERIES: "tuple[tuple[str, str], ...]" = (
     ("NFCI", "1971-01-01"),
 )
 
+# How long the Macro page waits for today's FRED rows before it renders the stored
+# copies with the date each was fetched. One visit in #429's measurements took 184 s,
+# cause unrecorded; past this wait the page renders and the warm carries on.
+PAGE_WAIT_SECONDS = 15.0
+
 _WARM_GUARD = threading.Lock()
 _WARM_THREAD: "threading.Thread | None" = None
+_WARM_DAY: "str | None" = None
+# Notified each time the warm finishes a series, fetched or failed, so a page waiting
+# for one wakes as soon as it resolves.
+_WARM_PROGRESS = threading.Condition()
 
 
-def warm_cache_in_background() -> "threading.Thread | None":
-    """Fetch the Macro page's series into today's cache on a background thread, once
-    per process (audit item 15f). A fresh container's first Macro visit waited about
-    15 seconds for 22 fetches; warmed at startup, it reads cached rows, and a visit
-    that arrives mid-warm waits only for the series still in flight (get_series takes
-    one fetch per series at a time). Returns the thread, or None when it was already
-    started or the demo's fetch timer is off (personal mode, the test suite)."""
-    global _WARM_THREAD
+def warm_enabled() -> bool:
+    """Whether the warm runs: on the demo's fetch timer (demo_refresh.enabled()),
+    unless DEMO_FRED_WARM=0. tests/conftest.py sets that, so no test starts the
+    thread unless it means to; one that did left it running into later tests, where
+    it raced their migrations."""
     from src import demo_refresh
-    if not demo_refresh.enabled():
+    return demo_refresh.enabled() and os.environ.get("DEMO_FRED_WARM", "1") != "0"
+
+
+def warm_cache_in_background(*, again: bool = False) -> "threading.Thread | None":
+    """Fetch the Macro page's series into today's cache on a background thread (audit
+    item 15f). A fresh container's first Macro visit waited about 15 seconds for 22
+    fetches; warmed at startup, it reads cached rows, and a visit that arrives
+    mid-warm waits only for the series still in flight (get_series takes one fetch per
+    series at a time).
+
+    The router calls this on every run and it starts one warm a day. The Macro page
+    calls it with ``again=True`` when it lacks a row, which starts one unless one is
+    running. Returns the thread, or None when none was started (one is running, today's
+    has run, or warm_enabled() is False: personal mode, the suite)."""
+    global _WARM_THREAD, _WARM_DAY
+    if not warm_enabled():
         return None
+    today = date.today().isoformat()
     with _WARM_GUARD:
-        if _WARM_THREAD is not None:
+        if _WARM_THREAD is not None and _WARM_THREAD.is_alive():
             return None
+        if not again and _WARM_DAY == today:
+            return None
+        _WARM_DAY = today
         _WARM_THREAD = threading.Thread(target=_warm, name="fred-warm", daemon=True)
-    _WARM_THREAD.start()
-    return _WARM_THREAD
+        _WARM_THREAD.start()
+        return _WARM_THREAD
+
+
+def _warm_running() -> bool:
+    thread = _WARM_THREAD
+    return thread is not None and thread.is_alive()
 
 
 def _warm() -> None:
@@ -265,6 +306,98 @@ def _warm() -> None:
             # The page reports its own failures when it reads the series.
             print(f"[INFO] FRED warm: {series_id} not cached ({type(exc).__name__})",
                   file=sys.stderr)
+        finally:
+            with _WARM_PROGRESS:
+                _WARM_PROGRESS.notify_all()
+
+
+class FREDStillFetching(Exception):
+    """Today's row for a series did not arrive within the page's wait
+    (PAGE_WAIT_SECONDS). ``stored`` is the newest stored copy that reaches back to the
+    requested start and ``stored_on`` the date it was fetched, both None when nothing
+    is stored. The warm keeps fetching, so a later visit reads today's row."""
+    def __init__(self, series_id: str, stored: "pd.Series | None", stored_on: "str | None"):
+        self.series_id = series_id
+        self.stored = stored
+        self.stored_on = stored_on
+        if stored_on:
+            detail = f"showing the copy fetched on {stored_on}"
+        else:
+            detail = "no earlier copy is stored"
+        super().__init__(f"FRED has not returned '{series_id}' within "
+                         f"{PAGE_WAIT_SECONDS:.0f} seconds; {detail}. The fetch "
+                         "continues in the background.")
+
+
+def get_series_for_page(series_id: str, start_date: str, deadline: float) -> pd.Series:
+    """get_series for a page that must not wait on FRED past ``deadline``, a
+    time.monotonic() value.
+
+    While the warm runs (warm_enabled()) the page never fetches. It reads today's row,
+    raises the series' retry wait as get_series would, or waits for the warm, starting
+    one if none is running. At the deadline it raises FREDStillFetching with the stored
+    copy, and the warm carries on. With the warm off (personal mode, the suite) this is
+    get_series."""
+    if not warm_enabled():
+        return get_series(series_id, start_date)
+    _ensure_cache_table()
+    started = False
+    while True:
+        # Read BEFORE the row: a warm seen finished here has written all it will.
+        running = _warm_running()
+        cached = _read_cached(series_id, start_date, date.today().isoformat())
+        if cached is not None:
+            return cached
+        wait = _retry_wait(series_id)
+        if wait is not None:
+            raise wait
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        if not running:
+            if started:
+                break                  # it ran without resolving this series
+            warm_cache_in_background(again=True)
+            started = True
+            continue
+        with _WARM_PROGRESS:
+            _WARM_PROGRESS.wait(min(remaining, 0.5))
+    stored, stored_on = _read_stored(series_id, start_date)
+    raise FREDStillFetching(series_id, stored, stored_on)
+
+
+def _read_stored(series_id: str, start_date: str) -> "tuple[pd.Series | None, str | None]":
+    """The newest stored row for the series that reaches back to ``start_date``, sliced
+    from it, with the date it was fetched; (None, None) when there is none.
+
+    A row that records its requested start reaches back when it was requested from
+    ``start_date`` or earlier. An older row, without that record, is judged by its first
+    observation: it reaches back when no other stored row of the series starts earlier.
+    Other callers request some series from later starts (the PDF asks for T10Y2Y from
+    1990, the page from 1976), and their rows must not shorten a panel's history."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT fetch_date, data FROM macro_cache WHERE series_id = ?",
+            (series_id,)).fetchall()
+    parsed = []
+    for row in rows:
+        payload = json.loads(row["data"])
+        s = pd.Series(
+            [float(v) if v is not None else float("nan") for v in payload["values"]],
+            index=pd.to_datetime(payload["dates"]), name=series_id)
+        valid = s.dropna()
+        if valid.empty:
+            continue
+        parsed.append((row["fetch_date"], payload.get("requested_start"), valid.index[0], s))
+    if not parsed:
+        return None, None
+    earliest = min(first for _, _, first, _ in parsed)
+    reaching = [(fetched, s) for fetched, requested, first, s in parsed
+                if (requested <= start_date if requested is not None else first == earliest)]
+    if not reaching:
+        return None, None
+    fetched, s = max(reaching, key=lambda r: r[0])
+    return s[s.index >= start_date], fetched
 
 
 def clear_macro_cache() -> int:
@@ -280,7 +413,13 @@ def get_recession_periods(start_date: str, end_date: str) -> list:
     Convert USREC monthly indicator into (start, end) date tuples for chart shading.
     USREC = 1 during NBER-dated recessions, 0 otherwise.
     """
-    usrec = get_series("USREC", start_date="1945-01-01")
+    return recession_periods(get_series("USREC", start_date="1945-01-01"),
+                             start_date, end_date)
+
+
+def recession_periods(usrec: pd.Series, start_date: str, end_date: str) -> list:
+    """get_recession_periods from a USREC series the caller already holds: the Macro
+    page loads USREC within its wait and must not fetch it a second time without one."""
     window = usrec.loc[start_date:end_date].dropna()
 
     periods: list = []
