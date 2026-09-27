@@ -87,5 +87,19 @@ def test_home_bias_is_stated_plainly():
     ("Emerging Markets", "3.2%, 2.8%, 1.7%, and 1.5%"),
 ])
 def test_lists_keep_the_serial_comma(sleeve, phrase):
-    assert phrase in SEED[sleeve]
-    assert phrase in _demo_rationales()[sleeve]
+    """As the page renders them: EM's four mirrored sleeves are derived from the
+    targets since #406 item 5, so the stored text carries tokens, not the figures."""
+    from src.prose_figures import render
+    targets = _demo_targets()
+    assert phrase in render(SEED[sleeve], targets=targets)
+    assert phrase in render(_demo_rationales()[sleeve], targets=targets)
+
+
+def _demo_targets() -> "dict[str, float]":
+    conn = sqlite3.connect(f"file:{ROOT / 'data' / 'demo.db'}?mode=ro", uri=True)
+    try:
+        rows = conn.execute("SELECT name, target_weight FROM asset_classes "
+                            "ORDER BY parent_id IS NOT NULL").fetchall()
+    finally:
+        conn.close()
+    return {n: w for n, w in rows}

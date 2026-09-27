@@ -16,9 +16,12 @@ SPAXX_RATIONALE = (
     "SPAXX is Fidelity's default money market fund and the natural cash vehicle: no transaction "
     "cost and immediate liquidity. It earns roughly the Treasury bill rate less its fee; the Macro "
     "page shows the live rate. BIL exists only for attribution comparison. "
-    "The 3% cash weight is operational liquidity: it funds rebalancing trades, covers small drawdowns "
-    "without forced selling, and buffers position friction. The weight would be reduced toward 1% if "
-    "short rates fell materially below 2%."
+    # Cash has no SAA target, so its share is the operational balance, derived when the
+    # text renders ({{cash}}, src/prose_figures.py). It read "The 3% cash weight" (#406
+    # item 7).
+    "The operational cash balance, {{cash}}, is untargeted liquidity: it funds rebalancing "
+    "trades, covers small drawdowns without forced selling, and buffers position friction. It "
+    "would be reduced toward 1% if short rates fell materially below 2%."
 )
 
 SPAXX_HOLDING = {
@@ -124,6 +127,11 @@ def _comparison_df(bm, h, self_bm=False, show_type=False):
 
 
 sleeves, secs = load_research_data()
+# Seeded prose carries tokens for figures that derive from the data (#406 items 5, 7).
+from src.prose_figures import render as _render_figures
+for _s in secs:
+    _s["holding_rationale"] = _render_figures(_s["holding_rationale"])
+SPAXX_HOLDING["holding_rationale"] = _render_figures(SPAXX_RATIONALE)
 
 
 def _er_of(ticker: str) -> str:

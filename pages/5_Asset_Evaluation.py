@@ -937,6 +937,14 @@ with col:
         dd_0_row  = dd_sens[dd_sens["BTC Alloc"] == "0.0%"]
         dd_10_row = dd_sens[dd_sens["BTC Alloc"] == "10.0%"]
         dd_note = ""
+        # 2022's declines from the book's own series: bitcoin's, and the naive
+        # benchmark's two legs for equities and bonds (#406 item 6).
+        from src.benchmarks import NAIVE_60_40
+        (_eq_t, _), (_bd_t, _) = NAIVE_60_40
+        _btc22 = ae.decline_in_year(btc_ret)
+        _eq22 = ae.decline_in_year(_load_candidate_returns(_eq_t))
+        _bd22 = ae.decline_in_year(_load_candidate_returns(_bd_t))
+        _all22 = all(np.isfinite(x) for x in (_btc22, _eq22, _bd22))
         if not dd_0_row.empty and not dd_10_row.empty:
             dd_0   = float(dd_0_row["Max DD"].iloc[0])
             dd_10  = float(dd_10_row["Max DD"].iloc[0])
@@ -944,10 +952,12 @@ with col:
             mdd22_10 = float(dd_10_row["2022 MDD"].iloc[0])
             _dd_verb = ("deepens" if dd_10 < dd_0 else "narrows" if dd_10 > dd_0
                         else "leaves unchanged")
+            _btc22_s = (f"BTC fell {_btc22:.1%} from its peak and equities"
+                        if np.isfinite(_btc22) else "BTC and equities")
             dd_note = (
                 f"Adding a 10% BTC allocation {_dd_verb} portfolio maximum drawdown "
                 f"from {dd_0:.1%} to {dd_10:.1%} over the full sample. "
-                f"In 2022, when BTC fell approximately 65% and equities "
+                f"In 2022, when {_btc22_s} "
                 f"sold off at the same time, the portfolio's maximum drawdown within that calendar "
                 f"year shifts from {mdd22_0:.1%} (0% BTC) to {mdd22_10:.1%} (10% BTC). "
             )
@@ -955,8 +965,11 @@ with col:
         st.markdown(
             dd_note
             + "2022 is the most important stress-test period for evaluating Bitcoin's "
-            "portfolio impact: equities fell roughly 20%, bonds fell 15%, and BTC fell "
-            "over 60%, all at the same time. That eliminated any diversification benefit "
+            + (f"portfolio impact: equities ({_eq_t}) fell {_eq22:.1%}, bonds ({_bd_t}) fell "
+               f"{_bd22:.1%}, and BTC fell {_btc22:.1%} from their 2022 peaks, all at the same "
+               "time. " if _all22 else
+               "portfolio impact: equities, bonds, and BTC fell at the same time. ")
+            + "That eliminated any diversification benefit "
             "and amplified drawdown. This joint stress scenario, not the full-sample "
             "average correlation, is the relevant measure of risk."
         )

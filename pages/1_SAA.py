@@ -84,6 +84,11 @@ def load_saa_data():
                 ORDER BY p.target_weight DESC, COALESCE(ac.sort_order, 999) ASC
             """).fetchall()
         ]
+    # The rationales carry tokens for the weights they quote, filled from the targets
+    # (#406 item 5): typed, they went stale when the targets moved.
+    from src.prose_figures import render
+    for row in parents + sub_classes:
+        row["rationale"] = render(row["rationale"])
     return parents, sub_classes
 
 

@@ -995,6 +995,15 @@ def interpret_candidate_diversification(
     )
 
 
+def decline_in_year(returns, year: int = 2022) -> float:
+    """How far a series fell from its peak within one calendar year, as a POSITIVE
+    fraction (the page's "fell 24.5%"): max_drawdown over that year, negated. NaN when
+    the series has no returns in it. The 2022 paragraph reads bitcoin's own series and
+    the naive benchmark's two legs for equities and bonds (#406 item 6); it typed
+    "roughly 20%", "15%", "approximately 65%" and "over 60%" before."""
+    return -max_drawdown(returns.loc[f"{year}-01-01":f"{year}-12-31"])
+
+
 def max_drawdown(returns) -> float:
     """Worst peak-to-trough loss of a daily return series, as a NEGATIVE fraction.
 
