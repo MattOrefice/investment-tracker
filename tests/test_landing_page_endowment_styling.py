@@ -14,6 +14,12 @@ def _app_text() -> str:
     return APP_PY.read_text(encoding="utf-8")
 
 
+def _app_words() -> str:
+    """app.py with every run of whitespace collapsed, so a pinned phrase is found
+    wherever the source wraps it."""
+    return " ".join(_app_text().split())
+
+
 # ── Test 1: Google Fonts EB Garamond link present ─────────────────────────────
 
 def test_app_py_imports_eb_garamond():
@@ -57,16 +63,17 @@ def test_card_descriptions_unchanged():
 
     Pins phrases unique to each card — would fail on revert to old copy.
     """
-    src = _app_text()
+    src = _app_words()
 
     # Migrated deliberately by the writing sweep (2026-09-25 audit, item 14): the
     # phrases below are unique to the rewritten cards, so a revert to the Phase 36
     # copy ("SAA is treated", "SAA-target-weighted blended benchmark", "mean-variance
-    # contribution analysis") fails here.
-    saa_phrase = "No tactical tilts are"
-    perf_phrase = "blended SAA benchmark: summary, cumulative return chart"
+    # contribution analysis") fails here. The owner's review of the calibration (14a)
+    # restored the positive claim on the SAA card and the serial comma.
+    saa_phrase = "the bands set when rebalancing is warranted, and positions follow the targets."
+    perf_phrase = "blended SAA benchmark: summary, cumulative return chart, and Brinson-Fachler"
     macro_phrase = "CAPE, ECY"
-    ae_phrase = "mean-variance contribution."
+    ae_phrase = "regime-conditional correlation with the SAA sleeves, and mean-variance contribution."
     # New cards (Phase 36)
     ba_phrase = "Newey-West HAC standard errors"
     fp_phrase = "TERM/CREDIT decomposition"
@@ -144,13 +151,14 @@ def test_new_cards_route_to_correct_pages():
 
 
 def test_intro_prose_positions_follow_the_policy():
-    """The intro says the macro dashboard does not set positions. Pinned: Phase 36 as
-    'policy-driven, not view-driven'; the writing sweep (audit item 14) states it without
-    the contrast, and this pins the new sentence deliberately."""
-    src = _app_text()
-    assert "cross-asset returns; it does not set" in src, (
-        "Intro prose no longer says the dashboard does not set positions"
+    """The intro says positions follow the SAA, not the macro dashboard. Pinned: Phase 36
+    as 'policy-driven, not view-driven'; the writing sweep (audit item 14) states the
+    positive claim without the contrast, and this pins the new sentence deliberately."""
+    src = _app_words()
+    assert "valuation, and cross-asset returns; positions follow the SAA." in src, (
+        "Intro prose no longer says positions follow the SAA"
     )
+    assert "it does not set positions" not in src
     assert "policy-driven, not view-driven" not in src
     assert "warrant any tactical tilt" not in src, (
         "TAA-flavored phrase 'warrant any tactical tilt' still present in app.py"
