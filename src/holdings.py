@@ -867,3 +867,76 @@ def get_inception_date(
             "catching it here names the account instead of failing later without one."
         ) from None
     return earliest
+
+
+def pair_legs(legs: "list[tuple[str, float]]", held: "list[str]") -> "dict[str, str] | None":
+    """{leg: holding}: each leg with the holding of the same ticker, and one leg and one
+    holding left over with each other. None for a single-fund benchmark, or when the
+    holdings cannot be paired with the legs one to one."""
+    if len(legs) < 2 or len(held) != len(legs):
+        return None
+    pairs = {t: t for t, _w in legs if t in held}
+    free_legs = [t for t, _w in legs if t not in pairs]
+    free_held = [t for t in held if t not in pairs.values()]
+    if len(free_legs) > 1 or len(free_held) != len(free_legs):
+        return None
+    if free_legs:
+        pairs[free_legs[0]] = free_held[0]
+    return pairs
+
+
+class BlendLeg(NamedTuple):
+    holding: str                # the fund the sleeve holds
+    leg: str                    # the benchmark leg it is set against
+    leg_weight: float           # the leg's weight in the blend
+    inception_weight: float     # the holding's share of the sleeve's inception buys
+    current_weight: float       # the holding's share of the sleeve's value today
+
+
+def blend_split(sleeve: str, date_str: Optional[str] = None) -> "list[BlendLeg] | None":
+    """How a sleeve benchmarked to a blend holds its funds against the blend's legs
+    (audit item 15c): each holding's share of the sleeve, bought at inception and held
+    at ``date_str``, beside the weight of the leg it is set against.
+
+    A leg pairs with the holding of the same ticker; one leg and one holding left over
+    pair with each other (Real Assets: VNQ with VNQ, PDBC with the DBC leg). None when
+    the sleeve's benchmark is a single fund, or its holdings cannot be paired with its
+    legs one to one. Inception buys are the sleeve's trades on the portfolio's first
+    day, DRIP lots excluded; today's shares include them."""
+    from src.sleeve_config import parse_benchmark_spec
+    d = date_str or date.today().isoformat()
+    acct = get_portfolio_account_id()
+    with get_connection() as conn:
+        row = conn.execute("SELECT benchmark_ticker FROM asset_classes WHERE name = ? AND "
+                           "parent_id IS NOT NULL", (sleeve,)).fetchone()
+        held = [r[0] for r in conn.execute(
+            "SELECT s.ticker FROM securities s JOIN asset_classes ac "
+            "ON s.asset_class_id = ac.asset_class_id WHERE ac.name = ? "
+            "AND ac.parent_id IS NOT NULL AND COALESCE(s.security_type, '') != 'benchmark' "
+            "ORDER BY s.ticker", (sleeve,))]
+    if row is None or not row[0]:
+        return None
+    legs = parse_benchmark_spec(row[0])
+    pairs = pair_legs(legs, held)
+    if pairs is None:
+        return None
+
+    inception = get_inception_date(account_id=acct)
+    with get_connection() as conn:
+        bought = dict(conn.execute(
+            "SELECT ticker, SUM(shares * price) FROM trades WHERE account_id = ? AND "
+            "trade_date = ? AND LOWER(action) = 'buy' AND (lot_source IS NULL OR "
+            f"lot_source != 'drip') AND ticker IN ({','.join('?' * len(held))}) "
+            "GROUP BY ticker", (acct, inception, *held)).fetchall())
+    shares = get_holdings_on_date(d, account_id=acct)
+    value = {}
+    for t in held:
+        n = float(shares["net_shares"].get(t, 0.0)) if not shares.empty else 0.0
+        frame, _st = _price_and_status(t, look_back_start(t, d), d)
+        value[t] = n * float(frame["close"].iloc[-1]) if n and not frame.empty else 0.0
+    if not all(bought.get(t) for t in held) or not all(value.values()):
+        return None
+    b_total, v_total = sum(bought[t] for t in held), sum(value.values())
+    weight = dict(legs)
+    return [BlendLeg(pairs[leg], leg, weight[leg], bought[pairs[leg]] / b_total,
+                     value[pairs[leg]] / v_total) for leg, _w in legs]
