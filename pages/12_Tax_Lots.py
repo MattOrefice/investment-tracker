@@ -7,7 +7,7 @@ import streamlit as st
 
 st.set_page_config(page_title="Tax Lot Inventory", layout="wide")
 
-from src.asof import as_of_banner
+from src.asof import as_of_banner, today_et
 from src.tax_lots import (
     HARVEST_MATERIALITY_THRESHOLD,
     apply_sleeve_filter,
@@ -31,7 +31,7 @@ from src.ui_helpers import demo_portfolio_phrase, render_footer, render_page_hea
 render_page_header()
 
 
-TODAY = date.today().isoformat()
+TODAY = today_et().isoformat()   # New York's date, as every rendered date is (#443)
 
 
 # ── Cached data loader ────────────────────────────────────────────────────────

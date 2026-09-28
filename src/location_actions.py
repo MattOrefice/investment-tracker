@@ -1314,7 +1314,8 @@ def yield_assumption_note(register, *, today=None) -> str:
                                      SLEEVE_YIELD_CONSTRUCTION, SLEEVE_YIELD_PROXY,
                                      YIELD_CONSTRUCTION_REVIEW_DAYS)
 
-    ref = today or date.today()
+    from src.asof import today_et   # the review age renders: New York's date (#443)
+    ref = today or today_et()
 
     note = (
         "**Annual benefit is modelled, not measured**: `position value × assumed "

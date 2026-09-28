@@ -10,7 +10,7 @@ import streamlit as st
 st.set_page_config(page_title="Macro Dashboard", layout="wide")
 
 from src import factor_regime, factor_valuation, macro, shiller
-from src.asof import _when, as_of_banner
+from src.asof import _when, as_of_banner, today_et
 from src.config import IS_DEMO
 from src.macro import (
     format_ur_delta,
@@ -28,7 +28,7 @@ from src.ui_helpers import render_footer, render_page_header
 render_page_header()
 
 
-TODAY      = date.today().isoformat()
+TODAY      = today_et().isoformat()   # New York's date, as every rendered date is (#443)
 ONE_YR_AGO = (date.fromisoformat(TODAY) - timedelta(days=365)).isoformat()
 
 _C = {

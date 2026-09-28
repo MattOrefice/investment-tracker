@@ -247,7 +247,8 @@ def get_lot_inventory(as_of: Optional[str] = None, *, account_ids: "list[int]") 
     account_ids = [int(a) for a in account_ids]
     if not account_ids:
         return pd.DataFrame()
-    as_of_str = as_of or date.today().isoformat()
+    from src.asof import today_et   # holding periods render: New York's date (#443)
+    as_of_str = as_of or today_et().isoformat()
     as_of_date = date.fromisoformat(as_of_str)
     marks = ",".join("?" * len(account_ids))
 
@@ -354,7 +355,8 @@ def open_lot_cost_basis(*, account_id: int, as_of: Optional[str] = None) -> floa
     """
     from src.holdings import _require_account_id
     account_id = _require_account_id(account_id)
-    as_of_str = as_of or date.today().isoformat()
+    from src.asof import today_et   # holding periods render: New York's date (#443)
+    as_of_str = as_of or today_et().isoformat()
     with get_connection() as conn:
         rows = conn.execute(
             """SELECT account_id, trade_id, ticker, trade_date, action, shares, price,

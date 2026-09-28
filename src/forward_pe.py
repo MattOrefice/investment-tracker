@@ -86,7 +86,8 @@ def load_forward_eps(path: Path | None = None) -> dict | None:
 
 def staleness_days(eps_info: dict, today: date | None = None) -> int:
     """Age of the estimate in days."""
-    return ((today or date.today()) - eps_info["as_of"]).days
+    from src.asof import today_et
+    return ((today or today_et()) - eps_info["as_of"]).days
 
 
 def forward_pe_state(eps_info: dict, today: date | None = None) -> str:

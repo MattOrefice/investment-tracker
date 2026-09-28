@@ -691,18 +691,45 @@ class _PinnedDate(_REAL_DATE, metaclass=_PinnedDateMeta):
         return _REAL_DATE(cls._pin.year, cls._pin.month, cls._pin.day)
 
 
-def pin_today(mp: "pytest.MonkeyPatch", day=FROZEN_TODAY) -> None:
+_REAL_TODAY_ET = None
+
+
+def _pinned_today_et(now=None):
+    """asof.today_et under a pin: the pinned day, unless a caller passes its own
+    moment, which is converted as the real function converts it."""
+    if now is not None:
+        return _REAL_TODAY_ET(now)
+    return _REAL_DATE(_PinnedDate._pin.year, _PinnedDate._pin.month, _PinnedDate._pin.day)
+
+
+def pin_today(mp: "pytest.MonkeyPatch", day=FROZEN_TODAY, *, pin_et: bool = True) -> None:
     """Make date.today() return ``day`` for code run under ``mp``: the datetime
     module (so a page script's `from datetime import date` at exec gets it) and
     every loaded src/tests/pages module that bound the real `date` at import.
+
+    And New York's date: every rendered "today" reads asof.today_et() (#443), so a
+    pin that left it on the real clock would put the calendar back into every
+    frozen-book render. ``pin_et=False`` leaves it on the clock, for a test that
+    sets the clock itself and asks what a UTC machine renders.
+
     datetime.now() is NOT pinned: its three uses (the unsettled-bar check, reached
     only by a fetch; snapshot capture time; Macro's "Last updated" caption) are not
     reached by an offline frozen-book render."""
+    global _REAL_TODAY_ET
     _PinnedDate._pin = day
     mp.setattr(_dt, "date", _PinnedDate)
     for name, mod in list(sys.modules.items()):
         if (name.startswith(("src", "tests", "pages")) or name.startswith("test_"))                 and getattr(mod, "date", None) is _REAL_DATE:
             mp.setattr(mod, "date", _PinnedDate)
+    if not pin_et:
+        return
+    import src.asof
+    if _REAL_TODAY_ET is None:
+        _REAL_TODAY_ET = src.asof.today_et
+    for name, mod in list(sys.modules.items()):
+        if (name.startswith(("src", "tests", "pages")) or name.startswith("test_")) \
+                and getattr(mod, "today_et", None) is _REAL_TODAY_ET:
+            mp.setattr(mod, "today_et", _pinned_today_et)
 
 
 def unpin_leftovers() -> "list[str]":
@@ -714,6 +741,9 @@ def unpin_leftovers() -> "list[str]":
     for name, mod in list(sys.modules.items()):
         if getattr(mod, "date", None) is _PinnedDate:
             setattr(mod, "date", _REAL_DATE)
+            fixed.append(name)
+        if getattr(mod, "today_et", None) is _pinned_today_et and _REAL_TODAY_ET is not None:
+            setattr(mod, "today_et", _REAL_TODAY_ET)
             fixed.append(name)
     return fixed
 

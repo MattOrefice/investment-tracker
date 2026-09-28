@@ -61,7 +61,7 @@ def staleness_note(label: str, frontier: "date | None", threshold_days: int) -> 
     if frontier is None:
         note = f"{label} data is unavailable: the committed file is missing or unreadable."
         return note if IS_DEMO else note + " Restore it from git or run tools/refresh_market_data.py."
-    days = (date.today() - frontier).days
+    days = (today_et() - frontier).days
     if days <= threshold_days:
         return None
     note = (f"{label} data ends {format_long_date(frontier)} ({days} days ago), as of this "
@@ -108,7 +108,7 @@ def _most_recent_completed_quarter(today: date | None = None) -> tuple[date, dat
     Use ``most_recent_reportable_quarter`` for the reportable one; this stays the
     pure calendar reference the staleness disclosure is measured against.
     """
-    d = today or date.today()
+    d = today or today_et()
     for q in _completed_quarters_descending(d):
         return q
     return date(d.year - 1, 9, 30), date(d.year - 1, 12, 31), f"Q4 {d.year - 1}"
@@ -188,7 +188,7 @@ def most_recent_reportable_quarter(
     """
     if isinstance(inception, str):
         inception = date.fromisoformat(inception)
-    d = today or date.today()
+    d = today or today_et()
     resolved = _resolve_frontier(frontier)
 
     for q_start, q_end, label in _completed_quarters_descending(d):
@@ -217,7 +217,7 @@ def quarter_staleness_note(
     """
     if isinstance(inception, str):
         inception = date.fromisoformat(inception)
-    d = today or date.today()
+    d = today or today_et()
     resolved = _resolve_frontier(frontier)
     if resolved is None:
         return None
@@ -348,7 +348,7 @@ def as_of_live_line(
     holding with no committed price by construction (holdings.py:200-206), so it
     cannot see the gap it would need to report.
     """
-    ref = today or date.today()
+    ref = today or today_et()
 
     if frontier is _UNSET:
         if coverage is not None:
@@ -472,8 +472,10 @@ def _when(t: "datetime | str") -> str:
 
 
 def today_et(now: "datetime | None" = None) -> date:
-    """Today's date in New York, for a date stamped on something a reader keeps (the
-    PDF). The server's own date is UTC on the public demo, a day ahead after 8 PM ET."""
+    """Today's date in New York: the date every rendered "today" is, from the PDF's
+    cover to the as-of banner (#443). The server's own date, date.today(), is UTC on
+    the public demo and a day ahead after 8 PM ET, which changed the banner's wording
+    at 8 PM there while nothing about the prices had changed."""
     return (now or datetime.now(timezone.utc)).astimezone(ET).date()
 
 
@@ -493,7 +495,7 @@ def as_of_report_line(
     this banner steps back with it — the every-page banner and the PDF cannot
     disagree about which quarter is current.
     """
-    today = today or date.today()
+    today = today or today_et()
     if inception is None:
         from src.holdings import get_inception_date, get_portfolio_account_id
         inception = get_inception_date(account_id=get_portfolio_account_id())
