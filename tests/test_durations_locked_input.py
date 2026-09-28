@@ -119,6 +119,16 @@ def test_the_live_figures_read_the_file(tmp_path, monkeypatch):
     assert got["fi_sleeve_duration"] == round((0.06 * 3.3 + 0.04 * 8.8) / 0.10, 1)
 
 
+def test_the_performance_caption_names_each_funds_figure_measure_and_date():
+    from src.positioning import live_duration_sources
+    assert live_duration_sources() == (
+        "VGIT 4.9 yrs, average duration as of August 31, 2026; "
+        "SCHP 6.3 yrs, weighted average duration as of June 30, 2026")
+    page = (ROOT / "pages" / "2_Performance.py").read_text(encoding="utf-8")
+    assert "Durations from each fund's issuer: {live_duration_sources()}." in page
+    assert "5.5 yrs" not in page and "Q1 2026" not in page, "the retired table's caption"
+
+
 # ── locks ─────────────────────────────────────────────────────────────────────
 
 def test_a_lock_holding_durations_serves_its_own():

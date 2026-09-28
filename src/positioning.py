@@ -71,6 +71,20 @@ def fund_durations() -> "dict[str, float]":
     return live_fund_durations()
 
 
+def live_duration_sources() -> str:
+    """Where the live duration metric's figures come from: one clause per fund it
+    weights, the ETF metadata's duration with its measure and as-of date (#455)."""
+    import json
+    from src.asof import format_long_date
+    from src.style_box import _META_PATH
+    with open(_META_PATH) as f:
+        meta = json.load(f)
+    funds = [t for s, t in _FI_SLEEVE_HOLDING.items() if s != "Cash / SPAXX"]
+    return "; ".join(
+        f"{t} {meta[t]['duration_years']:g} yrs, {meta[t]['duration_measure']} as of "
+        f"{format_long_date(meta[t]['as_of'])}" for t in funds)
+
+
 # Sleeve → actual holding ticker (for duration lookup)
 _FI_SLEEVE_HOLDING: dict[str, str] = {
     "Core Fixed Income": "VGIT",
