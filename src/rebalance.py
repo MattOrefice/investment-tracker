@@ -388,7 +388,8 @@ def suggest_contributions(
     Rationale column:
         "close drift"     — sleeve is below target, Step 2 allocation
         "mixed"           — sleeve is below target AND receives residual (Step 3)
-        "maintain target" — sleeve is at/above target, residual only (Step 3)
+        "maintain target" — sleeve is at target, residual only (Step 3)
+        "above target"    — sleeve is above target, residual only (Step 3)
 
     Args:
         portfolio_value:  current total portfolio value in dollars

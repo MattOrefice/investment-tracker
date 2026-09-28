@@ -8,6 +8,7 @@ import streamlit as st
 st.set_page_config(page_title="Tax Lot Inventory", layout="wide")
 
 from src.asof import as_of_banner, today_et
+from src.prose_figures import render
 from src.tax_lots import (
     HARVEST_MATERIALITY_THRESHOLD,
     apply_sleeve_filter,
@@ -94,10 +95,10 @@ with st.expander("How to read this page", expanded=False):
         "- **Top metrics**: total cost basis (sum of acquisition prices), total market "
         "value (current), and unrealized G/L split into short-term (held ≤365 days, taxed "
         "at ordinary income rates) and long-term (held >365 days, taxed at LTCG rates).\n"
-        "- **Harvest Candidate Pool**: dollar value of lots that would qualify for "
-        "tax-loss harvesting at the action threshold ($100 minimum loss, 5% minimum loss "
-        "percentage). $0.00 means no lots are currently underwater enough to make "
-        "harvesting worthwhile after transaction costs and wash-sale considerations.\n"
+        "- **Harvest Candidate Pool**: the total unrealized loss on lots whose loss is "
+        f"more than \\${HARVEST_MATERIALITY_THRESHOLD:.0f} each, the floor below which "
+        "round-trip transaction costs typically exceed the benefit. \\$0.00 means no "
+        "lot's loss is above it.\n"
         "- **DRIP reinvestments**: dividend reinvestments are persisted as separate lot "
         "rows with lot_source='drip', using the payment-date closing price as cost basis "
         "to match Fidelity DRIP execution. Toggle the filter at top to include or exclude "
@@ -422,7 +423,7 @@ with st.expander("Tax-Loss Harvest Candidates", expanded=_has_candidates):
             loss    = c["unrealized_loss"]
             sleeve  = c["sleeve"]
             repl    = c["replacement_ticker"]
-            note    = c["replacement_rationale"]
+            note    = render(c["replacement_rationale"])   # SCHP's sleeve weight
             ws_s    = c["wash_sale_start_date"].strftime("%B %d, %Y")
             ws_e    = c["wash_sale_end_date"].strftime("%B %d, %Y")
 

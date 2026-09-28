@@ -161,11 +161,12 @@ with st.expander("How to read this page", expanded=False):
         "tolerance band (±3% for major equity sleeves, ±2% for smaller sleeves) and "
         "surfaces corrective buy suggestions. The table is read-only; execute the "
         "suggested trades directly via your broker.\n"
-        "- **Rationale tags**: 'close drift' means the sleeve is below target and "
-        "gets priority allocation; 'above target' means the sleeve has drifted high "
-        "and receives no new cash; 'mixed' means the sleeve is below target and also "
-        "receives a proportional residual share; 'maintain target' means no drift and "
-        "the sleeve receives proportional contribution only.\n"
+        "- **Rationale tags**: 'close drift' means the sleeve is below target and the "
+        "cash does not cover every shortfall, so it gets a share in proportion to its "
+        "shortfall; 'mixed' means the sleeve is below target, its shortfall is filled, "
+        "and it also gets a share of the cash left over; 'maintain target' and 'above "
+        "target' mean the sleeve is at or above its target and gets only its share of "
+        "the cash left over.\n"
         "- **Execute and Log workflow**: edit the Suggested \\$ column to match actual "
         "broker fills, then click Execute and Log. A confirmation modal shows the final "
         "trade preview before writing to the Trade Log. In demo mode, Execute and Log "
@@ -750,10 +751,10 @@ with st.expander("Methodology", expanded=False):
         },
     )
     st.markdown(
-        "**Contribution priority**: cash flows to below-band sleeves first (close drift), "
-        "then to in-band sleeves by SAA target weight (maintain allocation). Above-band "
-        "sleeves receive no new cash until they return to band naturally or are "
-        "rebalanced.\n\n"
+        "**Contribution priority**: cash first fills each sleeve's shortfall to its SAA "
+        "target, in proportion to the shortfalls when the cash does not cover them all. "
+        "Cash left over once every shortfall is filled is spread across every sleeve by "
+        "target weight, including sleeves above target.\n\n"
         "**Band-breach detection**: a sleeve is in breach if |actual weight − target "
         "weight| > tolerance band. Rebalancing buy suggestions in the Rebalancing Check "
         "section are sized to return the sleeve to its target weight, not to its band "
@@ -766,7 +767,7 @@ with st.expander("Methodology", expanded=False):
         "**Execute and Log mechanics**: clicking Execute and Log writes the "
         "suggested (or edited) trades to the Trade Log via the same lot-tracking system "
         "used for direct trade entry, with lot_source='Manual' to distinguish from DRIP "
-        "reinvestments (lot_source='drip') and inception buys (lot_source='inception')."
+        "reinvestments (lot_source='drip') and inception buys (lot_source='initial')."
     )
 
 render_footer()
