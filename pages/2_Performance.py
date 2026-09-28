@@ -1530,19 +1530,20 @@ with col:
     dur      = get_effective_duration(TODAY)
     fi_dur   = dur["fi_sleeve_duration"]
     agg_dur  = dur["agg_benchmark"]
+    agg_name = dur["agg_name"]
     fi_wt    = dur["fi_weight_pct"]
     cash_wt  = dur["cash_weight_pct"]
     delta_yr  = round(fi_dur - agg_dur, 1)
     dur_diff  = abs(fi_dur - agg_dur)
     if dur_diff < 0.05:
-        dur_vs_caption = "in line with the Bloomberg US Agg benchmark"
+        dur_vs_caption = f"in line with {agg_name}"
     else:
         vs_agg = "below" if delta_yr < 0 else "above"
-        dur_vs_caption = f"{abs(delta_yr):.1f} yrs {vs_agg} the Bloomberg US Agg benchmark"
+        dur_vs_caption = f"{abs(delta_yr):.1f} yrs {vs_agg} {agg_name}"
     st.metric(
         label="FI Sleeve Duration (Core FI + TIPS)",
         value=f"{fi_dur} yrs",
-        delta=f"{delta_yr:+.1f} yrs vs Bloomberg US Agg ({agg_dur} yrs)",
+        delta=f"{delta_yr:+.1f} yrs vs {dur['agg_short']} ({agg_dur} yrs)",
         help=(
             "Weighted average duration of Core Fixed Income (VGIT) and TIPS (SCHP) only. "
             "Cash/SPAXX is excluded: it carries zero duration and is not in the Bloomberg Agg."
@@ -1554,6 +1555,7 @@ with col:
         f"FI sleeve duration is {dur_vs_caption}. "
         "Duration also flows through equity via discount-rate effects, so it is a "
         "whole-portfolio consideration. "
-        f"Durations from each fund's issuer: {live_duration_sources()}."
+        f"Durations from each fund's issuer, and the benchmark's from AGG's: "
+        f"{live_duration_sources()}."
     )
     render_footer()

@@ -22,9 +22,19 @@ from src.style_box import (
 
 # ── Static reference dicts ─────────────────────────────────────────────────
 
-# Bloomberg US Aggregate Bond Index effective duration — used as the FI benchmark.
-# Quarterly maintenance: update from Bloomberg Index Services fact sheet or FRED BFI series.
-BLOOMBERG_AGG_DURATION_YEARS: float = 6.0
+# The duration the FI sleeve's is compared with. Since #462 it lives in
+# data/etf_metadata.json with its measure, source and as-of date, locked with the
+# fact-sheet data like the funds' (#455). Bloomberg's own index page could not be read
+# (HTTP 403), so it is AGG's, the iShares ETF that tracks the Bloomberg US Agg, and
+# named as AGG's wherever it is shown. Read through benchmark_duration().
+AGG_TICKER = "AGG"
+AGG_NAME = "AGG, the iShares ETF tracking the Bloomberg US Agg"
+#
+# The figure before #462, labelled the Agg's. UNDATED like _UNDATED_DURATIONS below:
+# nothing recorded when or where it was read. Kept only for a quarter locked before
+# the move, which reports the benchmark it was reported with. Never a live figure.
+_UNDATED_AGG_DURATION: float = 6.0
+UNDATED_AGG_NAME = "the Bloomberg US Agg"
 
 # A fund's duration lives in data/etf_metadata.json since #455, each with its
 # measure, source and as-of date, so a quarter lock snapshots it with the rest of the
@@ -71,6 +81,28 @@ def fund_durations() -> "dict[str, float]":
     return live_fund_durations()
 
 
+def benchmark_duration() -> "dict":
+    """The duration the FI sleeve's is compared with, as {years, name, short}: AGG's
+    from the ETF metadata, locked with it like the funds' (#462); inside a lock taken
+    before the move, whose locked metadata holds no AGG duration or which holds no
+    inputs at all, the undated 6.0 it was reported with, under the Agg's name. Raises
+    InputPending inside a lock still waiting on its metadata."""
+    from src import prices
+    from src.input_lock import ETF_METADATA, locked
+    held = locked(ETF_METADATA)
+    if held is not None:
+        meta = held
+    elif prices._PRICE_LOCK.get() is not None:        # a lock from before locked inputs
+        meta = {}
+    else:
+        meta = _load_metadata()
+    years = _durations_in(meta).get(AGG_TICKER)
+    if years is None:
+        return {"years": _UNDATED_AGG_DURATION, "name": UNDATED_AGG_NAME,
+                "short": "Bloomberg US Agg"}
+    return {"years": years, "name": AGG_NAME, "short": AGG_TICKER}
+
+
 def live_duration_sources() -> str:
     """Where the live duration metric's figures come from: one clause per fund it
     weights, the ETF metadata's duration with its measure and as-of date (#455)."""
@@ -80,6 +112,8 @@ def live_duration_sources() -> str:
     with open(_META_PATH) as f:
         meta = json.load(f)
     funds = [t for s, t in _FI_SLEEVE_HOLDING.items() if s != "Cash / SPAXX"]
+    if AGG_TICKER in meta:                         # the benchmark's, named as AGG's (#462)
+        funds.append(AGG_TICKER)
     return "; ".join(
         f"{t} {meta[t]['duration_years']:g} yrs, {meta[t]['duration_measure']} as of "
         f"{format_long_date(meta[t]['as_of'])}" for t in funds)
@@ -391,16 +425,19 @@ def get_effective_duration(end_date: str) -> dict:
         fi_weight_pct          — Core FI + TIPS weight as % of invested (ex-cash) portfolio
         cash_weight_pct        — operational SPAXX float as % of TOTAL portfolio
         fi_weight_incl_cash_pct — Core FI + TIPS + operational cash (for informational use)
-        agg_benchmark          — Bloomberg US Agg duration for comparison
+        agg_benchmark          — the benchmark duration for comparison (benchmark_duration)
+        agg_name / agg_short   — whose it is: AGG's since #462, the Agg's in older locks
 
     Phase 38a — sleeve weights are ex-cash (sum to 1.0 over the 9 strategic
     sleeves); operational cash is read from the sleeve frame's .attrs, not as a
     sleeve row.
     """
+    bench = benchmark_duration()
     _empty = {
         "duration": 0.0, "fi_sleeve_duration": 0.0,
         "fi_weight_pct": 0.0, "cash_weight_pct": 0.0,
-        "fi_weight_incl_cash_pct": 0.0, "agg_benchmark": BLOOMBERG_AGG_DURATION_YEARS,
+        "fi_weight_incl_cash_pct": 0.0, "agg_benchmark": bench["years"],
+        "agg_name": bench["name"], "agg_short": bench["short"],
     }
     sw = get_sleeve_weights_on_date(end_date)
     if sw.empty:
@@ -451,7 +488,9 @@ def get_effective_duration(end_date: str) -> dict:
         "fi_weight_pct":           fi_excl_cash_pct,
         "cash_weight_pct":         cash_of_total_pct,
         "fi_weight_incl_cash_pct": round(fi_excl_cash_pct + cash_of_total_pct, 1),
-        "agg_benchmark":           BLOOMBERG_AGG_DURATION_YEARS,
+        "agg_benchmark":           bench["years"],
+        "agg_name":                bench["name"],
+        "agg_short":               bench["short"],
     }
 
 

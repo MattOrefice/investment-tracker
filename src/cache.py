@@ -246,7 +246,8 @@ def inputs_restatement_note(quarter_id: "str | None", snap: "SnapshotFrames | No
 
 def undated_durations_note(snap: "SnapshotFrames | None") -> "str | None":
     """The cover sentence for a quarter whose fixed-income durations came from the
-    undated table they lived in before #455, or None.
+    undated table they lived in before #455, or whose Bloomberg US Agg duration was
+    the undated 6.0 it carried before #462, or None. Names each that was undated.
 
     That is a lock whose locked ETF metadata holds no durations, or which holds no
     inputs at all: positioning.fund_durations serves such a lock the undated table,
@@ -257,11 +258,20 @@ def undated_durations_note(snap: "SnapshotFrames | None") -> "str | None":
     if ETF_METADATA in (getattr(snap, "inputs_pending", None) or {}):
         return None
     meta = (getattr(snap, "inputs", None) or {}).get(ETF_METADATA) or {}
-    if any(isinstance(v, dict) and v.get("duration_years") is not None
-           for v in meta.values()):
-        return None
-    return ("This quarter's fixed-income durations came from an undated table later "
-            "found out of date.")
+    dated = {t for t, v in meta.items()
+             if isinstance(v, dict) and v.get("duration_years") is not None}
+    funds_undated, agg_undated = not (dated - {"AGG"}), "AGG" not in dated
+    if funds_undated and agg_undated:
+        return ("This quarter's fixed-income durations came from an undated table later "
+                "found out of date, and the Bloomberg US Agg duration they were compared "
+                "with was undated too.")
+    if funds_undated:
+        return ("This quarter's fixed-income durations came from an undated table later "
+                "found out of date.")
+    if agg_undated:
+        return ("This quarter's Bloomberg US Agg duration, which its fixed-income "
+                "durations were compared with, was undated.")
+    return None
 
 
 # ── Exact encoding for locked inputs ──────────────────────────────────────────
