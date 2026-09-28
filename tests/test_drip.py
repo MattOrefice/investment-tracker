@@ -93,7 +93,7 @@ def _make_distributions(*rows) -> pd.DataFrame:
 
 
 def _make_prices(dates_prices: dict) -> pd.Series:
-    """dict of {datetime.date: adj_close}."""
+    """dict of {datetime.date: raw close}."""
     return pd.Series(dates_prices)
 
 
@@ -103,17 +103,17 @@ def test_single_distribution_correct_shares():
     """10 shares × $1.00 dps / $100 price = 0.1 DRIP shares."""
     initial   = _make_initial(10.0)
     dists     = _make_distributions((date(2025, 6, 30), 1.0))
-    prices    = _make_prices({date(2025, 6, 30): 100.0})
+    prices    = _make_prices({date(2025, 7, 2): 100.0})   # the pay date's close
     result    = compute_drip_lots("VOO", initial, dists, prices)
     assert len(result) == 1
     assert result[0]["shares"] == pytest.approx(0.1)
 
 
 def test_single_distribution_correct_cost_basis():
-    """Cost basis per share equals the adj_close on ex_date."""
+    """Cost basis per share equals the close on the reinvestment date."""
     initial = _make_initial(10.0)
     dists   = _make_distributions((date(2025, 6, 30), 1.0))
-    prices  = _make_prices({date(2025, 6, 30): 123.45})
+    prices  = _make_prices({date(2025, 7, 2): 123.45})   # the pay date's close
     result  = compute_drip_lots("VOO", initial, dists, prices)
     assert result[0]["cost_basis_per_share"] == pytest.approx(123.45)
 
@@ -132,7 +132,7 @@ def test_single_distribution_correct_purchase_date():
 def test_single_distribution_lot_source_is_drip():
     initial = _make_initial(10.0)
     dists   = _make_distributions((date(2025, 6, 30), 1.0))
-    prices  = _make_prices({date(2025, 6, 30): 100.0})
+    prices  = _make_prices({date(2025, 7, 2): 100.0})   # the pay date's close
     result  = compute_drip_lots("VOO", initial, dists, prices)
     assert result[0]["lot_source"] == "drip"
 
@@ -157,9 +157,9 @@ def test_compounding_later_drip_uses_accumulated_shares():
         (date(2025, 6, 30), 1.0),   # first: 10 sh × $1 / $100 = 0.1 new shares
         (date(2025, 9, 30), 1.0),   # second: 10.1 sh × $1 / $110
     )
-    prices  = _make_prices({
-        date(2025, 6, 30): 100.0,
-        date(2025, 9, 30): 110.0,
+    prices  = _make_prices({            # each pay date's close
+        date(2025, 7, 2): 100.0,
+        date(2025, 10, 2): 110.0,
     })
     result = compute_drip_lots("VOO", initial, dists, prices)
     assert len(result) == 2
@@ -191,7 +191,7 @@ def test_distribution_one_day_after_inception_qualifies():
     """Distribution on 2025-05-02 does qualify because shares exist on 2025-05-01."""
     initial = _make_initial(shares=10.0, start=date(2025, 5, 1))
     dists   = _make_distributions((date(2025, 5, 2), 1.0))
-    prices  = _make_prices({date(2025, 5, 2): 100.0})
+    prices  = _make_prices({date(2025, 5, 6): 100.0})   # the pay date's close
     result  = compute_drip_lots("VGIT", initial, dists, prices)
     assert len(result) == 1
     assert result[0]["shares"] == pytest.approx(10.0 * 1.0 / 100.0)
@@ -199,19 +199,22 @@ def test_distribution_one_day_after_inception_qualifies():
 
 # ── compute_drip_lots — price lookup ─────────────────────────────────────────
 
-def test_weekend_ex_date_uses_previous_trading_day_price():
+def test_weekend_ex_date_never_reinvests_at_a_close_before_the_pay_date():
     """
-    If ex_date falls on a weekend and only the prior Friday has a price,
-    the Friday price is used (index <= ex_date, last available).
+    A Saturday ex_date pays Tuesday. The Friday close before it is never used: the
+    reinvestment executes at the first close on or after the pay date (#406 item 12).
+    This test used to pin the old rule, the last close on or before.
     """
-    friday  = date(2025, 6, 27)  # Friday
+    friday   = date(2025, 6, 27)  # Friday
     saturday = date(2025, 6, 28)  # Saturday ex_date
+    tuesday  = date(2025, 7, 1)   # the pay date
     initial = _make_initial(10.0)
     dists   = _make_distributions((saturday, 1.0))
-    prices  = _make_prices({friday: 95.0})  # no Saturday price
+    prices  = _make_prices({friday: 95.0, tuesday: 97.0})
     result  = compute_drip_lots("VOO", initial, dists, prices)
     assert len(result) == 1
-    assert result[0]["cost_basis_per_share"] == pytest.approx(95.0)
+    assert result[0]["cost_basis_per_share"] == pytest.approx(97.0)
+    assert result[0]["purchase_date"] == tuesday
 
 
 # ── persist_drip_lots — idempotency ──────────────────────────────────────────
@@ -511,22 +514,23 @@ def test_compute_drip_lots_shares_use_payment_date_price():
     assert result[0]["shares"] == pytest.approx(0.1)
 
 
-def test_compute_drip_lots_payment_date_price_falls_back_to_prior_trading_day():
-    """If payment_date has no price, falls back to the last available price before it."""
+def test_compute_drip_lots_pay_date_with_no_price_moves_to_the_next_close():
+    """If payment_date has no close (a market holiday), the reinvestment executes at
+    the next close and the lot is dated there (#406 item 12). This test used to pin
+    the old rule: the last close BEFORE the pay date, before the cash had arrived."""
     ex = date(2025, 6, 26)   # Thursday → pay date = Monday 2025-06-30
-    pay = date(2025, 6, 30)
     friday = date(2025, 6, 27)
+    tuesday = date(2025, 7, 1)
 
     initial = _make_initial(10.0)
     dists   = _make_distributions((ex, 1.0))
-    # Only Friday price available; Monday (pay_date) has no price
-    prices  = _make_prices({ex: 90.0, friday: 92.0})
+    # Monday (pay_date) has no price; Friday before it and Tuesday after it do
+    prices  = _make_prices({ex: 90.0, friday: 92.0, tuesday: 93.0})
     result  = compute_drip_lots("VOO", initial, dists, prices)
 
     assert len(result) == 1
-    # price_history[index <= pay_date].iloc[-1] = Friday's price (last before Monday)
-    assert result[0]["cost_basis_per_share"] == pytest.approx(92.0)
-    assert result[0]["purchase_date"] == pay
+    assert result[0]["cost_basis_per_share"] == pytest.approx(93.0)
+    assert result[0]["purchase_date"] == tuesday
 
 
 # ── distribution_gaps_for_holdings — surfacing the warn-and-skip in-app ────────

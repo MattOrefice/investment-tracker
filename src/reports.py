@@ -36,6 +36,7 @@ from src.cache import (
     get_quarter_snapshot,
     input_corrections_note,
     inputs_restatement_note,
+    lot_rebuild_note,
     restatement_note,
     is_quarter_complete,
     label_to_quarter_id,
@@ -2151,6 +2152,8 @@ def generate_quarterly_report_bytes(
         restatement_note     = restatement_note(quarter_id, snap_df),
         inputs_restatement_note = inputs_restatement_note(quarter_id, snap_df),
         input_corrections_note = input_corrections_note(snap_df),
+        # The book's DRIP lots were rebuilt after this quarter locked (#406 item 12).
+        lot_rebuild_note     = lot_rebuild_note(snap_df),
         # A lock from before #383 states the construction its benchmark figures used;
         # every other report states the rule in its methodology.
         benchmark_construction_note = benchmark_construction_note(snap_df),

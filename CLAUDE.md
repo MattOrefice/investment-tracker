@@ -191,6 +191,13 @@ the code that supports it; the two with none are listed at the end.
   lists each end date with its tickers and exits 1 unless there is one, so no
   ticker lags silently (#406 item 8: IWB and IWF ended 2026-06-08 while the
   holdings ran to 2026-07-20).
+- Demo only, once that check passes and before the report takes the lock:
+  regenerate the DRIP lots from the ledger, `python
+  tools/rebuild_demo_drip_lots.py`, and commit `data/demo.db`. It derives every
+  lot through the DRIP write path at the raw close on its reinvestment date,
+  offline, and refuses if a position would no longer close.
+  `tests/test_demo_drip_lots.py` fails until the lots are regenerated (#406
+  item 12).
 - Refresh CAPE and trailing P/E for the quarter-end observation: `python
   tools/refresh_market_data.py --files cape pe`, then commit the diff. The lock
   takes CAPE once the quarter's last month has a reading.

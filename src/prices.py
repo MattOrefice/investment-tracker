@@ -552,9 +552,10 @@ def total_return_series(frame: pd.DataFrame) -> pd.Series:
       raises there — which is the distinction the DataFrame API cannot express and
       the reason this helper exists rather than a basis flag.
     * the fourteen per-site verdicts get a single home. They are DEFERRED, not
-      settled: drip.py:283 is right to fill (a DRIP reinvestment executes at the
-      raw market close), while risk.py:135 manufactures a spurious return spike on
-      the dividend date by doing the same thing. Whoever takes that up changes it
+      settled, except drip.py's: a DRIP reinvestment executes at the raw market
+      close, so drip.py reads ``close`` directly and no longer calls this (#406
+      item 12). risk.py:135 manufactures a spurious return spike on
+      the dividend date by filling from close. Whoever takes that up changes it
       here, per caller, instead of re-deriving the question fourteen times.
 
     Behaviour is pinned to what those sites do today, verbatim: adj_close where
