@@ -162,9 +162,10 @@ def test_a_stale_fact_sheet_file_leaves_only_the_style_box_pending(book, tmp_pat
     _metadata_dated(tmp_path, monkeypatch, "2026-01-15")
     snap, _ = capture_quarter_snapshot("2026Q2")
     note = reports._pending_note(snap, "positioning", subject="style box")
+    # #463: the line names the date that disqualifies the file, and which way.
     assert note == ("Pending: this style box locks when the ETF fact-sheet data covers the "
-                    "quarter. The ETF fact-sheet data on file is dated January 15, 2026; the "
-                    "quarter ended June 30, 2026.")
+                    "quarter. The oldest ETF fact-sheet data on file is dated January 15, "
+                    "2026, before the quarter began April 1, 2026.")
     html = _html(monkeypatch, *Q2)
     assert note in html
     assert "Equity Style Profile" in html and "Non-US Equity Sleeve" in html, (
