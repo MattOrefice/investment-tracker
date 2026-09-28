@@ -7,13 +7,11 @@ from zoneinfo import ZoneInfo
 # and the label is "ET" for both.
 ET = ZoneInfo("America/New_York")
 
-# A quarter-end is "priceable" if committed data reaches within this many calendar
-# days of it. Deliberately the same window as src.attribution._last_adj_price's
-# ``window_days`` default: that function decides whether a sleeve gets a real
-# end-of-period price or is purged as a price gap, so tying the quarter cap to it
-# means a quarter is offered exactly when attribution can actually price its close.
-# Also absorbs a quarter-end landing on a weekend/holiday (Dec-31 on a Sunday), where
-# the last real trading day legitimately precedes the calendar quarter-end.
+# The calendar-day allowance the French factors and momentum are still gated on
+# (cache._capture_inputs): French publishes whole months, so their rows end on a
+# month's last business day. It was the price rule too, for the lock until #454 and
+# for the reportable-quarter cap until #458; both now need the close of the
+# quarter's last NYSE session (cache.last_session_on_or_before).
 QUARTER_END_COVERAGE_DAYS = 5
 
 # ── Committed market-data staleness (factor / valuation inputs) ────────────────
@@ -122,8 +120,9 @@ def _resolve_frontier(frontier: "date | str | None") -> date | None:
     opt out of the cap (what the pure-logic tests do).
     """
     if frontier is None:
-        from src.holdings import committed_price_frontier  # lazy — avoids a DB import at module load
-        frontier = committed_price_frontier()
+        # The LOCK's frontier, not the holdings' (#458): every ticker the lock covers.
+        from src.cache import lock_price_frontier  # lazy — avoids a DB import at module load
+        frontier = lock_price_frontier()
     if frontier is None:
         return None
     if isinstance(frontier, str):
@@ -132,7 +131,12 @@ def _resolve_frontier(frontier: "date | str | None") -> date | None:
 
 
 def _quarter_end_is_priceable(q_end: date, frontier: date | None) -> bool:
-    """True when committed data reaches within QUARTER_END_COVERAGE_DAYS of ``q_end``.
+    """True when committed data holds the close of the quarter's last NYSE session:
+    the lock's rule (#454), so the page names a quarter only once its lock can be taken
+    (#458). A quarter ending on a weekend or holiday needs the session before it, and
+    no earlier one. It used to allow data ending up to QUARTER_END_COVERAGE_DAYS short,
+    so for one to five days the page named the new quarter and showed the lock's
+    refusal instead of stepping back.
 
     ``frontier is None`` (no committed prices / no resolvable account) returns True:
     the cap expresses "the data cannot support this quarter", and absent data it has
@@ -142,7 +146,8 @@ def _quarter_end_is_priceable(q_end: date, frontier: date | None) -> bool:
     """
     if frontier is None:
         return True
-    return frontier >= q_end - timedelta(days=QUARTER_END_COVERAGE_DAYS)
+    from src.cache import last_session_on_or_before
+    return frontier >= last_session_on_or_before(q_end)
 
 
 # Empty-state copy when no completed quarter has elapsed since inception.
@@ -169,8 +174,9 @@ def most_recent_reportable_quarter(
        back past inception returns ``None`` so callers render the empty state
        rather than an all-zero "locked" report for a span preceding the portfolio.
 
-    2. **Data frontier.** A quarter is reportable only if committed prices reach
-       its close (see ``_quarter_end_is_priceable``). Without this gate the
+    2. **Data frontier.** A quarter is reportable only if committed prices hold its
+       last session's close for every ticker the lock covers (see
+       ``_quarter_end_is_priceable`` and ``cache.lock_price_frontier``). Without this gate the
        calendar rolls into Q3 while the price history still ends in July, and the
        report renders that quarter anyway: attribution, benchmarks and holdings
        visibly break on the gap, but the value series forward-fills, so the
@@ -182,7 +188,7 @@ def most_recent_reportable_quarter(
        back to and why.
 
     ``inception`` accepts a date or an ISO date string. ``frontier`` defaults to
-    ``None`` = resolve from the committed price cache (``committed_price_frontier``,
+    ``None`` = resolve from the committed price cache (``cache.lock_price_frontier``,
     no network); pass an explicit date to pin it, including a far-future date to
     exercise the uncapped inception logic on its own.
     """

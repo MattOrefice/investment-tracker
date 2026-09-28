@@ -90,6 +90,31 @@ def last_session_on_or_before(d: date) -> date:
     return d
 
 
+def lock_price_frontier(today: "date | None" = None) -> "Optional[str]":
+    """The latest date by which every ticker a quarter lock covers has a stored close:
+    MIN over the lock's tickers (_get_all_snapshot_tickers, every security and every
+    benchmark constituent) of each one's latest stored close on or before ``today``
+    (New York's date by default). DB only, never a fetch. None when none is stored.
+
+    The reportable-quarter cap reads it (#458), so the page names a quarter only once
+    the lock's coverage gate (_short_coverage) would pass. The holdings' frontier
+    (holdings.committed_price_frontier) cannot stand in: the lock also needs every
+    benchmark's close, so a quarter it named could still be refused. A ticker with no
+    stored price at all is skipped, as the lock skips it to a disclosed gap."""
+    from src.asof import today_et
+    ref = (today or today_et()).isoformat()
+    tickers, _gaps = _get_all_snapshot_tickers()
+    if not tickers:
+        return None
+    marks = ",".join("?" * len(tickers))
+    with get_connection() as conn:
+        rows = conn.execute(
+            f"SELECT ticker, MAX(price_date) FROM prices WHERE ticker IN ({marks}) "
+            "AND price_date <= ? GROUP BY ticker", (*tickers, ref)).fetchall()
+    ends = [r[1] for r in rows if r[1]]
+    return min(ends) if ends else None
+
+
 class SnapshotFrames(NamedTuple):
     """A quarter snapshot: one flat frame per price basis.
 
