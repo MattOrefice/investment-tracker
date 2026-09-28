@@ -117,6 +117,11 @@ def _rules():
         ("tools/migrate_spaxx_yield_copy.py",
          "UPDATE asset_classes SET rationale = ? WHERE asset_class_id = ? AND rationale = ?"):
             "primary-key",
+        # #459: the Real Assets PARENT's legacy spec, keyed on the name, the parent row and
+        # the current text, so at most one row; zero once cleared.
+        ("tools/migrate_demo_parent_benchmark.py",
+         "UPDATE asset_classes SET benchmark_ticker = NULL WHERE name = ? AND parent_id IS NULL "
+         "AND benchmark_ticker = ?"): lambda conn: [(("Real Assets", "VNQ+DBC"), "at-most-one")],
         # src/db.py's _auto_migrate heal: the f-string's literal part (the WHERE is the
         # module constant _REAL_ASSETS_LEGACY_WHERE, checked below with its real text).
         ("src/db.py", "UPDATE asset_classes SET benchmark_ticker = 'VNQ (60%) + DBC (40%)'"):
