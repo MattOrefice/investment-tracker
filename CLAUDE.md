@@ -186,6 +186,11 @@ the code that supports it; the two with none are listed at the end.
   the quarter's last trading day or later. Until then a lock is refused
   (`LockCoverageError`), never taken short, and the report steps back to the
   previous quarter (`asof.most_recent_reportable_quarter`).
+- Demo only, after the snapshot advance: confirm every ticker's committed
+  history ends on the same date, `python tools/check_price_histories.py`. It
+  lists each end date with its tickers and exits 1 unless there is one, so no
+  ticker lags silently (#406 item 8: IWB and IWF ended 2026-06-08 while the
+  holdings ran to 2026-07-20).
 - Refresh CAPE and trailing P/E for the quarter-end observation: `python
   tools/refresh_market_data.py --files cape pe`, then commit the diff. The lock
   takes CAPE once the quarter's last month has a reading.
