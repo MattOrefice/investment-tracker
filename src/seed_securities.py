@@ -25,13 +25,13 @@ HOLDINGS = [
         "expense_ratio": 0.0003,
         "er_source": 'Vanguard fund page', "er_as_of": _ER_AS_OF,
         "holding_rationale": (
-            "VOO delivers S&P 500 exposure at 0.03% with the best tax efficiency of any large-cap "
+            "VOO delivers S&P 500 exposure at {{er:VOO}} with the best tax efficiency of any large-cap "
             "passive fund. The benchmark is SPY, used for attribution because it's the institutional "
             "standard. SPY's unit investment trust structure, however, prevents internal dividend "
             "reinvestment, creating cash drag and incremental tax events that accumulate over "
             "decades. Vanguard's ETF share class structure historically produces fewer capital gains "
             "distributions. The difference between VOO and SPY compounds quietly; at a 30-year "
-            "horizon I'm not willing to pay three times the fee for intraday liquidity I don't need.\n"
+            "horizon I'm not willing to pay SPY's {{er:SPY}} for intraday liquidity I don't need.\n"
             "\n"
             "**Would revisit if** the SEC grants ETF share-class relief to competing issuers and a "
             "materially cheaper or more tax-efficient S&P 500 vehicle results. Vanguard's patent "
@@ -54,7 +54,13 @@ HOLDINGS = [
             "to assets predict earnings reversals, as documented in Sloan (1996) and widely "
             "replicated since. CFA training reinforced this: accruals manipulation is real and "
             "persistent, and a quality screen that ignores it is incomplete. The tradeoff is smaller "
-            "AUM ($6B vs QUAL's $40B), acceptable given SPHQ isn't at closure-risk scale. "
+            # Net assets from each fund's Form N-PORT filed with the SEC, period July 31, 2026, read
+            # 2026-09-28 (#456): SPHQ, Invesco Exchange-Traded Fund Trust series S000003049,
+            # $19,446,477,532.34, accession 0001209466-26-001344; QUAL, iShares Trust series
+            # S000041444, $46,531,547,421.38, accession 0001004726-26-008857. The text typed
+            # "$6B vs QUAL's $40B" before.
+            "net assets ($19.4B against QUAL's $46.5B on July 31, 2026, from each fund's N-PORT "
+            "filing with the SEC), acceptable given SPHQ isn't at closure-risk scale. "
             "Benchmarking against QUAL sets up a natural attribution test over time: whether the "
             "accruals screen adds or costs value.\n"
             "\n"
@@ -75,7 +81,7 @@ HOLDINGS = [
             "P/CF, and dividend yield) rather than the P/B-heavy single metric Russell uses in IWD, "
             "the benchmark. Multi-metric is academically superior: relying solely on P/B overweights "
             "asset-heavy industries and underweights intangible-rich businesses where book value "
-            "poorly proxies intrinsic value. VTV also costs 0.04% vs IWD's 0.19%. The holding differs"
+            "poorly proxies intrinsic value. VTV also costs {{er:VTV}} vs IWD's {{er:IWD}}. The holding differs"
             " from the benchmark by design.\n"
             "\n"
             "**Would revisit if** the multi-metric value definition stopped distinguishing itself "
@@ -96,7 +102,7 @@ HOLDINGS = [
             "DFA researchers, targets the size, value, and profitability factors simultaneously. "
             "Empirically, the size premium is concentrated almost entirely in profitable small-value "
             "firms; unprofitable small-caps drag index returns and explain why naive small-cap "
-            "exposure has looked weak for 15 years. The 0.25% ER is a real cost, but it buys factor "
+            "exposure has looked weak for 15 years. The {{er:AVUV}} ER is a real cost, but it buys factor "
             "exposure rather than index replication. Current large-cap valuations structurally "
             "improve the relative opportunity in cheap, profitable small companies. Attribution is "
             "tracked against IWM to test whether the factor tilt earns its fee over time.\n"
@@ -114,15 +120,15 @@ HOLDINGS = [
         "expense_ratio": 0.0003,
         "er_source": 'Vanguard fund page', "er_as_of": _ER_AS_OF,
         "holding_rationale": (
-            "VEA delivers developed-ex-US exposure at 0.03% versus EFA's 0.32%: EFA is ten times more"
-            " expensive for substantially the same asset class. VEA tracks FTSE Developed All Cap ex "
+            "VEA delivers developed-ex-US exposure at {{er:VEA}} versus EFA's {{er:EFA}} for"
+            " substantially the same asset class. VEA tracks FTSE Developed All Cap ex "
             "US, which includes Canada (MSCI EAFE excludes it), giving modestly broader coverage. The"
             " valuation thesis behind this sleeve's weight holds regardless of the Canada "
             "distinction; the fee difference is indefensible for passive exposure. Vanguard's "
             "structure also produces fewer capital gains distributions historically.\n"
             "\n"
-            "**Would revisit if** a cheaper or more tax-efficient developed ex-US core appeared. At 3"
-            " bps against a cap-weighted benchmark there is little else to falsify. The position is a"
+            "**Would revisit if** a cheaper or more tax-efficient developed ex-US core appeared. At"
+            " {{er:VEA}} against a cap-weighted benchmark there is little else to falsify. The position is a"
             " cost choice, not a view, and the only thing that unseats it is a better instrument for "
             "the same exposure."
         ),
@@ -147,7 +153,7 @@ HOLDINGS = [
             "reflects the regions rather than two vendors' definitions of quality.\n"
             "\n"
             "The benchmark is IQLT, iShares' MSCI quality index abroad, which reproduces the SPHQ-to-"
-            "QUAL relationship exactly. Cost is a wash (0.29% against IQLT's 0.30%), so this is a "
+            "QUAL relationship exactly. Cost is a wash ({{er:IDHQ}} against IQLT's {{er:IQLT}}), so this is a "
             "methodology decision, the same one already made domestically.\n"
             "\n"
             "The known asymmetry: S&P classifies South Korea as developed where MSCI does not, so "
@@ -180,7 +186,7 @@ HOLDINGS = [
             "\n"
             "The benchmark is EFV, MSCI's EAFE value index. Holding and benchmark come from different"
             " index families, exactly as VTV and IWD do, so selection effect measures implementation "
-            "rather than the value premium itself. At 0.25% against EFV's 0.33%, the profitability "
+            "rather than the value premium itself. At {{er:AVIV}} against EFV's {{er:EFV}}, the profitability "
             "integration costs nothing relative to the passive alternative.\n"
             "\n"
             "**Would revisit if** the profitability integration proved to be doing the work rather "
@@ -209,7 +215,7 @@ HOLDINGS = [
             "This is the same compromise the US sleeve already makes against IWM, with the same "
             "consequence: the factor exhibit, not attribution, shows whether the tilt is being paid.\n"
             "\n"
-            "At 0.36% it is among the portfolio's costliest positions and its highest-conviction one;"
+            "At {{er:AVDV}} it is among the portfolio's costliest positions and its highest-conviction one;"
             " the fee buys factor exposure rather than index replication. AVDV holds no South Korea, "
             "verified at the position level, so the universe mismatch that inflates the developed-"
             "core residual doesn't apply here.\n"
@@ -230,12 +236,15 @@ HOLDINGS = [
             # "identical exposure" on "the same index" was wrong: IEMG tracks MSCI EM IMI,
             # which adds small caps (2026-09-25 audit, item 8;
             # tools/migrate_research_prose_item8.py carries it into demo.db).
-            "IEMG is the holding because EEM costs 0.70%: seven times more expensive, and the largest"
-            " fee gap in the portfolio at 61 bps. The two are not the same exposure: IEMG at 0.09% "
+            "IEMG is the holding because EEM costs {{er:EEM}} against IEMG's {{er:IEMG}}, the largest"
+            " fee gap in the portfolio. The two are not the same exposure: IEMG "
             "tracks MSCI Emerging Markets IMI, which adds small caps to the large and mid caps of "
             "EEM's MSCI Emerging Markets index. China inclusion was deliberate. The SAA rationale "
-            "flags governance risk as a watch item but not yet a reason to exit: China trades at ~10x"
-            " P/E, and the EM valuation thesis meaningfully includes Chinese equities. Excluding "
+            # "~10x P/E" dropped (#456), as thesis 18 dropped it (#457): MSCI China's P/E was
+            # 13.96 (forward 10.76) against MSCI ACWI's 21.85, August 31, 2026, per MSCI's
+            # index fact sheets. The discount is the point; the multiple is not needed.
+            "flags governance risk as a watch item but not yet a reason to exit: China trades at a"
+            " valuation discount to global equities, and the EM valuation thesis meaningfully includes Chinese equities. Excluding "
             "China via EMXC would be a larger active bet than appropriate at current prices.\n"
             "\n"
             "**Would revisit if** ADR delisting risk materializes legislatively or if another sector-"
@@ -250,9 +259,10 @@ HOLDINGS = [
         "expense_ratio": 0.0004,
         "er_source": 'Vanguard fund page', "er_as_of": _ER_AS_OF,
         "holding_rationale": (
-            "VGIT delivers intermediate-term US Treasury exposure at 0.04% versus IEF's 0.15%. "
-            "Duration is modestly shorter (~5.5 years vs IEF's ~7.5 years), appropriate for a 6% "
-            "sleeve inside a 78% growth portfolio. The shorter duration means VGIT underperforms "
+            "VGIT delivers intermediate-term US Treasury exposure at {{er:VGIT}} versus IEF's "
+            "{{er:IEF}}. Duration is modestly shorter ({{dur:VGIT}} vs IEF's {{dur:IEF}}), "
+            "appropriate for a {{w:Core Fixed Income}} sleeve inside a {{w:Equity}} growth "
+            "portfolio. The shorter duration means VGIT underperforms "
             "longer-dated Treasuries in a flight-to-quality rally but limits drawdown in a "
             "rate-selloff. "
             # #283. Was "a real after-tax advantage in a high-income-tax jurisdiction
@@ -296,14 +306,14 @@ HOLDINGS = [
             # funds' own pages and filings, read 2026-09-27 (#406 item 11). TIP's 0.18% is the
             # expense ratio iShares' fund page gives "as stated in the prospectus", read
             # 2026-09-27 (#436); the rationale typed 0.19% before.
-            "SCHP delivers broad TIPS exposure at 0.03% versus TIP's 0.18%. The two track different "
+            "SCHP delivers broad TIPS exposure at {{er:SCHP}} versus TIP's {{er:TIP}}. The two track different "
             "indexes: SCHP the Bloomberg US Treasury Inflation-Linked Bond Index (Series-L), TIP the "
             "ICE US Treasury Inflation Linked Bond Index. The "
             "choice of broad TIPS over short-term alternatives (VTIP, STIP) reflects the long-horizon "
             "inflation thesis: at 27, the risk being hedged is not near-term inflation volatility but a "
             "decade of sustained real return erosion. Short-term TIPS protect against current inflation but "
             "have less sensitivity to unexpected long-run inflation regimes. Broad TIPS held for decades are "
-            "the more appropriate vehicle. SCHP at 0.03% makes this hedge essentially free to carry.\n\n"
+            "the more appropriate vehicle. SCHP at {{er:SCHP}} makes this hedge essentially free to carry.\n\n"
             "**Would revisit if** 5-year TIPS breakeven inflation falls persistently below 1.5%, indicating "
             "a deflationary regime shift that reduces the case for holding real return protection."
         ),
@@ -316,7 +326,10 @@ HOLDINGS = [
         "expense_ratio": 0.0012,
         "er_source": 'Vanguard fund page', "er_as_of": _ER_AS_OF,
         "holding_rationale": (
-            "VNQ is the standard for US REIT exposure: $35B AUM, 0.12% ER, broad diversification across "
+            # "$35B AUM" dropped (#456), as thesis 22 dropped it (#457): Vanguard gives $38.1B
+            # for the ETF share class and $70.8B for the fund, August 31, 2026. The point, the
+            # standard REIT vehicle, stands without it.
+            "VNQ is the standard for US REIT exposure: a {{er:VNQ}} ER and broad diversification across "
             "property types. Primary risk accepted knowingly: REIT distributions are predominantly "
             "non-qualified income taxed at ordinary rates. In a perfect construction this sleeve would sit "
             "in a tax-advantaged account; working with a taxable account only, the drag is accepted with "
@@ -342,7 +355,7 @@ HOLDINGS = [
             "holds its futures through a wholly-owned Cayman Islands subsidiary, so it reports on "
             "Form 1099 instead. It is benchmarked to the DBIQ Optimum Yield Diversified Commodity "
             "Index, the index DBC (the benchmark) tracks as a commodity pool that issues a K-1, and "
-            "it costs 0.59% against DBC's 0.85%. DBC is used for attribution only, never as a "
+            "it costs {{er:PDBC}} against DBC's {{er:DBC}}. DBC is used for attribution only, never as a "
             "holding.\n"
             "\n"
             "**Would revisit if** a broad no-K-1 commodity fund appeared at materially lower cost or with"

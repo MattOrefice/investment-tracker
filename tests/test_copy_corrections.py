@@ -181,10 +181,12 @@ def test_schp_names_both_indexes_everywhere_its_rationale_is_carried(tmp_path, m
         finally:
             con.close()
         assert held == seed, book
-        # Thesis 20 carries its own text since #421, its fees read from the data.
-        # Rendered, it is still the fund rationale without the revisit line.
-        assert "{{er:" in cells[0], book
-        assert tuple(_render_in(book, cells, tmp_path, monkeypatch)) == (thesis,) * 3, book
+        # Thesis 20 carries its own text since #421, its fees read from the data, and
+        # the fund rationale reads them too since #456. Rendered, the thesis is still
+        # the fund rationale without the revisit line.
+        assert "{{er:" in cells[0] and "{{er:" in thesis, book
+        assert (tuple(_render_in(book, cells, tmp_path, monkeypatch))
+                == tuple(_render_in(book, [thesis], tmp_path, monkeypatch)) * 3), book
 
 
 def _render_in(book, texts, tmp_path, monkeypatch):

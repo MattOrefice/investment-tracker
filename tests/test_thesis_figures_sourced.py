@@ -11,7 +11,8 @@ point stands without it and its source still supports the point.
   * thesis 23's "toward 1%", a cash level, is dropped from the thesis and the Research
     page's copy, as thesis 12's range was; the yield trigger stays.
 
-Thesis 14's AUM is unchanged: the issuer's page could not be read (listed on the PR).
+Thesis 14's AUM, "$6B vs QUAL's $40B", reads each fund's net assets from its N-PORT filing
+with the SEC instead, dated (#456): $19.4B against $46.5B on July 31, 2026.
 """
 from __future__ import annotations
 
@@ -27,8 +28,8 @@ ROOT = Path(__file__).resolve().parent.parent
 BOOKS = [ROOT / "data" / "demo.db", ROOT / "tests" / "fixtures" / "frozen_book.db"]
 COLUMNS = ("macro_view", "view_summary", "vehicle_rationale", "exit_conditions",
            "invalidation_conditions", "expected_return_scenario")
-DROPPED = {8: ["~10x P/E", "~22x"], 11: ["$10k"], 18: ["~10x P/E"], 22: ["$35B"],
-           23: ["toward 1%"]}
+DROPPED = {8: ["~10x P/E", "~22x"], 11: ["$10k"], 14: ["$6B", "$40B"], 18: ["~10x P/E"],
+           22: ["$35B"], 23: ["toward 1%"]}
 
 
 def _theses(book):
@@ -52,6 +53,10 @@ def test_the_dropped_figures_are_gone_and_the_points_stay(book):
     assert "China trades at a valuation discount to global equities" in t[18]["vehicle_rationale"]
     assert "VNQ is the standard for US REIT exposure: a {{er:VNQ}} ER" in t[22]["vehicle_rationale"]
     assert "It would be reduced if short rates fell materially below 2%." in t[23]["vehicle_rationale"]
+    for col in ("macro_view", "view_summary", "vehicle_rationale"):
+        assert ("The tradeoff is smaller net assets ($19.4B against QUAL's $46.5B on July 31, "
+                "2026, from each fund's N-PORT filing with the SEC), acceptable given SPHQ is "
+                "not at closure-risk scale.") in t[14][col], (book.name, col)
 
 
 def test_the_research_page_and_the_seed_drop_the_cash_level_too():
