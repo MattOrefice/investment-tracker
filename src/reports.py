@@ -39,6 +39,7 @@ from src.cache import (
     lot_rebuild_note,
     restatement_note,
     is_quarter_complete,
+    undated_durations_note,
     label_to_quarter_id,
     snapshot_price_context,
 )
@@ -1411,33 +1412,39 @@ def _build_thesis_section(start_date: str, end_date: str, *, account_id: int) ->
 
 
 def _build_positioning_section(end_date: str, style_pending: Optional[str] = None,
-                               style_dated: Optional[str] = None) -> dict:
+                               style_dated: Optional[str] = None,
+                               duration_pending: Optional[str] = None) -> dict:
     """Build the positioning section (duration + style box) from live portfolio state.
 
     ``style_pending`` is the pending line for a quarter whose ETF fact-sheet data did
     not cover it (#386): the style box renders it instead of the chart, and the rest
     of the section, built from prices, locks as usual. ``style_dated`` is the line for
-    a lock whose fact sheets are dated after its quarter (#388), shown with the chart."""
-    dur        = get_effective_duration(end_date)
+    a lock whose fact sheets are dated after its quarter (#388), shown with the chart.
+    ``duration_pending`` is the same wait for the fund durations, which live in that
+    file since #455: the duration line renders it instead of a figure."""
     style_data = None if style_pending else get_style_box_data(end_date)
     non_us     = get_non_us_equity_data(end_date)
-    fi_dur    = dur["fi_sleeve_duration"]
-    agg_dur   = dur["agg_benchmark"]
-    fi_wt     = dur["fi_weight_pct"]
-    cash_wt   = dur["cash_weight_pct"]
-    dur_diff  = abs(fi_dur - agg_dur)
-    if dur_diff < 0.05:
-        dur_vs = "in line with benchmark"
+    if duration_pending:
+        duration_line = duration_pending
     else:
-        vs_agg = "below" if fi_dur < agg_dur else "above"
-        dur_vs = f"{vs_agg} benchmark by {dur_diff:.1f} yrs"
-    duration_line = (
-        f"Fixed Income sleeve (Core FI + TIPS) effective duration: {fi_dur} yrs "
-        f"vs {agg_dur} yrs for the Bloomberg US Agg ({dur_vs}). "
-        f"FI weight: {fi_wt}% of portfolio. "
-        f"Cash/SPAXX ({cash_wt}%) is excluded: it is not a duration-bearing asset, and the "
-        f"Bloomberg Agg excludes it."
-    )
+        dur       = get_effective_duration(end_date)
+        fi_dur    = dur["fi_sleeve_duration"]
+        agg_dur   = dur["agg_benchmark"]
+        fi_wt     = dur["fi_weight_pct"]
+        cash_wt   = dur["cash_weight_pct"]
+        dur_diff  = abs(fi_dur - agg_dur)
+        if dur_diff < 0.05:
+            dur_vs = "in line with benchmark"
+        else:
+            vs_agg = "below" if fi_dur < agg_dur else "above"
+            dur_vs = f"{vs_agg} benchmark by {dur_diff:.1f} yrs"
+        duration_line = (
+            f"Fixed Income sleeve (Core FI + TIPS) effective duration: {fi_dur} yrs "
+            f"vs {agg_dur} yrs for the Bloomberg US Agg ({dur_vs}). "
+            f"FI weight: {fi_wt}% of portfolio. "
+            f"Cash/SPAXX ({cash_wt}%) is excluded: it is not a duration-bearing asset, and the "
+            f"Bloomberg Agg excludes it."
+        )
     style_box_b64 = _chart_b64(build_style_box_figure(style_data), 520, 300) if style_data else None
     return {
         "duration_line":     duration_line,
@@ -2095,6 +2102,7 @@ def generate_quarterly_report_bytes(
     factor_pending = _pending_note(snap_df, "factor")
     bench_pending = _pending_note(snap_df, "benchmark")
     style_pending = _pending_note(snap_df, "positioning", subject="style box")
+    duration_pending = _pending_note(snap_df, "positioning", subject="duration figure")
 
     ctx = snapshot_price_context(snap_df) if snap_df is not None else nullcontext()
     with ctx:
@@ -2103,7 +2111,8 @@ def generate_quarterly_report_bytes(
         perf_data        = _build_performance_section(start_date, end_date) if has_trades else None
         attr_data        = _build_attribution_section(start_date, end_date) if has_trades else None
         pos_data         = (_build_positioning_section(end_date, style_pending=style_pending,
-                                                       style_dated=fact_sheet_dated_note(snap_df))
+                                                       style_dated=fact_sheet_dated_note(snap_df),
+                                                       duration_pending=duration_pending)
                             if has_trades else None)
         factor_data      = (_build_factor_section(end_date)
                             if has_trades and not factor_pending else None)
@@ -2150,7 +2159,11 @@ def generate_quarterly_report_bytes(
         # Quarters that closed before the quarter-end lock rule are restated by it,
         # and say so; None for any other report (#368).
         restatement_note     = restatement_note(quarter_id, snap_df),
-        inputs_restatement_note = inputs_restatement_note(quarter_id, snap_df),
+        # A quarter reported with the undated duration table says so in this note,
+        # which every quarter locked before #455 carries.
+        inputs_restatement_note = (" ".join(filter(None, (
+            inputs_restatement_note(quarter_id, snap_df),
+            undated_durations_note(snap_df)))) or None),
         input_corrections_note = input_corrections_note(snap_df),
         # The book's DRIP lots were rebuilt after this quarter locked (#406 item 12).
         lot_rebuild_note     = lot_rebuild_note(snap_df),

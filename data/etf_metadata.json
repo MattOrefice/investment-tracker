@@ -1,5 +1,5 @@
 {
-  "_comment": "Weighted-average market cap and valuation ratios from ETF fact sheets. Update each quarter.",
+  "_comment": "Weighted-average market cap and valuation ratios from ETF fact sheets, and each bond fund's duration with its measure and source (#455). Update each quarter.",
   "SPY": {
     "weighted_avg_mcap_b": 250.0,
     "p_b": 4.30, "p_e": 24.0, "div_yield": 0.0125, "p_cf": 17.0,
@@ -24,5 +24,35 @@
     "weighted_avg_mcap_b":   3.0,
     "p_b": 1.50, "p_e": 11.0, "div_yield": 0.0180, "p_cf":  6.5,
     "as_of": "2026-04-15"
+  },
+  "VGIT": {
+    "duration_years": 4.9,
+    "duration_measure": "average duration",
+    "duration_source": "Vanguard fund data, investor.vanguard.com/vmf/api/VGIT/characteristic (averageDuration), read 2026-09-28",
+    "as_of": "2026-08-31"
+  },
+  "SCHP": {
+    "duration_years": 6.3,
+    "duration_measure": "weighted average duration (source: Aladdin)",
+    "duration_source": "Schwab Strategic Trust semiannual report, Form N-CSRS filed with the SEC, accession 0001193125-26-377998, read 2026-09-28; Schwab's fund page returned HTTP 403",
+    "as_of": "2026-06-30"
+  },
+  "IEF": {
+    "duration_years": 6.86,
+    "duration_measure": "effective duration",
+    "duration_source": "iShares fund page, ishares.com (IEF), read 2026-09-28",
+    "as_of": "2026-09-25"
+  },
+  "TIP": {
+    "duration_years": 6.2,
+    "duration_measure": "effective duration",
+    "duration_source": "iShares fund page, ishares.com (TIP), read 2026-09-28",
+    "as_of": "2026-09-25"
+  },
+  "BIL": {
+    "duration_years": 0.11,
+    "duration_measure": "option-adjusted duration",
+    "duration_source": "State Street SPDR fund page, ssga.com (BIL), read 2026-09-28",
+    "as_of": "2026-09-25"
   }
 }

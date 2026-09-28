@@ -14,8 +14,8 @@ targets and the book:
                          would have if a structure were mirrored into A's region
   {{cash}}               the operational cash share of the portfolio, with its close
   {{er:TICKER}}          the fund's expense ratio, as the securities table holds it
-  {{dur:TICKER}}         the fund's effective duration, as src.positioning.ETF_DURATION
-                         holds it for the duration metric
+  {{dur:TICKER}}         the fund's duration, as data/etf_metadata.json holds it with
+                         its measure, source and as-of date (#455)
 
 Weights and shares print to one decimal, as the SAA page does; an expense ratio prints to
 two, as the Research page does. A name that is not a sleeve of the book, or a ticker with
@@ -70,13 +70,13 @@ def _expense_ratio(ticker: str) -> str:
 
 
 def _duration(ticker: str) -> str:
-    """A fund's effective duration from the table the FI duration metric reads, so a
-    thesis states the figure the Positioning section computes with."""
-    from src.positioning import ETF_DURATION
-    years = ETF_DURATION.get(ticker.strip())
+    """A fund's duration from the ETF metadata, as it stands: the figure the live
+    duration metric computes with."""
+    from src.positioning import live_fund_durations
+    years = live_fund_durations().get(ticker.strip())
     if years is None:
-        raise KeyError(f"prose names the duration of '{ticker}', which ETF_DURATION does "
-                       "not hold")
+        raise KeyError(f"prose names the duration of '{ticker}', which the ETF "
+                       "metadata does not hold")
     return f"{years:.1f} years"
 
 

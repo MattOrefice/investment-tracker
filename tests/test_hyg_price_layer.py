@@ -25,7 +25,8 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from tests.conftest import pin_today, point_at_frozen_book, unpin_leftovers
+from tests.conftest import (fact_sheets_before_durations, pin_today, point_at_frozen_book,
+                            unpin_leftovers)
 
 ROOT = Path(__file__).resolve().parent.parent
 Q2 = ("2026-03-31", "2026-06-30")
@@ -37,6 +38,9 @@ def book(tmp_path, monkeypatch):
     monkeypatch.setattr(reports, "_render_chart_to_png", lambda *a, **k: None)
     pin_today(monkeypatch)
     path = point_at_frozen_book(monkeypatch, tmp_path)
+    # A fresh Q2 lock here stands for the one taken at Q2's close, on the file as
+    # it stood then (#455).
+    fact_sheets_before_durations(monkeypatch, tmp_path)
     yield path
     unpin_leftovers()
 

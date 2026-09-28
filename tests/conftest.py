@@ -662,6 +662,27 @@ def point_at_frozen_book(mp: "pytest.MonkeyPatch", tmp_dir: Path) -> Path:
     return copy
 
 
+def fact_sheets_before_durations(mp: "pytest.MonkeyPatch", tmp_dir: Path) -> Path:
+    """Serve data/etf_metadata.json as it stood before #455 added the bond funds'
+    durations: its equity fact sheets only, which is what the frozen book's and the
+    demo's Q2 2026 locks hold.
+
+    For a test that takes a FRESH Q2 2026 lock, standing in for the file on file at
+    Q2's close. The committed file cannot: its durations are dated after Q2, so it
+    leaves a fresh Q2 lock's metadata pending (#389). A lock taken on this file
+    reports the undated durations, as the committed Q2 lock does."""
+    import json
+    from src import style_box
+    meta = json.loads(Path(style_box._META_PATH).read_text())
+    kept = {k: v for k, v in meta.items()
+            if not (isinstance(v, dict) and "duration_years" in v)}
+    assert len(kept) < len(meta), "premise: the committed file carries durations"
+    out = tmp_dir / "etf_metadata_before_durations.json"
+    out.write_text(json.dumps(kept))
+    mp.setattr(style_box, "_META_PATH", out)
+    return out
+
+
 # The day these renders run "as of": the day after the frozen book's frontier
 # (2026-07-20). A frozen book alone does not make a render date-independent: the
 # pages read date.today() 79 times (YTD, quarter reportability, benchmark coverage

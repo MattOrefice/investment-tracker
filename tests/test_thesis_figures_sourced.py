@@ -1,8 +1,8 @@
 """The thesis figures the #452 pass flagged: each read from the data, or dropped where the
 point stands without it and its source still supports the point.
 
-  * thesis 19's durations read src.positioning.ETF_DURATION through {{dur:}}, the table
-    the fixed-income duration metric computes with;
+  * thesis 19's durations read the ETF metadata through {{dur:}}, the figures the live
+    fixed-income duration metric computes with (dated and sourced since #455);
   * thesis 22's "$35B AUM" (Vanguard gives $38.1B for the ETF share class and $70.8B for
     the fund, August 31 2026), thesis 11's "at $10k", thesis 8's "~10x P/E vs US ~22x"
     (MSCI Emerging Markets 15.23, forward 10.07, August 31 2026) and thesis 18's
@@ -65,7 +65,7 @@ def test_the_research_page_and_the_seed_drop_the_cash_level_too():
 @pytest.mark.parametrize("book", BOOKS, ids=lambda p: p.name)
 def test_thesis_19_reads_the_durations_the_metric_uses(book, tmp_path, monkeypatch):
     import src.db as db
-    from src.positioning import ETF_DURATION
+    from src.positioning import live_fund_durations
     from src.prose_figures import render
     cells = _theses(book)[19]
     assert all("{{dur:VGIT}} vs IEF's {{dur:IEF}}" in cells[c]
@@ -78,8 +78,9 @@ def test_thesis_19_reads_the_durations_the_metric_uses(book, tmp_path, monkeypat
     monkeypatch.setattr(db, "DB_PATH", copy)
     monkeypatch.setattr(db, "_migrated_paths", set())
     monkeypatch.setattr(db, "_RUNTIME_CACHE", None)
-    assert (f"Duration is modestly shorter ({ETF_DURATION['VGIT']:.1f} years vs IEF's "
-            f"{ETF_DURATION['IEF']:.1f} years)") in render(cells["vehicle_rationale"])
+    dur = live_fund_durations()
+    assert (f"Duration is modestly shorter ({dur['VGIT']:.1f} years vs IEF's "
+            f"{dur['IEF']:.1f} years)") in render(cells["vehicle_rationale"])
 
 
 def test_an_unknown_duration_raises():

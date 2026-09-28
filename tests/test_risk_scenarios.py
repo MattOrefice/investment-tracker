@@ -203,8 +203,16 @@ def test_risk_off_rate_rally_offsets_equity():
 
 # ── Module-level duration sourcing ─────────────────────────────────────────────
 
-def test_ief_duration_sourced_from_positioning_table():
-    """IEF duration is the maintained ETF-table value (single source of truth)."""
-    from src.positioning import ETF_DURATION
-    assert IEF_MODIFIED_DURATION == ETF_DURATION["IEF"] == 7.5
+def test_ief_duration_sourced_from_the_etf_metadata():
+    """IEF duration is the ETF metadata's (single source of truth, dated since #455).
+    Re-baselined from 7.5, the undated table's figure, to iShares' 6.86 effective
+    duration as of September 25, 2026."""
+    import json
+    from src.style_box import _META_PATH
+    ief = json.loads(_META_PATH.read_text())["IEF"]
+    assert IEF_MODIFIED_DURATION == ief["duration_years"] == 6.86
+    from src.risk import scenario_methodology_notes
+    assert any("IEF duration ≈ 6.86y (the ETF metadata's effective duration, as of "
+               "September 25, 2026)" in n for n in scenario_methodology_notes()), (
+        "the page names the figure's measure and date, not the retired table")
     assert HY_SPREAD_DURATION == 3.5
