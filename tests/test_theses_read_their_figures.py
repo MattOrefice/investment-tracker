@@ -279,7 +279,10 @@ def _rationale_figures(texts, held):
 
 @pytest.mark.parametrize("book", BOOKS, ids=lambda p: p.name)
 def test_no_rationale_types_a_weight_a_fee_or_an_unsourced_figure(book):
-    assert _rationale_figures(_book_rationales(book), _book_figures(book)) == []
+    r = _book_rationales(book)
+    assert {"VOO", "SPHQ", "VGIT", "International Core", "Cash / SPAXX"} <= set(r), (
+        "premise: the scan reaches the book's fund and sleeve rationales")
+    assert _rationale_figures(r, _book_figures(book)) == []
 
 
 def test_the_seeds_that_write_the_rationales_type_none_either():
