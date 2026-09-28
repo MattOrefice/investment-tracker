@@ -194,24 +194,28 @@ def test_a_quarter_the_data_does_not_reach_is_refused_naming_the_dates(tmp_path,
         unpin_leftovers()
 
 
-@pytest.mark.parametrize("days_short, refused", [(5, False), (6, True)])
-def test_coverage_allows_the_frontier_caps_weekend_tolerance_and_no_more(days_short, refused):
-    """Two-sided: a close within QUARTER_END_COVERAGE_DAYS locks (a quarter ending on
-    a weekend or holiday), one day beyond refuses."""
-    from src.asof import QUARTER_END_COVERAGE_DAYS
-    from src.cache import _short_coverage
+@pytest.mark.parametrize("end, served, refused", [
+    # A weekday quarter end: its own close locks, the session before refuses.
+    (date(2026, 9, 30), "2026-09-30", False),
+    (date(2026, 9, 30), "2026-09-29", True),
+    # A quarter ending on a Saturday: that Friday's close locks, Thursday's does not.
+    (date(2028, 9, 30), "2028-09-29", False),
+    (date(2028, 9, 30), "2028-09-28", True),
+])
+def test_coverage_requires_the_quarters_last_session_close(end, served, refused):
+    """Two-sided, both ends (#454). This pinned a 5-day allowance
+    (QUARTER_END_COVERAGE_DAYS) until the allowance was found to lock a weekday quarter
+    on the previous session's close; it pins the rule that replaced it."""
+    from src.cache import _short_coverage, last_session_on_or_before
     from src.coverage import TickerStatus
-    assert QUARTER_END_COVERAGE_DAYS == 5
-    end = date(2026, 9, 30)
-    served = (end - timedelta(days=days_short)).isoformat()
-    statuses = [TickerStatus("VOO", True, served_through=end.isoformat()),
+    need = last_session_on_or_before(end)
+    statuses = [TickerStatus("VOO", True, served_through=need.isoformat()),
                 TickerStatus("VTV", True, served_through=served)]
     lines = _short_coverage(statuses, end)
     assert bool(lines) is refused
     if refused:
-        assert lines == [f"prices end {served}, missing "
-                         f"{(end - timedelta(days=days_short - 1)).isoformat()} to 2026-09-30 "
-                         f"for VTV"]
+        first = (date.fromisoformat(served) + timedelta(days=1)).isoformat()
+        assert lines == [f"prices end {served}, missing {first} to {need.isoformat()} for VTV"]
 
 
 def test_a_persisted_lock_is_served_as_written(book):
