@@ -12,6 +12,7 @@ st.set_page_config(page_title="Performance & Attribution", layout="wide")
 from src.coverage import unresolved_marker
 from src.asof import (
     as_of_banner_with_inception,
+    today_et,
     format_long_date,
     most_recent_reportable_quarter,
     quarter_staleness_note,
@@ -68,7 +69,7 @@ _6040_full = f"{_6040} ({naive_60_40_legs()})"
 _PORTFOLIO_ACCT = get_portfolio_account()   # single source of truth for scope + label
 _ACCT_ID        = _PORTFOLIO_ACCT["account_id"]
 INCEPTION    = get_inception_date(account_id=_ACCT_ID)
-TODAY        = date.today().isoformat()
+TODAY        = today_et().isoformat()   # New York's date, as every rendered date is (#443)
 PERIODS      = ["1M", "3M", "YTD", "1Y", "SI"]
 PERIOD_LABEL = {"1M": "1 Month", "3M": "3 Months", "YTD": "YTD",
                 "1Y": "1 Year", "SI": "Since Inception"}
@@ -344,7 +345,7 @@ with col:
             with _dc1:
                 _r_start = str(st.date_input("Start date", value=date(2025, 1, 1), key="report_start"))
             with _dc2:
-                _r_end   = str(st.date_input("End date",   value=date.today(),       key="report_end"))
+                _r_end   = str(st.date_input("End date",   value=today_et(),         key="report_end"))
             _r_qlabel = None
             _report_filename = (
                 f"Orefice_Portfolio_{_r_start.replace('-','')}_{_r_end.replace('-','')}.pdf"

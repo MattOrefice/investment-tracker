@@ -8,7 +8,7 @@ import streamlit as st
 
 st.set_page_config(page_title="Trade Log", layout="wide")
 
-from src.asof import as_of_banner
+from src.asof import as_of_banner, today_et
 from src.config import get_demo_banner_text, IS_DEMO, is_write_enabled
 from src.db import get_connection
 from src.ui_helpers import render_footer, render_page_header, write_guard_toast
@@ -383,7 +383,7 @@ def render_trade_form():
     with st.form("trade_entry_form"):
         r1, r2, r3 = st.columns(3)
         with r1:
-            trade_date = st.date_input("Date", value=dt_date.today())
+            trade_date = st.date_input("Date", value=today_et())
             action     = st.radio("Action", ["Buy", "Sell"], horizontal=True)
         with r2:
             account_name = st.selectbox("Account", [a["name"] for a in accounts])
@@ -406,7 +406,7 @@ def render_trade_form():
                 errors.append("Shares must be greater than 0.")
             if price <= 0:
                 errors.append("Price must be greater than 0.")
-            if trade_date > dt_date.today():
+            if trade_date > today_et():
                 errors.append("Date cannot be in the future.")
             if is_new and not st.session_state.get("tl_new_title", "").strip():
                 errors.append("New thesis title is required.")
@@ -745,7 +745,7 @@ with tab_theses:
                 if thesis.get("created_at"):
                     try:
                         _open_date = dt_date.fromisoformat(str(thesis["created_at"])[:10])
-                        _days_held = (dt_date.today() - _open_date).days
+                        _days_held = (today_et() - _open_date).days
                         _safe_cap(f"**Days held:** {_days_held}")
                     except Exception:
                         pass

@@ -163,7 +163,8 @@ def compute_harvest_candidates(
     if lots.empty:
         return []
 
-    sale_date  = as_of or date.today()
+    from src.asof import today_et   # the wash-sale window renders: New York's date (#443)
+    sale_date  = as_of or today_et()
     wash_start = sale_date - timedelta(days=WASH_SALE_WINDOW_DAYS)
     wash_end   = sale_date + timedelta(days=WASH_SALE_WINDOW_DAYS)
 
