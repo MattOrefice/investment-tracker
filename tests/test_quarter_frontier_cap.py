@@ -33,7 +33,6 @@ from datetime import date, timedelta
 import pytest
 
 from src.asof import (
-    QUARTER_END_COVERAGE_DAYS,
     _most_recent_completed_quarter,
     most_recent_reportable_quarter,
     quarter_staleness_note,
@@ -85,20 +84,26 @@ def test_cap_steps_back_multiple_quarters():
     ) == _Q2_2026
 
 
-def test_frontier_inside_coverage_window_still_reports_the_quarter():
-    """A quarter-end landing days after the last trading day (weekend/holiday close)
-    must NOT be capped away. 2026-06-30 with data through 2026-06-26 is 4 days —
-    inside the coverage window — so Q2 remains reportable."""
+# Migrated with #458. These pinned the 5-day allowance: data through 2026-06-26 (4 days
+# short) still reported Q2, and one day more capped it. The cap now follows the lock's
+# rule (#454): the close of the quarter's last NYSE session, and no earlier one.
+
+def test_a_weekend_quarter_end_needs_the_session_before_it_and_no_earlier():
+    """A quarter ending on a weekend must NOT be capped away by its own missing close:
+    Q3 2028 ends Saturday, September 30, so Friday's close reports it and Thursday's
+    does not."""
     assert most_recent_reportable_quarter(
-        _INCEPTION, date(2026, 7, 20), frontier="2026-06-26"
-    ) == _Q2_2026
+        _INCEPTION, date(2028, 10, 15), frontier="2028-09-29")[2] == "Q3 2028"
+    assert most_recent_reportable_quarter(
+        _INCEPTION, date(2028, 10, 15), frontier="2028-09-28")[2] == "Q2 2028"
 
 
-def test_frontier_just_outside_coverage_window_caps():
-    """One day beyond the window flips it. Pins the boundary so a silent widening
-    of QUARTER_END_COVERAGE_DAYS cannot pass unnoticed."""
-    outside = date(2026, 6, 30) - timedelta(days=QUARTER_END_COVERAGE_DAYS + 1)
-    q = most_recent_reportable_quarter(_INCEPTION, date(2026, 7, 20), frontier=outside)
+def test_a_weekday_quarter_end_needs_its_own_close():
+    """Q2 2026 ends Tuesday, June 30: that day's close reports it; Monday's, one day
+    short and inside the old allowance, does not."""
+    assert most_recent_reportable_quarter(
+        _INCEPTION, date(2026, 7, 20), frontier="2026-06-30") == _Q2_2026
+    q = most_recent_reportable_quarter(_INCEPTION, date(2026, 7, 20), frontier="2026-06-29")
     assert q[2] == "Q1 2026"
 
 
@@ -110,8 +115,8 @@ def test_no_frontier_is_uncapped_not_suppressed(monkeypatch):
     Patches the resolver rather than passing None, because None is the request to
     resolve; this pins what happens when that resolution comes back empty.
     """
-    import src.holdings as holdings
-    monkeypatch.setattr(holdings, "committed_price_frontier", lambda *a, **k: None)
+    import src.cache as cache
+    monkeypatch.setattr(cache, "lock_price_frontier", lambda *a, **k: None)
     q = most_recent_reportable_quarter(_INCEPTION, _TODAY_PAST_Q3)
     assert q is not None and q[2] == "Q3 2026"
     assert quarter_staleness_note(_INCEPTION, _TODAY_PAST_Q3) is None
