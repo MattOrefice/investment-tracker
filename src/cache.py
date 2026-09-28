@@ -13,7 +13,7 @@ from typing import NamedTuple, Optional
 import pandas as pd
 
 import src.prices as _prices_module
-from src.coverage import TickerStatus, coverage_from_statuses
+from src.coverage import TickerStatus
 from src.db import get_connection
 from src.input_lock import (
     ALL_INPUTS,
@@ -69,9 +69,25 @@ def label_to_quarter_id(period_label: str) -> Optional[str]:
 
 
 def is_quarter_complete(quarter_id: str) -> bool:
-    """Return True if today is strictly past the quarter-end date."""
+    """Return True once New York's date is strictly past the quarter-end date.
+
+    New York's date (asof.today_et), not the machine's: on the demo's UTC server
+    date.today() passes the quarter's last day at 8 PM ET, four hours before New
+    York's quarter ends, and a lock taken then was measured freezing Q2 on June 29's
+    closes (#454)."""
+    from src.asof import today_et
     end = _parse_quarter_end(quarter_id)
-    return end is not None and date.today() > end
+    return end is not None and today_et() > end
+
+
+def last_session_on_or_before(d: date) -> date:
+    """The last NYSE session on or before ``d``, by the static holiday table
+    (demo_refresh.is_session, #412). A quarter that ends on a weekend or a holiday is
+    covered by the session before it, and by no earlier one (#454)."""
+    from src.demo_refresh import is_session
+    while not is_session(d):
+        d -= timedelta(days=1)
+    return d
 
 
 class SnapshotFrames(NamedTuple):
@@ -249,8 +265,9 @@ def _capture_inputs(end: date, tickers: "list[str]",
     Each input as its section's reader returns it, cut at the quarter's last day
     (#371's rule, applied to every input). An input whose data stops short of the
     quarter is PENDING instead: the French factors (and momentum) when they end
-    more than QUARTER_END_COVERAGE_DAYS before the quarter does, and CAPE when it has
-    no reading for the quarter's last month. French publishes about a month late,
+    more than QUARTER_END_COVERAGE_DAYS before the quarter does, HYG without the close
+    of the quarter's last NYSE session (the price gate's rule, #454), and CAPE when
+    it has no reading for the quarter's last month. French publishes about a month late,
     so on October 1 a Q3 lock holds prices and CAPE while its factor sections wait.
 
     HYG, the FI regression's credit proxy, comes from the price layer with the price
@@ -292,7 +309,7 @@ def _capture_inputs(end: date, tickers: "list[str]",
     if HYG in want:
         s = _hyg_through(end)
         last = s.index.max().date() if len(s) else None
-        gate(HYG, s, last, last is not None and last >= floor,
+        gate(HYG, s, last, last is not None and last >= last_session_on_or_before(end),
              lambda x: _enc_series(x, "datetime"))
     if CAPE in want:
         s = shiller.get_cape_series()
@@ -345,7 +362,6 @@ def restate_short_hyg(quarter_id: str, restated_on: date) -> "tuple[str, str] | 
     floor, and records the old end date so the report can say what it corrected.
     Every other input, the prices and the capture time are left as they are. Returns
     (old end, new end), or None when the lock's HYG already covered the quarter."""
-    from src.asof import QUARTER_END_COVERAGE_DAYS
     with get_connection() as conn:
         row = conn.execute(
             "SELECT snapshot_data, snapshot_date, captured_at FROM quarter_snapshots "
@@ -355,7 +371,7 @@ def restate_short_hyg(quarter_id: str, restated_on: date) -> "tuple[str, str] | 
     blob = json.loads(row["snapshot_data"])
     old = (blob.get("inputs_through") or {}).get(HYG)
     end = date.fromisoformat(row["snapshot_date"])
-    floor = end - timedelta(days=QUARTER_END_COVERAGE_DAYS)
+    floor = last_session_on_or_before(end)      # the price gate's rule (#454)
     if old is None or date.fromisoformat(old) >= floor:
         return None
     s = _hyg_through(end)
@@ -618,24 +634,26 @@ class LockCoverageError(ValueError):
 def _short_coverage(statuses: "list[TickerStatus]", end: date) -> "list[str]":
     """One line per distinct gap, naming its missing dates and every ticker in it.
 
+    THE RULE (#454): every ticker the lock covers must have the close of the
+    quarter's last NYSE session (last_session_on_or_before). It used to allow prices
+    ending up to QUARTER_END_COVERAGE_DAYS short, meant for a quarter ending on a
+    weekend or holiday; on a weekday quarter end that let a lock taken before the
+    last close was stored freeze the quarter on the previous session's, measured on
+    Q2 2026 (SPY 741.00 against 746.77). A weekend or holiday end needs the session
+    before it, and no earlier one.
+
     Grouped because a failed fetch leaves every ticker short by the same dates, and
-    29 copies of one sentence bury the tickers. Read through the coverage record:
-    frontier_served is the MIN over what was served, so stale_days beyond the
-    tolerance means at least one ticker is short. Empty when the lock may proceed."""
-    from src.asof import QUARTER_END_COVERAGE_DAYS
-    cov = coverage_from_statuses(statuses, end.isoformat())
-    if cov.stale_days is None or cov.stale_days <= QUARTER_END_COVERAGE_DAYS:
-        return []
-    floor = end - timedelta(days=QUARTER_END_COVERAGE_DAYS)
+    29 copies of one sentence bury the tickers. Empty when the lock may proceed."""
+    need = last_session_on_or_before(end)
     by_last: dict[str, list[str]] = {}
     for s in statuses:
-        if s.resolved and s.served_through and date.fromisoformat(s.served_through) < floor:
+        if s.resolved and s.served_through and date.fromisoformat(s.served_through) < need:
             by_last.setdefault(s.served_through, []).append(s.ticker)
     lines = []
     for last in sorted(by_last):
         first_missing = date.fromisoformat(last) + timedelta(days=1)
         lines.append(f"prices end {last}, missing {first_missing.isoformat()} to "
-                     f"{end.isoformat()} for {', '.join(sorted(by_last[last]))}")
+                     f"{need.isoformat()} for {', '.join(sorted(by_last[last]))}")
     return lines
 
 
@@ -651,9 +669,9 @@ def capture_quarter_snapshot(quarter_id: str) -> tuple:
     whenever a later ex-date arrived, and depended on when it was captured. With it,
     a lock is the same whenever it is computed and whatever is fetched afterwards.
 
-    COVERAGE, OR NO LOCK. A ticker whose prices stop short of the quarter's end,
-    beyond QUARTER_END_COVERAGE_DAYS (the frontier cap's own allowance for a weekend
-    or holiday close), means the data does not reach the quarter yet: after
+    COVERAGE, OR NO LOCK. A ticker without the close of the quarter's last NYSE
+    session (#454; a weekend or holiday end needs the session before it) means the
+    data does not reach the quarter yet: after
     September 30, a container whose fetch failed would otherwise lock Q3 on prices
     ending July 20. That REFUSES with LockCoverageError, naming each short ticker's
     missing dates, and persists nothing.
