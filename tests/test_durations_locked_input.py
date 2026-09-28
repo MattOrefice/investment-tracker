@@ -36,8 +36,14 @@ BOOKS = [ROOT / "data" / "demo.db", FROZEN_BOOK]
 QUARTERS = ("2025Q2", "2025Q3", "2025Q4", "2026Q1", "2026Q2")
 BOND_FUNDS = ("VGIT", "SCHP", "IEF", "TIP", "BIL")
 Q2 = ("2026-03-31", "2026-06-30")
+# Every committed lock predates #455 and #462, so its sentence names both (#462).
 SENTENCE = ("This quarter's fixed-income durations came from an undated table later "
-            "found out of date.")
+            "found out of date, and the Bloomberg US Agg duration they were compared "
+            "with was undated too.")
+FUNDS_ONLY = ("This quarter's fixed-income durations came from an undated table later "
+              "found out of date.")
+AGG_ONLY = ("This quarter's Bloomberg US Agg duration, which its fixed-income "
+            "durations were compared with, was undated.")
 # The frozen book's Q2 2026 report, as it was reported before the move.
 Q2_DURATION_LINE = (
     "Fixed Income sleeve (Core FI + TIPS) effective duration: 6.0 yrs vs 6.0 yrs for the "
@@ -123,9 +129,11 @@ def test_the_performance_caption_names_each_funds_figure_measure_and_date():
     from src.positioning import live_duration_sources
     assert live_duration_sources() == (
         "VGIT 4.9 yrs, average duration as of August 31, 2026; "
-        "SCHP 6.3 yrs, weighted average duration as of June 30, 2026")
+        "SCHP 6.3 yrs, weighted average duration as of June 30, 2026; "
+        "AGG 5.7 yrs, effective duration as of September 25, 2026")   # #462
     page = (ROOT / "pages" / "2_Performance.py").read_text(encoding="utf-8")
-    assert "Durations from each fund's issuer: {live_duration_sources()}." in page
+    assert ("Durations from each fund's issuer, and the benchmark's from AGG's: "
+            in page and "{live_duration_sources()}." in page)
     assert "5.5 yrs" not in page and "Q1 2026" not in page, "the retired table's caption"
 
 
@@ -183,7 +191,14 @@ def test_the_sentence_only_where_the_undated_table_was_used(frozen):
     holding = snap._replace(inputs={**snap.inputs, ETF_METADATA: meta})
     with snapshot_price_context(holding):
         assert fund_durations() == {"VGIT": 4.9}
-    assert undated_durations_note(holding) is None
+    # The funds dated, the Agg not (#462): the sentence names the Agg alone.
+    assert undated_durations_note(holding) == AGG_ONLY
+    both = dict(meta, AGG={"duration_years": 5.7, "as_of": "2026-06-15"})
+    assert undated_durations_note(
+        snap._replace(inputs={**snap.inputs, ETF_METADATA: both})) is None
+    agg_only = dict(snap.inputs[ETF_METADATA], AGG={"duration_years": 5.7, "as_of": "2026-06-15"})
+    assert undated_durations_note(
+        snap._replace(inputs={**snap.inputs, ETF_METADATA: agg_only})) == FUNDS_ONLY
 
     waiting = snap._replace(
         inputs={k: v for k, v in snap.inputs.items() if k != ETF_METADATA},

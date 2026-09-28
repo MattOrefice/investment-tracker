@@ -54,5 +54,11 @@
     "duration_measure": "option-adjusted duration",
     "duration_source": "State Street SPDR fund page, ssga.com (BIL), read 2026-09-28",
     "as_of": "2026-09-25"
+  },
+  "AGG": {
+    "duration_years": 5.7,
+    "duration_measure": "effective duration",
+    "duration_source": "iShares fund page, ishares.com (AGG, the iShares Core US Aggregate Bond ETF, which tracks the Bloomberg US Aggregate Bond Index), read 2026-09-28. AGG's figure, not the index's: Bloomberg's index page returned HTTP 403",
+    "as_of": "2026-09-25"
   }
 }

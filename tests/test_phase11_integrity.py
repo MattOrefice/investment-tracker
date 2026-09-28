@@ -367,6 +367,7 @@ def test_prose_duration_in_line_with_benchmark():
     mock_dur = {
         "fi_sleeve_duration":    6.0,
         "agg_benchmark":         6.0,   # identical → diff = 0.0
+        "agg_name":              "the Bloomberg US Agg",
         "fi_weight_pct":         15.0,
         "cash_weight_pct":       3.0,
         "fi_weight_incl_cash_pct": 18.0,
@@ -395,6 +396,7 @@ def test_prose_duration_above_benchmark():
     mock_dur = {
         "fi_sleeve_duration":    7.0,
         "agg_benchmark":         6.0,   # diff = 1.0 → 'above benchmark by 1.0 yrs'
+        "agg_name":              "the Bloomberg US Agg",
         "fi_weight_pct":         15.0,
         "cash_weight_pct":       3.0,
         "fi_weight_incl_cash_pct": 18.0,
@@ -420,6 +422,7 @@ def test_prose_duration_below_benchmark():
     mock_dur = {
         "fi_sleeve_duration":    5.0,
         "agg_benchmark":         6.5,   # diff = 1.5 → 'below benchmark by 1.5 yrs'
+        "agg_name":              "the Bloomberg US Agg",
         "fi_weight_pct":         15.0,
         "cash_weight_pct":       3.0,
         "fi_weight_incl_cash_pct": 18.0,

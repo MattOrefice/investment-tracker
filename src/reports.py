@@ -1430,6 +1430,7 @@ def _build_positioning_section(end_date: str, style_pending: Optional[str] = Non
         dur       = get_effective_duration(end_date)
         fi_dur    = dur["fi_sleeve_duration"]
         agg_dur   = dur["agg_benchmark"]
+        agg_name  = dur["agg_name"]
         fi_wt     = dur["fi_weight_pct"]
         cash_wt   = dur["cash_weight_pct"]
         dur_diff  = abs(fi_dur - agg_dur)
@@ -1440,7 +1441,7 @@ def _build_positioning_section(end_date: str, style_pending: Optional[str] = Non
             dur_vs = f"{vs_agg} benchmark by {dur_diff:.1f} yrs"
         duration_line = (
             f"Fixed Income sleeve (Core FI + TIPS) effective duration: {fi_dur} yrs "
-            f"vs {agg_dur} yrs for the Bloomberg US Agg ({dur_vs}). "
+            f"vs {agg_dur} yrs for {agg_name} ({dur_vs}). "
             f"FI weight: {fi_wt}% of portfolio. "
             f"Cash/SPAXX ({cash_wt}%) is excluded: it is not a duration-bearing asset, and the "
             f"Bloomberg Agg excludes it."
