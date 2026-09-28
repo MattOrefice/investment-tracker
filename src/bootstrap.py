@@ -39,6 +39,7 @@ from __future__ import annotations
 import importlib.util
 import logging
 import sqlite3
+import threading
 from pathlib import Path
 from typing import NamedTuple
 
@@ -57,8 +58,10 @@ _HOUSEHOLD_CSV = _ROOT / "data" / "seed" / "securities_household.csv"
 
 # Paths already bootstrapped in THIS process — skips the (idempotent but non-trivial)
 # migration+seed pass on every Streamlit rerun. Cleared by tests exercising DB-level
-# idempotency. Not a correctness guard: the bootstrap is safe to run repeatedly.
+# idempotency. The bootstrap is safe to run repeatedly, but NOT concurrently (#434):
+# _BOOTSTRAP_LOCK makes it run once per database however many sessions arrive together.
 _bootstrapped: set[str] = set()
+_BOOTSTRAP_LOCK = threading.Lock()
 
 
 def _load_module(path: Path):
@@ -259,12 +262,30 @@ def bootstrap_personal_db() -> dict:
     (no duplicate rows, no re-migration errors). Operates on ``src.db.DB_PATH``
     (read live so tests can monkeypatch it); the seed helpers that route through
     ``get_connection()`` target the same path.
+
+    ONCE PER DATABASE, UNDER A LOCK (#434). Two sessions whose first runs overlap both
+    reached the body, and 9 to 10 of 12 such starts failed (measured with two threads
+    released together): two migration tools repoint the process-wide DB_PATH at a str
+    while they run, and the other session's initialize_db() read `.parent` on it. The
+    second session now waits for the first's bootstrap, then finds it done, as
+    src.db._migrate_once does for the first connection's migration (#429).
     """
     path = Path(_db.DB_PATH)
     if str(path) in _bootstrapped:
-        return {"migrations": [], "db_path": str(path), "skipped": True,
-                "unmapped_holdings": unmapped_holdings(path)}
+        return _skipped(path)
+    with _BOOTSTRAP_LOCK:
+        if str(path) in _bootstrapped:
+            return _skipped(path)
+        return _bootstrap(path)
 
+
+def _skipped(path: Path) -> dict:
+    return {"migrations": [], "db_path": str(path), "skipped": True,
+            "unmapped_holdings": unmapped_holdings(path)}
+
+
+def _bootstrap(path: Path) -> dict:
+    """bootstrap_personal_db's body, run under its lock."""
     from src import seed_saa, seed_securities
     from src.seed.securities_loader import load_household_securities
     from src.seed.fund_compositions import seed_fund_compositions
