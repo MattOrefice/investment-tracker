@@ -11,7 +11,7 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
-from src.macro import classify_regime, get_series
+from src.macro import FREDStillFetching, classify_regime, get_series
 from src.prices import get_prices, total_return_series
 
 # ── Constants ────────────────────────────────────────────────────────────────
@@ -628,10 +628,23 @@ def _build_regime_series(start_date: str, end_date: str) -> pd.Series:
     Vectorized daily regime label series from FRED monthly/daily data.
     Returns a Series indexed by pd.Timestamp with string regime labels.
     """
+    # Past FRED's wait (#435) a series is its stored copy, and its fetch date rides on
+    # the result (attrs["fred_stored"]) so the page can say which copies it used.
+    stored: dict[str, str] = {}
+
+    def _read(series_id: str, start: str) -> pd.Series:
+        try:
+            return get_series(series_id, start_date=start).dropna()
+        except FREDStillFetching as exc:
+            if exc.stored is None:
+                raise
+            stored[series_id] = exc.stored_on
+            return exc.stored.dropna()
+
     try:
-        usrec  = get_series("USREC",  start_date="1945-01-01").dropna()
-        t10y2y = get_series("T10Y2Y", start_date="1976-06-01").dropna()
-        unrate = get_series("UNRATE", start_date="1948-01-01").dropna()
+        usrec  = _read("USREC",  "1945-01-01")
+        t10y2y = _read("T10Y2Y", "1976-06-01")
+        unrate = _read("UNRATE", "1948-01-01")
     except Exception:
         return pd.Series(dtype=str)
 
@@ -655,6 +668,7 @@ def _build_regime_series(start_date: str, end_date: str) -> pd.Series:
 
     labels[df["usrec"].notna() & (df["usrec"] >= 0.5)] = "Recession"
 
+    labels.attrs["fred_stored"] = stored
     return labels
 
 
@@ -676,6 +690,7 @@ def compute_regime_conditional_correlation(
     regimes = _build_regime_series(start_date, end)
     if regimes.empty:
         return pd.DataFrame(columns=["Regime", "Correlation", "N Obs"])
+    stored = dict(regimes.attrs.get("fred_stored", {}))
 
     reg_aligned = regimes.reindex(common).dropna()
     cand_r = cand.reindex(reg_aligned.index)
@@ -688,7 +703,9 @@ def compute_regime_conditional_correlation(
         corr = float(cand_r[mask].corr(ref_r[mask])) if n >= 10 else float("nan")
         rows.append({"Regime": label, "Correlation": corr, "N Obs": n})
 
-    return pd.DataFrame(rows)
+    out = pd.DataFrame(rows)
+    out.attrs["fred_stored"] = stored
+    return out
 
 
 # ── Aggregate rolling correlation over time (Phase 31) ─────────────────────────

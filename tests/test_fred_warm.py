@@ -85,6 +85,7 @@ def warm_on(monkeypatch):
     monkeypatch.setenv("DEMO_FRED_WARM", "1")
     monkeypatch.setattr(macro, "_WARM_THREAD", None)
     monkeypatch.setattr(macro, "_WARM_DAY", None)
+    monkeypatch.setattr(macro, "_STALLED_WARM", None)
     monkeypatch.setattr(macro, "_SERIES_LOCKS", {})
     monkeypatch.setattr(macro, "_FAILED", {})
     yield
