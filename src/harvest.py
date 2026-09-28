@@ -33,7 +33,7 @@ REPLACEMENT_MAP: dict[str, tuple[str | None, str, str]] = {
     ),
     "VTV": (
         "IUSV",
-        "Large-cap value via iShares Russell 1000 Value. Different index provider and "
+        "Large-cap value via iShares Core S&P U.S. Value. Different index provider and "
         "construction methodology from VTV's CRSP multi-metric screen.",
         "clean",
     ),
@@ -93,7 +93,7 @@ REPLACEMENT_MAP: dict[str, tuple[str | None, str, str]] = {
         "VTIP",
         "TIPS via Vanguard Short-Term Inflation-Protected Securities. Different issuer; "
         "shorter duration (~2.5 years vs ~7 years), a modest duration shift accepted "
-        "for a 6% sleeve.",
+        "for a {{w:TIPS}} sleeve.",
         "moderate",
     ),
     "VNQ": (
