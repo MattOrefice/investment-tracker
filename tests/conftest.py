@@ -662,24 +662,23 @@ def point_at_frozen_book(mp: "pytest.MonkeyPatch", tmp_dir: Path) -> Path:
     return copy
 
 
-def fact_sheets_before_durations(mp: "pytest.MonkeyPatch", tmp_dir: Path) -> Path:
-    """Serve data/etf_metadata.json as it stood before #455 added the bond funds'
-    durations: its equity fact sheets only, which is what the frozen book's and the
-    demo's Q2 2026 locks hold.
-
-    For a test that takes a FRESH Q2 2026 lock, standing in for the file on file at
-    Q2's close. The committed file cannot: its durations are dated after Q2, so it
-    leaves a fresh Q2 lock's metadata pending (#389). A lock taken on this file
-    reports the undated durations, as the committed Q2 lock does."""
+def metadata_dated_inside_q2(mp: "pytest.MonkeyPatch", tmp_dir: Path) -> Path:
+    """Serve data/etf_metadata.json with every entry's as_of set to April 15, 2026, for a
+    test that takes a FRESH Q2 2026 lock: a file such a lock takes. The committed file
+    cannot stand in, since its durations are dated after Q2 and leave a fresh Q2 lock's
+    metadata pending (#389). The dates are synthetic; the figures are the committed ones.
+    (It served the pre-#455 equity fact sheets until the style box was withdrawn, #468.)"""
     import json
-    from src import style_box
-    meta = json.loads(Path(style_box._META_PATH).read_text())
-    kept = {k: v for k, v in meta.items()
-            if not (isinstance(v, dict) and "duration_years" in v)}
-    assert len(kept) < len(meta), "premise: the committed file carries durations"
-    out = tmp_dir / "etf_metadata_before_durations.json"
-    out.write_text(json.dumps(kept))
-    mp.setattr(style_box, "_META_PATH", out)
+    from src import etf_metadata
+    meta = json.loads(Path(etf_metadata.META_PATH).read_text())
+    entries = [v for v in meta.values() if isinstance(v, dict)]
+    assert entries and all("duration_years" in v for v in entries), (
+        "premise: the committed file carries durations only")
+    for v in entries:
+        v["as_of"] = "2026-04-15"
+    out = tmp_dir / "etf_metadata_inside_q2.json"
+    out.write_text(json.dumps(meta))
+    mp.setattr(etf_metadata, "META_PATH", out)
     return out
 
 

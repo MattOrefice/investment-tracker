@@ -31,7 +31,7 @@ FF5_DEVELOPED_EXUS = "ff5_developed_exus"  # factors.load_factors("developed_exu
 UMD = "umd"                            # factors.load_umd_factor()
 HYG = "hyg"                            # factors.regress_fi_sleeve's credit proxy
 CAPE = "cape"                          # shiller.get_cape_series()
-ETF_METADATA = "etf_metadata"          # style_box._load_metadata()
+ETF_METADATA = "etf_metadata"          # etf_metadata.load_metadata()
 DIVIDENDS = "dividends"                # prices.get_dividends(), per ticker
 
 ALL_INPUTS = (FF5_US, FF5_DEVELOPED_EXUS, UMD, HYG, CAPE, ETF_METADATA, DIVIDENDS)

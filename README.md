@@ -69,10 +69,6 @@ Portfolio excess returns are regressed on the custom SAA-blended benchmark retur
 
 The Risk page decomposes portfolio risk in three parts. Factor decomposition regresses daily portfolio excess returns since inception on five factors simultaneously — market, size, and value (Fama-French), plus rates (IEF excess return) and credit (HYG − IEF spread) as ETF-based proxies for the term and credit premia — with Newey-West HAC standard errors, so each beta is a marginal exposure controlling for the other four. Scenario stress-testing applies those same betas to five hypothetical factor shocks, translating yield and spread moves into factor returns through duration, producing instantaneous linear-approximation impact estimates rather than forecasts. Risk contribution decomposes total portfolio volatility by sleeve via Euler (marginal-contribution-to-risk) decomposition on realized sample covariance, so each sleeve's contribution to risk can be compared against its capital weight — the two diverge whenever volatility and correlation differ across sleeves. All three sections share a single insufficient-history gate: with too few observations to estimate the factor betas, all three show an explicit empty state rather than unstable output.
 
-### Equity Style Box
-
-The style box approximates Morningstar's factor placement using four trailing valuation metrics (book-to-price, earnings-to-price, dividend yield, cash-flow-to-price), each normalized as a fractional deviation from SPY. Size is log₁₀(weighted-average market cap in $B), calibrated so SPY anchors at the Large/Blend center. Coverage is US equity ETFs only (VOO, VTV, SPHQ, AVUV); non-US holdings are excluded with a disclosure note referencing regional style box methodology.
-
 ### Asset Evaluation Framework
 
 Evaluates prospective asset additions using marginal Sharpe contribution, drawdown sensitivity, and correlation analysis relative to the existing SAA sleeves. The framework separates sample-period arithmetic (unreliable for volatile, regime-shifting assets) from forward-looking properties, and produces a structured decision conclusion with explicit arguments for and against inclusion. Bitcoin is the current case study.
@@ -124,7 +120,7 @@ Core logic resides in `src/` with no Streamlit imports, making it fully unit-tes
 src/
   attribution.py        Brinson-Fachler decomposition, two-stage reconciliation
   benchmarks.py         SAA-blended benchmark, per-sleeve benchmark series
-  factors.py            FF5 regressions, benchmark-relative regression, style box
+  factors.py            FF5 regressions, benchmark-relative regression
   holdings.py           Net shares, portfolio value series, sleeve weights
   macro.py              FRED integration (yield curve, Fed Funds, HY OAS, USREC)
   prices.py             Yahoo Finance fetcher with SQLite cache
@@ -136,7 +132,7 @@ pages/
   1_SAA.py              SAA allocation chart, per-sleeve rationale
   2_Performance.py      TWR, BF attribution, cumulative chart, drift, FI duration, PDF export
   3_Macro.py            CAPE, yield curve, Fed Funds, HY OAS, regime classifier
-  4_Factor_Profile.py   Per-sleeve FF5 regressions, benchmark-relative alpha, equity style box
+  4_Factor_Profile.py   Per-sleeve FF5 regressions, benchmark-relative alpha
   5_Asset_Evaluation.py  Bitcoin case study: marginal Sharpe, drawdown, decision framework
   6_Benchmark_Attribution.py  Custom-benchmark regression
   7_Risk.py              Factor-risk decomposition, scenario stress-testing, risk contribution

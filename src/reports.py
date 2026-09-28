@@ -32,12 +32,12 @@ from src.cache import (
     benchmark_construction_note,
     capture_quarter_snapshot,
     complete_quarter_inputs,
-    fact_sheet_dated_note,
     get_quarter_snapshot,
     input_corrections_note,
     inputs_restatement_note,
     lot_rebuild_note,
     restatement_note,
+    style_box_withdrawn_note,
     is_quarter_complete,
     undated_durations_note,
     label_to_quarter_id,
@@ -64,11 +64,7 @@ from src.holdings import (
     get_sleeve_weights_on_date,
 )
 from src.macro import FREDStillFetching, compute_cape_implied_return, get_series, percentile
-from src.positioning import (
-    build_style_box_figure, get_effective_duration,
-    get_non_us_equity_data, get_style_box_data,
-)
-from src.style_box import STYLE_BOX_CAPTION
+from src.positioning import get_effective_duration
 from src.input_lock import ETF_METADATA, FF5_DEVELOPED_EXUS, FF5_US, HYG, UMD
 from src.returns import period_return, twr_daily_linked
 from src.shiller import current_cape, get_cape_series
@@ -1411,19 +1407,13 @@ def _build_thesis_section(start_date: str, end_date: str, *, account_id: int) ->
     return {"theses": theses, "trades": trades, "drip_summary": drip_summary}
 
 
-def _build_positioning_section(end_date: str, style_pending: Optional[str] = None,
-                               style_dated: Optional[str] = None,
+def _build_positioning_section(end_date: str,
                                duration_pending: Optional[str] = None) -> dict:
-    """Build the positioning section (duration + style box) from live portfolio state.
+    """Build the positioning section (the FI duration line) from live portfolio state.
 
-    ``style_pending`` is the pending line for a quarter whose ETF fact-sheet data did
-    not cover it (#386): the style box renders it instead of the chart, and the rest
-    of the section, built from prices, locks as usual. ``style_dated`` is the line for
-    a lock whose fact sheets are dated after its quarter (#388), shown with the chart.
-    ``duration_pending`` is the same wait for the fund durations, which live in that
-    file since #455: the duration line renders it instead of a figure."""
-    style_data = None if style_pending else get_style_box_data(end_date)
-    non_us     = get_non_us_equity_data(end_date)
+    ``duration_pending`` is the pending line for a quarter whose ETF metadata (the fund
+    durations, since #455) did not cover it (#386): the duration line renders it instead
+    of a figure. The equity style box this section also built was withdrawn (#468)."""
     if duration_pending:
         duration_line = duration_pending
     else:
@@ -1446,15 +1436,7 @@ def _build_positioning_section(end_date: str, style_pending: Optional[str] = Non
             f"Cash/SPAXX ({cash_wt}%) is excluded: it is not a duration-bearing asset, and the "
             f"Bloomberg Agg excludes it."
         )
-    style_box_b64 = _chart_b64(build_style_box_figure(style_data), 520, 300) if style_data else None
-    return {
-        "duration_line":     duration_line,
-        "style_box_b64":     style_box_b64,
-        "style_box_caption": STYLE_BOX_CAPTION,
-        "style_box_pending": style_pending,
-        "style_box_dated":   style_dated if style_box_b64 else None,
-        "non_us":            non_us,
-    }
+    return {"duration_line": duration_line}
 
 
 # Moved to src/asset_evaluation.py so the Asset Evaluation page can share them
@@ -2122,7 +2104,6 @@ def generate_quarterly_report_bytes(
     # the date its data ends, rather than locking on part of the quarter (#382).
     factor_pending = _pending_note(snap_df, "factor")
     bench_pending = _pending_note(snap_df, "benchmark")
-    style_pending = _pending_note(snap_df, "positioning", subject="style box")
     duration_pending = _pending_note(snap_df, "positioning", subject="duration figure")
 
     ctx = snapshot_price_context(snap_df) if snap_df is not None else nullcontext()
@@ -2131,8 +2112,7 @@ def generate_quarterly_report_bytes(
         hold_data        = _build_holdings_section(end_date)              if has_trades else {"rows": [], "chart_b64": None}
         perf_data        = _build_performance_section(start_date, end_date) if has_trades else None
         attr_data        = _build_attribution_section(start_date, end_date) if has_trades else None
-        pos_data         = (_build_positioning_section(end_date, style_pending=style_pending,
-                                                       style_dated=fact_sheet_dated_note(snap_df),
+        pos_data         = (_build_positioning_section(end_date,
                                                        duration_pending=duration_pending)
                             if has_trades else None)
         factor_data      = (_build_factor_section(end_date)
@@ -2188,6 +2168,8 @@ def generate_quarterly_report_bytes(
         input_corrections_note = input_corrections_note(snap_df),
         # The book's DRIP lots were rebuilt after this quarter locked (#406 item 12).
         lot_rebuild_note     = lot_rebuild_note(snap_df),
+        # The equity style box was withdrawn and this lock restated (#468).
+        style_box_withdrawn_note = style_box_withdrawn_note(snap_df),
         # A lock from before #383 states the construction its benchmark figures used;
         # every other report states the rule in its methodology.
         benchmark_construction_note = benchmark_construction_note(snap_df),

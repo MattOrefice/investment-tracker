@@ -61,16 +61,6 @@ def test_a_stale_cache_offline_still_prices_the_book(use_demo_db, offline):
         "the served frontier must be the stored price's date, so the banner shows the lag")
 
 
-def test_a_stale_cache_offline_still_values_positioning(use_demo_db, offline):
-    """The positioning page's market values: the same look-back, the same stale case."""
-    from src.positioning import _portfolio_market_values
-    far = (date.fromisoformat(_newest_stored()) + timedelta(days=60)).isoformat()
-    mv, total = _portfolio_market_values(far)
-    priced = {t: v for t, v in mv.items() if t != "SPAXX"}
-    assert priced and all(v > 0 for v in priced.values()), (
-        f"positions valued at zero offline on a stale cache: {mv}")
-
-
 def test_a_stale_cache_offline_still_prices_the_lots(use_demo_db, offline):
     """The tax-lot inventory's current prices: the same look-back, the same stale case."""
     from src.tax_lots import get_lot_inventory, taxable_accounts

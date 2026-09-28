@@ -208,8 +208,8 @@ def test_ief_duration_sourced_from_the_etf_metadata():
     Re-baselined from 7.5, the undated table's figure, to iShares' 6.86 effective
     duration as of September 25, 2026."""
     import json
-    from src.style_box import _META_PATH
-    ief = json.loads(_META_PATH.read_text())["IEF"]
+    from src.etf_metadata import META_PATH
+    ief = json.loads(META_PATH.read_text())["IEF"]
     assert IEF_MODIFIED_DURATION == ief["duration_years"] == 6.86
     from src.risk import scenario_methodology_notes
     assert any("IEF duration ≈ 6.86y (the ETF metadata's effective duration, as of "

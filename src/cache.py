@@ -327,10 +327,10 @@ def _capture_inputs(end: date, tickers: "list[str]",
 
     HYG, the FI regression's credit proxy, comes from the price layer with the price
     rule (dividends through the quarter's last day) and the French gate (#386). The
-    ETF metadata is a hand-kept file of fact-sheet figures, each stamped with its
-    source date; it covers a quarter when every stamp falls inside the quarter, so a
-    file nobody has updated renders the style box as pending rather than locking."""
-    from src import factors, shiller, style_box
+    ETF metadata is a hand-kept file of fund durations, each stamped with its source
+    date; it covers a quarter when every stamp falls inside the quarter, so a file
+    nobody has updated renders the duration line as pending rather than locking."""
+    from src import etf_metadata, factors, shiller
     from src.asof import QUARTER_END_COVERAGE_DAYS
 
     want = set(only or ALL_INPUTS)
@@ -373,7 +373,7 @@ def _capture_inputs(end: date, tickers: "list[str]",
         gate(CAPE, s, last, last is not None and last >= date(end.year, end.month, 1),
              lambda x: _enc_series(x, "datetime"))
     if ETF_METADATA in want:
-        meta = style_box._load_metadata()
+        meta = etf_metadata.load_metadata()
         stamps = sorted(date.fromisoformat(v["as_of"]) for v in meta.values()
                         if isinstance(v, dict) and v.get("as_of"))
         q_start = date(end.year, end.month - 2, 1)
@@ -475,32 +475,6 @@ def benchmark_construction_note(snap: "SnapshotFrames | None") -> "str | None":
     )
 
 
-def fact_sheet_dated_note(snap: "SnapshotFrames | None") -> "str | None":
-    """The style-box line for a lock whose ETF fact sheets are dated after its quarter
-    ended, or None (#388, leave and disclose).
-
-    #389's gate keeps a lock from Q3 2026 from taking such a file, so this fires only on
-    a lock taken before it: the demo's four quarters from Q2 2025 to Q1 2026 hold fact
-    sheets dated April 15, 2026, and no earlier ones are on file to restate them."""
-    meta = ((getattr(snap, "inputs", None) or {}).get(ETF_METADATA)
-            if snap is not None else None)
-    q_end = getattr(snap, "quarter_end", None) if snap is not None else None
-    if not meta or not q_end:
-        return None
-    end = date.fromisoformat(q_end)
-    late = sorted({date.fromisoformat(v["as_of"]) for v in meta.values()
-                   if isinstance(v, dict) and v.get("as_of")
-                   and date.fromisoformat(v["as_of"]) > end})
-    if not late:
-        return None
-
-    def _long(d: date) -> str:
-        return f"{d.strftime('%B')} {d.day}, {d.year}"
-
-    when = _long(late[0]) if len(late) == 1 else f"{_long(late[0])} to {_long(late[-1])}"
-    return f"The style box uses ETF fact sheets dated {when}, after this quarter ended."
-
-
 def input_corrections_note(snap: "SnapshotFrames | None") -> "str | None":
     """The cover line for a lock whose HYG input was corrected (#386), or None."""
     fix = ((getattr(snap, "input_corrections", None) or {}).get(HYG)
@@ -546,6 +520,21 @@ def record_lot_rebuild(quarter_id: str, restated_on: date) -> bool:
             raise RuntimeError(f"recording {quarter_id}'s lot rebuild matched "
                                f"{cur.rowcount} rows, expected exactly 1")
     return True
+
+
+def style_box_withdrawn_note(snap: "SnapshotFrames | None") -> "str | None":
+    """The cover line for a lock restated when the equity style box was withdrawn
+    (#468), or None. Its ETF metadata held the style box's fact-sheet figures, which
+    had no recorded source; they were removed from the lock and the removal recorded
+    under input_corrections, as #386 recorded HYG's."""
+    fix = ((getattr(snap, "input_corrections", None) or {}).get(ETF_METADATA)
+           if snap is not None else None)
+    if not fix:
+        return None
+    on = date.fromisoformat(fix["restated_on"])
+    return (f"Restated {on.strftime('%B')} {on.day}, {on.year} to correct an error. The "
+            f"equity style box is withdrawn: its fact-sheet figures had no recorded "
+            f"source.")
 
 
 def lot_rebuild_note(snap: "SnapshotFrames | None") -> "str | None":
