@@ -2010,6 +2010,21 @@ _PENDING_WORDS = {
 }
 
 
+def _metadata_clause(pending_date: str, quarter_end: str) -> str:
+    """The ETF fact-sheet file's waiting clause (#463): the date that disqualifies it,
+    and which way. The lock records the newest date when the file is too new for the
+    quarter and the oldest when it is too old."""
+    d, end = date.fromisoformat(pending_date), date.fromisoformat(quarter_end)
+    start = date(end.year, end.month - 2, 1)
+    if d > end:
+        return (f"the newest ETF fact-sheet data on file is dated {format_long_date(d)}, "
+                f"after the quarter ended {format_long_date(end)}")
+    if d < start:
+        return (f"the oldest ETF fact-sheet data on file is dated {format_long_date(d)}, "
+                f"before the quarter began {format_long_date(start)}")
+    return f"the ETF fact-sheet data on file is dated {format_long_date(d)}"
+
+
 def _pending_note(snap, section: str, subject: str = "section") -> Optional[str]:
     """The pending line for a locked section whose inputs are still pending, or None.
 
@@ -2024,14 +2039,19 @@ def _pending_note(snap, section: str, subject: str = "section") -> Optional[str]
     groups: dict = {}
     for n in waiting:
         groups.setdefault(_PENDING_WORDS[n], []).append(pending[n])
-    whats, clauses = [], []
+    q_end = getattr(snap, "quarter_end", None)
+    whats, clauses, bound_named = [], [], False
     for (what, dated, missing), ends in groups.items():
         whats.append(what)
         known = [e for e in ends if e]
+        if known and q_end and (what, dated, missing) == _PENDING_WORDS[ETF_METADATA]:
+            clauses.append(_metadata_clause(min(known), q_end))
+            bound_named = True
+            continue
         clauses.append(dated.format(format_long_date(min(known))) if known else missing)
     verb = "covers" if len(whats) == 1 else "cover"
-    q_end = getattr(snap, "quarter_end", None)
-    closed = f"; the quarter ended {format_long_date(q_end)}" if q_end else ""
+    closed = (f"; the quarter ended {format_long_date(q_end)}"
+              if q_end and not (bound_named and len(clauses) == 1) else "")
     data = "; ".join(clauses)
     return (f"Pending: this {subject} locks when {' and '.join(whats)} {verb} the quarter. "
             f"{data[0].upper()}{data[1:]}{closed}.")

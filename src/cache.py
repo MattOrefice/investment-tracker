@@ -378,7 +378,12 @@ def _capture_inputs(end: date, tickers: "list[str]",
                         if isinstance(v, dict) and v.get("as_of"))
         q_start = date(end.year, end.month - 2, 1)
         oldest = stamps[0] if stamps else None
-        gate(ETF_METADATA, meta, oldest,
+        # Pending on the date that disqualifies the file (#463): its newest when it is
+        # too new for the quarter, its oldest when it is too old (and when it is both).
+        # It used to be the oldest always, so a file too new named a date inside the
+        # quarter.
+        too_new = bool(stamps) and stamps[0] >= q_start and stamps[-1] > end
+        gate(ETF_METADATA, meta, stamps[-1] if too_new else oldest,
              bool(stamps) and stamps[0] >= q_start and stamps[-1] <= end,
              lambda x: {"kind": "json", "data": x})
     if DIVIDENDS in want:
