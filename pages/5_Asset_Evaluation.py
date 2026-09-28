@@ -11,7 +11,7 @@ import plotly.graph_objects as go
 
 from src import asset_evaluation as ae
 from src.asof import as_of_banner
-from src.macro import get_recession_periods
+from src import macro
 from src.prices import is_valid_ticker
 from src.prose_helpers import a_or_an
 from src.ui_helpers import render_footer, render_page_header
@@ -173,11 +173,18 @@ def _load_regime_conditional_correlation() -> pd.DataFrame:
 
 
 @st.cache_data(ttl=7200, show_spinner=False)
-def _load_recession_periods() -> list:
+def _load_recessions() -> "tuple[list, str | None]":
+    """(periods, stored_on). Past FRED's wait (#435) the shading comes from the stored
+    USREC copy, and stored_on is the date it was fetched; None for today's series."""
     try:
-        return get_recession_periods(ae.SAMPLE_START, TODAY)
+        usrec, stored_on = macro.series_or_stored("USREC", "1945-01-01")
+        return macro.recession_periods(usrec, ae.SAMPLE_START, TODAY), stored_on
     except Exception:
-        return []
+        return [], None
+
+
+def _load_recession_periods() -> list:
+    return _load_recessions()[0]
 
 
 # ── Page ─────────────────────────────────────────────────────────────────────
@@ -451,6 +458,31 @@ mv           = _load_mv_analysis()
 msc          = _load_marginal_sharpe_curve()
 dd_sens      = _load_drawdown_sensitivity()
 recession_periods = _load_recession_periods()
+
+
+def _stored_fred_note() -> "str | None":
+    """Which FRED series this page shows as stored copies, and the date each was
+    fetched (#435): past the wait, the page renders what is stored rather than hold on
+    FRED. The risk-free rate says so in its own line."""
+    stored = {}
+    if _load_recessions()[1]:
+        stored["USREC (recession shading)"] = _load_recessions()[1]
+    for sid, on in _load_regime_conditional_correlation().attrs.get("fred_stored", {}).items():
+        stored[f"{sid} (regime table)"] = on
+    if not stored:
+        return None
+    from src.asof import format_long_date
+    return (f"Today's FRED data did not arrive within {macro.PAGE_WAIT_SECONDS:.0f} "
+            "seconds, so these are shown as stored, with the date each was fetched: "
+            + "; ".join(f"{k}, {format_long_date(v)}" for k, v in stored.items())
+            + ". The fetch continues in the background; reload the page to read it.")
+
+
+_fred_note = _stored_fred_note()
+if _fred_note:
+    _, col, _ = st.columns([1, 8, 1])
+    with col:
+        st.info(_fred_note)
 
 data_ok = not btc_ret.empty and not slv_ret.empty
 

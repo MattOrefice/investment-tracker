@@ -102,16 +102,50 @@ def fetch_fred_series(
     raise FREDFetchError(series_id, last_exc)
 
 
-def get_series(series_id: str, start_date: str = "1990-01-01") -> pd.Series:
+def get_series(series_id: str, start_date: str = "1990-01-01", *,
+               deadline: "float | None" = None) -> pd.Series:
     """
     Return series from 24h SQLite cache; fetches fresh from FRED if stale or
     if the cached window doesn't cover the requested start_date.
 
-    On the demo's fetch timer (demo_refresh.enabled()), a failed fetch raises
+    WHERE THE WARM RUNS (warm_enabled(): the demo), EVERY READ IS BOUNDED (#435), by
+    the Macro page's rule (audit item 15f). The reader never fetches: it reads today's
+    row, raises the series' retry wait, or waits for the warm until ``deadline`` (a
+    time.monotonic() value; PAGE_WAIT_SECONDS from now by default). Past it, it raises
+    FREDStillFetching carrying the stored copy and the date it was fetched, and the
+    warm carries on. series_or_stored() returns that copy instead. Since #419 the
+    risk-free rate reads FRED, so Performance and Asset Evaluation are readers too, and
+    a slow FRED held them for as long as it took.
+
+    With the warm off (personal mode, the suite) a read fetches as it always did. On
+    the demo's fetch timer (demo_refresh.enabled()), a failed fetch raises
     FREDRetryWait, and so does every call for that series until
-    demo_refresh.RETRY_AFTER has passed, without fetching. Off it (personal mode, the
-    suite), a failure raises as it always did and the next call fetches again.
+    demo_refresh.RETRY_AFTER has passed, without fetching. Off it, a failure raises as
+    it always did and the next call fetches again.
     """
+    if warm_enabled():
+        return _wait_for_warm(series_id, start_date, time.monotonic() + PAGE_WAIT_SECONDS
+                              if deadline is None else deadline)
+    return _get_series_now(series_id, start_date)
+
+
+def series_or_stored(series_id: str, start_date: str = "1990-01-01", *,
+                     deadline: "float | None" = None) -> "tuple[pd.Series, str | None]":
+    """get_series, and past the wait the stored copy instead of the exception: the
+    series, and the date it was fetched when it is a stored copy (None when it is
+    today's). Any other failure raises as get_series does, and so does a wait with
+    nothing stored."""
+    try:
+        return get_series(series_id, start_date, deadline=deadline), None
+    except FREDStillFetching as exc:
+        if exc.stored is None:
+            raise
+        return exc.stored, exc.stored_on
+
+
+def _get_series_now(series_id: str, start_date: str) -> pd.Series:
+    """The unbounded read: today's cached row, or a fetch. The warm reads this way,
+    since it is what the bounded readers wait for."""
     _ensure_cache_table()
     today = date.today().isoformat()
     cached = _read_cached(series_id, start_date, today)
@@ -301,7 +335,7 @@ def _warm_running() -> bool:
 def _warm() -> None:
     for series_id, start in MACRO_PAGE_SERIES:
         try:
-            get_series(series_id, start)
+            _get_series_now(series_id, start)
         except Exception as exc:                          # noqa: BLE001
             # The page reports its own failures when it reads the series.
             print(f"[INFO] FRED warm: {series_id} not cached ({type(exc).__name__})",
@@ -330,16 +364,22 @@ class FREDStillFetching(Exception):
 
 
 def get_series_for_page(series_id: str, start_date: str, deadline: float) -> pd.Series:
-    """get_series for a page that must not wait on FRED past ``deadline``, a
-    time.monotonic() value.
-
-    While the warm runs (warm_enabled()) the page never fetches. It reads today's row,
-    raises the series' retry wait as get_series would, or waits for the warm, starting
-    one if none is running. At the deadline it raises FREDStillFetching with the stored
-    copy, and the warm carries on. With the warm off (personal mode, the suite) this is
-    get_series."""
+    """get_series with one deadline for a whole page (the Macro page's 22 reads)."""
     if not warm_enabled():
         return get_series(series_id, start_date)
+    return get_series(series_id, start_date, deadline=deadline)
+
+
+# The warm a reader gave up waiting on (#435). While that warm is still running, a read
+# does not wait again: one stalled warm costs the first reader PAGE_WAIT_SECONDS and
+# every later reader, of any series on any page, nothing. A new warm clears it.
+_STALLED_WARM: "threading.Thread | None" = None
+
+
+def _wait_for_warm(series_id: str, start_date: str, deadline: float) -> pd.Series:
+    """The bounded read (see get_series): today's row, the series' retry wait, or the
+    warm's fetch until ``deadline``; past it, FREDStillFetching with the stored copy."""
+    global _STALLED_WARM
     _ensure_cache_table()
     started = False
     while True:
@@ -352,7 +392,11 @@ def get_series_for_page(series_id: str, start_date: str, deadline: float) -> pd.
         if wait is not None:
             raise wait
         remaining = deadline - time.monotonic()
+        if running and _STALLED_WARM is _WARM_THREAD:
+            break                      # an earlier reader already gave up on this warm
         if remaining <= 0:
+            if running:
+                _STALLED_WARM = _WARM_THREAD
             break
         if not running:
             if started:

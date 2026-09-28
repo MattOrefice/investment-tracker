@@ -61,7 +61,7 @@ from src.holdings import (
     get_portfolio_value_series,
     get_sleeve_weights_on_date,
 )
-from src.macro import compute_cape_implied_return, get_series, percentile
+from src.macro import FREDStillFetching, compute_cape_implied_return, get_series, percentile
 from src.positioning import (
     build_style_box_figure, get_effective_duration,
     get_non_us_equity_data, get_style_box_data,
@@ -1216,6 +1216,18 @@ def _build_macro_section() -> dict:
     # Each reading's own latest observation, for the section's as-of line: the macro
     # context is live by design, not locked to the report's quarter (#368).
     observed: dict[str, str] = {}
+    # Past FRED's wait (#435) a reading is taken from the stored copy; the as-of line
+    # names each one and the date it was fetched.
+    stored: dict[str, str] = {}
+
+    def _fred(label: str, series_id: str, start: str):
+        try:
+            return get_series(series_id, start)
+        except FREDStillFetching as exc:
+            if exc.stored is None:
+                raise
+            stored[label] = exc.stored_on
+            return exc.stored
 
     try:
         cape_val = current_cape()
@@ -1269,7 +1281,7 @@ def _build_macro_section() -> dict:
         }
 
     try:
-        yc     = get_series("T10Y2Y", "1990-01-01")
+        yc     = _fred("10Y-2Y", "T10Y2Y", "1990-01-01")
         yc_val = float(yc.dropna().iloc[-1])
         observed["10Y-2Y"] = _obs_date(yc)
         note   = ("Positive slope — normalized rate environment."
@@ -1282,7 +1294,7 @@ def _build_macro_section() -> dict:
         macro["yield_curve"] = {"value": "N/A", "percentile": "N/A", "note": "Data unavailable."}
 
     try:
-        ff     = get_series("DFF", "1990-01-01")
+        ff     = _fred("Fed funds", "DFF", "1990-01-01")
         ff_val = float(ff.dropna().iloc[-1])
         observed["Fed funds"] = _obs_date(ff)
         macro["fed_funds"] = {
@@ -1293,7 +1305,7 @@ def _build_macro_section() -> dict:
         macro["fed_funds"] = {"value": "N/A", "percentile": "N/A", "note": "Data unavailable."}
 
     try:
-        hy     = get_series("BAMLH0A0HYM2", "2023-05-01")
+        hy     = _fred("HY OAS", "BAMLH0A0HYM2", "2023-05-01")
         hy_val = float(hy.dropna().iloc[-1])
         observed["HY OAS"] = _obs_date(hy)
         macro["hy_spread"] = {
@@ -1308,6 +1320,9 @@ def _build_macro_section() -> dict:
         "observation when this report was generated ("
         + (", ".join(f"{k} {v}" for k, v in observed.items() if v) or "none available")
         + ")."
+        + ("" if not stored else
+           " FRED did not answer in time, so these are stored copies, with the date each "
+           "was fetched: " + ", ".join(f"{k} {v}" for k, v in stored.items()) + ".")
     )
     return macro
 
