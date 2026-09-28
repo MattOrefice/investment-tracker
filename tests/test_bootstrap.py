@@ -87,6 +87,46 @@ def test_bootstrap_lets_build_location_register_run(tmp_path, monkeypatch):
     assert register is not None
 
 
+def test_two_sessions_starting_together_bootstrap_once(tmp_path, monkeypatch):
+    """#434: two sessions reach bootstrap_personal_db together. The first holds inside
+    the body (its one call to run_pending_migrations) until the second has had time to
+    arrive; the second must wait for it, then find the book bootstrapped. Unlocked, the
+    second reaches the body too, and the migrations run twice."""
+    import threading
+    import time
+    _fresh_db(tmp_path, monkeypatch)
+    real = bootstrap.run_pending_migrations
+    entered, inside, results, errors = [], threading.Event(), {}, []
+
+    def held(path):
+        entered.append(threading.current_thread().name)
+        inside.set()
+        end = time.monotonic() + 1.5                  # room for the second to arrive
+        while len(entered) < 2 and time.monotonic() < end:
+            time.sleep(0.02)
+        return real(path)
+
+    monkeypatch.setattr(bootstrap, "run_pending_migrations", held)
+
+    def session(name):
+        try:
+            results[name] = bootstrap.bootstrap_personal_db()
+        except Exception as exc:                      # noqa: BLE001
+            errors.append((name, f"{type(exc).__name__}: {exc}"))
+
+    first = threading.Thread(target=session, args=("first",), name="first")
+    first.start()
+    assert inside.wait(60), "premise: the first session reached the body"
+    second = threading.Thread(target=session, args=("second",), name="second")
+    second.start()
+    first.join(120)
+    second.join(120)
+    assert errors == [], errors
+    assert entered == ["first"], f"the body ran in {entered}"
+    assert results["second"]["skipped"] is True
+    assert "migrations" in results["first"] and "skipped" not in results["first"]
+
+
 def test_bootstrap_is_idempotent(tmp_path, monkeypatch):
     """Running the bootstrap a second time against the same DB neither errors nor
     duplicates rows."""
