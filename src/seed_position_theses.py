@@ -15,7 +15,7 @@ SPAXX_VEHICLE_RATIONALE = (
     # item 7).
     "The operational cash balance, {{cash}}, is untargeted liquidity: it funds rebalancing "
     "trades, covers small drawdowns without forced selling, and buffers position friction. It "
-    "would be reduced toward 1% if short rates fell materially below 2%."
+    "would be reduced if short rates fell materially below 2%."
 )
 
 

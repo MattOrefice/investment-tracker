@@ -146,7 +146,7 @@ SLEEVE_META = {
             "with developed markets removing the structural discount."
         ),
         "expected_return_scenario": (
-            "EM structural discount (~10x P/E vs US ~22x) implies significant valuation "
+            "EM's structural valuation discount to US equities implies significant valuation "
             "tailwind; demographic dividend adds 1-2% long-run growth premium."
         ),
         "themes": ["Valuation-driven", "Regime change"],
