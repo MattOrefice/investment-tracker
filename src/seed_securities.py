@@ -55,10 +55,9 @@ HOLDINGS = [
             "replicated since. CFA training reinforced this: accruals manipulation is real and "
             "persistent, and a quality screen that ignores it is incomplete. The tradeoff is smaller "
             # Net assets from each fund's Form N-PORT filed with the SEC, period July 31, 2026, read
-            # 2026-09-28 (#456): SPHQ, Invesco Exchange-Traded Fund Trust series S000003049,
-            # $19,446,477,532.34, accession 0001209466-26-001344; QUAL, iShares Trust series
-            # S000041444, $46,531,547,421.38, accession 0001004726-26-008857. The text typed
-            # "$6B vs QUAL's $40B" before.
+            # 2026-09-28 (#456): SPHQ (Invesco Exchange-Traded Fund Trust) $19,446,477,532.34,
+            # accession 0001209466-26-001344; QUAL (iShares Trust) $46,531,547,421.38, accession
+            # 0001004726-26-008857. The text typed "$6B vs QUAL's $40B" before.
             "net assets ($19.4B against QUAL's $46.5B on July 31, 2026, from each fund's N-PORT "
             "filing with the SEC), acceptable given SPHQ isn't at closure-risk scale. "
             "Benchmarking against QUAL sets up a natural attribution test over time: whether the "
