@@ -22,7 +22,7 @@ books and the seeds that write them (src/seed_securities.py, src/seed_saa.py): w
 read the targets, fees {{er:}} and durations {{dur:}}. The check there also catches a
 dollar figure, a multiple, a typed duration and an "N of M" weight; the one dollar
 figure left, SPHQ against QUAL, is dated and read from each fund's N-PORT filing.
-The books' parent rows are left to #461.
+The books' parent rows carry the seed's parent text since #461, and are scanned too.
 
 Widened to the theses (#462): their check catches a dollar figure, a multiple, a typed
 duration and an "N of M" weight too, which found thesis 26's "8 of 49" (it now reads
@@ -265,16 +265,16 @@ RATIONALES_NOT_THE_BOOKS = {
 
 
 def _book_rationales(book) -> "dict[str, dict[str, str]]":
-    """Every fund and sleeve rationale in the book. Not the parent rows: two carry text
-    no seed writes, Real Assets' with a typed weight, and which text they should hold
-    is #461's decision. The seeds' parent text is scanned below."""
+    """Every fund, sleeve and parent rationale in the book. The parent rows carry the
+    seed's parent text since #461; before it, two carried text no seed writes, Real
+    Assets' with a typed weight."""
     con = _ro(book)
     try:
         out = {t: {"holding_rationale": r} for t, r in con.execute(
             "SELECT ticker, holding_rationale FROM securities")}
-        for name, r in con.execute("SELECT name, rationale FROM asset_classes "
-                                   "WHERE parent_id IS NOT NULL"):
-            out.setdefault(name, {})["rationale"] = r
+        for name, r, parent in con.execute("SELECT name, rationale, parent_id IS NULL "
+                                           "FROM asset_classes"):
+            out.setdefault(name, {})["parent rationale" if parent else "rationale"] = r
         return out
     finally:
         con.close()
