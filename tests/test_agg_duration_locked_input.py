@@ -66,8 +66,8 @@ def frozen(tmp_path, monkeypatch):
 
 def test_the_file_carries_aggs_duration_dated_sourced_and_labelled_as_aggs():
     from src.positioning import AGG_TICKER
-    from src.style_box import _META_PATH
-    e = json.loads(Path(_META_PATH).read_text())[AGG_TICKER]
+    from src.etf_metadata import META_PATH
+    e = json.loads(Path(META_PATH).read_text())[AGG_TICKER]
     assert isinstance(e["duration_years"], float) and e["duration_years"] > 0
     assert e["duration_measure"].strip() and date.fromisoformat(e["as_of"])
     assert "AGG" in e["duration_source"] and "not the index's" in e["duration_source"]
@@ -75,19 +75,17 @@ def test_the_file_carries_aggs_duration_dated_sourced_and_labelled_as_aggs():
 
 def test_the_live_figures_read_it_and_name_it_as_aggs(tmp_path, monkeypatch):
     from unittest.mock import patch
-    from src import positioning, reports, style_box
+    from src import etf_metadata, positioning, reports
     from tests.test_positioning import _BASELINE_ROWS, _make_sw
-    meta = json.loads(Path(style_box._META_PATH).read_text())
+    meta = json.loads(Path(etf_metadata.META_PATH).read_text())
     meta["AGG"]["duration_years"] = 9.9
     out = tmp_path / "meta.json"
     out.write_text(json.dumps(meta))
-    monkeypatch.setattr(style_box, "_META_PATH", out)
+    monkeypatch.setattr(etf_metadata, "META_PATH", out)
     monkeypatch.setattr(reports, "_render_chart_to_png", lambda *a, **k: None)
     assert positioning.benchmark_duration() == {"years": 9.9, "name": AGG_NAME, "short": "AGG"}
     with patch("src.positioning.get_sleeve_weights_on_date",
-               return_value=_make_sw(dict(_BASELINE_ROWS))), \
-         patch("src.reports.get_style_box_data", return_value=None), \
-         patch("src.reports.get_non_us_equity_data", return_value=None):
+               return_value=_make_sw(dict(_BASELINE_ROWS))):
         dur = positioning.get_effective_duration("2026-09-25")
         line = reports._build_positioning_section("2026-09-25")["duration_line"]
     assert (dur["agg_benchmark"], dur["agg_name"], dur["agg_short"]) == (9.9, AGG_NAME, "AGG")

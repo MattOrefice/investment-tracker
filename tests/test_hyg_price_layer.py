@@ -9,9 +9,9 @@ watched only the price layer. Pinned here:
   * the parquet is retired and HYG is read from the price layer;
   * a lock gates HYG on coverage like the French data: short, the factor section
     renders pending with HYG's end date, and locks once the data covers the quarter;
-  * the hand-kept ETF fact-sheet file covers a quarter only when every source date
-    falls inside it; otherwise the style box renders pending and the rest of the
-    positioning section locks;
+  * the hand-kept ETF metadata file covers a quarter only when every source date
+    falls inside it; otherwise the duration line renders pending and the rest of the
+    report locks (the style box that also waited on it was withdrawn, #468);
   * the demo's Q2 lock carries the corrected HYG and says so on the cover, and the
     four locks whose HYG covered their quarters are untouched.
 """
@@ -25,7 +25,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from tests.conftest import (fact_sheets_before_durations, pin_today, point_at_frozen_book,
+from tests.conftest import (metadata_dated_inside_q2, pin_today, point_at_frozen_book,
                             unpin_leftovers)
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -38,9 +38,8 @@ def book(tmp_path, monkeypatch):
     monkeypatch.setattr(reports, "_render_chart_to_png", lambda *a, **k: None)
     pin_today(monkeypatch)
     path = point_at_frozen_book(monkeypatch, tmp_path)
-    # A fresh Q2 lock here stands for the one taken at Q2's close, on the file as
-    # it stood then (#455).
-    fact_sheets_before_durations(monkeypatch, tmp_path)
+    # A fresh Q2 lock here takes a metadata file dated inside Q2 (#455, #468).
+    metadata_dated_inside_q2(monkeypatch, tmp_path)
     yield path
     unpin_leftovers()
 
@@ -129,15 +128,15 @@ def test_french_and_hyg_short_together_name_both(book):
 # ── the ETF fact-sheet file is gated on its source dates ───────────────────────
 
 def _metadata_dated(tmp_path, monkeypatch, *stamps):
-    from src import style_box
-    meta = json.loads(Path(style_box._META_PATH).read_text())
+    from src import etf_metadata
+    meta = json.loads(Path(etf_metadata.META_PATH).read_text())
     keys = [k for k in meta if not k.startswith("_")]
     assert len(keys) >= len(stamps)
     for i, k in enumerate(keys):
         meta[k]["as_of"] = stamps[min(i, len(stamps) - 1)]
     out = tmp_path / "meta.json"
     out.write_text(json.dumps(meta))
-    monkeypatch.setattr(style_box, "_META_PATH", out)
+    monkeypatch.setattr(etf_metadata, "META_PATH", out)
 
 
 @pytest.mark.parametrize("stamps, covered", [
@@ -156,21 +155,20 @@ def test_etf_metadata_covers_a_quarter_only_when_every_source_date_is_inside_it(
     assert (ETF_METADATA in snap.inputs) == covered
 
 
-def test_a_stale_fact_sheet_file_leaves_only_the_style_box_pending(book, tmp_path, monkeypatch):
+def test_a_stale_metadata_file_leaves_only_the_duration_line_pending(book, tmp_path, monkeypatch):
     from src import reports
     from src.cache import capture_quarter_snapshot
     _metadata_dated(tmp_path, monkeypatch, "2026-01-15")
     snap, _ = capture_quarter_snapshot("2026Q2")
-    note = reports._pending_note(snap, "positioning", subject="style box")
+    note = reports._pending_note(snap, "positioning", subject="duration figure")
     # #463: the line names the date that disqualifies the file, and which way.
-    assert note == ("Pending: this style box locks when the ETF fact-sheet data covers the "
+    assert note == ("Pending: this duration figure locks when the ETF fact-sheet data covers the "
                     "quarter. The oldest ETF fact-sheet data on file is dated January 15, "
                     "2026, before the quarter began April 1, 2026.")
     html = _html(monkeypatch, *Q2)
     assert note in html
-    assert "Equity Style Profile" in html and "Non-US Equity Sleeve" in html, (
-        "the price-based rest of the section still renders")
-    assert 'alt="Equity Style Profile"' not in html, "no chart from the stale file"
+    assert "Fixed Income Effective Duration" in html and "effective duration:" not in html
+    assert "Brinson-Fachler Attribution" in html, "the price-based rest of the report renders"
 
 
 # ── the demo's committed locks ─────────────────────────────────────────────────
@@ -197,7 +195,9 @@ def test_the_demo_q2_lock_carries_the_corrected_hyg_and_says_so(monkeypatch):
         "from the price data through the quarter's end."), note
     for qid in ("2025Q2", "2025Q3", "2025Q4", "2026Q1"):
         snap = get_quarter_snapshot(qid)[0]
-        assert snap.input_corrections is None and input_corrections_note(snap) is None, qid
+        # No HYG correction. (Since #468 each also records the style box's withdrawal.)
+        assert (snap.input_corrections or {}).get(HYG) is None, qid
+        assert input_corrections_note(snap) is None, qid
         assert snap.inputs[HYG].index.max() == pd.Timestamp(_parse_quarter_end(qid)), qid
 
 

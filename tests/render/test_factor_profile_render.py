@@ -91,15 +91,6 @@ def test_build_caption_suppressed_without_env(factor_profile_app: AppTest) -> No
     )
 
 
-def test_morningstar_independence_statement_present(factor_profile_app: AppTest) -> None:
-    """Methodology expander must contain the Morningstar independence statement. Pinned: Phase 38."""
-    captions = [c.value for c in factor_profile_app.caption]
-    assert any("independent of Morningstar" in c for c in captions), (
-        "Morningstar independence statement not found in Factor Profile methodology captions — "
-        "possible Phase 38 regression"
-    )
-
-
 def test_institutional_prose_for_intl_developed(factor_profile_app: AppTest) -> None:
     """Intl Developed sleeve must show Korea universe-mismatch prose. Pinned: Phase 41 Item 1."""
     if not factor_profile_app.dataframe:

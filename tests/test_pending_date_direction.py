@@ -19,7 +19,7 @@ import pytest
 
 from tests.conftest import pin_today, point_at_frozen_book, unpin_leftovers
 
-HEAD = "Pending: this style box locks when the ETF fact-sheet data covers the quarter. "
+HEAD = "Pending: this duration figure locks when the ETF fact-sheet data covers the quarter. "
 
 
 @pytest.fixture
@@ -37,14 +37,14 @@ def q2_unlocked(tmp_path, monkeypatch):
 
 def _dated(tmp_path, monkeypatch, *stamps):
     """The committed file with its entries' as_of set to ``stamps`` in turn."""
-    from src import style_box
-    meta = json.loads(Path(style_box._META_PATH).read_text())
+    from src import etf_metadata
+    meta = json.loads(Path(etf_metadata.META_PATH).read_text())
     keys = [k for k in meta if not k.startswith("_")]
     for i, k in enumerate(keys):
         meta[k]["as_of"] = stamps[i % len(stamps)]
     out = tmp_path / "meta.json"
     out.write_text(json.dumps(meta))
-    monkeypatch.setattr(style_box, "_META_PATH", out)
+    monkeypatch.setattr(etf_metadata, "META_PATH", out)
 
 
 def _lock_and_line():
@@ -53,13 +53,13 @@ def _lock_and_line():
     from src.input_lock import ETF_METADATA
     snap, _ = capture_quarter_snapshot("2026Q2")
     return (snap.inputs_pending.get(ETF_METADATA),
-            reports._pending_note(snap, "positioning", subject="style box"))
+            reports._pending_note(snap, "positioning", subject="duration figure"))
 
 
 def test_a_file_too_new_names_its_newest_date(q2_unlocked):
     """The committed file: its durations are dated September 25, after Q2 ended."""
-    from src.style_box import _META_PATH
-    stamps = sorted(v["as_of"] for v in json.loads(Path(_META_PATH).read_text()).values()
+    from src.etf_metadata import META_PATH
+    stamps = sorted(v["as_of"] for v in json.loads(Path(META_PATH).read_text()).values()
                     if isinstance(v, dict) and v.get("as_of"))
     assert stamps[0] >= "2026-04-01" and stamps[-1] == "2026-09-25", "premise: too new only"
     recorded, line = _lock_and_line()

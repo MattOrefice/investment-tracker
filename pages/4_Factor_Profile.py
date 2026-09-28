@@ -9,8 +9,6 @@ st.set_page_config(page_title="Factor Profile", layout="wide")
 
 from src.asof import as_of_banner, data_vintage, format_long_date
 from src.config import get_demo_banner_text, IS_DEMO
-from src.positioning import build_style_box_figure, get_non_us_equity_data, get_style_box_data
-from src.style_box import STYLE_BOX_CAPTION
 from src.ui_helpers import render_footer, render_page_header
 render_page_header()
 
@@ -403,51 +401,6 @@ with col:
 
     st.divider()
 
-    # ── Equity Style Profile ──────────────────────────────────────────────────
-    st.subheader("Equity Style Profile")
-    style_data = get_style_box_data(end_date)
-    non_us     = get_non_us_equity_data(end_date)
-
-    if style_data:
-        fig = build_style_box_figure(style_data)
-        box_col, _ = st.columns([3, 2])
-        with box_col:
-            st.plotly_chart(fig, width='stretch')
-        st.caption(STYLE_BOX_CAPTION)
-        st.caption(
-            "Empty cells reflect deliberate construction: the SAA does not include mid-cap or "
-            "pure-growth tilts. Quality (SPHQ) and value (VTV, AVUV) are the chosen factor exposures."
-        )
-
-        if non_us:
-            st.markdown("**Non-US Equity Sleeves**")
-            for item in non_us:
-                st.markdown(
-                    f"- **{item['ticker']}** ({item['region_label']}): "
-                    f"{item['weight_pct']:.1f}% of portfolio"
-                )
-            st.caption(
-                "Non-US holdings are not directly comparable to US value/growth and "
-                "market-cap distributions. Morningstar's regional style boxes cover "
-                "international placement methodology."
-            )
-            if len(non_us) > 2:
-                # Tilted (12-sleeve) book only — on the personal book the two
-                # rows are exactly the regressed sleeve plus EM, so the
-                # coverage note would state the obvious.
-                st.caption(
-                    "Regression coverage: the cap-weighted core sleeve (VEA) and "
-                    "the three quality/value/small-value tilt sleeves (IDHQ, AVIV, "
-                    "AVDV) each carry a per-sleeve factor regression above, against "
-                    "the developed ex-US FF5 series. Each tilt sleeve is paired with a "
-                    "Canada-matched control fund. Emerging Markets has no regression "
-                    "by design, as the disclosure above explains."
-                )
-    else:
-        st.info("No equity holdings found.")
-
-    st.divider()
-
     # ── Methodology disclosure ────────────────────────────────────────────────
     with st.expander("Methodology & Disclosure", expanded=False):
         for note in build_factor_methodology_notes(results, fi_result=fi_result):
@@ -464,11 +417,5 @@ with col:
             "US factors cached at data/ff_factors_us.csv; Developed ex-US at "
             "data/ff_factors_developed_exus.csv; Momentum (UMD) at data/ff_umd_us.csv. "
             "Committed copies, refreshed by hand and never fetched on read."
-        )
-        st.caption(
-            "The equity style profile uses a 3×3 size-by-style grid format. "
-            "This implementation is independent of Morningstar, Inc. The 3×3 "
-            "size-by-style grid is a generic equity portfolio analysis convention "
-            "and is not produced by, affiliated with, or endorsed by Morningstar."
         )
     render_footer()

@@ -372,12 +372,7 @@ def test_prose_duration_in_line_with_benchmark():
         "cash_weight_pct":       3.0,
         "fi_weight_incl_cash_pct": 18.0,
     }
-    mock_non_us  = {"non_us_equity_pct": 27.0, "intl_pct": 19.0, "em_pct": 8.0}
-    mock_style   = None
-
-    with patch("src.reports.get_effective_duration", return_value=mock_dur), \
-         patch("src.reports.get_style_box_data",     return_value=mock_style), \
-         patch("src.reports.get_non_us_equity_data", return_value=mock_non_us):
+    with patch("src.reports.get_effective_duration", return_value=mock_dur):
         section = rpt._build_positioning_section("2025-12-31")
 
     duration_line = section["duration_line"]
@@ -401,11 +396,7 @@ def test_prose_duration_above_benchmark():
         "cash_weight_pct":       3.0,
         "fi_weight_incl_cash_pct": 18.0,
     }
-    mock_non_us  = {"non_us_equity_pct": 27.0, "intl_pct": 19.0, "em_pct": 8.0}
-
-    with patch("src.reports.get_effective_duration", return_value=mock_dur), \
-         patch("src.reports.get_style_box_data",     return_value=None), \
-         patch("src.reports.get_non_us_equity_data", return_value=mock_non_us):
+    with patch("src.reports.get_effective_duration", return_value=mock_dur):
         section = rpt._build_positioning_section("2025-12-31")
 
     duration_line = section["duration_line"]
@@ -427,11 +418,7 @@ def test_prose_duration_below_benchmark():
         "cash_weight_pct":       3.0,
         "fi_weight_incl_cash_pct": 18.0,
     }
-    mock_non_us  = {"non_us_equity_pct": 27.0, "intl_pct": 19.0, "em_pct": 8.0}
-
-    with patch("src.reports.get_effective_duration", return_value=mock_dur), \
-         patch("src.reports.get_style_box_data",     return_value=None), \
-         patch("src.reports.get_non_us_equity_data", return_value=mock_non_us):
+    with patch("src.reports.get_effective_duration", return_value=mock_dur):
         section = rpt._build_positioning_section("2025-12-31")
 
     duration_line = section["duration_line"]

@@ -24,7 +24,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from tests.conftest import (fact_sheets_before_durations, pin_today, point_at_frozen_book,
+from tests.conftest import (metadata_dated_inside_q2, pin_today, point_at_frozen_book,
                             unpin_leftovers)
 
 Q2 = ("2026-03-31", "2026-06-30")
@@ -36,9 +36,8 @@ def book(tmp_path, monkeypatch):
     monkeypatch.setattr(reports, "_render_chart_to_png", lambda *a, **k: None)
     pin_today(monkeypatch)
     path = point_at_frozen_book(monkeypatch, tmp_path)
-    # A fresh Q2 lock here stands for the one taken at Q2's close, on the file as
-    # it stood then (#455).
-    fact_sheets_before_durations(monkeypatch, tmp_path)
+    # A fresh Q2 lock here takes a metadata file dated inside Q2 (#455, #468).
+    metadata_dated_inside_q2(monkeypatch, tmp_path)
     yield path
     unpin_leftovers()
 
@@ -55,13 +54,9 @@ def _sections(snap):
     from src import reports
     from src.cache import snapshot_price_context
     from src.holdings import get_portfolio_account_id
-    from src.positioning import get_style_box_data
     acct = get_portfolio_account_id()
     with snapshot_price_context(snap):
         return {
-            # What the positioning section's style-box chart plots: the metadata
-            # reaches the section only through it, and chart images are not compared.
-            "pos_style": repr(get_style_box_data(Q2[1])),
             "exec": repr(_strip(reports._build_executive_summary(*Q2))),
             "hold": repr(_strip(reports._build_holdings_section(Q2[1]))),
             "perf": repr(_strip(reports._build_performance_section(*Q2))),
@@ -75,7 +70,7 @@ def _sections(snap):
 
 def _revise_every_input(tmp_path, monkeypatch, book):
     """A provider revision of every non-price input, on disk and in the DB."""
-    from src import factors, shiller, style_box
+    from src import etf_metadata, factors, shiller
     rev = tmp_path / "revised"
     rev.mkdir()
     # Revised history AND rows after the quarter: the lock must see neither.
@@ -100,15 +95,12 @@ def _revise_every_input(tmp_path, monkeypatch, book):
     cape["cape"] = cape["cape"] * 0.5
     cape.to_csv(rev / "cape.csv", index=False)
     monkeypatch.setattr(shiller, "_CACHE_CSV", rev / "cape.csv")
-    meta = json.loads(Path(style_box._META_PATH).read_text())
-    # One ETF's figures only: the style box measures each ETF against SPY, so a
-    # revision applied to every ETF alike would cancel and test nothing.
-    sphq = meta["SPHQ"] if "SPHQ" in meta else meta.get("etfs", {}).get("SPHQ")
-    for k, x in list(sphq.items()):
-        if isinstance(x, (int, float)) and not isinstance(x, bool):
-            sphq[k] = x * 1.7
+    meta = json.loads(Path(etf_metadata.META_PATH).read_text())
+    # VGIT's duration, which the positioning section's duration line reads (#455);
+    # the style box that read the other entries was withdrawn (#468).
+    meta["VGIT"]["duration_years"] = meta["VGIT"]["duration_years"] * 1.7
     (rev / "meta.json").write_text(json.dumps(meta))
-    monkeypatch.setattr(style_box, "_META_PATH", rev / "meta.json")
+    monkeypatch.setattr(etf_metadata, "META_PATH", rev / "meta.json")
     con = sqlite3.connect(book)
     with con:
         con.execute("DELETE FROM dividends WHERE ticker = 'VOO'")
@@ -135,8 +127,14 @@ def test_every_locked_section_is_unmoved_by_a_revision_of_every_input(book, tmp_
     # sections that read those inputs. Without this the test could pass on a
     # revision that never reached a section.
     unlocked = _sections(snap._replace(inputs=None, inputs_pending=None, inputs_rule=None))
-    for k in ("exec", "pos_style", "factor", "bench"):
+    for k in ("exec", "factor", "bench"):
         assert unlocked[k] != before[k], f"the revision does not reach {k}; nothing is tested"
+    # The metadata's reader is the duration line, which a lock without inputs serves
+    # the undated table (#455), so the control is the reader itself: it sees the
+    # revision, and the locked positioning section above did not move.
+    from src.positioning import live_fund_durations
+    held = snap.inputs["etf_metadata"]["VGIT"]["duration_years"]
+    assert live_fund_durations()["VGIT"] == pytest.approx(held * 1.7)
 
 
 def test_the_lock_holds_every_input_through_the_quarter_end(book, tmp_path, monkeypatch):
@@ -287,14 +285,14 @@ def test_on_october_1_the_factor_sections_wait_for_french_and_then_lock(book, tm
     pd.testing.assert_frame_equal(done.adj_close, locked_prices)
     assert reports._pending_note(done, "factor") is None
 
-    # September's fact sheets arrive: the style box locks, and French stays put.
-    from src import style_box
-    meta = json.loads(Path(style_box._META_PATH).read_text())
+    # September's durations arrive: the metadata locks, and French stays put.
+    from src import etf_metadata
+    meta = json.loads(Path(etf_metadata.META_PATH).read_text())
     for k, v in meta.items():
         if isinstance(v, dict):
             v["as_of"] = "2026-09-30"
     (tmp_path / "meta_q3.json").write_text(json.dumps(meta))
-    monkeypatch.setattr(style_box, "_META_PATH", tmp_path / "meta_q3.json")
+    monkeypatch.setattr(etf_metadata, "META_PATH", tmp_path / "meta_q3.json")
     locked_ff = done.inputs[FF5_US].copy()
     final = complete_quarter_inputs("2026Q3")
     assert final.inputs_pending == {} and ETF_METADATA in final.inputs
@@ -307,9 +305,10 @@ def test_the_template_renders_a_pending_section(book):
     src = Path(tmpl.filename).read_text(encoding="utf-8")
     assert "{% elif factor_pending %}" in src and "{% elif bench_pending %}" in src
     assert "{{ factor_pending }}" in src and "{{ bench_pending }}" in src
-    # #386: the style box's pending line and the HYG correction on the cover (both
-    # rendered for real in tests/test_hyg_price_layer.py).
-    assert "{{ pos.style_box_pending }}" in src and "{{ input_corrections_note }}" in src
+    # #386: the positioning section's pending line (the duration line, since the style
+    # box was withdrawn, #468) and the HYG correction on the cover (both rendered for
+    # real in tests/test_hyg_price_layer.py).
+    assert "{{ pos.duration_line }}" in src and "{{ input_corrections_note }}" in src
 
 
 # ── the demo ships its locks ──────────────────────────────────────────────────

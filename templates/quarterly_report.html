@@ -36,6 +36,9 @@
     {% if lot_rebuild_note %}
     <p class="cover-staleness">{{ lot_rebuild_note }}</p>
     {% endif %}
+    {% if style_box_withdrawn_note %}
+    <p class="cover-staleness">{{ style_box_withdrawn_note }}</p>
+    {% endif %}
     {% if benchmark_construction_note %}
     <p class="cover-staleness">{{ benchmark_construction_note }}</p>
     {% endif %}
@@ -411,34 +414,6 @@
   </div>
   {% endif %}
 
-  {% if has_trades and pos and (pos.style_box_b64 or pos.style_box_pending) %}
-  <h3>Equity Style Profile</h3>
-  {% if pos.style_box_b64 %}
-  <div style="text-align: center; margin: 8px 0 4px;">
-    <img src="data:image/png;base64,{{ pos.style_box_b64 }}" style="max-width: 360px;" alt="Equity Style Profile" />
-    <p style="font-size: 0.85em; color: #666; margin: 2px 0 0;">{{ pos.style_box_caption }}</p>
-    {%- if pos.style_box_dated %}
-    <p style="font-size: 0.85em; color: #666; margin: 2px 0 0;">{{ pos.style_box_dated }}</p>
-    {%- endif %}
-  </div>
-  {% else %}
-  <div class="empty-banner">{{ pos.style_box_pending }}</div>
-  {% endif %}
-  {% if pos.non_us %}
-  <div style="margin: 8px 0 0; padding: 8px 12px; background: #F7F7F7; border-left: 3px solid #CCCCCC; font-size: 0.85em; page-break-inside: avoid; break-inside: avoid;">
-    <strong>Non-US Equity Sleeve</strong>
-    <ul style="margin: 4px 0 4px 16px; padding: 0;">
-    {% for item in pos.non_us %}
-      <li><strong>{{ item.ticker }}</strong> ({{ item.region_label }}): {{ "%.1f"|format(item.weight_pct) }}% of portfolio</li>
-    {% endfor %}
-    </ul>
-    <p style="margin: 4px 0 0; color: #666;">
-      Non-US holdings are not directly comparable to US value/growth and market-cap distributions.
-      Morningstar&rsquo;s regional style boxes give the placement methodology for international holdings.
-    </p>
-  </div>
-  {% endif %}
-  {% endif %}
 </section>
 
 {# ── Page 6: Benchmark Attribution ─────────────────────────────────────────── #}
@@ -818,18 +793,6 @@
     <tr>
       <td>
         <dl class="methodology">
-          <dt>Style Box Methodology</dt>
-          <dd><strong>Size (y-axis):</strong> log<sub>10</sub>(weighted-average market cap in $B),
-          additive-shifted so SPY anchors at y=2.0 (Large/Blend centre). Large/Mid boundary ≈ $79B,
-          Mid/Small boundary ≈ $7.9B at current calibration.
-          <strong>Value-growth (x-axis):</strong> four-factor fractional-deviation composite of book-to-price, earnings-to-price,
-          dividend yield, and cash-flow-to-price. Each is normalised as fractional deviation from SPY
-          (ratio &minus; 1); the four are averaged, then mapped to x with VALUE_SCALE=0.85. SPY/VOO anchors at x=1.0 (Blend centre).
-          <strong>Simplification:</strong> 4-factor trailing approximation of Morningstar&rsquo;s
-          proprietary 10-factor score. Dot positions are directional indicators of factor tilt,
-          not precise Morningstar equivalents.
-          <strong>Universe:</strong> US equity ETFs only (VOO, VTV, SPHQ, AVUV).</dd>
-
           <dt>Fama-French 5-Factor Regression</dt>
           <dd>Per-sleeve decomposition: each equity sleeve is regressed against its own
           region-appropriate FF5 factor set: US factors (Ken French Data Library) for the US equity

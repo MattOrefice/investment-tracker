@@ -54,7 +54,7 @@ The SQLite database (`src/db.py`) is the single source of truth for portfolio st
 |--------|---------------|
 | `attribution.py` | Brinson-Fachler decomposition; algebra check assert (allocation + selection = active) |
 | `benchmarks.py` | SAA-target-weighted blended benchmark; per-sleeve benchmark series |
-| `factors.py` | FF5 per-sleeve regressions (US and Developed ex-US); benchmark-relative regression; style box; dynamic interpretations |
+| `factors.py` | FF5 per-sleeve regressions (US and Developed ex-US); benchmark-relative regression; dynamic interpretations |
 
 **Macro and research**
 

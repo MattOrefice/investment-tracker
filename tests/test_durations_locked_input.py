@@ -92,8 +92,8 @@ def _html(monkeypatch, start, end):
 
 def test_every_bond_fund_carries_a_dated_sourced_duration():
     from src.positioning import _FI_SLEEVE_HOLDING
-    from src.style_box import _META_PATH
-    meta = json.loads(Path(_META_PATH).read_text())
+    from src.etf_metadata import META_PATH
+    meta = json.loads(Path(META_PATH).read_text())
     for t in BOND_FUNDS:
         e = meta[t]
         assert isinstance(e["duration_years"], float) and e["duration_years"] > 0, t
@@ -107,15 +107,15 @@ def test_every_bond_fund_carries_a_dated_sourced_duration():
 
 def test_the_live_figures_read_the_file(tmp_path, monkeypatch):
     from unittest.mock import patch
-    from src import positioning, style_box
+    from src import etf_metadata, positioning
     from src.prose_figures import render
     from tests.test_positioning import _BASELINE_ROWS, _make_sw
-    meta = json.loads(Path(style_box._META_PATH).read_text())
+    meta = json.loads(Path(etf_metadata.META_PATH).read_text())
     for t, years in (("VGIT", 3.3), ("SCHP", 8.8), ("IEF", 9.1)):
         meta[t]["duration_years"] = years
     out = tmp_path / "meta.json"
     out.write_text(json.dumps(meta))
-    monkeypatch.setattr(style_box, "_META_PATH", out)
+    monkeypatch.setattr(etf_metadata, "META_PATH", out)
     assert positioning.live_fund_durations()["VGIT"] == 3.3
     assert positioning.fund_durations()["VGIT"] == 3.3, "no lock: the file's"
     assert render("{{dur:VGIT}} vs {{dur:IEF}}", targets={}) == "3.3 years vs 9.1 years"

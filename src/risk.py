@@ -64,7 +64,7 @@ from src.holdings import (
     last_settled_price_date,
 )
 from src.prices import get_prices, total_return_series
-from src.style_box import _META_PATH
+from src.etf_metadata import META_PATH
 
 # ── Model configuration ────────────────────────────────────────────────────────
 
@@ -368,7 +368,7 @@ def methodology_notes() -> list[str]:
 # to credit-SPREAD moves, not yield moves), so it is a documented assumption
 # here — ~3.5y, consistent with the HYG fact sheet (~3–4y). Both are stated on
 # the page as assumptions, in the same spirit as the Phase 1 proxy disclosure.
-with open(_META_PATH) as _f:
+with open(META_PATH) as _f:
     _IEF_ENTRY = json.load(_f)["IEF"]
 IEF_MODIFIED_DURATION = float(_IEF_ENTRY["duration_years"])  # the metadata's, live
 HY_SPREAD_DURATION    = 3.5                          # years (assumption)
