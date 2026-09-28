@@ -121,7 +121,9 @@ def test_no_book_says_core_is_not_the_largest_us_sleeve(book):
 def test_the_seed_holds_tips_fee_from_the_fund_page():
     tip = next(b for b in BENCHMARKS if b["ticker"] == "TIP")
     assert tip["expense_ratio"] == 0.0018 and tip["er_as_of"] == "2026-09-27"
-    assert "versus TIP's 0.18%." in _fund("SCHP")
+    # The rationale reads the fee from the securities table since #456; the book's
+    # rendered thesis 20 is checked for 0.18% below.
+    assert "versus TIP's {{er:TIP}}." in _fund("SCHP")
 
 
 @pytest.mark.parametrize("book", BOOKS, ids=lambda p: p.name)

@@ -159,12 +159,12 @@ SUB_CLASSES = [
             "portfolio, and a deviation is only meaningful if the portfolio it deviates from is "
             "also owned.\n"
             "\n"
-            "Core is {{share:International Core|International Core+International Quality+International Large Value+International Small Value}} of international equity here, the same share it holds in the US book (17 "
-            "of 49). That proportion is not a separate decision: the international sleeves apply the "
+            "Core is {{share:International Core|International Core+International Quality+International Large Value+International Small Value}} of international equity here, the same share it holds in the US book "
+            "({{share:US Large Core|US Large Core+US Large Quality+US Large Value+US Small Cap}}). That proportion is not a separate decision: the international sleeves apply the "
             "US structure to a {{sum:International Core+International Quality+International Large Value+International Small Value}} region, so the weights follow from choices already made. If the US"
             " core weight changes, this one changes with it.\n"
             "\n"
-            "VEA, at 3 bps, is the cheapest instrument for the exposure. IEFA is held as a substitute"
+            "VEA, at {{er:VEA}}, is the cheapest instrument for the exposure. IEFA is held as a substitute"
             " in the same sleeve, tracking the same developed universe.\n"
             "\n"
             "**Would revisit if** the US core weight changes, since this sleeve is defined as the US "
@@ -178,7 +178,8 @@ SUB_CLASSES = [
         "tolerance_band": 0.02,
         "benchmark_ticker": "IQLT",
         "rationale": (
-            "Quality is the largest tilt in the US book, at 15 of 49, and it is the largest tilt here"
+            "Quality is the largest tilt in the US book, {{share:US Large Quality|US Large Core+US Large Quality+US Large Value+US Small Cap}} of it, "
+            "and it is the largest tilt here"
             " for the same reason.\n"
             "\n"
             "Nothing in the case for holding SPHQ is US-specific. The screen sorts on return on "
@@ -187,9 +188,10 @@ SUB_CLASSES = [
             "profitability premium exists at home but not abroad, which is home bias.\n"
             "\n"
             "IDHQ tracks S&P's quality screen of developed ex-US large and mid caps: the same issuer "
-            "as SPHQ, the same index provider, and the same three fundamental measures. It costs 26 "
-            "bps over VEA, less than the 33 paid for international small value. The US has the same "
-            "ordering, where quality costs 12 bps over VOO and small value costs 22. The benchmark is"
+            "as SPHQ, the same index provider, and the same three fundamental measures. It costs "
+            "{{er:IDHQ}} against VEA's {{er:VEA}}, less than the {{er:AVDV}} paid for international "
+            "small value. The US has the same ordering: quality costs {{er:SPHQ}} and small value "
+            "{{er:AVUV}}, against VOO's {{er:VOO}}. The benchmark is"
             " IQLT, iShares' MSCI quality index abroad, which reproduces the SPHQ-to-QUAL "
             "relationship exactly. Selection effect therefore measures what it measures at home: the "
             "gap between two quality methodologies, not the premium itself.\n"
@@ -232,7 +234,7 @@ SUB_CLASSES = [
             "The small-value interaction, held abroad for the reason AVUV is held at home.\n"
             "\n"
             "This is the smallest sleeve in the book. It is small because international is {{sum:International Core+International Quality+International Large Value+International Small Value}} of the"
-            " portfolio and small value is 8 of 49 in the US structure: the size is arithmetic, not "
+            " portfolio and small value is {{share:US Small Cap|US Large Core+US Large Quality+US Large Value+US Small Cap}} of the US structure: the size is arithmetic, not "
             "diminished conviction. Sizing it above what the mirror produces would claim a stronger "
             "premium abroad than at home, and no such claim is made.\n"
             "\n"
@@ -358,14 +360,13 @@ SUB_CLASSES = [
         "benchmark_ticker": "BIL",
         "rationale": (
             "Operational liquidity, not strategic dry powder. At 27 with a 30+ year horizon, holding meaningful "
-            "cash is performance drag — 1% of cash held over 30 years costs roughly $2.4k of terminal wealth "
-            "per $10k of base capital at 7% real equity returns. The operational cash balance is untargeted: "
+            "cash is performance drag. The operational cash balance is untargeted: "
             "it handles rebalancing friction (funding "
             "tax-inefficient sleeves without forced sales), small drawdowns without selling at the bottom, and "
             "occasional opportunistic deployment. SPAXX earns roughly the Treasury bill rate less its "
             "fee, so the drag is muted; the Macro page shows the live rate.\n\n"
             "**Would increase** closer to retirement or with shorter-duration liabilities.\n"
-            "**Would reduce** toward 1-2% if cash yields collapse below 2%."
+            "**Would reduce** if cash yields collapse below 2%."
         ),
     },
 ]
