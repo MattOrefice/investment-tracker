@@ -18,8 +18,10 @@ DRIP is computed in-memory or from persisted lots.
 PAYMENT DATE: DRIP executes on payment_date (the date Fidelity actually
 reinvests the dividend), not on ex_dividend_date. Payment date is derived
 as ex_date + PAYMENT_DATE_OFFSET_TRADING_DAYS trading days (weekday arithmetic,
-Saturday/Sunday skipped). NYSE holidays are not currently modeled — a future
-phase may add pandas_market_calendars for exact holiday-aware arithmetic.
+Saturday/Sunday skipped). NYSE holidays are not modeled in that arithmetic, so a
+pay date can fall on a day with no close: the reinvestment then executes at the
+first stored close on or after it, when the cash actually arrives (#406 item 12),
+found in the price history rather than from a calendar.
 """
 from __future__ import annotations
 
@@ -170,7 +172,9 @@ def compute_drip_lots(
       1. shares_before = initial shares held strictly BEFORE ex_date
                          + cumulative DRIP shares from prior events
       2. payment_date  = derive_payment_date(ex_date, ticker)
-      3. price         = adj_close on or before payment_date
+      3. price         = the first close on or after payment_date, and the lot is
+                         dated there (#406 item 12: a pay date with no close, a
+                         market holiday, reinvests at the next close)
       4. new_shares    = (shares_before × dividend_per_share) / price
       5. cumulative_drip += new_shares  (compounding for subsequent events)
 
@@ -191,7 +195,8 @@ def compute_drip_lots(
 
     Returns:
         List of lot dicts with keys: ticker, ex_date (datetime.date),
-        purchase_date (datetime.date, = payment_date), shares (float),
+        purchase_date (datetime.date, the first close on or after the pay date),
+        shares (float),
         cost_basis_per_share (float), lot_source='drip'.
         Empty list if no qualifying events.
     """
@@ -213,12 +218,18 @@ def compute_drip_lots(
         if shares_before <= 0:
             continue
 
-        # Derive payment_date and look up adj_close on or before it
+        # The reinvestment executes at the first stored close on or after the pay
+        # date, when the cash arrives. It used to take the last close ON OR BEFORE,
+        # dated the pay date itself: a pay date on a market holiday reinvested at the
+        # previous session's close, before the cash existed (#406 item 12). No close
+        # yet on or after the pay date means the cash has not arrived in the data:
+        # no lot until one does.
         payment_date = derive_payment_date(ex_date, ticker)
-        avail = price_history[price_history.index <= payment_date].dropna()
+        avail = price_history[price_history.index >= payment_date].dropna()
         if avail.empty:
             continue
-        price = float(avail.iloc[-1])
+        reinvest_date = avail.index[0]
+        price = float(avail.iloc[0])
         if price <= 0:
             continue
 
@@ -230,7 +241,7 @@ def compute_drip_lots(
             {
                 "ticker":               ticker,
                 "ex_date":              ex_date,
-                "purchase_date":        payment_date,
+                "purchase_date":        reinvest_date,
                 "shares":               new_shares,
                 "cost_basis_per_share": price,
                 "lot_source":           "drip",
