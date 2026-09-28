@@ -118,6 +118,10 @@ def test_every_committed_lock_reports_the_undated_six_under_the_aggs_name(book, 
                                             "short": "Bloomberg US Agg"}, (book.name, q)
         assert undated_durations_note(snap).endswith(
             "and the Bloomberg US Agg duration they were compared with was undated too."), q
+    # A lock from before inputs were locked holds no metadata at all: the undated 6.0 too.
+    before_inputs = snap._replace(inputs=None, inputs_pending=None, inputs_rule=None)
+    with snapshot_price_context(before_inputs):
+        assert benchmark_duration()["years"] == 6.0
 
 
 def test_the_performance_page_names_it_as_aggs(frozen):
