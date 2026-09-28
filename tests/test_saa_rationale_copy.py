@@ -103,3 +103,62 @@ def _demo_targets() -> "dict[str, float]":
     finally:
         conn.close()
     return {n: w for n, w in rows}
+
+
+# ── the parent rows (#461) ─────────────────────────────────────────────────────────
+# Two parent rows carried text no seed writes: Real Assets' an older draft typing a
+# "10%" weight, Cash's a shorter one. The tool now carries src/seed_saa.py's PARENTS text
+# into them by the sleeves' path.
+
+def _tool():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "migrate_saa_rationale_copy", ROOT / "tools" / "migrate_saa_rationale_copy.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _parents(book) -> "dict[str, str]":
+    conn = sqlite3.connect(f"file:{Path(book).as_posix()}?mode=ro", uri=True)
+    try:
+        return dict(conn.execute("SELECT name, rationale FROM asset_classes "
+                                 "WHERE parent_id IS NULL").fetchall())
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize("book", [ROOT / "data" / "demo.db",
+                                  ROOT / "tests" / "fixtures" / "frozen_book.db"],
+                         ids=lambda p: p.name)
+def test_every_parent_row_carries_the_seeds_parent_text(book):
+    from src.seed_saa import PARENTS
+    seed = {p["name"]: p["rationale"] for p in PARENTS if p.get("rationale")}
+    rows = _parents(book)
+    assert {"Real Assets", "Cash"} <= set(seed) <= set(rows)
+    assert {n: rows[n] for n in seed} == seed
+    assert "10%" not in rows["Real Assets"]
+
+
+def test_the_tool_carries_them_from_whatever_they_held(tmp_path, monkeypatch, capsys):
+    """From an older text, and from NULL (the tool keys on `rationale IS ?`)."""
+    import os
+    import shutil
+    tool = _tool()
+    copy = tmp_path / "demo.db"
+    shutil.copyfile(ROOT / "data" / "demo.db", copy)
+    os.chmod(copy, 0o644)
+    conn = sqlite3.connect(copy)
+    with conn:
+        for name, old in (("Real Assets", "An older draft. 10% is large enough."),
+                          ("Cash", "Operational liquidity; not strategic dry powder."),
+                          ("Equity", None)):
+            assert conn.execute("UPDATE asset_classes SET rationale = ? WHERE name = ? AND "
+                                "parent_id IS NULL", (old, name)).rowcount == 1
+    conn.close()
+    monkeypatch.setattr(tool, "DEMO_DB", copy)
+    assert tool.main() == 0
+    assert "3 rationale(s) changed" in capsys.readouterr().out
+    assert _parents(copy) == _parents(ROOT / "data" / "demo.db")
+    assert tool.main() == 0
+    assert "0 rationale(s) changed" in capsys.readouterr().out

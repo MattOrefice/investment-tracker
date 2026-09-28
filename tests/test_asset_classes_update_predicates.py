@@ -112,6 +112,13 @@ def _rules():
          "AND rationale = ?"): lambda conn: [
             ((s["name"], s["rationale"]), "at-most-one")
             for s in _mod("src.seed_saa").SUB_CLASSES if s.get("rationale")],
+        # #461: the same tool's parent rows, keyed on the parent's name and its current
+        # text (IS, so NULL matches): at most one row per parent.
+        ("tools/migrate_saa_rationale_copy.py",
+         "UPDATE asset_classes SET rationale = ? WHERE name = ? AND parent_id IS NULL "
+         "AND rationale IS ?"): lambda conn: [
+            ((p["name"], p["rationale"]), "at-most-one")
+            for p in _mod("src.seed_saa").PARENTS if p.get("rationale")],
         # SPAXX's yield copy (audit item 15b): keyed on the primary key and the current
         # text, so at most one row by the schema.
         ("tools/migrate_spaxx_yield_copy.py",
