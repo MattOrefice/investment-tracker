@@ -26,15 +26,64 @@ from src.style_box import (
 # Quarterly maintenance: update from Bloomberg Index Services fact sheet or FRED BFI series.
 BLOOMBERG_AGG_DURATION_YEARS: float = 6.0
 
-# Quarterly maintenance: update from ETF provider fact sheets (iShares, Vanguard, Schwab).
-ETF_DURATION: dict[str, float] = {
-    "VGIT":  5.5,   # Vanguard Intermediate-Term Treasury (Core FI holding)
-    "SCHP":  6.8,   # Schwab TIPS (TIPS holding) — verify from fact sheet
-    "SPAXX": 0.0,   # Money market (Cash holding)
-    "IEF":   7.5,   # iShares 7-10Y Treasury (Core FI benchmark)
-    "TIP":   7.0,   # iShares TIPS (TIPS benchmark)
-    "BIL":   0.1,   # SPDR 1-3 Month T-Bill (Cash benchmark)
+# A fund's duration lives in data/etf_metadata.json since #455, each with its
+# measure, source and as-of date, so a quarter lock snapshots it with the rest of the
+# fact-sheet data. Read through fund_durations() (the positioning section, locked) or
+# live_fund_durations() (live figures).
+#
+# The table they came from before #455. UNDATED: nothing recorded when or where its
+# values were read, and by 2026-09 it was out of date (VGIT 5.5 against Vanguard's
+# 4.9, IEF 7.5 against iShares' 6.86). Kept only so a quarter locked before the
+# move, whose locked metadata holds no durations, reports the durations it was
+# reported with. Never read for a live figure.
+_UNDATED_DURATIONS: dict[str, float] = {
+    "VGIT": 5.5, "SCHP": 6.8, "IEF": 7.5, "TIP": 7.0, "BIL": 0.1,
 }
+
+
+def _durations_in(meta: dict) -> "dict[str, float]":
+    return {t: float(v["duration_years"]) for t, v in meta.items()
+            if isinstance(v, dict) and v.get("duration_years") is not None}
+
+
+def live_fund_durations() -> "dict[str, float]":
+    """{ticker: duration in years} from data/etf_metadata.json as it stands, for a
+    live figure (the Risk page's rate shock, a thesis's {{dur:}}). Never a lock's."""
+    import json
+    from src.style_box import _META_PATH
+    with open(_META_PATH) as f:
+        return _durations_in(json.load(f))
+
+
+def fund_durations() -> "dict[str, float]":
+    """{ticker: duration in years} for the positioning section: the ETF metadata's,
+    locked with the quarter's fact-sheet data like the rest of it (#455). Inside a
+    lock taken before the move, whose locked metadata holds no durations or which
+    holds no inputs at all, the undated table that quarter was reported with. Raises
+    InputPending inside a lock still waiting on its metadata."""
+    from src import prices
+    from src.input_lock import ETF_METADATA, locked
+    held = locked(ETF_METADATA)
+    if held is not None:
+        return _durations_in(held) or dict(_UNDATED_DURATIONS)
+    if prices._PRICE_LOCK.get() is not None:        # a lock from before locked inputs
+        return dict(_UNDATED_DURATIONS)
+    return live_fund_durations()
+
+
+def live_duration_sources() -> str:
+    """Where the live duration metric's figures come from: one clause per fund it
+    weights, the ETF metadata's duration with its measure and as-of date (#455)."""
+    import json
+    from src.asof import format_long_date
+    from src.style_box import _META_PATH
+    with open(_META_PATH) as f:
+        meta = json.load(f)
+    funds = [t for s, t in _FI_SLEEVE_HOLDING.items() if s != "Cash / SPAXX"]
+    return "; ".join(
+        f"{t} {meta[t]['duration_years']:g} yrs, {meta[t]['duration_measure']} as of "
+        f"{format_long_date(meta[t]['as_of'])}" for t in funds)
+
 
 # Sleeve → actual holding ticker (for duration lookup)
 _FI_SLEEVE_HOLDING: dict[str, str] = {
@@ -365,31 +414,29 @@ def get_effective_duration(end_date: str) -> dict:
     fi_wt_excl_cash = 0.0
     fi_wt_incl_cash = 0.0
     cash_wt         = 0.0
+    durations       = fund_durations()
 
     for sleeve, ticker in _FI_SLEEVE_HOLDING.items():
         if sleeve not in sw.index:
             continue
         actual_wt = float(sw.loc[sleeve, "Actual Weight"])
-        # A held FI-sleeve holding with no duration would silently contribute 0 to
-        # the weighted sleeve duration — understating "FI Sleeve Duration" with no
-        # signal. _FI_SLEEVE_HOLDING and ETF_DURATION live side by side in this
-        # module, so a missing entry means a holding was added without its duration:
-        # raise rather than default to 0.
-        if ticker not in ETF_DURATION:
-            raise ValueError(
-                f"get_effective_duration: FI-sleeve holding {ticker!r} (sleeve "
-                f"{sleeve!r}) has no entry in ETF_DURATION. A held FI fund with no "
-                f"duration silently understates the FI sleeve duration metric — add "
-                f"{ticker}'s effective duration from the provider fact sheet. "
-                f"Known: {sorted(ETF_DURATION)}."
-            )
-        duration  = ETF_DURATION[ticker]
         fi_wt_incl_cash += actual_wt
         if sleeve == "Cash / SPAXX":
-            cash_wt += actual_wt
-        else:
-            weighted_dur    += actual_wt * duration
-            fi_wt_excl_cash += actual_wt
+            cash_wt += actual_wt          # operational cash: no duration is read for it
+            continue
+        # A held FI-sleeve holding with no duration would silently contribute 0 to
+        # the weighted sleeve duration — understating "FI Sleeve Duration" with no
+        # signal: raise rather than default to 0.
+        if ticker not in durations:
+            raise ValueError(
+                f"get_effective_duration: FI-sleeve holding {ticker!r} (sleeve "
+                f"{sleeve!r}) has no duration in data/etf_metadata.json. A held FI "
+                f"fund with no duration silently understates the FI sleeve duration "
+                f"metric — add {ticker}'s duration, measure, source and as_of from "
+                f"its issuer. Known: {sorted(durations)}."
+            )
+        weighted_dur    += actual_wt * durations[ticker]
+        fi_wt_excl_cash += actual_wt
 
     eff_duration  = weighted_dur / total_portfolio_wt
     fi_sleeve_dur = weighted_dur / fi_wt_excl_cash if fi_wt_excl_cash > 0 else 0.0

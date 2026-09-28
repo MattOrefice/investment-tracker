@@ -56,7 +56,7 @@ from src.reports import generate_quarterly_report_bytes
 from src.sleeve_config import international_sleeves
 from src.tax_lots import open_lot_cost_basis
 from src.returns import annualize, clamped_period_bounds, period_bounds, period_return, period_window_predates_inception, twr_index
-from src.positioning import get_effective_duration
+from src.positioning import get_effective_duration, live_duration_sources
 from src.rebalance import compute_drift
 from src.ui_helpers import demo_portfolio_phrase, render_footer, render_page_header
 render_page_header()
@@ -1554,6 +1554,6 @@ with col:
         f"FI sleeve duration is {dur_vs_caption}. "
         "Duration also flows through equity via discount-rate effects, so it is a "
         "whole-portfolio consideration. "
-        "Duration sourced from ETF fact-sheet values (VGIT: 5.5 yrs, SCHP: 6.8 yrs per Vanguard/Schwab Q1 2026)."
+        f"Durations from each fund's issuer: {live_duration_sources()}."
     )
     render_footer()

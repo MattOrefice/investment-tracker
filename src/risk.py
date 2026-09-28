@@ -46,6 +46,7 @@ of the app's regression machinery (reused from src.factors).
 """
 from __future__ import annotations
 
+import json
 from datetime import date
 from typing import Optional
 
@@ -54,6 +55,7 @@ import pandas as pd
 from statsmodels.regression.linear_model import OLS
 from statsmodels.tools import add_constant
 
+from src.asof import format_long_date
 from src.factors import _nw_lags, load_factors
 from src.holdings import (
     get_inception_date,
@@ -61,8 +63,8 @@ from src.holdings import (
     get_portfolio_value_series,
     last_settled_price_date,
 )
-from src.positioning import ETF_DURATION
 from src.prices import get_prices, total_return_series
+from src.style_box import _META_PATH
 
 # ── Model configuration ────────────────────────────────────────────────────────
 
@@ -359,14 +361,16 @@ def methodology_notes() -> list[str]:
 #  The translation chain is carried on each leg so the page can SHOW it.
 # ════════════════════════════════════════════════════════════════════════════
 
-# Duration assumptions (years). IEF modified duration is REUSED from the
-# maintained ETF duration table in src.positioning (single source of truth;
-# 7.5y, refreshed quarterly from the iShares fact sheet). HY spread duration is
-# a distinct concept from the rate-duration entries in that table (sensitivity
+# Duration assumptions (years). IEF's duration is REUSED from the ETF metadata
+# (data/etf_metadata.json, read live: single source of truth, with its measure,
+# source and as-of date since #455). HY spread duration is
+# a distinct concept from the rate-duration entries in that file (sensitivity
 # to credit-SPREAD moves, not yield moves), so it is a documented assumption
 # here — ~3.5y, consistent with the HYG fact sheet (~3–4y). Both are stated on
 # the page as assumptions, in the same spirit as the Phase 1 proxy disclosure.
-IEF_MODIFIED_DURATION = float(ETF_DURATION["IEF"])  # 7.5y, from src.positioning
+with open(_META_PATH) as _f:
+    _IEF_ENTRY = json.load(_f)["IEF"]
+IEF_MODIFIED_DURATION = float(_IEF_ENTRY["duration_years"])  # the metadata's, live
 HY_SPREAD_DURATION    = 3.5                          # years (assumption)
 
 _DEFAULT_DURATIONS = {"rates": IEF_MODIFIED_DURATION, "credit": HY_SPREAD_DURATION}
@@ -564,8 +568,9 @@ def scenario_methodology_notes(durations: Optional[dict] = None) -> list[str]:
         "Δspread). The translation chain is shown on every result so the units "
         "are transparent, rather than a raw basis-points-times-beta product.",
 
-        f"Duration assumptions: IEF modified duration ≈ {durations['rates']:g}y "
-        "(from the maintained ETF duration table) and HY spread duration ≈ "
+        f"Duration assumptions: IEF duration ≈ {durations['rates']:g}y (the ETF "
+        f"metadata's {_IEF_ENTRY['duration_measure']}, as of "
+        f"{format_long_date(_IEF_ENTRY['as_of'])}) and HY spread duration ≈ "
         f"{durations['credit']:g}y (HYG fact sheet, ~3–4y). Both are stated "
         "assumptions, disclosed like the Phase 1 ETF-proxy disclosure.",
 

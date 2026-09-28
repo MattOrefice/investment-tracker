@@ -9,12 +9,12 @@ import pytest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from src.positioning import (
-    ETF_DURATION,
     ETF_STYLE_BOX,
     _FI_SLEEVE_HOLDING,
     build_style_box_figure,
     get_effective_duration,
     get_style_box_data,
+    live_fund_durations,
 )
 
 # ── Shared test fixtures ──────────────────────────────────────────────────────
@@ -67,8 +67,8 @@ def test_effective_duration_known_weights():
     with patch("src.positioning.get_sleeve_weights_on_date", return_value=sw):
         result = get_effective_duration("2026-03-31")
 
-    vgit_dur = ETF_DURATION[_FI_SLEEVE_HOLDING["Core Fixed Income"]]
-    schp_dur = ETF_DURATION[_FI_SLEEVE_HOLDING["TIPS"]]
+    vgit_dur = live_fund_durations()[_FI_SLEEVE_HOLDING["Core Fixed Income"]]
+    schp_dur = live_fund_durations()[_FI_SLEEVE_HOLDING["TIPS"]]
 
     # Cash/SPAXX is excluded from duration; portfolio-level duration = weighted FI only
     expected_dur = (0.06 * vgit_dur + 0.04 * schp_dur) / 1.0
@@ -97,14 +97,15 @@ def test_effective_duration_empty_portfolio():
 
 
 def test_effective_duration_raises_on_unmapped_fi_holding():
-    """A held FI-sleeve holding with no ETF_DURATION entry must RAISE — a silent 0
-    would understate the FI sleeve duration with nothing visibly wrong."""
+    """A held FI-sleeve holding with no duration in the ETF metadata must RAISE — a
+    silent 0 would understate the FI sleeve duration with nothing visibly wrong."""
     sw = _make_sw(dict(_BASELINE_ROWS))
     # Core FI's holding (VGIT) loses its duration entry.
-    patched = {k: v for k, v in ETF_DURATION.items() if k != _FI_SLEEVE_HOLDING["Core Fixed Income"]}
+    patched = {k: v for k, v in live_fund_durations().items()
+               if k != _FI_SLEEVE_HOLDING["Core Fixed Income"]}
     with patch("src.positioning.get_sleeve_weights_on_date", return_value=sw), \
-         patch("src.positioning.ETF_DURATION", patched):
-        with pytest.raises(ValueError, match="ETF_DURATION"):
+         patch("src.positioning.fund_durations", return_value=patched):
+        with pytest.raises(ValueError, match="has no duration in data/etf_metadata.json"):
             get_effective_duration("2026-03-31")
 
 

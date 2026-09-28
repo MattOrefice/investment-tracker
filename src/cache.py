@@ -219,6 +219,26 @@ def inputs_restatement_note(quarter_id: "str | None", snap: "SnapshotFrames | No
     )
 
 
+def undated_durations_note(snap: "SnapshotFrames | None") -> "str | None":
+    """The cover sentence for a quarter whose fixed-income durations came from the
+    undated table they lived in before #455, or None.
+
+    That is a lock whose locked ETF metadata holds no durations, or which holds no
+    inputs at all: positioning.fund_durations serves such a lock the undated table,
+    so it reports the durations it was reported with. Not a lock still waiting on its
+    metadata, whose duration line is pending. The figures are not restated here."""
+    if snap is None or getattr(snap, "quarter_end", None) is None:
+        return None
+    if ETF_METADATA in (getattr(snap, "inputs_pending", None) or {}):
+        return None
+    meta = (getattr(snap, "inputs", None) or {}).get(ETF_METADATA) or {}
+    if any(isinstance(v, dict) and v.get("duration_years") is not None
+           for v in meta.values()):
+        return None
+    return ("This quarter's fixed-income durations came from an undated table later "
+            "found out of date.")
+
+
 # ── Exact encoding for locked inputs ──────────────────────────────────────────
 # NOT to_json: its default keeps ten significant digits, which would make a locked
 # regression differ from the same regression on the file it locked. Python floats
