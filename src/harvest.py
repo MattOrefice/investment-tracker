@@ -85,14 +85,16 @@ REPLACEMENT_MAP: dict[str, tuple[str | None, str, str]] = {
     ),
     "VGIT": (
         "IEI",
+        # The durations are no longer typed (#462): the points, a comparable duration here
+        # and a shorter one for VTIP, stand without figures no table holds.
         "Intermediate US Treasury via iShares 3-7 Year Treasury. Different issuer; "
-        "comparable duration (~4-5 years).",
+        "comparable duration.",
         "clean",
     ),
     "SCHP": (
         "VTIP",
         "TIPS via Vanguard Short-Term Inflation-Protected Securities. Different issuer; "
-        "shorter duration (~2.5 years vs ~7 years), a modest duration shift accepted "
+        "shorter duration, a modest duration shift accepted "
         "for a {{w:TIPS}} sleeve.",
         "moderate",
     ),

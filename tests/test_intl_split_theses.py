@@ -93,12 +93,6 @@ def test_the_tool_writes_those_fields_from_the_state_before_it(tmp_path, monkeyp
 
 _TOKEN = re.compile(r"\d+(?:\.\d+)?%?|\b[A-Z]{3,5}\b")
 
-# Thesis 26 still types the US structure's "8 of 49", which its sleeve's rationale
-# reads from the targets since #456 (a share, 16.3%). Filed as #462, not changed with
-# the rationales. Pinned exactly: the check stays live for every other figure, and
-# goes red when #462 changes the thesis, so this entry is removed then.
-KNOWN_462 = {"AVDV": ["49", "8"]}
-
 
 @pytest.mark.parametrize("ticker", ["IDHQ", "AVIV", "AVDV"])
 def test_each_thesis_adds_no_figure_or_fund_its_rationale_does_not_have(ticker):
@@ -110,7 +104,7 @@ def test_each_thesis_adds_no_figure_or_fund_its_rationale_does_not_have(ticker):
                                "parent_id IS NOT NULL", (sleeve,)).fetchone()
     con.close()
     missing = sorted({t for t in _TOKEN.findall(text)} - set(_TOKEN.findall(rationale)))
-    assert missing == KNOWN_462.get(ticker, []), missing
+    assert missing == [], missing
 
 
 def test_the_tool_is_idempotent_and_refuses_a_second_link(tmp_path, monkeypatch):
