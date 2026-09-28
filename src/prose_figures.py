@@ -14,6 +14,8 @@ targets and the book:
                          would have if a structure were mirrored into A's region
   {{cash}}               the operational cash share of the portfolio, with its close
   {{er:TICKER}}          the fund's expense ratio, as the securities table holds it
+  {{dur:TICKER}}         the fund's effective duration, as src.positioning.ETF_DURATION
+                         holds it for the duration metric
 
 Weights and shares print to one decimal, as the SAA page does; an expense ratio prints to
 two, as the Research page does. A name that is not a sleeve of the book, or a ticker with
@@ -67,6 +69,17 @@ def _expense_ratio(ticker: str) -> str:
     return f"{float(row[0]) * 100:.2f}%"
 
 
+def _duration(ticker: str) -> str:
+    """A fund's effective duration from the table the FI duration metric reads, so a
+    thesis states the figure the Positioning section computes with."""
+    from src.positioning import ETF_DURATION
+    years = ETF_DURATION.get(ticker.strip())
+    if years is None:
+        raise KeyError(f"prose names the duration of '{ticker}', which ETF_DURATION does "
+                       "not hold")
+    return f"{years:.1f} years"
+
+
 def cash_phrase() -> str:
     """The operational cash share of the portfolio, as the SAA page's own caption
     measures it (sleeve_weights_with_coverage's cash_weight_of_total), with the close it
@@ -104,6 +117,8 @@ def render(text: "str | None", *, targets: "dict[str, float] | None" = None) -> 
             return cash_phrase()
         if kind == "er":
             return _expense_ratio(arg)
+        if kind == "dur":
+            return _duration(arg)
         raise KeyError(f"unknown prose token {m.group(0)}")
 
     return TOKEN.sub(fill, text)

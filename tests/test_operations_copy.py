@@ -41,8 +41,9 @@ def test_both_books_carry_every_swept_cell(book):
     # 52 swept cells, plus thesis 7's exit, invalidation and expected-return cells, which
     # #406 item 4's rewrite from International Core's rationale sets (two of them cleared),
     # plus #421's pass: theses 3's and 12's exit conditions, and thesis 20's three cells,
-    # which this table carries now instead of tools/migrate_copy_corrections.py.
-    assert sum(len(cols) for cols in new.values()) == 60
+    # which this table carries now instead of tools/migrate_copy_corrections.py; plus
+    # thesis 8's expected return, whose typed P/E figures were dropped (item 1, 09-28).
+    assert sum(len(cols) for cols in new.values()) == 61
     for tid, cols in new.items():
         for col, text in cols.items():
             assert _cell(book, int(tid), col) == text, (book.name, tid, col)

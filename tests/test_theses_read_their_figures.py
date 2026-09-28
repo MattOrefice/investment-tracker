@@ -48,9 +48,9 @@ NOT_THE_BOOKS = {
     10: ["below 0%", "below 2%, making", "(~2%)", "above 2.5%", "usually 20-30%"],
     11: ["below -1%", "which 2-3% would not", "30%+ drawdowns"],
     12: ["collapse below 2%"],
-    # SPAXX's own text, kept equal to the Research page's by tools/migrate_markets_copy.py.
-    # "Toward 1%" is a cash level the book has no target for.
-    23: ["toward 1% if short rates", "materially below 2%"],
+    # SPAXX's own text, kept equal to the Research page's by tools/migrate_markets_copy.py:
+    # its yield trigger. The cash level it named ("toward 1%") was dropped.
+    23: ["materially below 2%"],
 }
 
 
