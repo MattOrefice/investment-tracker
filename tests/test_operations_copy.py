@@ -39,8 +39,10 @@ def _cell(book, thesis_id, col):
 def test_both_books_carry_every_swept_cell(book):
     new = _tool().NEW
     # 52 swept cells, plus thesis 7's exit, invalidation and expected-return cells, which
-    # #406 item 4's rewrite from International Core's rationale sets (two of them cleared).
-    assert sum(len(cols) for cols in new.values()) == 55
+    # #406 item 4's rewrite from International Core's rationale sets (two of them cleared),
+    # plus #421's pass: theses 3's and 12's exit conditions, and thesis 20's three cells,
+    # which this table carries now instead of tools/migrate_copy_corrections.py.
+    assert sum(len(cols) for cols in new.values()) == 60
     for tid, cols in new.items():
         for col, text in cols.items():
             assert _cell(book, int(tid), col) == text, (book.name, tid, col)

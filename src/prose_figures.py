@@ -13,10 +13,12 @@ targets and the book:
   {{scaled:A|B|C+D}}     A's target times B's share of the C+D group: the size a sleeve
                          would have if a structure were mirrored into A's region
   {{cash}}               the operational cash share of the portfolio, with its close
+  {{er:TICKER}}          the fund's expense ratio, as the securities table holds it
 
-Weights and shares print to one decimal, as the SAA page does. A name that is not a sleeve
-of the book raises: a rationale naming a sleeve the book lacks is an error to see, not a
-figure to guess. Text without tokens (the personal book's prose) renders unchanged.
+Weights and shares print to one decimal, as the SAA page does; an expense ratio prints to
+two, as the Research page does. A name that is not a sleeve of the book, or a ticker with
+no expense ratio on file, raises: prose naming what the book lacks is an error to see, not
+a figure to guess. Text without tokens (the personal book's prose) renders unchanged.
 """
 from __future__ import annotations
 
@@ -50,6 +52,19 @@ def _total(targets: "dict[str, float]", names: str) -> float:
             raise KeyError(f"prose names '{name}', which is not an asset class of this book")
         total += targets[name]
     return total
+
+
+def _expense_ratio(ticker: str) -> str:
+    """A fund's expense ratio from the securities table, printed as Research prints it
+    (theses read the same number the fee exhibit shows, #421)."""
+    from src.db import get_connection
+    with get_connection() as conn:
+        row = conn.execute("SELECT expense_ratio FROM securities WHERE ticker = ?",
+                           (ticker.strip(),)).fetchone()
+    if row is None or row[0] is None:
+        raise KeyError(f"prose names the expense ratio of '{ticker}', which this book "
+                       "does not hold")
+    return f"{float(row[0]) * 100:.2f}%"
 
 
 def cash_phrase() -> str:
@@ -87,6 +102,8 @@ def render(text: "str | None", *, targets: "dict[str, float] | None" = None) -> 
                         / _total(targets, whole))
         if kind == "cash":
             return cash_phrase()
+        if kind == "er":
+            return _expense_ratio(arg)
         raise KeyError(f"unknown prose token {m.group(0)}")
 
     return TOKEN.sub(fill, text)
