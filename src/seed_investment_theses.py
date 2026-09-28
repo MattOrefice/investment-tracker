@@ -10,7 +10,7 @@ from src.db import get_connection, initialize_db
 SLEEVE_META = {
     "US Large Core": {
         "exit_conditions": (
-            "Would reduce if active factor tilts consistently underperform pure cap-weight "
+            "Would reduce if active factor tilts consistently outperform pure cap-weight "
             "for multiple decades, removing the rationale for maintaining an un-opinionated anchor."
         ),
         "invalidation_conditions": (
@@ -198,7 +198,7 @@ SLEEVE_META = {
     },
     "Cash / SPAXX": {
         "exit_conditions": (
-            "Would reduce toward 1-2% if cash yields collapse below 2% for 12+ consecutive "
+            "Would reduce if cash yields collapse below 2% for 12+ consecutive "
             "months, increasing deployment into equity sleeves."
         ),
         "invalidation_conditions": (

@@ -164,7 +164,7 @@ def test_the_international_theses_name_sleeves_the_book_has(book):
 
 # ── 4. SCHP ──────────────────────────────────────────────────────────────────
 
-def test_schp_names_both_indexes_everywhere_its_rationale_is_carried():
+def test_schp_names_both_indexes_everywhere_its_rationale_is_carried(tmp_path, monkeypatch):
     from src.seed_securities import HOLDINGS
     seed = next(h["holding_rationale"] for h in HOLDINGS if h["ticker"] == "SCHP")
     indexes = ("SCHP the Bloomberg US Treasury Inflation-Linked Bond Index (Series-L), "
@@ -181,7 +181,27 @@ def test_schp_names_both_indexes_everywhere_its_rationale_is_carried():
         finally:
             con.close()
         assert held == seed, book
-        assert tuple(cells) == (thesis,) * 3, book
+        # Thesis 20 carries its own text since #421, its fees read from the data.
+        # Rendered, it is still the fund rationale without the revisit line.
+        assert "{{er:" in cells[0], book
+        assert tuple(_render_in(book, cells, tmp_path, monkeypatch)) == (thesis,) * 3, book
+
+
+def _render_in(book, texts, tmp_path, monkeypatch):
+    """``texts`` rendered against ``book`` (a copy): the theses read their fees from the
+    book's securities table since #421."""
+    import os
+    import src.db as db
+    from src.prose_figures import render
+    src_path = Path(book) if Path(book).is_absolute() else ROOT / book
+    copy = tmp_path / f"render_{src_path.name}"
+    if not copy.exists():
+        shutil.copyfile(src_path, copy)
+        os.chmod(copy, 0o644)
+    monkeypatch.setattr(db, "DB_PATH", copy)
+    monkeypatch.setattr(db, "_migrated_paths", set())
+    monkeypatch.setattr(db, "_RUNTIME_CACHE", None)
+    return [render(t) for t in texts]
 
 
 # ── the tool ─────────────────────────────────────────────────────────────────

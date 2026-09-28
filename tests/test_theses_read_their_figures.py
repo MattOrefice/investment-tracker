@@ -1,0 +1,211 @@
+"""The Trade Log's theses read their weights and fees from the data (#421, #447).
+
+The seeded theses were copies of older rationale text, and the figures they typed went
+stale as the rationales were corrected: 16/14/8/38/7/8/9-in-72/6/3% against targets of
+17.3/15.3/9.2/41.8/8.2/9.2/6.1-in-79.6/4.1/0%, and fees typed where the Research page
+reads them from the securities table. They were corrected item by item, keeping each
+thesis's own argument: every weight a thesis states is a placeholder over the targets,
+and every expense ratio one over the securities table (src/prose_figures.py, {{er:}}).
+
+Pinned here, on data/demo.db, the frozen book, and the table that writes them
+(tools/migrate_operations_copy.py):
+  * no thesis types a weight or a fee: a percentage equal to a target or an expense
+    ratio the book holds fails, and so does any other percentage not listed below as
+    a figure that is not the book's (a CPI level, a return assumption, a hypothetical);
+  * every placeholder renders;
+  * the items #421 and #447 named: thesis 3's exit condition, thesis 12's cash text,
+    thesis 16's "highest in the portfolio", thesis 19's jurisdiction, thesis 23's
+    target_weight, and what #449 left in theses 18 and 21.
+"""
+from __future__ import annotations
+
+import importlib.util
+import os
+import re
+import shutil
+import sqlite3
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parent.parent
+BOOKS = [ROOT / "data" / "demo.db", ROOT / "tests" / "fixtures" / "frozen_book.db"]
+COLUMNS = ("macro_view", "view_summary", "vehicle_rationale", "exit_conditions",
+           "invalidation_conditions", "expected_return_scenario")
+TOKEN = re.compile(r"\{\{[^}]*\}\}")
+FIGURE = re.compile(r"\d+(?:\.\d+)?\s?%|\d+\s?bps?\b")
+
+# Percentages a thesis may type because no table holds them: return assumptions, CPI
+# and yield thresholds, drawdown sizes, hypotheticals. Each is an exact phrase in that
+# thesis. A weight or a fee typed back into a thesis is in none of these.
+NOT_THE_BOOKS = {
+    3: [">3% per year", "5-7% annually"],
+    4: ["~1-2% over market", "over 60% of quality"],
+    5: ["~3-4% incremental"],
+    6: ["~1-2% premium", "~1% premium"],
+    8: ["50%+ drawdowns", "1-2% long-run"],
+    9: ["exceed 3%", "4% CPI", "~5-10% portfolio"],
+    10: ["below 0%", "below 2%, making", "(~2%)", "above 2.5%", "usually 20-30%"],
+    11: ["below -1%", "which 2-3% would not", "30%+ drawdowns"],
+    12: ["collapse below 2%"],
+    # SPAXX's own text, kept equal to the Research page's by tools/migrate_markets_copy.py.
+    # "Toward 1%" is a cash level the book has no target for.
+    23: ["toward 1% if short rates", "materially below 2%"],
+}
+
+
+def _ro(book):
+    return sqlite3.connect(f"file:{Path(book).as_posix()}?mode=ro", uri=True)
+
+
+def _book_figures(book) -> "dict[str, str]":
+    """Every weight and fee the book holds, as a thesis would print it."""
+    con = _ro(book)
+    try:
+        held: "dict[str, list[str]]" = {}
+        for n, w in con.execute("SELECT name, target_weight FROM asset_classes"):
+            if w:
+                held.setdefault(f"{w * 100:.1f}%", []).append(f"the {n} target")
+        for t, e in con.execute("SELECT ticker, expense_ratio FROM securities ORDER BY ticker"):
+            if e:
+                held.setdefault(f"{e * 100:.2f}%", []).append(f"{t}'s expense ratio")
+        return {fig: ", ".join(names) for fig, names in held.items()}
+    finally:
+        con.close()
+
+
+def _theses(book) -> "dict[int, dict[str, str]]":
+    con = _ro(book)
+    try:
+        return {r[0]: dict(zip(COLUMNS, r[1:])) for r in con.execute(
+            f"SELECT thesis_id, {', '.join(COLUMNS)} FROM theses ORDER BY thesis_id")}
+    finally:
+        con.close()
+
+
+def _table() -> "dict[int, dict[str, str]]":
+    spec = importlib.util.spec_from_file_location(
+        "migrate_operations_copy", ROOT / "tools" / "migrate_operations_copy.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return {int(k): v for k, v in mod.NEW.items()}
+
+
+def typed_figures(theses: "dict[int, dict[str, str]]", held: "dict[str, str]") -> "list[str]":
+    """Every figure a thesis types that it should read: one the book holds, or one not
+    listed as a figure that is not the book's."""
+    out = []
+    for tid, cells in theses.items():
+        for col, text in cells.items():
+            if not isinstance(text, str) or not text:
+                continue
+            plain = TOKEN.sub("", text)
+            allowed = [(m.start(), m.end()) for p in NOT_THE_BOOKS.get(tid, [])
+                       for m in re.finditer(re.escape(p), plain)]
+            for m in FIGURE.finditer(plain):
+                fig = m.group(0).replace(" ", "")
+                if fig in held:
+                    out.append(f"thesis {tid} {col} types {fig}, {held[fig]}")
+                elif not any(a <= m.start() and m.end() <= b for a, b in allowed):
+                    out.append(f"thesis {tid} {col} types {fig}: "
+                               f"...{plain[max(0, m.start() - 30):m.end() + 10]}...")
+    return out
+
+
+@pytest.mark.parametrize("book", BOOKS, ids=lambda p: p.name)
+def test_no_thesis_types_a_weight_or_a_fee(book):
+    assert typed_figures(_theses(book), _book_figures(book)) == []
+
+
+def test_the_table_that_writes_them_types_none_either():
+    assert typed_figures(_table(), _book_figures(BOOKS[0])) == []
+
+
+def test_the_check_fails_on_a_weight_or_a_fee_typed_back():
+    """The check's own contrast: the stale weight and the fee this pass removed."""
+    held = _book_figures(BOOKS[0])
+    theses = _theses(BOOKS[0])
+    weight = {3: dict(theses[3], macro_view=theses[3]["macro_view"].replace(
+        "{{w:US Large Core}}", "16%"))}
+    fee = {13: dict(theses[13], vehicle_rationale=theses[13]["vehicle_rationale"].replace(
+        "{{er:VOO}}", "0.03%"))}
+    assert typed_figures(weight, held) and "16%" in typed_figures(weight, held)[0]
+    assert typed_figures(fee, held) and "VOO's expense ratio" in typed_figures(fee, held)[0]
+
+
+# ── every placeholder renders ────────────────────────────────────────────────────
+
+@pytest.fixture(params=BOOKS, ids=lambda p: p.name)
+def book_copy(request, tmp_path, monkeypatch):
+    import socket
+    import src.db as db
+    import src.prices as prices
+    from tests.conftest import pin_today, unpin_leftovers
+    copy = tmp_path / "book.db"
+    shutil.copyfile(request.param, copy)
+    os.chmod(copy, 0o644)
+
+    def _offline(*_a, **_k):
+        raise OSError("offline")
+
+    monkeypatch.setattr(socket, "getaddrinfo", _offline)
+    monkeypatch.setattr(prices._SESSION, "get", _offline)
+    monkeypatch.setattr(prices, "_GAP_FETCH", False)
+    monkeypatch.setattr(db, "DB_PATH", copy)
+    monkeypatch.setattr(db, "_migrated_paths", set())
+    monkeypatch.setattr(db, "_RUNTIME_CACHE", None)
+    pin_today(monkeypatch)
+    yield copy
+    unpin_leftovers()
+
+
+def _rendered(book) -> "dict[int, dict[str, str]]":
+    from src.prose_figures import render
+    return {tid: {c: render(t) for c, t in cells.items()}
+            for tid, cells in _theses(book).items()}
+
+
+def test_every_placeholder_renders(book_copy):
+    left = [(tid, c) for tid, cells in _rendered(book_copy).items()
+            for c, t in cells.items() if t and "{{" in t]
+    assert left == []
+
+
+def test_the_items_421_and_447_named(book_copy):
+    r = _rendered(book_copy)
+    # thesis 3: the exit condition agreed with its own invalidation condition
+    assert "tilts consistently outperform pure cap-weight" in r[3]["exit_conditions"]
+    assert "Factor tilts outperform pure cap-weight" in r[3]["invalidation_conditions"]
+    assert r[3]["view_summary"].count("Core is sized at 17.3% because") == 1
+    # thesis 12 (#447): thesis 23's framing, no "$2.4k", no cash weight, no 1-2% range
+    for col in ("macro_view", "view_summary"):
+        t = r[12][col]
+        assert "The operational cash balance, " in t and "is untargeted liquidity" in t
+        assert "$2.4k" not in t and "3% handles" not in t and "1-2%" not in t
+    assert r[12]["exit_conditions"].startswith("Would reduce if cash yields collapse below 2%")
+    # thesis 16: 0.25% is not the highest expense ratio in the portfolio
+    assert "highest in the portfolio" not in r[16]["vehicle_rationale"]
+    assert "Its 0.25% expense ratio buys factor exposure." in r[16]["vehicle_rationale"]
+    # thesis 19: Pennsylvania, as 776e1e6 corrected VGIT's rationale
+    t = r[19]["vehicle_rationale"]
+    assert "Pennsylvania's flat rate" in t and "DC" not in t and "high-income-tax" not in t
+    assert "at 0.04% versus IEF's 0.15%" in t and "a 6.1% sleeve inside a 79.6% growth" in t
+    # theses 18 and 21: #449's corrections hold, with the fees read from the data
+    assert ("EEM costs 0.70% against IEMG's 0.09%, the largest fee gap in the portfolio. "
+            "The two are not the same exposure: IEMG tracks MSCI Emerging Markets IMI"
+            in r[18]["vehicle_rationale"])
+    assert "seven times" not in r[18]["vehicle_rationale"] and "61 bps" not in r[18]["vehicle_rationale"]
+    assert "it costs 0.59% against DBC's 0.85%." in r[21]["vehicle_rationale"]
+    assert "SPY's 0.09% is not worth paying" in r[13]["vehicle_rationale"]
+
+
+@pytest.mark.parametrize("book", BOOKS, ids=lambda p: p.name)
+def test_thesis_23_holds_the_cash_sleeves_target(book):
+    con = _ro(book)
+    try:
+        (weight,), = con.execute("SELECT target_weight FROM theses WHERE thesis_id = 23")
+        (target,), = con.execute("SELECT target_weight FROM asset_classes WHERE "
+                                 "name = 'Cash / SPAXX'")
+    finally:
+        con.close()
+    assert weight == target == 0.0

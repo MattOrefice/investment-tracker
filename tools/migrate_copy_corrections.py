@@ -10,9 +10,9 @@ rest, each from the source that now holds it:
   * theses 24 and 26 (International Quality — IDHQ, International Small Value — AVDV):
     tools/link_intl_split_theses.py's text, where #415's "by a wide margin" and "much
     weaker" are reverted to "materially";
-  * thesis 20 (TIPS — SCHP): SCHP's fund rationale in src/seed_securities.py without its
-    revisit line, as the thesis has always carried it, so it no longer calls TIP
-    "identical exposure" (#406 item 11);
+  * thesis 20 (TIPS — SCHP) was carried here from SCHP's fund rationale until #421's
+    pass gave it its own text, with the fees read from the data: it is in
+    tools/migrate_operations_copy.py now, and renders as the fund rationale does;
   * theses 7 and 17: the sleeves they name. Both were written for the undivided
     International Developed sleeve and now condense International Core's rationale
     (#406 item 4), so 17 names International Core, in its title too, and 7, the parent
@@ -22,7 +22,9 @@ rest, each from the source that now holds it:
     src/seed_position_theses.py seeds with, the sleeve's target over its funds:
     International Core's, whose one fund is VEA, as theses 24 to 26 hold theirs.
     Nothing displays the field today (the Trade Log selects it and never shows it); a
-    wrong value would be displayed the day something reads it.
+    wrong value would be displayed the day something reads it;
+  * thesis 23's target_weight (#447): 0.02, Cash's old 2% target, by the same rule now
+    0.0, the Cash / SPAXX sleeve's target over its one fund, SPAXX.
 
 Each UPDATE is keyed on the thesis id and the cell's current value, must change exactly
 one row, or the run rolls back; a second run changes nothing. Targets data/demo.db
@@ -67,30 +69,28 @@ def _draft(ticker: str) -> str:
     return tool.DRAFTS[ticker][1]
 
 
-def _schp_thesis_text() -> str:
-    from src.seed_securities import HOLDINGS
-    text = next(h["holding_rationale"] for h in HOLDINGS if h["ticker"] == "SCHP")
-    return text.split("\n\n**Would revisit if**")[0]
-
-
-def _international_core_target() -> float:
+def _position_target(sleeve: str) -> float:
     """The seed's rule for a position thesis: its sleeve's target over the sleeve's funds.
-    International Core holds one fund, VEA."""
+    International Core holds one fund, VEA. SPAXX is a synthetic holding outside the
+    securities table, and src.seed_position_theses gives its thesis the Cash / SPAXX
+    sleeve's target itself."""
     from src.seed_saa import SUB_CLASSES
     from src.seed_securities import HOLDINGS
-    funds = [h for h in HOLDINGS if h.get("asset_class") == "International Core"]
-    target = next(s["target_weight"] for s in SUB_CLASSES if s["name"] == "International Core")
+    target = next(s["target_weight"] for s in SUB_CLASSES if s["name"] == sleeve)
+    if sleeve == "Cash / SPAXX":
+        return target
+    funds = [h for h in HOLDINGS if h.get("asset_class") == sleeve]
     return target / len(funds)
 
 
 def cells() -> "dict[int, dict[str, object]]":
-    idhq, avdv, schp = _draft("IDHQ"), _draft("AVDV"), _schp_thesis_text()
+    idhq, avdv = _draft("IDHQ"), _draft("AVDV")
     return {
         7:  {"target_sleeves": json.dumps(INTL_SLEEVES)},
         17: {"title": "International Core — VEA",
              "target_sleeves": json.dumps(["International Core"]),
-             "target_weight": _international_core_target()},
-        20: {"macro_view": schp, "view_summary": schp, "vehicle_rationale": schp},
+             "target_weight": _position_target("International Core")},
+        23: {"target_weight": _position_target("Cash / SPAXX")},
         24: {"macro_view": idhq, "view_summary": idhq, "vehicle_rationale": idhq},
         26: {"macro_view": avdv, "view_summary": avdv, "vehicle_rationale": avdv},
     }

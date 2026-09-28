@@ -19,6 +19,7 @@ Every book that carries a cell is checked: the seed, data/demo.db and the frozen
 from __future__ import annotations
 
 import sqlite3
+import shutil
 from pathlib import Path
 
 import pytest
@@ -53,19 +54,44 @@ def _sleeve(name):
     return next(s for s in SUB_CLASSES if s["name"] == name)
 
 
-# ── #436: theses 18 and 21 carry their fund's rationale ─────────────────────────
+# ── #436: theses 18 and 21 keep the corrections their fund rationales carry ─────
+# #449 copied the fund rationales in. #421's pass corrected the theses item by item
+# from there, reading their fees from the data and dropping the two figures derived
+# from them ("seven times", "61 bps"), so they no longer equal the fund text: what
+# stays pinned is that #449's corrections hold, rendered.
 
 @pytest.mark.parametrize("book", BOOKS, ids=lambda p: p.name)
-def test_the_iemg_and_pdbc_theses_carry_their_fund_rationales(book):
-    iemg_body, _, iemg_revisit = _fund("IEMG").partition(REVISIT)
-    pdbc_body = _fund("PDBC").partition(REVISIT)[0]
-    want = {18: f"{iemg_body} Would revisit if {iemg_revisit}", 21: pdbc_body}
+def test_the_iemg_and_pdbc_theses_keep_449s_corrections(book, tmp_path, monkeypatch):
+    want = {18: "The two are not the same exposure: IEMG tracks MSCI Emerging Markets "
+                "IMI, which adds small caps to the large and mid caps of EEM's MSCI "
+                "Emerging Markets index.",
+            21: "PDBC is a regulated investment company that holds its futures through a "
+                "wholly-owned Cayman Islands subsidiary, so it reports on Form 1099 "
+                "instead."}
     for tid, text in want.items():
-        for col, cell in _thesis(book, tid).items():
-            assert cell == text, (book.name, tid, col)
+        cells = _thesis(book, tid)
+        for col, cell in zip(cells, _render_in(book, cells.values(), tmp_path, monkeypatch)):
+            assert text in cell, (book.name, tid, col)
             for claim in ("identical exposure", "the same MSCI Emerging Markets index",
                           "only broad commodity ETF worth owning", "C-corporation"):
                 assert claim not in cell, (book.name, tid, col, claim)
+
+
+def _render_in(book, texts, tmp_path, monkeypatch):
+    """``texts`` rendered against ``book`` (a copy): the theses read their fees from the
+    book's securities table since #421."""
+    import os
+    import src.db as db
+    from src.prose_figures import render
+    src_path = Path(book) if Path(book).is_absolute() else ROOT / book
+    copy = tmp_path / f"render_{src_path.name}"
+    if not copy.exists():
+        shutil.copyfile(src_path, copy)
+        os.chmod(copy, 0o644)
+    monkeypatch.setattr(db, "DB_PATH", copy)
+    monkeypatch.setattr(db, "_migrated_paths", set())
+    monkeypatch.setattr(db, "_RUNTIME_CACHE", None)
+    return [render(t) for t in texts]
 
 
 # ── #437: no "not the largest US sleeve" ──────────────────────────────────────────
@@ -99,11 +125,12 @@ def test_the_seed_holds_tips_fee_from_the_fund_page():
 
 
 @pytest.mark.parametrize("book", BOOKS, ids=lambda p: p.name)
-def test_every_book_carries_tips_fee(book):
+def test_every_book_carries_tips_fee(book, tmp_path, monkeypatch):
     assert _q(book, "SELECT expense_ratio FROM securities WHERE ticker = 'TIP'") == [(0.0018,)]
     (schp,), = _q(book, "SELECT holding_rationale FROM securities WHERE ticker = 'SCHP'")
     assert schp == _fund("SCHP")
-    for col, cell in _thesis(book, 20).items():
+    cells = _thesis(book, 20)
+    for col, cell in zip(cells, _render_in(book, cells.values(), tmp_path, monkeypatch)):
         assert "versus TIP's 0.18%." in cell and "0.19%" not in cell, (book.name, col)
 
 
