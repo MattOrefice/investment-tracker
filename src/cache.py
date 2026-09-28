@@ -120,6 +120,10 @@ class SnapshotFrames(NamedTuple):
     # lock taken from #383 on; None before, when each figure held its own window's
     # basket, and those reports keep that construction (window_start_baskets).
     benchmark_rule: "str | None" = None
+    # {"restated_on": ISO} when the book's DRIP lots were rebuilt from the ledger
+    # after this lock was taken (#406 item 12). A lock holds prices and inputs, not
+    # trades, so its report reads the rebuilt lots; this is what makes it say so.
+    lot_rebuild: "dict | None" = None
 
 
 # Every lock captured from #368 on: prices AND dividends through the quarter's last
@@ -443,6 +447,51 @@ def input_corrections_note(snap: "SnapshotFrames | None") -> "str | None":
     )
 
 
+def record_lot_rebuild(quarter_id: str, restated_on: date) -> bool:
+    """Record in a lock that the book's DRIP lots were rebuilt after it was taken
+    (#406 item 12). Every price, input and the capture time are left as they are;
+    only the record is added. Returns False when there is no lock, or it already
+    carries a record: a second rebuild on the same lock does not re-date the first."""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT snapshot_data, snapshot_date, captured_at FROM quarter_snapshots "
+            "WHERE quarter_id = ?", (quarter_id,)).fetchone()
+    if row is None:
+        return False
+    blob = json.loads(row["snapshot_data"])
+    if blob.get("lot_rebuild"):
+        return False
+    blob["lot_rebuild"] = {"restated_on": restated_on.isoformat()}
+    with get_connection() as conn:
+        cur = conn.execute(
+            "UPDATE quarter_snapshots SET snapshot_data = ? WHERE quarter_id = ?",
+            (json.dumps(blob), quarter_id))
+        if cur.rowcount != 1:
+            raise RuntimeError(f"recording {quarter_id}'s lot rebuild matched "
+                               f"{cur.rowcount} rows, expected exactly 1")
+    return True
+
+
+def lot_rebuild_note(snap: "SnapshotFrames | None") -> "str | None":
+    """The cover line for a quarter whose DRIP lots were rebuilt after it locked, or
+    None. What moved is every figure that counts reinvested shares: market value,
+    weights and the trade list. Returns, attribution and benchmark figures value the
+    non-DRIP shares at the adjusted close and never read a lot, so they do not move."""
+    rec = getattr(snap, "lot_rebuild", None) if snap is not None else None
+    if not rec:
+        return None
+    on = date.fromisoformat(rec["restated_on"])
+    return (
+        f"Restated {on.strftime('%B')} {on.day}, {on.year}: the dividend reinvestment "
+        f"lots were rebuilt from the trade ledger and priced at the actual close on each "
+        f"reinvestment date. Earlier versions of this report priced them at a "
+        f"dividend-adjusted close and did not hold a lot for every distribution, so "
+        f"market values, weights and the trade list differ from those versions. "
+        f"Returns, attribution and benchmark figures do not read these lots and are "
+        f"unchanged."
+    )
+
+
 def _as_frames(snap) -> SnapshotFrames:
     """Accept a SnapshotFrames, or a bare adj_close-only frame (the legacy shape)."""
     if isinstance(snap, SnapshotFrames):
@@ -512,7 +561,8 @@ def get_quarter_snapshot(quarter_id: str) -> tuple:
                            inputs=inputs, inputs_pending=blob.get("inputs_pending"),
                            inputs_rule=blob.get("inputs_rule"),
                            input_corrections=blob.get("input_corrections"),
-                           benchmark_rule=blob.get("benchmark_rule")),
+                           benchmark_rule=blob.get("benchmark_rule"),
+                           lot_rebuild=blob.get("lot_rebuild")),
             row["captured_at"])
 
 

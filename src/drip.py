@@ -7,19 +7,28 @@ is unchanged by this module.
 
 PDBC NOTE: PDBC distributions have mixed tax character (qualified dividend,
 return of capital, ordinary income). Phase 17 treats PDBC identically to other
-ETFs — distributions are reinvested at payment-date adj_close. Tax-character
+ETFs — distributions are reinvested at the reinvestment date's close. Tax-character
 splitting for PDBC cost basis is deferred to a future phase.
 
-PRICE CONVENTION: DRIP share counts and cost_basis_per_share use adj_close
-(total-return basis), consistent with the TWR methodology used throughout.
-This ensures get_portfolio_value_series produces identical results whether
-DRIP is computed in-memory or from persisted lots.
+PRICE CONVENTION: a lot's shares and cost_basis_per_share use the RAW close on its
+reinvestment date, read from ``close`` directly: a DRIP reinvestment executes at the
+market close, which is what the broker's confirmation and the lot's cost basis
+record. Never adj_close. dividend_adjusted re-anchors adj_close on every stored
+dividend, so a lot priced from it would change with each later distribution, and
+lots persisted at different times would sit on different bases (#406 item 12).
+This module used to use adj_close "for consistency with get_portfolio_value_series",
+but that series, like attribution, excludes DRIP lots and values the non-DRIP
+shares at adj_close, so no return calculation reads a DRIP lot and the consistency
+it claimed was with nothing. The lots are real shares: market value, weights and
+tax lots read them.
 
 PAYMENT DATE: DRIP executes on payment_date (the date Fidelity actually
 reinvests the dividend), not on ex_dividend_date. Payment date is derived
 as ex_date + PAYMENT_DATE_OFFSET_TRADING_DAYS trading days (weekday arithmetic,
-Saturday/Sunday skipped). NYSE holidays are not currently modeled — a future
-phase may add pandas_market_calendars for exact holiday-aware arithmetic.
+Saturday/Sunday skipped). NYSE holidays are not modeled in that arithmetic, so a
+pay date can fall on a day with no close: the reinvestment then executes at the
+first stored close on or after it, when the cash actually arrives (#406 item 12),
+found in the price history rather than from a calendar.
 """
 from __future__ import annotations
 
@@ -31,7 +40,7 @@ from typing import NamedTuple, Optional
 import pandas as pd
 
 from src.db import get_connection
-from src.prices import get_dividends, get_prices, total_return_series
+from src.prices import get_dividends, get_prices
 
 _SPAXX_TICKER = "SPAXX"
 
@@ -170,7 +179,9 @@ def compute_drip_lots(
       1. shares_before = initial shares held strictly BEFORE ex_date
                          + cumulative DRIP shares from prior events
       2. payment_date  = derive_payment_date(ex_date, ticker)
-      3. price         = adj_close on or before payment_date
+      3. price         = the first close on or after payment_date, and the lot is
+                         dated there (#406 item 12: a pay date with no close, a
+                         market holiday, reinvests at the next close)
       4. new_shares    = (shares_before × dividend_per_share) / price
       5. cumulative_drip += new_shares  (compounding for subsequent events)
 
@@ -187,11 +198,13 @@ def compute_drip_lots(
             built from buy/sell trades with lot_source != 'drip'.
         distributions: DataFrame with ex_date (datetime.date) and
             dividend_per_share (float), sorted chronologically.
-        price_history: adj_close Series indexed by datetime.date.
+        price_history: RAW close Series indexed by datetime.date (see PRICE
+            CONVENTION above; never adj_close).
 
     Returns:
         List of lot dicts with keys: ticker, ex_date (datetime.date),
-        purchase_date (datetime.date, = payment_date), shares (float),
+        purchase_date (datetime.date, the first close on or after the pay date),
+        shares (float),
         cost_basis_per_share (float), lot_source='drip'.
         Empty list if no qualifying events.
     """
@@ -213,12 +226,18 @@ def compute_drip_lots(
         if shares_before <= 0:
             continue
 
-        # Derive payment_date and look up adj_close on or before it
+        # The reinvestment executes at the first stored close on or after the pay
+        # date, when the cash arrives. It used to take the last close ON OR BEFORE,
+        # dated the pay date itself: a pay date on a market holiday reinvested at the
+        # previous session's close, before the cash existed (#406 item 12). No close
+        # yet on or after the pay date means the cash has not arrived in the data:
+        # no lot until one does.
         payment_date = derive_payment_date(ex_date, ticker)
-        avail = price_history[price_history.index <= payment_date].dropna()
+        avail = price_history[price_history.index >= payment_date].dropna()
         if avail.empty:
             continue
-        price = float(avail.iloc[-1])
+        reinvest_date = avail.index[0]
+        price = float(avail.iloc[0])
         if price <= 0:
             continue
 
@@ -230,7 +249,7 @@ def compute_drip_lots(
             {
                 "ticker":               ticker,
                 "ex_date":              ex_date,
-                "purchase_date":        payment_date,
+                "purchase_date":        reinvest_date,
                 "shares":               new_shares,
                 "cost_basis_per_share": price,
                 "lot_source":           "drip",
@@ -385,7 +404,9 @@ def backfill_all_drip_lots(
             results[ticker] = BackfillResult(0, "price_fetch_failed", str(exc))
             continue
 
-        price_history       = total_return_series(price_df)
+        # The raw close, read from ``close`` directly: the price the reinvestment
+        # executed at, which no later dividend can move (PRICE CONVENTION above).
+        price_history       = price_df["close"].astype(float)
         price_history.index = pd.to_datetime(price_history.index).date
 
         lots = compute_drip_lots(ticker, initial_shares, distributions, price_history)
