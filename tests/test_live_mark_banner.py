@@ -32,10 +32,14 @@ class _Resp:
         return self._p
 
 
-def _chart(session_open: bool, quoted: datetime, close: float = 101.5):
-    """Two bars, yesterday and today (UTC dates), with today's session open or closed."""
-    now = datetime.now(timezone.utc)
-    today = datetime(now.year, now.month, now.day, 13, 30, tzinfo=timezone.utc)
+def _chart(session_open: bool, quoted: datetime, close: float = 101.5, *,
+           day: "date | None" = None, now: "datetime | None" = None):
+    """Two bars, the day before and the session's day, with the session open or closed.
+    The session is ``day``'s (the real clock's UTC date by default), opening 13:30 UTC,
+    and open until two hours after ``now`` (the real clock by default)."""
+    now = now or datetime.now(timezone.utc)
+    day = day or now.date()
+    today = datetime(day.year, day.month, day.day, 13, 30, tzinfo=timezone.utc)
     yday = today - timedelta(days=1)
     start = int(today.timestamp())
     end = int((now + timedelta(hours=2)).timestamp()) if session_open else int(
@@ -163,33 +167,69 @@ def test_the_record_is_reset_for_every_test(request):
     assert prices._LIVE_MARKS == {}
 
 
+# The page renders read the clock twice: the price layer judges the session open
+# against datetime.now(), and the banner dates "today" by the machine's date. They used
+# to stage the session on the UTC date of the real clock, so from 8 PM to midnight
+# Eastern, on an Eastern machine, the staged session was tomorrow in New York and the
+# banner rightly did not call it today's (#441). The clock is pinned, and the session is
+# staged on New York's date, written out rather than computed with the app's helper.
+SESSION_DAY = date(2026, 9, 28)                                  # a Monday
+QUOTED = datetime(2026, 9, 28, 15, 2, tzinfo=timezone.utc)       # 11:02 AM EDT
+IN_SESSION = QUOTED
+EVENING = datetime(2026, 9, 29, 1, 0, tzinfo=timezone.utc)       # 9:00 PM EDT, Sep 28
+
+
+def _pin_clock(monkeypatch, instant: datetime) -> None:
+    """datetime.now() for the price layer, and date.today() everywhere, at ``instant``
+    and New York's date then: SESSION_DAY for both instants."""
+    from tests.conftest import pin_today
+
+    class _Now(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return instant.astimezone(tz) if tz else instant.astimezone().replace(tzinfo=None)
+
+    monkeypatch.setattr(prices, "datetime", _Now)
+    pin_today(monkeypatch, SESSION_DAY)
+
+
 @pytest.mark.parametrize("page", ["7_Risk.py", "2_Performance.py"])
-def test_the_page_banner_says_so_after_the_page_serves_the_bar(book, monkeypatch, page):
-    """Rendered, in personal mode during a staged open session. The record starts
-    empty, so the sentence can only come from bars THIS render served: Risk wrote its
-    banner before pricing its current value, and now writes it again after."""
+@pytest.mark.parametrize("instant", [IN_SESSION, EVENING], ids=["11:02 AM ET", "9 PM ET"])
+def test_the_page_banner_says_so_after_the_page_serves_the_bar(book, monkeypatch, page,
+                                                                 instant):
+    """Rendered, in personal mode, with the session's bar quoted at 11:02 AM Eastern.
+    The record starts empty, so the sentence can only come from bars THIS render served:
+    Risk wrote its banner before pricing its current value, and now writes it again after.
+
+    At 9 PM Eastern the process still serves that bar and no stored close covers it, so
+    the banner still names it. That is the hour the unpinned test failed in: its UTC
+    date is the next day, and a session staged on it is tomorrow in New York."""
     import streamlit as st
     import src.config as config
     from streamlit.testing.v1 import AppTest
+    from tests.conftest import unpin_leftovers
     monkeypatch.setattr(config, "IS_DEMO", False)
     con = sqlite3.connect(book)
     last = dict(con.execute(
         "SELECT ticker, close FROM prices p WHERE price_date = "
         "(SELECT MAX(price_date) FROM prices q WHERE q.ticker = p.ticker)").fetchall())
     con.close()
-    quoted = datetime.now(timezone.utc).replace(hour=15, minute=2, second=0, microsecond=0)
 
     def _get(url, *a, **k):
         ticker = url.split("/chart/")[1].split("?")[0]
-        return _Resp(_chart(True, quoted, float(last.get(ticker, 100.0))))
+        return _Resp(_chart(True, QUOTED, float(last.get(ticker, 100.0)),
+                            day=SESSION_DAY, now=instant))
 
     monkeypatch.setattr(prices._SESSION, "get", _get)
-    assert prices.live_marks() == {}, "premise: no mark before the render"
-    st.cache_data.clear()
-    at = AppTest.from_file(str(ROOT / "pages" / page), default_timeout=300).run()
+    _pin_clock(monkeypatch, instant)
+    try:
+        assert prices.live_marks() == {}, "premise: no mark before the render"
+        st.cache_data.clear()
+        at = AppTest.from_file(str(ROOT / "pages" / page), default_timeout=300).run()
+    finally:
+        unpin_leftovers()
     assert not at.exception, [str(e.value) for e in at.exception]
-    et = quoted.astimezone(__import__("src.asof", fromlist=["ET"]).ET).strftime("%I:%M %p").lstrip("0")
     caps = [str(c.value) for c in at.caption]
-    assert any(f"Current values include today’s unsettled price, quoted at {et} ET." in c
+    assert any("Current values include today’s unsettled price, quoted at 11:02 AM ET." in c
                for c in caps), [c for c in caps if "Prices through" in c or "Live data" in c]
     st.cache_data.clear()
