@@ -48,7 +48,10 @@ DRAFTS = {
              "is the book's smallest sleeve because international is "
              "{{sum:International Core+International Quality+International Large Value+"
              "International Small Value}} of the portfolio and "
-             "small value is 8 of 49 in the US structure: the size is arithmetic, not diminished "
+             # The share reads the targets as the sleeve's rationale does (#456, #462); it
+             # typed "8 of 49" before.
+             "small value is {{share:US Small Cap|US Large Core+US Large Quality+US Large Value+US Small Cap}} of the US "
+             "structure: the size is arithmetic, not diminished "
              "conviction. Its benchmark, SCZ, is small blend rather than small value, because no "
              "passive international small-value index fund exists, so selection here carries "
              "the value premium itself. That premium comes from the factor tilt, not manager "

@@ -22,8 +22,12 @@ books and the seeds that write them (src/seed_securities.py, src/seed_saa.py): w
 read the targets, fees {{er:}} and durations {{dur:}}. The check there also catches a
 dollar figure, a multiple, a typed duration and an "N of M" weight; the one dollar
 figure left, SPHQ against QUAL, is dated and read from each fund's N-PORT filing.
-Thesis 26 still types "8 of 49", which the theses' narrower check cannot see (#462);
-the books' parent rows are left to #461.
+The books' parent rows are left to #461.
+
+Widened to the theses (#462): their check catches a dollar figure, a multiple, a typed
+duration and an "N of M" weight too, which found thesis 26's "8 of 49" (it now reads
+the share its rationale does). Tax Lots' harvest replacement rationales are checked the
+same way.
 """
 from __future__ import annotations
 
@@ -42,6 +46,13 @@ COLUMNS = ("macro_view", "view_summary", "vehicle_rationale", "exit_conditions",
            "invalidation_conditions", "expected_return_scenario")
 TOKEN = re.compile(r"\{\{[^}]*\}\}")
 FIGURE = re.compile(r"\d+(?:\.\d+)?\s?%|\d+\s?bps?\b")
+# The wide check (#456 for the rationales, #462 for the theses): a percentage or basis
+# points, a dollar figure, a multiple, a weight written "N of M", a decimal number of
+# years, and any number of years in the clause after "duration" ("duration (~4-5 years").
+WIDE_FIGURE = re.compile(
+    FIGURE.pattern + r"|\$\d[\d.,]*\s?[BMKbmk]?|~?\d+(?:\.\d+)?x\b|\b\d+ of \d+\b"
+    r"|~?\d+\.\d+ years|(?i:duration)[^.;]{0,40}?~?\d+(?:\.\d+)?(?:-\d+(?:\.\d+)?)?\s?"
+    r"(?:years|yrs)\b")
 
 # Percentages a thesis may type because no table holds them: return assumptions, CPI
 # and yield thresholds, drawdown sizes, hypotheticals. Each is an exact phrase in that
@@ -56,6 +67,8 @@ NOT_THE_BOOKS = {
     10: ["below 0%", "below 2%, making", "(~2%)", "above 2.5%", "usually 20-30%"],
     11: ["below -1%", "which 2-3% would not", "30%+ drawdowns"],
     12: ["collapse below 2%"],
+    # SPHQ against QUAL, dated and read from each fund's N-PORT filing with the SEC (#456).
+    14: ["$19.4B against QUAL's $46.5B on July 31, 2026"],
     # SPAXX's own text, kept equal to the Research page's by tools/migrate_markets_copy.py:
     # its yield trigger. The cash level it named ("toward 1%") was dropped.
     23: ["materially below 2%"],
@@ -100,7 +113,7 @@ def _table() -> "dict[int, dict[str, str]]":
 
 
 def typed_figures(theses: "dict", held: "dict[str, str]", allowed: "dict | None" = None,
-                  figure: "re.Pattern" = FIGURE, label: str = "thesis") -> "list[str]":
+                  figure: "re.Pattern" = WIDE_FIGURE, label: str = "thesis") -> "list[str]":
     """Every figure a text types that it should read: one the book holds, or one not
     listed as a figure that is not the book's. Theses by default; the rationales pass
     their own list and pattern."""
@@ -142,6 +155,14 @@ def test_the_check_fails_on_a_weight_or_a_fee_typed_back():
         "{{er:VOO}}", "0.03%"))}
     assert typed_figures(weight, held) and "16%" in typed_figures(weight, held)[0]
     assert typed_figures(fee, held) and "VOO's expense ratio" in typed_figures(fee, held)[0]
+    # #462: the widened check, on the weight this pass removed from thesis 26.
+    theses_26 = _theses(BOOKS[0])[26]
+    share = "{{share:US Small Cap|US Large Core+US Large Quality+US Large Value+US Small Cap}} of the US"
+    assert share in theses_26["macro_view"], "premise: thesis 26 reads the share"
+    back = {26: dict(theses_26, macro_view=theses_26["macro_view"].replace(
+        share, "8 of 49 in the US"))}
+    assert typed_figures(back, held) and "8of49" in typed_figures(back, held)[0]
+    assert not typed_figures(back, held, figure=FIGURE), "the old check could not see it"
 
 
 # ── every placeholder renders ────────────────────────────────────────────────────
@@ -224,10 +245,8 @@ def test_thesis_23_holds_the_cash_sleeves_target(book):
 
 # ── the rationales (#456) ──────────────────────────────────────────────────────────
 
-# A rationale's check also catches what the theses' pass settled by hand: a dollar
-# figure, a multiple, a typed duration, and a weight written as "N of M".
-RATIONALE_FIGURE = re.compile(FIGURE.pattern + r"|\$\d[\d.,]*\s?[BMKbmk]?|~?\d+(?:\.\d+)?x\b"
-                              r"|\b\d+ of \d+\b|~?\d+\.\d+ years")
+# The rationales' check is the wide one (WIDE_FIGURE), as the theses' is since #462.
+RATIONALE_FIGURE = WIDE_FIGURE
 
 # Figures a rationale may type because no table holds them: thresholds, a return
 # assumption, a drawdown size, and SPHQ's and QUAL's net assets, dated and read from each
@@ -352,3 +371,23 @@ def test_every_rationale_placeholder_renders_and_the_456_items_read_right(ration
     assert f"the same share it holds in the US book ({share})" in core
     for gone in ("three times", "ten times", "seven times", "61 bps", "~10x", "$35B", "$6B"):
         assert not any(gone in t for cells in r.values() for t in cells.values()), gone
+
+
+# ── Tax Lots' harvest rationales (#462) ──────────────────────────────────────────
+
+def test_no_harvest_rationale_types_a_duration_and_each_keeps_its_point():
+    from src.harvest import REPLACEMENT_MAP
+    texts = {t: {"rationale": why} for t, (_rep, why, _risk) in REPLACEMENT_MAP.items()}
+    assert {"VGIT", "SCHP"} <= set(texts), "premise: the scan reaches the harvest map"
+    assert typed_figures(texts, {}, {}) == []
+    assert "Different issuer; comparable duration." in texts["VGIT"]["rationale"]
+    assert "shorter duration, a modest duration shift accepted" in texts["SCHP"]["rationale"]
+
+
+def test_the_harvest_check_sees_a_duration_typed_back():
+    from src.harvest import REPLACEMENT_MAP
+    why = REPLACEMENT_MAP["VGIT"][1].replace("comparable duration.",
+                                             "comparable duration (~4-5 years).")
+    assert typed_figures({"VGIT": {"rationale": why}}, {}, {})
+    assert not typed_figures({"VGIT": {"rationale": why}}, {}, {}, figure=FIGURE), (
+        "a number of years is not a percentage: only the duration arm sees it")
