@@ -34,7 +34,8 @@ def test_the_saa_page_and_the_trade_log_render_their_tokens():
     saa = AppTest.from_file(str(ROOT / "pages" / "1_SAA.py"), default_timeout=300).run()
     assert not saa.exception, [str(e.value) for e in saa.exception]
     text = _all_text(saa)
-    assert "The 17.3% weight is deliberately not the largest US sleeve" in text
+    assert "At 17.3%, Core is sized for that role" in text                # #437
+    assert "not the largest US sleeve" not in text
     assert "{{" not in text
     log = AppTest.from_file(str(ROOT / "pages" / "10_Trade_Log.py"), default_timeout=300).run()
     assert not log.exception, [str(e.value) for e in log.exception]
@@ -122,5 +123,6 @@ def test_the_2022_paragraph_states_each_series_decline(tmp_path, monkeypatch):
     assert not at.exception, [str(e.value) for e in at.exception]
     para = next(t for t in _texts(at) if "is the most important stress-test period" in t)
     assert ("portfolio impact: equities (SPY) fell 24.5%, bonds (AGG) fell 16.0%, and BTC "
-            "fell 66.9% from their 2022 peaks, all at the same time.") in para, para
+            "fell 66.9%, all at the same time. Each is a peak-to-trough decline within "
+            "2022, not a calendar-year return.") in para, para
     assert "In 2022, when BTC fell 66.9% from its peak and equities sold off" in para, para

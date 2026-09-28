@@ -71,8 +71,8 @@ def test_the_rendered_rationales_state_the_targets(book):
     got = {n: render(text, targets=t) for n, text in r.items() if text}
     large = t["US Large Core"] + t["US Large Quality"] + t["US Large Value"]
     intl = sum(t[s] for s in INTL)
-    assert (f"The {_p(t['US Large Core'])} weight is deliberately not the largest US sleeve "
-            f"(Quality at {_p(t['US Large Quality'])} comes close)") in got["US Large Core"]
+    assert (f"At {_p(t['US Large Core'])}, Core is sized for that role, because most US "
+            "large-cap exposure") in got["US Large Core"]
     assert f"{_p(t['US Large Quality'])} expresses high" in got["US Large Quality"]
     assert (f"{_p(t['US Large Value'])} out of the {_p(large)} total in US large caps is "
             f"{_p(t['US Large Value'] / large)} of US large-cap exposure") in got["US Large Value"]
@@ -96,7 +96,7 @@ def test_the_demo_books_figures_as_read_off_its_targets():
     t, r = _book("data/demo.db")
     value = render(r["US Large Value"], targets=t)
     assert "9.2% out of the 41.8% total in US large caps is 22.0%" in value
-    assert "The 17.3% weight" in render(r["US Large Core"], targets=t)
+    assert "At 17.3%, Core is sized" in render(r["US Large Core"], targets=t)
     assert "6.1% in a 79.6% growth portfolio" in render(r["Core Fixed Income"], targets=t)
 
 

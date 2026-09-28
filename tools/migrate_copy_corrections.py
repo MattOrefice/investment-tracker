@@ -16,7 +16,13 @@ rest, each from the source that now holds it:
   * theses 7 and 17: the sleeves they name. Both were written for the undivided
     International Developed sleeve and now condense International Core's rationale
     (#406 item 4), so 17 names International Core, in its title too, and 7, the parent
-    of the four international position theses, names the four sleeves.
+    of the four international position theses, names the four sleeves;
+  * thesis 17's target_weight (a later pass, #436's): seeded as 0.2, the undivided
+    International Developed sleeve's target, and never re-derived. It is now the rule
+    src/seed_position_theses.py seeds with, the sleeve's target over its funds:
+    International Core's, whose one fund is VEA, as theses 24 to 26 hold theirs.
+    Nothing displays the field today (the Trade Log selects it and never shows it); a
+    wrong value would be displayed the day something reads it.
 
 Each UPDATE is keyed on the thesis id and the cell's current value, must change exactly
 one row, or the run rolls back; a second run changes nothing. Targets data/demo.db
@@ -48,6 +54,8 @@ UPDATES = {
         "UPDATE theses SET view_summary = ? WHERE thesis_id = ? AND view_summary = ?",
     "vehicle_rationale":
         "UPDATE theses SET vehicle_rationale = ? WHERE thesis_id = ? AND vehicle_rationale = ?",
+    "target_weight":
+        "UPDATE theses SET target_weight = ? WHERE thesis_id = ? AND target_weight = ?",
 }
 
 
@@ -65,12 +73,23 @@ def _schp_thesis_text() -> str:
     return text.split("\n\n**Would revisit if**")[0]
 
 
-def cells() -> "dict[int, dict[str, str]]":
+def _international_core_target() -> float:
+    """The seed's rule for a position thesis: its sleeve's target over the sleeve's funds.
+    International Core holds one fund, VEA."""
+    from src.seed_saa import SUB_CLASSES
+    from src.seed_securities import HOLDINGS
+    funds = [h for h in HOLDINGS if h.get("asset_class") == "International Core"]
+    target = next(s["target_weight"] for s in SUB_CLASSES if s["name"] == "International Core")
+    return target / len(funds)
+
+
+def cells() -> "dict[int, dict[str, object]]":
     idhq, avdv, schp = _draft("IDHQ"), _draft("AVDV"), _schp_thesis_text()
     return {
         7:  {"target_sleeves": json.dumps(INTL_SLEEVES)},
         17: {"title": "International Core — VEA",
-             "target_sleeves": json.dumps(["International Core"])},
+             "target_sleeves": json.dumps(["International Core"]),
+             "target_weight": _international_core_target()},
         20: {"macro_view": schp, "view_summary": schp, "vehicle_rationale": schp},
         24: {"macro_view": idhq, "view_summary": idhq, "vehicle_rationale": idhq},
         26: {"macro_view": avdv, "view_summary": avdv, "vehicle_rationale": avdv},

@@ -293,8 +293,10 @@ HOLDINGS = [
         "er_source": 'Schwab fund page', "er_as_of": _ER_AS_OF,
         "holding_rationale": (
             # Not "identical exposure": the two track different index families, per the
-            # funds' own pages and filings, read 2026-09-27 (#406 item 11).
-            "SCHP delivers broad TIPS exposure at 0.03% versus TIP's 0.19%. The two track different "
+            # funds' own pages and filings, read 2026-09-27 (#406 item 11). TIP's 0.18% is the
+            # expense ratio iShares' fund page gives "as stated in the prospectus", read
+            # 2026-09-27 (#436); the rationale typed 0.19% before.
+            "SCHP delivers broad TIPS exposure at 0.03% versus TIP's 0.18%. The two track different "
             "indexes: SCHP the Bloomberg US Treasury Inflation-Linked Bond Index (Series-L), TIP the "
             "ICE US Treasury Inflation Linked Bond Index. The "
             "choice of broad TIPS over short-term alternatives (VTIP, STIP) reflects the long-horizon "
@@ -371,8 +373,10 @@ BENCHMARKS = [
      "expense_ratio": 0.007,    "er_source": "iShares EEM fund page (net ER)", "er_as_of": _ER_AS_OF},
     {"ticker": "IEF",  "name": "iShares 7-10 Year Treasury Bond ETF",               "asset_class": "Core Fixed Income",
      "expense_ratio": 0.0015,   "er_source": "iShares IEF fund page",  "er_as_of": _ER_AS_OF},
+    # 0.18% "as stated in the prospectus" on iShares' fund page, read 2026-09-27 (#436);
+    # 0.19% before.
     {"ticker": "TIP",  "name": "iShares TIPS Bond ETF",                             "asset_class": "TIPS",
-     "expense_ratio": 0.0019,   "er_source": "iShares TIP fund page",  "er_as_of": _ER_AS_OF},
+     "expense_ratio": 0.0018,   "er_source": "iShares TIP fund page",  "er_as_of": "2026-09-27"},
     # DJP (iPath Bloomberg Commodity ETN) delisted May 2020; the Real Assets
     # benchmark is DBC (see src/benchmarks.py). Source + reseed now agree on DBC.
     {"ticker": "DBC",  "name": "Invesco DB Commodity Index Tracking Fund",          "asset_class": "Real Assets",

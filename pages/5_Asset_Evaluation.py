@@ -997,9 +997,13 @@ with col:
         st.markdown(
             dd_note
             + "2022 is the most important stress-test period for evaluating Bitcoin's "
+            # Peak to trough within the year (decline_in_year), labelled as such: SPY's
+            # calendar 2022 total return is -18.2% on the same committed series, so an
+            # unlabelled 24.5% reads as an error.
             + (f"portfolio impact: equities ({_eq_t}) fell {_eq22:.1%}, bonds ({_bd_t}) fell "
-               f"{_bd22:.1%}, and BTC fell {_btc22:.1%} from their 2022 peaks, all at the same "
-               "time. " if _all22 else
+               f"{_bd22:.1%}, and BTC fell {_btc22:.1%}, all at the same time. Each is a "
+               "peak-to-trough decline within 2022, not a calendar-year return. "
+               if _all22 else
                "portfolio impact: equities, bonds, and BTC fell at the same time. ")
             + "That eliminated any diversification benefit "
             "and amplified drawdown. This joint stress scenario, not the full-sample "
