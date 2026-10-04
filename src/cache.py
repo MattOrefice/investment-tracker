@@ -222,12 +222,72 @@ SECTION_INPUTS = {
 }
 
 
+# What the cover calls each input a lock can hold, in the order it lists them. Every
+# name in ALL_INPUTS has one (tests/test_cover_names_what_the_lock_holds.py), so an
+# input added later cannot be left off the cover silently.
+_INPUT_WORDS = {
+    DIVIDENDS: "dividends",
+    CAPE: "CAPE",
+    FF5_US: "the US Fama-French factors",
+    FF5_DEVELOPED_EXUS: "the Developed ex-US Fama-French factors",
+    UMD: "the momentum factor",
+    HYG: "the HYG credit proxy",
+    ETF_METADATA: "the fund durations",
+}
+
+# The report sections built outside the lock, as their headings name them. They read
+# through the day the report is generated (reports.generate_quarterly_report_bytes).
+UNLOCKED_SECTIONS = ("Macro Context", "Asset Evaluation")
+
+
+def _named(names) -> "list[str]":
+    """The cover's words for input ``names``, in _INPUT_WORDS order, the two French
+    files as one item when both are there."""
+    words = [_INPUT_WORDS[n] for n in _INPUT_WORDS if n in names]
+    us, dev = _INPUT_WORDS[FF5_US], _INPUT_WORDS[FF5_DEVELOPED_EXUS]
+    if us in words and dev in words:
+        words[words.index(us)] = "the Fama-French factors"
+        words.remove(dev)
+    return words
+
+
+def _listed(items: "list[str]") -> str:
+    return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
+
+
+def lock_holds_note(snap: "SnapshotFrames | None") -> "str | None":
+    """The cover sentence saying what this quarter's lock holds, or None with no lock.
+
+    Read from the lock's own lists (#478 section 3): its price frames, the inputs it
+    holds and the inputs it is still waiting on. The cover used to claim the quarter
+    locked every one of its report's inputs, beside two sections the same report
+    labels live. The ETF metadata is named only when it holds a duration: the locks taken
+    before #455 hold the file with none, and their durations came from the undated
+    table (undated_durations_note)."""
+    if snap is None:
+        return None
+    held = dict(getattr(snap, "inputs", None) or {})
+    meta = held.get(ETF_METADATA)
+    if ETF_METADATA in held and not any(
+            isinstance(v, dict) and v.get("duration_years") is not None
+            for v in (meta or {}).values()):
+        del held[ETF_METADATA]
+    waiting = _named(getattr(snap, "inputs_pending", None) or {})
+    text = "This quarter's lock holds " + _listed(["prices"] + _named(held))
+    if waiting:
+        text += ", and is waiting on " + _listed(waiting)
+    return (f"{text}. {_listed(list(UNLOCKED_SECTIONS))} are not locked: they are "
+            f"computed each time the report is generated.")
+
+
 def inputs_restatement_note(quarter_id: "str | None", snap: "SnapshotFrames | None") -> "str | None":
     """One line for a quarter whose report this rule restated, or None.
 
     Only when the lock carries INPUTS_RULE, holds a CAPE series, and the quarter
     closed before the rule took effect. What moved is the executive summary's CAPE
-    reading, now the quarter's last monthly observation instead of the latest one."""
+    reading, now the quarter's last monthly observation instead of the latest one,
+    and the line says that and nothing wider: what the lock holds is lock_holds_note's
+    to say (#478 section 3)."""
     end = _parse_quarter_end(quarter_id) if quarter_id else None
     if (end is None or snap is None or getattr(snap, "inputs_rule", None) != INPUTS_RULE
             or (snap.inputs or {}).get(CAPE) is None):
@@ -237,8 +297,7 @@ def inputs_restatement_note(quarter_id: "str | None", snap: "SnapshotFrames | No
     last = snap.inputs[CAPE].index.max()
     return (
         f"Restated {INPUTS_RULE_SINCE.strftime('%B')} {INPUTS_RULE_SINCE.day}, "
-        f"{INPUTS_RULE_SINCE.year}: this quarter now locks every input its report "
-        f"reads, not only prices. Its CAPE reading is the quarter's last monthly "
+        f"{INPUTS_RULE_SINCE.year}: the lock's CAPE reading is the quarter's last monthly "
         f"observation, {last.strftime('%B')} {last.year}; earlier versions of this "
         f"report cited the latest CAPE on file when they were generated."
     )
