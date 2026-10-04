@@ -17,7 +17,8 @@ from src.macro import percentile as macro_percentile
 from src.prose_helpers import blend_split_sentence, cape_valuation_sentence
 from src.rebalance import compute_drift, interpret_rebalance_status
 from src.sleeve_config import international_sleeves, sleeve_holdings
-from src.shiller import earlier_years_at_or_above, get_cape_series
+from src.shiller import (earlier_years_at_or_above, get_cape_series, latest_reading,
+                         read_clause)
 from src.ui_helpers import demo_portfolio_phrase, render_footer, render_page_header
 render_page_header()
 
@@ -49,7 +50,8 @@ def _load_cape_sentence() -> str:
     The reading always carries its month, so a stale series never reads as a current
     stance. That replaces the "(CAPE data through …)" suffix, which nested inside the
     sentence's own parenthesis. A failed read no longer falls back to "elevated
-    historically", a label nothing measured.
+    historically", a label nothing measured. It carries the date it was read and its
+    source too (#478 I06).
     """
     try:
         s = get_cape_series().dropna()
@@ -58,7 +60,8 @@ def _load_cape_sentence() -> str:
         if pct is None:
             raise ValueError("empty CAPE series")
         return cape_valuation_sentence(cv, s.index[-1].strftime("%B %Y"), pct,
-                                       earlier_years_at_or_above(s, cv))
+                                       earlier_years_at_or_above(s, cv),
+                                       read=read_clause(latest_reading()))
     except Exception:
         return ("US equity valuations could not be read: the CAPE series did not load "
                 "for this render.")

@@ -1,4 +1,4 @@
-"""CAPE data sourced from Robert Shiller's dataset via multpl.com.
+"""CAPE as multpl.com computes it from Robert Shiller's data.
 
 Primary source: https://www.multpl.com/shiller-pe/table/by-month
   - Full history 1871-present, updated monthly.
@@ -12,11 +12,20 @@ data/shiller_cape.csv is a COMMITTED INPUT: get_cape_series() reads it and
 never fetches or writes; tools/refresh_market_data.py is the only writer
 (fetch_cape_dataframe() below is its fetch half). Staleness is surfaced via
 cape_frontier() + asof.staleness_note, never silently repaired at read time.
+
+EVERY READING IS DATED (#478 I06). A row holds the month it describes, the value,
+the date it was read from its source (read_on) and which source answered. multpl's
+top row is the current month's reading so far, and it is filed under that month:
+without a read date nothing told it from the month's own figure. The 2026-09-25
+refresh's September row was 41.48; multpl's September row read 40.90 on 2026-10-04.
+A quarter lock takes its last month only from a reading made after that month's
+last NYSE session (read_after_month_end, used by cache._capture_inputs), and every
+printed CAPE figure states its read date (read_clause).
 """
 import io
 from datetime import date
 from pathlib import Path
-from typing import Optional
+from typing import NamedTuple, Optional
 
 import pandas as pd
 import requests
@@ -26,6 +35,30 @@ _CACHE_CSV = _ROOT / "data" / "shiller_cape.csv"
 
 _MULTPL_URL = "https://www.multpl.com/shiller-pe/table/by-month"
 _YALE_URL   = "http://www.econ.yale.edu/~shiller/data/ie_data.xls"
+
+# Which source a reading came from, as the file's ``source`` column stores it.
+MULTPL, YALE = "multpl", "yale"
+# How a printed figure names its source. Yale is the fallback, and a figure read from
+# it says so.
+SOURCE_NAMES = {
+    MULTPL: "multpl.com",
+    YALE: "Robert Shiller's Yale data file, the fallback source",
+}
+# The credit wherever CAPE's source is named, on the pages and in the PDF.
+CREDIT = "multpl.com's computation of Robert Shiller's CAPE"
+# The file's columns, in order.
+COLUMNS = ["date", "cape", "read_on", "source"]
+
+
+class CapeReading(NamedTuple):
+    """One CAPE reading: the month it describes, its value, the date it was read and
+    the source it was read from. ``read_on`` and ``source`` are None where neither was
+    recorded: a quarter lock taken before readings were dated holds the series alone."""
+
+    month: date
+    value: float
+    read_on: "date | None"
+    source: "str | None"
 
 
 # ── date parsing (Shiller fractional-year format) ─────────────────────────────
@@ -168,9 +201,10 @@ def fetch_cape_dataframe() -> pd.DataFrame:
 
     Primary:  multpl.com HTML table (full history 1871-present, monthly updates).
     Fallback: Yale ie_data.xls (known stale at Sep 2023 as of May 2026).
-    Raises when both fail; tools/refresh_market_data.py owns the write and
-    reports fetch and write outcomes separately, so a blocked write can never
-    masquerade as a network failure (the old combined path did exactly that).
+    Columns date, cape and source: which of the two answered, so a figure read from
+    the fallback can say so. Raises when both fail; tools/refresh_market_data.py owns
+    the write and reports fetch and write outcomes separately, so a blocked write can
+    never masquerade as a network failure (the old combined path did exactly that).
     """
     try:
         resp = requests.get(
@@ -179,13 +213,129 @@ def fetch_cape_dataframe() -> pd.DataFrame:
             headers={"User-Agent": "Mozilla/5.0 (compatible; investment-tracker/1.0)"},
         )
         resp.raise_for_status()
-        return _parse_multpl(resp.text)
+        return _parse_multpl(resp.text).assign(source=MULTPL)
     except Exception:
         pass
 
     resp = requests.get(_YALE_URL, timeout=30)
     resp.raise_for_status()
-    return _parse_excel_bytes(resp.content)
+    return _parse_excel_bytes(resp.content)[["date", "cape"]].assign(source=YALE)
+
+
+def read_after_month_end(month, read_on: "date | None") -> bool:
+    """Whether a reading was made after the last NYSE session of the month it
+    describes. Until then multpl's figure for the month is its reading so far, which
+    moves with every close. A reading with no read date cannot be shown to be one."""
+    if read_on is None:
+        return False
+    from src.cache import last_session_on_or_before
+    month_end = (pd.Timestamp(month) + pd.offsets.MonthEnd(0)).date()
+    return read_on > last_session_on_or_before(month_end)
+
+
+def stamp_readings(fetched: pd.DataFrame, stored: "pd.DataFrame | None",
+                   read_on: date) -> pd.DataFrame:
+    """The frame the refresh writes: every fetched reading with the date it was read.
+
+    A reading takes ``read_on``, unless the file already holds the same value from the
+    same source, read after its month's last NYSE session: that row is kept as it is.
+    So a refresh's diff shows the months that are new, revised, or read again now that
+    they have ended, and nothing else. Months the source no longer returns are dropped,
+    as they were before readings were dated."""
+    kept: dict = {}
+    if stored is not None and len(stored):
+        for month, row in stored.iterrows():
+            if read_after_month_end(month, row["read_on"]):
+                kept[pd.Timestamp(month)] = row
+    rows = []
+    for _, row in fetched.sort_values("date").iterrows():
+        month = pd.Timestamp(row["date"])
+        old = kept.get(month)
+        same = (old is not None and float(old["cape"]) == float(row["cape"])
+                and old["source"] == row["source"])
+        rows.append({"date": month.date().isoformat(), "cape": float(row["cape"]),
+                     "read_on": (old["read_on"] if same else read_on).isoformat(),
+                     "source": row["source"]})
+    return pd.DataFrame(rows, columns=COLUMNS)
+
+
+def _committed_readings() -> pd.DataFrame:
+    """The committed file as a frame indexed by month: cape, read_on (a date, or None
+    where the file records none) and source."""
+    if not _CACHE_CSV.exists():
+        raise FileNotFoundError(
+            f"Committed CAPE data missing: {_CACHE_CSV}. Restore it from git, "
+            "or regenerate it with tools/refresh_market_data.py."
+        )
+    df = pd.read_csv(_CACHE_CSV, parse_dates=["date"], dtype={"read_on": str, "source": str})
+    df = df.dropna(subset=["cape"]).sort_values("date")
+    out = pd.DataFrame({"cape": df["cape"].values}, index=pd.DatetimeIndex(df["date"]))
+    for col in ("read_on", "source"):
+        cells = df[col].tolist() if col in df.columns else [None] * len(df)
+        cells = [c if isinstance(c, str) and c else None for c in cells]
+        if col == "read_on":
+            cells = [date.fromisoformat(c) if c else None for c in cells]
+        out[col] = pd.Series(cells, index=out.index, dtype=object)
+    return out
+
+
+def get_cape_readings() -> pd.DataFrame:
+    """Every CAPE reading, indexed by the month it describes: cape, read_on, source.
+
+    Inside a quarter lock, the readings the lock holds. A lock taken before readings
+    were dated holds the series alone, so its read_on and source are None: no date is
+    borrowed from today's file for a reading the lock recorded none for."""
+    from src.input_lock import CAPE, locked
+    held = locked(CAPE)
+    if held is None:
+        return _committed_readings()
+    if isinstance(held, pd.DataFrame):
+        return held.copy()
+    out = pd.DataFrame({"cape": held.values}, index=held.index)
+    for col in ("read_on", "source"):
+        out[col] = pd.Series([None] * len(out), index=out.index, dtype=object)
+    return out
+
+
+def latest_reading() -> CapeReading:
+    """The most recent reading, the one current_cape() returns, with the month it
+    describes, the date it was read and its source."""
+    df = get_cape_readings().dropna(subset=["cape"])
+    row = df.iloc[-1]
+    return CapeReading(month=df.index[-1].date(), value=float(row["cape"]),
+                       read_on=row["read_on"], source=row["source"])
+
+
+def _long_date(d: date) -> str:
+    return f"{d.strftime('%B')} {d.day}, {d.year}"
+
+
+def read_clause(reading: CapeReading) -> str:
+    """When and where a printed CAPE figure was read: "read October 4, 2026 from
+    multpl.com". A reading with no recorded read date says that, and claims none."""
+    if reading.read_on is None:
+        return "its read date and source were not recorded"
+    return (f"read {_long_date(reading.read_on)} from "
+            f"{SOURCE_NAMES.get(reading.source, 'a source that was not recorded')}")
+
+
+def reading_label(reading: CapeReading, note: str = "") -> str:
+    """A printed figure's month and read date: "October 2026, read October 4, 2026
+    from multpl.com", or "June 2026; its read date and source were not recorded".
+    ``note`` sits between the two ("the quarter's last monthly reading")."""
+    month = f"{reading.month.strftime('%B')} {reading.month.year}"
+    head = f"{month}, {note}" if note else month
+    return f"{head}{';' if reading.read_on is None else ','} {read_clause(reading)}"
+
+
+def read_short(reading: CapeReading) -> str:
+    """read_clause for a label or a chart annotation: "read Oct 4, 2026", naming the
+    fallback source when the reading came from it."""
+    if reading.read_on is None:
+        return "read date not recorded"
+    d = reading.read_on
+    text = f"read {d.strftime('%b')} {d.day}, {d.year}"
+    return text + (" from Yale, the fallback" if reading.source == YALE else "")
 
 
 def get_cape_series() -> pd.Series:
@@ -204,17 +354,13 @@ def get_cape_series() -> pd.Series:
     # month (#382): a locked report cites the quarter-end reading, not today's.
     from src.input_lock import CAPE, locked
     held = locked(CAPE)
+    if isinstance(held, pd.DataFrame):
+        # A lock that holds dated readings (#478 I06): the same series, from its frame.
+        return pd.Series(held["cape"].values, index=held.index, name="CAPE", dtype=float)
     if held is not None:
         return held.copy()
-    if not _CACHE_CSV.exists():
-        raise FileNotFoundError(
-            f"Committed CAPE data missing: {_CACHE_CSV}. Restore it from git, "
-            "or regenerate it with tools/refresh_market_data.py."
-        )
-    df = pd.read_csv(_CACHE_CSV, parse_dates=["date"])
-    df = df.dropna(subset=["cape"])
-    s = pd.Series(df["cape"].values, index=pd.DatetimeIndex(df["date"]), name="CAPE")
-    return s.sort_index()
+    df = _committed_readings()
+    return pd.Series(df["cape"].values, index=df.index, name="CAPE")
 
 
 def cape_frontier() -> "date | None":

@@ -67,6 +67,7 @@ from src.macro import FREDStillFetching, compute_cape_implied_return, get_series
 from src.positioning import get_effective_duration
 from src.input_lock import ETF_METADATA, FF5_DEVELOPED_EXUS, FF5_US, HYG, UMD
 from src.returns import period_return, twr_daily_linked
+from src.shiller import CREDIT as CAPE_CREDIT
 from src.shiller import current_cape, get_cape_series
 
 from jinja2 import Environment, FileSystemLoader
@@ -249,7 +250,7 @@ REPORT_DISCLAIMER = (
     "fiduciary, advisory, or client relationship is created by accessing "
     "this report or the underlying analytics system. Price data sourced "
     "from public market data feeds; macro data from FRED; valuation data "
-    "from Robert Shiller’s public datasets. Calculations are best-effort "
+    f"from {CAPE_CREDIT}. Calculations are best-effort "
     "and may contain methodological simplifications."
 )
 
@@ -269,7 +270,7 @@ DEMO_REPORT_DISCLAIMER = (
     "fiduciary, advisory, or client relationship is created by accessing "
     "this report or the underlying analytics system. Price data sourced "
     "from public market data feeds; macro data from FRED; valuation data "
-    "from Robert Shiller’s public datasets. Calculations are best-effort "
+    f"from {CAPE_CREDIT}. Calculations are best-effort "
     "and may contain methodological simplifications."
 )
 
@@ -515,29 +516,24 @@ def _cape_reading_sentence(cape_val: float, cape_pct: float) -> str:
     """Executive-summary CAPE line: reports the reading and the derived regime label and
     draws NO allocation conclusion — that stance belongs to the Macro Context section.
     Reads naturally at both extremes ("Elevated versus history" at the 99th, "Below-average
-    versus history" at the 20th). Carries an as-of clause whenever the committed
-    CAPE series is stale (data frontier past the valuation threshold) — the
-    stance must not read as current when its input is months old."""
+    versus history" at the 20th). Always names the month the reading describes and the
+    date it was read (#478 I06), so the stance never reads as current when its input
+    is months old, and a reading taken before its month ended can be told from the
+    month's own. That replaced a "(CAPE data through ...)" clause shown only when the
+    series was stale."""
     from src.prose_helpers import ordinal
+    from src.shiller import latest_reading, reading_label
     label, _ = _cape_regime(int(round(cape_pct)))
     sentence = (
         f"CAPE stands at {cape_val:.1f}x, in the {ordinal(cape_pct)} percentile: "
-        f"{label} versus history."
+        f"{label} versus history"
     )
     # Inside a quarter lock the reading is the quarter's last monthly observation by
-    # design (#382), so it says which month, never that the data is stale.
+    # design (#382). A lock taken before readings were dated holds no read date, and
+    # its sentence says so instead of borrowing today's.
     from src.input_lock import CAPE, locked
-    held = locked(CAPE)
-    if held is not None:
-        last = held.index.max()
-        return sentence[:-1] + (f" ({last.strftime('%B')} {last.year}, the quarter's "
-                                f"last monthly reading).")
-    from src.asof import MARKET_DATA_STALE_DAYS_VALUATION, staleness_note
-    from src.shiller import cape_frontier
-    frontier = cape_frontier()
-    if staleness_note("Shiller CAPE", frontier, MARKET_DATA_STALE_DAYS_VALUATION):
-        sentence += f" (CAPE data through {frontier.isoformat()}.)"
-    return sentence
+    note = "the quarter's last monthly reading" if locked(CAPE) is not None else ""
+    return f"{sentence} ({reading_label(latest_reading(), note)})."
 
 
 # ── Section builders ──────────────────────────────────────────────────────────
@@ -628,8 +624,14 @@ def _build_executive_summary(start_date: str, end_date: str) -> dict:
         cape_pct = percentile(get_cape_series(), cape_val)
     except InputPending as exc:
         cape_val = cape_pct = None
-        _cape_failure = (f"CAPE for the quarter's last month is not yet on file (the "
-                         f"series ends {exc.through}); the reading locks when it is.")
+        # exc.through is the latest month with a reading made after it ended (#478
+        # I06): the quarter's last month may be on file as a reading taken mid-month.
+        _through = (f"the latest such reading on file is for "
+                    f"{date.fromisoformat(exc.through).strftime('%B %Y')}"
+                    if exc.through else "no such reading is on file")
+        _cape_failure = (f"CAPE for the quarter's last month is not yet on file as a "
+                         f"reading made after the month ended ({_through}); the reading "
+                         f"locks when it is.")
     except Exception as exc:
         logging.exception("Executive-summary CAPE reading failed")
         cape_val = cape_pct = None
@@ -1227,10 +1229,13 @@ def _build_macro_section() -> dict:
             stored[label] = exc.stored_on
             return exc.stored
 
+    # The CAPE reading's month and read date, stated beside the figure (#478 I06).
+    cape_read: Optional[str] = None
     try:
         cape_val = current_cape()
         cape_s   = get_cape_series()
         observed["CAPE"] = _obs_date(cape_s)
+        cape_read = _cape_read_sentence()
         # HANDLE None, DO NOT CATCH ITS TypeError. percentile() returns None on an
         # empty series BY CONTRACT, and its docstring names this caller's obligation:
         # "those that can [receive an empty series] must handle None". The previous
@@ -1318,11 +1323,24 @@ def _build_macro_section() -> dict:
         "observation when this report was generated ("
         + (", ".join(f"{k} {v}" for k, v in observed.items() if v) or "none available")
         + ")."
+        + (f" {cape_read}" if cape_read else "")
         + ("" if not stored else
            " FRED did not answer in time, so these are stored copies, with the date each "
            "was fetched: " + ", ".join(f"{k} {v}" for k, v in stored.items()) + ".")
     )
     return macro
+
+
+def _cape_read_sentence() -> "str | None":
+    """The Macro Context line that dates its CAPE figure: the month the reading
+    describes, the date it was read and its source. None when it cannot be read.
+
+    NEVER RAISES, for _obs_date's reason: it runs inside the CAPE try block."""
+    try:
+        from src.shiller import latest_reading, reading_label
+        return f"The CAPE reading is for {reading_label(latest_reading())}."
+    except Exception:                                    # noqa: BLE001
+        return None
 
 
 def _obs_date(series) -> "str | None":
@@ -2183,6 +2201,8 @@ def generate_quarterly_report_bytes(
         si_days              = si_days_report,
         cover_sub_id         = _account_label(is_demo),
         report_disclaimer    = _report_disclaimer(is_demo),
+        # Where CAPE comes from, in one wording for the pages and the PDF (#478 I07).
+        cape_credit          = CAPE_CREDIT,
         exec           = exec_data,
         hold           = hold_data,
         perf           = perf_data,

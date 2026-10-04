@@ -539,7 +539,8 @@
   <strong>{{ macro.cape.implied_return }}</strong> (historical relationship, not a forecast).{% endif %}
   Indicators are reference data; tactical positioning remains anchored to SAA targets.</p>
 
-  <p class="muted">CAPE from Robert Shiller / Yale (econ.yale.edu). Yield curve, Fed Funds,
+  <p class="muted">CAPE is {{ cape_credit }}; Shiller's own Yale data file is the fallback,
+  and a figure read from it says so. Yield curve, Fed Funds,
   and HY spread from FRED (St. Louis Fed). Historical percentile computed over available
   data window. HY spread data available from May 2023 only due to FRED licensing restrictions.</p>
 </section>
@@ -850,7 +851,10 @@
           cannot shift this report's numbers.{% endif %}</dd>
 
           <dt>CAPE (Shiller P/E)</dt>
-          <dd>Robert Shiller / Yale (econ.yale.edu). Monthly observations; most recent month shown.
+          <dd>From {{ cape_credit }}, one reading a month. Shiller's own
+          Yale data file is the fallback, and a figure read from it says so. Each figure states the
+          month it describes and the date it was read. A locked quarter's executive summary cites
+          the quarter's last month; Macro Context shows the latest reading on file.
           Implied 10-year real return: r &asymp; &minus;0.070 &times; ln(CAPE/16) + 0.066.</dd>
 
           <dt>Macro Data</dt>

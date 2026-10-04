@@ -198,9 +198,12 @@ the code that supports it; the two with none are listed at the end.
   offline, and refuses if a position would no longer close.
   `tests/test_demo_drip_lots.py` fails until the lots are regenerated (#406
   item 12).
-- Refresh CAPE and trailing P/E for the quarter-end observation: `python
-  tools/refresh_market_data.py --files cape pe`, then commit the diff. The lock
-  takes CAPE once the quarter's last month has a reading.
+- Refresh CAPE and trailing P/E for the quarter-end observation, on a day after the
+  quarter's last NYSE session: `python tools/refresh_market_data.py --files cape pe`,
+  then commit the diff. The refresh writes each CAPE reading with the date it was
+  read, and the lock takes the quarter's last month only from a reading made after
+  that month's last NYSE session (#478 I06). A refresh run earlier files the month's
+  reading so far under the month, and CAPE stays pending until it is run again.
 - Generate the quarter's report (Performance page, "Most recent completed
   quarter"). That takes the lock. Prices, dividends, HYG, CAPE and in-quarter
   durations lock now; the French factors and momentum wait, and the factor and

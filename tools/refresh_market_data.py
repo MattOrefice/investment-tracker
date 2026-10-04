@@ -5,7 +5,8 @@ Fetches and rewrites the five tracked market-data files:
     data/cache/ff_factors_us.csv             Ken French daily FF5, US
     data/cache/ff_factors_developed_exus.csv Ken French daily FF5, Developed ex-US
     data/cache/ff_umd_us.csv                 Ken French daily momentum (UMD)
-    data/shiller_cape.csv                    Shiller CAPE (multpl, Yale fallback)
+    data/shiller_cape.csv                    Shiller CAPE (multpl, Yale fallback), each
+                                             reading with its read date and source
     data/trailing_pe.csv                     S&P 500 trailing P/E (multpl)
 
 The runtime loaders never fetch or write (see data/cache/README.md): a refresh
@@ -43,6 +44,22 @@ def _write_csv_factory(path: Path, **to_csv_kwargs):
     return _write
 
 
+def _write_cape(df) -> None:
+    """CAPE's write: each reading goes in with the date it was read, New York's today,
+    and the source that answered (#478 I06). A month already read after it ended, with
+    the same value from the same source, keeps its row (shiller.stamp_readings)."""
+    from src.asof import today_et
+    path, today = shiller._CACHE_CSV, today_et()
+    stored = shiller._committed_readings() if path.exists() else None
+    out = shiller.stamp_readings(df, stored, today)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    out.to_csv(path, index=False)
+    sources = ", ".join(sorted(set(out["source"])))
+    dated = int((out["read_on"] == today.isoformat()).sum())
+    print(f"  {'cape':<18} source: {sources}; {dated} of {len(out)} readings dated "
+          f"{today.isoformat()} (new, revised, or first read after their month ended)")
+
+
 # key -> (target path, fetch() -> frame/series, write(frame), frontier() -> date|None)
 _TARGETS: dict[str, tuple] = {
     "ff_us": (
@@ -66,7 +83,7 @@ _TARGETS: dict[str, tuple] = {
     "cape": (
         shiller._CACHE_CSV,
         shiller.fetch_cape_dataframe,
-        _write_csv_factory(shiller._CACHE_CSV, index=False),
+        _write_cape,
         shiller.cape_frontier,
     ),
     "pe": (
