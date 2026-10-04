@@ -57,7 +57,14 @@
   live_data -q`. pytest.ini excludes them from the default suite and PR CI, so a
   PR can break them unseen; #387 hid Macro's Forward P/E panel, a `live_data`
   test pinned it, and main's scheduled job went red the next morning (#394).
-  They make live calls, so run them with the network up and FRED_API_KEY set.
+  They make live calls, so run them with the network up and WITHOUT a FRED key:
+  the scheduled job sets none (`.github/workflows/live-data.yml`). Run them in
+  the suite's worktree, which has no `.env` to supply one, with the variable
+  unset in the shell: `env -u FRED_API_KEY TRACKER_MODE=demo python -m pytest -m
+  live_data -q`. This step said "FRED_API_KEY set" until #485: a `live_data`
+  test that needed FRED passed three pre-push runs with the key and failed on
+  schedule without it. A test that needs a FRED series goes in the default suite
+  with that series stubbed.
 
 ## Modes
 - TRACKER_MODE controls demo (Streamlit Cloud, public, paper-trade)

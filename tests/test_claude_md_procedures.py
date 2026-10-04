@@ -56,3 +56,20 @@ def test_before_every_push_runs_the_suite_and_the_live_data_tests():
     # The live_data tests run only on the schedule unless someone runs them (#394).
     assert "python -m pytest -m\n  live_data" in s or "python -m pytest -m live_data" in s
     assert "rendered page" in s
+    # Without a FRED key, as the scheduled job runs them (#485): with one, a test that
+    # needed FRED passed before the merge and failed on schedule.
+    flat = " ".join(s.split())
+    assert "WITHOUT a FRED key" in flat
+    assert "env -u FRED_API_KEY TRACKER_MODE=demo python -m pytest -m live_data -q" in flat
+    assert "run them with the network up and FRED_API_KEY set" not in flat
+
+
+def test_the_scheduled_live_data_job_sets_no_fred_key():
+    """The premise of "as the scheduled job does". If the job is ever given the key,
+    this fails, and the pre-push step has to change with it: the two must run the
+    live_data tests in the same environment."""
+    workflow = (ROOT / ".github" / "workflows" / "live-data.yml").read_text(encoding="utf-8")
+    assert "pytest -m \"live_data\"" in workflow, "premise: this is the job that runs them"
+    sets_key = [ln.strip() for ln in workflow.splitlines()
+                if "FRED_API_KEY" in ln and not ln.strip().startswith("#")]
+    assert sets_key == [], sets_key
