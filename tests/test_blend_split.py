@@ -19,7 +19,7 @@ from src.holdings import BlendLeg, blend_split, pair_legs
 from src.prose_helpers import blend_split_sentence
 
 ROOT = Path(__file__).resolve().parent.parent
-DAY = "2026-07-20"          # the demo book's committed price frontier
+DAY = "2026-07-20"          # a day inside the demo book's history (its frontier until #397)
 
 
 @pytest.fixture

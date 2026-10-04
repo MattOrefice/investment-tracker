@@ -26,6 +26,11 @@ import src.prices as prices
 
 _ROOT = Path(__file__).resolve().parent.parent
 _DEMO = _ROOT / "data" / "demo.db"
+# The snapshot the staged tests copy: the frozen book, whose prices end 2026-07-20 for
+# good. They copied data/demo.db and typed that date; the Q3 2026 close-out advanced the
+# committed book to September 30 (#397), and every "after July 20" below then counted
+# rows the seed already held.
+_SNAPSHOT = _ROOT / "tests" / "fixtures" / "frozen_book.db"
 
 
 def _sha(path) -> str:
@@ -61,11 +66,9 @@ def _session_get(url, params=None, timeout=None):
     }], "error": None}, "ticker": ticker})
 
 
-@pytest.fixture
-def overlaid(tmp_path, monkeypatch):
-    """A demo.db copy standing in for the committed file, with the runtime cache on."""
+def _overlay(tmp_path, monkeypatch, source):
     demo = tmp_path / "demo.db"
-    shutil.copyfile(_DEMO, demo)
+    shutil.copyfile(source, demo)
     os.chmod(demo, 0o644)
     cache = tmp_path / "runtime" / "cache.db"
     monkeypatch.setattr(db, "DB_PATH", demo)
@@ -75,6 +78,20 @@ def overlaid(tmp_path, monkeypatch):
     monkeypatch.setattr(prices._SESSION, "get", _session_get)
     prices._reset_trailing_memo()
     return demo, cache, _sha(demo)
+
+
+@pytest.fixture
+def overlaid(tmp_path, monkeypatch):
+    """A copy of the frozen snapshot standing in for the committed file, with the
+    runtime cache on."""
+    return _overlay(tmp_path, monkeypatch, _SNAPSHOT)
+
+
+@pytest.fixture
+def overlaid_demo(tmp_path, monkeypatch):
+    """The same over a copy of data/demo.db itself, for the test that counts its
+    committed FRED rows: the frozen book keeps one of them."""
+    return _overlay(tmp_path, monkeypatch, _DEMO)
 
 
 def test_fetched_prices_and_dividends_land_in_the_cache_not_demo_db(overlaid):
@@ -91,11 +108,12 @@ def test_fetched_prices_and_dividends_land_in_the_cache_not_demo_db(overlaid):
     assert _sha(demo) == before
 
 
-def test_fred_series_land_in_the_cache_and_the_committed_rows_stay_in_demo_db(overlaid, monkeypatch):
+def test_fred_series_land_in_the_cache_and_the_committed_rows_stay_in_demo_db(overlaid_demo,
+                                                                              monkeypatch):
     """The 127 committed FRED rows stay IN demo.db, byte for byte. The run reads and
     writes the cache's copy, so clearing empties that copy and never the file."""
     import src.macro as macro
-    demo, cache, before = overlaid
+    demo, cache, before = overlaid_demo
     monkeypatch.setattr(macro, "fetch_fred_series", lambda sid, start, end=None: pd.Series(
         [1.0, 2.0], index=pd.to_datetime(["1990-01-01", "2026-09-01"]), name=sid))
     committed = sqlite3.connect(f"file:{demo}?mode=ro", uri=True).execute(
@@ -140,7 +158,7 @@ def test_any_other_write_is_refused_by_the_read_only_file(overlaid):
 def test_another_book_is_not_overlaid(overlaid, tmp_path, monkeypatch):
     """A tool that repoints DB_PATH at the book it means to write still writes it."""
     other = tmp_path / "other.db"
-    shutil.copyfile(_DEMO, other)
+    shutil.copyfile(_SNAPSHOT, other)
     monkeypatch.setattr(db, "DB_PATH", other)
     before = _sha(other)
     prices.get_prices("VOO", "2026-07-01", "2026-07-31")
@@ -156,22 +174,43 @@ def test_the_demo_app_run_that_fetched_leaves_demo_db_byte_identical(tmp_path, m
     monkeypatch.setattr(db, "_RUNTIME_CACHE", None)
     monkeypatch.setattr(db, "_migrated_paths", set())
     monkeypatch.setenv("DEMO_RUNTIME_CACHE", str(tmp_path / "cache.db"))
-    monkeypatch.setattr(prices._SESSION, "get", _session_get)
+    asked = []
+
+    def _counted(url, params=None, timeout=None):
+        asked.append(url)
+        return _session_get(url, params, timeout)
+
+    monkeypatch.setattr(prices._SESSION, "get", _counted)
     prices._reset_trailing_memo()
     before = _sha(_DEMO)
+    # The committed frontier is read from the book: it moves at every close-out.
+    con = sqlite3.connect(f"file:{_DEMO.as_posix()}?mode=ro", uri=True)
+    frontier = con.execute(
+        "SELECT MAX(price_date) FROM prices WHERE ticker = 'VOO'").fetchone()[0]
+    con.close()
+    # A week past the frontier, so the gap the run fills always holds a weekday: on the
+    # real clock, the weekend after a Friday frontier has none.
+    from tests.conftest import pin_today, unpin_leftovers
+    pin_today(monkeypatch, date.fromisoformat(frontier) + timedelta(days=7))
 
     from streamlit.testing.v1 import AppTest
-    at = AppTest.from_file(str(_ROOT / "app.py"), default_timeout=300).run()
-    assert not at.exception, at.exception
-    at.switch_page("pages/2_Performance.py").run()
-    assert not at.exception, at.exception
+    try:
+        at = AppTest.from_file(str(_ROOT / "app.py"), default_timeout=300).run()
+        assert not at.exception, at.exception
+        at.switch_page("pages/2_Performance.py").run()
+        assert not at.exception, at.exception
+    finally:
+        unpin_leftovers()
 
     assert db._RUNTIME_CACHE is not None and db._RUNTIME_CACHE[0] == _DEMO.resolve()
     c = sqlite3.connect(tmp_path / "cache.db")
-    fetched = c.execute("SELECT COUNT(*), MAX(price_date) FROM runtime_prices "
-                        "WHERE price_date > '2026-07-20'").fetchone()
+    # The stand-in provider answers 100.0 on every weekday it is asked for. "After July
+    # 20" became true of the seed itself once the book advanced, so the rows counted are
+    # the provider's own, after the frontier the book holds today.
+    fetched = c.execute("SELECT COUNT(*), MIN(price_date) FROM runtime_prices "
+                        "WHERE price_date > ? AND close = 100.0", (frontier,)).fetchone()
     c.close()
-    assert fetched[0] > 0 and fetched[1] > "2026-07-20", "the run fetched"
+    assert asked and fetched[0] > 0 and fetched[1] > frontier, "the run fetched"
     assert _sha(_DEMO) == before
     assert config.IS_DEMO
 
