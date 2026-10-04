@@ -57,14 +57,17 @@ def ordinal(n: float) -> str:
 
 
 def cape_valuation_sentence(value: float, as_of: str, pct: float,
-                            earlier_years: "list[int]") -> str:
+                            earlier_years: "list[int]", read: str = "") -> str:
     """The SAA thesis's valuation sentence, from the CAPE reading and its history.
 
     ``earlier_years`` is shiller.earlier_years_at_or_above(series, value). A level
     reached before in more than three separate stretches is not rare enough to name.
+    ``read`` is shiller.read_clause for the reading: when and where it was read (#478
+    I06), stated beside the month it describes.
     """
     s = (f"US equity valuations are {percentile_label(pct)}: CAPE is {value:.1f} as of "
-         f"{as_of}, the {ordinal(pct)} percentile of the Shiller record")
+         f"{as_of}{f' ({read})' if read else ''}, the {ordinal(pct)} percentile of the "
+         f"Shiller record")
     if not earlier_years:
         return s + ", above every earlier reading."
     ys = sorted(set(earlier_years))

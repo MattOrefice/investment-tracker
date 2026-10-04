@@ -249,6 +249,13 @@ def _load_cape_series() -> pd.Series:
 
 
 @st.cache_data(ttl=86400, show_spinner=False)
+def _load_cape_reading() -> "shiller.CapeReading":
+    """The latest reading's month, read date and source (#478 I06), cached as long as
+    the series it belongs to."""
+    return shiller.latest_reading()
+
+
+@st.cache_data(ttl=86400, show_spinner=False)
 def _load_trailing_pe() -> pd.DataFrame:
     from src.trailing_pe import get_trailing_pe
     return get_trailing_pe()
@@ -318,7 +325,8 @@ with col:
                   "Credit percentiles use the history FRED provides, stated on each credit panel.")
         return (
             f"Last updated: {_when(datetime.now().astimezone())}. "
-            "Data: FRED & Shiller. Percentile basis varies by panel and is labeled on each. The "
+            f"Data: FRED, and for CAPE {shiller.CREDIT}. "
+            "Percentile basis varies by panel and is labeled on each. The "
             "macro-indicator percentiles (growth, inflation, rates, the dollar) are window-relative, "
             "and a panel's selector recomputes them against that window. The valuation "
             "(CAPE/ECY full leg), factor-regime, value-spread, and financial-conditions "
@@ -1794,6 +1802,7 @@ with col:
     try:
         with st.spinner("Loading CAPE data…"):
             cape_series = _load_cape_series()
+            cape_reading = _load_cape_reading()
         cape_val     = float(cape_series.dropna().iloc[-1])
         cape_pctile  = macro.percentile(cape_series, cape_val)
         cape_implied = macro.compute_cape_implied_return(cape_val)
@@ -1821,7 +1830,11 @@ with col:
             "Window", ["20Y", "50Y", "Max"],
             index=2, key="cape_window", horizontal=True,
         )
-        cape_as_of    = cape_last_date.strftime("%b %Y")
+        # Wherever the CAPE figure prints on this page, the date it was read prints
+        # with it (#478 I06): multpl files the current month's reading so far under
+        # the month, and only the read date tells it from the month's own figure.
+        cape_read       = shiller.read_clause(cape_reading)
+        cape_read_short = shiller.read_short(cape_reading)
         w_start_cape  = _window_start(cape_window)
         cape_filtered = cape_series[cape_series.index >= w_start_cape].dropna()
         _cape_pct = _window_pctile(cape_series, cape_val, w_start_cape)
@@ -1860,7 +1873,8 @@ with col:
         )
         _add_current_annotation(
             fig_cape, cape_val,
-            f"Current {cape_val:.1f}× ({_ordinal(cape_pctile_w)} pct, {cape_scope_short})",
+            f"Current {cape_val:.1f}× ({_ordinal(cape_pctile_w)} pct, {cape_scope_short}; "
+            f"{cape_read_short})",
         )
         _apply_style(fig_cape, height=_CHART_H_CAPE)
         fig_cape.update_yaxes(title_text="CAPE (×)")
@@ -1869,17 +1883,22 @@ with col:
         if _yr:
             fig_cape.update_yaxes(range=_yr)
         st.plotly_chart(fig_cape, width='stretch')
-        st.metric("Shiller CAPE", f"{cape_val:.1f}×")
+        st.metric(f"Shiller CAPE ({cape_last_date.strftime('%b %Y')}, {cape_read_short})",
+                  f"{cape_val:.1f}×")
         # The record's span and the earlier years at or above 40, from the committed
         # series (#401): the captions said "since 1881", "145-year" and "1999–2001",
         # where the file begins in 1871, spans 155 years, and last reached 40 before
         # the current run in September 2000.
         _cape_first, _cape_years = cape_record_span(cape_series)
+        # Yale is the fallback, and a figure read from it says so (cape_read names it).
+        _cape_source = (f"Source: {shiller.CREDIT}, monthly"
+                        if cape_reading.source != shiller.YALE else
+                        "Source: Robert Shiller's Yale data file, monthly")
         st.caption(
             f"{_ordinal(cape_pctile_w)} percentile of {cape_scope} "
             f"· full history: {_ordinal(cape_pctile)} pct since {_cape_first} "
-            f"· data as of {cape_as_of} "
-            "· Source: Shiller dataset via multpl.com, monthly  \n"
+            f"· {cape_last_date.strftime('%B %Y')} reading, {cape_read} "
+            f"· {_cape_source}  \n"
             f"Implied 10Y real return at this CAPE is approximately {cape_implied:+.2%} "
             "based on the long-run historical relationship between starting CAPE and forward "
             f"10-year returns. The relationship is empirically robust over the full "
@@ -1888,7 +1907,8 @@ with col:
 
         pctile_label_cape = percentile_label(cape_pctile)
         st.caption(
-            f"CAPE is in the {_ordinal(cape_pctile)} percentile of its history: {pctile_label_cape}. "
+            f"CAPE ({cape_read_short}) is in the {_ordinal(cape_pctile)} percentile of its "
+            f"history: {pctile_label_cape}. "
             + cape_forty_sentence(cape_series, cape_val) +
             "Periods of extreme valuation have preceded materially below-average decade-ahead "
             "returns. The reading is most directly relevant to the international developed and US Large Value "
@@ -1982,7 +2002,8 @@ with col:
             st.markdown(
                 f"**Reading the gap.** The same market prices at {ttm_val:.1f}× trailing "
                 f"twelve-month earnings but {cape_val:.1f}× its ten-year average of real "
-                f"earnings (CAPE). Algebraically, current S&P 500 earnings are running "
+                f"earnings (CAPE, {cape_read_short}). Algebraically, current S&P 500 "
+                f"earnings are running "
                 f"≈{_earn_gap:.0%} above their inflation-adjusted ten-year average. CAPE "
                 "smooths away that elevated-earnings base, which is the structural reason "
                 "CAPE has read \"extreme\" for a decade while the market compounded. When "
@@ -2103,7 +2124,8 @@ with col:
                     st.markdown(
                         f"**Three lenses, one market.** Trailing {ttm_val:.1f}× (what "
                         f"was earned), forward {_fwd_pe:.1f}× (what analysts expect), "
-                        f"CAPE {cape_val:.1f}× (ten-year real average). Forward sits "
+                        f"CAPE {cape_val:.1f}× (ten-year real average, "
+                        f"{cape_read_short}). Forward sits "
                         "lowest because its denominator is the largest and most "
                         "optimistic; CAPE sits highest because its denominator "
                         "averages away the recent earnings surge. When the three "
@@ -2186,8 +2208,8 @@ with col:
         st.caption(
             f"{_ordinal(ecy_pctile_w)} percentile of {ecy_scope} "
             f"(full history since {ecy_since}: {_ordinal(ecy_pctile)} pct)  \n"
-            f"CAPE yield {100/cape_val:.2f}% vs real rate {_real_rate:.2f}% "
-            f"(DFII10, the 10-year TIPS yield, as on the Real 10-Year panel)"
+            f"CAPE yield {100/cape_val:.2f}% (CAPE {cape_read_short}) vs real rate "
+            f"{_real_rate:.2f}% (DFII10, the 10-year TIPS yield, as on the Real 10-Year panel)"
         )
 
         st.caption(interpret_excess_cape(current_ecy, ecy_pctile / 100))
@@ -2790,8 +2812,9 @@ with col:
             "**FRED USREC** (NBER recession indicator): lags recession end by ~12 months"
             + ("" if rec_periods is not None else " · unavailable"),
             (
-                f"**Shiller CAPE** (multpl.com / Robert Shiller): "
-                f"last observation **{cape_series.dropna().index[-1].strftime('%b %Y')}**"
+                f"**Shiller CAPE** ({shiller.CREDIT}; Shiller's own Yale data file is the "
+                f"fallback, and a figure read from it says so): latest reading "
+                f"**{cape_series.dropna().index[-1].strftime('%b %Y')}**, {cape_read}"
                 if cape_ok else "**Shiller CAPE**: unavailable"
             ),
         ]

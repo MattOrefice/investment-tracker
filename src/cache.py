@@ -293,8 +293,27 @@ def _enc_series(s: pd.Series, index_kind: str) -> dict:
             "data": [float(v) for v in s.tolist()]}
 
 
+def _enc_cape(readings: pd.DataFrame) -> dict:
+    """CAPE with each reading's read date and source beside its month (#478 I06). A
+    lock taken before this holds CAPE as a plain series (_enc_series), and stays so."""
+    return {"kind": "cape_readings",
+            "index": [pd.Timestamp(d).isoformat() for d in readings.index],
+            "index_name": readings.index.name,
+            "data": [float(v) for v in readings["cape"].tolist()],
+            "read_on": [d.isoformat() if d is not None else None
+                        for d in readings["read_on"].tolist()],
+            "source": readings["source"].tolist()}
+
+
 def _dec(payload):
     kind = payload["kind"]
+    if kind == "cape_readings":
+        idx = pd.DatetimeIndex(pd.to_datetime(payload["index"]), name=payload["index_name"])
+        out = pd.DataFrame({"cape": pd.Series(payload["data"], index=idx, dtype=float)})
+        out["read_on"] = pd.Series([date.fromisoformat(d) if d else None
+                                    for d in payload["read_on"]], index=idx, dtype=object)
+        out["source"] = pd.Series(payload["source"], index=idx, dtype=object)
+        return out
     if kind == "frame":
         idx = pd.DatetimeIndex(pd.to_datetime(payload["index"]), name=payload["index_name"])
         return pd.DataFrame(payload["data"], index=idx, columns=payload["columns"],
@@ -321,9 +340,10 @@ def _capture_inputs(end: date, tickers: "list[str]",
     (#371's rule, applied to every input). An input whose data stops short of the
     quarter is PENDING instead: the French factors (and momentum) when they end
     more than QUARTER_END_COVERAGE_DAYS before the quarter does, HYG without the close
-    of the quarter's last NYSE session (the price gate's rule, #454), and CAPE when
-    it has no reading for the quarter's last month. French publishes about a month late,
-    so on October 1 a Q3 lock holds prices and CAPE while its factor sections wait.
+    of the quarter's last NYSE session (the price gate's rule, #454), and CAPE until
+    the quarter's last month has a reading made after that month's last NYSE session
+    (#478 I06). French publishes about a month late, so on October 1 a Q3 lock holds
+    prices, and CAPE once it has been read again, while its factor sections wait.
 
     HYG, the FI regression's credit proxy, comes from the price layer with the price
     rule (dividends through the quarter's last day) and the French gate (#386). The
@@ -367,11 +387,18 @@ def _capture_inputs(end: date, tickers: "list[str]",
         gate(HYG, s, last, last is not None and last >= last_session_on_or_before(end),
              lambda x: _enc_series(x, "datetime"))
     if CAPE in want:
-        s = shiller.get_cape_series()
-        s = s[s.index <= end_ts]
-        last = s.index.max().date() if len(s) else None
-        gate(CAPE, s, last, last is not None and last >= date(end.year, end.month, 1),
-             lambda x: _enc_series(x, "datetime"))
+        # The quarter's last month, and only from a reading made after that month's
+        # last NYSE session (#478 I06). Before then the row filed under the month is
+        # the source's reading so far: on 2026-09-25 September read 41.48, and
+        # multpl's September row read 40.90 once the month had ended. Pending names
+        # the latest month the file holds such a reading for.
+        r = shiller.get_cape_readings()
+        r = r[r.index <= end_ts]
+        last = next((m.date() for m, d in zip(r.index[::-1], r["read_on"].tolist()[::-1])
+                     if shiller.read_after_month_end(m, d)), None)
+        covered = (len(r) > 0 and r.index.max().date() >= date(end.year, end.month, 1)
+                   and last == r.index.max().date())
+        gate(CAPE, r, last, covered, _enc_cape)
     if ETF_METADATA in want:
         meta = etf_metadata.load_metadata()
         stamps = sorted(date.fromisoformat(v["as_of"]) for v in meta.values()

@@ -13,7 +13,10 @@ verification discipline. Refresh is a deliberate, committed, human step.
 
 Also governed by the same policy, outside this directory:
 `data/shiller_cape.csv` and `data/trailing_pe.csv` (tracked inputs, refreshed
-by the same tool). `ff_factors_global.csv` was deleted: Ken French ceased
+by the same tool). Each CAPE row holds the month it describes, the value, the
+date it was read (`read_on`) and the source that answered (`multpl`, or `yale`
+for the fallback); a quarter lock takes its last month only from a reading made
+after that month's last NYSE session. `ff_factors_global.csv` was deleted: Ken French ceased
 daily Global 5-factor publication in June 2019, before this portfolio's
 inception, so nothing could ever load it.
 

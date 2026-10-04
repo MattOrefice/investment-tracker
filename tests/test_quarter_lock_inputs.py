@@ -173,7 +173,14 @@ def test_the_executive_summary_cites_the_quarter_end_cape_and_says_it_was_restat
     capture_quarter_snapshot("2026Q2")
     snap = get_quarter_snapshot("2026Q2")[0]
     exec_ = _sections(snap)["exec"]
-    assert "(June 2026, the quarter's last monthly reading)" in exec_
+    # A lock taken now holds the reading's read date and source (#478 I06), read here
+    # off the file the lock was taken from.
+    from src import shiller
+    june = shiller.get_cape_readings().loc["2026-06-01"]
+    read = shiller.read_clause(shiller.CapeReading(date(2026, 6, 1), june["cape"],
+                                                   june["read_on"], june["source"]))
+    assert june["read_on"] is not None, "premise: the file dates its June reading"
+    assert f"(June 2026, the quarter's last monthly reading, {read})" in exec_
     assert "CAPE data through" not in exec_
     note = inputs_restatement_note("2026Q2", snap)
     assert note.startswith("Restated September 26, 2026: this quarter now locks every input")
@@ -226,10 +233,15 @@ def _factor_files_through(tmp_path, monkeypatch, day: str):
 
 
 def _cape_through(tmp_path, monkeypatch, month: str):
+    """The CAPE file ending at ``month``, that reading made on the first day of the
+    month after it: one a lock takes (#478 I06; the gate itself is pinned in
+    tests/test_cape_read_dates.py)."""
     from src import shiller
-    df = pd.read_csv(shiller._CACHE_CSV)
+    df = pd.read_csv(shiller._CACHE_CSV, dtype={"read_on": str, "source": str})
     df = df[df["date"] < month]
-    df = pd.concat([df, pd.DataFrame({"date": [month], "cape": [40.0]})])
+    read_on = (pd.Timestamp(month) + pd.offsets.MonthBegin(1)).date().isoformat()
+    df = pd.concat([df, pd.DataFrame({"date": [month], "cape": [40.0], "read_on": [read_on],
+                                      "source": ["multpl"]})])
     df.to_csv(tmp_path / "cape_q3.csv", index=False)
     monkeypatch.setattr(shiller, "_CACHE_CSV", tmp_path / "cape_q3.csv")
 
@@ -274,14 +286,14 @@ def test_on_october_1_the_factor_sections_wait_for_french_and_then_lock(book, tm
     _factor_files_through(tmp_path, monkeypatch, "2026-09-30")
     _cape_through(tmp_path, monkeypatch, "2026-09-01")   # a revised CAPE file...
     from src import shiller
-    df = pd.read_csv(shiller._CACHE_CSV)
+    df = pd.read_csv(shiller._CACHE_CSV, dtype={"read_on": str, "source": str})
     df.loc[df["date"] == "2026-09-01", "cape"] = 99.0      # ...that must not reach Q3
     df.to_csv(shiller._CACHE_CSV, index=False)
     done = complete_quarter_inputs("2026Q3")
     assert done.inputs_pending == {ETF_METADATA: "2026-04-15"}, "the fact sheets still wait"
     assert {FF5_US, FF5_DEVELOPED_EXUS, UMD} <= set(done.inputs)
     assert done.inputs[FF5_US].index.max() == pd.Timestamp("2026-09-30")
-    pd.testing.assert_series_equal(done.inputs[CAPE], locked_cape)
+    pd.testing.assert_frame_equal(done.inputs[CAPE], locked_cape)
     pd.testing.assert_frame_equal(done.adj_close, locked_prices)
     assert reports._pending_note(done, "factor") is None
 
