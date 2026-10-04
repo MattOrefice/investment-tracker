@@ -100,4 +100,6 @@ def test_trailing_pe_has_one_date(render):
                    and "percentile" in t and "Shiller" not in t)
     warned = re.search(r"Trailing P/E data ends (\w+) (\d+), (\d{4})", warning).groups()
     shown = re.search(r"data as of (\w{3}) (\d+), (\d{4})", caption).groups()
-    assert (warned[0][:3], warned[1], warned[2]) == shown, (warning, caption)
+    # Compared as dates: the caption pads the day ("Oct 02"), the warning does not.
+    assert (warned[0][:3], int(warned[1]), warned[2]) == (
+        shown[0], int(shown[1]), shown[2]), (warning, caption)

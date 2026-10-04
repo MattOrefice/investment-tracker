@@ -25,12 +25,23 @@ def test_public_origin_every_row_that_names_the_book_is_demo_s():
     """Accounts and trades are exactly rows of the PUBLIC demo.db. A book seeded
     from anywhere else (the personal tracker.db above all) fails here, in CI."""
     f, d = _ro(FROZEN), _ro(DEMO)
-    for table in ("accounts", "trades", "securities", "theses"):
-        frozen_rows = set(f.execute(f"SELECT * FROM {table}"))
+    # A DRIP lot is compared on what it is, not on trade_id and created_at: the
+    # close-out's tools/rebuild_demo_drip_lots.py removes every lot and writes it again,
+    # so those two are new in demo.db after each one while the lot itself is the same.
+    lot = ("account_id, ticker, thesis_id, trade_date, action, shares, price, fees, notes, "
+           "lot_source")
+    reads = {"accounts": "SELECT * FROM accounts", "securities": "SELECT * FROM securities",
+             "theses": "SELECT * FROM theses",
+             "trades": "SELECT * FROM trades WHERE lot_source IS NOT 'drip'",
+             "trades (DRIP lots)": f"SELECT {lot} FROM trades WHERE lot_source = 'drip'"}
+    for table, sql in reads.items():
+        frozen_rows = set(f.execute(sql))
         assert frozen_rows, f"{table} is empty in the frozen book"
-        assert frozen_rows <= set(d.execute(f"SELECT * FROM {table}")), (
+        assert frozen_rows <= set(d.execute(sql)), (
             f"{table} has rows that are not demo.db's: the frozen book must be built "
             "from the public demo.db only (tools/build_frozen_book.py)")
+    assert set(lot.split(", ")) | {"trade_id", "created_at"} == {
+        r[1] for r in d.execute("PRAGMA table_info(trades)")}, "every trades column is read"
     assert f.execute("SELECT COUNT(*) FROM accounts").fetchone() == (1,)
 
 

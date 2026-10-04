@@ -193,6 +193,13 @@ the code that supports it; the two with none are listed at the end.
   the quarter's last trading day or later. Until then a lock is refused
   (`LockCoverageError`), never taken short, and the report steps back to the
   previous quarter (`asof.most_recent_reportable_quarter`).
+- Demo only, to make the step above true of the committed book: advance the
+  snapshot through the quarter's last NYSE session, `python
+  tools/advance_demo_prices.py 2026-09-30` (the date as YYYY-MM-DD). It fetches
+  every ticker the book holds prices for into a scratch copy, checks the delta
+  (no existing row changed, no session missing, no dividend dated inside the
+  committed history) and writes it in one transaction, or refuses and leaves
+  the book as it was (#397). Nothing else writes prices into `data/demo.db`.
 - Demo only, after the snapshot advance: confirm every ticker's committed
   history ends on the same date, `python tools/check_price_histories.py`. It
   lists each end date with its tickers and exits 1 unless there is one, so no
@@ -232,12 +239,14 @@ the code that supports it; the two with none are listed at the end.
   `test_benchmark_gap_renormalization_is_numeric_stack_invariant` only with a
   demo.db price change inside 2025-05-01 to 2026-07-20.
 - Run the `live_data` tests: `TRACKER_MODE=demo python -m pytest -m live_data -q`.
-- Not yet supported (#397), so not steps: advancing the committed demo snapshot
-  through quarter-end and committing the new quarter's lock (no tool writes
-  prices into `data/demo.db`, and `tools/lock_demo_quarters.py` refuses a
-  quarter its committed prices do not cover), and a committed harness that
-  renders every earlier locked report for a byte-identical diff. Until they
-  exist, the demo's new quarter is locked only in its runtime cache.
+- Demo only, to commit the quarter's lock: `python tools/lock_demo_quarters.py`,
+  then commit `data/demo.db`. It locks from the committed prices and dividends,
+  offline, never re-locks a quarter already locked, and refuses a quarter the
+  committed prices do not cover, which is why the advance comes first. Until
+  the lock is committed, the demo's new quarter is locked only in each
+  container's runtime cache.
+- Not yet supported (#397), so not a step: a committed harness that renders
+  every earlier locked report for a byte-identical diff.
 
 ## History baseline (post-2026-06-08 reorg)
 - History was reorganized twice on 2026-06-08, both as

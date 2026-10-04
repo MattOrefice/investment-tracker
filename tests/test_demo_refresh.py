@@ -22,6 +22,10 @@ from tests.test_runtime_cache import _session_get
 
 _ROOT = Path(__file__).resolve().parent.parent
 _DEMO = _ROOT / "data" / "demo.db"
+# The snapshot the staged tests copy: the frozen book, whose prices end 2026-07-20 for
+# good, so NOW (September 24) is after its frontier whatever the committed demo book
+# has since been advanced to (#397).
+_SNAPSHOT = _ROOT / "tests" / "fixtures" / "frozen_book.db"
 NOW = datetime(2026, 9, 24, 22, 0, tzinfo=timezone.utc)      # after the New York close
 
 
@@ -30,7 +34,7 @@ def demo(tmp_path, monkeypatch):
     """A demo.db copy standing in for the committed file, the runtime cache on, the
     refresh enabled for this test only, and a call counter on the provider."""
     copy = tmp_path / "demo.db"
-    shutil.copyfile(_DEMO, copy)
+    shutil.copyfile(_SNAPSHOT, copy)
     os.chmod(copy, 0o644)
     monkeypatch.setattr(db, "DB_PATH", copy)
     monkeypatch.setattr(db, "_migrated_paths", set())
@@ -156,7 +160,9 @@ def test_a_fetch_that_did_not_reach_this_page_still_reads_behind(monkeypatch):
 
 def test_the_landing_banner_reports_the_fetched_date_before_it_renders(tmp_path, monkeypatch):
     """app.py in demo mode, fetch answered: the landing banner is read AFTER the
-    startup refresh, so it names the fetched date, not the snapshot's July 20."""
+    startup refresh, so it names the fetched date: the newest weekday the stand-in
+    provider answers, which is the last one on or before today. (It asserted that
+    "July 20" was absent, the snapshot's date until the Q3 2026 advance.)"""
     from tests.conftest import _pin_mode
     _pin_mode(monkeypatch, "demo")
     monkeypatch.setattr(db, "_RUNTIME_CACHE", None)
@@ -174,7 +180,13 @@ def test_the_landing_banner_reports_the_fetched_date_before_it_renders(tmp_path,
     assert not at.exception, at.exception
     banner = next(m.value for m in at.markdown if 'class="endow-recency"' in m.value)
     banner = banner.split('class="endow-recency">')[1].split("</p>")[0]
-    assert "fetched" in banner and "July 20" not in banner, banner
+    from datetime import timedelta
+    from src.asof import today_et
+    served = today_et()
+    while served.weekday() > 4:
+        served -= timedelta(days=1)
+    assert "fetched" in banner, banner
+    assert f"{served.strftime('%B')} {served.day}, {served.year}" in banner, banner
     assert hashlib.sha256(_DEMO.read_bytes()).hexdigest() == before
 
 
