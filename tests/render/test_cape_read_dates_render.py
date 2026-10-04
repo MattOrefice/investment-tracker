@@ -5,7 +5,10 @@ Rendered on the demo book, offline: the Macro page's CAPE panel (chart annotatio
 metric, both captions), its trailing-P/E contrast, its header and its sources list, and
 the SAA page's thesis sentence. A reading taken from Yale, the fallback, says so.
 
-The Excess CAPE Yield caption needs FRED, so its render is a live_data test.
+The Excess CAPE Yield caption needs FRED's real 10-year yield. It is rendered here with
+that one series stubbed, so it runs offline too. It was a live_data test first, and the
+scheduled live-data job has no FRED key: the panel did not render there and the job
+went red on its first run (#485). The pre-push live_data run sets the key, so it passed.
 """
 from __future__ import annotations
 
@@ -23,8 +26,13 @@ import src.prices as prices
 ROOT = Path(__file__).resolve().parent.parent.parent
 
 
-def _render(page, tmp, cape_csv=None, fred_down=True):
-    """(texts, metrics, chart annotations) of a demo page on a demo.db copy."""
+def _fred_down(*_a, **_k):
+    raise RuntimeError("FRED down")
+
+
+def _render(page, tmp, cape_csv=None, fred=_fred_down):
+    """(texts, metrics, chart annotations) of a demo page on a demo.db copy. ``fred``
+    stands in for every FRED fetch; by default FRED is down."""
     import streamlit as st
     from streamlit.testing.v1 import AppTest
     import src.config as config
@@ -38,9 +46,7 @@ def _render(page, tmp, cape_csv=None, fred_down=True):
     mp.setattr(db, "_migrated_paths", set())
     mp.setattr(db, "_RUNTIME_CACHE", None)
     mp.setattr(prices._SESSION, "get", lambda *a, **k: (_ for _ in ()).throw(OSError("offline")))
-    if fred_down:
-        mp.setattr(macro, "fetch_fred_series",
-                   lambda *a, **k: (_ for _ in ()).throw(RuntimeError("FRED down")))
+    mp.setattr(macro, "fetch_fred_series", fred)
     mp.setattr(config, "IS_DEMO", True)
     if cape_csv is not None:
         mp.setattr(shiller, "_CACHE_CSV", cape_csv)
@@ -140,14 +146,30 @@ def test_the_saa_thesis_dates_its_cape_reading(tmp_path_factory):
     assert "((" not in para.replace(" ", "")
 
 
-@pytest.mark.live_data
+def _only_the_real_10_year(series_id, start_date, end_date=None):
+    """FRED with one series answering: DFII10, a flat 2.00% on every business day. The
+    figure is a stand-in; the test reads the caption's CAPE clause, not the yield."""
+    if series_id != "DFII10":
+        raise RuntimeError("FRED down")
+    return pd.Series(2.0, index=pd.bdate_range("2003-01-02", "2026-10-02"))
+
+
 def test_the_ecy_caption_dates_the_cape_it_divides(tmp_path_factory):
-    """The Excess CAPE Yield panel prints a yield derived from CAPE; it needs FRED's
-    real 10-year, so it renders only with the network up."""
+    """The Excess CAPE Yield panel prints a yield derived from CAPE, so it carries the
+    CAPE reading's date too. Offline, with the real 10-year stubbed: no FRED key."""
     from src import shiller
-    texts, _, _, reading = _render("3_Macro.py", tmp_path_factory.mktemp("macro_live"),
-                                   fred_down=False)
+    texts, _, _, reading = _render("3_Macro.py", tmp_path_factory.mktemp("macro_ecy"),
+                                   fred=_only_the_real_10_year)
     caption = next((t for t in texts if "CAPE yield" in t), None)
-    assert caption is not None, "the ECY panel did not render: is FRED reachable?"
+    assert caption is not None, "premise: the ECY panel renders on the stubbed real yield"
     assert (f"CAPE yield {100 / reading.value:.2f}% (CAPE {shiller.read_short(reading)}) "
-            "vs real rate ") in caption
+            "vs real rate 2.00% (DFII10, ") in caption
+
+
+def test_without_the_real_10_year_the_ecy_panel_says_so_and_prints_no_cape_yield(macro_page):
+    """The other state, which the scheduled job is in: no FRED, so no ECY figure, and
+    the panel says it is unavailable instead of printing an undated one."""
+    texts, _, _, _ = macro_page
+    assert not any("CAPE yield" in t for t in texts)
+    assert any(t.startswith("**Excess CAPE Yield (ECY)**: data temporarily unavailable")
+               for t in texts), [t[:80] for t in texts if "ECY" in t]
