@@ -833,7 +833,9 @@ def test_em_disclosure_untilted_book_keeps_iemg_composition_framing():
     ):
         text = em_disclosure()
     assert "IEMG" in text
-    assert "~27% China" in text
+    # The composition framing, without the typed "~27% China weight" (#478 I05).
+    assert "IEMG provides passive cap-weighted broad EM exposure." in text
+    assert "China" not in text
     assert "held at cap weight" not in text  # no cap-weight-exception framing
 
 

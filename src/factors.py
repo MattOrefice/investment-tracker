@@ -256,13 +256,17 @@ def em_disclosure() -> str:
     except Exception:
         tilted = False
     if not tilted:
+        # No typed figures (#478 I05). This named "~27% China weight", "approximately
+        # 12 observations over the current 1-year window" and "3+ years of monthly
+        # data": an undated index weight, and two counts nothing in the code computes.
+        # The only threshold here is the daily regressions' 30-observation minimum,
+        # which is not a monthly one, so the counts are dropped, not re-derived.
         return (
-            "Ken French does not publish daily EM factor data. "
-            "Monthly EM factors would yield approximately 12 observations over the current "
-            "1-year window, below the threshold for stable inference. "
-            "IEMG provides passive cap-weighted broad EM exposure (~27% China weight at current "
-            "index composition). Factor decomposition for this sleeve will be added when the "
-            "portfolio accumulates sufficient history (target: 3+ years of monthly data)."
+            "Ken French does not publish daily EM factor data, and the monthly history "
+            "since this portfolio's inception is too short for stable inference. "
+            "IEMG provides passive cap-weighted broad EM exposure. Factor decomposition "
+            "for this sleeve will be added when the portfolio has accumulated enough "
+            "monthly history."
         )
     return (
         "This is the one equity region held at cap weight, and the only equity sleeve "
@@ -1154,14 +1158,28 @@ def regress_fi_sleeve(inception: str, end_date: str) -> Optional[dict]:
 def build_factor_prose(
     results: dict,
     fi_result: Optional[dict] = None,
+    duration_line_location: str = "on the Performance page",
 ) -> list[str]:
     """
     Generate institutional-register prose interpreting the sleeve regressions.
 
     results       : dict with keys 'us' and 'developed_exus' (each a result dict or None).
     fi_result     : optional TERM/CREDIT result dict from regress_fi_sleeve.
+    duration_line_location : where the reader finds the Fixed Income Effective Duration
+                    line the FI paragraph points to: the Performance page for the
+                    Factor Profile page, "in this report" for the PDF.
     Called by both the PDF section builder and the Streamlit page to guarantee
     identical output.
+
+    NO TYPED FIGURES (#478 I01 to I04). The literal text here carries no number that
+    a fund, an index or the ledger could move: every figure is a regression result or
+    read from this module's own constants. It typed VGIT's and SCHP's durations
+    ("~5.5-year" and "~6.8-year", undated; data/etf_metadata.json held 4.9 and 6.3 on
+    2026-10-04), Korea's weight in VEA ("~3-4%"; Vanguard's fact sheet as of June 30,
+    2026 gives 10.2%), a 2025 return for Korean equities with no index named, and
+    "VNQ 60%, DBC 40%" for a sleeve that holds VNQ and PDBC.
+    tests/test_factor_prose_types_no_figures.py reads this function's literals and
+    fails on one typed back.
     """
     lines: list[str] = []
     us  = results.get("us")
@@ -1205,6 +1223,18 @@ def build_factor_prose(
 
         alpha_sig_d = significance_label(t_a_d)
 
+        # The two classification claims, each read from its owner's page on
+        # 2026-10-04 (#478 I02):
+        #   * VEA tracks the FTSE Developed All Cap ex US Index: Vanguard's prospectus
+        #     of April 28, 2026 and its fact sheet as of June 30, 2026, which lists
+        #     Korea among the fund's ten largest markets.
+        #   * FTSE classifies South Korea as Developed: "Markets classified under the
+        #     FTSE Equity Country Classification Scheme", as of April 7, 2026.
+        #   * French's factors exclude Korea: the country table in "Description of
+        #     Fama/French 5 Factors for Developed Markets" lists 23 countries for
+        #     Developed and Developed ex US, and Korea is not one of them.
+        # Korea's weight in VEA and its 2025 return are not stated: both were typed,
+        # and neither is an input this module holds (I02, I03).
         lines.append(
             f"The {_intl_core_label()} sleeve (VEA, {T_dev} trading days, "
             f"{s_start_d} to {s_end_d}) "
@@ -1213,12 +1243,10 @@ def build_factor_prose(
             f"The {a_bps_d:+.0f} bps annualized alpha (t = {t_a_d:.2f}) is {alpha_sig_d}, "
             f"and it reflects a universe mismatch, not skill. "
             f"VEA tracks the FTSE Developed All Cap ex US Index, which classifies "
-            f"South Korea as Developed (~3-4% of VEA's holdings), while "
+            f"South Korea as Developed, while "
             f"Ken French's Developed ex-US factor universe excludes Korea entirely. "
-            f"Korean equities returned approximately 95-98% in calendar 2025, "
-            f"driven by the AI/semiconductor capex cycle (Samsung Electronics, SK Hynix). "
-            f"That excess return falls outside the FF Developed ex-US factor span and "
-            f"accumulates in the alpha term. "
+            f"The return on Korean equities falls outside the FF Developed ex-US factor "
+            f"span and accumulates in the alpha term. "
             f"The reported alpha is therefore return the Developed ex-US factors leave "
             f"unexplained because of the universe mismatch, not risk-adjusted excess return."
         )
@@ -1231,15 +1259,18 @@ def build_factor_prose(
         a_bps_fi = fi_result["alpha_annual_bps"]
         t_a_fi   = fi_result["t_alpha"]
         T_fi     = fi_result["T"]
+        # The regression's own weights (_FI_WEIGHTS), as the page's caption reads
+        # them. The paragraph typed "VGIT 60% / SCHP 40%".
+        fi_mix = " / ".join(f"{t} {round(w * 100):.0f}%" for t, w in _FI_WEIGHTS.items())
 
         lines.append(
-            f"The FI sleeve (VGIT 60% / SCHP 40%, {T_fi} trading days) loads on the "
+            f"The FI sleeve ({fi_mix}, {T_fi} trading days) loads on the "
             f"TERM factor (IEF − BIL duration premium) at {b_term:.3f} (t = {t_term:.2f}). "
             f"Its CREDIT factor (HYG − IEF spread premium) loading is {b_credit:.3f} "
             f"(t = {t_credit:.2f}). "
             f"The positive TERM loading confirms the sleeve carries meaningful interest-rate "
-            f"duration, consistent with VGIT's ~5.5-year effective duration and SCHP's ~6.8-year "
-            f"duration. "
+            f"duration, consistent with the fund durations behind the Fixed Income Effective "
+            f"Duration line {duration_line_location}. "
             f"Annualized alpha of {a_bps_fi:+.0f} bps (t = {t_a_fi:.2f}) captures return "
             f"not explained by the TERM/CREDIT proxies. At this sample length the confidence "
             f"interval is wide, and the alpha primarily reflects ETF-vs-index tracking "
@@ -1250,7 +1281,7 @@ def build_factor_prose(
         "The Emerging Markets sleeve (IEMG) is excluded from regression analysis: "
         "Ken French does not publish daily EM factor data, and the current "
         "portfolio history is insufficient for a meaningful monthly-frequency regression. "
-        "Real assets (VNQ 60%, DBC 40%) are excluded: no liquid daily factor proxy set spans "
+        "Real assets are excluded: no liquid daily factor proxy set spans "
         "REIT and commodity exposure simultaneously."
     )
 
