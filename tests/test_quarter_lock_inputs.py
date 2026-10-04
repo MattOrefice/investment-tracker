@@ -183,8 +183,10 @@ def test_the_executive_summary_cites_the_quarter_end_cape_and_says_it_was_restat
     assert f"(June 2026, the quarter's last monthly reading, {read})" in exec_
     assert "CAPE data through" not in exec_
     note = inputs_restatement_note("2026Q2", snap)
-    assert note.startswith("Restated September 26, 2026: this quarter now locks every input")
-    assert "June 2026" in note
+    # What moved was the CAPE reading, and the line says that; what the lock holds is
+    # the cover's own sentence (#478 section 3, tests/test_cover_names_what_the_lock_holds.py).
+    assert note.startswith("Restated September 26, 2026: the lock's CAPE reading is the "
+                           "quarter's last monthly observation, June 2026;")
     assert inputs_restatement_note("2026Q3", snap._replace(quarter_end="2026-09-30")) is None, (
         "a quarter that closes after the rule was never reported the old way")
     assert INPUTS_RULE_SINCE == date(2026, 9, 26)

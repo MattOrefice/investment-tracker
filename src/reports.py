@@ -35,6 +35,7 @@ from src.cache import (
     get_quarter_snapshot,
     input_corrections_note,
     inputs_restatement_note,
+    lock_holds_note,
     lot_rebuild_note,
     restatement_note,
     style_box_withdrawn_note,
@@ -2179,6 +2180,9 @@ def generate_quarterly_report_bytes(
         # Quarters that closed before the quarter-end lock rule are restated by it,
         # and say so; None for any other report (#368).
         restatement_note     = restatement_note(quarter_id, snap_df),
+        # What this quarter's lock holds, from the lock's own lists, and the two
+        # sections built outside it (#478 section 3). Every locked report carries it.
+        lock_holds_note      = lock_holds_note(snap_df),
         # A quarter reported with the undated duration table says so in this note,
         # which every quarter locked before #455 carries.
         inputs_restatement_note = (" ".join(filter(None, (
