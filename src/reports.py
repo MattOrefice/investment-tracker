@@ -1118,7 +1118,8 @@ def _build_factor_section(end_date: str) -> Optional[dict]:
     return {
         "sleeves":           sleeves,
         "em_note":           em_disclosure(),
-        "prose":             build_factor_prose(results, fi_result=fi_result)
+        "prose":             build_factor_prose(results, fi_result=fi_result,
+                                                duration_line_location="in this report")
                              + ([_fi_failure] if _fi_failure else []),
         "methodology_notes": build_factor_methodology_notes(results, fi_result=fi_result),
     }
