@@ -1534,7 +1534,8 @@ def _build_asset_eval_section() -> dict:
         "rf_note":          None,
         "args_for":         [],
         "args_against":     [],
-        "conclusion": ae.CONCLUSION,
+        # Without the rolling series: no figures and no date. 5c replaces it (#478 I11).
+        "conclusion": ae.conclusion(),
     }
 
     try:
@@ -1570,7 +1571,10 @@ def _build_asset_eval_section() -> dict:
     except risk_free.RiskFreeUnavailable as exc:
         return {**_empty, "disposition": "failed",
                 "failure_reason": f"{type(exc).__name__}: {exc}"}
-    result["rf_note"] = f"Risk-free rate: {risk_free.describe(_rf)}."
+    # Names its series and its averaging window, as the page does (#478 I09, I10): the
+    # window is the returns' own dates, the line above this one in the section.
+    result["rf_note"] = ("Risk-free rate: " + risk_free.describe(
+        _rf, name_series=True, window="the sample's own window") + ".")
 
     # Bitcoin's OWN realized 2022 drawdown, for the table caption (#276). Computed
     # here rather than inside 5h because it is a property of the candidate asset, not
@@ -1647,6 +1651,8 @@ def _build_asset_eval_section() -> dict:
     try:
         rolling_corr = ae.compute_rolling_correlation(btc_ret, spy_ret, window=60)
         if not rolling_corr.empty:
+            # The conclusion cites this series' two averages and its date.
+            result["conclusion"] = ae.conclusion(rolling_corr)
             fig_roll = go.Figure()
             fig_roll.add_hline(y=0, line_dash="dash", line_color="#9E9E9E", line_width=1)
             fig_roll.add_trace(go.Scatter(
@@ -1666,10 +1672,7 @@ def _build_asset_eval_section() -> dict:
             )
             result["rolling_chart_b64"] = _chart_b64(fig_roll, 700, 200)
 
-            post_2020    = rolling_corr.loc["2020-01-01":]
-            pre_2020     = rolling_corr.loc[:"2019-12-31"]
-            post_avg     = float(post_2020.mean()) if len(post_2020) > 0 else float("nan")
-            pre_avg      = float(pre_2020.mean())  if len(pre_2020) > 0  else float("nan")
+            pre_avg, post_avg, _ = ae.pre_post_2020(rolling_corr)
             prose_parts: list[str] = []
             if not np.isnan(pre_avg):
                 prose_parts.append(
@@ -1808,11 +1811,9 @@ def _build_asset_eval_section() -> dict:
 
         if not corr.empty:
             btc_spy_j = float(corr.get("US Large Core", float("nan")))
-            if not np.isnan(btc_spy_j) and btc_spy_j > 0.3:
-                args_against.append(
-                    f"Equity-like correlation with US Large Core ({btc_spy_j:.2f}) post-2020: "
-                    "co-movement spikes during stress, when a hedge is most valuable"
-                )
+            equity_like = ae.equity_like_argument(btc_spy_j)
+            if equity_like:
+                args_against.append(equity_like)
 
         # DERIVED, and the derivation is not the point — the SUBJECT is (#276).
         #

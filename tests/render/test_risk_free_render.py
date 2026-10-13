@@ -151,7 +151,12 @@ def test_the_asset_evaluation_page_uses_and_states_the_samples_rate(seen):
                          "compute_marginal_sharpe_curve", "compute_drawdown_sensitivity"}
     assert all(v == pytest.approx(rate.annual) for v in seen.values()), seen
     text = " ".join(str(e.value) for e in list(at.caption) + list(at.markdown))
-    assert f"**Risk-free rate:** {risk_free.describe(rate)}, the sample's own window." in text
+    # Names its series since #478 I09: FRED's DGS3MO, with the window it is averaged over.
+    stated = risk_free.describe(rate, name_series=True, window="the sample's own window")
+    assert "FRED's DGS3MO, the 3-month Treasury bill rate," in stated
+    assert ", the sample's own window. FRED was unavailable" in stated, (
+        "premise: offline, so the stored clause follows the window")
+    assert f"**Risk-free rate:** {stated}." in text
     assert "450 bps" not in text
     st.cache_data.clear()
 
@@ -164,6 +169,8 @@ def test_the_pdf_section_uses_and_states_the_samples_rate(seen):
     assert set(seen) == {"build_univariate_table", "compute_mv_analysis",
                          "compute_marginal_sharpe_curve", "compute_drawdown_sensitivity"}
     assert all(v == pytest.approx(rate.annual) for v in seen.values()), seen
-    assert section["rf_note"] == f"Risk-free rate: {risk_free.describe(rate)}."
+    stated = risk_free.describe(rate, name_series=True, window="the sample's own window")
+    assert "FRED's DGS3MO, the 3-month Treasury bill rate," in stated
+    assert section["rf_note"] == f"Risk-free rate: {stated}."
     template = (ROOT / "templates" / "quarterly_report.html").read_text(encoding="utf-8")
     assert "{{ asset_eval.rf_note }}" in template

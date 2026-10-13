@@ -88,10 +88,14 @@ def test_5j_verdict_sentence(ae_app: AppTest) -> None:
     summary loses its explicit policy decision.
     """
     all_md = " ".join(m.value for m in ae_app.markdown)
-    assert "Bitcoin does not currently belong in this portfolio" in all_md, (
+    # Dated since #478 I11: it said "does not currently belong", with no date.
+    import re
+    assert re.search(r"\*\*As of [A-Z][a-z]+ \d+, \d{4}, Bitcoin does not belong in this "
+                     r"portfolio's SAA\.\*\*", all_md), (
         "Verdict sentence not found in Section 5j — Phase 44 Item 15: "
-        "'Bitcoin does not currently belong in this portfolio's SAA.' must be present."
+        "'As of <date>, Bitcoin does not belong in this portfolio's SAA.' must be present."
     )
+    assert "does not currently belong" not in all_md
 
 
 def test_5j_reevaluation_triggers_present(ae_app: AppTest) -> None:
@@ -114,8 +118,9 @@ def test_rf_unit_is_bps_not_percent(ae_app: AppTest) -> None:
     import re
     all_md = " ".join(m.value for m in ae_app.markdown)
     assert "4.5 bps" not in all_md and "450 bps" not in all_md
-    assert re.search(r"\*\*Risk-free rate:\*\* (\d+\.\d{2}%, the (average )?3-month "
-                     r"Treasury bill rate|not available)", all_md), (
+    # The series is named since #478 I09: "the average of FRED's DGS3MO, the 3-month ...".
+    assert re.search(r"\*\*Risk-free rate:\*\* (\d+\.\d{2}%, (the average of )?FRED's "
+                     r"DGS3MO, the 3-month Treasury bill rate,|not available)", all_md), (
         "The methodology no longer states the risk-free rate as a percentage.")
     assert not re.search(r"\*\*Risk-free rate:\*\* \d+(\.\d+)? bps", all_md)
 
