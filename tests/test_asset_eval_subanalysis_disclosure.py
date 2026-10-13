@@ -55,6 +55,7 @@ _BASE = {
     "args_for": [], "args_against": [], "conclusion": "x",
     "disposition": "computed", "failure_reason": None, "unavailable": [],
     "rf_note": None,
+    "gap_note": None,
 }
 
 

@@ -48,6 +48,8 @@ _BASE = {
     "unavailable": [],
     # Added by audit item 15a (the risk-free rate's line), and caught the same way.
     "rf_note": None,
+    # Added by #521 (a close the book lacks, named in the section), caught the same way.
+    "gap_note": None,
 }
 
 
