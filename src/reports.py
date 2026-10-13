@@ -1532,6 +1532,10 @@ def _build_asset_eval_section() -> dict:
         # The risk-free rate every Sharpe figure here uses, and where it came from
         # (audit item 15a): the sample's average 3-month Treasury bill rate.
         "rf_note":          None,
+        # A close the book lacks inside the history of a ticker the section reads,
+        # named with its date as the page names it (#521). None when it lacks none,
+        # and on the exits that show no figures.
+        "gap_note":         None,
         "args_for":         [],
         "args_against":     [],
         # Without the rolling series: no figures and no date. 5c replaces it (#478 I11).
@@ -1562,6 +1566,11 @@ def _build_asset_eval_section() -> dict:
         f"Live, not locked to the report's quarter: returns from {ae.SAMPLE_START} "
         f"through {_through.date().isoformat()}."
     )
+    # The series above carry the close before a missing day forward, so a close the
+    # book lacks changes this section's figures. The page names it; so does the PDF,
+    # under the line that says through when its data runs (#521). No candidate screen
+    # here, so the tickers are the page's without the screen's.
+    result["gap_note"] = ae.price_gap_note(in_report=True)
     # The sample's average 3-month Treasury bill rate (audit item 15a), live like the
     # returns it is set against. Without it no Sharpe figure can be computed, so the
     # section says so rather than computing them on a guess.

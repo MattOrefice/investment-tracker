@@ -393,9 +393,12 @@ def tickers_read(candidate: str = "BTC-USD", screened: str = "") -> "list[str]":
     return sorted(read)
 
 
-def price_gap_note(candidate: str = "BTC-USD", screened: str = "") -> "str | None":
+def price_gap_note(candidate: str = "BTC-USD", screened: str = "", *,
+                   in_report: bool = False) -> "str | None":
     """What the page says when the book lacks a close inside the history of a ticker it
-    reads, naming each ticker and date; None when it lacks none.
+    reads, naming each ticker and date; None when it lacks none. With ``in_report`` it
+    is the PDF section's sentence: the same tickers and dates, worded for a report,
+    which does not change once it is generated (#521).
 
     Every series here is built from a ticker's stored closes with the close before a
     missing day carried forward, so a gap changes figures and nothing on the page showed
@@ -412,10 +415,15 @@ def price_gap_note(candidate: str = "BTC-USD", screened: str = "") -> "str | Non
         return None
     named = "; ".join(f"{t} on {', '.join(days)}" for t, days in sorted(by_ticker.items()))
     one = sum(len(days) for days in by_ticker.values()) == 1
+    it, it_is = ("it", "it is") if one else ("them", "they are")
+    if in_report:
+        return (f"No close is stored for {named}. The figures in this section that read "
+                f"{it} carry the close before forward. Each price refresh asks for {it} "
+                f"again, and a report generated once {it_is} stored carries no such note.")
     return (f"No close is stored for {named}. The figures on this page that read "
-            f"{'it' if one else 'them'} carry the close before forward. Each price "
-            f"refresh asks for {'it' if one else 'them'} again, and this note goes once "
-            f"{'it is' if one else 'they are'} stored.")
+            f"{it} carry the close before forward. Each price "
+            f"refresh asks for {it} again, and this note goes once "
+            f"{it_is} stored.")
 
 
 def build_univariate_table(
