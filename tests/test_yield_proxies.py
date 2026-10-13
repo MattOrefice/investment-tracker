@@ -1,23 +1,27 @@
-"""#210 PR 2 — every equity sleeve entry declares its proxy, its spread, and its coverage.
+"""#210 PR 2 — every proxied sleeve entry declares its proxy and its candidates.
 
 PR 1 gave a blend a look-through and refused where no basis exists. This gives the
 thirteen proxy-backed equity sleeves entries whose basis is DECLARED: a benchmark
-ticker in the cache, its trailing-twelve-month distribution yield, the spread against
-every other cached candidate for the same sleeve, and how much of the sleeve's held
-value that proxy actually represents.
+ticker in the cache, its trailing-twelve-month distribution yield, and the other
+cached candidates for the same sleeve that it is compared against.
 
-WHY THE SPREAD IS PART OF THE ENTRY. A declared basis that hides its own sensitivity
-is the #191 defect wearing a proxy ticker. Measured, not asserted: EFV 4.48% vs AVIV
-2.42% is +85% on intl_large_value; IWD vs VTV is +34%; EEM vs IEMG is +32%. Four
-sleeves have exactly ONE cached candidate, so their spread is UNMEASURED rather than
-zero — and silence there would read as the most certain when it is merely the least
-checked, which is why PROXY_SPREAD_UNMEASURED exists as an explicit set.
+WHY THE SPREAD IS COMPUTED HERE (#520). A declared basis that hides its own
+sensitivity is the #191 defect wearing a proxy ticker, so each entry's spread against
+its candidates matters. The config's comments used to type each spread, each
+candidate's yield and a "held cached" coverage figure. The spreads and yields were
+re-typed at every re-measurement; the coverage figures came from a holdings file that
+is not committed, and nothing could recompute them. The comments now give each proxy's
+method and reason, and this file computes the spreads from the committed demo book
+and prints them on request. Four sleeves have exactly ONE cached candidate, so their
+spread is UNMEASURED rather than zero — and silence there would read as the most
+certain when it is merely the least checked, which is why PROXY_SPREAD_UNMEASURED
+exists as an explicit set.
 
 BENCHMARK THROUGHOUT, including where a held ticker looks more apt. intl_large_value
-takes EFV (a benchmark, 0% held coverage) and not AVIV (the sleeve's SAA carrier),
-because departing from the framing on one row is held-weighted reasoning applied
-selectively — thirteen entries meaning "benchmark" and one meaning "the ticker I plan
-to buy" is an undeclared basis again.
+takes EFV (a benchmark) and not AVIV (the sleeve's SAA carrier), because departing
+from the framing on one row is held-weighted reasoning applied selectively — thirteen
+entries meaning "benchmark" and one meaning "the ticker I plan to buy" is an
+undeclared basis again.
 
 intl_all_exus gets NO entry. The only all-ex-US candidate in the cache is EFA, which
 is developed-only and excludes emerging markets — wrong in KIND for that sleeve, the
@@ -43,6 +47,7 @@ from src.location_config import (
     SLEEVE_PRIORITY_BY_ACCOUNT_TYPE,
     SLEEVE_YIELD_PROXY,
     SLEEVE_YIELD_PROXY_AS_OF,
+    SLEEVE_YIELD_PROXY_CANDIDATES,
     TAX_PROFILE,
 )
 
@@ -131,7 +136,25 @@ def test_spread_unmeasured_and_measured_sets_partition_the_proxied_sleeves():
     assert measured | PROXY_SPREAD_UNMEASURED == set(SLEEVE_YIELD_PROXY)
 
 
-# ── the comment block carries the sensitivity, not just the ticker ───────────
+def test_every_proxied_sleeve_declares_its_candidates_BOTH_WAYS():
+    """The candidates map is what the spreads are computed from, so it covers exactly
+    the proxied sleeves, and a sleeve with none is exactly a sleeve whose spread is
+    declared unmeasured. A candidate is never the proxy itself: that spread is zero by
+    construction and would read as a measurement."""
+    assert set(SLEEVE_YIELD_PROXY_CANDIDATES) == set(SLEEVE_YIELD_PROXY), (
+        f"only candidates: {sorted(set(SLEEVE_YIELD_PROXY_CANDIDATES) - set(SLEEVE_YIELD_PROXY))}; "
+        f"only proxies: {sorted(set(SLEEVE_YIELD_PROXY) - set(SLEEVE_YIELD_PROXY_CANDIDATES))}")
+    without = {s for s, c in SLEEVE_YIELD_PROXY_CANDIDATES.items() if not c}
+    assert without == set(PROXY_SPREAD_UNMEASURED), (
+        "a sleeve with no candidate must be declared spread-unmeasured, and one with a "
+        f"candidate must not: no candidates {sorted(without)}, "
+        f"declared unmeasured {sorted(PROXY_SPREAD_UNMEASURED)}")
+    for sleeve, candidates in SLEEVE_YIELD_PROXY_CANDIDATES.items():
+        assert SLEEVE_YIELD_PROXY[sleeve] not in candidates, sleeve
+        assert len(set(candidates)) == len(candidates), sleeve
+
+
+# ── the comments give method and reason, and type no figure (#520) ───────────
 
 def _entry_comments():
     """Map sleeve -> the comment text attached to its SLEEVE_YIELD_PROXY entry.
@@ -160,37 +183,66 @@ def _entry_comments():
     return out
 
 
-def test_each_proxy_entry_comment_states_its_spread():
-    """The requirement in words: each entry carries its proxy AND its spread. A
-    parsed assertion, so a value added without one fails rather than merely looking
-    thin in review."""
+BENCHMARK = "a benchmark for the sleeve"
+ONLY_CACHED = "the only fund cached for the sleeve"
+
+
+def test_each_proxy_entry_comment_gives_its_reason():
+    """MIGRATED at #520 from "each comment states its spread". What that protected: an
+    entry added with a bare ticker fails rather than merely looking thin in review. It
+    still does. Each comment says why that fund stands for the sleeve: it is a
+    benchmark for it, or it is the only fund the cache holds for it, and the second is
+    said exactly where the spread is unmeasured."""
     comments = _entry_comments()
     missing = [s for s in EXPECTED_PROXIES if s not in comments]
     assert not missing, f"no inline comment on the proxy entry for: {missing}"
 
     for sleeve, comment in comments.items():
         if sleeve in PROXY_SPREAD_UNMEASURED:
-            assert "unmeasured" in comment.lower(), (
-                f"{sleeve} has one cached candidate; its comment must say the spread "
-                f"is unmeasured, got: {comment!r}"
-            )
+            assert ONLY_CACHED in comment and BENCHMARK not in comment, (
+                f"{sleeve} has one cached candidate; its comment must say so, "
+                f"got: {comment!r}")
         else:
-            assert re.search(r"\+\d+% vs ", comment), (
-                f"{sleeve}'s comment states no spread: {comment!r}"
-            )
+            assert BENCHMARK in comment and ONLY_CACHED not in comment, (
+                f"{sleeve}'s comment gives no reason for its proxy: {comment!r}")
 
 
-def test_each_proxy_entry_comment_states_its_held_coverage():
-    """How much of the sleeve the proxy represents. emerging_markets is the case that
-    drove this: IEMG covers 4.7% of the sleeve by value, and EEM 0%."""
+def _proxy_map_block() -> str:
+    """The proxy map as the file writes it: its header comment, its entries and the
+    candidates map."""
+    text = CONFIG.read_text(encoding="utf-8")
+    start = text.index("# Where each proxied entry above came from.")
+    end = text.index("# The one date every proxied entry above is measured on")
+    block = text[start:end]
+    assert "SLEEVE_YIELD_PROXY: dict[str, str] = {" in block
+    assert "SLEEVE_YIELD_PROXY_CANDIDATES: dict[str, tuple[str, ...]] = {" in block
+    return block
+
+
+def test_the_proxy_map_types_no_measured_figure():
+    """MIGRATED at #520 from "each comment states its held coverage", which checked
+    that a figure was PRESENT beside each entry and never what it was: 14 coverage
+    percentages typed on 2026-08-11 from a holdings file that is not committed. A
+    figure a reader needs is computed below, from the committed demo book; none is
+    typed in the map. A percentage in the map's comments is a spread, a yield or a
+    coverage figure coming back."""
+    block = _proxy_map_block()
+    typed = re.findall(r"[^\n]*\d(?:\.\d+)?\s?%[^\n]*", block)
+    assert not typed, f"the proxy map types a percentage again: {typed}"
+    assert "held cached" not in block and "% held" not in block
     for sleeve, comment in _entry_comments().items():
-        assert re.search(r"\d+(\.\d+)?% held", comment), (
-            f"{sleeve}'s comment states no held coverage: {comment!r}"
-        )
+        assert not re.search(r"\bvs\b", comment), (
+            f"{sleeve}'s comment compares against a candidate inline; candidates live "
+            f"in SLEEVE_YIELD_PROXY_CANDIDATES: {comment!r}")
+
+
+PAYMENTS = {"pays quarterly": 4,
+            "pays semi-annually, so the TTM is 2 payments": 2,
+            "pays monthly, so the TTM is 12 payments": 12}
 
 
 def test_semiannual_proxies_say_so():
-    """The six international proxies pay semi-annually, so a trailing-twelve-month
+    """The five international proxies pay semi-annually, so a trailing-twelve-month
     figure is TWO payments. That is part of the sensitivity, not a footnote."""
     comments = _entry_comments()
     for sleeve in ("intl_developed", "emerging_markets", "intl_quality",
@@ -199,6 +251,21 @@ def test_semiannual_proxies_say_so():
             f"{sleeve}'s proxy is semi-annual; its comment must say the TTM is two "
             f"payments, got: {comments[sleeve]!r}"
         )
+
+
+def test_each_comments_payment_frequency_is_the_demo_books():
+    """The method each comment states, checked: the number of distributions the demo
+    book holds for the proxy in the year to the shared as-of is the number its comment
+    says a trailing twelve months holds."""
+    for sleeve, comment in _entry_comments().items():
+        said = [n for phrase, n in PAYMENTS.items() if comment.endswith(phrase)]
+        assert len(said) == 1, (
+            f"{sleeve}'s comment does not end with how often its proxy pays: {comment!r}")
+        held = _distributions_on(DEMO_BOOK, SLEEVE_YIELD_PROXY[sleeve])
+        assert held == said[0], (
+            f"{sleeve}: the comment says {said[0]} payments a year, the demo book holds "
+            f"{held} for {SLEEVE_YIELD_PROXY[sleeve]} in the year to "
+            f"{SLEEVE_YIELD_PROXY_AS_OF}")
 
 
 # ── intl_all_exus refuses rather than borrowing a developed-only proxy ──────
@@ -341,6 +408,22 @@ def _ttm_on(book, ticker: str) -> float:
         conn.close()
 
 
+def _distributions_on(book, ticker: str) -> int:
+    """How many distributions ``book`` holds for a ticker in the year to the as-of."""
+    import sqlite3
+    from datetime import date, timedelta
+
+    as_of = date.fromisoformat(SLEEVE_YIELD_PROXY_AS_OF)
+    w0 = (as_of - timedelta(days=365)).isoformat()
+    conn = sqlite3.connect(f"file:{Path(book).as_posix()}?mode=ro", uri=True)
+    try:
+        return int(conn.execute(
+            "SELECT COUNT(*) FROM dividends WHERE ticker = ? AND ex_date > ? "
+            "AND ex_date <= ?", (ticker, w0, as_of.isoformat())).fetchone()[0])
+    finally:
+        conn.close()
+
+
 def _check_entries(book) -> int:
     """Every proxied entry against its proxy's yield on ``book``; returns how many."""
     for sleeve, proxy in SLEEVE_YIELD_PROXY.items():
@@ -429,51 +512,89 @@ def test_a_distribution_the_book_loses_moves_the_recomputed_yield(tmp_path):
         _check_entries(fewer)
 
 
-def _comment_spreads() -> "dict[str, tuple[int, dict[str, float]]]":
-    """{sleeve: (the spread its comment states, in percent, {candidate: stated yield})}
-    for every entry whose spread is measured."""
+def _measured_spreads(book=None) -> "dict[str, tuple[float, float, dict[str, float]]]":
+    """{sleeve: (spread, the proxy's yield, {candidate: its yield})} for every entry
+    with a candidate, computed from ``book`` (the committed demo book) at the shared
+    as-of. Nothing here is read from a comment. The spread is the widest ratio between
+    the proxy's yield and a candidate's, larger over smaller, minus one."""
+    book = book or DEMO_BOOK
     out = {}
-    for sleeve, comment in _entry_comments().items():
-        if sleeve in PROXY_SPREAD_UNMEASURED:
+    for sleeve, candidates in SLEEVE_YIELD_PROXY_CANDIDATES.items():
+        if not candidates:
             continue
-        m = re.match(r"\+(\d+)% vs ((?:[A-Z]+ \d+\.\d+%(?:, )?)+)", comment)
-        assert m, f"{sleeve}'s comment does not open with '+N% vs TICKER x.xx%': {comment!r}"
-        out[sleeve] = (int(m.group(1)), {k: float(v) for k, v in
-                                         re.findall(r"([A-Z]+) (\d+\.\d+)%", m.group(2))})
+        proxy = _ttm_on(book, SLEEVE_YIELD_PROXY[sleeve])
+        yields = {ticker: _ttm_on(book, ticker) for ticker in candidates}
+        widest = max(max(proxy, y) / min(proxy, y) - 1 for y in yields.values())
+        out[sleeve] = (widest, proxy, yields)
     return out
 
 
-def test_each_stated_spread_and_candidate_yield_is_the_demo_books():
-    """The comments carry each entry's sensitivity, and nothing recomputed them: the
-    first set was measured once, by hand, and mixed two signs. Each candidate's yield
-    and each spread is now recomputed from the demo book at the shared as-of. The
-    spread is the widest ratio between the proxy's yield and a candidate's, larger over
-    smaller, minus one."""
-    stated = _comment_spreads()
-    assert set(stated) == set(SLEEVE_YIELD_PROXY) - PROXY_SPREAD_UNMEASURED
-    for sleeve, (spread, candidates) in stated.items():
-        proxy = _ttm_on(DEMO_BOOK, SLEEVE_YIELD_PROXY[sleeve])
-        widest = 0.0
-        for ticker, listed in candidates.items():
-            measured = _ttm_on(DEMO_BOOK, ticker)
-            assert listed == pytest.approx(round(measured * 100, 2), abs=1e-9), (
-                f"{sleeve}: the comment lists {ticker} at {listed}%, the book gives "
-                f"{measured * 100:.2f}%")
-            widest = max(widest, max(proxy, measured) / min(proxy, measured) - 1)
-        assert spread == round(widest * 100), (
-            f"{sleeve}: the comment states +{spread}%, the book gives +{widest * 100:.0f}%")
+def test_each_spread_is_computed_from_the_demo_book():
+    """MIGRATED at #520 from "each stated spread and candidate yield is the demo
+    book's", which compared figures typed in the comments with the book. Nothing is
+    typed now, so this is the computation itself: every candidate has a close dated on
+    the as-of and a distribution in the year to it (``_ttm_on`` refuses otherwise), so
+    every declared spread is measurable, and each one is a positive size."""
+    spreads = _measured_spreads()
+    assert set(spreads) == set(SLEEVE_YIELD_PROXY) - PROXY_SPREAD_UNMEASURED
+    assert len(spreads) == 10
+    for sleeve, (spread, proxy, yields) in spreads.items():
+        assert proxy > 0 and all(y > 0 for y in yields.values()), sleeve
+        assert spread > 0, f"{sleeve}: a proxy and its candidates cannot yield the same"
+
+
+def test_a_spread_moves_with_the_book_it_is_computed_from(tmp_path):
+    """The contrast: with AVIV's latest distribution gone from a copy, the spread
+    between EFV and AVIV is wider there than on the committed book. So the figure is
+    read from the book's rows and not from anything typed."""
+    committed = _measured_spreads()["intl_large_value"][0]
+    fewer = _demo_copy(tmp_path, (
+        "DELETE FROM dividends WHERE ticker = 'AVIV' AND ex_date = (SELECT MAX(ex_date) "
+        "FROM dividends WHERE ticker = 'AVIV' AND ex_date <= ?)",
+        (SLEEVE_YIELD_PROXY_AS_OF,)))
+    assert _measured_spreads(fewer)["intl_large_value"][0] > committed
 
 
 def test_the_widest_spread_the_note_prints_is_the_widest_measured():
     """The Asset Location note names EFV and AVIV and prints how far apart they are.
-    The figure is typed once (PROXY_WIDEST_SPREAD_PCT); it must be the largest spread
-    in the map, and that entry must still be EFV against AVIV."""
-    stated = _comment_spreads()
-    sleeve = max(stated, key=lambda s: stated[s][0])
-    assert (sleeve, SLEEVE_YIELD_PROXY[sleeve], list(stated[sleeve][1])) == (
+    The figure is typed once (PROXY_WIDEST_SPREAD_PCT), because the page prints it; it
+    must be the largest spread the demo book gives, and that entry must still be EFV
+    against AVIV."""
+    spreads = _measured_spreads()
+    sleeve = max(spreads, key=lambda s: spreads[s][0])
+    assert (sleeve, SLEEVE_YIELD_PROXY[sleeve], list(spreads[sleeve][2])) == (
         "intl_large_value", "EFV", ["AVIV"])
-    assert stated[sleeve][0] == PROXY_WIDEST_SPREAD_PCT == 62
-    assert "the widest in the table" in _entry_comments()[sleeve]
+    assert round(spreads[sleeve][0] * 100) == PROXY_WIDEST_SPREAD_PCT == 62
+
+
+def _spread_table() -> "list[str]":
+    """One line per proxied sleeve: the proxy and its yield, each candidate and its
+    yield, and the spread. The figures the config's comments used to type."""
+    spreads = _measured_spreads()
+    lines = []
+    for sleeve, proxy in SLEEVE_YIELD_PROXY.items():
+        if sleeve in spreads:
+            spread, own, yields = spreads[sleeve]
+            against = ", ".join(f"{t} {y * 100:.2f}%" for t, y in yields.items())
+            lines.append(f"{sleeve:<22}{proxy:<5} {own * 100:5.2f}%  +{spread * 100:.0f}% "
+                         f"vs {against}")
+        else:
+            own = _ttm_on(DEMO_BOOK, proxy)
+            lines.append(f"{sleeve:<22}{proxy:<5} {own * 100:5.2f}%  spread unmeasured: "
+                         "no other candidate is cached")
+    return lines
+
+
+def test_the_spreads_and_candidate_yields_are_printed_for_a_reader():
+    """What a reader of the map needs and the map no longer types. Run with ``-s`` to
+    see it: ``python -m pytest tests/test_yield_proxies.py -k printed -s``."""
+    lines = _spread_table()
+    assert len(lines) == len(SLEEVE_YIELD_PROXY) == 14
+    assert sum("spread unmeasured" in line for line in lines) == len(PROXY_SPREAD_UNMEASURED)
+    widest = [line for line in lines if f"+{PROXY_WIDEST_SPREAD_PCT}% vs AVIV" in line]
+    assert len(widest) == 1 and widest[0].startswith("intl_large_value")
+    print(f"\nProxy yields and spreads at {SLEEVE_YIELD_PROXY_AS_OF}, from {DEMO_BOOK.name}:")
+    print("\n".join(lines))
 
 
 # ── the disclosure must not keep claiming "no declared basis" for all of them ──
@@ -538,5 +659,9 @@ def test_note_reports_the_spread_and_that_some_are_unmeasured():
         "the widest spread is not disclosed")
     assert f"those two differ by {PROXY_WIDEST_SPREAD_PCT}%." in note
     assert "85%" not in note, "the note still prints the first measurement's spread"
+    # #520: an entry records its candidates; its spread is computed, not recorded.
+    assert ("recorded per entry with the other candidates in the price cache it is "
+            "compared against. The spreads between them are wide") in note
+    assert "recorded per entry with its spread" not in note
     assert "unmeasured rather than zero" in note
     assert str(len(PROXY_SPREAD_UNMEASURED)) in note

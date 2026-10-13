@@ -1353,8 +1353,9 @@ def yield_assumption_note(register, *, today=None) -> str:
         note += (
             f" **{n_proxied} of {len(register)} rows** use a yield with a **declared "
             "basis** — a named benchmark's trailing-twelve-month distribution yield, "
-            "recorded per entry with its spread against every other candidate in the "
-            f"price cache. Those spreads are wide, up to **+{PROXY_WIDEST_SPREAD_PCT}%** "
+            "recorded per entry with the other candidates in the price cache it is "
+            f"compared against. The spreads between them are wide, up to "
+            f"**+{PROXY_WIDEST_SPREAD_PCT}%** "
             "on one sleeve, and "
             f"for {len(PROXY_SPREAD_UNMEASURED)} sleeves only one candidate is cached "
             "so the spread is **unmeasured rather than zero**."
