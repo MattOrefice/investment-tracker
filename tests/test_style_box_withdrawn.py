@@ -30,7 +30,13 @@ from pathlib import Path
 import pytest
 from markupsafe import escape
 
-from tests.conftest import FROZEN_BOOK, pin_today, point_at_frozen_book, unpin_leftovers
+from tests.conftest import (
+    FROZEN_BOOK,
+    pin_today,
+    point_at_frozen_book,
+    q2_2026_before_its_closes_were_filled,
+    unpin_leftovers,
+)
 
 ROOT = Path(__file__).resolve().parent.parent
 BOOKS = [ROOT / "data" / "demo.db", FROZEN_BOOK]
@@ -170,7 +176,17 @@ REST_BEFORE = {
 
 @pytest.mark.parametrize("book", BOOKS, ids=lambda p: p.name)
 def test_nothing_else_in_any_lock_changed(book):
-    for q, blob in _payloads(book).items():
+    con = _ro(book)
+    try:
+        texts = dict(con.execute("SELECT quarter_id, snapshot_data FROM quarter_snapshots"))
+    finally:
+        con.close()
+    # Q2 2026 was restated once more, for the closes it froze missing (#491): its price
+    # frames and one record. That is undone first, so this still pins everything the lock
+    # held at 10313a9 but the five entries (tests/test_filled_closes.py pins the undoing).
+    texts["2026Q2"] = q2_2026_before_its_closes_were_filled(texts["2026Q2"])
+    for q, text in texts.items():
+        blob = json.loads(text)
         del blob["input_corrections"]["etf_metadata"]
         if not blob["input_corrections"]:
             del blob["input_corrections"]

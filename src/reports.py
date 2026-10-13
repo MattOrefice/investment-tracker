@@ -32,6 +32,7 @@ from src.cache import (
     benchmark_construction_note,
     capture_quarter_snapshot,
     complete_quarter_inputs,
+    filled_closes_note,
     get_quarter_snapshot,
     input_corrections_note,
     inputs_restatement_note,
@@ -2193,6 +2194,8 @@ def generate_quarterly_report_bytes(
         lot_rebuild_note     = lot_rebuild_note(snap_df),
         # The equity style box was withdrawn and this lock restated (#468).
         style_box_withdrawn_note = style_box_withdrawn_note(snap_df),
+        # The lock froze closes its book lacked, and was restated with them (#491).
+        filled_closes_note   = filled_closes_note(snap_df),
         # A lock from before #383 states the construction its benchmark figures used;
         # every other report states the rule in its methodology.
         benchmark_construction_note = benchmark_construction_note(snap_df),
