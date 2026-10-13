@@ -69,9 +69,10 @@ SLEEVE_ASSUMED_YIELD: dict[str, float] = {
     # ── Equity sleeves, added #210 PR 2. Each value is a benchmark proxy's
     # trailing-twelve-month distribution yield as of SLEEVE_YIELD_PROXY_AS_OF
     # (2026-09-30), rounded to 4dp.
-    # The proxy, its spread against every other cached candidate, and how much of
-    # the sleeve is measurable from holdings all live in SLEEVE_YIELD_PROXY below —
-    # read them together, because the spread is the honest content of the value.
+    # The proxy and the reason for it live in SLEEVE_YIELD_PROXY below, and the other
+    # cached funds it is compared against in SLEEVE_YIELD_PROXY_CANDIDATES. How far a
+    # value moves with the choice of fund is its spread, and
+    # tests/test_yield_proxies.py computes it; read the value with that in mind.
     "us_large_core":           0.0092,
     "us_large_growth":         0.0034,
     "us_large_value":          0.0142,
@@ -89,7 +90,18 @@ SLEEVE_ASSUMED_YIELD: dict[str, float] = {
 
 # Where each proxied entry above came from. A value without a declared basis is what
 # #191 closed, so this map is not optional metadata — a test fails if an entry exists
-# without one, and fails again if its comment omits the spread or the coverage.
+# without one, and fails again if its comment gives no reason or types a figure.
+#
+# THE COMMENTS STATE METHOD AND REASON, NOT MEASUREMENTS (#520). Each entry's comment
+# says why that fund stands for the sleeve and how often it pays, which sets how many
+# payments its trailing twelve months hold. The comments used to type each entry's
+# spread, each candidate's yield and a coverage figure (how much of the sleeve's held
+# value the price cache carried) beside it. The spreads and the candidates' yields are
+# computed by tests/test_yield_proxies.py from the committed demo book and
+# SLEEVE_YIELD_PROXY_CANDIDATES; run
+# `python -m pytest tests/test_yield_proxies.py -k printed -s` to print them. The
+# coverage figures are gone: they were measured once from a holdings file that is not
+# committed, so nothing could recompute them.
 #
 # EQUITY-ONLY UNTIL #286, which added core_fi_treasury and made this map's scope wider
 # than the block it was written for. Nothing about the contract changed — a proxy is a
@@ -107,50 +119,75 @@ SLEEVE_ASSUMED_YIELD: dict[str, float] = {
 # book, in CI, and fails on a book that lacks the day's close.
 #
 # THE SPREAD is the widest ratio between the proxy's yield and another cached
-# candidate's, larger over smaller, minus one: a size, always written "+". (The first
-# set mixed two signs: EFA's read -25% where every other row was written +.) Each
-# candidate's own yield is listed beside it, measured the same way on the same day.
+# candidate's, larger over smaller, minus one: a size, never a signed difference. (The
+# first typed set mixed two signs.) Each candidate's yield is measured the same way as
+# the proxy's, on the same day.
 #
 # BENCHMARK THROUGHOUT, deliberately, including where a held ticker looks more apt.
-# intl_large_value takes EFV (0% held) rather than AVIV (the sleeve's SAA carrier),
-# because departing from the framing on one row is held-weighted reasoning applied
-# selectively: thirteen entries meaning "benchmark" and one meaning "the ticker I plan
-# to buy" is an undeclared basis again. The +62% spread is that entry's honest content.
+# intl_large_value takes EFV rather than AVIV (the sleeve's SAA carrier), because
+# departing from the framing on one row is held-weighted reasoning applied selectively:
+# thirteen entries meaning "benchmark" and one meaning "the ticker I plan to buy" is an
+# undeclared basis again. That entry's spread is the widest in the map
+# (PROXY_WIDEST_SPREAD_PCT), and it is the entry's honest content.
 #
-# "N% held" is how much of the sleeve's HELD value is measurable from the cache at all
-# — the reason a benchmark stands in. Where it is low the held-weighted alternative is
-# not a better measurement, just a thinner one. These are coverage figures, measured on
-# 2026-08-11 from the holdings then, and were NOT re-measured with the yields.
+# WHY A BENCHMARK AND NOT THE HOLDINGS. A held-weighted yield can be measured only for
+# the held funds the price cache carries. Where those are a small part of a sleeve's
+# held value, the held-weighted alternative is not a better measurement, just a thinner
+# one.
 SLEEVE_YIELD_PROXY: dict[str, str] = {
-    "us_large_core":        "IWB",   # +16% vs VOO 1.06%, SPY 0.99%; quarterly; 82.8% held cached
-    "us_large_growth":      "IWF",   # +21% vs QQQ 0.42%; quarterly; 60.1% held cached
-    "us_large_value":       "IWD",   # +35% vs VTV 1.93%; quarterly; only 7.8% held cached
-    "us_large_quality":     "QUAL",  # +22% vs SPHQ 1.03%; quarterly; 100.0% held cached
-    "us_small_core":        "IWM",   # spread UNMEASURED, only cached candidate; quarterly; 0.0% held cached
-    "us_small_value":       "AVUV",  # spread UNMEASURED, only cached candidate; quarterly; 100.0% held cached
-    "us_sector_tech":       "XLK",   # spread UNMEASURED, only cached candidate; quarterly; 100.0% held cached
-    "us_sector_healthcare": "XLV",   # spread UNMEASURED, only cached candidate; quarterly; 100.0% held cached
-    "intl_developed":       "EFA",   # +34% vs VEA 2.41%; semi-annual so the TTM is 2 payments; only 7.2% held cached
-    "emerging_markets":     "EEM",   # +33% vs IEMG 2.21%; semi-annual so the TTM is 2 payments; only 4.7% held cached
-    "intl_quality":         "IQLT",  # +23% vs IDHQ 1.97%; semi-annual so the TTM is 2 payments; 0.0% held cached
-    "intl_large_value":     "EFV",   # +62% vs AVIV 2.85% — the widest in the table; semi-annual so the TTM is 2 payments; 0.0% held cached
-    "intl_small_value":     "SCZ",   # +5% vs ISVL 2.99%, AVDV 3.17%; semi-annual so the TTM is 2 payments; 0.0% held cached
+    "us_large_core":        "IWB",   # a benchmark for the sleeve; pays quarterly
+    "us_large_growth":      "IWF",   # a benchmark for the sleeve; pays quarterly
+    "us_large_value":       "IWD",   # a benchmark for the sleeve; pays quarterly
+    "us_large_quality":     "QUAL",  # a benchmark for the sleeve; pays quarterly
+    "us_small_core":        "IWM",   # the only fund cached for the sleeve; pays quarterly
+    "us_small_value":       "AVUV",  # the only fund cached for the sleeve; pays quarterly
+    "us_sector_tech":       "XLK",   # the only fund cached for the sleeve; pays quarterly
+    "us_sector_healthcare": "XLV",   # the only fund cached for the sleeve; pays quarterly
+    "intl_developed":       "EFA",   # a benchmark for the sleeve; pays semi-annually, so the TTM is 2 payments
+    "emerging_markets":     "EEM",   # a benchmark for the sleeve; pays semi-annually, so the TTM is 2 payments
+    "intl_quality":         "IQLT",  # a benchmark for the sleeve; pays semi-annually, so the TTM is 2 payments
+    "intl_large_value":     "EFV",   # a benchmark for the sleeve, kept over its SAA carrier (see BENCHMARK THROUGHOUT); pays semi-annually, so the TTM is 2 payments
+    "intl_small_value":     "SCZ",   # a benchmark for the sleeve; pays semi-annually, so the TTM is 2 payments
     # FIXED INCOME, added #286 — the first non-equity entry. It takes the map's SHARED
     # as-of (SLEEVE_YIELD_PROXY_AS_OF), which the recomputation test pins for every entry
     # at once; an entry with its own as-of would silently fail that recomputation.
-    "core_fi_treasury":     "IEF",   # +3% vs VGIT 4.04%; monthly, so the TTM is 12 payments; 100.0% held cached
+    "core_fi_treasury":     "IEF",   # a benchmark for the sleeve, not the fund held in it; pays monthly, so the TTM is 12 payments
+}
+
+# The other cached funds each proxy is compared against, measured the same way on the
+# same day. The spread between a proxy and these is how far the entry moves with the
+# choice of fund. Nothing in the app reads this map: tests/test_yield_proxies.py does,
+# to compute each spread from the committed demo book. A sleeve with no candidate has
+# an UNMEASURED spread (PROXY_SPREAD_UNMEASURED below), and the test holds the two in
+# step. Adding a cached candidate here is what makes a spread measurable.
+SLEEVE_YIELD_PROXY_CANDIDATES: dict[str, tuple[str, ...]] = {
+    "us_large_core":        ("VOO", "SPY"),
+    "us_large_growth":      ("QQQ",),
+    "us_large_value":       ("VTV",),
+    "us_large_quality":     ("SPHQ",),
+    "us_small_core":        (),
+    "us_small_value":       (),
+    "us_sector_tech":       (),
+    "us_sector_healthcare": (),
+    "intl_developed":       ("VEA",),
+    "emerging_markets":     ("IEMG",),
+    "intl_quality":         ("IDHQ",),
+    "intl_large_value":     ("AVIV",),
+    "intl_small_value":     ("ISVL", "AVDV"),
+    "core_fi_treasury":     ("VGIT",),
 }
 
 # The one date every proxied entry above is measured on: see the map's header.
 SLEEVE_YIELD_PROXY_AS_OF = "2026-09-30"
 # The widest spread in the map, in percent, as the Asset Location note prints it: EFV's
-# yield over AVIV's, minus one. Typed once, here; the recomputation test derives it
-# from the demo book and from the entry comments above, and fails if they disagree.
+# yield over AVIV's, minus one. Typed once, here, because the page prints it; the
+# recomputation test derives it from the demo book and the candidates above, and fails
+# if they disagree.
 PROXY_WIDEST_SPREAD_PCT = 62
 
 # Entries whose value is CONSTRUCTED from published series rather than measured from a
 # proxy's distributions. Parallel to SLEEVE_YIELD_PROXY above and disjoint from it: a
-# proxy entry declares ticker, spread and coverage; a constructed entry declares its
+# proxy entry declares its ticker and its candidates; a constructed entry declares its
 # formula, its component series and its as-of date. Same obligation either way — the
 # value does not travel without its basis.
 #
@@ -160,7 +197,7 @@ PROXY_WIDEST_SPREAD_PCT = 62
 # constructed-entry analogue of recomputing a proxy's TTM from the price cache.
 # Entries that were AUTHORED — a judgement, not a measurement. The third declaration
 # shape, and the one that ends "authored with no basis" without measuring anything
-# (#289). A proxy entry declares ticker, spread and coverage; a constructed entry
+# (#289). A proxy entry declares its ticker and its candidates; a constructed entry
 # declares formula, components and as-of; an authored entry declares WHEN THE JUDGEMENT
 # WAS MADE and WHAT KIND OF CLAIM IT IS. Same obligation all three ways — the value does
 # not travel without its basis.

@@ -50,7 +50,7 @@ def test_tips_declares_a_construction():
 
 
 def test_every_constructed_entry_declares_formula_series_and_as_of():
-    """Where a proxy entry declares ticker, spread and coverage, a constructed entry
+    """Where a proxy entry declares its ticker and its candidates, a constructed entry
     declares its formula, its series IDs and its as-of date. Same obligation, different
     fields — the value does not travel without its basis."""
     assert SLEEVE_YIELD_CONSTRUCTION, "empty map — this test would pass vacuously"

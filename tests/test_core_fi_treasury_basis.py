@@ -57,7 +57,7 @@ def test_the_benchmark_convention_is_followed_not_the_held_ticker():
     """BENCHMARK THROUGHOUT. VGIT is the held ticker and measures 3.90%; IEF is the
     benchmark its own rationale compares against. Taking the held ticker on one row
     would be held-weighted reasoning applied selectively — the config says so, and it
-    is what made intl_large_value take EFV over AVIV at an +85% spread."""
+    is what made intl_large_value take EFV over AVIV, the widest spread in the map."""
     assert lc.SLEEVE_YIELD_PROXY["core_fi_treasury"] == "IEF"
     held = {"VGIT"}
     assert lc.SLEEVE_YIELD_PROXY["core_fi_treasury"] not in held

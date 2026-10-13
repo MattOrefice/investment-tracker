@@ -814,7 +814,7 @@ def _unlisted_sleeve_error(sleeve_key: str, symbol: str, *, underlying_of: str =
 # so the blend names its LEAST-verified component. The ordering is a stated choice:
 #   authored     a judgement, no measurement behind it
 #   proxy        a named benchmark's TTM distributions (measured, but the choice of
-#                benchmark is authored, and candidates spread by up to 62%,
+#                benchmark is authored, and candidates spread widely: see
 #                location_config.PROXY_WIDEST_SPREAD_PCT)
 #   constructed  arithmetic on published series (reproducible from its inputs)
 #   structural   a fact about the asset (no cash flow to yield)
