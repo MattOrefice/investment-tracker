@@ -29,13 +29,18 @@ def test_staleness_note_at_threshold_is_still_fresh():
     assert staleness_note("X", date.today() - timedelta(days=45), 45) is None
 
 
-def test_staleness_note_fires_with_day_count_and_date(monkeypatch):
+def test_staleness_note_fires_with_day_count_and_date(monkeypatch, new_york_day):
     """The 2026-09-25 audit's one wording: the end date, its age, and that the end
     is this app's last refresh, never a claim about the source's publication. The
-    maintainer's command renders in personal mode only."""
+    maintainer's command renders in personal mode only.
+
+    The age is counted from New York's date. The frontier was staged from the machine's
+    date, a day ahead on a UTC machine from 00:00 UTC until midnight in New York, where
+    the note then read 132 days (#493). It is staged from New York's date, on a pinned
+    UTC machine in the morning and in the evening (the new_york_day fixture)."""
     import src.config as config
     from src.asof import format_long_date
-    frontier = date.today() - timedelta(days=133)
+    frontier = new_york_day - timedelta(days=133)
     monkeypatch.setattr(config, "IS_DEMO", False)
     note = staleness_note("Fama-French factor", frontier, 70)
     assert note.startswith(f"Fama-French factor data ends {format_long_date(frontier)} "
