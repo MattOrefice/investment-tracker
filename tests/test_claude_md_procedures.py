@@ -25,6 +25,7 @@ def test_the_quarterly_close_out_names_the_code_behind_each_step():
     s = _section("Quarterly close-out")
     for needle in ("data/etf_metadata.json", "committed_price_frontier",
                    "tools/advance_demo_prices.py", "tools/lock_demo_quarters.py",
+                   "tools/check_price_histories.py",
                    "refresh_market_data.py --files cape pe",
                    "refresh_market_data.py --files ff_us ff_developed_exus",
                    "complete_quarter_inputs", "inputs_pending", "-m live_data",

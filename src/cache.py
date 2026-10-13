@@ -783,7 +783,8 @@ def complete_quarter_inputs(quarter_id: str) -> "SnapshotFrames | None":
 
 
 class LockCoverageError(ValueError):
-    """A quarter was asked to lock before its data reaches the quarter's end.
+    """A quarter was asked to lock before its data reaches the quarter's end, or from
+    prices with a gap inside a ticker's history.
 
     Raised by capture_quarter_snapshot INSTEAD of persisting a lock. Its message
     names every short ticker and its missing dates, so the page can show it as it
@@ -816,6 +817,38 @@ def _short_coverage(statuses: "list[TickerStatus]", end: date) -> "list[str]":
     return lines
 
 
+def _interior_gaps(frame: pd.DataFrame) -> "list[str]":
+    """One clause per set of tickers that lack a close on dates between their own
+    first and last close, naming the dates. Empty when the lock may proceed.
+
+    THE RULE (#491): no lock is taken from prices with a gap in them. The demo book
+    lacked 32 closes between stored closes of ten funds, and Q2 2026's lock froze them
+    as nulls: a reader carries the close before a null forward, and a dividend just
+    after one was scaled on the close before the gap.
+
+    The frame's dates are the union of its tickers' dates, so a null between a
+    ticker's first and last close is a date another ticker holds and it does not.
+    Dates before a ticker's first close are not a gap: it had not listed. Every ticker
+    a lock covers today trades NYSE sessions. A series that trades every day (BTC-USD,
+    which no lock covers) would make every weekend such a date for the others, and
+    this would refuse until it is taught the two calendars."""
+    frame = frame.sort_index()
+    days = [d.isoformat() for d in frame.index]
+    missing: "dict[str, list[str]]" = {}
+    for ticker in frame.columns:
+        have = frame[ticker].notna().to_numpy()
+        held = have.nonzero()[0]
+        if not len(held):
+            continue
+        for i in range(held[0], held[-1] + 1):
+            if not have[i]:
+                missing.setdefault(days[i], []).append(str(ticker))
+    groups: "dict[tuple, list[str]]" = {}
+    for day in sorted(missing):
+        groups.setdefault(tuple(sorted(missing[day])), []).append(day)
+    return [f"{', '.join(dates)} for {', '.join(tickers)}" for tickers, dates in groups.items()]
+
+
 def capture_quarter_snapshot(quarter_id: str) -> tuple:
     """Lock a completed quarter and return (SnapshotFrames, captured_at_str).
 
@@ -834,6 +867,10 @@ def capture_quarter_snapshot(quarter_id: str) -> tuple:
     September 30, a container whose fetch failed would otherwise lock Q3 on prices
     ending July 20. That REFUSES with LockCoverageError, naming each short ticker's
     missing dates, and persists nothing.
+
+    NO GAP INSIDE A HISTORY, OR NO LOCK (#491). A ticker with no close on a date
+    between its own first and last, on which another ticker holds one, refuses the
+    same way (_interior_gaps): the lock would freeze the gap.
 
     A ticker with NO usable prices at all stays what #204 made it, a disclosed gap
     read live and named on the cover. That is a different fact: the symbol cannot
@@ -891,6 +928,13 @@ def capture_quarter_snapshot(quarter_id: str) -> tuple:
 
     adj_df = pd.DataFrame(adj)
     adj_df.index = pd.to_datetime(adj_df.index).date
+    holes = _interior_gaps(adj_df)
+    if holes:
+        raise LockCoverageError(
+            f"Cannot lock {quarter_id}: the price data has a gap inside a ticker's "
+            f"history, so a lock now would freeze the gap. Nothing was locked. No close "
+            f"on " + "; ".join(holes) + "."
+        )
     raw_df = pd.DataFrame(raw)
     if not raw_df.empty:
         raw_df.index = pd.to_datetime(raw_df.index).date

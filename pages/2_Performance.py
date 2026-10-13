@@ -375,7 +375,8 @@ with col:
                     )
                 except LockCoverageError as _lock_refused:
                     # A REFUSAL, not a failure: the prices do not reach the quarter's
-                    # end yet, and the message names which tickers and dates (#368).
+                    # end yet, or have a gap inside a ticker's history (#491), and the
+                    # message names which tickers and dates (#368).
                     # "Try again later" would hide the one fact that says when.
                     st.error(str(_lock_refused))
                 except Exception:

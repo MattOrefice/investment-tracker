@@ -201,10 +201,15 @@ the code that supports it; the two with none are listed at the end.
   committed history) and writes it in one transaction, or refuses and leaves
   the book as it was (#397). Nothing else writes prices into `data/demo.db`.
 - Demo only, after the snapshot advance: confirm every ticker's committed
-  history ends on the same date, `python tools/check_price_histories.py`. It
-  lists each end date with its tickers and exits 1 unless there is one, so no
+  history ends on the same date and holds no gap, `python
+  tools/check_price_histories.py`. It lists each end date with its tickers, then
+  every date inside a ticker's own span on which it is wrong, and exits 1 unless
+  the histories end on one date and hold no gap. SPY is the session reference: an
+  exchange-traded ticker must hold a close on every date SPY holds between its
+  own first and last close, and BTC-USD on every calendar day of its span. So no
   ticker lags silently (#406 item 8: IWB and IWF ended 2026-06-08 while the
-  holdings ran to 2026-07-20).
+  holdings ran to 2026-07-20), and none lacks a close an end date cannot show
+  (#491: the book lacked 33, and Q2 2026's lock froze 32 of them).
 - Demo only, once that check passes and before the report takes the lock:
   regenerate the DRIP lots from the ledger, `python
   tools/rebuild_demo_drip_lots.py`, and commit `data/demo.db`. It derives every
@@ -239,12 +244,16 @@ the code that supports it; the two with none are listed at the end.
   `test_benchmark_gap_renormalization_is_numeric_stack_invariant` only with a
   demo.db price change inside 2025-05-01 to 2026-07-20.
 - Run the `live_data` tests: `TRACKER_MODE=demo python -m pytest -m live_data -q`.
-- Demo only, to commit the quarter's lock: `python tools/lock_demo_quarters.py`,
-  then commit `data/demo.db`. It locks from the committed prices and dividends,
-  offline, never re-locks a quarter already locked, and refuses a quarter the
-  committed prices do not cover, which is why the advance comes first. Until
-  the lock is committed, the demo's new quarter is locked only in each
-  container's runtime cache.
+- Demo only, to commit the quarter's lock: run `python
+  tools/check_price_histories.py` again and go on only if it passes, because no
+  lock is taken from a book with a gap (#491). Then `python
+  tools/lock_demo_quarters.py`, and commit `data/demo.db`. It locks from the
+  committed prices and dividends, offline, never re-locks a quarter already
+  locked, and refuses a quarter the committed prices do not cover, which is why
+  the advance comes first. It refuses the same way (`LockCoverageError`) when a
+  ticker the lock covers has no close on a date between its own first and last
+  close, in either mode. Until the lock is committed, the demo's new quarter is
+  locked only in each container's runtime cache.
 - Not yet supported (#397), so not a step: a committed harness that renders
   every earlier locked report for a byte-identical diff.
 
