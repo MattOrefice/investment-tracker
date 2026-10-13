@@ -882,8 +882,12 @@ with col:
             "convention (CFA, GIPS IR supplement) and would yield a higher IR, because the "
             "arithmetic mean is at least the geometric mean (Jensen's inequality)."
         )
-        _n_1m      = _m_1m.get("n_days", 0) if _m_1m else 0
-        _n_3m      = _m_3m.get("n_days", 0) if _m_3m else 0
+        # Each window's own count, from the function the floor is held to, whether or
+        # not the window has figures (#512). They read `n_days or 21` and `or 63`: a
+        # window below the floor has no n_days, so the sentence printed 21 or 63
+        # trading days for a window that held, say, three.
+        _n_1m = trading_days_in_window(pv, _bl_for_metrics, window="1M", cashflows=cf)
+        _n_3m = trading_days_in_window(pv, _bl_for_metrics, window="3M", cashflows=cf)
 
         _disc_parts = []
         _overlap = one_year_overlap_note(si_days)
@@ -891,7 +895,7 @@ with col:
             _disc_parts.append(_overlap)
         _disc_parts.append(
             f"Risk ratios at 1M and 3M windows reflect "
-            f"{_n_1m or 21} and {_n_3m or 63} trading days respectively; "
+            f"{_n_1m} and {_n_3m} trading days respectively; "
             "interpret short-window Sharpe and Sortino as directional rather than "
             "statistically stable."
         )

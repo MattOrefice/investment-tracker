@@ -145,7 +145,10 @@ def test_the_page_counts_from_the_series_and_flows_it_measures():
     """The count in the sentence and the figures it stands in for come from the same
     inputs: the page hands trading_days_in_window the series, the benchmark and the
     flows it hands compute_risk_metrics. These renders hold no flow in 2027, so they
-    could not tell a count taken without the flows from one taken with them."""
+    could not tell a count taken without the flows from one taken with them.
+
+    Three calls since #512: the empty window's own sentence, and the 1M and 3M counts
+    in the note under the tiles. Every one takes the same three inputs."""
     import ast
     from pathlib import Path
     page = Path(__file__).resolve().parent.parent.parent / "pages" / "2_Performance.py"
@@ -155,11 +158,12 @@ def test_the_page_counts_from_the_series_and_flows_it_measures():
                 "compute_risk_metrics", "trading_days_in_window"):
             calls.setdefault(node.func.id, []).append(node)
     assert {k: len(v) for k, v in calls.items()} == {"compute_risk_metrics": 1,
-                                                     "trading_days_in_window": 1}
+                                                     "trading_days_in_window": 3}
 
     def inputs(call):
         kw = {k.arg: ast.unparse(k.value) for k in call.keywords}
         return [ast.unparse(a) for a in call.args], kw.get("cashflows")
 
-    assert inputs(calls["trading_days_in_window"][0]) == inputs(calls["compute_risk_metrics"][0])
+    for counted in calls["trading_days_in_window"]:
+        assert inputs(counted) == inputs(calls["compute_risk_metrics"][0])
     assert inputs(calls["compute_risk_metrics"][0]) == (["pv", "_bl_for_metrics"], "cf")
