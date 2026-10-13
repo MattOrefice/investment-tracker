@@ -21,12 +21,28 @@ from src.asof import staleness_note  # noqa: E402
 
 # ── staleness_note ─────────────────────────────────────────────────────────────
 
-def test_staleness_note_fresh_returns_none():
-    assert staleness_note("X", date.today() - timedelta(days=10), 45) is None
+# The age is counted from New York's date (asof.today_et). The two tests below staged
+# their frontier from the machine's date, a day ahead on a UTC machine from 00:00 UTC
+# until midnight in New York. There the first read 9 days against a 45-day threshold,
+# no boundary at all, and the second read 44, one day inside the threshold it names
+# (#493). Both are staged from New York's date, on a pinned UTC machine in the morning
+# and in the evening (the new_york_day fixture).
+
+def test_staleness_note_fresh_returns_none(new_york_day):
+    """Fresh data renders nothing, through the threshold's last day, and the day after
+    it renders the note: both sides of the boundary."""
+    assert staleness_note("X", new_york_day - timedelta(days=10), 45) is None
+    assert staleness_note("X", new_york_day - timedelta(days=45), 45) is None
+    past = staleness_note("X", new_york_day - timedelta(days=46), 45)
+    assert past is not None and "(46 days ago)" in past
 
 
-def test_staleness_note_at_threshold_is_still_fresh():
-    assert staleness_note("X", date.today() - timedelta(days=45), 45) is None
+def test_staleness_note_at_threshold_is_still_fresh(new_york_day):
+    """Exactly 45 days old at a 45-day threshold. That it is 45 to the day, and not one
+    day inside, is read off the note the same frontier gets at a 44-day threshold."""
+    frontier = new_york_day - timedelta(days=45)
+    assert staleness_note("X", frontier, 45) is None
+    assert "(45 days ago)" in staleness_note("X", frontier, 44)
 
 
 def test_staleness_note_fires_with_day_count_and_date(monkeypatch, new_york_day):
