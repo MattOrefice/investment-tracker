@@ -1309,7 +1309,7 @@ def yield_assumption_note(register, *, today=None) -> str:
 
     from datetime import date
 
-    from src.location_config import (PROXY_SPREAD_UNMEASURED,
+    from src.location_config import (PROXY_SPREAD_UNMEASURED, PROXY_WIDEST_SPREAD_PCT,
                                      SLEEVE_YIELD_AUTHORED, SLEEVE_YIELD_STRUCTURAL,
                                      SLEEVE_YIELD_CONSTRUCTION, SLEEVE_YIELD_PROXY,
                                      YIELD_CONSTRUCTION_REVIEW_DAYS)
@@ -1325,7 +1325,7 @@ def yield_assumption_note(register, *, today=None) -> str:
         "(`SLEEVE_ASSUMED_YIELD` in `src/location_config.py`), not a measured "
         "distribution rate. Authored stays true even where a benchmark basis is "
         "declared below: choosing EFV over AVIV for the same sleeve is a judgement, "
-        "and those two differ by 85%."
+        f"and those two differ by {PROXY_WIDEST_SPREAD_PCT}%."
     )
     if register.empty:
         return note + (
@@ -1354,7 +1354,8 @@ def yield_assumption_note(register, *, today=None) -> str:
             f" **{n_proxied} of {len(register)} rows** use a yield with a **declared "
             "basis** — a named benchmark's trailing-twelve-month distribution yield, "
             "recorded per entry with its spread against every other candidate in the "
-            "price cache. Those spreads are wide, up to **+85%** on one sleeve, and "
+            f"price cache. Those spreads are wide, up to **+{PROXY_WIDEST_SPREAD_PCT}%** "
+            "on one sleeve, and "
             f"for {len(PROXY_SPREAD_UNMEASURED)} sleeves only one candidate is cached "
             "so the spread is **unmeasured rather than zero**."
         )

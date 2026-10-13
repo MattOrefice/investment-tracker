@@ -38,9 +38,11 @@ from src.location_config import (
     ACCOUNT_SHELTER_PRIORITY,
     NOT_MODELLED_SLEEVES,
     PROXY_SPREAD_UNMEASURED,
+    PROXY_WIDEST_SPREAD_PCT,
     SLEEVE_ASSUMED_YIELD,
     SLEEVE_PRIORITY_BY_ACCOUNT_TYPE,
     SLEEVE_YIELD_PROXY,
+    SLEEVE_YIELD_PROXY_AS_OF,
     TAX_PROFILE,
 )
 
@@ -173,7 +175,7 @@ def test_each_proxy_entry_comment_states_its_spread():
                 f"is unmeasured, got: {comment!r}"
             )
         else:
-            assert re.search(r"[+-]\d+%", comment), (
+            assert re.search(r"\+\d+% vs ", comment), (
                 f"{sleeve}'s comment states no spread: {comment!r}"
             )
 
@@ -303,67 +305,175 @@ def test_no_row_falls_to_the_default_on_this_fixture():
 
 # ── the values are the proxies', recomputed independently ───────────────────
 
+DEMO_BOOK = CONFIG.parent.parent / "data" / "demo.db"
+
+
+def _ttm_on(book, ticker: str) -> float:
+    """A ticker's trailing-twelve-month distribution yield at the shared as-of, read
+    from ``book``: the distributions with an ex-date in the 365 days to the as-of, over
+    the close DATED ON the as-of.
+
+    THE CLOSE MUST BE THE AS-OF'S OWN (#513). This took "the latest close on or before
+    the as-of". On a cache whose closes for IWB, IWF, XLK and XLV stopped on July 21 that
+    was a three-week-old close: four entries had been measured over it, this check took
+    the same close and agreed, and it went red only when the cache was refreshed. A book
+    without the day's close now fails here instead of agreeing."""
+    import sqlite3
+    from datetime import date, timedelta
+
+    as_of = date.fromisoformat(SLEEVE_YIELD_PROXY_AS_OF)
+    w0 = (as_of - timedelta(days=365)).isoformat()
+    conn = sqlite3.connect(f"file:{Path(book).as_posix()}?mode=ro", uri=True)
+    try:
+        px = conn.execute(
+            "SELECT price_date, close FROM prices WHERE ticker = ? AND price_date <= ? "
+            "ORDER BY price_date DESC LIMIT 1", (ticker, as_of.isoformat())).fetchone()
+        assert px is not None and px[0] == as_of.isoformat(), (
+            f"{ticker}: {Path(book).name} holds no close dated {as_of}; its latest on or "
+            f"before it is {px[0] if px else 'none'}. A yield over an older close is not "
+            "the yield at the as-of.")
+        total, n = conn.execute(
+            "SELECT COALESCE(SUM(amount), 0), COUNT(*) FROM dividends WHERE ticker = ? "
+            "AND ex_date > ? AND ex_date <= ?", (ticker, w0, as_of.isoformat())).fetchone()
+        assert n, f"{ticker}: {Path(book).name} holds no distribution in the year to {as_of}"
+        return float(total) / float(px[1])
+    finally:
+        conn.close()
+
+
+def _check_entries(book) -> int:
+    """Every proxied entry against its proxy's yield on ``book``; returns how many."""
+    for sleeve, proxy in SLEEVE_YIELD_PROXY.items():
+        recomputed = round(_ttm_on(book, proxy), 4)
+        assert SLEEVE_ASSUMED_YIELD[sleeve] == pytest.approx(recomputed, abs=1e-9), (
+            f"{sleeve}: entry {SLEEVE_ASSUMED_YIELD[sleeve]} does not match "
+            f"{proxy}'s recomputed TTM {recomputed}"
+        )
+    return len(SLEEVE_YIELD_PROXY)
+
+
 def test_entry_values_match_their_proxies_at_the_shared_as_of():
-    """Each authored proxy value equals its proxy's TTM yield recomputed from the
-    committed dividends/prices tables AT THE ONE SHARED AS-OF below, never read back
-    from the config. Skips only if the personal cache is absent (CI), and asserts a
-    non-empty comparison otherwise so an empty run cannot pass.
+    """Each proxied value equals its proxy's TTM yield recomputed from the COMMITTED
+    DEMO BOOK at the one shared as-of, never read back from the config. The demo book
+    holds every proxy's closes and distributions, so this runs in CI; it read the
+    personal cache, and skipped there (#513).
 
     WHAT THIS CHECKS, AND WHAT IT DOES NOT (#234). It verifies the value was
     TRANSCRIBED correctly from the measurement at the recorded date. It says nothing
     about whether that value is still CURRENT. The as-of is frozen, and deliberately
     so: a moving window would make this test's outcome depend on the day it runs.
-    It was named "..._recomputed_from_the_cache", which read as a currency check."""
+    It was named "..._recomputed_from_the_cache", which read as a currency check.
+
+    ONE AS-OF FOR THE WHOLE MAP (location_config.SLEEVE_YIELD_PROXY_AS_OF), and this is
+    a CONSTRAINT ON THE MAP, not a convenience here. Every proxy entry is recomputed at
+    this single date, so an entry carrying its OWN as-of does not merely go
+    undocumented: it recomputes against the wrong day and fails, or worse, passes at a
+    value nobody chose. #286 hit it. Its first draft gave core_fi_treasury a per-entry
+    as-of of 2026-08-19 and wrote the value measured there; this test recomputed at the
+    shared date and went red. The harness found the constraint that reasoning had not.
+
+    SO IF YOU ARE HERE TO ADD PER-ENTRY DATING, the natural next request, since a
+    shared date ages every entry at once: it is this that decides it. Moving to
+    per-entry as-ofs means the date becomes part of each entry (a dict value, not a
+    bare float) and this test resolves each at its own; a half-migration where the map
+    claims per-entry dates and the recomputation keeps one is the state that passes
+    while measuring the wrong thing."""
+    assert SLEEVE_YIELD_PROXY_AS_OF == "2026-09-30"
+    assert _check_entries(DEMO_BOOK) == len(EXPECTED_PROXIES) == 14
+
+
+def _demo_copy(tmp_path, *statements):
+    """A scratch copy of the demo book with ``statements`` (sql, args) run on it."""
+    import os
+    import shutil
     import sqlite3
-    from datetime import date, timedelta
-
-    db = Path(__file__).resolve().parent.parent / "data" / "tracker.db"
-    if not db.exists() or db.stat().st_size == 0:
-        pytest.skip("personal cache absent")
-
-    # ONE AS-OF FOR THE WHOLE MAP, and this is a CONSTRAINT ON THE MAP, not a
-    # convenience here. Every proxy entry is recomputed at this single date, so an
-    # entry carrying its OWN as-of does not merely go undocumented — it recomputes
-    # against the wrong day and fails, or worse, passes at a value nobody chose.
-    #
-    # #286 hit it. Its first draft gave core_fi_treasury a per-entry as-of of
-    # 2026-08-19 and wrote the value measured there (0.0394); this test recomputed at
-    # 2026-08-11 and got 0.0397 and went red. The harness found the constraint that
-    # reasoning had not.
-    #
-    # SO IF YOU ARE HERE TO ADD PER-ENTRY DATING — the natural next request, since a
-    # shared date ages every entry at once — it is this line that decides it. Moving
-    # to per-entry as-ofs means the date becomes part of each entry (a dict value, not
-    # a bare float) and this test resolves each at its own; a half-migration where the
-    # map claims per-entry dates and the recomputation keeps one is the state that
-    # passes while measuring the wrong thing.
-    as_of = date(2026, 8, 11)
-    w0 = (as_of - timedelta(days=365)).isoformat()
-    conn = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True)
-    checked = 0
+    copy = tmp_path / "demo_copy.db"
+    shutil.copyfile(DEMO_BOOK, copy)
+    os.chmod(copy, 0o644)
+    con = sqlite3.connect(copy)
     try:
-        for sleeve, proxy in SLEEVE_YIELD_PROXY.items():
-            px = conn.execute(
-                "SELECT close FROM prices WHERE ticker=? AND price_date<=? AND "
-                "close IS NOT NULL ORDER BY price_date DESC LIMIT 1",
-                (proxy, as_of.isoformat())).fetchone()
-            div = conn.execute(
-                "SELECT COALESCE(SUM(amount),0) FROM dividends WHERE ticker=? AND "
-                "ex_date>? AND ex_date<=?", (proxy, w0, as_of.isoformat())).fetchone()
-            if px is None or not div[0]:
-                continue
-            recomputed = round(float(div[0]) / float(px[0]), 4)
-            assert SLEEVE_ASSUMED_YIELD[sleeve] == pytest.approx(recomputed, abs=1e-4), (
-                f"{sleeve}: entry {SLEEVE_ASSUMED_YIELD[sleeve]} does not match "
-                f"{proxy}'s recomputed TTM {recomputed}"
-            )
-            checked += 1
+        with con:
+            for sql, args in statements:
+                assert con.execute(sql, args).rowcount >= 1, (sql, args)
     finally:
-        conn.close()
-    assert checked >= 10, (
-        f"only {checked} entries were checkable against the cache; an almost-empty "
-        "comparison passes without proving anything"
-    )
+        con.close()
+    return copy
+
+
+def test_a_book_whose_closes_stop_short_of_the_as_of_fails_the_check(tmp_path):
+    """#513's cache, rebuilt on a copy: IWB's closes after July 21 gone. The old check
+    divided by the July 21 close and compared; this one refuses the book."""
+    short = _demo_copy(tmp_path, ("DELETE FROM prices WHERE ticker = 'IWB' AND "
+                                  "price_date > ?", ("2026-07-21",)))
+    with pytest.raises(AssertionError, match="IWB: demo_copy.db holds no close dated "
+                                             "2026-09-30; its latest on or before it is "
+                                             "2026-07-21"):
+        _check_entries(short)
+
+
+def test_a_book_without_the_as_ofs_own_close_fails_even_one_session_short(tmp_path):
+    one_short = _demo_copy(tmp_path, ("DELETE FROM prices WHERE ticker = 'IEF' AND "
+                                      "price_date = ?", ("2026-09-30",)))
+    with pytest.raises(AssertionError, match="IEF: demo_copy.db holds no close dated "
+                                             "2026-09-30; its latest on or before it is "
+                                             "2026-09-29"):
+        _check_entries(one_short)
+
+
+def test_a_distribution_the_book_loses_moves_the_recomputed_yield(tmp_path):
+    """The other input. With IWB's September distribution gone the recomputation no
+    longer equals the entry, so the check reads dividends and not only closes."""
+    fewer = _demo_copy(tmp_path, ("DELETE FROM dividends WHERE ticker = 'IWB' AND "
+                                  "ex_date = ?", ("2026-09-15",)))
+    with pytest.raises(AssertionError, match="us_large_core: entry 0.0092 does not match"):
+        _check_entries(fewer)
+
+
+def _comment_spreads() -> "dict[str, tuple[int, dict[str, float]]]":
+    """{sleeve: (the spread its comment states, in percent, {candidate: stated yield})}
+    for every entry whose spread is measured."""
+    out = {}
+    for sleeve, comment in _entry_comments().items():
+        if sleeve in PROXY_SPREAD_UNMEASURED:
+            continue
+        m = re.match(r"\+(\d+)% vs ((?:[A-Z]+ \d+\.\d+%(?:, )?)+)", comment)
+        assert m, f"{sleeve}'s comment does not open with '+N% vs TICKER x.xx%': {comment!r}"
+        out[sleeve] = (int(m.group(1)), {k: float(v) for k, v in
+                                         re.findall(r"([A-Z]+) (\d+\.\d+)%", m.group(2))})
+    return out
+
+
+def test_each_stated_spread_and_candidate_yield_is_the_demo_books():
+    """The comments carry each entry's sensitivity, and nothing recomputed them: the
+    first set was measured once, by hand, and mixed two signs. Each candidate's yield
+    and each spread is now recomputed from the demo book at the shared as-of. The
+    spread is the widest ratio between the proxy's yield and a candidate's, larger over
+    smaller, minus one."""
+    stated = _comment_spreads()
+    assert set(stated) == set(SLEEVE_YIELD_PROXY) - PROXY_SPREAD_UNMEASURED
+    for sleeve, (spread, candidates) in stated.items():
+        proxy = _ttm_on(DEMO_BOOK, SLEEVE_YIELD_PROXY[sleeve])
+        widest = 0.0
+        for ticker, listed in candidates.items():
+            measured = _ttm_on(DEMO_BOOK, ticker)
+            assert listed == pytest.approx(round(measured * 100, 2), abs=1e-9), (
+                f"{sleeve}: the comment lists {ticker} at {listed}%, the book gives "
+                f"{measured * 100:.2f}%")
+            widest = max(widest, max(proxy, measured) / min(proxy, measured) - 1)
+        assert spread == round(widest * 100), (
+            f"{sleeve}: the comment states +{spread}%, the book gives +{widest * 100:.0f}%")
+
+
+def test_the_widest_spread_the_note_prints_is_the_widest_measured():
+    """The Asset Location note names EFV and AVIV and prints how far apart they are.
+    The figure is typed once (PROXY_WIDEST_SPREAD_PCT); it must be the largest spread
+    in the map, and that entry must still be EFV against AVIV."""
+    stated = _comment_spreads()
+    sleeve = max(stated, key=lambda s: stated[s][0])
+    assert (sleeve, SLEEVE_YIELD_PROXY[sleeve], list(stated[sleeve][1])) == (
+        "intl_large_value", "EFV", ["AVIV"])
+    assert stated[sleeve][0] == PROXY_WIDEST_SPREAD_PCT == 62
+    assert "the widest in the table" in _entry_comments()[sleeve]
 
 
 # ── the disclosure must not keep claiming "no declared basis" for all of them ──
@@ -424,6 +534,9 @@ def test_note_reports_the_spread_and_that_some_are_unmeasured():
     proxy ticker, so the note carries the widest spread and the unmeasured count."""
     from src.location_actions import yield_assumption_note
     note = yield_assumption_note(_note_register())
-    assert "+85%" in note, "the widest spread is not disclosed"
+    assert f"up to **+{PROXY_WIDEST_SPREAD_PCT}%** on one sleeve" in note, (
+        "the widest spread is not disclosed")
+    assert f"those two differ by {PROXY_WIDEST_SPREAD_PCT}%." in note
+    assert "85%" not in note, "the note still prints the first measurement's spread"
     assert "unmeasured rather than zero" in note
     assert str(len(PROXY_SPREAD_UNMEASURED)) in note

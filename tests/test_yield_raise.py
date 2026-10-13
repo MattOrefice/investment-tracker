@@ -246,9 +246,8 @@ def test_the_intl_carrier_trades_do_not_raise():
 
     TWO independent reasons, either sufficient:
 
-    1. All three sleeves gained declared-basis entries in PR 2 (intl_large_value
-       0.0448, intl_quality 0.0231, intl_small_value 0.0309), so the yield resolves
-       through the table.
+    1. All three sleeves gained declared-basis entries in PR 2 (intl_large_value,
+       intl_quality and intl_small_value), so the yield resolves through the table.
     2. The carriers generate NO register row at all, so yield resolution is never
        reached for them. They are tax_efficiency='high' holdings in a taxable account,
        so cases A (low) and B (medium) cannot fire; they are not in a Roth, so no case
