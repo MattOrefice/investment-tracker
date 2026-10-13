@@ -297,6 +297,54 @@ def sample_risk_free(btc: pd.Series, sleeves: pd.DataFrame):
     return risk_free.rate_over(SAMPLE_START, end)
 
 
+# What the univariate table sets beside each other: the candidate and four comparison
+# assets, and the two legs of its Real Assets basket.
+UNIVARIATE_TICKERS = ("BTC-USD", "SPY", "AGG", "GLD", "VOO")
+REAL_ASSETS_BASKET = ("VNQ", "PDBC")
+
+
+def tickers_read(candidate: str = "BTC-USD", screened: str = "") -> "list[str]":
+    """Every ticker whose closes the page's figures are computed from: the case study's
+    candidate, each sleeve's benchmark legs, the univariate table's assets and basket,
+    the naive benchmark's two legs (the 2022 comparison), and ``screened``, the ticker
+    in the candidate screen's box (QQQ until the reader types another), when it is one.
+    The page's gap note reads this."""
+    from src.benchmarks import NAIVE_60_40
+    from src.prices import is_valid_ticker
+    read = {candidate, *UNIVARIATE_TICKERS, *REAL_ASSETS_BASKET}
+    if is_valid_ticker(screened):
+        read.add(screened)
+    read.update(t for t, _w in NAIVE_60_40)
+    for legs in sleeve_benchmarks().values():
+        read.update(t for t, _w in legs)
+    return sorted(read)
+
+
+def price_gap_note(candidate: str = "BTC-USD", screened: str = "") -> "str | None":
+    """What the page says when the book lacks a close inside the history of a ticker it
+    reads, naming each ticker and date; None when it lacks none.
+
+    Every series here is built from a ticker's stored closes with the close before a
+    missing day carried forward, so a gap changes figures and nothing on the page showed
+    it. For a ticker a quarter lock covers the Performance page steps back and names the
+    close; no lock covers BTC-USD, the ticker this page is about (#501). The refresh
+    asks for a missing close again every time it runs (src.price_gaps), so the note
+    lasts only while the provider does not supply it."""
+    from src import price_gaps
+    from src.asof import format_long_date
+    by_ticker: "dict[str, list[str]]" = {}
+    for ticker, day in price_gaps.gaps_for(tickers_read(candidate, screened)):
+        by_ticker.setdefault(ticker, []).append(format_long_date(day))
+    if not by_ticker:
+        return None
+    named = "; ".join(f"{t} on {', '.join(days)}" for t, days in sorted(by_ticker.items()))
+    one = sum(len(days) for days in by_ticker.values()) == 1
+    return (f"No close is stored for {named}. The figures on this page that read "
+            f"{'it' if one else 'them'} carry the close before forward. Each price "
+            f"refresh asks for {'it' if one else 'them'} again, and this note goes once "
+            f"{'it is' if one else 'they are'} stored.")
+
+
 def build_univariate_table(
     start_date: str = SAMPLE_START,
     end_date: Optional[str] = None,
@@ -310,14 +358,14 @@ def build_univariate_table(
     end = end_date or date.today().isoformat()
     assets: dict[str, pd.Series] = {}
 
-    for ticker in ("BTC-USD", "SPY", "AGG", "GLD", "VOO"):
+    for ticker in UNIVARIATE_TICKERS:
         p = _price_series(ticker, start_date, end)
         if not p.empty:
             assets[ticker.replace("-USD", "")] = p.pct_change().dropna()
 
     # Real Assets blend
-    vnq  = _price_series("VNQ",  start_date, end)
-    pdbc = _price_series("PDBC", start_date, end)
+    vnq  = _price_series(REAL_ASSETS_BASKET[0], start_date, end)
+    pdbc = _price_series(REAL_ASSETS_BASKET[1], start_date, end)
     if not vnq.empty and not pdbc.empty:
         common = vnq.index.intersection(pdbc.index)
         ra = (vnq.reindex(common).pct_change() * 0.5 +

@@ -42,6 +42,11 @@ def _load_sleeve_returns() -> pd.DataFrame:
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
+def _load_price_gap_note(screened: str) -> "str | None":
+    return ae.price_gap_note(screened=screened)
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
 def _load_spy_returns() -> pd.Series:
     try:
         return ae.get_candidate_returns("SPY", ae.SAMPLE_START)
@@ -483,6 +488,14 @@ if _fred_note:
     _, col, _ = st.columns([1, 8, 1])
     with col:
         st.info(_fred_note)
+
+# A close the book lacks inside the history of a ticker read above, named with its
+# date. Cached as the series are, so the note describes the data the figures came from.
+_gap_note = _load_price_gap_note(cand_ticker)
+if _gap_note:
+    _, col, _ = st.columns([1, 8, 1])
+    with col:
+        st.info(_gap_note)
 
 data_ok = not btc_ret.empty and not slv_ret.empty
 
