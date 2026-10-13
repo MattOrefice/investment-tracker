@@ -9,11 +9,16 @@ Pinned here:
     history, the dividends through the quarter, CAPE's September reading with the date
     it was read, and HYG through September 30. What it holds never moves again, so its
     frames and held inputs are pinned as hashes;
-  * what it waits on, with the date each ended when it locked: French's three files
-    (August 31) and the fund durations (SCHP's is dated June 30);
+  * the fund durations, which it waited on when it was taken (SCHP's was dated June 30)
+    and has held since SCHP's Q3 figure was entered and the lock completed in the
+    committed book the same day (tools/complete_demo_lock_inputs.py). Nothing else in
+    the payload moved: with the durations put back among the inputs it waits on, it is
+    the lock as taken, byte for byte;
+  * what it still waits on, with the date each ended when it locked: French's three
+    files (August 31);
   * TIP's two ex-dates in the quarter (#490);
-  * its cover names each input it waits on and carries no restatement line, and its
-    factor, benchmark and duration lines read as pending;
+  * its cover names each input it waits on and carries no restatement line, its factor
+    and benchmark sections read as pending, and its duration line renders;
   * the five earlier locks are as #491's restatement left them, and the frozen book,
     whose prices end July 20, holds no Q3 lock.
 """
@@ -33,15 +38,24 @@ from tests.conftest import FROZEN_BOOK
 ROOT = Path(__file__).resolve().parent.parent
 DEMO = ROOT / "data" / "demo.db"
 Q3 = "2026Q3"
-COVER = ("This quarter's lock holds prices, dividends, CAPE and the HYG credit proxy, and is "
-         "waiting on the Fama-French factors, the momentum factor and the fund durations. "
+COVER = ("This quarter's lock holds prices, dividends, CAPE, the HYG credit proxy and the "
+         "fund durations, and is waiting on the Fama-French factors and the momentum factor. "
          "Macro Context and Asset Evaluation are not locked: they are computed each time the "
          "report is generated.")
-PENDING = {"ff5_us": "2026-08-31", "ff5_developed_exus": "2026-08-31", "umd": "2026-08-31",
-           "etf_metadata": "2026-06-30"}
+PENDING = {"ff5_us": "2026-08-31", "ff5_developed_exus": "2026-08-31", "umd": "2026-08-31"}
 # What the cover calls each input the lock waits on.
 COVER_WORDS = {"ff5_us": "the Fama-French factors", "ff5_developed_exus": "the Fama-French factors",
-               "umd": "the momentum factor", "etf_metadata": "the fund durations"}
+               "umd": "the momentum factor"}
+# The fund durations the lock holds, as (years, measure, as-of): data/etf_metadata.json as
+# it stood on October 13, 2026, every figure dated inside the quarter.
+DURATIONS = {
+    "VGIT": (4.9, "average duration", "2026-08-31"),
+    "SCHP": (6.4, "effective duration", "2026-08-31"),
+    "IEF": (6.86, "effective duration", "2026-09-25"),
+    "TIP": (6.2, "effective duration", "2026-09-25"),
+    "BIL": (0.11, "option-adjusted duration", "2026-09-25"),
+    "AGG": (5.7, "effective duration", "2026-09-25"),
+}
 # SHA-256 of json.dumps of each part the lock HOLDS, as locked. A held part never moves.
 HELD = {
     "adj_close": "9edb3d6ce6856f640c29d3d94d419b0941304510e3eb1020185879246e6747a8",
@@ -49,6 +63,7 @@ HELD = {
     "dividends": "2ce842a62b7b3ef343d5e6e28a207dafd07d0b73b4bebf50527595e87a53ee47",
     "cape": "3466fb99aced02d9e8676f764b676718009c584cc17fc3c3f999f228a3a2b24d",
     "hyg": "3cc7da9cacc3eac8925f1c9a4d566715cb86b8038b7506bb3d6d47de2173254a",
+    "etf_metadata": "d3bcefa3ce390398e83a8a187c890c82a729f17771c92d66448ca38f8792bb6a",
 }
 # Each earlier lock's stored payload as its SHA-256, as #491's restatement left them: the
 # first four are unchanged since 10313a9, and Q2 2026 is the restated one.
@@ -110,8 +125,9 @@ def test_the_lock_holds_prices_through_the_quarters_last_session_with_no_gap(pay
 
 
 def test_what_the_lock_holds_is_pinned(payload):
-    assert sorted(payload["inputs"]) == ["cape", "dividends", "hyg"]
-    assert payload["inputs_through"] == {"hyg": "2026-09-30", "cape": "2026-09-01"}
+    assert sorted(payload["inputs"]) == ["cape", "dividends", "etf_metadata", "hyg"]
+    assert payload["inputs_through"] == {"hyg": "2026-09-30", "cape": "2026-09-01",
+                                         "etf_metadata": "2026-08-31"}
     parts = {"adj_close": payload["adj_close"], "close": payload["close"], **payload["inputs"]}
     assert {k: _digest(json.dumps(v)) for k, v in parts.items()} == HELD
 
@@ -137,8 +153,23 @@ def test_tip_has_two_ex_dates_in_the_quarter(payload):
     assert (len(held), sum(len(v) for v in in_q3.values())) == (26, 27)
 
 
-def test_it_waits_on_frenchs_files_and_the_fund_durations(payload):
+def test_it_waits_on_frenchs_files(payload):
     assert payload["inputs_pending"] == PENDING
+
+
+def test_it_holds_every_fund_duration_dated_inside_the_quarter(payload):
+    """SCHP's was dated June 30 when the lock was taken, so the durations waited. Its
+    August 31 figure, Schwab's effective duration, was entered on October 13, and the
+    lock took the file as it then stood."""
+    held = payload["inputs"]["etf_metadata"]
+    assert held["kind"] == "json"
+    funds = {t: v for t, v in held["data"].items() if isinstance(v, dict)}
+    assert {t: (v["duration_years"], v["duration_measure"], v["as_of"])
+            for t, v in funds.items()} == DURATIONS
+    assert all("2026-07-01" <= v["as_of"] <= "2026-09-30" for v in funds.values())
+    assert all(v["duration_source"] for v in funds.values())
+    # The oldest date in the file, which is what the lock records it as covering through.
+    assert payload["inputs_through"]["etf_metadata"] == min(d for _y, _m, d in DURATIONS.values())
 
 
 def test_its_cover_names_each_input_it_waits_on_and_claims_no_restatement(snap):
@@ -156,16 +187,32 @@ def test_its_cover_names_each_input_it_waits_on_and_claims_no_restatement(snap):
         assert line(snap) is None, line.__name__
 
 
-def test_its_factor_benchmark_and_duration_lines_read_as_pending(snap):
+def test_its_factor_and_benchmark_sections_read_as_pending(snap):
     from src.reports import _pending_note
     french = ("Pending: this section locks when the factor data covers the quarter. The "
               "Fama-French factor data on file ends August 31, 2026; the quarter ended "
               "September 30, 2026.")
     assert _pending_note(snap, "factor") == french
     assert _pending_note(snap, "benchmark") == french
-    assert _pending_note(snap, "positioning", subject="duration figure").startswith(
-        "Pending: this duration figure locks when ")
-    assert "June 30, 2026" in _pending_note(snap, "positioning", subject="duration figure")
+
+
+def test_its_duration_line_renders_from_the_durations_it_holds(snap, monkeypatch):
+    """No longer pending. The sleeve's figure is the lock's VGIT and SCHP durations
+    weighted by the two sleeves, against AGG's, whatever the file says afterwards."""
+    from src import cache, etf_metadata, reports
+    from src.holdings import get_sleeve_weights_on_date
+    assert reports._pending_note(snap, "positioning", subject="duration figure") is None
+    # The file is not read inside the lock: one that would raise proves it.
+    monkeypatch.setattr(etf_metadata, "META_PATH", Path("no-such-file.json"))
+    with cache.snapshot_price_context(snap):
+        line = reports._build_positioning_section("2026-09-30")["duration_line"]
+        weights = get_sleeve_weights_on_date("2026-09-30")["Actual Weight"]
+    core, tips = float(weights["Core Fixed Income"]), float(weights["TIPS"])
+    years = (core * DURATIONS["VGIT"][0] + tips * DURATIONS["SCHP"][0]) / (core + tips)
+    assert line.startswith(
+        f"Fixed Income sleeve (Core FI + TIPS) effective duration: {round(years, 1)} yrs "
+        f"vs {DURATIONS['AGG'][0]} yrs for AGG, the iShares ETF tracking the Bloomberg US Agg ")
+    assert "Pending" not in line
 
 
 def test_the_five_earlier_locks_are_as_the_restatement_left_them():

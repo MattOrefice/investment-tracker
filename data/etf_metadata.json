@@ -7,10 +7,10 @@
     "as_of": "2026-08-31"
   },
   "SCHP": {
-    "duration_years": 6.3,
-    "duration_measure": "weighted average duration",
-    "duration_source": "Schwab Strategic Trust semiannual report, Form N-CSRS filed with the SEC, accession 0001193125-26-377998, which labels it Weighted Average Duration (Source: Aladdin); read 2026-09-28. Schwab's fund page returned HTTP 403",
-    "as_of": "2026-06-30"
+    "duration_years": 6.4,
+    "duration_measure": "effective duration",
+    "duration_source": "Schwab Asset Management fund page, schwabassetmanagement.com/products/SCHP, Fund Characteristics, which labels it Effective Duration; read 2026-10-13 by the repository owner. The page returned HTTP 403 to an automated request the same day",
+    "as_of": "2026-08-31"
   },
   "IEF": {
     "duration_years": 6.86,

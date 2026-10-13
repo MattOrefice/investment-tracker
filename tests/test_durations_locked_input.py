@@ -129,7 +129,7 @@ def test_the_performance_caption_names_each_funds_figure_measure_and_date():
     from src.positioning import live_duration_sources
     assert live_duration_sources() == (
         "VGIT 4.9 yrs, average duration as of August 31, 2026; "
-        "SCHP 6.3 yrs, weighted average duration as of June 30, 2026; "
+        "SCHP 6.4 yrs, effective duration as of August 31, 2026; "
         "AGG 5.7 yrs, effective duration as of September 25, 2026")   # #462
     page = (ROOT / "pages" / "2_Performance.py").read_text(encoding="utf-8")
     assert ("Durations from each fund's issuer, and the benchmark's from AGG's: "

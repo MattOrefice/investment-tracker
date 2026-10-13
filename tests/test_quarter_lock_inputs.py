@@ -330,9 +330,10 @@ def test_the_template_renders_a_pending_section(book):
 COMMITTED = ("2025Q2", "2025Q3", "2025Q4", "2026Q1", "2026Q2")
 # Locked while some inputs did not cover the quarter yet, with the date each ended then.
 # Q3 2026 was locked on October 13, 2026: French's library ended August 31, and SCHP's
-# duration was dated June 30. cache.complete_quarter_inputs locks them later.
+# duration was dated June 30. The durations were completed in the book that day, once
+# SCHP's Q3 figure was entered (tools/complete_demo_lock_inputs.py); French's wait.
 WAITING = {"2026Q3": {"ff5_us": "2026-08-31", "ff5_developed_exus": "2026-08-31",
-                      "umd": "2026-08-31", "etf_metadata": "2026-06-30"}}
+                      "umd": "2026-08-31"}}
 
 
 def test_the_demo_ships_its_completed_quarters_locked_with_every_input(monkeypatch):

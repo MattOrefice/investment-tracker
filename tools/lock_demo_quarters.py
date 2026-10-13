@@ -9,8 +9,8 @@ quarter's report depend only on the repo as of its lock.
 
 Run this BEFORE committing a market-data refresh, so the locks hold the inputs the
 quarters were reported on. It never re-locks: a quarter already locked is left
-exactly as it is. A quarter whose inputs were pending when locked is completed by
-the report path (cache.complete_quarter_inputs), not here.
+exactly as it is. A quarter whose inputs were pending when locked is completed in
+the book by tools/complete_demo_lock_inputs.py, not here.
 
 Targets data/demo.db explicitly (never get_db_path), offline: the committed prices
 and dividends only, no fetch. main() only, so bootstrap never runs it.
