@@ -22,7 +22,10 @@ if IS_DEMO:
     # (fetched prices and dividends, FRED series, quarter locks) goes to a separate
     # runtime cache, and demo.db is opened read-only. It used to take all four, and
     # 127 FRED rows from past runs were committed that way (#368).
-    from src.db import use_runtime_cache
+    from src.db import after_reseed, use_runtime_cache
+    # A new demo.db is served from this load on (#480): the cache re-seeds from it, and
+    # the figures the pages cached from the book before go with the old seed.
+    after_reseed(st.cache_data.clear)
     use_runtime_cache()
     initialize_db()          # demo.db is committed/prebuilt — just ensure base schema
     # The daily price refresh, BEFORE the landing page reads its date (#368 item 3):

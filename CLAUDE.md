@@ -403,6 +403,12 @@ the code that supports it; the two with none are listed at the end.
   Cloud dashboard; there is nothing to fix in the code. Before bisecting a
   reported page-import bug, first confirm the names actually fail to resolve
   at HEAD — `tests/test_page_imports_resolve.py` answers that in 0.24s.
+- The BOOK is not stale that way since #480. A running demo looks at
+  `data/demo.db` on every page load (`db.use_runtime_cache`: one stat, a hash
+  only when its size or modification time moved) and re-seeds its runtime cache
+  when the hash is not the one it was seeded from, which drops every runtime
+  quarter lock and fetched row. It waits while another page is still rendering.
+  So a `demo.db` commit needs no reboot; a code change still does, as above.
 - pages/14_Asset_Location.py and 13_Household_View.py raise
   `look_through_position: no composition or sleeve_category for symbol 'VEA'`
   when executed in demo mode. This is NOT a demo-data gap and must NOT be

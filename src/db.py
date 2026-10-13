@@ -316,7 +316,8 @@ class _ClosingConnection(sqlite3.Connection):
 # With the cache in use (use_runtime_cache), demo.db is opened READ-ONLY and a
 # separate cache file is attached. The cache holds a COPY of these four tables,
 # seeded from demo.db once per demo.db (keyed on its sha256, so a new deploy
-# re-seeds), plus everything the run writes. On each connection the four names are
+# re-seeds, in a running process too: #480), plus everything the run writes. On each
+# connection the four names are
 # TEMP views of the cache's tables, and a write to one lands in the cache through an
 # INSTEAD OF trigger (INSERT OR REPLACE, so the newest write wins a shared key).
 # Nothing else is redirected: any other write fails on the read-only file rather
@@ -345,8 +346,25 @@ _RUNTIME_TABLES = {
 
 # (committed demo.db, cache file) once use_runtime_cache() has run; None otherwise.
 _RUNTIME_CACHE: "tuple[Path, Path] | None" = None
-_SEEDED: "set[tuple[str, str]]" = set()
+
+
+class _Seed:
+    """What this process knows of one (demo.db, cache file) pair it serves."""
+
+    __slots__ = ("stamp", "sha", "seeded", "renders")
+
+    def __init__(self):
+        self.stamp = None       # demo.db's (size, mtime_ns) when it was last hashed
+        self.sha = None         # its SHA-256 then
+        self.seeded = None      # the SHA-256 the cache is seeded from
+        self.renders = set()    # the threads that began a page run on this pair
+
+
+_SEEDED: "dict[tuple[str, str], _Seed]" = {}
 _SEED_LOCK = threading.Lock()
+# Called after a running process re-seeds its cache from a new demo.db, under the seed
+# lock: each forgets what its module built on the seed before (after_reseed).
+_AFTER_RESEED: list = []
 
 
 def runtime_cache_path() -> Path:
@@ -367,34 +385,56 @@ def _sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-def _seed_runtime_cache(committed: Path, cache: Path) -> None:
+def _stamp(path: Path) -> "tuple[int, int]":
+    """A file's size and modification time: the one stat a page load spends on demo.db."""
+    st = os.stat(path)
+    return st.st_size, st.st_mtime_ns
+
+
+def _seed_runtime_cache(committed: Path, cache: Path, ident: "str | None" = None) -> bool:
     """Copy the four runtime tables from demo.db into the cache, unless the cache was
-    already seeded from this exact demo.db. demo.db is read through a read-only URI."""
-    ident = _sha256(committed)
-    conn = sqlite3.connect(str(cache), uri=True)   # uri: so ATTACH can open demo.db read-only
+    already seeded from this exact demo.db (``ident``, its SHA-256). demo.db is read
+    through a read-only URI. Returns whether it seeded.
+
+    ONE TRANSACTION (#480). A running process re-seeds too, so the four tables are
+    replaced together: another connection reads the seed before or the new one, never
+    a table dropped and not yet refilled, and a seed that fails leaves the one before
+    in place. The statements used to commit one by one, which nothing could observe
+    while only a starting process seeded."""
+    ident = ident or _sha256(committed)
+    # uri: so ATTACH can open demo.db read-only. isolation_level None: the transaction
+    # is the explicit one below, which the DDL joins.
+    conn = sqlite3.connect(str(cache), uri=True, isolation_level=None)
     try:
         conn.execute("CREATE TABLE IF NOT EXISTS runtime_meta (key TEXT PRIMARY KEY, value TEXT)")
         row = conn.execute("SELECT value FROM runtime_meta WHERE key = 'seeded_from'").fetchone()
         if row and row[0] == ident:
-            return
+            return False
         conn.execute("ATTACH DATABASE ? AS committed",
                      (f"file:{committed.as_posix()}?mode=ro",))
-        present = {r[0] for r in conn.execute(
-            "SELECT name FROM committed.sqlite_master WHERE type = 'table'")}
-        for name, (key, cols) in _RUNTIME_TABLES.items():
-            conn.execute(f"DROP TABLE IF EXISTS runtime_{name}")
-            conn.execute(f"CREATE TABLE runtime_{name} ("
-                         + ", ".join(f"{c} {t}" for c, t in cols.items())
-                         + f", PRIMARY KEY ({', '.join(key)}))")
-            if name in present:
-                names = ", ".join(cols)
-                conn.execute(f"INSERT INTO runtime_{name} ({names}) "
-                             f"SELECT {names} FROM committed.{name}")
-        # A new seed drops every fetched row, so the record of past fetches goes too:
-        # the refresh reads it to say what a failed fetch is serving instead.
-        conn.execute("DELETE FROM runtime_meta")
-        conn.execute("INSERT INTO runtime_meta VALUES ('seeded_from', ?)", (ident,))
-        conn.commit()
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            present = {r[0] for r in conn.execute(
+                "SELECT name FROM committed.sqlite_master WHERE type = 'table'")}
+            for name, (key, cols) in _RUNTIME_TABLES.items():
+                conn.execute(f"DROP TABLE IF EXISTS runtime_{name}")
+                conn.execute(f"CREATE TABLE runtime_{name} ("
+                             + ", ".join(f"{c} {t}" for c, t in cols.items())
+                             + f", PRIMARY KEY ({', '.join(key)}))")
+                if name in present:
+                    names = ", ".join(cols)
+                    conn.execute(f"INSERT INTO runtime_{name} ({names}) "
+                                 f"SELECT {names} FROM committed.{name}")
+            # A new seed drops every fetched row, so the record of past fetches goes too:
+            # the refresh reads it to say what a failed fetch is serving instead.
+            conn.execute("DELETE FROM runtime_meta")
+            conn.execute("INSERT INTO runtime_meta VALUES ('seeded_from', ?)", (ident,))
+            conn.execute("COMMIT")
+        except BaseException:
+            if conn.in_transaction:
+                conn.execute("ROLLBACK")
+            raise
+        return True
     finally:
         conn.close()
 
@@ -425,6 +465,16 @@ def set_runtime_meta(key: str, value: str) -> None:
         conn.close()
 
 
+def after_reseed(forget) -> None:
+    """Have ``forget()`` called whenever this process re-seeds its runtime cache from a
+    new demo.db: for state a module built on the seed before, which a restart would
+    have dropped with the process. Registering the same callable again does nothing,
+    so the router may register on every rerun."""
+    with _SEED_LOCK:
+        if forget not in _AFTER_RESEED:
+            _AFTER_RESEED.append(forget)
+
+
 def use_runtime_cache(cache_path=None, *, committed=None) -> Path:
     """Send the demo app's runtime writes to a separate cache, never to demo.db.
 
@@ -432,15 +482,41 @@ def use_runtime_cache(cache_path=None, *, committed=None) -> Path:
     the seed runs once per process and demo.db. Applies only to connections whose
     DB_PATH is ``committed`` (the committed demo.db by default), so a tool that
     repoints DB_PATH at a book it means to write is unaffected. Returns the cache
-    path."""
+    path.
+
+    A NEW demo.db IS SERVED FROM THE NEXT PAGE LOAD, WITHOUT A RESTART (#480). A
+    process that outlived a deploy used to keep the seed it took from the book before,
+    runtime quarter locks included, beside trades it read from the new file. Each call
+    now spends one stat on demo.db (_stamp). The file is hashed again only when its
+    size or modification time has changed, and the cache is re-seeded only when that
+    hash is not the one it is seeded from: a file touched and not changed is hashed
+    once and nothing else happens.
+
+    NEVER UNDER A RENDER IN PROGRESS. Streamlit runs each script run on its own
+    thread, which ends with the run, so a thread that called this and is still alive
+    is a page still rendering from the cache. While another one is, the re-seed waits:
+    this load is served the seed before, and the first load to find no other render in
+    progress re-seeds, under the seed lock, before it reads anything. A load that
+    begins meanwhile waits on that lock and reads the new seed."""
     global _RUNTIME_CACHE
     demo = Path(committed or (_ROOT / "data" / "demo.db")).resolve()
     cache = Path(cache_path or runtime_cache_path())
+    me = threading.current_thread()
     with _SEED_LOCK:
-        if (str(demo), str(cache)) not in _SEEDED:
+        seed = _SEEDED.setdefault((str(demo), str(cache)), _Seed())
+        stamp = _stamp(demo)
+        if stamp != seed.stamp:
+            seed.sha, seed.stamp = _sha256(demo), stamp
+        rendering = {t for t in seed.renders if t.is_alive() and t is not me}
+        if seed.sha != seed.seeded and (seed.seeded is None or not rendering):
+            running = seed.seeded is not None
             cache.parent.mkdir(parents=True, exist_ok=True)
-            _seed_runtime_cache(demo, cache)
-            _SEEDED.add((str(demo), str(cache)))
+            _seed_runtime_cache(demo, cache, seed.sha)
+            seed.seeded = seed.sha
+            if running:
+                for forget in _AFTER_RESEED:
+                    forget()
+        seed.renders = rendering | {me}
         _RUNTIME_CACHE = (demo, cache)
     return cache
 
