@@ -382,5 +382,16 @@ if not IS_DEMO and _unmapped_notice:
 
 nav = st.navigation(_page_groups, expanded=True)
 
-nav.run()
+try:
+    nav.run()
+finally:
+    # The personal book refreshes through each page's own reads: get_prices fetches
+    # what lies past a ticker's newest stored close. After a load whose reads fetched,
+    # ask again for every close the book lacks inside a ticker's history (#501); the
+    # demo does the same after its daily refresh (src.demo_refresh). In a finally,
+    # because a page that ends in st.stop() has refreshed the book all the same. It
+    # never raises, and a load that fetched nothing costs one comparison.
+    if not IS_DEMO:
+        from src.price_gaps import reask_after_refresh
+        reask_after_refresh()
 render_sidebar_footer()

@@ -45,6 +45,10 @@ os.environ["DEMO_DAILY_FETCH"] = "0"
 # that test by 17 more, running their migrations against their own databases (#429).
 # The warm's own tests turn it on for themselves.
 os.environ["DEMO_FRED_WARM"] = "0"
+# Nor does a refresh ask the provider again for closes a book lacks (#501): the demo's
+# refresh and a personal page load would each fetch for whatever book a test points at,
+# and write into it. Its own tests turn it on for themselves.
+os.environ["PRICE_GAP_REASK"] = "0"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TRACKED-DB WRITE REDIRECT (GitHub #227)
