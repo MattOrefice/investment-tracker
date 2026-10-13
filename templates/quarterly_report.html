@@ -853,9 +853,7 @@
           <dt>Price Data</dt>
           <dd>Daily closes from the price provider, cached in SQLite; total-return levels are derived
           from those closes and the recorded dividends. Gaps forward-filled from last trading day.
-          {% if snapshot_captured_at %}Quarter prices locked {{ snapshot_captured_at }}, using only prices
-          and dividends through the quarter's last day, so a later dividend or a later price update
-          cannot shift this report's numbers.{% endif %}</dd>
+          {% if price_data_lock_note %}{{ price_data_lock_note }}{% endif %}</dd>
 
           <dt>CAPE (Shiller P/E)</dt>
           <dd>From {{ cape_credit }}, one reading a month. Shiller's own

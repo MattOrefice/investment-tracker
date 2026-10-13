@@ -38,6 +38,7 @@ from src.cache import (
     inputs_restatement_note,
     lock_holds_note,
     lot_rebuild_note,
+    price_data_lock_note,
     restatement_note,
     style_box_withdrawn_note,
     is_quarter_complete,
@@ -2194,6 +2195,8 @@ def generate_quarterly_report_bytes(
         # What this quarter's lock holds, from the lock's own lists, and the two
         # sections built outside it (#478 section 3). Every locked report carries it.
         lock_holds_note      = lock_holds_note(snap_df),
+        # The methodology's Price Data entry says the same of the lock (#482).
+        price_data_lock_note = price_data_lock_note(snap_df, snapshot_display),
         # A quarter reported with the undated duration table says so in this note,
         # which every quarter locked before #455 carries.
         inputs_restatement_note = (" ".join(filter(None, (

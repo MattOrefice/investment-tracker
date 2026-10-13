@@ -283,6 +283,27 @@ def lock_holds_note(snap: "SnapshotFrames | None") -> "str | None":
             f"computed each time the report is generated.")
 
 
+def price_data_lock_note(snap: "SnapshotFrames | None", locked_on: "str | None") -> "str | None":
+    """The methodology's Price Data sentences about the lock, or None with no lock.
+
+    The entry said a lock used "only prices and dividends through the quarter's last
+    day, so a later dividend or a later price update cannot shift this report's
+    numbers" (#482). Two sections of the same report are built outside the lock and
+    read prices through the day it is generated, and a locked figure has moved by
+    restatement, each named on a cover. So it says what the lock holds, from the lock
+    (dividends only when it holds them: a lock from before inputs were locked holds
+    prices alone), how a locked figure can change, and which sections are not locked,
+    in the cover's own words for them."""
+    if snap is None or not locked_on:
+        return None
+    held = getattr(snap, "inputs", None) or {}
+    what = "prices and dividends" if DIVIDENDS in held else "prices"
+    return (f"Quarter prices locked {locked_on}. The lock holds {what} through the "
+            f"quarter's last day, and a locked figure changes only by a restatement the "
+            f"cover names. {_listed(list(UNLOCKED_SECTIONS))} are not locked: they are "
+            f"computed each time the report is generated.")
+
+
 def inputs_restatement_note(quarter_id: "str | None", snap: "SnapshotFrames | None") -> "str | None":
     """One line for a quarter whose report this rule restated, or None.
 
