@@ -40,7 +40,7 @@ def fred(tmp_path, monkeypatch):
     monkeypatch.setattr(db, "DB_PATH", copy)
     monkeypatch.setattr(db, "_migrated_paths", set())
     monkeypatch.setattr(db, "_RUNTIME_CACHE", None)
-    monkeypatch.setattr(db, "_SEEDED", set())
+    monkeypatch.setattr(db, "_SEEDED", {})
     db.use_runtime_cache(tmp_path / "cache.db", committed=copy)
     monkeypatch.setenv("DEMO_DAILY_FETCH", "1")
     monkeypatch.setattr(macro, "_FAILED", {})

@@ -238,7 +238,7 @@ def test_the_cache_is_reseeded_when_demo_db_changes_and_only_then(overlaid, monk
     fetched = "SELECT COUNT(*) FROM runtime_prices WHERE price_date > '2026-07-20'"
     assert sqlite3.connect(cache).execute(fetched).fetchone()[0] > 0
 
-    monkeypatch.setattr(db, "_SEEDED", set())                 # a new process
+    monkeypatch.setattr(db, "_SEEDED", {})                    # a new process
     db.use_runtime_cache(cache, committed=demo)
     assert sqlite3.connect(cache).execute(fetched).fetchone()[0] > 0, "same demo.db: kept"
 
@@ -246,7 +246,7 @@ def test_the_cache_is_reseeded_when_demo_db_changes_and_only_then(overlaid, monk
     c.execute("INSERT INTO prices VALUES ('ZZZZ', '2026-07-20', 1.0, NULL)")
     c.commit()
     c.close()
-    monkeypatch.setattr(db, "_SEEDED", set())
+    monkeypatch.setattr(db, "_SEEDED", {})
     db.use_runtime_cache(cache, committed=demo)
     s = sqlite3.connect(cache)
     assert s.execute(fetched).fetchone()[0] == 0, "new demo.db: re-seeded"
