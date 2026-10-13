@@ -103,6 +103,27 @@ def book_gaps() -> "list[tuple[str, str, str]]":
     return gaps_in(stored_dates())
 
 
+def gaps_for(tickers) -> "list[tuple[str, str]]":
+    """(ticker, ISO date) for every close the book lacks inside the history of one of
+    ``tickers``, by the same rule, reading those tickers and the reference alone. For a
+    page that must say which of the closes it reads are missing (Asset Evaluation).
+    DB only. [] when the book holds no close for the reference: nothing can be checked."""
+    from src.db import get_connection
+    wanted = set(tickers)
+    names = sorted(wanted | {REFERENCE})
+    stored: "dict[str, list[str]]" = {}
+    with get_connection() as conn:
+        for ticker, day in conn.execute(
+                f"SELECT ticker, price_date FROM prices WHERE ticker IN "
+                f"({','.join('?' * len(names))}) ORDER BY ticker, price_date", names):
+            stored.setdefault(ticker, []).append(day)
+    try:
+        found = gaps_in(stored)
+    except NoReference:
+        return []
+    return [(t, d) for t, d, what in found if what == MISSING and t in wanted]
+
+
 class Reask(NamedTuple):
     """One re-ask: what the check named, and what came of asking."""
 
