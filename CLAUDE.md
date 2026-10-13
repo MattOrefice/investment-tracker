@@ -187,7 +187,8 @@ the code that supports it; the two with none are listed at the end.
   inside the quarter, with `as_of` set to that date. A quarter lock takes the
   file only when every `as_of` falls inside the quarter (#389), so until then
   the report's duration line renders as pending. Commit the file; nothing
-  refreshes it.
+  refreshes it. A figure entered after the quarter's lock was committed (demo)
+  goes in with the lock completed: the pending-inputs step below.
 - Confirm prices cover the quarter's last close: `python -c "from
   src.holdings import committed_price_frontier as f; print(f())"` must print
   the quarter's last trading day or later. Until then a lock is refused
@@ -231,10 +232,23 @@ the code that supports it; the two with none are listed at the end.
   print(g('2026Q3')[0].inputs_pending)"` lists what waits (quarter id YYYYQn).
 - When French publishes the quarter's final month (about a month after it
   ends): `python tools/refresh_market_data.py --files ff_us ff_developed_exus
-  ff_umd`, commit, and generate the report again. That run locks the pending
-  inputs (`cache.complete_quarter_inputs`) without moving anything already
-  locked; confirm `inputs_pending` prints `{}` and the factor and benchmark
-  sections render.
+  ff_umd`, then the pending-inputs step below, and commit the files and the
+  book together. Generate the report again; confirm `inputs_pending` prints
+  `{}` and the factor and benchmark sections render.
+- Pending inputs, whenever one comes to cover a locked quarter (French's
+  files, a duration entered late, a CAPE reading made after its month ended).
+  Generating the report locks it (`cache.complete_quarter_inputs`) without
+  moving anything already locked, and in personal mode that is the whole step.
+  In demo mode it reaches only a container's runtime cache, which a re-seed
+  rebuilds from whatever files are committed then, so complete the committed
+  lock too: `python tools/complete_demo_lock_inputs.py 2026Q3 ff5_us
+  ff5_developed_exus umd` (the quarter id, then each input to complete, by its
+  `inputs_pending` name), and commit `data/demo.db` with the files. It runs the
+  report path's completion on a scratch copy and writes only when exactly the
+  named inputs move from pending to held and every other byte of that lock,
+  and every other lock, is unchanged.
+  `tests/test_complete_demo_lock_inputs.py` fails while a committed lock waits
+  on an input the committed files cover.
 - Run the lock tests: `python -m pytest -q tests/test_quarter_lock.py
   tests/test_quarter_lock_inputs.py tests/test_hyg_price_layer.py
   tests/test_one_blended_series.py tests/test_window_base_close.py

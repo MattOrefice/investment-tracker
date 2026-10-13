@@ -7,8 +7,9 @@ set from VTV's ratios), and no issuer set gives the five fields on one definitio
 
   * the style box and its non-US callout are gone from the code, the Factor Profile
     page and the quarterly PDF;
-  * data/etf_metadata.json holds the durations only, so Q3's lock waits on SCHP's
-    June 30 figure and on nothing else from it;
+  * data/etf_metadata.json holds the durations only, so a Q3 lock waits on a figure
+    dated outside the quarter, as it did on SCHP's June 30 one, and on nothing else
+    from the file;
   * every committed lock, in both books, holds no equity entry, records the restatement
     under input_corrections, and says so on its cover in one sentence; nothing else in
     its payload changes; #388's line about the fact sheets' date is gone;
@@ -118,8 +119,11 @@ def _extend_prices_through(book, day: str):
 
 
 def test_q3s_lock_waits_on_schps_duration_and_nothing_else_from_the_file(tmp_path, monkeypatch):
-    """The committed file on October 1: every entry but SCHP's (June 30) is dated inside
-    Q3, so the metadata waits on June 30. With SCHP re-dated inside Q3, it locks."""
+    """The file as it stood on October 1: every entry but SCHP's (June 30) dated inside
+    Q3, so the metadata waits on June 30. With SCHP dated inside Q3, it locks. Staged
+    from the committed figures with those dates, since the committed dates move on with
+    each quarter: SCHP's Q3 figure was entered on October 13 (tests/test_q3_2026_lock.py
+    pins what the committed lock then took)."""
     from src import etf_metadata
     from src.cache import capture_quarter_snapshot
     from src.input_lock import ETF_METADATA
@@ -128,9 +132,12 @@ def test_q3s_lock_waits_on_schps_duration_and_nothing_else_from_the_file(tmp_pat
     pin_today(monkeypatch, date(2026, 10, 1))
     try:
         meta = json.loads(Path(etf_metadata.META_PATH).read_text())
-        outside = sorted(k for k, v in meta.items() if isinstance(v, dict)
-                         and not "2026-07-01" <= v["as_of"] <= "2026-09-30")
-        assert outside == ["SCHP"], outside
+        funds = [k for k, v in meta.items() if isinstance(v, dict)]
+        assert "SCHP" in funds and len(funds) > 1, funds
+        for k in funds:
+            meta[k]["as_of"] = "2026-06-30" if k == "SCHP" else "2026-09-25"
+        (tmp_path / "meta_october_1.json").write_text(json.dumps(meta))
+        monkeypatch.setattr(etf_metadata, "META_PATH", tmp_path / "meta_october_1.json")
         snap, _ = capture_quarter_snapshot("2026Q3")
         assert snap.inputs_pending.get(ETF_METADATA) == "2026-06-30"
 
@@ -139,7 +146,7 @@ def test_q3s_lock_waits_on_schps_duration_and_nothing_else_from_the_file(tmp_pat
             assert con.execute("DELETE FROM quarter_snapshots WHERE quarter_id = '2026Q3'"
                                ).rowcount == 1
         con.close()
-        meta["SCHP"]["as_of"] = "2026-09-30"
+        meta["SCHP"]["as_of"] = "2026-08-31"
         (tmp_path / "meta.json").write_text(json.dumps(meta))
         monkeypatch.setattr(etf_metadata, "META_PATH", tmp_path / "meta.json")
         snap, _ = capture_quarter_snapshot("2026Q3")
