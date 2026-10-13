@@ -19,6 +19,30 @@ def _make_series(returns: np.ndarray, start: str = "2025-01-01") -> pd.Series:
     return pd.Series(values, index=dates)
 
 
+# The day the window tests' series end, and the day they pin as today: a fixed session
+# late in a year, so the year-to-date window holds well over 20 of them whenever the
+# suite runs. The two tests below ended their series on date.today(), and failed from
+# the first session of each January until the year had 20 (#496).
+SERIES_END = "2026-12-15"
+
+
+def _series_ending(returns: np.ndarray, end: str = SERIES_END) -> pd.Series:
+    """A value series of one business day per return, its last day ``end``."""
+    dates = pd.bdate_range(end=end, periods=len(returns))
+    assert dates[-1] == pd.Timestamp(end), f"premise: {end} is a business day"
+    return pd.Series(10_000 * np.cumprod(1 + returns), index=dates)
+
+
+@pytest.fixture
+def at_series_end(monkeypatch):
+    """Today pinned to SERIES_END, so no window in these tests can follow the calendar."""
+    from datetime import date as _date
+    from tests.conftest import pin_today, unpin_leftovers
+    pin_today(monkeypatch, _date.fromisoformat(SERIES_END))
+    yield
+    unpin_leftovers()
+
+
 # ── VaR and CVaR unit tests ───────────────────────────────────────────────────
 
 def test_var_95_positive_loss():
@@ -99,23 +123,20 @@ def test_risk_metrics_returns_var_cvar_keys():
 
 # ── Alpha CI unit tests ───────────────────────────────────────────────────────
 
-def test_compute_risk_metrics_short_windows():
+def test_compute_risk_metrics_short_windows(at_series_end):
     """compute_risk_metrics must support 1M, 3M, YTD, and 1Y windows.
 
     Regression pin: Phase 8u. Extended from SI+1Y to five windows matching the
-    BF Attribution period set. Uses a synthetic 400-day series so every window
-    has ≥ 20 observations; asserts all seven keys are present and values are finite.
+    BF Attribution period set. Uses a synthetic 400-day series that ends on
+    SERIES_END, so every window has ≥ 20 observations, the year-to-date one included;
+    asserts all seven keys are present and values are finite.
     """
     import math as _math
-    import pandas as pd
-    from datetime import date as _date
     rng = np.random.default_rng(99)
     N400 = 400
     returns = rng.normal(0.0004, 0.01, N400)
-    # Anchor end to today so all window cutoffs fall within the series
-    start400 = (pd.Timestamp(_date.today()) - pd.tseries.offsets.BDay(N400)).date().isoformat()
-    pv = _make_series(returns, start=start400)
-    bl = _make_series(np.zeros(N400), start=start400)
+    pv = _series_ending(returns)
+    bl = _series_ending(np.zeros(N400))
 
     expected_keys = {
         "sharpe", "sortino", "max_drawdown_pct", "tracking_error_pct",
@@ -132,7 +153,7 @@ def test_compute_risk_metrics_short_windows():
             )
 
 
-def test_risk_metrics_distinguish_across_windows():
+def test_risk_metrics_distinguish_across_windows(at_series_end):
     """Window filtering must produce monotonically shorter obs counts and distinct Sharpe.
 
     Regression pin: Phase 8u.1. Previous tests only asserted non-NaN; this test
@@ -147,9 +168,6 @@ def test_risk_metrics_distinguish_across_windows():
     If window filtering collapses (all windows return the SI series), 1M Sharpe
     would be positive like SI — and the sign assertion would fail.
     """
-    import pandas as pd
-    from datetime import date
-
     rng = np.random.default_rng(77)
     N = 400
     returns = np.concatenate([
@@ -158,12 +176,10 @@ def test_risk_metrics_distinguish_across_windows():
         # Low vol in the negative period ensures the 1M sample mean (21 obs)
         # is reliably negative regardless of seed: P(mean>0) < 1e-6.
     ])
-    # Anchor the series END to today so all window cutoffs (1M/3M/YTD/1Y) fall
-    # within the series. BDay(N) counts N business days back from today; the
-    # resulting series spans N business days ending at the most recent business day.
-    start = (pd.Timestamp(date.today()) - pd.tseries.offsets.BDay(N)).date().isoformat()
-    pv = _make_series(returns, start=start)
-    bl = _make_series(np.zeros(N), start=start)
+    # The series ends on SERIES_END, so all window cutoffs (1M/3M/YTD/1Y) fall within
+    # it and the year-to-date window is the same one every day the suite runs (#496).
+    pv = _series_ending(returns)
+    bl = _series_ending(np.zeros(N))
 
     results = {w: compute_risk_metrics(pv, bl, window=w) for w in ("1M", "3M", "YTD", "1Y", "SI")}
 
@@ -177,10 +193,14 @@ def test_risk_metrics_distinguish_across_windows():
     assert n["1M"] < n["3M"],  f"1M ({n['1M']} obs) must be < 3M ({n['3M']} obs)"
     assert n["3M"] < n["1Y"],  f"3M ({n['3M']} obs) must be < 1Y ({n['1Y']} obs)"
     assert n["1Y"] < n["SI"],  f"1Y ({n['1Y']} obs) must be < SI ({n['SI']} obs)"
-    # YTD is somewhere between the extremes (exact position varies by day of year)
-    assert 0 < n["YTD"] < n["SI"], (
-        f"YTD ({n['YTD']} obs) must be > 0 and < SI ({n['SI']} obs)"
+    # YTD from January 1 through SERIES_END, December 15: longer than 3M, shorter
+    # than the year back from the same day.
+    assert n["3M"] < n["YTD"] < n["1Y"], (
+        f"YTD ({n['YTD']} obs) must be between 3M ({n['3M']}) and 1Y ({n['1Y']})"
     )
+    # One return per session after the window's first: 2026 has 249 business days
+    # from January 1 through December 15.
+    assert n["YTD"] == len(pd.bdate_range("2026-01-01", SERIES_END)) - 1 == 248
 
     # Sharpe must clearly distinguish short vs. long windows.
     # Step-down series: first 300 days strongly positive, last 100 days strongly
@@ -202,6 +222,45 @@ def test_risk_metrics_distinguish_across_windows():
         f"filtering collapsed and all windows are returning the full SI series. "
         f"Fix: restore .copy() after cutoff slice in src/performance.py."
     )
+
+
+@pytest.mark.parametrize("today", ["2026-10-12", "2026-12-15", "2027-01-04", "2027-01-12",
+                                   "2027-01-28", "2027-01-29", "2027-02-10"])
+def test_the_two_window_tests_pass_whatever_the_date(monkeypatch, today):
+    """#496's table, kept as a test. Called with today pinned to each of these dates,
+    both tests above failed on the three in January. They read no clock now, so each
+    passes on all seven."""
+    import datetime
+    from tests.conftest import pin_today, unpin_leftovers
+    pin_today(monkeypatch, datetime.date.fromisoformat(today))
+    try:
+        assert datetime.date.today().isoformat() == today, "premise: the pin is up"
+        test_compute_risk_metrics_short_windows(None)
+        test_risk_metrics_distinguish_across_windows(None)
+    finally:
+        unpin_leftovers()
+
+
+@pytest.mark.parametrize("end, rows_in_year, returns_counted", [
+    ("2027-01-27", 19, None),      # the 19th business day of the year: no figures
+    ("2027-01-28", 20, 19),        # the 20th: figures, on 19 returns
+])
+def test_the_ytd_window_is_empty_until_the_year_has_twenty_rows(end, rows_in_year,
+                                                                returns_counted):
+    """The floor, kept as it is (#496): a window with fewer than 20 rows returns
+    nothing. On a series of one row per business day that is the year's first 19
+    sessions. Both sides of the boundary, and every other window still has figures."""
+    rng = np.random.default_rng(99)
+    pv = _series_ending(rng.normal(0.0004, 0.01, 400), end=end)
+    bl = _series_ending(np.zeros(400), end=end)
+    assert int((pv.index >= "2027-01-01").sum()) == rows_in_year
+    ytd = compute_risk_metrics(pv, bl, window="YTD")
+    if returns_counted is None:
+        assert ytd == {}
+    else:
+        assert ytd["n_days"] == returns_counted and math.isfinite(ytd["sharpe"])
+    for w in ("1M", "3M", "1Y", "SI"):
+        assert compute_risk_metrics(pv, bl, window=w), w
 
 
 def test_alpha_ci_str_format():
