@@ -409,9 +409,9 @@ with col:
         st.markdown(
             "- **Residual (α) confidence intervals**: 95% CI = residual_bps ± 1.96 × SE_bps, "
             "where SE_bps = HAC standard error of the intercept × 252 × 10,000. "
-            "CIs apply to the residual (regression intercept) only. Wide CIs at ≤2 years "
-            "of history show that the residual estimate is not yet stable; they reflect the "
-            "sample length, not a methodological weakness."
+            "CIs apply to the residual (regression intercept) only. Wide CIs show that the "
+            "residual estimate is not yet stable; they reflect the sample length, not a "
+            "methodological weakness."
         )
         st.caption(
             "Data: Ken French Data Library, Dartmouth (mba.tuck.dartmouth.edu). "
