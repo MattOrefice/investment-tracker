@@ -789,13 +789,17 @@ def test_ex_cash_denominator_drops_cash_and_sums_to_one(pytestconfig, tmp_path):
     book at date.today(): live prices in CI, so the rounding drift moved with the
     market and an unchanged SHA went red then green (#359).
     """
-    from datetime import date
     conftest = _frozen_conftest(pytestconfig)
     try:
         with pytest.MonkeyPatch.context() as mp:
             conftest.pin_today(mp)
             conftest.point_at_frozen_book(mp, tmp_path)
+            # Imported AFTER the pin, which replaces datetime.date: a name bound before
+            # it keeps the real class, and this test then passed the machine's date
+            # while saying today was pinned (#497).
+            from datetime import date
             from src.holdings import get_sleeve_weights_on_date
+            assert date.today() == conftest.FROZEN_TODAY, "premise: the pin reaches this date"
             sw = get_sleeve_weights_on_date(date.today().isoformat())
     finally:
         conftest.unpin_leftovers()
