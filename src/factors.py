@@ -202,6 +202,17 @@ def _sleeve_label(spec: dict) -> str:
 # item 9). Refresh the date when a newer Avantis N-PORT has been read.
 _NPORT_ASOF = "March 31, 2026"
 
+# The two classification claims the developed sleeve's methodology note makes, each as
+# its owner's own page gave it when read on October 4, 2026 (#478 I02, #481): FTSE's
+# list classes South Korea and Israel as Developed, and French's country table for the
+# Developed and Developed ex US factors lists neither. Held here so the note cites
+# what was read, and a later reading updates one place. build_factor_prose makes the
+# Korea half of the claim, and its comment records the same two pages.
+_FTSE_CLASSIFICATION = ('"Markets classified under the FTSE Equity Country '
+                        'Classification Scheme", as of April 7, 2026')
+_FRENCH_COUNTRY_TABLE = ('the country table in his "Description of Fama/French 5 Factors '
+                         'for Developed Markets", read October 4, 2026')
+
 _INTL_TILT_SLEEVES = [
     {
         "sleeve":        "International Quality",
@@ -1155,6 +1166,37 @@ def regress_fi_sleeve(inception: str, end_date: str) -> Optional[dict]:
 
 # ── Interpretation helpers ─────────────────────────────────────────────────────
 
+def _listed_mix(parts: "list[str]") -> str:
+    """["VOO 35%", "VTV 20%", "AVUV 10%"] -> "VOO 35%, VTV 20% and AVUV 10%"."""
+    return parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1]
+
+
+def _sign_word(beta: float) -> str:
+    """The sign the regression found for a loading, as a word."""
+    return "positive" if beta > 0 else "negative" if beta < 0 else "zero"
+
+
+def _term_reading(b_term: float, t_term: float, duration_line_location: str) -> str:
+    """What the FI sleeve's TERM loading shows, from the loading itself (#481).
+
+    The paragraph said "The positive TERM loading confirms the sleeve carries meaningful
+    interest-rate duration" whatever the regression returned. It now states the sign
+    and the significance found, and draws the duration reading only from a positive
+    loading that is distinguishable from zero. Every branch still points the reader to
+    the Fixed Income Effective Duration line, where the fund durations are."""
+    found = f"The TERM loading is {_sign_word(b_term)} and {significance_label(t_term)}"
+    line = f"the Fixed Income Effective Duration line {duration_line_location}"
+    distinguishable = significance_label(t_term) != significance_label(0.0)
+    if distinguishable and b_term > 0:
+        return (f"{found}: the sleeve carries interest-rate duration, consistent with "
+                f"the fund durations behind {line}.")
+    if distinguishable:
+        return (f"{found}: this regression does not show the interest-rate duration "
+                f"that the fund durations behind {line} imply.")
+    return (f"{found}, so this regression does not by itself show interest-rate "
+            f"duration; the fund durations are behind {line}.")
+
+
 def build_factor_prose(
     results: dict,
     fi_result: Optional[dict] = None,
@@ -1238,8 +1280,8 @@ def build_factor_prose(
         lines.append(
             f"The {_intl_core_label()} sleeve (VEA, {T_dev} trading days, "
             f"{s_start_d} to {s_end_d}) "
-            f"loads on Mkt-RF_dev at {b_mkt_d:.2f} (t = {t_mkt_d:.2f}), within the "
-            f"expected range for a passive cap-weighted developed-markets ETF. "
+            f"loads on Mkt-RF_dev at {b_mkt_d:.2f} (t = {t_mkt_d:.2f}), "
+            f"a {_sign_word(b_mkt_d)} loading that is {significance_label(t_mkt_d)}. "
             f"The {a_bps_d:+.0f} bps annualized alpha (t = {t_a_d:.2f}) is {alpha_sig_d}, "
             f"and it reflects a universe mismatch, not skill. "
             f"VEA tracks the FTSE Developed All Cap ex US Index, which classifies "
@@ -1268,9 +1310,7 @@ def build_factor_prose(
             f"TERM factor (IEF − BIL duration premium) at {b_term:.3f} (t = {t_term:.2f}). "
             f"Its CREDIT factor (HYG − IEF spread premium) loading is {b_credit:.3f} "
             f"(t = {t_credit:.2f}). "
-            f"The positive TERM loading confirms the sleeve carries meaningful interest-rate "
-            f"duration, consistent with the fund durations behind the Fixed Income Effective "
-            f"Duration line {duration_line_location}. "
+            f"{_term_reading(b_term, t_term, duration_line_location)} "
             f"Annualized alpha of {a_bps_fi:+.0f} bps (t = {t_a_fi:.2f}) captures return "
             f"not explained by the TERM/CREDIT proxies. At this sample length the confidence "
             f"interval is wide, and the alpha primarily reflects ETF-vs-index tracking "
@@ -1408,7 +1448,24 @@ def build_intl_tilt_disclosure(entry: dict) -> list[str]:
 
 
 def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = None) -> list[str]:
-    """Return methodology disclosure bullet points for the sleeve regressions."""
+    """Return methodology disclosure bullet points for the sleeve regressions.
+
+    NO TYPED FIGURES, as build_factor_prose (#481). The Factor Profile page prints
+    these. Each figure is read from the code it describes or is gone:
+      * the US and FI sleeve weights are the regression's own (_SLEEVES["us"]["weights"],
+        _FI_WEIGHTS). The notes typed 35.6/31.1/17.8/15.6% "proportional to the locked
+        Phase 1 sleeve targets of 16/14/8/7%" beside weights of 17/15/9/8, and "9%/6%
+        SAA targets" beside a comment saying 6% and 4%;
+      * "VNQ 60%, DBC 40%" is gone from the real-assets sentences, as it went from the
+        prose (#478 I04);
+      * the EM note's "approximately 12 observations" and "3+ years" are gone: nothing
+        here computes a monthly count, as em_disclosure records;
+      * the two classification claims are the ones their owners' pages make
+        (_FTSE_CLASSIFICATION, _FRENCH_COUNTRY_TABLE). "Treated as EM" and "a different
+        Israel categorization" were read from no page.
+    The momentum vintage note's worked example is one refresh's dated measurements,
+    pinned by tests/test_factors.py, and is the scan's one listed exception.
+    tests/test_factor_prose_types_no_figures.py reads this function's literals."""
     us  = results.get("us")
     dev = results.get("developed_exus")
 
@@ -1441,6 +1498,10 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
     # entirely, a state the loaders and staleness surfaces already fail loudly on.
     _umd_f = umd_frontier()
 
+    # The regressions' own fixed weights, as they are applied (#481).
+    us_mix = _listed_mix([f"{t} {w:.1%}" for t, w in _SLEEVES["us"]["weights"].items()])
+    fi_mix = " + ".join(f"{t} ({round(w * 100):.0f}%)" for t, w in _FI_WEIGHTS.items())
+
     notes = [
         f"Samples: US equity sleeve {T_us} US trading days ({us_window}), L = {L_us}. "
         f"{_intl_core_label()} sleeve {T_dev} US trading days ({dev_window}), L = {L_dev}. "
@@ -1462,23 +1523,24 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
         "Standard errors: Newey-West HAC, correcting for autocorrelation in daily return "
         "residuals. Lag L is computed per regression as floor(4 × (T/100)^(2/9)).",
 
-        "Sleeve return series: the US equity sleeve return is the value-weighted daily "
-        "total return of VOO, VTV, SPHQ, and AVUV, weighted by SAA target proportions: "
-        "VOO 35.6%, SPHQ 31.1%, VTV 17.8%, and AVUV 15.6%. These are proportional to the "
-        "locked Phase 1 sleeve targets of 16/14/8/7%. Weights are held constant. "
+        "Sleeve return series: the US equity sleeve return is the weighted daily total "
+        f"return of its funds at the regression's fixed weights: {us_mix}. "
+        "Weights are held constant. "
         "The Developed sleeve is VEA's daily adjusted-close return.",
 
-        "Universe mismatch, Developed sleeve: VEA tracks FTSE Developed All Cap ex US "
-        "(includes Korea, Israel as Developed). Ken French's Developed ex-US universe "
-        "excludes Korea (treated as EM in Ken French's classification) and uses a different "
-        "Israel categorization. The universe difference contributes to unexplained variance "
+        "Universe mismatch, Developed sleeve: VEA tracks the FTSE Developed All Cap ex US "
+        "Index, and FTSE classifies both South Korea and Israel as Developed "
+        f"({_FTSE_CLASSIFICATION}). Neither is among the countries of Ken French's "
+        f"Developed ex-US factors ({_FRENCH_COUNTRY_TABLE}). "
+        "The universe difference contributes to unexplained variance "
         "and inflates the Developed-sleeve alpha estimate. A future phase may address this "
         "by reweighting VEA's holdings to match Ken French's universe before regressing, "
         "or by using a custom factor set aligned to FTSE Developed All Cap ex US.",
 
-        "EM sleeve exclusion: Ken French does not publish daily EM factor data. "
-        "Monthly EM factors would yield approximately 12 observations, below the minimum "
-        "for stable inference. EM factor decomposition will be added at 3+ years of history.",
+        "EM sleeve exclusion: Ken French does not publish daily EM factor data, and the "
+        "monthly history since this portfolio's inception is too short for stable "
+        "inference. EM factor decomposition will be added when the portfolio has "
+        "accumulated enough monthly history.",
 
         "Carhart Momentum supplement (FF5+MOM): Ken French daily UMD factor "
         "(F-F_Momentum_Factor_daily_CSV.zip) added as a sixth regressor alongside FF5 "
@@ -1519,11 +1581,11 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
             f"({fi_window}), Newey-West HAC L = {L_fi}. "
             "TERM = IEF daily return − BIL daily return (duration premium proxy). "
             "CREDIT = HYG daily return − IEF daily return (credit spread premium proxy). "
-            "FI sleeve return: value-weighted VGIT (60%) + SCHP (40%), proportional to 9%/6% SAA targets. "
+            f"FI sleeve return: {fi_mix}, the regression's fixed weights. "
             "Equity FF5 factors do not span fixed income; this dedicated two-factor model "
             "captures duration and credit risk explicitly. RF from Ken French US daily factors.",
 
-            "Real assets (VNQ 60%, DBC 40%) remain excluded: no liquid daily factor proxy set spans "
+            "Real assets remain excluded: no liquid daily factor proxy set spans "
             "REIT and commodity exposure simultaneously. Factor models for real assets are "
             "a future extension.",
         ]
@@ -1531,7 +1593,7 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
         notes.append(
             "Fixed income (VGIT, SCHP): TERM/CREDIT factor model (IEF−BIL duration premium, "
             "HYG−IEF credit spread premium) in scope; the FI Sleeve panel above shows it. "
-            "Real assets (VNQ 60%, DBC 40%) remain excluded; no liquid daily factor proxy set "
+            "Real assets remain excluded; no liquid daily factor proxy set "
             "spans REIT and commodity exposure simultaneously."
         )
 
