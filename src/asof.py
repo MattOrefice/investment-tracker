@@ -164,6 +164,9 @@ def _quarter_lock_gaps(label: str) -> "list[str]":
 # the PDF-export expander) and the every-page as-of banner. Update all callers
 # and tests together if this string changes.
 NO_COMPLETED_QUARTER = "No completed quarter yet."
+# The report line's opening when no portfolio account resolves; the lookup's reason
+# follows it (as_of_report_line).
+NO_REPORT_YET = "No quarterly report yet"
 
 
 def most_recent_reportable_quarter(
@@ -539,8 +542,16 @@ def as_of_report_line(
     """
     today = today or today_et()
     if inception is None:
-        from src.holdings import get_inception_date, get_portfolio_account_id
-        inception = get_inception_date(account_id=get_portfolio_account_id())
+        from src.holdings import (PortfolioAccountUnresolved, get_inception_date,
+                                  get_portfolio_account_id)
+        # No portfolio account, so no quarter to name: say why, in the lookup's own
+        # words, as the live line beside this one says "No committed price data."
+        # It raised, and this line is on every page: a book with no trade logged yet
+        # showed a traceback in place of each of them (#510).
+        try:
+            inception = get_inception_date(account_id=get_portfolio_account_id())
+        except PortfolioAccountUnresolved as exc:
+            return f"{NO_REPORT_YET}: {exc.reason}."
     q = most_recent_reportable_quarter(inception, today, frontier=frontier)
     if q is None:
         return NO_COMPLETED_QUARTER

@@ -43,7 +43,6 @@ from src.holdings import (
     current_market_value_with_coverage,
     get_external_cashflow_series,
     get_inception_date,
-    get_portfolio_account,
     portfolio_value_series_with_coverage,
     sleeve_weights_with_coverage,
     last_settled_price_date,
@@ -64,7 +63,8 @@ from src.tax_lots import open_lot_cost_basis
 from src.returns import annualize, clamped_period_bounds, period_bounds, period_return, period_window_predates_inception, twr_index
 from src.positioning import get_effective_duration, live_duration_sources
 from src.rebalance import compute_drift
-from src.ui_helpers import demo_portfolio_phrase, render_footer, render_page_header
+from src.ui_helpers import (demo_portfolio_phrase, render_footer, render_page_header,
+                            require_portfolio_account)
 render_page_header()
 
 # The naive benchmark's labels derive from its weights (#406 item 10).
@@ -72,7 +72,9 @@ _6040 = naive_60_40_label()
 _6040_full = f"{_6040} ({naive_60_40_legs()})"
 
 
-_PORTFOLIO_ACCT = get_portfolio_account()   # single source of truth for scope + label
+# Single source of truth for scope + label, or the page's empty state when no
+# portfolio account resolves (#510).
+_PORTFOLIO_ACCT = require_portfolio_account("Performance")
 _ACCT_ID        = _PORTFOLIO_ACCT["account_id"]
 INCEPTION    = get_inception_date(account_id=_ACCT_ID)
 TODAY        = today_et().isoformat()   # New York's date, as every rendered date is (#443)

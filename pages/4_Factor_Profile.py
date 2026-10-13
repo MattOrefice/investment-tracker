@@ -9,8 +9,9 @@ st.set_page_config(page_title="Factor Profile", layout="wide")
 
 from src.asof import as_of_banner, data_vintage, format_long_date
 from src.config import get_demo_banner_text, IS_DEMO
-from src.ui_helpers import render_footer, render_page_header
+from src.ui_helpers import render_footer, render_page_header, require_portfolio_account
 render_page_header()
+require_portfolio_account("Factor Profile")
 
 from src.factors import (
     _FI_WEIGHTS,

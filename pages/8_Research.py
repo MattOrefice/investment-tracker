@@ -8,8 +8,9 @@ from collections import defaultdict
 from src.asof import as_of_banner
 from src.config import get_demo_banner_text, IS_DEMO
 from src.db import get_connection
-from src.ui_helpers import render_footer, render_page_header
+from src.ui_helpers import render_footer, render_page_header, require_portfolio_account
 render_page_header()
+require_portfolio_account("Security Research")
 
 
 SPAXX_RATIONALE = (

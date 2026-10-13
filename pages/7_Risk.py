@@ -34,7 +34,8 @@ from src.risk import (
     scenario_insufficient_history_message,
     scenario_methodology_notes,
 )
-from src.ui_helpers import demo_portfolio_phrase, render_footer, render_page_header
+from src.ui_helpers import (demo_portfolio_phrase, render_footer, render_page_header,
+                            require_portfolio_account)
 
 
 def _usd(v: float) -> str:
@@ -42,6 +43,7 @@ def _usd(v: float) -> str:
     return f"{'-' if round(v) < 0 else '+'}${abs(v):,.0f}"
 
 render_page_header()
+require_portfolio_account("Risk")
 
 
 # Human-readable labels for the five factors (table display only).

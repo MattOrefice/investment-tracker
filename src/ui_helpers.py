@@ -63,6 +63,37 @@ def render_sidebar_footer() -> None:
         )
 
 
+# A page built from the trade ledger, on a book the portfolio-account lookup resolves
+# nothing in: what it says in place of its figures. The lookup's reason goes in the
+# gap; the hint follows only when that reason is a book with no trade logged.
+NO_PORTFOLIO_YET = ("This page is built from the portfolio's trade ledger, and there is "
+                    "none to read: {reason}.")
+FIRST_TRADE_HINT = "Record a trade on the Trade Log page and this page will build from it."
+
+
+def require_portfolio_account(title: str) -> dict:
+    """The portfolio account this page's figures are scoped to, or, when the lookup
+    resolves none, the page's empty state: its title, the as-of banner, the lookup's
+    own reason, and nothing below it (#510).
+
+    Called once, right after render_page_header(). Seven pages took their scope from
+    holdings.get_portfolio_account() at the top of the script and raised with it, so a
+    clean clone's first personal launch, before any trade is logged, showed a
+    traceback on each of them. The lookup still raises for every caller that computes
+    a figure: a page that stops here computes none."""
+    from src.asof import as_of_banner
+    from src.holdings import (NO_TRADE_LEDGER, PortfolioAccountUnresolved,
+                              get_portfolio_account)
+    try:
+        return get_portfolio_account()
+    except PortfolioAccountUnresolved as exc:
+        st.title(title)
+        st.caption(as_of_banner())
+        hint = f" {FIRST_TRADE_HINT}" if exc.reason == NO_TRADE_LEDGER else ""
+        st.info(NO_PORTFOLIO_YET.format(reason=exc.reason) + hint)
+        st.stop()
+
+
 def demo_portfolio_phrase() -> str:
     """What a page that reads the portfolio ledger is describing, in demo mode: the
     paper-trade book, one simulated taxable account. Personal mode keeps each page's
