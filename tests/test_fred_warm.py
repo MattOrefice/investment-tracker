@@ -265,7 +265,7 @@ def fresh_container(tmp_path, monkeypatch, warm_on, render_env):
     monkeypatch.setattr(db, "DB_PATH", copy)
     monkeypatch.setattr(db, "_migrated_paths", set())
     monkeypatch.setattr(db, "_RUNTIME_CACHE", None)
-    monkeypatch.setattr(db, "_SEEDED", set())
+    monkeypatch.setattr(db, "_SEEDED", {})
     db.use_runtime_cache(tmp_path / "cache.db", committed=copy)
     monkeypatch.setenv("DEMO_DAILY_FETCH", "1")
     return copy

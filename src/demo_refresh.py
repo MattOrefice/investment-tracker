@@ -56,6 +56,14 @@ _STATE: Optional[RefreshState] = None
 _LOCK = threading.Lock()
 
 
+def _forget_last_attempt() -> None:
+    """A re-seed dropped every fetched row with the seed it was fetched into (src.db,
+    #480), so the next refresh_if_due fetches again, as a restarted process would,
+    instead of waiting out the last attempt's timer on the committed snapshot."""
+    global _STATE
+    _STATE = None
+
+
 def enabled() -> bool:
     """False in tests (DEMO_DAILY_FETCH=0), or before the runtime cache is in use:
     fetching into demo.db itself is the one thing this must never do."""
@@ -172,7 +180,9 @@ def refresh_if_due(now: Optional[datetime] = None) -> Optional[RefreshState]:
     global _STATE
     if not enabled():
         return _STATE
+    import src.db as db
     from src import prices
+    db.after_reseed(_forget_last_attempt)
     now = now or datetime.now(timezone.utc)
     with _LOCK:
         prices.set_gap_fetch(False)

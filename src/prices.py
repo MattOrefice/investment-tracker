@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 import requests
 
-from src.db import get_connection
+from src.db import after_reseed, get_connection
 
 # Shared session with a browser User-Agent so Yahoo Finance doesn't 429-block us
 _SESSION = requests.Session()
@@ -328,6 +328,11 @@ _TRAILING_MEMO: dict[tuple[str, str, str], pd.DataFrame] = {}
 def _reset_trailing_memo() -> None:
     """Clear the trailing-fetch memo (tests; also useful in a long-lived REPL)."""
     _TRAILING_MEMO.clear()
+
+
+# A re-seeded runtime cache no longer holds what these fetches stored, their dividends
+# included, so the demo forgets them with the seed (src.db, #480).
+after_reseed(_reset_trailing_memo)
 
 
 def _fetch_trailing_memoized(ticker: str, start: str, end: str) -> pd.DataFrame:
