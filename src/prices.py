@@ -5,10 +5,11 @@ are applied to every request, avoiding the 429 rate-limit that yfinance's
 internal timezone-fetch triggers.
 """
 import re
+import threading
 import time
 from contextvars import ContextVar
 from datetime import date, datetime, timedelta, timezone
-from typing import Callable, Optional
+from typing import Callable, Iterable, Optional
 from urllib.parse import quote
 
 import numpy as np
@@ -128,6 +129,8 @@ def fetch_prices(
     ticker: str,
     start_date: str,
     end_date: Optional[str] = None,
+    *,
+    only_missing: "Optional[Iterable[str]]" = None,
 ) -> pd.DataFrame:
     """
     Pull daily close + adj_close from Yahoo Finance v8/chart API, cache the CLOSE
@@ -139,6 +142,13 @@ def fetch_prices(
     The provider re-anchors adj_close at every new dividend, so rows cached on
     different days carried different anchors and a return spanning two fetch dates
     crossed a seam. A raw close does not move after it settles.
+
+    ``only_missing`` (ISO dates) makes this the re-ask for closes the book lacks inside
+    a ticker's history (#501, src.price_gaps). A close is then stored only on one of
+    those dates and only where the book holds none, and a dividend only where the book
+    holds none, so NO STORED ROW CHANGES whatever else the response carries. Without it
+    every settled bar in the response replaces the stored one, as before. The dates
+    stored are returned in ``attrs["stored"]``.
 
     Raises ValueError for malformed, delisted, or unrecognised tickers.
     """
@@ -254,6 +264,8 @@ def fetch_prices(
                           if isinstance(rmt, (int, float)) and rmt > 0 else None),
         }
 
+    wanted = None if only_missing is None else set(only_missing)
+    stored: "list[str]" = []
     with get_connection() as conn:
         # Auto-migrate: ensure dividends table exists in pre-existing DBs
         conn.execute(
@@ -264,20 +276,64 @@ def fetch_prices(
         for dt, row in df.iterrows():
             if skip_date is not None and dt >= skip_date:
                 continue
-            conn.execute(
-                """INSERT OR REPLACE INTO prices (ticker, price_date, close, adj_close)
-                   VALUES (?, ?, ?, NULL)""",
-                (ticker, _to_iso(dt), float(row["close"])),
-            )
+            day = _to_iso(dt)
+            if wanted is None:
+                conn.execute(
+                    """INSERT OR REPLACE INTO prices (ticker, price_date, close, adj_close)
+                       VALUES (?, ?, ?, NULL)""",
+                    (ticker, day, float(row["close"])),
+                )
+            elif day in wanted and conn.execute(
+                    "SELECT 1 FROM prices WHERE ticker = ? AND price_date = ?",
+                    (ticker, day)).fetchone() is None:
+                # The re-ask: insert-only. The guard is in the statement too, so a row
+                # another connection stored meanwhile is still not replaced: in the
+                # demo `prices` is a view whose insert trigger replaces (src.db).
+                conn.execute(
+                    """INSERT INTO prices (ticker, price_date, close, adj_close)
+                       SELECT ?, ?, ?, NULL WHERE NOT EXISTS
+                       (SELECT 1 FROM prices WHERE ticker = ? AND price_date = ?)""",
+                    (ticker, day, float(row["close"]), ticker, day),
+                )
+                stored.append(day)
         # Dividends are ex-date events, not intraday quotes — an ex-date announced
         # during an open session is already final, so they are not gated here.
         for ex_date, amount in div_rows:
-            conn.execute(
-                "INSERT OR REPLACE INTO dividends (ticker, ex_date, amount) VALUES (?, ?, ?)",
-                (ticker, ex_date, amount),
-            )
+            if wanted is None:
+                conn.execute(
+                    "INSERT OR REPLACE INTO dividends (ticker, ex_date, amount) VALUES (?, ?, ?)",
+                    (ticker, ex_date, amount),
+                )
+            else:
+                conn.execute(
+                    """INSERT INTO dividends (ticker, ex_date, amount)
+                       SELECT ?, ?, ? WHERE NOT EXISTS
+                       (SELECT 1 FROM dividends WHERE ticker = ? AND ex_date = ?)""",
+                    (ticker, ex_date, amount, ticker, ex_date),
+                )
 
+    if wanted is not None:
+        df.attrs["stored"] = stored
+    _count_fetch()
     return df
+
+
+# How many fetches the provider has answered in this process, with their rows stored.
+# Personal mode reads it to tell a page load that refreshed the book from one that
+# read only what was stored (src.price_gaps.reask_after_refresh, #501).
+_FETCHES = 0
+_FETCHES_LOCK = threading.Lock()
+
+
+def _count_fetch() -> None:
+    global _FETCHES
+    with _FETCHES_LOCK:
+        _FETCHES += 1
+
+
+def fetch_count() -> int:
+    """Fetches answered and stored so far in this process (see _FETCHES)."""
+    return _FETCHES
 
 
 # Whether a read may go to the network to fill a gap the cache does not cover. Off

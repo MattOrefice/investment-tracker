@@ -32,20 +32,16 @@ from __future__ import annotations
 
 import sqlite3
 import sys
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DEMO_DB = ROOT / "data" / "demo.db"
 sys.path.insert(0, str(ROOT))
 
-# The session reference: an exchange-traded ticker's sessions are the dates it holds.
-REFERENCE = "SPY"
-# Series that trade every calendar day. Every other ticker trades NYSE sessions.
-DAILY = frozenset({"BTC-USD"})
-
-MISSING = "no close"
-OFF_SESSION = "a close on a date that is not a session"
+# The rule itself lives in src.price_gaps, where the app runs it on the book it serves
+# after every refresh (#501). This tool runs the same rule on a committed book by path.
+from src.price_gaps import DAILY, MISSING, OFF_SESSION, REFERENCE, NoReference, gaps_in  # noqa: E402,F401
 
 
 def _stored(db_path: Path) -> "dict[str, list[str]]":
@@ -74,42 +70,16 @@ def history_ends(db_path: Path) -> "dict[str, list[str]]":
     return dict(sorted(ends.items()))
 
 
-def _days(first: str, last: str):
-    day, end = date.fromisoformat(first), date.fromisoformat(last)
-    while day <= end:
-        yield day
-        day += timedelta(days=1)
-
-
 def history_gaps(db_path: Path) -> "list[tuple[str, str, str]]":
-    """Every (ticker, ISO date, what) wrong inside a stored history, ``what`` being
-    MISSING or OFF_SESSION, by the rules in the module docstring. Raises ValueError when
-    the book holds no close for the reference."""
-    from src.demo_refresh import NYSE_HOLIDAYS, is_session
-
-    stored = _stored(db_path)
-    if REFERENCE not in stored:
+    """Every (ticker, ISO date, what) wrong inside a stored history in ``db_path``,
+    ``what`` being MISSING or OFF_SESSION, by the rules in the module docstring
+    (price_gaps.gaps_in). Raises ValueError when the book holds no close for the
+    reference."""
+    try:
+        return gaps_in(_stored(db_path))
+    except NoReference:
         raise ValueError(f"{Path(db_path).name} holds no {REFERENCE} closes, so no ticker's "
-                         f"sessions can be checked.")
-    sessions = stored[REFERENCE]
-    session_set = set(sessions)
-    found = []
-    # The reference against the calendar, where the calendar is known.
-    known = {d.year for d in NYSE_HOLIDAYS}
-    for day in _days(sessions[0], sessions[-1]):
-        if day.year in known and is_session(day) != (day.isoformat() in session_set):
-            found.append((REFERENCE, day.isoformat(),
-                          MISSING if is_session(day) else OFF_SESSION))
-    for ticker, days in stored.items():
-        held = set(days)
-        if ticker in DAILY:
-            found += [(ticker, d.isoformat(), MISSING) for d in _days(days[0], days[-1])
-                      if d.isoformat() not in held]
-        elif ticker != REFERENCE:
-            found += [(ticker, d, MISSING) for d in sessions
-                      if days[0] <= d <= days[-1] and d not in held]
-            found += [(ticker, d, OFF_SESSION) for d in days if d not in session_set]
-    return sorted(found)
+                         f"sessions can be checked.") from None
 
 
 def main(argv: "list[str]") -> int:

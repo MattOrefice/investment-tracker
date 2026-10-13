@@ -17,6 +17,11 @@ SETTLED CLOSES ONLY. fetch_prices never caches a bar whose session is still open
 (prices.unsettled_bar_date), so a mid-session attempt stores through the previous
 close and the next attempt picks up the rest.
 
+AND THE CLOSES IT LACKS. A response that leaves one session out and holds later ones
+puts a gap inside a history, behind the date the next fetch starts from. After the
+fetch, each attempt runs the gap check on the cache and asks again for every close it
+names (src.price_gaps, #501).
+
 What the banner reports (asof.as_of_live_line) comes from state(): the date served
 and its basis, and, when the fetch failed, that it failed, what is served instead,
 and when it retries. In tests the refresh never runs: conftest sets
@@ -50,6 +55,8 @@ class RefreshState(NamedTuple):
     served_through: Optional[str]          # committed_price_frontier after the attempt
     fetched_before: Optional[str]          # a previous success on this seed, ISO UTC, or None
     failed: tuple = ()                     # (ticker, reason) for each fetch that raised
+    gaps: tuple = ()                       # (ticker, ISO date): closes still lacking inside a
+                                           # history after they were asked for again (#501)
 
 
 _STATE: Optional[RefreshState] = None
@@ -150,6 +157,15 @@ def _attempt(now: datetime) -> RefreshState:
         results = list(pool.map(lambda r: _fetch_one(r[0], r[1], today), tickers))
     failed = tuple(sorted(r for r in results if r is not None))
 
+    # Then ask again for every close the cache lacks inside a ticker's history (#501).
+    # Each fetch above began at its ticker's last stored date, so a session the
+    # provider left out of an earlier response was never asked for again. What it
+    # still lacks stays named (state().gaps, and cache.quarter_lock_gaps for a ticker
+    # a lock covers) and is asked for at the next attempt. It does not make the fetch
+    # a failure: the later closes arrived, and the banner's date is theirs.
+    from src import price_gaps
+    gaps = price_gaps.reask().left if price_gaps.enabled() else ()
+
     # A failure the banner must report: every ticker failed (the provider is out of
     # reach), or one the frontier is taken over did. A lone non-holding ticker that
     # failed is recorded and retried at the next close, without calling the whole
@@ -169,6 +185,7 @@ def _attempt(now: datetime) -> RefreshState:
         served_through=served,
         fetched_before=before,
         failed=failed,
+        gaps=gaps,
     )
 
 
