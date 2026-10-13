@@ -33,6 +33,7 @@ from markupsafe import escape
 
 from tests.conftest import (
     FROZEN_BOOK,
+    before_the_gap_record,
     pin_today,
     point_at_frozen_book,
     q2_2026_before_its_closes_were_filled,
@@ -44,8 +45,11 @@ BOOKS = [ROOT / "data" / "demo.db", FROZEN_BOOK]
 QUARTERS = ["2025Q2", "2025Q3", "2025Q4", "2026Q1", "2026Q2"]
 EQUITY = ["SPY", "VOO", "VTV", "SPHQ", "AVUV"]
 RESTATED_ON = "2026-09-28"
+# The callout that sat under the style box went with it, and the sentence names it
+# since #478.
 SENTENCE = ("Restated September 28, 2026 to correct an error. The equity style box is "
-            "withdrawn: its fact-sheet figures had no recorded source.")
+            "withdrawn, and the Non-US Equity Sleeve callout that sat under it: the style "
+            "box's fact-sheet figures had no recorded source.")
 
 
 def _ro(book):
@@ -59,6 +63,14 @@ def _payloads(book) -> "dict[str, dict]":
             "SELECT quarter_id, snapshot_data FROM quarter_snapshots")}
     finally:
         con.close()
+
+
+def _gap_tool():
+    spec = importlib.util.spec_from_file_location(
+        "restate_demo_gap_record", ROOT / "tools" / "restate_demo_gap_record.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 
 def _tool():
@@ -197,6 +209,9 @@ def test_nothing_else_in_any_lock_changed(book):
     # Q2 2026 was restated once more, for the closes it froze missing (#491): its price
     # frames and one record. That is undone first, so this still pins everything the lock
     # held at 10313a9 but the five entries (tests/test_filled_closes.py pins the undoing).
+    # Each of the five was later given a record of #469's rewrite (#478), appended as
+    # its last key; that is undone too (tests/test_gap_rewrite_is_recorded.py pins it).
+    texts = {q: before_the_gap_record(t) for q, t in texts.items()}
     texts["2026Q2"] = q2_2026_before_its_closes_were_filled(texts["2026Q2"])
     assert set(REST_BEFORE) <= set(texts)
     for q in REST_BEFORE:
@@ -235,9 +250,11 @@ def test_the_q2_report_carries_the_sentence_and_no_style_box(tmp_path, monkeypat
     finally:
         unpin_leftovers()
     assert html.count(str(escape(SENTENCE))) == 1
+    # The cover's sentence names the callout since #478; nothing else in the report does.
+    body = html.replace(str(escape(SENTENCE)), "")
     for phrase in ("Equity Style Profile", "Non-US Equity Sleeve",
                    "fractional deviation from SPY", "ETF fact sheets dated"):
-        assert phrase not in html, phrase
+        assert phrase not in body, phrase
     assert "Fixed Income Effective Duration" in html, "the positioning duration line stays"
 
 
@@ -256,7 +273,9 @@ def _with_the_entries_back(src: Path, dst: Path) -> None:
                                 ).fetchall():
             if q not in QUARTERS:
                 continue
-            blob = json.loads(p)
+            # The gap record came after the style box's restatement (#478): the
+            # before-image holds none.
+            blob = json.loads(before_the_gap_record(p))
             data = blob["inputs"]["etf_metadata"]["data"]
             for t in EQUITY:
                 data[t] = {"weighted_avg_mcap_b": 1.0, "p_b": 1.0, "p_e": 1.0,
@@ -277,6 +296,9 @@ def test_the_tool_restores_the_committed_book_exactly_and_twice_changes_nothing(
     monkeypatch.setattr(tool, "DEMO_DB", before)
     assert tool.main(date(2026, 9, 28)) == 0
     assert "5 lock(s) restated on 2026-09-28" in capsys.readouterr().out
+    # The committed locks are that restatement followed by the gap record (#478).
+    assert _gap_tool().main(before) == 0
+    capsys.readouterr()
     committed, rebuilt = _ro(ROOT / "data" / "demo.db"), _ro(before)
     try:
         sql = "SELECT quarter_id, snapshot_date, captured_at, snapshot_data FROM quarter_snapshots ORDER BY 1"

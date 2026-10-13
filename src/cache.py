@@ -168,6 +168,11 @@ class SnapshotFrames(NamedTuple):
     # {"restated_on": ISO, "filled": [[ticker, ISO date], ...]} when the lock froze
     # closes its book lacked and was restated with them filled (#491).
     price_corrections: "dict | None" = None
+    # {"restated_on": ISO, "removed": [spec, ...]} when the lock's gaps list was
+    # rewritten to remove a gap that was never one (#459, #469): the cover had said a
+    # benchmark series could not be fetched when prices were locked. The rewrite left
+    # no record; this is the record, added afterwards (#478).
+    gap_corrections: "dict | None" = None
 
 
 # Every lock captured from #368 on: prices AND dividends through the quarter's last
@@ -642,9 +647,29 @@ def style_box_withdrawn_note(snap: "SnapshotFrames | None") -> "str | None":
     if not fix:
         return None
     on = date.fromisoformat(fix["restated_on"])
+    # The callout went with it and the sentence did not say so (#478): it listed the
+    # non-US holdings' weights under the style box, in the same block of the report.
     return (f"Restated {on.strftime('%B')} {on.day}, {on.year} to correct an error. The "
-            f"equity style box is withdrawn: its fact-sheet figures had no recorded "
-            f"source.")
+            f"equity style box is withdrawn, and the Non-US Equity Sleeve callout that "
+            f"sat under it: the style box's fact-sheet figures had no recorded source.")
+
+
+def gap_corrections_note(snap: "SnapshotFrames | None") -> "str | None":
+    """The cover line for a lock whose gaps list was rewritten to remove a gap that was
+    never one (#459), or None. The lock's cover had said a benchmark series could not
+    be fetched when prices were locked: the lock's ticker list could not parse a
+    parent row's legacy benchmark spec, and no price was missing. #469 emptied the
+    list and left no record, so the line went from the cover with nothing said
+    (#478). tools/restate_demo_gap_record.py added the record this reads."""
+    rec = getattr(snap, "gap_corrections", None) if snap is not None else None
+    if not rec:
+        return None
+    on = date.fromisoformat(rec["restated_on"])
+    n = len(rec["removed"])
+    said = "one benchmark series" if n == 1 else f"{n} benchmark series"
+    return (f"Restated {on.strftime('%B')} {on.day}, {on.year} to correct an error. An "
+            f"earlier version of this report said {said} could not be fetched when "
+            f"prices were locked; none was missing.")
 
 
 def filled_closes_note(snap: "SnapshotFrames | None") -> "str | None":
@@ -758,7 +783,8 @@ def get_quarter_snapshot(quarter_id: str) -> tuple:
                            input_corrections=blob.get("input_corrections"),
                            benchmark_rule=blob.get("benchmark_rule"),
                            lot_rebuild=blob.get("lot_rebuild"),
-                           price_corrections=blob.get("price_corrections")),
+                           price_corrections=blob.get("price_corrections"),
+                           gap_corrections=blob.get("gap_corrections")),
             row["captured_at"])
 
 

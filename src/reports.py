@@ -33,6 +33,7 @@ from src.cache import (
     capture_quarter_snapshot,
     complete_quarter_inputs,
     filled_closes_note,
+    gap_corrections_note,
     get_quarter_snapshot,
     input_corrections_note,
     inputs_restatement_note,
@@ -2209,6 +2210,8 @@ def generate_quarterly_report_bytes(
         style_box_withdrawn_note = style_box_withdrawn_note(snap_df),
         # The lock froze closes its book lacked, and was restated with them (#491).
         filled_closes_note   = filled_closes_note(snap_df),
+        # The lock's gaps list was rewritten to remove a gap that was never one (#469).
+        gap_corrections_note = gap_corrections_note(snap_df),
         # A lock from before #383 states the construction its benchmark figures used;
         # every other report states the rule in its methodology.
         benchmark_construction_note = benchmark_construction_note(snap_df),
