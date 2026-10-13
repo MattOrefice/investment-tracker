@@ -38,6 +38,7 @@ from markupsafe import escape
 
 from tests.conftest import (
     FROZEN_BOOK,
+    before_the_gap_record,
     pin_today,
     point_at_frozen_book,
     q2_2026_before_its_closes_were_filled,
@@ -309,8 +310,10 @@ def test_nothing_but_q2_2026s_frames_and_record_changed_in_any_lock(book):
     without the 32 closes and its record removed, is main's bytes too."""
     locks = _locks(book)
     assert set(OTHERS + ["2026Q2"]) <= set(locks)
+    # Each lock was later given a record of #469's rewrite, appended as its last key
+    # (#478); it is undone before the comparison with main's bytes at 1e3e5c9.
     for q in OTHERS:
-        assert _digest(locks[q][2]) == MAIN[q], (book.name, q)
+        assert _digest(before_the_gap_record(locks[q][2])) == MAIN[q], (book.name, q)
     text = locks["2026Q2"][2]
     assert _digest(text) != MAIN["2026Q2"], "premise: the lock was restated"
     assert _digest(q2_2026_before_its_closes_were_filled(text)) == MAIN["2026Q2"], book.name
@@ -421,6 +424,10 @@ def test_the_tool_restores_the_committed_locks_exactly_and_twice_changes_nothing
     assert tool.main(RESTATED_ON) == 0
     assert capsys.readouterr().out.strip() == (
         "2026Q2 restated on 2026-10-13 in demo.db and frozen_book.db: 32 closes filled.")
+    # The committed lock is that restatement followed by the gap record (#478).
+    gap = _load("restate_demo_gap_record")
+    assert gap.main(demo) == 0 and gap.main(frozen) == 0
+    assert capsys.readouterr().out.count("1 lock(s) given the record") == 2
     assert _locks(demo) == _locks(DEMO) and _locks(frozen) == _locks(FROZEN_BOOK)
     assert tool.main(date(2026, 10, 14)) == 0
     assert "already restated" in capsys.readouterr().out

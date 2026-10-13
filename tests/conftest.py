@@ -686,6 +686,23 @@ def metadata_dated_inside_q2(mp: "pytest.MonkeyPatch", tmp_dir: Path) -> Path:
     return out
 
 
+# The record tools/restate_demo_gap_record.py appended to each of the five locks #469
+# rewrote (#478), as the text it adds: the lock's last key.
+GAP_RECORD_APPENDED = (', "gap_corrections": {"restated_on": "2026-09-28", '
+                       '"removed": ["VNQ+DBC"]}}')
+
+
+def before_the_gap_record(text: str) -> str:
+    """A lock's stored payload as it stood before the gap record was appended (#478): the
+    same text less the record. A lock that carries none is returned as it is.
+    tests/test_gap_rewrite_is_recorded.py pins that this is main's lock at cc9c31d, byte
+    for byte, so a test that pins what a lock held before the record undoes it with this
+    first."""
+    if text.endswith(GAP_RECORD_APPENDED):
+        return text[:-len(GAP_RECORD_APPENDED)] + "}"
+    return text
+
+
 _Q2_BEFORE_491: "dict[str, str]" = {}
 
 
@@ -696,7 +713,8 @@ def q2_2026_before_its_closes_were_filled(text: str) -> str:
     .frames, on data/demo.db's closes and the dividends the lock holds), and the record
     removed. tests/test_filled_closes.py pins that this is main's lock at 1e3e5c9, byte
     for byte, so a test that pins what the lock held before #491 undoes the restatement
-    with this first. Both books' locks are the same text, so one result serves both."""
+    with this first. Both books' locks are the same text, so one result serves both.
+    The gap record (#478) was appended after #491, so it is undone first."""
     if text not in _Q2_BEFORE_491:
         import importlib.util
         import json
@@ -704,7 +722,7 @@ def q2_2026_before_its_closes_were_filled(text: str) -> str:
             "restate_demo_filled_closes", _ROOT / "tools" / "restate_demo_filled_closes.py")
         tool = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(tool)
-        blob = json.loads(text)
+        blob = json.loads(before_the_gap_record(text))
         filled = {tuple(c) for c in blob.pop(tool.RECORD)["filled"]}
         tickers, end = list(blob["adj_close"]["columns"]), "2026-06-30"
         closes = {k: c for k, c in tool._closes(_ROOT / "data" / "demo.db").items()

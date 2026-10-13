@@ -33,7 +33,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.conftest import FROZEN_BOOK
+from tests.conftest import FROZEN_BOOK, before_the_gap_record
 
 ROOT = Path(__file__).resolve().parent.parent
 DEMO = ROOT / "data" / "demo.db"
@@ -216,9 +216,11 @@ def test_its_duration_line_renders_from_the_durations_it_holds(snap, monkeypatch
 
 
 def test_the_five_earlier_locks_are_as_the_restatement_left_them():
+    # Each was later given a record of #469's rewrite, appended as its last key (#478,
+    # pinned by tests/test_gap_rewrite_is_recorded.py). Less that, it is as it was.
     locks = _locks(DEMO)
     assert sorted(locks) == sorted(EARLIER) + [Q3]
-    assert {q: _digest(locks[q][2]) for q in EARLIER} == EARLIER
+    assert {q: _digest(before_the_gap_record(locks[q][2])) for q in EARLIER} == EARLIER
 
 
 def test_the_frozen_book_holds_no_q3_lock():
@@ -226,4 +228,5 @@ def test_the_frozen_book_holds_no_q3_lock():
     are demo.db's five."""
     locks = _locks(FROZEN_BOOK)
     assert sorted(locks) == sorted(EARLIER)
-    assert {q: _digest(locks[q][2]) for q in EARLIER} == EARLIER
+    assert {q: _digest(before_the_gap_record(locks[q][2])) for q in EARLIER} == EARLIER
+    assert {q: locks[q][2] for q in EARLIER} == {q: _locks(DEMO)[q][2] for q in EARLIER}
