@@ -64,24 +64,26 @@ def test_malformed_raises_not_none(tmp_path, payload, fragment):
 
 # ── staleness state machine ───────────────────────────────────────────────────
 
-def _info(days_old: int) -> dict:
-    return {"eps": 305.0, "as_of": date.today() - timedelta(days=days_old), "source": "x"}
-
-
-def test_fresh_is_ok():
-    assert forward_pe_state(_info(0)) == "ok"
-    assert forward_pe_state(_info(STALE_WARN_DAYS)) == "ok"
-
-
-# The estimate's age is counted from New York's date (asof.today_et, #451). The three
+# The estimate's age is counted from New York's date (asof.today_et, #451). The four
 # tests below check it to the day, and used to stage the estimate from the machine's
-# date (_info). On a UTC machine, from 00:00 UTC until midnight in New York, that date
-# is a day ahead: every age came out one short and all three failed (#493). They now
-# run on a pinned UTC machine, in the morning and in the evening of one New York day
-# (the new_york_day fixture), with the estimate staged from that day.
+# date. On a UTC machine, from 00:00 UTC until midnight in New York, that date is a day
+# ahead and every age came out one short: three of them failed, and test_fresh_is_ok
+# passed on 44 days without reaching the 45 it names (#493). They now run on a pinned
+# UTC machine, in the morning and in the evening of one New York day (the new_york_day
+# fixture), with the estimate staged from that day.
 
 def _aged(new_york_day: date, days_old: int) -> dict:
     return {"eps": 305.0, "as_of": new_york_day - timedelta(days=days_old), "source": "x"}
+
+
+def test_fresh_is_ok(new_york_day):
+    """Fresh through the 45th day, the warning threshold, and no longer on the 46th.
+    The days are literals, so a threshold moved either way fails here."""
+    assert forward_pe_state(_aged(new_york_day, 0)) == "ok"
+    at_threshold = _aged(new_york_day, 45)
+    assert staleness_days(at_threshold) == 45, "premise: 45 days old, to the day"
+    assert forward_pe_state(at_threshold) == "ok"
+    assert forward_pe_state(_aged(new_york_day, 46)) == "stale_warn"
 
 
 def test_aging_warns(new_york_day):
