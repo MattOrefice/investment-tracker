@@ -281,5 +281,11 @@ def test_the_generated_q2_report_reads_the_lock_and_says_it_was_restated(book, m
     monkeypatch.setattr(reports, "_render_pdf", lambda h: html.setdefault("h", h).encode())
     reports.generate_quarterly_report_bytes(*Q2, is_demo=True)
     assert "Restated September 24, 2026: this quarter now locks at its close on June 30" in html["h"]
-    flat = " ".join(html["h"].split())       # the template wraps the methodology text
-    assert "using only prices and dividends through the quarter's last day" in flat
+    # MIGRATED at #482. The methodology said the lock used "only prices and dividends
+    # through the quarter's last day, so a later dividend or a later price update cannot
+    # shift this report's numbers". It still describes the rule, as what the lock holds.
+    # The sentence is a template variable now, so its apostrophe arrives escaped.
+    from html import unescape
+    flat = unescape(" ".join(html["h"].split()))
+    assert "The lock holds prices and dividends through the quarter's last day" in flat
+    assert "cannot shift this report's numbers" not in flat
