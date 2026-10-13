@@ -165,6 +165,9 @@ class SnapshotFrames(NamedTuple):
     # after this lock was taken (#406 item 12). A lock holds prices and inputs, not
     # trades, so its report reads the rebuilt lots; this is what makes it say so.
     lot_rebuild: "dict | None" = None
+    # {"restated_on": ISO, "filled": [[ticker, ISO date], ...]} when the lock froze
+    # closes its book lacked and was restated with them filled (#491).
+    price_corrections: "dict | None" = None
 
 
 # Every lock captured from #368 on: prices AND dividends through the quarter's last
@@ -623,6 +626,26 @@ def style_box_withdrawn_note(snap: "SnapshotFrames | None") -> "str | None":
             f"source.")
 
 
+def filled_closes_note(snap: "SnapshotFrames | None") -> "str | None":
+    """The cover line for a lock restated because it froze closes its book lacked
+    (#491), or None. The lock's two price frames held nulls on those sessions; the
+    closes were filled from the provider and the adjusted levels recomputed from them
+    (tools/restate_demo_filled_closes.py). The count and the month are read from the
+    lock's own record."""
+    rec = getattr(snap, "price_corrections", None) if snap is not None else None
+    if not rec:
+        return None
+    on = date.fromisoformat(rec["restated_on"])
+    months: list = []
+    for day in sorted(date.fromisoformat(d) for _t, d in rec["filled"]):
+        month = f"{day.strftime('%B')} {day.year}"
+        if month not in months:
+            months.append(month)
+    return (f"Restated {on.strftime('%B')} {on.day}, {on.year} to correct an error. The "
+            f"lock froze {len(rec['filled'])} closes missing from {_listed(months)}; they "
+            f"are now filled from the provider.")
+
+
 def lot_rebuild_note(snap: "SnapshotFrames | None") -> "str | None":
     """The cover line for a quarter whose DRIP lots were rebuilt after it locked, or
     None. What moved is every figure that counts reinvested shares: market value,
@@ -713,7 +736,8 @@ def get_quarter_snapshot(quarter_id: str) -> tuple:
                            inputs_rule=blob.get("inputs_rule"),
                            input_corrections=blob.get("input_corrections"),
                            benchmark_rule=blob.get("benchmark_rule"),
-                           lot_rebuild=blob.get("lot_rebuild")),
+                           lot_rebuild=blob.get("lot_rebuild"),
+                           price_corrections=blob.get("price_corrections")),
             row["captured_at"])
 
 
