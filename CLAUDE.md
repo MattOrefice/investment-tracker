@@ -210,7 +210,11 @@ the code that supports it; the two with none are listed at the end.
   own first and last close, and BTC-USD on every calendar day of its span. So no
   ticker lags silently (#406 item 8: IWB and IWF ended 2026-06-08 while the
   holdings ran to 2026-07-20), and none lacks a close an end date cannot show
-  (#491: the book lacked 33, and Q2 2026's lock froze 32 of them).
+  (#491: the book lacked 33, and Q2 2026's lock froze 32 of them). The end-date
+  half is applied in demo mode only, so run it with `TRACKER_MODE=demo`: in
+  personal mode the tool checks the personal book for gaps alone, because a
+  ticker no page reads (`^GSPC` today) is never refreshed there, and its first
+  line says which mode, book and checks it ran.
 - Demo only, once that check passes and before the report takes the lock:
   regenerate the DRIP lots from the ledger, `python
   tools/rebuild_demo_drip_lots.py`, and commit `data/demo.db`. It derives every

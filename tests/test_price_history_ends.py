@@ -28,6 +28,10 @@ from tools.check_price_histories import (
 ROOT = Path(__file__).resolve().parent.parent
 DEMO = ROOT / "data" / "demo.db"
 
+# The tool judges end dates in demo mode only, so every test here runs in it unless it
+# says otherwise: the suite's mode is the checkout's, and personal locally.
+pytestmark = pytest.mark.usefixtures("use_demo_db")
+
 
 def _book(tmp_path: Path, series: "dict[str, list[str]]", name: str = "book.db") -> Path:
     path = tmp_path / name
@@ -179,3 +183,69 @@ def test_the_book_before_the_fill_is_flagged_on_exactly_its_33_closes(tmp_path, 
     out = capsys.readouterr().out
     assert "2026-05-28: no close for 10 ticker(s): AVUV, IEMG, PDBC, SCHP, SPHQ, VEA, VGIT, VNQ, VOO, VTV" in out
     assert "2026-07-08: no close for 1 ticker(s): BTC-USD" in out
+
+
+# ── the end-date check is a demo close-out step ───────────────────────────────
+
+def _personal(monkeypatch, book=None):
+    """Personal mode for the rest of the test, over the module's demo pin; with ``book``,
+    that file is the personal book."""
+    import src.db as db
+    from tests.conftest import _pin_mode
+    _pin_mode(monkeypatch, "personal")
+    if book is not None:
+        monkeypatch.setattr(db, "DB_PATH", book)
+
+
+def test_in_personal_mode_a_ticker_that_ends_early_is_listed_and_does_not_fail(
+        tmp_path, capsys, monkeypatch):
+    """The personal book's case: ^GSPC is read only for the Forward P/E panel, which
+    fetches nothing while no estimate is on file, so its history ends where that panel
+    last ran. The same book fails in demo mode, where the advance fetches every ticker."""
+    path = _book(tmp_path, {"SPY": WEEK, "VOO": WEEK, "^GSPC": WEEK[:1]})
+    assert main(["x", str(path)]) == 1, "premise: in demo mode this book fails"
+    assert "NOT ALIGNED" in capsys.readouterr().out
+    _personal(monkeypatch)
+    assert main(["x", str(path)]) == 0
+    out = capsys.readouterr().out.strip().splitlines()
+    assert out[0] == ("Personal mode, book.db: gaps only. The end dates are listed and not "
+                      "judged: the alignment check is a demo close-out step.")
+    assert "2026-09-28: 1 ticker(s): ^GSPC" in out and "2026-09-30: 2 ticker(s): SPY, VOO" in out
+    assert out[-2:] == ["book.db's price histories end on 2 different dates. Not judged in "
+                        "personal mode: a ticker no page reads is not refreshed.",
+                        "No ticker in book.db lacks a close inside its history."]
+    assert not [line for line in out if line.startswith("NOT ALIGNED")]
+
+
+def test_in_personal_mode_a_gap_still_fails(tmp_path, capsys, monkeypatch):
+    _personal(monkeypatch)
+    path = _book(tmp_path, {"SPY": WEEK, "VOO": [WEEK[0], WEEK[2]], "^GSPC": WEEK[:1]})
+    assert main(["x", str(path)]) == 1
+    out = capsys.readouterr().out
+    assert "2026-09-29: no close for 1 ticker(s): VOO" in out
+    assert out.strip().splitlines()[-1].startswith("GAPS: book.db holds 1 gap(s)")
+
+
+def test_in_personal_mode_a_book_without_the_reference_still_fails(tmp_path, capsys, monkeypatch):
+    _personal(monkeypatch)
+    path = _book(tmp_path, {"VOO": WEEK, "IWB": WEEK})
+    assert main(["x", str(path)]) == 1
+    assert "NO REFERENCE: book.db holds no SPY closes" in capsys.readouterr().out
+
+
+def test_demo_mode_says_what_it_checked(tmp_path, capsys):
+    path = _book(tmp_path, {"SPY": WEEK, "VOO": WEEK})
+    assert main(["x", str(path)]) == 0
+    assert capsys.readouterr().out.splitlines()[0] == "Demo mode, book.db: end dates and gaps."
+
+
+def test_with_no_path_it_checks_the_modes_own_book(tmp_path, capsys, monkeypatch):
+    """Demo mode reads data/demo.db. Personal mode reads the personal book, so a
+    close-out step run without TRACKER_MODE=demo says so on its first line instead of
+    checking the demo book under the personal rule."""
+    assert main(["x"]) == 0
+    assert capsys.readouterr().out.splitlines()[0] == "Demo mode, demo.db: end dates and gaps."
+    mine = _book(tmp_path, {"SPY": WEEK, "VOO": WEEK, "^GSPC": WEEK[:1]}, "mine.db")
+    _personal(monkeypatch, mine)
+    assert main(["x"]) == 0
+    assert capsys.readouterr().out.splitlines()[0].startswith("Personal mode, mine.db: gaps only.")
