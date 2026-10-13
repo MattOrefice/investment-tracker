@@ -16,11 +16,13 @@ jobs:
     # three merge proofs, so a run that can neither pass nor fail breaks a
     # verification leg rather than merely being annoying.
     #
-    # Without this the job inherits GitHub's 360-minute default. Observed normal for
-    # the whole job is 3-4 minutes, so 15 is ~4x headroom and cannot fire on a merely
-    # slow run. This is the backstop for every step with no timeout of its own; the
-    # step-level values below are tighter where a normal has been measured.
-    timeout-minutes: 15
+    # Without this the job inherits GitHub's 360-minute default. Measured normal for
+    # the whole job is 8.5 to 11 minutes on GitHub's runner (October 2026: the test
+    # step's 8 to 10 minutes plus 30 to 55 seconds for the steps around it), so 30 is
+    # about 3x headroom and cannot fire on a merely slow run. This is the backstop for
+    # every step with no timeout of its own; the step-level values below are tighter
+    # where a normal has been measured.
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v5
@@ -98,8 +100,11 @@ jobs:
       - name: Run fast tests (slow/network tests excluded)
         # Exclusions live in pytest.ini addopts (not slow and not live_data). Do NOT add a CLI -m here — it overrides addopts and silently re-includes the live_data tests (live external API calls on every push).
         run: python -m pytest --tb=long -q
-        # Observed normal ~2.5 minutes. 10 leaves room for a slow runner while still
-        # bounding a hang — a slow test run and a hung one deserve different verdicts.
-        timeout-minutes: 10
+        # Measured normal: 8 to 10 minutes on GitHub's runner, October 2026 (#507). 20
+        # leaves room for a slow runner while still bounding a hang — a slow test run
+        # and a hung one deserve different verdicts. At a limit of 10 the normal reached
+        # it: two push runs on main were cut off on October 13 with no test failing.
+        # Speeding up the suite waits until its normal passes half this limit.
+        timeout-minutes: 20
         env:
           TRACKER_MODE: demo
