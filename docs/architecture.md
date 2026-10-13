@@ -25,8 +25,10 @@ Four external data sources feed the system:
 Yahoo Finance (v8/chart API)  →  src/prices.py  →  SQLite prices table
 FRED API                      →  src/macro.py   →  SQLite macro_cache table (24h TTL)
 Ken French Data Library       →  src/factors.py →  data/ff_factors_*.csv (7-day TTL)
-Yale/Shiller CAPE dataset     →  src/shiller.py →  data/shiller_cape.csv (30-day TTL)
+multpl.com (Shiller's CAPE)   →  src/shiller.py →  data/shiller_cape.csv (committed input, no TTL)
 ```
+
+CAPE is read from multpl.com's monthly table of Robert Shiller's CAPE. Shiller's own Yale file is the fallback and has been stale since September 2023. `data/shiller_cape.csv` is a committed input with no TTL: `src/shiller.py` reads it and never fetches, and `tools/refresh_market_data.py` is its only writer.
 
 All reads from external sources are cached locally. `src/prices.py` calls the Yahoo Finance v8/chart endpoint directly via `requests` (not the `yfinance` library) with a browser User-Agent header to avoid 429 rate-limiting. Factor ZIPs from Ken French are downloaded on demand and unpacked to CSV; the cache is refreshed when the file is older than 7 days or the most recent factor date exceeds a 35-day publication lag.
 
@@ -61,7 +63,7 @@ The SQLite database (`src/db.py`) is the single source of truth for portfolio st
 | Module | Responsibility |
 |--------|---------------|
 | `macro.py` | FRED integration (yield curve, Fed Funds, HY OAS, USREC); CAPE excess yield; dynamic interpretations |
-| `shiller.py` | CAPE from Yale dataset with local CSV fallback |
+| `shiller.py` | CAPE from multpl.com, with Shiller's Yale file as the fallback; reads the committed `data/shiller_cape.csv` and never fetches |
 | `asset_evaluation.py` | Pure functions for SAA candidate analysis: Sharpe contribution, correlation, drawdown, mean-variance tangency |
 | `positioning.py` | Active tilts, effective duration, scenario analysis (pure functions, no DB access) |
 | `rebalance.py` | Band-breach detection, contribution allocation (pure functions, no DB access) |

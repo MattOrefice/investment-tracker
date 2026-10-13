@@ -27,9 +27,11 @@ HYG now comes from the price layer, like every other ETF; the Risk page's credit
 factor already read it there.
 
 Hand-kept inputs outside this directory, with no refresh tool:
-`data/etf_metadata.json` (fact-sheet figures for the style box, each stamped with
-its source date; a quarter lock takes it only when every stamp falls inside the
-quarter, otherwise the style box renders as pending) and `data/forward_eps.json`
+`data/etf_metadata.json` (fund durations only: each bond fund's duration, and AGG's
+for the Bloomberg US Agg, with its measure, source and as-of date; a quarter lock
+takes it only when every as-of falls inside the quarter, otherwise the report's
+duration line renders as pending; the equity style box it once fed was withdrawn
+in #477) and `data/forward_eps.json`
 (the S&P DJI forward-EPS estimate, a manual seam by design; the demo hides its
 panel while no estimate is on file).
 

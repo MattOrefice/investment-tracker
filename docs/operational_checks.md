@@ -60,9 +60,13 @@ ERs are static in `pages/8_Research.py`. Review once per year at renewal:
 
 ### Review CAPE data freshness
 
-The Shiller CAPE dataset at Yale is updated periodically but lags by 1–2 months. If the
-Macro page shows data-as-of more than 3 months ago, force-refresh via the "Force Refresh"
-button on the Macro page.
+CAPE comes from multpl.com's monthly table of Robert Shiller's CAPE. Shiller's own Yale
+file is the fallback and has been stale since September 2023. `data/shiller_cape.csv` is
+a committed input with no TTL: nothing refreshes it at runtime, and the Macro page's
+"Force refresh" button re-fetches FRED only. The Macro page shows a staleness note once
+the file's newest reading is older than `asof.MARKET_DATA_STALE_DAYS_VALUATION` days.
+To refresh it, run `python tools/refresh_market_data.py --files cape pe` and commit the
+diff.
 
 ### Review `_SAA_US` and `_FI_WEIGHTS` constants
 

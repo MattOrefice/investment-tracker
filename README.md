@@ -87,7 +87,7 @@ Three layers: (1) math identities that must hold by construction (BF effects sum
 |--------|--------|---------|
 | Yahoo Finance | Daily adjusted-close (all holdings and benchmarks) | SQLite; locked on quarterly report date to prevent retroactive revisions |
 | FRED | T10Y2Y, DFF, BAMLH0A0HYM2 (HY OAS), USREC | SQLite, 24-hour TTL |
-| Robert Shiller / Yale | CAPE (monthly) | Local CSV, monthly refresh |
+| multpl.com | Robert Shiller's CAPE (monthly). Shiller's own Yale file is the fallback, stale since September 2023 | Committed CSV (`data/shiller_cape.csv`), no TTL: only `tools/refresh_market_data.py` writes it |
 | Ken French Data Library | FF5 factors (US, Developed ex-US), UMD momentum | Downloaded and cached per regression run |
 
 **Real Assets benchmark disclosure.** The portfolio holds PDBC (C-corp structure, no K-1 issued); the benchmark uses DBC (K-1-issuing). Selection effect in the Brinson-Fachler table captures the DBC–PDBC return spread. This asymmetry is documented rather than hidden. Real Assets sleeve is benchmarked as a 60% VNQ / 40% DBC blend; REITs are weighted higher than commodities because broad commodity futures carry negative roll yield in contango regimes that suppresses long-run total return.
@@ -99,7 +99,7 @@ Three layers: (1) math identities that must hold by construction (BF effects sum
 ## Implementation
 
 - **Stack:** Python 3.11, Streamlit, pandas, NumPy, statsmodels, plotly, SQLite
-- **Data sources:** FRED API (macro), Ken French Data Library (factors), Shiller / Yale (CAPE), yfinance (prices)
+- **Data sources:** FRED API (macro), Ken French Data Library (factors), multpl.com (Shiller's CAPE; Yale's file is the fallback), yfinance (prices)
 - **Test coverage:** unit and integration tests covering return calculation, attribution math, factor regression plumbing, and dynamic-interpretation guards — see [Integrity Testing](#integrity-testing) above for the current pass/skip count
 - **Deployment:** Streamlit Community Cloud, redeploy on push to main
 
@@ -126,7 +126,7 @@ src/
   prices.py             Yahoo Finance fetcher with SQLite cache
   reports.py            PDF generator: data assembly, Jinja2 render, WeasyPrint
   returns.py            Daily-linked TWR, Modified Dietz, annualization, period slicing
-  shiller.py            CAPE from Yale dataset with local CSV fallback
+  shiller.py            CAPE from multpl.com (Yale's file is the fallback), read from a committed CSV
 
 pages/
   1_SAA.py              SAA allocation chart, per-sleeve rationale
