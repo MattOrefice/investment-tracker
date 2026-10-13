@@ -150,6 +150,15 @@ def _quarter_end_is_priceable(q_end: date, frontier: date | None) -> bool:
     return frontier >= last_session_on_or_before(q_end)
 
 
+def _quarter_lock_gaps(label: str) -> "list[str]":
+    """What a lock of the quarter labelled ``label`` ("Q3 2026") would be refused for
+    as a gap inside a ticker's history, from stored prices (cache.quarter_lock_gaps).
+    Empty when the quarter is already locked or its prices hold no gap."""
+    from src.cache import label_to_quarter_id, quarter_lock_gaps  # lazy, as lock_price_frontier
+    quarter_id = label_to_quarter_id(label)
+    return quarter_lock_gaps(quarter_id) if quarter_id else []
+
+
 # Empty-state copy when no completed quarter has elapsed since inception.
 # Pinned literal — referenced by the Performance page (Section 1a snapshot and
 # the PDF-export expander) and the every-page as-of banner. Update all callers
@@ -187,21 +196,34 @@ def most_recent_reportable_quarter(
        ``quarter_staleness_note`` so the artifact says which quarter it stepped
        back to and why.
 
+    3. **No gap.** A quarter is reportable only if its lock can be taken or already
+       is: a ticker the lock covers with no close on a date between its own first and
+       last refuses the lock (``cache.quarter_lock_gaps``, #491). Without this gate
+       the page named the quarter and showed the lock's refusal in place of its
+       figures. It steps back the same way, and ``quarter_staleness_note`` names the
+       missing closes. A quarter already locked is served from its lock whatever
+       the prices hold now.
+
     ``inception`` accepts a date or an ISO date string. ``frontier`` defaults to
     ``None`` = resolve from the committed price cache (``cache.lock_price_frontier``,
     no network); pass an explicit date to pin it, including a far-future date to
-    exercise the uncapped inception logic on its own.
+    exercise the uncapped inception logic on its own. A pinned frontier pins the data
+    gates: the gap gate reads the cache only when the frontier does.
     """
     if isinstance(inception, str):
         inception = date.fromisoformat(inception)
     d = today or today_et()
     resolved = _resolve_frontier(frontier)
+    from_cache = frontier is None and resolved is not None
 
     for q_start, q_end, label in _completed_quarters_descending(d):
         if q_end < inception:
             return None          # stepped back past the portfolio's existence
-        if _quarter_end_is_priceable(q_end, resolved):
-            return q_start, q_end, label
+        if not _quarter_end_is_priceable(q_end, resolved):
+            continue
+        if from_cache and _quarter_lock_gaps(label):
+            continue
+        return q_start, q_end, label
     return None
 
 
@@ -215,7 +237,8 @@ def quarter_staleness_note(
     Returns ``None`` in the normal case — the reported quarter IS the calendar's
     most recent completed one, so there is nothing to explain. Returns a single
     sentence naming both quarters and the frontier date when they differ, for the
-    PDF cover and the Performance page.
+    PDF cover and the Performance page. When the newer quarter was held back by a gap
+    inside a ticker's history instead, the sentence names the missing closes.
 
     Deliberately silent when the step-back is caused by *inception* rather than by
     the frontier: that case already renders ``NO_COMPLETED_QUARTER`` empty-state
@@ -229,11 +252,24 @@ def quarter_staleness_note(
         return None
 
     _, calendar_end, calendar_label = _most_recent_completed_quarter(d)
-    reported = most_recent_reportable_quarter(inception, d, frontier=resolved)
+    reported = most_recent_reportable_quarter(inception, d, frontier=frontier)
     if reported is None or reported[2] == calendar_label:
         return None
     if calendar_end < inception:
         return None              # pre-inception, not a data-frontier step-back
+
+    # Stepped back for a gap, not for the frontier: the last close is stored, and a
+    # ticker lacks one before it (#491). The sentence names the closes, as the lock's
+    # own refusal does, so a reader can see what has to be filled.
+    if _quarter_end_is_priceable(calendar_end, resolved):
+        gaps = _quarter_lock_gaps(calendar_label) if frontier is None else []
+        if gaps:
+            return (
+                f"Reporting {reported[2]}, not {calendar_label}: the price data has a gap "
+                f"inside a ticker's history, and a {calendar_label} lock would freeze it. "
+                f"No close on {'; '.join(gaps)}. {reported[2]} does not read those "
+                f"closes, so the figures in this report are complete."
+            )
 
     # The closing clause is not padding: this note appears on a PUBLIC artifact
     # whose reader cannot ask whether "stale" also means the printed figures are
