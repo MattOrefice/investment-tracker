@@ -22,9 +22,19 @@ checked:
     table covers (demo_refresh.NYSE_HOLIDAYS), so a session that every ticker lacks, SPY
     included, still shows there.
 
-Reads data/demo.db by default, read-only; pass a path to check another book. Prints each
-end date with the tickers that end on it, then every gap, and exits 1 unless the
-histories end on one date and hold no gap.
+THE ENDS CHECK IS A DEMO CLOSE-OUT STEP. The snapshot advance fetches every ticker the
+demo book prices, so there a ticker that ends early is a ticker the advance missed. The
+personal book is refreshed by the pages' own reads, and a ticker no page reads is never
+refreshed: ^GSPC is read only for the Forward P/E panel, which fetches nothing while no
+estimate is on file, so its history stops where that panel last ran and the check failed
+on it alone. So in personal mode this lists the end dates and does not judge them, and
+its result is the gap check's. Its first line says which mode it ran in, on which book,
+and which checks it applied.
+
+Reads the mode's own book by default (data/demo.db in demo mode, the personal book
+otherwise), read-only; pass a path to check another book. Prints each end date with the
+tickers that end on it, then every gap. Exits 1 on a gap in either mode, and in demo
+mode also unless the histories end on one date.
 
 Usage:  python tools/check_price_histories.py [path/to/book.db]
 """
@@ -83,7 +93,14 @@ def history_gaps(db_path: Path) -> "list[tuple[str, str, str]]":
 
 
 def main(argv: "list[str]") -> int:
-    path = Path(argv[1]) if len(argv) > 1 else DEMO_DB
+    from src import config, db
+    demo = config.IS_DEMO
+    path = Path(argv[1]) if len(argv) > 1 else (DEMO_DB if demo else Path(db.DB_PATH))
+    if demo:
+        print(f"Demo mode, {path.name}: end dates and gaps.")
+    else:
+        print(f"Personal mode, {path.name}: gaps only. The end dates are listed and not "
+              f"judged: the alignment check is a demo close-out step.")
     ends = history_ends(path)
     for day, tickers in ends.items():
         print(f"{day}: {len(tickers)} ticker(s): {', '.join(tickers)}")
@@ -102,15 +119,18 @@ def main(argv: "list[str]") -> int:
     aligned = len(ends) == 1
     if aligned:
         print(f"Every ticker's history in {path.name} ends on {next(iter(ends))}.")
-    else:
+    elif demo:
         print(f"NOT ALIGNED: {path.name}'s price histories end on {len(ends)} different "
               f"dates. Every ticker before {max(ends)} lags.")
+    else:
+        print(f"{path.name}'s price histories end on {len(ends)} different dates. Not "
+              f"judged in personal mode: a ticker no page reads is not refreshed.")
     if gaps:
         print(f"GAPS: {path.name} holds {len(gaps)} gap(s) inside its tickers' histories, "
               f"listed above. No lock is taken from a book with a gap.")
     else:
         print(f"No ticker in {path.name} lacks a close inside its history.")
-    return 0 if aligned and not gaps else 1
+    return 0 if (aligned or not demo) and not gaps else 1
 
 
 if __name__ == "__main__":
