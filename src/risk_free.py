@@ -117,15 +117,31 @@ def rate_over(start, end, bills: "BillSeries | None" = None) -> RiskFreeRate:
                         win.index[-1].date(), bills.end)
 
 
-def describe(rate: RiskFreeRate) -> str:
+def describe(rate: RiskFreeRate, *, name_series: bool = False, window: str = "") -> str:
     """The rate and where it came from, for a caption: "4.21%, the average 3-month
-    Treasury bill rate from May 1, 2025 to September 24, 2026"."""
+    Treasury bill rate from May 1, 2025 to September 24, 2026".
+
+    ``name_series`` names the series it is read from as well: "4.21%, the average of
+    FRED's DGS3MO, the 3-month Treasury bill rate, from May 1, 2025 to ...". Asset
+    Evaluation asks for it, on the page and in the PDF: its Sharpe figures, weights and
+    charts all rest on this rate, and nothing there named the series (#478 I09).
+
+    ``window`` says what the averaging dates are ("the sample's own window"), straight
+    after them and before the stored-series clause, which has its own date."""
     from src.asof import format_long_date as _long
-    if rate.start == rate.through:
+    if name_series:
+        bill = "FRED's DGS3MO, the 3-month Treasury bill rate,"
+        text = (f"{rate.annual:.2%}, {bill} on {_long(rate.through)}"
+                if rate.start == rate.through else
+                f"{rate.annual:.2%}, the average of {bill} from {_long(rate.start)} to "
+                f"{_long(rate.through)}")
+    elif rate.start == rate.through:
         text = f"{rate.annual:.2%}, the 3-month Treasury bill rate on {_long(rate.through)}"
     else:
         text = (f"{rate.annual:.2%}, the average 3-month Treasury bill rate from "
                 f"{_long(rate.start)} to {_long(rate.through)}")
+    if window:
+        text += f", {window}"
     if rate.basis == STORED:
         text += (f". FRED was unavailable, so the rate comes from the stored series, "
                  f"which ends {_long(rate.series_end)}")

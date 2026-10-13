@@ -84,9 +84,75 @@ def sleeve_names() -> list[str]:
     """Sleeve display names (abbreviated) for the CURRENT book, in DB order."""
     return list(_derive_sleeve_maps()[0].keys())
 
-# Shared conclusion — used by both pages/10_Asset_Evaluation.py and src/reports.py.
-# Excludes the Streamlit-specific "This page will update automatically" sentence.
-CONCLUSION = (
+def pre_post_2020(rolling: "pd.Series | None") -> "tuple[float, float, pd.Timestamp | None]":
+    """(average before 2020, average from 2020 on, the date the series runs through) of
+    the rolling BTC-SPY correlation: the two figures the section prints under its
+    rolling chart, computed in one place so the conclusion cites the same ones. NaN and
+    None where there is nothing to average."""
+    if rolling is None or rolling.empty:
+        return float("nan"), float("nan"), None
+    pre, post = rolling.loc[:"2019-12-31"], rolling.loc["2020-01-01":]
+    return (float(pre.mean()) if len(pre) else float("nan"),
+            float(post.mean()) if len(post) else float("nan"),
+            pd.Timestamp(rolling.index.max()))
+
+
+def conclusion(rolling_corr: "pd.Series | None" = None) -> str:
+    """The section's conclusion, for the page and the PDF, from the rolling BTC-SPY
+    correlation the section charts.
+
+    IT READS THE SECTION'S OWN FIGURES, WITH THEIR DATE (#478 I11). It was a constant.
+    Its first re-evaluation trigger was a rolling 5-year correlation "below 0.20 (the
+    pre-2020 baseline established in the rolling BTC-SPY correlation)": the section
+    computes no 5-year correlation, and the pre-2020 average it does print, of the
+    60-day one, is about zero. And its verdict said "currently" with no date. The
+    trigger now names the correlation the section computes and gives its two averages,
+    and the verdict carries the date that series runs through. With no series (the
+    rolling analysis unavailable) both stand without figures and without a date.
+
+    Excludes the page's "updates automatically" sentence, which the PDF cannot say."""
+    from src.asof import format_long_date
+    pre, post, through = pre_post_2020(rolling_corr)
+    if through is None:
+        verdict = "**Bitcoin does not belong in this portfolio's SAA.**"
+    else:
+        verdict = (f"**As of {format_long_date(through.date())}, Bitcoin does not belong "
+                   "in this portfolio's SAA.**")
+    trigger = "- The rolling 60-day correlation with SPY returns to its pre-2020 level"
+    if through is not None and not np.isnan(post):
+        since = f"{post:.2f} from 2020 through {format_long_date(through.date())}"
+        # A book whose candidate history starts in 2020 or later has no rolling
+        # correlation before it: the section prints no pre-2020 average, so none is cited.
+        trigger += (f": this sample holds none before 2020, and it has averaged {since}"
+                    if np.isnan(pre) else
+                    f": it averaged {pre:.2f} before 2020 and {since}")
+    trigger += ". That would indicate a return to diversifying behavior.\n"
+    return (
+        _CONCLUSION_OPENING + verdict + "\n\n"
+        "The framework would re-evaluate inclusion if any of the following "
+        "observable conditions are met:\n"
+        + trigger + _CONCLUSION_OTHER_TRIGGERS
+    )
+
+
+# The full-sample correlation with US Large Core above which the section lists it
+# among the arguments against inclusion.
+EQUITY_LIKE_ABOVE = 0.3
+
+
+def equity_like_argument(corr_us_large_core: float) -> "str | None":
+    """The "arguments against" bullet for an equity-like correlation, or None at or
+    below EQUITY_LIKE_ABOVE. The figure is the FULL-SAMPLE correlation and says so. It
+    was labelled "post-2020" (#478 I12), and the post-2020 figure the section prints is
+    a different number: the rolling correlation's average from 2020 on."""
+    if np.isnan(corr_us_large_core) or corr_us_large_core <= EQUITY_LIKE_ABOVE:
+        return None
+    return (f"Equity-like correlation with US Large Core ({corr_us_large_core:.2f} over "
+            f"the full sample, {SAMPLE_START[:4]} to present): "
+            "co-movement spikes during stress, when a hedge is most valuable")
+
+
+_CONCLUSION_OPENING = (
     "Bitcoin's sample-period Sharpe improvement is real but almost entirely "
     "attributable to its exceptional 2020–2021 bull market return. "
     "The 2024 spot ETF launches have already partially satisfied the "
@@ -96,12 +162,8 @@ CONCLUSION = (
     "The remaining barriers to inclusion are analytical (the post-2020 "
     "correlation regime and the 2022 joint stress) and fundamental (no cash "
     "flow anchor for valuation), not operational. "
-    "**Bitcoin does not currently belong in this portfolio's SAA.**\n\n"
-    "The framework would re-evaluate inclusion if any of the following "
-    "observable conditions are met:\n"
-    "- Rolling 5-year correlation with US Large Core falls below 0.20 "
-    "(the pre-2020 baseline established in the rolling BTC–SPY correlation), "
-    "indicating a return to diversifying behavior.\n"
+)
+_CONCLUSION_OTHER_TRIGGERS = (
     "- A 5–10% allocation produces a positive Sharpe contribution after "
     "explicit tax-drag adjustment (the analytical gap in the constrained "
     "mean-variance analysis).\n"
@@ -298,9 +360,19 @@ def sample_risk_free(btc: pd.Series, sleeves: pd.DataFrame):
 
 
 # What the univariate table sets beside each other: the candidate and four comparison
-# assets, and the two legs of its Real Assets basket.
+# assets. Its last row is the Real Assets sleeve's benchmark (real_assets_basket).
 UNIVARIATE_TICKERS = ("BTC-USD", "SPY", "AGG", "GLD", "VOO")
-REAL_ASSETS_BASKET = ("VNQ", "PDBC")
+REAL_ASSETS = "Real Assets"
+
+
+def real_assets_basket() -> "list[tuple[str, float]]":
+    """The univariate table's Real Assets row: the sleeve's own benchmark spec, legs and
+    weights, read from the book (VNQ 60% and DBC 40% today). [] for a book with no such
+    sleeve.
+
+    The row was 50% VNQ + 50% PDBC, typed here, while the only definition a reader is
+    given is the sleeve's benchmark, 60% VNQ + 40% DBC (#478 I13)."""
+    return list(sleeve_benchmarks().get(REAL_ASSETS, []))
 
 
 def tickers_read(candidate: str = "BTC-USD", screened: str = "") -> "list[str]":
@@ -308,10 +380,11 @@ def tickers_read(candidate: str = "BTC-USD", screened: str = "") -> "list[str]":
     candidate, each sleeve's benchmark legs, the univariate table's assets and basket,
     the naive benchmark's two legs (the 2022 comparison), and ``screened``, the ticker
     in the candidate screen's box (QQQ until the reader types another), when it is one.
-    The page's gap note reads this."""
+    The basket's legs are the Real Assets sleeve's, so they are among the sleeves'. The
+    page's gap note reads this."""
     from src.benchmarks import NAIVE_60_40
     from src.prices import is_valid_ticker
-    read = {candidate, *UNIVARIATE_TICKERS, *REAL_ASSETS_BASKET}
+    read = {candidate, *UNIVARIATE_TICKERS}
     if is_valid_ticker(screened):
         read.add(screened)
     read.update(t for t, _w in NAIVE_60_40)
@@ -352,7 +425,8 @@ def build_univariate_table(
 ) -> pd.DataFrame:
     """
     Univariate stats table for BTC plus comparison assets.
-    Rows: BTC, SPY, AGG, GLD, VOO, Real Assets (60% VNQ + 40% PDBC).
+    Rows: BTC, SPY, AGG, GLD, VOO, and Real Assets, the sleeve's benchmark as its spec
+    weights it (real_assets_basket).
     Returns a DataFrame indexed by asset name.
     """
     end = end_date or date.today().isoformat()
@@ -363,14 +437,16 @@ def build_univariate_table(
         if not p.empty:
             assets[ticker.replace("-USD", "")] = p.pct_change().dropna()
 
-    # Real Assets blend
-    vnq  = _price_series(REAL_ASSETS_BASKET[0], start_date, end)
-    pdbc = _price_series(REAL_ASSETS_BASKET[1], start_date, end)
-    if not vnq.empty and not pdbc.empty:
-        common = vnq.index.intersection(pdbc.index)
-        ra = (vnq.reindex(common).pct_change() * 0.5 +
-              pdbc.reindex(common).pct_change() * 0.5).dropna()
-        assets["Real Assets"] = ra
+    # Real Assets: the sleeve's benchmark legs on their common dates, weighted as the
+    # spec weights them.
+    legs = [(weight, _price_series(ticker, start_date, end))
+            for ticker, weight in real_assets_basket()]
+    if legs and not any(p.empty for _w, p in legs):
+        common = legs[0][1].index
+        for _w, p in legs[1:]:
+            common = common.intersection(p.index)
+        assets[REAL_ASSETS] = sum(
+            p.reindex(common).pct_change() * weight for weight, p in legs).dropna()
 
     rows = {}
     for name, rets in assets.items():

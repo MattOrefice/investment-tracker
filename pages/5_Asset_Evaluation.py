@@ -449,7 +449,7 @@ def _rf_line() -> str:
     if _r is None:
         return (f"not available ({_why}), so the Sharpe figures and the mean-variance "
                 "analysis are not shown.")
-    return f"{risk_free.describe(_r)}, the sample's own window."
+    return risk_free.describe(_r, name_series=True, window="the sample's own window") + "."
 
 
 uni_tbl  = _load_univariate_table()
@@ -669,10 +669,7 @@ with col:
         st.plotly_chart(fig_roll, width="stretch", config={"displayModeBar": False})
 
         # Prose
-        post_2020 = rolling_corr.loc["2020-01-01":]
-        post_2020_avg = float(post_2020.mean()) if len(post_2020) > 0 else float("nan")
-        pre_2020  = rolling_corr.loc[:"2019-12-31"]
-        pre_2020_avg  = float(pre_2020.mean())  if len(pre_2020) > 0 else float("nan")
+        pre_2020_avg, post_2020_avg, _ = ae.pre_post_2020(rolling_corr)
 
         pre_note = (
             f"Prior to 2020, BTC's rolling 60-day correlation with SPY averaged "
@@ -1120,11 +1117,9 @@ with col:
             args_for.append(f"Low correlation ({_c(corr[s])}) with {s}")
 
         btc_spy_j = float(corr.get("US Large Core", float("nan")))
-        if not np.isnan(btc_spy_j) and btc_spy_j > 0.3:
-            args_against.append(
-                f"Equity-like correlation with US Large Core ({btc_spy_j:.2f}) post-2020: "
-                "co-movement spikes during stress, when a hedge is most valuable"
-            )
+        _equity_like = ae.equity_like_argument(btc_spy_j)
+        if _equity_like:
+            args_against.append(_equity_like)
 
     # The drawdown bullet's inputs, built as the PDF builds them (src/reports.py).
     _max_drawdown, _drawdown_argument = ae.max_drawdown, ae.drawdown_argument
@@ -1174,7 +1169,7 @@ with col:
         "or an overweight to Real Assets with a sub-allocation"
     )
 
-    st.markdown(f"**Conclusion:**\n\n{ae.CONCLUSION}")
+    st.markdown(f"**Conclusion:**\n\n{ae.conclusion(rolling_corr)}")
     st.caption("This page updates automatically as new data arrives.")
 
     st.divider()
