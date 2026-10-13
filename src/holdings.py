@@ -119,6 +119,25 @@ def _price_and_status(
     return frame, TickerStatus(ticker, True, served_through=served)
 
 
+# Why the lookup below finds nothing on a book with no trade logged, in its own words.
+NO_TRADE_LEDGER = "no active self-directed taxable account carries a trade ledger"
+
+
+class PortfolioAccountUnresolved(ValueError):
+    """get_portfolio_account found no account, or more than one.
+
+    Still a ValueError, raised as before: a figure must never be computed on a guessed
+    scope. ``reason`` is the lookup's own statement of why, as a clause, for the one
+    kind of caller that must SAY so instead of raising: a sentence about the book
+    that names no figure (the as-of banner's report line, a page's empty state). A
+    book with no trade logged yet is the common case, and it used to put a traceback
+    on every page of a clean clone's first personal launch (#510)."""
+
+    def __init__(self, reason: str, message: str):
+        super().__init__(message)
+        self.reason = reason
+
+
 def get_portfolio_account() -> dict:
     """Resolve THE portfolio account — the single source of truth for the
     account identity behind every trade-derived "Portfolio" view.
@@ -159,14 +178,15 @@ def get_portfolio_account() -> dict:
             "name":         r["name"],
         }
     if not rows:
-        raise ValueError(
-            "cannot resolve the portfolio account: no active self-directed taxable "
-            "account carries a trade ledger. Refusing to guess a scope for the "
-            "trade-derived 'Portfolio' views."
+        raise PortfolioAccountUnresolved(
+            NO_TRADE_LEDGER,
+            f"cannot resolve the portfolio account: {NO_TRADE_LEDGER}. Refusing to "
+            "guess a scope for the trade-derived 'Portfolio' views."
         )
-    raise ValueError(
-        "cannot resolve the portfolio account uniquely: "
-        f"{len(rows)} self-directed taxable accounts carry trades "
+    several = f"{len(rows)} self-directed taxable accounts carry trades"
+    raise PortfolioAccountUnresolved(
+        several,
+        f"cannot resolve the portfolio account uniquely: {several} "
         f"(ids {[int(r['account_id']) for r in rows]}). Disambiguate the "
         "account-identity duplication before scoping the reads."
     )

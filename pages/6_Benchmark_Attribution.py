@@ -24,8 +24,10 @@ from src.factors import (
     sig_marker,
 )
 from src.reports import build_bf_cross_reference
-from src.ui_helpers import demo_portfolio_phrase, render_footer, render_page_header
+from src.ui_helpers import (demo_portfolio_phrase, render_footer, render_page_header,
+                            require_portfolio_account)
 render_page_header()
+require_portfolio_account("Benchmark Attribution")
 
 
 if IS_DEMO:

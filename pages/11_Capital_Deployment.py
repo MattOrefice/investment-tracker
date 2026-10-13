@@ -22,8 +22,10 @@ from src.rebalance import (
     SUM_INVARIANT_TOLERANCE,
 )
 from src.trade_writer import build_thesis_lookup, write_trades_batch
-from src.ui_helpers import demo_portfolio_phrase, render_footer, render_page_header, write_guard_toast
+from src.ui_helpers import (demo_portfolio_phrase, render_footer, render_page_header,
+                            require_portfolio_account, write_guard_toast)
 render_page_header()
+require_portfolio_account("Capital Deployment")
 
 
 

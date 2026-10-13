@@ -19,8 +19,10 @@ from src.rebalance import compute_drift, interpret_rebalance_status
 from src.sleeve_config import international_sleeves, sleeve_holdings
 from src.shiller import (earlier_years_at_or_above, get_cape_series, latest_reading,
                          read_clause)
-from src.ui_helpers import demo_portfolio_phrase, render_footer, render_page_header
+from src.ui_helpers import (demo_portfolio_phrase, render_footer, render_page_header,
+                            require_portfolio_account)
 render_page_header()
+require_portfolio_account("Strategic Asset Allocation")
 
 
 PARENT_COLORS = {
