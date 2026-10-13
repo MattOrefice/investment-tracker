@@ -50,7 +50,13 @@ from src.holdings import (
     spaxx_modeled_income,
 )
 from src import risk_free
-from src.performance import compute_risk_metrics, one_year_overlap_note, window_bounds
+from src.performance import (
+    MIN_TRADING_DAYS,
+    compute_risk_metrics,
+    one_year_overlap_note,
+    trading_days_in_window,
+    window_bounds,
+)
 from src.cache import LockCoverageError
 from src.reports import generate_quarterly_report_bytes
 from src.sleeve_config import international_sleeves
@@ -804,9 +810,15 @@ with col:
         _m = _RISK_WINDOW_MAP.get(_window_label) or {}
 
         if not _m:
+            # The floor and this window's own count, from the function that applies
+            # the floor (#502): the sentence used to name 20 trading days for a rule
+            # that counted calendar rows.
+            _have = trading_days_in_window(pv, _bl_for_metrics,
+                                           window=_RISK_WINDOW_CODES[_window_label],
+                                           cashflows=cf)
             st.caption(
-                f"Insufficient data for the {_window_label} window: it needs at least 20 "
-                "trading days."
+                f"Insufficient data for the {_window_label} window: it needs at least "
+                f"{MIN_TRADING_DAYS} trading days; it has {_have}."
             )
         else:
             # Row 1 — portfolio metrics
