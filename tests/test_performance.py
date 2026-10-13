@@ -9,7 +9,7 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from src.performance import compute_risk_metrics
+from src.performance import MIN_TRADING_DAYS, compute_risk_metrics, trading_days_in_window
 
 
 def _make_series(returns: np.ndarray, start: str = "2025-01-01") -> pd.Series:
@@ -20,9 +20,9 @@ def _make_series(returns: np.ndarray, start: str = "2025-01-01") -> pd.Series:
 
 
 # The day the window tests' series end, and the day they pin as today: a fixed session
-# late in a year, so the year-to-date window holds well over 20 of them whenever the
-# suite runs. The two tests below ended their series on date.today(), and failed from
-# the first session of each January until the year had 20 (#496).
+# late in a year, so the year-to-date window is far past its floor whenever the suite
+# runs. The two tests below ended their series on date.today(), and failed from the
+# first session of each January until the window had figures again (#496).
 SERIES_END = "2026-12-15"
 
 
@@ -128,7 +128,7 @@ def test_compute_risk_metrics_short_windows(at_series_end):
 
     Regression pin: Phase 8u. Extended from SI+1Y to five windows matching the
     BF Attribution period set. Uses a synthetic 400-day series that ends on
-    SERIES_END, so every window has ≥ 20 observations, the year-to-date one included;
+    SERIES_END, so every window clears the floor, the year-to-date one included;
     asserts all seven keys are present and values are finite.
     """
     import math as _math
@@ -241,26 +241,116 @@ def test_the_two_window_tests_pass_whatever_the_date(monkeypatch, today):
         unpin_leftovers()
 
 
-@pytest.mark.parametrize("end, rows_in_year, returns_counted", [
-    ("2027-01-27", 19, None),      # the 19th business day of the year: no figures
-    ("2027-01-28", 20, 19),        # the 20th: figures, on 19 returns
+# ── the floor: 15 trading days (#502) ─────────────────────────────────────────
+
+def _page_series(end: str, days: int = 500, flat_from: "str | None" = None):
+    """(pv, bl) shaped as the Performance page's: one row per CALENDAR day ending
+    ``end``, a move on every NYSE session and none on a weekend or holiday. From
+    ``flat_from`` on, no day moves: closes carried forward."""
+    from src.demo_refresh import is_session
+    idx = pd.date_range(end=end, periods=days, freq="D")
+    rng = np.random.default_rng(99)
+    moves = [(rng.normal(0.0004, 0.01), rng.normal(0.0003, 0.008)) for _ in idx]
+    live = [is_session(d.date()) and (flat_from is None or d < pd.Timestamp(flat_from))
+            for d in idx]
+    port = np.array([m[0] if on else 0.0 for m, on in zip(moves, live)])
+    bench = np.array([m[1] if on else 0.0 for m, on in zip(moves, live)])
+    return (pd.Series(10_000 * np.cumprod(1 + port), index=idx),
+            pd.Series(100 * np.cumprod(1 + bench), index=idx))
+
+
+def _sessions(first: str, last: str) -> int:
+    from src.demo_refresh import is_session
+    return sum(is_session(d.date()) for d in pd.date_range(first, last, freq="D"))
+
+
+def test_the_floor_is_fifteen():
+    assert MIN_TRADING_DAYS == 15
+
+
+@pytest.mark.parametrize("end, session_of_the_year, shows", [
+    ("2027-01-22", 14, False),     # the year's 14th session: no figures
+    ("2027-01-25", 15, True),      # its 15th: figures, on 15 trading days
 ])
-def test_the_ytd_window_is_empty_until_the_year_has_twenty_rows(end, rows_in_year,
-                                                                returns_counted):
-    """The floor, kept as it is (#496): a window with fewer than 20 rows returns
-    nothing. On a series of one row per business day that is the year's first 19
-    sessions. Both sides of the boundary, and every other window still has figures."""
+def test_the_ytd_window_is_empty_until_the_years_fifteenth_session(end, session_of_the_year,
+                                                                   shows):
+    """Both sides of the floor, on a series with a row for every calendar day, which is
+    what the page passes. Every other window has figures on both days."""
+    pv, bl = _page_series(end)
+    assert _sessions("2027-01-01", end) == session_of_the_year, "premise: the calendar"
+    assert trading_days_in_window(pv, bl, "YTD") == session_of_the_year
+    ytd = compute_risk_metrics(pv, bl, window="YTD")
+    if shows:
+        assert ytd["n_days"] == session_of_the_year and math.isfinite(ytd["sharpe"])
+    else:
+        assert ytd == {}
+    for w in ("1M", "3M", "1Y", "SI"):
+        assert compute_risk_metrics(pv, bl, window=w), w
+
+
+def test_twenty_calendar_rows_are_not_twenty_trading_days():
+    """The floor that went (#502): 20 ROWS. On January 20, 2027 the page's year-to-date
+    window holds 20 rows and 12 sessions. It showed figures there, on 12 returns, the
+    day after saying it needed 20 trading days. Now it has none until the 15th session."""
+    pv, bl = _page_series("2027-01-20")
+    assert int((pv.index >= "2027-01-01").sum()) == 20, "premise: 20 calendar rows"
+    assert trading_days_in_window(pv, bl, "YTD") == _sessions("2027-01-01", "2027-01-20") == 12
+    assert compute_risk_metrics(pv, bl, window="YTD") == {}
+
+
+@pytest.mark.parametrize("rows_in_year, shows", [(15, False), (16, True), (19, True)])
+def test_a_series_of_sessions_only_is_held_to_the_same_fifteen(rows_in_year, shows):
+    """One row per business day, as the tests above this section build theirs: the
+    window's first row is the base its first return is measured from, so 16 rows are 15
+    trading days. 19 rows had no figures under the 20-row floor; they hold 18 trading days."""
+    end = pd.bdate_range("2027-01-01", periods=rows_in_year)[-1].strftime("%Y-%m-%d")
     rng = np.random.default_rng(99)
     pv = _series_ending(rng.normal(0.0004, 0.01, 400), end=end)
     bl = _series_ending(np.zeros(400), end=end)
     assert int((pv.index >= "2027-01-01").sum()) == rows_in_year
+    assert trading_days_in_window(pv, bl, "YTD") == rows_in_year - 1
     ytd = compute_risk_metrics(pv, bl, window="YTD")
-    if returns_counted is None:
-        assert ytd == {}
-    else:
-        assert ytd["n_days"] == returns_counted and math.isfinite(ytd["sharpe"])
-    for w in ("1M", "3M", "1Y", "SI"):
-        assert compute_risk_metrics(pv, bl, window=w), w
+    assert bool(ytd) is shows
+    if shows:
+        assert ytd["n_days"] == rows_in_year - 1
+
+
+def test_a_one_month_window_of_nineteen_sessions_has_figures():
+    """Why 15 and not 20. The 1 Month window is the 30 days to the last close, and the
+    30 days to June 22, 2026 hold 19 sessions (Memorial Day and Juneteenth fall in
+    them). A floor of 20 would hide the window that day."""
+    pv, bl = _page_series("2026-06-22")
+    assert _sessions("2026-05-24", "2026-06-22") == 19, "premise: the calendar"
+    assert trading_days_in_window(pv, bl, "1M") == 19
+    assert MIN_TRADING_DAYS <= 19 < 20
+    assert compute_risk_metrics(pv, bl, window="1M")["n_days"] == 19
+
+
+def test_days_on_which_nothing_moved_are_not_trading_days():
+    """Closes carried forward flat from January 1: the year has rows and no return, so
+    the window holds no trading day, however many rows it has (#502's second table)."""
+    pv, bl = _page_series("2027-02-10", flat_from="2027-01-01")
+    assert int((pv.index >= "2027-01-01").sum()) == 41
+    assert trading_days_in_window(pv, bl, "YTD") == 0
+    assert compute_risk_metrics(pv, bl, window="YTD") == {}
+
+
+@pytest.mark.parametrize("window", ["1M", "3M", "YTD", "1Y", "SI"])
+def test_the_count_the_page_prints_is_the_count_the_floor_is_held_to(window):
+    """trading_days_in_window and compute_risk_metrics count from the same returns, with
+    and without flows. The flow here falls on a Saturday, a day with no return until
+    the flow is taken out of it, so the two counts differ by that day and each function
+    must be given the flows to agree with the other."""
+    pv, bl = _page_series("2026-12-15")
+    flows = pd.Series(0.0, index=pv.index)
+    flows.loc["2026-12-05"] = 250.0
+    assert pd.Timestamp("2026-12-05").dayofweek == 5, "premise: a Saturday"
+    for cf in (None, flows):
+        m = compute_risk_metrics(pv, bl, window=window, cashflows=cf)
+        assert trading_days_in_window(pv, bl, window, cashflows=cf) == m["n_days"]
+    assert (trading_days_in_window(pv, bl, window, cashflows=flows)
+            == trading_days_in_window(pv, bl, window) + 1)
+    assert trading_days_in_window(pv.iloc[:0], bl.iloc[:0], window) == 0, "an empty series"
 
 
 def test_alpha_ci_str_format():
