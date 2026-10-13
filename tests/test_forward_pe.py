@@ -73,20 +73,31 @@ def test_fresh_is_ok():
     assert forward_pe_state(_info(STALE_WARN_DAYS)) == "ok"
 
 
-def test_aging_warns():
-    assert forward_pe_state(_info(STALE_WARN_DAYS + 1)) == "stale_warn"
-    assert forward_pe_state(_info(STALE_SUPPRESS_DAYS)) == "stale_warn"
+# The estimate's age is counted from New York's date (asof.today_et, #451). The three
+# tests below check it to the day, and used to stage the estimate from the machine's
+# date (_info). On a UTC machine, from 00:00 UTC until midnight in New York, that date
+# is a day ahead: every age came out one short and all three failed (#493). They now
+# run on a pinned UTC machine, in the morning and in the evening of one New York day
+# (the new_york_day fixture), with the estimate staged from that day.
+
+def _aged(new_york_day: date, days_old: int) -> dict:
+    return {"eps": 305.0, "as_of": new_york_day - timedelta(days=days_old), "source": "x"}
 
 
-def test_stale_suppresses():
+def test_aging_warns(new_york_day):
+    assert forward_pe_state(_aged(new_york_day, STALE_WARN_DAYS + 1)) == "stale_warn"
+    assert forward_pe_state(_aged(new_york_day, STALE_SUPPRESS_DAYS)) == "stale_warn"
+
+
+def test_stale_suppresses(new_york_day):
     """Past the suppression threshold the figure must not render at all —
     same principle as refusing to fabricate the estimate."""
-    assert forward_pe_state(_info(STALE_SUPPRESS_DAYS + 1)) == "suppressed"
-    assert forward_pe_state(_info(400)) == "suppressed"
+    assert forward_pe_state(_aged(new_york_day, STALE_SUPPRESS_DAYS + 1)) == "suppressed"
+    assert forward_pe_state(_aged(new_york_day, 400)) == "suppressed"
 
 
-def test_staleness_days_counts():
-    assert staleness_days(_info(30)) == 30
+def test_staleness_days_counts(new_york_day):
+    assert staleness_days(_aged(new_york_day, 30)) == 30
 
 
 def test_thresholds_are_the_agreed_ones():

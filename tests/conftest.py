@@ -768,6 +768,52 @@ def unpin_leftovers() -> "list[str]":
     return fixed
 
 
+def utc_machine(mp: "pytest.MonkeyPatch", instant: "_dt.datetime") -> None:
+    """A UTC machine at ``instant`` (an aware datetime), for code run under ``mp``:
+    date.today() is the UTC date, and the clock asof.today_et() reads says ``instant``.
+    New York's date is left to be derived, not pinned.
+
+    GitHub's runner is such a machine. From 00:00 UTC until midnight in New York its
+    date is a day ahead of New York's, and a test that stages a date from date.today()
+    for code that counts from today_et() is then a day out (#493). Call
+    unpin_leftovers() afterwards, as after any pin_today."""
+    import src.asof
+
+    class _Clock(_dt.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return instant.astimezone(tz) if tz else instant.replace(tzinfo=None)
+
+    pin_today(mp, instant.astimezone(_dt.timezone.utc).date(), pin_et=False)
+    mp.setattr(src.asof, "datetime", _Clock)
+
+
+# One New York day, read on a UTC machine in the morning and in the evening. At 9 PM
+# Eastern the machine's date is already the next day.
+NEW_YORK_DAY = _REAL_DATE(2026, 10, 12)
+_UTC_MACHINE_AT = {
+    "11 AM ET": _dt.datetime(2026, 10, 12, 15, 0, tzinfo=_dt.timezone.utc),
+    "9 PM ET": _dt.datetime(2026, 10, 13, 1, 0, tzinfo=_dt.timezone.utc),
+}
+
+
+@pytest.fixture(params=list(_UTC_MACHINE_AT))
+def new_york_day(request):
+    """New York's date, NEW_YORK_DAY, on a UTC machine pinned at 11 AM and again at
+    9 PM Eastern that day. A test that counts days against the app's "today" stages
+    its dates from this, never from date.today(): in the evening case the machine's
+    date is a day ahead, which the fixture checks before the test runs (#493)."""
+    import src.asof
+    with pytest.MonkeyPatch.context() as mp:
+        utc_machine(mp, _UTC_MACHINE_AT[request.param])
+        ahead = (_dt.date.today() - NEW_YORK_DAY).days
+        assert src.asof.today_et() == NEW_YORK_DAY, "premise: New York's date is derived"
+        assert ahead == (1 if request.param == "9 PM ET" else 0), (
+            "premise: the machine's date is a day ahead of New York's only in the evening")
+        yield NEW_YORK_DAY
+    unpin_leftovers()
+
+
 @pytest.fixture(scope="module")
 def frozen_book_module(tmp_path_factory):
     """Module-scoped: a copy of the frozen book, offline, with today pinned to the
