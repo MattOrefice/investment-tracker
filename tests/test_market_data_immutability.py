@@ -21,9 +21,13 @@ tracked data file enrolls automatically.
 THE LEGS. Real consumers first — AppTest renders of Factor Profile, Macro, and
 SAA plus an in-memory PDF build, with network available, so a refresh is
 genuinely attempted wherever the code still tries. Then deterministic per-loader
-legs: each loader is called with ``date.today`` warped +40 days, arming every
-mtime/lag staleness window regardless of wall-clock, so the mtime-gated paths
-(shiller, trailing P/E) cannot dodge the proof by having young files.
+legs: each loader is called with the clock it reads, ``date.today``, warped +40
+days. Five of the six read no clock any more: their staleness windows went with
+the in-loader refresh, so for them the warp arms nothing and the leg checks that a
+plain call writes no tracked file. One window is left, the BE/ME breakpoints'
+30-day one, whose cache is not a tracked file. The warp sends that loader to its
+fetch, and the leg asserts it did (#497: the warp used to be installed in three
+modules, armed nothing in any leg, and nothing said so).
 """
 from __future__ import annotations
 
@@ -34,6 +38,7 @@ import pathlib
 import shutil
 import subprocess
 import sys
+import warnings
 from datetime import date, timedelta
 
 import pytest
@@ -181,10 +186,11 @@ def test_pdf_build_writes_no_tracked_data(demo_db_copy, write_trap):
     _assert_no_attempts(write_trap, "building the quarterly PDF")
 
 
-# ── Deterministic per-loader legs (staleness windows armed via time warp) ──────
+# ── Deterministic per-loader legs (the clock each loader reads, warped) ────────
 
 class _WarpedDate(date):
-    """date.today() shifted +40 days — arms every 7/30/35-day staleness window."""
+    """date.today() shifted +40 days: past the one staleness window a loader still
+    has, the BE/ME breakpoints' 30 days (factors._BEME_REFRESH_DAYS)."""
 
     @classmethod
     def today(cls):
@@ -195,24 +201,99 @@ _LOADER_LEGS = {
     "ff_factors_us": ("src.factors", lambda m: m.load_factors("us")),
     "ff_factors_developed_exus": ("src.factors", lambda m: m.load_factors("developed_exus")),
     "ff_umd_us": ("src.factors", lambda m: m.load_umd_factor()),
+    "ff_beme_breakpoints": ("src.factors", lambda m: m.load_beme_breakpoints()),
     "shiller_cape": ("src.shiller", lambda m: m.get_cape_series()),
     "trailing_pe": ("src.trailing_pe", lambda m: m.get_trailing_pe()),
 }
+# The fetch a staleness branch in each module would call. A leg stubs them all, so it
+# never reaches the network and a call to one is what "went down a staleness branch"
+# means here.
+_FETCHERS = {
+    "src.factors": ("_fetch_factors", "_fetch_umd", "_fetch_beme_breakpoints"),
+    "src.shiller": ("fetch_cape_dataframe",),
+    "src.trailing_pe": ("fetch_trailing_pe_dataframe",),
+}
+# The legs whose loader still has a staleness window for the warp to arm. The other
+# five read no clock: counted over each leg, the only clock read in these modules is
+# load_beme_breakpoints' (#497).
+_HAS_STALENESS_WINDOW = {"ff_beme_breakpoints"}
 
 
-@pytest.mark.parametrize("key", sorted(_LOADER_LEGS))
-def test_loader_writes_no_tracked_data_even_when_stale(key, write_trap, monkeypatch):
+def _run_leg(key, monkeypatch, tmp_path, *, warped: bool) -> "tuple[list[str], pathlib.Path | None]":
+    """Call one loader with every fetch in its module stubbed, and return (the fetches
+    it made, its staged cache or None). The BE/ME loader gets a cache written now, so
+    it is fresh by the real clock and stale only under the warp; its stubbed fetch
+    answers, so the refresh goes through to its write."""
     import importlib
+
+    import pandas as pd
 
     mod_name, call = _LOADER_LEGS[key]
     mod = importlib.import_module(mod_name)
-    monkeypatch.setattr(mod, "date", _WarpedDate)
-    try:
-        call(mod)
-    except Exception:
-        # Fallback chains may absorb or re-raise; the recorded attempts decide.
-        pass
+    fetched: list[str] = []
+
+    def _stub(name):
+        def fetch(*_a, **_k):
+            fetched.append(name)
+            if name == "_fetch_beme_breakpoints":
+                return pd.DataFrame({"p50": [0.75]}, index=pd.to_datetime(["2026-06-30"]))
+            raise OSError("a loader leg never reaches the network")
+        return fetch
+
+    for name in _FETCHERS[mod_name]:
+        assert callable(getattr(mod, name)), f"premise: {mod_name}.{name} is the fetch"
+        monkeypatch.setattr(mod, name, _stub(name))
+    staged = None
+    if key == "ff_beme_breakpoints":
+        staged = tmp_path / f"ff_beme_breakpoints_{'warped' if warped else 'real'}.csv"
+        pd.DataFrame({"p50": [0.5]}, index=pd.to_datetime(["2025-06-30"])).to_csv(staged)
+        monkeypatch.setattr(mod, "_BEME_CACHE", staged)
+    if warped:
+        monkeypatch.setattr(mod, "date", _WarpedDate)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        try:
+            call(mod)
+        except Exception:
+            # Fallback chains may absorb or re-raise; the recorded attempts decide.
+            pass
+    return fetched, staged
+
+
+@pytest.mark.parametrize("key", sorted(_LOADER_LEGS))
+def test_loader_writes_no_tracked_data_even_when_stale(key, write_trap, monkeypatch, tmp_path):
+    """Each loader with the clock it reads 40 days on. A loader with a staleness window
+    must be sent to its fetch by the warp, or the leg arms nothing; one without must
+    fetch nothing. Either way it writes no tracked file."""
+    fetched, _staged = _run_leg(key, monkeypatch, tmp_path, warped=True)
+    if key in _HAS_STALENESS_WINDOW:
+        assert fetched, f"the warp did not send {key!r} down its staleness branch"
+    else:
+        assert fetched == [], (
+            f"{key!r} fetched under the warp ({fetched}): its loader has a staleness "
+            f"window again. Add it to _HAS_STALENESS_WINDOW, so the leg is known armed.")
     _assert_no_attempts(write_trap, f"loader leg {key!r} (today warped +40d)")
+
+
+def test_the_warp_is_what_sends_a_loader_down_its_staleness_branch(write_trap, monkeypatch,
+                                                                   tmp_path):
+    """At least one leg is armed, and by the warp: on the real clock the same loader
+    reads its fresh cache and fetches nothing; warped, it fetches and rewrites that
+    cache. The file it writes is not a tracked one."""
+    import src.factors as factors
+
+    assert _HAS_STALENESS_WINDOW == {"ff_beme_breakpoints"}
+    real_cache = factors._BEME_CACHE
+    assert os.path.normcase(str(real_cache.resolve())) not in _tracked_data_files(), (
+        "the one file a stale loader still writes has become a tracked file")
+
+    fetched, staged = _run_leg("ff_beme_breakpoints", monkeypatch, tmp_path, warped=False)
+    assert fetched == [] and "0.5" in staged.read_text(), "fresh by the real clock: read, not fetched"
+
+    fetched, staged = _run_leg("ff_beme_breakpoints", monkeypatch, tmp_path, warped=True)
+    assert fetched == ["_fetch_beme_breakpoints"]
+    assert "0.75" in staged.read_text(), "the refresh went through to its write"
+    _assert_no_attempts(write_trap, "the BE/ME loader, stale")
 
 
 def test_trap_set_covers_the_refresh_family():
