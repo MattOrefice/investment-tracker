@@ -137,7 +137,7 @@ def test_every_committed_lock_reaches_its_last_session(book):
                            "quarter_snapshots").fetchall()
     finally:
         con.close()
-    assert len(rows) == 5
+    assert {"2025Q2", "2025Q3", "2025Q4", "2026Q1", "2026Q2"} <= {r[0] for r in rows}
     for qid, qend, blob in rows:
         b = json.loads(blob)
         need = last_session_on_or_before(date.fromisoformat(qend)).isoformat()

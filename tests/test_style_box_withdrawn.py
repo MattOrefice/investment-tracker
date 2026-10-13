@@ -153,13 +153,19 @@ def test_q3s_lock_waits_on_schps_duration_and_nothing_else_from_the_file(tmp_pat
 @pytest.mark.parametrize("book", BOOKS, ids=lambda p: p.name)
 def test_every_committed_lock_is_restated(book):
     payloads = _payloads(book)
-    assert sorted(payloads) == QUARTERS
-    for q, blob in payloads.items():
+    assert set(QUARTERS) <= set(payloads)
+    for q in QUARTERS:
+        blob = payloads[q]
         data = blob["inputs"]["etf_metadata"]["data"]
         assert not [t for t in EQUITY if t in data], (book.name, q)
         assert blob["input_corrections"]["etf_metadata"] == {
             "restated_on": RESTATED_ON, "removed": EQUITY}, (book.name, q)
     assert "hyg" in payloads["2026Q2"]["input_corrections"], "#386's record is kept"
+    # A quarter locked after the withdrawal never held the entries, and carries no record.
+    for q in sorted(set(payloads) - set(QUARTERS)):
+        held = payloads[q]["inputs"].get("etf_metadata", {}).get("data", {})
+        assert not [t for t in EQUITY if t in held], (book.name, q)
+        assert "etf_metadata" not in payloads[q].get("input_corrections", {}), (book.name, q)
 
 
 # Each lock's payload less the five equity entries, as the SHA-256 of its json.dumps, read
@@ -185,8 +191,9 @@ def test_nothing_else_in_any_lock_changed(book):
     # frames and one record. That is undone first, so this still pins everything the lock
     # held at 10313a9 but the five entries (tests/test_filled_closes.py pins the undoing).
     texts["2026Q2"] = q2_2026_before_its_closes_were_filled(texts["2026Q2"])
-    for q, text in texts.items():
-        blob = json.loads(text)
+    assert set(REST_BEFORE) <= set(texts)
+    for q in REST_BEFORE:
+        blob = json.loads(texts[q])
         del blob["input_corrections"]["etf_metadata"]
         if not blob["input_corrections"]:
             del blob["input_corrections"]
@@ -230,15 +237,18 @@ def test_the_q2_report_carries_the_sentence_and_no_style_box(tmp_path, monkeypat
 # ── the tool ─────────────────────────────────────────────────────────────────
 
 def _with_the_entries_back(src: Path, dst: Path) -> None:
-    """``src`` with the five equity entries back in every lock's metadata and the record
-    removed: a before-image, rebuilt from the committed after-image. The figures are
-    placeholders; the tool removes them whatever they are."""
+    """``src`` with the five equity entries back in the metadata of every lock that was
+    restated, and the record removed: a before-image, rebuilt from the committed
+    after-image. The figures are placeholders; the tool removes them whatever they are.
+    A quarter locked since the withdrawal is left as it is."""
     shutil.copyfile(src, dst)
     os.chmod(dst, 0o644)
     con = sqlite3.connect(dst)
     with con:
         for q, p in con.execute("SELECT quarter_id, snapshot_data FROM quarter_snapshots"
                                 ).fetchall():
+            if q not in QUARTERS:
+                continue
             blob = json.loads(p)
             data = blob["inputs"]["etf_metadata"]["data"]
             for t in EQUITY:

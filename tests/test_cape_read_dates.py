@@ -382,10 +382,14 @@ def test_the_committed_locks_hold_cape_as_they_did_with_no_read_date(book):
     """Their payloads are pinned whole by tests/test_style_box_withdrawn.py; this names
     the part this change must not touch. A lock that holds read dates is the other kind."""
     payloads = _payloads(book)
-    assert sorted(payloads) == sorted(COMMITTED)
-    for q, blob in payloads.items():
-        cape = blob["inputs"]["cape"]
+    assert set(COMMITTED) <= set(payloads)
+    for q in COMMITTED:
+        cape = payloads[q]["inputs"]["cape"]
         assert cape["kind"] == "series" and "read_on" not in cape and "source" not in cape, q
+    # A quarter locked since holds the other kind: each reading with its read date.
+    for q in sorted(set(payloads) - set(COMMITTED)):
+        cape = payloads[q]["inputs"]["cape"]
+        assert cape["kind"] == "cape_readings" and cape["read_on"][-1] and cape["source"][-1], q
 
 
 @pytest.mark.parametrize("book", BOOKS, ids=lambda p: p.name)

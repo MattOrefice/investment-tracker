@@ -25,6 +25,8 @@ from tests.conftest import FROZEN_BOOK, pin_today, point_at_frozen_book, unpin_l
 ROOT = Path(__file__).resolve().parent.parent
 BOOKS = [ROOT / "data" / "demo.db", FROZEN_BOOK]
 LINE = "series that could not be fetched when prices were locked"
+# The locks that carried the false gap. A quarter locked since never did.
+HAD_THE_GAP = ["2025Q2", "2025Q3", "2025Q4", "2026Q1", "2026Q2"]
 
 
 def _ro(book):
@@ -63,7 +65,7 @@ def test_no_committed_lock_carries_a_gap(book):
         payloads = dict(con.execute("SELECT quarter_id, snapshot_data FROM quarter_snapshots"))
     finally:
         con.close()
-    assert sorted(payloads) == ["2025Q2", "2025Q3", "2025Q4", "2026Q1", "2026Q2"]
+    assert set(HAD_THE_GAP) <= set(payloads)
     assert {q: json.loads(p)["gaps"] for q, p in payloads.items()} == {q: [] for q in payloads}
 
 
@@ -122,6 +124,8 @@ def _with_the_gap_back(src: Path, dst: Path, tool) -> None:
                     "name = 'Real Assets' AND parent_id IS NULL")
         for q, p in con.execute("SELECT quarter_id, snapshot_data FROM quarter_snapshots"
                                 ).fetchall():
+            if q not in HAD_THE_GAP:
+                continue
             assert p.count('"gaps": []') == 1
             con.execute("UPDATE quarter_snapshots SET snapshot_data = ? WHERE quarter_id = ?",
                         (p.replace('"gaps": []', gap), q))

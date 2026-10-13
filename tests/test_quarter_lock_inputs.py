@@ -328,12 +328,19 @@ def test_the_template_renders_a_pending_section(book):
 # ── the demo ships its locks ──────────────────────────────────────────────────
 
 COMMITTED = ("2025Q2", "2025Q3", "2025Q4", "2026Q1", "2026Q2")
+# Locked while some inputs did not cover the quarter yet, with the date each ended then.
+# Q3 2026 was locked on October 13, 2026: French's library ended August 31, and SCHP's
+# duration was dated June 30. cache.complete_quarter_inputs locks them later.
+WAITING = {"2026Q3": {"ff5_us": "2026-08-31", "ff5_developed_exus": "2026-08-31",
+                      "umd": "2026-08-31", "etf_metadata": "2026-06-30"}}
 
 
 def test_the_demo_ships_its_completed_quarters_locked_with_every_input(monkeypatch):
     """A fresh demo container rebuilds from the repo, so a lock that lived only in
-    its runtime cache was re-taken from whatever files were committed then. These
-    were locked by tools/lock_demo_quarters.py before the 2026-09-25 refresh."""
+    its runtime cache was re-taken from whatever files were committed then. The first
+    five were locked by tools/lock_demo_quarters.py before the 2026-09-25 refresh, and
+    hold every input. A quarter locked since holds what covered it and waits on the
+    rest (WAITING)."""
     import src.db as db
     from src.cache import INPUTS_RULE, QUARTER_END_RULE, _parse_quarter_end, get_quarter_snapshot
     from src.input_lock import ALL_INPUTS, DIVIDENDS, ETF_METADATA
@@ -343,12 +350,14 @@ def test_the_demo_ships_its_completed_quarters_locked_with_every_input(monkeypat
     con = sqlite3.connect(f"file:{(root / 'data' / 'demo.db').as_posix()}?mode=ro", uri=True)
     ids = [r[0] for r in con.execute("SELECT quarter_id FROM quarter_snapshots ORDER BY quarter_id")]
     con.close()
-    assert tuple(ids) == COMMITTED
-    for qid in COMMITTED:
+    assert tuple(ids) == COMMITTED + tuple(WAITING)
+    for qid in ids:
         snap = get_quarter_snapshot(qid)[0]
         end = pd.Timestamp(_parse_quarter_end(qid))
+        pending = WAITING.get(qid, {})
         assert snap.rule == QUARTER_END_RULE and snap.inputs_rule == INPUTS_RULE, qid
-        assert set(snap.inputs) == set(ALL_INPUTS) and snap.inputs_pending == {}, qid
+        assert snap.inputs_pending == pending, qid
+        assert set(snap.inputs) == set(ALL_INPUTS) - set(pending), qid
         for name, value in snap.inputs.items():
             if name not in (DIVIDENDS, ETF_METADATA):
                 assert value.index.max() <= end, (qid, name)

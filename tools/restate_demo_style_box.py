@@ -12,7 +12,8 @@ One transaction, rolled back unless each lock changes exactly as named: its payl
 round-trip through JSON byte for byte, must hold all five entries (and no duration among
 them), and after the edit must equal the old payload parsed, less those entries, plus the
 record; the UPDATE is keyed on the quarter and the payload's current text. A lock already
-restated is left alone, so a second run changes nothing. Targets data/demo.db explicitly
+restated is left alone, and so is one locked since that never held the entries, so a
+second run changes nothing. Targets data/demo.db explicitly
 and runs from main() only; the frozen book is rebuilt from it (tools/build_frozen_book.py).
 The personal book holds no committed locks.
 """
@@ -39,6 +40,11 @@ def restated(text: str, restated_on: date) -> "str | None":
     if json.dumps(blob) != text:
         raise SystemExit("ABORT: a payload does not round-trip through JSON")
     if (blob.get("input_corrections") or {}).get(INPUT):
+        return None
+    # A quarter locked since the withdrawal never held the entries: its metadata is the
+    # durations, or still pending and not in the lock at all. Nothing to restate.
+    held = ((blob.get("inputs") or {}).get(INPUT) or {}).get("data") or {}
+    if not any(t in held for t in EQUITY):
         return None
     data = blob["inputs"][INPUT]["data"]
     missing = [t for t in EQUITY if t not in data]
