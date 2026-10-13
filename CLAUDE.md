@@ -252,8 +252,10 @@ the code that supports it; the two with none are listed at the end.
   locked, and refuses a quarter the committed prices do not cover, which is why
   the advance comes first. It refuses the same way (`LockCoverageError`) when a
   ticker the lock covers has no close on a date between its own first and last
-  close, in either mode. Until the lock is committed, the demo's new quarter is
-  locked only in each container's runtime cache.
+  close, in either mode, and until those closes are filled the report steps back
+  to the previous quarter and names them (`cache.quarter_lock_gaps`). Until the
+  lock is committed, the demo's new quarter is locked only in each container's
+  runtime cache.
 - Not yet supported (#397), so not a step: a committed harness that renders
   every earlier locked report for a byte-identical diff.
 

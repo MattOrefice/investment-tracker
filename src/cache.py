@@ -833,7 +833,7 @@ def _interior_gaps(frame: pd.DataFrame) -> "list[str]":
     which no lock covers) would make every weekend such a date for the others, and
     this would refuse until it is taught the two calendars."""
     frame = frame.sort_index()
-    days = [d.isoformat() for d in frame.index]
+    days = [d if isinstance(d, str) else d.isoformat() for d in frame.index]
     missing: "dict[str, list[str]]" = {}
     for ticker in frame.columns:
         have = frame[ticker].notna().to_numpy()
@@ -847,6 +847,46 @@ def _interior_gaps(frame: pd.DataFrame) -> "list[str]":
     for day in sorted(missing):
         groups.setdefault(tuple(sorted(missing[day])), []).append(day)
     return [f"{', '.join(dates)} for {', '.join(tickers)}" for tickers, dates in groups.items()]
+
+
+def quarter_lock_gaps(quarter_id: str) -> "list[str]":
+    """The gaps a lock of ``quarter_id`` would be refused for now, as _interior_gaps
+    writes them (dates, then the tickers that lack a close on them), or [] when it
+    would not be: the quarter is already locked, and a persisted lock is served as
+    written, or the stored prices of the tickers the lock covers hold no gap from the
+    lock's first day through the quarter's last.
+
+    The reportable-quarter cap reads it (asof.most_recent_reportable_quarter), so a
+    page names a quarter only once its lock can be taken, and until then shows the
+    quarter before with the missing closes named (#491). The frame is the one the
+    capture would build from the cache: the same tickers, the same first day, the same
+    rule. DB only: never a fetch, and never a write, so the table is not created."""
+    import sqlite3
+    end = _parse_quarter_end(quarter_id)
+    if end is None:
+        return []
+    with get_connection() as conn:
+        try:
+            locked = conn.execute("SELECT 1 FROM quarter_snapshots WHERE quarter_id = ?",
+                                  (quarter_id,)).fetchone()
+        except sqlite3.OperationalError:          # no locks table yet: nothing is locked
+            locked = None
+    if locked:
+        return []
+    tickers, _gaps = _get_all_snapshot_tickers()
+    if not tickers:
+        return []
+    marks = ",".join("?" * len(tickers))
+    with get_connection() as conn:
+        rows = conn.execute(
+            f"SELECT ticker, price_date FROM prices WHERE ticker IN ({marks}) "
+            "AND price_date >= ? AND price_date <= ?",
+            (*tickers, _INPUT_START, end.isoformat())).fetchall()
+    if not rows:
+        return []
+    held = pd.DataFrame([(r[0], r[1]) for r in rows], columns=["ticker", "day"])
+    held["close"] = 1.0
+    return _interior_gaps(held.pivot(index="day", columns="ticker", values="close"))
 
 
 def capture_quarter_snapshot(quarter_id: str) -> tuple:
