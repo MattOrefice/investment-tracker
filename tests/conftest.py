@@ -682,6 +682,37 @@ def metadata_dated_inside_q2(mp: "pytest.MonkeyPatch", tmp_dir: Path) -> Path:
     return out
 
 
+_Q2_BEFORE_491: "dict[str, str]" = {}
+
+
+def q2_2026_before_its_closes_were_filled(text: str) -> str:
+    """The Q2 2026 lock's stored payload as it stood before #491's restatement, rebuilt
+    from the committed one (``text``): its two price frames recomputed WITHOUT the 32
+    filled closes, by the restatement tool's own steps (tools/restate_demo_filled_closes
+    .frames, on data/demo.db's closes and the dividends the lock holds), and the record
+    removed. tests/test_filled_closes.py pins that this is main's lock at 1e3e5c9, byte
+    for byte, so a test that pins what the lock held before #491 undoes the restatement
+    with this first. Both books' locks are the same text, so one result serves both."""
+    if text not in _Q2_BEFORE_491:
+        import importlib.util
+        import json
+        spec = importlib.util.spec_from_file_location(
+            "restate_demo_filled_closes", _ROOT / "tools" / "restate_demo_filled_closes.py")
+        tool = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(tool)
+        blob = json.loads(text)
+        filled = {tuple(c) for c in blob.pop(tool.RECORD)["filled"]}
+        tickers, end = list(blob["adj_close"]["columns"]), "2026-06-30"
+        closes = {k: c for k, c in tool._closes(_ROOT / "data" / "demo.db").items()
+                  if k[0] in tickers and tool.INCEPTION <= k[1] <= end and k not in filled}
+        held = blob["inputs"]["dividends"]["data"]
+        dividends = {(t, d): a for t in tickers
+                     for d, a in zip(held[t]["index"], held[t]["data"])}
+        blob.update(tool.frames(closes, dividends, tickers, end))
+        _Q2_BEFORE_491[text] = json.dumps(blob)
+    return _Q2_BEFORE_491[text]
+
+
 # The day these renders run "as of": the day after the frozen book's frontier
 # (2026-07-20). A frozen book alone does not make a render date-independent: the
 # pages read date.today() 79 times (YTD, quarter reportability, benchmark coverage
