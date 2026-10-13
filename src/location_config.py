@@ -48,13 +48,14 @@ SLEEVE_ASSUMED_YIELD: dict[str, float] = {
     "floating_rate":           0.055,
     "multi_sector_fi":         0.040,
     "core_fi_credit":          0.035,
-    # DECLARED BASIS (#286) — IEF's TTM distribution yield on the map's shared as-of of
-    # 2026-08-11, same as every equity entry below. The 0.040 it replaces was AUTHORED:
+    # DECLARED BASIS (#286) — IEF's TTM distribution yield on the map's shared as-of
+    # (SLEEVE_YIELD_PROXY_AS_OF), same as every equity entry below. The 0.040 the
+    # first measurement replaced was AUTHORED:
     # it arrived at 6cd6f99 (2026-06-01) inside a block whose fifteen entries are ALL
     # exact multiples of 0.5%, with no comment then or since. Never measured, rather
     # than measured-and-gone-stale — which is why the fix is a first measurement and
     # not a refresh. See SLEEVE_YIELD_PROXY.
-    "core_fi_treasury":        0.0397,
+    "core_fi_treasury":        0.0414,
     # CONSTRUCTED, not assumed — see SLEEVE_YIELD_CONSTRUCTION below, which a test
     # re-adds. 2.35% real yield + 2.26% breakeven inflation. It shipped at 0.025, which
     # read as a real yield because it essentially was one (within 15bp of DFII10) and so
@@ -66,23 +67,24 @@ SLEEVE_ASSUMED_YIELD: dict[str, float] = {
     "crypto":                  0.000,
     "liquid_alt":              0.020,
     # ── Equity sleeves, added #210 PR 2. Each value is a benchmark proxy's
-    # trailing-twelve-month distribution yield as of 2026-08-11, rounded to 4dp.
+    # trailing-twelve-month distribution yield as of SLEEVE_YIELD_PROXY_AS_OF
+    # (2026-09-30), rounded to 4dp.
     # The proxy, its spread against every other cached candidate, and how much of
     # the sleeve is measurable from holdings all live in SLEEVE_YIELD_PROXY below —
     # read them together, because the spread is the honest content of the value.
     "us_large_core":           0.0092,
-    "us_large_growth":         0.0036,
-    "us_large_value":          0.0136,
-    "us_large_quality":        0.0084,
-    "us_small_core":           0.0088,
-    "us_small_value":          0.0123,
-    "us_sector_tech":          0.0044,
-    "us_sector_healthcare":    0.0158,
-    "intl_developed":          0.0311,
-    "emerging_markets":        0.0170,
-    "intl_quality":            0.0231,
-    "intl_large_value":        0.0448,
-    "intl_small_value":        0.0309,
+    "us_large_growth":         0.0034,
+    "us_large_value":          0.0142,
+    "us_large_quality":        0.0085,
+    "us_small_core":           0.0098,
+    "us_small_value":          0.0129,
+    "us_sector_tech":          0.0043,
+    "us_sector_healthcare":    0.0151,
+    "intl_developed":          0.0324,
+    "emerging_markets":        0.0167,
+    "intl_quality":            0.0242,
+    "intl_large_value":        0.0462,
+    "intl_small_value":        0.0316,
 }
 
 # Where each proxied entry above came from. A value without a declared basis is what
@@ -91,37 +93,60 @@ SLEEVE_ASSUMED_YIELD: dict[str, float] = {
 #
 # EQUITY-ONLY UNTIL #286, which added core_fi_treasury and made this map's scope wider
 # than the block it was written for. Nothing about the contract changed — a proxy is a
-# proxy — and the as-of is SHARED (2026-08-11), because the recomputation test resolves
-# every entry at one date. A per-entry as-of would fail it, which is how that was found.
+# proxy — and the as-of is SHARED (SLEEVE_YIELD_PROXY_AS_OF, 2026-09-30), because the
+# recomputation test resolves every entry at one date. A per-entry as-of would fail it,
+# which is how that was found.
+#
+# RE-MEASURED AT 2026-09-30 (#513). The entries first carried an as-of of 2026-08-11,
+# and four of them (IWB, IWF, XLK, XLV) had been measured over a JULY 21 close: the
+# measurement took "the latest close on or before the as-of" from a cache whose closes
+# for those four stopped there, and the test that pinned them took the same close, so
+# it agreed. Every entry is now its proxy's distributions with an ex-date in the 365
+# days to the as-of, over the close DATED ON the as-of, read from the committed demo
+# book. tests/test_yield_proxies.py recomputes each entry and each spread from that
+# book, in CI, and fails on a book that lacks the day's close.
+#
+# THE SPREAD is the widest ratio between the proxy's yield and another cached
+# candidate's, larger over smaller, minus one: a size, always written "+". (The first
+# set mixed two signs: EFA's read -25% where every other row was written +.) Each
+# candidate's own yield is listed beside it, measured the same way on the same day.
 #
 # BENCHMARK THROUGHOUT, deliberately, including where a held ticker looks more apt.
 # intl_large_value takes EFV (0% held) rather than AVIV (the sleeve's SAA carrier),
 # because departing from the framing on one row is held-weighted reasoning applied
 # selectively: thirteen entries meaning "benchmark" and one meaning "the ticker I plan
-# to buy" is an undeclared basis again. The +85% spread is that entry's honest content.
+# to buy" is an undeclared basis again. The +62% spread is that entry's honest content.
 #
 # "N% held" is how much of the sleeve's HELD value is measurable from the cache at all
 # — the reason a benchmark stands in. Where it is low the held-weighted alternative is
-# not a better measurement, just a thinner one.
+# not a better measurement, just a thinner one. These are coverage figures, measured on
+# 2026-08-11 from the holdings then, and were NOT re-measured with the yields.
 SLEEVE_YIELD_PROXY: dict[str, str] = {
-    "us_large_core":        "IWB",   # +13% vs VOO 1.04%, SPY 0.98%; quarterly; 82.8% held cached
-    "us_large_growth":      "IWF",   # +19% vs QQQ 0.42%; quarterly; 60.1% held cached
-    "us_large_value":       "IWD",   # +34% vs VTV 1.81%; quarterly; only 7.8% held cached
-    "us_large_quality":     "QUAL",  # +30% vs SPHQ 1.09%; quarterly; 100.0% held cached
+    "us_large_core":        "IWB",   # +16% vs VOO 1.06%, SPY 0.99%; quarterly; 82.8% held cached
+    "us_large_growth":      "IWF",   # +21% vs QQQ 0.42%; quarterly; 60.1% held cached
+    "us_large_value":       "IWD",   # +35% vs VTV 1.93%; quarterly; only 7.8% held cached
+    "us_large_quality":     "QUAL",  # +22% vs SPHQ 1.03%; quarterly; 100.0% held cached
     "us_small_core":        "IWM",   # spread UNMEASURED, only cached candidate; quarterly; 0.0% held cached
     "us_small_value":       "AVUV",  # spread UNMEASURED, only cached candidate; quarterly; 100.0% held cached
     "us_sector_tech":       "XLK",   # spread UNMEASURED, only cached candidate; quarterly; 100.0% held cached
     "us_sector_healthcare": "XLV",   # spread UNMEASURED, only cached candidate; quarterly; 100.0% held cached
-    "intl_developed":       "EFA",   # -25% vs VEA 2.49%; semi-annual so the TTM is 2 payments; only 7.2% held cached
-    "emerging_markets":     "EEM",   # +32% vs IEMG 2.25%; semi-annual so the TTM is 2 payments; only 4.7% held cached
-    "intl_quality":         "IQLT",  # +20% vs IDHQ 1.93%; semi-annual so the TTM is 2 payments; 0.0% held cached
-    "intl_large_value":     "EFV",   # +85% vs AVIV 2.42% — the widest in the table; semi-annual so the TTM is 2 payments; 0.0% held cached
-    "intl_small_value":     "SCZ",   # +16% vs ISVL 3.02%, AVDV 2.67%; semi-annual so the TTM is 2 payments; 0.0% held cached
+    "intl_developed":       "EFA",   # +34% vs VEA 2.41%; semi-annual so the TTM is 2 payments; only 7.2% held cached
+    "emerging_markets":     "EEM",   # +33% vs IEMG 2.21%; semi-annual so the TTM is 2 payments; only 4.7% held cached
+    "intl_quality":         "IQLT",  # +23% vs IDHQ 1.97%; semi-annual so the TTM is 2 payments; 0.0% held cached
+    "intl_large_value":     "EFV",   # +62% vs AVIV 2.85% — the widest in the table; semi-annual so the TTM is 2 payments; 0.0% held cached
+    "intl_small_value":     "SCZ",   # +5% vs ISVL 2.99%, AVDV 3.17%; semi-annual so the TTM is 2 payments; 0.0% held cached
     # FIXED INCOME, added #286 — the first non-equity entry. It takes the map's SHARED
-    # as-of (2026-08-11), which the recomputation test pins for every entry at once; an
-    # entry with its own as-of would silently fail that recomputation.
-    "core_fi_treasury":     "IEF",   # +2% vs VGIT 3.90%; monthly, so the TTM is 12 payments; 100.0% held cached
+    # as-of (SLEEVE_YIELD_PROXY_AS_OF), which the recomputation test pins for every entry
+    # at once; an entry with its own as-of would silently fail that recomputation.
+    "core_fi_treasury":     "IEF",   # +3% vs VGIT 4.04%; monthly, so the TTM is 12 payments; 100.0% held cached
 }
+
+# The one date every proxied entry above is measured on: see the map's header.
+SLEEVE_YIELD_PROXY_AS_OF = "2026-09-30"
+# The widest spread in the map, in percent, as the Asset Location note prints it: EFV's
+# yield over AVIV's, minus one. Typed once, here; the recomputation test derives it
+# from the demo book and from the entry comments above, and fails if they disagree.
+PROXY_WIDEST_SPREAD_PCT = 62
 
 # Entries whose value is CONSTRUCTED from published series rather than measured from a
 # proxy's distributions. Parallel to SLEEVE_YIELD_PROXY above and disjoint from it: a
