@@ -27,10 +27,16 @@ Since #481 the check also covers factors.build_factor_methodology_notes, which t
 Factor Profile page prints, and factors._term_reading, the FI paragraph's sentence
 about the TERM loading. The notes typed two sets of sleeve weights that disagreed
 with the regression's own, the real-assets split again, two EM counts, and two
-classification claims read from no page. One exception is listed, with its reason:
-the momentum vintage note's worked example (UMD_EXAMPLE below).
+classification claims read from no page.
 
-The check covers these four functions and no other prose in src/factors.py.
+Since #526 the scan lists no exception. The momentum vintage note's worked example
+(four measurements of the August 2026 refresh) is read from one named record,
+factors.UMD_REFRESH_EVIDENCE, which carries the refresh's date and the commit that
+measured it. And three more sentences of the US paragraph, with the FI paragraph's
+alpha sentence, follow the computed loading as the TERM sentence does; the helpers
+that write them are read too.
+
+The check covers these seven functions and no other prose in src/factors.py.
 """
 from __future__ import annotations
 
@@ -46,18 +52,12 @@ from tests.test_theses_read_their_figures import WIDE_FIGURE, typed_figures
 
 ROOT = Path(__file__).resolve().parent.parent
 SOURCE = (ROOT / "src" / "factors.py").read_text(encoding="utf-8")
-FUNCTIONS = ("build_factor_prose", "em_disclosure", "_term_reading",
-             "build_factor_methodology_notes")
+FUNCTIONS = ("build_factor_prose", "em_disclosure", "_term_reading", "_market_reading",
+             "_tilt_reading", "_fi_alpha_reading", "build_factor_methodology_notes")
 
-# The one figure the scan lets a function type, and why. The momentum vintage note
-# cites one refresh as evidence for the order of its two causes: the August 2026
-# refresh, where the added quarter moved the loadings far more than a source rewrite
-# of most of the history did. Those are dated measurements of that refresh, not
-# figures any code holds, and tests/test_factors.py pins them so the order cannot be
-# re-inverted. #481's decision listed the notes' other figures and not this one, so
-# it stays as written until it is decided.
-UMD_EXAMPLE = "revision touching 70% of daily UMD history"
-ALLOWED = {"build_factor_methodology_notes": [UMD_EXAMPLE]}
+# No exception. #481 listed one, the momentum vintage note's "70%": the note now
+# reads its four measurements from factors.UMD_REFRESH_EVIDENCE (#526).
+ALLOWED: dict = {}
 
 # #452's wide check, plus what the factor prose typed that it could not see: a span
 # of years ("~5.5-year", "1-year") and a count of observations or of years ("12
@@ -103,7 +103,7 @@ def literal_texts(source: str, function: str) -> "list[str]":
 
 def _typed(source: str, allowed: "dict | None" = None) -> "list[str]":
     """Every figure the functions type, by #452's own function, with no figure held
-    by a book to match and the one exception ALLOWED lists."""
+    by a book to match and no exception (ALLOWED is empty)."""
     texts = {fn: dict(enumerate(literal_texts(source, fn))) for fn in FUNCTIONS}
     return typed_figures(texts, {}, ALLOWED if allowed is None else allowed,
                          figure=FACTOR_FIGURE, label="factor prose")
@@ -123,12 +123,19 @@ def test_the_scan_reaches_the_prose_it_checks():
     assert ".2f" not in prose and ".0f" not in prose, "format specs are not prose"
     notes = " ".join(literal_texts(SOURCE, "build_factor_methodology_notes"))
     for phrase in ("Universe mismatch, Developed sleeve", "FI sleeve return: {}",
-                   "at the regression's fixed weights: {}", UMD_EXAMPLE,
+                   "at the regression's fixed weights: {}",
+                   "of daily UMD history back to {} moved them by less than {}.",
                    "Real assets remain excluded"):
         assert phrase in notes, phrase
     assert "NO TYPED FIGURES" not in notes, "the docstring is not prose"
     term = " ".join(literal_texts(SOURCE, "_term_reading"))
     assert "The TERM loading is {} and {}" in term
+    assert "consistent with near-fully-invested US equity exposure." in " ".join(
+        literal_texts(SOURCE, "_market_reading"))
+    assert "The {} loading of {} (t = {}) is {} " in " ".join(
+        literal_texts(SOURCE, "_tilt_reading"))
+    assert "Annualized alpha of {} bps (t = {}) is " in " ".join(
+        literal_texts(SOURCE, "_fi_alpha_reading"))
 
 
 def test_the_factor_prose_types_no_figure():
@@ -185,6 +192,10 @@ REMOVED = {
         "\"inference: approximately 12 observations. EM factor decomposition will be \"\n"
         "        \"added at 3+ years of history, when the portfolio has \"",
         ["12observations", "3+years"]),
+    # #526: the momentum note's worked example.
+    "the momentum note's revised share": (
+        "f\"while a source revision touching {_umd_ev['history_revised']} of daily UMD \"",
+        "\"while a source revision touching 70% of daily UMD \"", ["70%"]),
 }
 
 
@@ -320,14 +331,14 @@ def test_the_q2_report_prints_the_pointer_and_none_of_the_typed_figures(tmp_path
 
 # ── #481: the methodology notes, and the sentences that follow the loading ────
 
-def test_the_one_listed_exception_is_the_momentum_notes_example_and_nothing_else():
-    """With no exception allowed the scan finds exactly one figure: the worked example
-    in the momentum vintage note. So nothing else in the four functions is typed, and
-    the exception cannot widen without this failing."""
-    found = _typed(SOURCE, allowed={})
-    assert len(found) == 1, found
-    assert "build_factor_methodology_notes" in found[0] and "types 70%" in found[0]
-    assert UMD_EXAMPLE in " ".join(literal_texts(SOURCE, "build_factor_methodology_notes"))
+def test_the_scan_lists_no_exception():
+    """#481 left one: the momentum vintage note's "70%". The note reads its record now
+    (#526), so nothing in the seven functions is typed and nothing is excused."""
+    assert ALLOWED == {}
+    assert _typed(SOURCE, allowed={}) == []
+    note = " ".join(literal_texts(SOURCE, "build_factor_methodology_notes"))
+    for typed in ("70%", "0.02", "0.07", "0.001", "1926", "2026-08"):
+        assert typed not in note, typed
 
 
 _NOTES_FI = dict(_FI, nw_lags=5, sample_start="2025-05-01", sample_end="2026-06-30")
@@ -472,3 +483,178 @@ def test_neither_sentence_survives_in_the_prose_the_functions_spell_out():
                      for t in literal_texts(SOURCE, fn))
     for gone in ("expected range", "TERM loading confirms", "meaningful interest-rate"):
         assert gone not in prose, gone
+
+
+# ── #526: the momentum note's record, and four more sentences ────────────────
+
+def test_the_momentum_note_reads_its_figures_from_one_dated_record(monkeypatch):
+    import src.factors as factors
+    record = factors.UMD_REFRESH_EVIDENCE
+    assert record == {
+        "refresh": "2026-08", "measured_on": "2026-08-12", "measured_in": "59caf70",
+        "extension_moved": "0.02–0.07", "history_revised": "70%",
+        "history_from": "1926", "revision_moved_under": "0.001"}
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", record["measured_on"])
+    assert record["measured_on"].startswith(record["refresh"])
+    assert re.fullmatch(r"[0-9a-f]{7,40}", record["measured_in"])
+    note = _note("Momentum (UMD) vintage:")
+    assert note.endswith(
+        "At the 2026-08 refresh, for example, the added quarter moved the rendered Mom "
+        "loadings by 0.02–0.07 while a source revision touching 70% of daily UMD history "
+        "back to 1926 moved them by less than 0.001. Neither reflects portfolio changes.")
+    # The contrast: the note follows the record.
+    monkeypatch.setattr(factors, "UMD_REFRESH_EVIDENCE", dict(
+        record, refresh="2027-02", extension_moved="0.03", history_revised="12%",
+        history_from="1990", revision_moved_under="0.002"))
+    assert _note("Momentum (UMD) vintage:").endswith(
+        "At the 2027-02 refresh, for example, the added quarter moved the rendered Mom "
+        "loadings by 0.03 while a source revision touching 12% of daily UMD history back to "
+        "1990 moved them by less than 0.002. Neither reflects portfolio changes.")
+
+
+_US = {"betas": {"HML": 0.083, "SMB": 0.177, "Mkt-RF": 0.936},
+       "t_stats": {"HML": 2.34, "SMB": 6.16, "Mkt-RF": 64.83},
+       "alpha_annual_bps": -36.0, "t_alpha": -0.16, "T": 291,
+       "sample_start": "2025-05-01", "sample_end": "2026-06-30"}
+
+
+def test_the_us_paragraph_states_what_each_loading_is_before_reading_it():
+    from src.factors import build_factor_prose
+    assert build_factor_prose({"us": _US})[0] == (
+        "The US equity sleeve (291 trading days, May 1, 2025 to June 30, 2026) loads on "
+        "Mkt-RF at 0.94 (t = 64.83), a positive loading that is statistically significant at "
+        "the 1% level, consistent with near-fully-invested US equity exposure. The HML "
+        "loading of 0.083 (t = 2.34) is positive and statistically significant at the 5% "
+        "level, consistent with the value tilts in VTV and AVUV. The SMB loading of 0.177 "
+        "(t = 6.16) is positive and statistically significant at the 1% level, consistent "
+        "with the small-cap exposure from the AVUV holding. Annualized alpha of -36 bps is "
+        "not statistically distinguishable from zero.")
+
+
+@pytest.mark.parametrize("beta, t, clause", [
+    (0.936, 64.83, "a positive loading that is statistically significant at the 1% level, "
+                   "consistent with near-fully-invested US equity exposure."),
+    (0.60, 9.00, "a positive loading that is statistically significant at the 1% level, and "
+                 "not the near-one loading a fully invested US equity sleeve shows."),
+    (1.20, 9.00, "a positive loading that is statistically significant at the 1% level, and "
+                 "not the near-one loading a fully invested US equity sleeve shows."),
+    (0.95, 1.20, "a positive loading that is not statistically distinguishable from zero, so "
+                 "this regression does not by itself show the sleeve's US equity exposure."),
+    (-0.20, -3.00, "a negative loading that is statistically significant at the 1% level, and "
+                   "not the near-one loading a fully invested US equity sleeve shows."),
+], ids=["near-one", "low", "high", "indistinct", "negative"])
+def test_the_market_sentence_follows_the_loading(beta, t, clause):
+    """It said "consistent with near-fully-invested US equity exposure" whatever the
+    loading was."""
+    from src.factors import build_factor_prose
+    us = dict(_US, betas=dict(_US["betas"], **{"Mkt-RF": beta}),
+              t_stats=dict(_US["t_stats"], **{"Mkt-RF": t}))
+    text = build_factor_prose({"us": us})[0]
+    assert f"loads on Mkt-RF at {beta:.2f} (t = {t:.2f}), {clause} The HML loading" in text
+    assert ("near-fully-invested" in text) == ("near-fully-invested" in clause)
+
+
+@pytest.mark.parametrize("factor, tilt", [
+    ("HML", "the value tilts in VTV and AVUV"),
+    ("SMB", "the small-cap exposure from the AVUV holding")])
+@pytest.mark.parametrize("beta, t, tail", [
+    (0.150, 4.00, "is positive and statistically significant at the 1% level, consistent "
+                  "with {}."),
+    (-0.120, -2.00, "is negative and statistically significant at the 5% level: this "
+                    "regression does not show {}."),
+    (0.020, 0.40, "is positive and not statistically distinguishable from zero, so this "
+                  "regression does not by itself show {}."),
+    (-0.020, -0.40, "is negative and not statistically distinguishable from zero, so this "
+                    "regression does not by itself show {}."),
+], ids=["positive-significant", "negative-significant", "positive-indistinct",
+        "negative-indistinct"])
+def test_the_value_and_size_sentences_follow_the_loading(factor, tilt, beta, t, tail):
+    """The HML sentence said "broadly consistent with the value tilts" and the SMB one
+    "reflects the small-cap exposure", at any sign and any significance."""
+    from src.factors import build_factor_prose
+    us = dict(_US, betas=dict(_US["betas"], **{factor: beta}),
+              t_stats=dict(_US["t_stats"], **{factor: t}))
+    text = build_factor_prose({"us": us})[0]
+    assert f"The {factor} loading of {beta:.3f} (t = {t:.2f}) {tail.format(tilt)} " in text
+
+
+@pytest.mark.parametrize("alpha, t, expected", [
+    (-65.0, -0.95,
+     "Annualized alpha of -65 bps (t = -0.95) is negative and not statistically "
+     "distinguishable from zero: the return the TERM/CREDIT proxies leave unexplained cannot "
+     "be told from zero at this sample length, so it is not evidence of managerial skill."),
+    (85.0, 0.42,
+     "Annualized alpha of +85 bps (t = 0.42) is positive and not statistically "
+     "distinguishable from zero: the return the TERM/CREDIT proxies leave unexplained cannot "
+     "be told from zero at this sample length, so it is not evidence of managerial skill."),
+    (120.0, 2.40,
+     "Annualized alpha of +120 bps (t = 2.40) is positive and statistically significant at "
+     "the 5% level: return the TERM/CREDIT proxies do not explain. ETF-vs-index tracking "
+     "differences and expense ratios can leave such a remainder, and this regression does "
+     "not separate them from managerial skill."),
+    (-200.0, -3.10,
+     "Annualized alpha of -200 bps (t = -3.10) is negative and statistically significant at "
+     "the 1% level: return the TERM/CREDIT proxies do not explain. ETF-vs-index tracking "
+     "differences and expense ratios can leave such a remainder, and this regression does "
+     "not separate them from managerial skill."),
+], ids=["negative-indistinct", "positive-indistinct", "positive-significant",
+        "negative-significant"])
+def test_the_fi_alpha_sentence_follows_the_alpha(alpha, t, expected):
+    """It said the alpha "primarily reflects ETF-vs-index tracking differences and expense
+    ratios rather than managerial skill", under an interval it called wide, whatever the
+    regression returned."""
+    from src.factors import build_factor_prose
+    fi = dict(_FI, alpha_annual_bps=alpha, t_alpha=t)
+    text = build_factor_prose({}, fi_result=fi, duration_line_location="in this report")[0]
+    assert text.endswith("in this report. " + expected)
+
+
+def test_a_loading_at_the_10_percent_level_is_told_from_zero_and_one_below_it_is_not():
+    """A reading is drawn from any loading its label can tell from zero, the marginal
+    band included: the sentence and its reading share significance_label's cut-offs, so
+    no sentence calls a loading significant and then says it cannot be told from zero."""
+    import src.factors as factors
+    from src.prose_helpers import significance_label
+    assert significance_label(1.80) == "marginally significant (10% level)"
+    assert factors._distinguishable(1.80) and factors._distinguishable(-1.80)
+    assert factors._distinguishable(1.65) and not factors._distinguishable(1.64)
+    assert factors._tilt_reading("HML", 0.050, 1.80, "the value tilts in VTV and AVUV") == (
+        "The HML loading of 0.050 (t = 1.80) is positive and marginally significant (10% "
+        "level), consistent with the value tilts in VTV and AVUV.")
+    assert factors._market_reading(0.95, 1.80) == (
+        "a positive loading that is marginally significant (10% level), consistent with "
+        "near-fully-invested US equity exposure.")
+    assert factors._fi_alpha_reading(150.0, 1.80).startswith(
+        "Annualized alpha of +150 bps (t = 1.80) is positive and marginally significant "
+        "(10% level): return the TERM/CREDIT proxies do not explain.")
+    for t in (1.64, 1.65, 1.80, 1.95, 1.96, 2.57, 2.58):
+        for sentence in (factors._tilt_reading("SMB", 0.05, t, "the tilt"),
+                         factors._market_reading(0.95, t),
+                         factors._fi_alpha_reading(50.0, t)):
+            told = "significant" in sentence
+            assert told == (t >= 1.65), sentence
+            assert told != ("does not by itself show" in sentence
+                            or "cannot be told from zero" in sentence), sentence
+
+
+def test_none_of_the_four_old_readings_survives_in_the_prose_the_functions_spell_out():
+    prose = " ".join(t for fn in FUNCTIONS for t in literal_texts(SOURCE, fn))
+    for gone in ("broadly consistent", "reflects the small-cap", "primarily reflects",
+                 "confidence interval is wide", "captures return not explained",
+                 "loads on Mkt-RF at {} (t = {}), consistent with"):
+        assert gone not in prose, gone
+
+
+def test_near_full_exposure_is_one_band_for_the_sleeve_and_for_the_benchmark(monkeypatch):
+    """The US sleeve's market sentence and the benchmark prose read "near full" by one
+    constant. It was typed in the benchmark prose alone."""
+    import src.factors as factors
+    assert factors._NEAR_FULL_BETA == 0.15
+    readers = [line for line in SOURCE.splitlines()
+               if "_NEAR_FULL_BETA" in line and "abs(" in line]
+    assert len(readers) == 2, readers
+    assert "abs(b_bench - 1.0) < 0.15" not in SOURCE, "the benchmark prose types it again"
+    assert "near-fully-invested" in factors._market_reading(0.86, 30.0)
+    assert "near-fully-invested" not in factors._market_reading(0.84, 30.0)
+    monkeypatch.setattr(factors, "_NEAR_FULL_BETA", 0.20)
+    assert "near-fully-invested" in factors._market_reading(0.84, 30.0)

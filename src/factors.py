@@ -73,6 +73,24 @@ _FACTOR_CONFIG: dict[str, dict] = {
 _UMD_URL   = _BASE_URL + "F-F_Momentum_Factor_daily_CSV.zip"
 _UMD_CACHE = _CACHE_DIR / "ff_umd_us.csv"
 
+# What one refresh of the momentum file measured: the evidence the vintage note cites
+# for the ORDER of its two causes (#170, #172). The August 2026 refresh brought both a
+# longer sample and a source revision of most of the daily history, and a same-window
+# comparison of the two vintages showed which moved the rendered loadings. These are
+# dated measurements of that refresh, not figures any code computes, so they are held
+# as one record with its date and the commit that made and described the measurement,
+# and the note reads them from here (#526). A later refresh does not update this: it
+# would be a new measurement, with its own date and commit.
+UMD_REFRESH_EVIDENCE = {
+    "refresh": "2026-08",             # the refresh measured, as the note names it
+    "measured_on": "2026-08-12",      # the day of the measurement
+    "measured_in": "59caf70",         # the commit that made it and says how
+    "extension_moved": "0.02–0.07",   # the added quarter moved the Mom loadings by
+    "history_revised": "70%",         # share of daily history the source revised
+    "history_from": "1926",           # how far back the revision reached
+    "revision_moved_under": "0.001",  # and it moved the loadings by less than
+}
+
 # Ken French NYSE book-to-market (BE/ME) breakpoints — annual, formed each June,
 # "every 5th percentile" (5, 10, …, 100). Used for the value-spread valuation
 # signal (Phase 30). Separate ingestion path from the 5-factor daily files.
@@ -1176,6 +1194,69 @@ def _sign_word(beta: float) -> str:
     return "positive" if beta > 0 else "negative" if beta < 0 else "zero"
 
 
+# How near 1.0 a market loading must be to be read as full exposure: one band, for the
+# US sleeve's Mkt-RF loading and for the portfolio's loading on its own benchmark.
+_NEAR_FULL_BETA = 0.15
+
+
+def _distinguishable(t: float) -> bool:
+    """Whether a t-statistic earns any significance label but the last: the loading can
+    be told from zero at some level significance_label names."""
+    return significance_label(t) != significance_label(0.0)
+
+
+def _market_reading(b_mkt: float, t_mkt: float) -> str:
+    """The clause after the US sleeve's Mkt-RF loading, from the loading itself (#526).
+
+    It read "consistent with near-fully-invested US equity exposure" whatever the
+    regression returned. It states the sign and significance found, and draws that
+    reading only from a loading that is distinguishable from zero and within
+    _NEAR_FULL_BETA of one."""
+    found = f"a {_sign_word(b_mkt)} loading that is {significance_label(t_mkt)}"
+    if _distinguishable(t_mkt) and abs(b_mkt - 1.0) < _NEAR_FULL_BETA:
+        return f"{found}, consistent with near-fully-invested US equity exposure."
+    if _distinguishable(t_mkt):
+        return (f"{found}, and not the near-one loading a fully invested US equity "
+                f"sleeve shows.")
+    return (f"{found}, so this regression does not by itself show the sleeve's US "
+            f"equity exposure.")
+
+
+def _tilt_reading(factor: str, beta: float, t: float, tilt: str) -> str:
+    """One sentence for a style loading the sleeve is held for (HML, SMB), from the
+    loading itself (#526): its value, its sign and significance, and the tilt it is
+    read as, only when the loading is positive and distinguishable from zero. The
+    HML sentence said "broadly consistent with the value tilts" and the SMB sentence
+    "reflects the small-cap exposure" at any sign and any significance."""
+    found = (f"The {factor} loading of {beta:.3f} (t = {t:.2f}) is {_sign_word(beta)} "
+             f"and {significance_label(t)}")
+    if _distinguishable(t) and beta > 0:
+        return f"{found}, consistent with {tilt}."
+    if _distinguishable(t):
+        return f"{found}: this regression does not show {tilt}."
+    return f"{found}, so this regression does not by itself show {tilt}."
+
+
+def _fi_alpha_reading(a_bps: float, t_a: float) -> str:
+    """The FI sleeve's alpha, from the alpha itself (#526).
+
+    The paragraph said the alpha "primarily reflects ETF-vs-index tracking differences
+    and expense ratios rather than managerial skill", under a confidence interval it
+    called wide, whatever the regression returned. It states the sign and significance
+    found. An alpha that cannot be told from zero is said to be that, and so no
+    evidence of skill. One that can is unexplained return, and the sentence says what
+    this regression cannot separate, without choosing."""
+    found = (f"Annualized alpha of {a_bps:+.0f} bps (t = {t_a:.2f}) is "
+             f"{_sign_word(a_bps)} and {significance_label(t_a)}")
+    if _distinguishable(t_a):
+        return (f"{found}: return the TERM/CREDIT proxies do not explain. ETF-vs-index "
+                f"tracking differences and expense ratios can leave such a remainder, "
+                f"and this regression does not separate them from managerial skill.")
+    return (f"{found}: the return the TERM/CREDIT proxies leave unexplained cannot be "
+            f"told from zero at this sample length, so it is not evidence of managerial "
+            f"skill.")
+
+
 def _term_reading(b_term: float, t_term: float, duration_line_location: str) -> str:
     """What the FI sleeve's TERM loading shows, from the loading itself (#481).
 
@@ -1186,7 +1267,7 @@ def _term_reading(b_term: float, t_term: float, duration_line_location: str) -> 
     the Fixed Income Effective Duration line, where the fund durations are."""
     found = f"The TERM loading is {_sign_word(b_term)} and {significance_label(t_term)}"
     line = f"the Fixed Income Effective Duration line {duration_line_location}"
-    distinguishable = significance_label(t_term) != significance_label(0.0)
+    distinguishable = _distinguishable(t_term)
     if distinguishable and b_term > 0:
         return (f"{found}: the sleeve carries interest-rate duration, consistent with "
                 f"the fund durations behind {line}.")
@@ -1240,17 +1321,16 @@ def build_factor_prose(
         s_start = _fmt_date(us["sample_start"])
         s_end   = _fmt_date(us["sample_end"])
 
-        hml_sig    = significance_label(t_hml)
         alpha_note = significance_label(t_a)
 
+        # Each loading's sentence states the sign and significance the regression
+        # found and draws its reading only from a loading that supports it (#526).
         lines.append(
             f"The US equity sleeve ({T_us} trading days, {s_start} to {s_end}) "
-            f"loads on Mkt-RF at {b_mkt:.2f} (t = {t_mkt:.2f}), consistent with "
-            f"near-fully-invested US equity exposure. "
-            f"The HML loading of {b_hml:.3f} (t = {t_hml:.2f}) is {hml_sig}, "
-            f"broadly consistent with the value tilts in VTV and AVUV. "
-            f"The SMB loading of {b_smb:.3f} (t = {t_smb:.2f}) reflects the "
-            f"small-cap exposure from the AVUV holding. "
+            f"loads on Mkt-RF at {b_mkt:.2f} (t = {t_mkt:.2f}), "
+            f"{_market_reading(b_mkt, t_mkt)} "
+            f"{_tilt_reading('HML', b_hml, t_hml, 'the value tilts in VTV and AVUV')} "
+            f"{_tilt_reading('SMB', b_smb, t_smb, 'the small-cap exposure from the AVUV holding')} "
             f"Annualized alpha of {a_bps:+.0f} bps is {alpha_note}."
         )
 
@@ -1311,10 +1391,7 @@ def build_factor_prose(
             f"Its CREDIT factor (HYG − IEF spread premium) loading is {b_credit:.3f} "
             f"(t = {t_credit:.2f}). "
             f"{_term_reading(b_term, t_term, duration_line_location)} "
-            f"Annualized alpha of {a_bps_fi:+.0f} bps (t = {t_a_fi:.2f}) captures return "
-            f"not explained by the TERM/CREDIT proxies. At this sample length the confidence "
-            f"interval is wide, and the alpha primarily reflects ETF-vs-index tracking "
-            f"differences and expense ratios rather than managerial skill."
+            f"{_fi_alpha_reading(a_bps_fi, t_a_fi)}"
         )
 
     lines.append(
@@ -1463,8 +1540,9 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
       * the two classification claims are the ones their owners' pages make
         (_FTSE_CLASSIFICATION, _FRENCH_COUNTRY_TABLE). "Treated as EM" and "a different
         Israel categorization" were read from no page.
-    The momentum vintage note's worked example is one refresh's dated measurements,
-    pinned by tests/test_factors.py, and is the scan's one listed exception.
+    The momentum vintage note's worked example is one refresh's dated measurements.
+    It is read from UMD_REFRESH_EVIDENCE, which carries the refresh's date and the
+    commit that measured it (#526); the scan lists no exception.
     tests/test_factor_prose_types_no_figures.py reads this function's literals."""
     us  = results.get("us")
     dev = results.get("developed_exus")
@@ -1498,6 +1576,8 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
     # entirely, a state the loaders and staleness surfaces already fail loudly on.
     _umd_f = umd_frontier()
 
+    # The one refresh the momentum note cites, read from its record (#526).
+    _umd_ev = UMD_REFRESH_EVIDENCE
     # The regressions' own fixed weights, as they are applied (#481).
     us_mix = _listed_mix([f"{t} {w:.1%}" for t, w in _SLEEVES["us"]["weights"].items()])
     fi_mix = " + ".join(f"{t} ({round(w * 100):.0f}%)" for t, w in _FI_WEIGHTS.items())
@@ -1553,10 +1633,11 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
         "Momentum (UMD) vintage: Mom loadings are computed against the Ken French "
         f"momentum series. {data_vintage('Momentum factor', _umd_f)} Loadings shift between "
         "refreshes chiefly because the sample extends and only secondarily because "
-        "the source revises history. At the 2026-08 refresh, for example, the "
-        "added quarter moved the rendered Mom loadings by 0.02–0.07 while a source "
-        "revision touching 70% of daily UMD history back to 1926 moved them by "
-        "less than 0.001. Neither reflects portfolio changes.",
+        f"the source revises history. At the {_umd_ev['refresh']} refresh, for example, the "
+        f"added quarter moved the rendered Mom loadings by {_umd_ev['extension_moved']} "
+        f"while a source revision touching {_umd_ev['history_revised']} of daily UMD "
+        f"history back to {_umd_ev['history_from']} moved them by "
+        f"less than {_umd_ev['revision_moved_under']}. Neither reflects portfolio changes.",
 
         f"Global factor supplement ({_intl_core_label()}): Ken French ceased publication "
         "of the daily Global 5-factor file in June 2019. This portfolio's inception "
@@ -1751,7 +1832,7 @@ def build_benchmark_prose(
 
     bench_note = (
         "consistent with near-full beta to the SAA benchmark"
-        if abs(b_bench - 1.0) < 0.15
+        if abs(b_bench - 1.0) < _NEAR_FULL_BETA
         else "departing from benchmark (expected ≈ 1.0 for a fully-invested passive portfolio)"
     )
 
