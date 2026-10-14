@@ -5,21 +5,81 @@ consistently to all panels that use them.
 """
 
 
-def significance_label(t_stat: float) -> str:
-    """Return a qualitative significance description based on a t-statistic.
+# ── Labels: a classification of a computed figure, stated in words ────────────
 
-    Uses two-tailed critical values: |t|>=2.58 (1%), |t|>=1.96 (5%),
-    |t|>=1.65 (10%). Matches the thresholds in the Factor Profile
-    methodology disclosure.
-    """
+# Every family of label the quarterly report states in running text, and the classes
+# each can state. A class is what the label SAYS about a figure (the level a t-statistic
+# reaches, which side of its benchmark a duration falls); the words that say it are
+# passed beside it and are free to change. A locked quarter's labels are held to the
+# committed golden by class (#525, tests/locked_figures.py): moving a cut-off moves a
+# class and fails it, rewording a label does not.
+LABEL_CLASSES = {
+    # The strictest level a t-statistic reaches (SIGNIFICANCE_CUT_OFFS below).
+    "significance": ("1%", "5%", "10%", "none"),
+    # The sign of a loading or an alpha.
+    "sign": ("positive", "negative", "zero"),
+    # Whether a return beat or trailed the one it is set against, where the sentence
+    # prints the gap as a magnitude.
+    "versus_benchmark": ("out", "under"),
+    # The CAPE percentile's band (reports._cape_regime_class).
+    "cape_regime": ("elevated", "above_average", "moderate", "below_average"),
+    # The FI sleeve's duration against the benchmark's (reports._build_positioning_section).
+    "duration_vs_benchmark": ("in_line", "below", "above"),
+    # The sleeve's weight against its benchmark weight, in the top allocation effect.
+    "allocation_weight": ("overweight", "underweight"),
+    # What each factor sentence reads from its loading (src/factors.py).
+    "us_market_reading": ("near_full", "not_near_full", "not_shown"),
+    "tilt_reading": ("shown", "contrary", "not_shown"),
+    "term_reading": ("duration", "contrary", "not_shown"),
+    "fi_alpha_reading": ("unexplained", "not_from_zero"),
+    # The portfolio's loading on its own benchmark, and what a significant intercept
+    # is read as.
+    "benchmark_beta": ("near_full", "departing"),
+    "active_return_reading": ("selection",),
+}
+
+# Set only by tests/locked_figures.py, while it renders a report to read its labels.
+_label_reader = None
+
+
+def label(family: str, cls: str, words: str) -> str:
+    """``words``, declared as stating class ``cls`` of the label family ``family``.
+
+    Returns ``words``. Every word, clause or sentence the report chooses by testing a
+    computed figure goes through here, so the class it states can be read off a
+    locked quarter's render whatever the words are. An undeclared family or class
+    raises: the classes are the list above, and a new one is added there."""
+    if cls not in LABEL_CLASSES[family]:
+        raise ValueError(f"{cls!r} is not a class of the label family {family!r}: "
+                         f"{LABEL_CLASSES[family]}")
+    return words if _label_reader is None else _label_reader(family, cls, words)
+
+
+# Two-tailed critical values for |t|, strictest first. They match the thresholds in
+# the Factor Profile methodology disclosure.
+SIGNIFICANCE_CUT_OFFS = (("1%", 2.58), ("5%", 1.96), ("10%", 1.65))
+SIGNIFICANCE_WORDS = {
+    "1%": "statistically significant at the 1% level",
+    "5%": "statistically significant at the 5% level",
+    "10%": "marginally significant (10% level)",
+    "none": "not statistically distinguishable from zero",
+}
+
+
+def significance_level(t_stat: float) -> str:
+    """The strictest level a t-statistic reaches: "1%", "5%", "10%", or "none"."""
     t_abs = abs(t_stat)
-    if t_abs >= 2.58:
-        return "statistically significant at the 1% level"
-    if t_abs >= 1.96:
-        return "statistically significant at the 5% level"
-    if t_abs >= 1.65:
-        return "marginally significant (10% level)"
-    return "not statistically distinguishable from zero"
+    for level, cut_off in SIGNIFICANCE_CUT_OFFS:
+        if t_abs >= cut_off:
+            return level
+    return "none"
+
+
+def significance_label(t_stat: float) -> str:
+    """Return a qualitative significance description based on a t-statistic: the words
+    for the level it reaches (significance_level)."""
+    level = significance_level(t_stat)
+    return label("significance", level, SIGNIFICANCE_WORDS[level])
 
 
 def year_ranges(years: "list[int]") -> str:

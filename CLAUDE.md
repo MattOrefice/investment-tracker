@@ -293,6 +293,16 @@ the code that supports it; the two with none are listed at the end.
   difference. Macro Context and Asset Evaluation are computed at each render and
   are not in it; neither are the cover, the methodology page or any wording. How
   a figure is told from wording is in `tests/locked_figures.py`'s docstring.
+- A LABEL IS HELD BY THE CLASS IT STATES, NOT ITS WORDS. Words a locked section's
+  code picks by testing a computed figure (a significance level, "in line with
+  benchmark", "outperforming", what a factor sentence reads from its loading) go
+  through `prose_helpers.label(family, cls, words)`, and the families and their
+  classes are `prose_helpers.LABEL_CLASSES`. The golden holds each label's class: a
+  moved cut-off that moves a class fails it, and rewording a label moves nothing. A
+  new word the code picks from a figure goes through `label()`, with its family
+  declared, or the golden cannot see it. A classification in a table cell (a
+  significance star, a drift status) is compared whole, words and all, like any
+  cell.
 - A PR THAT MOVES A LOCKED FIGURE UPDATES THE GOLDEN IN THE SAME PR, and does one
   of two things:
     - carries a restatement: a record in each lock whose figures move and a
@@ -315,7 +325,7 @@ the code that supports it; the two with none are listed at the end.
   figure, because the render cannot tell it from a computed one. Rewording such a
   sentence moves the golden with no figure moving: regenerate with `--wording
   "<what was reworded>"` and say so in the PR. The writer lets it through only
-  when no table cell and no tile moved.
+  when no table cell, no tile and no label's class moved.
 - The personal book is not in it: it holds no committed lock.
 
 ## History baseline (post-2026-06-08 reorg)

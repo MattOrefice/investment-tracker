@@ -17,13 +17,16 @@ Pinned here:
   * the golden covers exactly the committed locks, and each lock's figures are its;
   * each entry was taken under the lock's own records, so a lock and the golden stay
     in step, and every restatement record a lock carries is said on its cover;
-  * the reading itself: typed text is not a figure, a significance label is not, a
-    table cell is compared whole, words and their order are free;
+  * the reading itself: typed text is not a figure, a table cell is compared whole,
+    words and their order are free;
+  * a label is held by the class it states, not its words: every committed entry holds
+    each section's labels, a moved 1% cut-off fails, and every label reworded passes;
   * the proof: a significance cut-off moved from 10% to 20% fails the comparison and
     the tool refuses it; the same change carried with a record in each lock passes.
 """
 from __future__ import annotations
 
+import ast
 import importlib.util
 import json
 import os
@@ -197,23 +200,137 @@ def _m(text: str) -> str:
 def test_text_typed_in_the_template_is_not_a_figure():
     section = (f"<p>Sum of effects reconciles within 1 bp. Cash drag: <strong>{_m('-12 bps')}"
                f"</strong> across the {_m('12')} sleeves.</p>")
-    assert lf.figures_of(section) == {"tables": [], "text": ["-12 bps", "12"]}
+    assert lf.figures_of(section) == {"tables": [], "text": ["-12 bps", "12"],
+                                      "labels": []}
 
 
 def test_a_number_in_a_computed_sentence_is_a_figure_and_its_words_are_not():
     one = lf.figures_of("<p>" + _m("The sleeve loads on Mkt-RF at 0.97 (t = 45.12).") + "</p>")
     two = lf.figures_of("<p>" + _m("With t = 45.12, its market loading is 0.97, as found.")
                         + "</p><p>" + _m("A sentence with no number.") + "</p>")
-    assert one == two == {"tables": [], "text": ["0.97", "45.12"]}
+    assert one == two == {"tables": [], "text": ["0.97", "45.12"], "labels": []}
 
 
 def test_a_significance_label_is_a_word_for_the_t_statistic_beside_it():
+    """In plain text the label's words are set aside from the numbers. (In a marked
+    render the label is found by its marks: the tests below.)"""
     from src.prose_helpers import significance_label
     labels = lf.significance_labels()
     assert significance_label(3.0) in labels and len(labels) == 4
     sentence = f"The HML loading of 0.083 (t = 2.34) is {significance_label(2.34)}."
     assert "5% level" in sentence
     assert lf.numbers_in(sentence) == ["0.083", "2.34"]
+
+
+def test_a_label_is_read_as_its_class_and_its_words_are_not():
+    """A label's class is what the comparison holds; its words, numbers in them
+    included, are not figures, and the figure beside it still is."""
+    def section(words_5, words_below):
+        return ("<p>" + _m("The SMB loading of 0.083 (t = 2.34) is "
+                           + lf.labelled("significance", "5%", words_5) + ".")
+                + "</p><p>" + _m("Duration 5.9 yrs vs 6.1 yrs ("
+                                 + lf.labelled("duration_vs_benchmark", "below", words_below)
+                                 + " by 0.2 yrs).") + "</p>")
+    one = lf.figures_of(section("statistically significant at the 5% level", "below benchmark"))
+    two = lf.figures_of(section("significant at five percent, 95 in 100", "short of the Agg"))
+    assert one == two == {"tables": [], "text": ["0.083", "0.2 yrs", "2.34", "5.9 yrs",
+                                                 "6.1 yrs"],
+                          "labels": ["duration_vs_benchmark=below", "significance=5%"]}
+    other = lf.figures_of(section("statistically significant at the 5% level",
+                                  "below benchmark").replace("significance=5%",
+                                                             "significance=1%"))
+    assert other["labels"] == ["duration_vs_benchmark=below", "significance=1%"]
+    assert other["text"] == one["text"]
+
+
+def test_a_label_prints_as_its_words():
+    """Outside the harness label() returns the words; in the harness the marks around
+    them come off whole, so a table cell holding a label is compared as printed."""
+    from src.prose_helpers import label
+    assert label("duration_vs_benchmark", "in_line", "in line with benchmark") == (
+        "in line with benchmark")
+    marked = _m("Duration (" + lf.labelled("duration_vs_benchmark", "in_line",
+                                           "in line with benchmark") + ")")
+    assert lf._unmarked(marked) == "Duration (in line with benchmark)"
+    table = ("<table class='data-table'><thead><tr><th>Sleeve</th><th>Status</th></tr>"
+             f"</thead><tbody><tr><td>{_m('US')}</td><td>{_m(lf.labelled('sign', 'zero', 'Flat'))}"
+             "</td></tr></tbody></table>")
+    assert lf.figures_of(table) == {"tables": [[["Flat"]]], "text": [], "labels": []}
+
+
+def test_a_label_outside_a_computed_value_or_with_unbalanced_marks_fails():
+    with pytest.raises(AssertionError, match="outside a computed value"):
+        lf.figures_of("<p>Typed " + lf.labelled("sign", "positive", "positive") + "</p>")
+    broken = _m("is " + lf.labelled("sign", "positive", "positive")[:-1] + " here")
+    with pytest.raises(AssertionError, match="unbalanced"):
+        lf.figures_of("<p>" + broken + "</p>")
+
+
+def test_a_label_states_only_a_declared_class():
+    from src.prose_helpers import LABEL_CLASSES, label
+    with pytest.raises(ValueError, match="'in line' is not a class of the label family "
+                                         "'duration_vs_benchmark'"):
+        label("duration_vs_benchmark", "in line", "in line with benchmark")
+    with pytest.raises(KeyError):
+        label("duration", "in_line", "in line with benchmark")
+    for family, classes in LABEL_CLASSES.items():
+        assert classes and len(set(classes)) == len(classes), family
+
+
+def _label_calls() -> "list[tuple[str, int, str, object]]":
+    """Every call of label() in src/: (file, line, family, class or None when the class
+    is computed)."""
+    calls = []
+    for path in sorted((ROOT / "src").rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                    and node.func.id == "label" and len(node.args) == 3):
+                family = node.args[0]
+                assert isinstance(family, ast.Constant), (path.name, node.lineno)
+                cls = node.args[1].value if isinstance(node.args[1], ast.Constant) else None
+                calls.append((path.name, node.lineno, family.value, cls))
+    return calls
+
+
+def test_every_label_family_is_declared_and_stated_somewhere():
+    """Each label() call names a declared family and, when it is typed, a declared
+    class; and every declared family is stated by some call, so the list in
+    prose_helpers is the report's labels and nothing else."""
+    from src.prose_helpers import LABEL_CLASSES
+    calls = _label_calls()
+    assert len(calls) >= 20, "premise: the report's labels go through label()"
+    for name, line, family, cls in calls:
+        assert family in LABEL_CLASSES, (name, line, family)
+        assert cls is None or cls in LABEL_CLASSES[family], (name, line, family, cls)
+    assert {family for _n, _l, family, _c in calls} == set(LABEL_CLASSES)
+
+
+def test_every_committed_entry_holds_its_labels():
+    """Each section of each committed entry carries its labels, so no entry is one
+    written before labels were read; and the count the golden was written with."""
+    from src.prose_helpers import LABEL_CLASSES
+    stated = set()
+    for book, quarter in CASES:
+        entry = GOLDEN[book][quarter]
+        assert lf.holds_labels(entry), (book, quarter)
+        for s in entry["sections"].values():
+            assert s["labels"] == sorted(s["labels"])
+            for found in s["labels"]:
+                family, cls = found.split("=")
+                assert cls in LABEL_CLASSES[family], (book, quarter, found)
+                stated.add(found)
+    assert sum(lf.count_labels(GOLDEN[b][q]) for b, q in CASES) == 264, (
+        "the count the golden was written with")
+    # What the committed locks state. A label no lock states (a reading that would
+    # contradict a tilt, a duration above the benchmark) is held from the first lock
+    # that does.
+    assert {"significance=1%", "significance=5%", "significance=10%", "significance=none",
+            "sign=positive", "sign=negative", "versus_benchmark=out", "versus_benchmark=under",
+            "cape_regime=elevated", "duration_vs_benchmark=in_line",
+            "duration_vs_benchmark=below", "us_market_reading=near_full", "tilt_reading=shown",
+            "term_reading=duration", "fi_alpha_reading=not_from_zero",
+            "benchmark_beta=near_full", "active_return_reading=selection"} == stated
 
 
 def test_a_name_that_holds_a_number_is_not_a_figure():
@@ -234,7 +351,8 @@ def test_a_table_cell_is_compared_whole_and_its_row_label_is_not():
              f"<tr><td>{_m('HML')}</td><td>{_m('0.083')}</td><td>{_m('**')}</td></tr>"
              f"<tr><td>{_m('SMB')}</td><td>{_m('0.177')}</td><td>{_m('')}</td></tr>"
              "</tbody></table>")
-    assert lf.figures_of(table) == {"tables": [[["0.083", "**"], ["0.177", ""]]], "text": []}
+    assert lf.figures_of(table) == {"tables": [[["0.083", "**"], ["0.177", ""]]],
+                                    "text": [], "labels": []}
     renamed = table.replace("HML", "Value").replace("Loading", "Beta")
     assert lf.figures_of(renamed) == lf.figures_of(table), "a label is a name"
     trades = ("<table class='data-table'><thead><tr><th>Date</th><th>Ticker</th></tr></thead>"
@@ -262,16 +380,19 @@ def test_a_computed_number_that_reaches_the_page_unmarked_fails():
 
 def test_the_marks_change_nothing_else_in_the_render(tmp_path):
     """The reading rests on this: the marked render is the report the app renders,
-    character for character, with the two invisible marks around computed values.
-    Every lock of the frozen book, rendered both ways."""
+    character for character, with the two invisible marks around computed values and
+    the class of each label carried around its words. Every lock of the frozen book,
+    rendered both ways. A comparison the report makes on a label's words would make
+    the two differ here."""
     with_marks, without = {}, {}
     lf.render_book("frozen_book.db", tmp_path, html_out=with_marks)
     assert lf.render_book("frozen_book.db", tmp_path, marked=False, html_out=without) == {}
     assert sorted(with_marks) == sorted(without) == sorted(GOLDEN["frozen_book.db"])
     for quarter, html in with_marks.items():
         assert html.count(lf.OPEN) == html.count(lf.CLOSE) > 400, quarter
-        assert lf.OPEN not in without[quarter] and lf.CLOSE not in without[quarter]
-        assert html.replace(lf.OPEN, "").replace(lf.CLOSE, "") == without[quarter], quarter
+        assert html.count(lf.LABEL_OPEN) == html.count(lf.LABEL_CLOSE) > 20, quarter
+        assert not any(mark in without[quarter] for mark in lf.MARKS), quarter
+        assert lf._unmarked(html) == without[quarter], quarter
 
 
 def test_marking_leaves_a_value_its_comparisons_and_refuses_what_it_cannot_mark():
@@ -294,12 +415,24 @@ def test_differences_names_each_figure_that_moved():
     now["tiles"]["alpha_sp_str"] = "-289 bps"
     now["sections"]["Factor Profile"]["tables"][0][2][3] = "*"
     now["sections"]["Performance"]["text"][0] = "9.9%"
+    labels = now["sections"]["Performance"]["labels"]
+    assert labels == ["duration_vs_benchmark=in_line"], "premise"
+    labels[0] = "duration_vs_benchmark=below"
     lines = lf.differences(was, now)
     assert lines[0] == "Performance tile alpha_sp_str: '-290 bps' -> '-289 bps'"
     assert any(line.startswith("Factor Profile, table 1, row 3: ") for line in lines)
     assert any(line.startswith("Performance, text: no longer printed ['1.5%']; now printed "
                                "['9.9%']") for line in lines)
-    assert len(lines) == 3
+    assert ("Performance, labels: no longer stated ['duration_vs_benchmark=in_line']; now "
+            "stated ['duration_vs_benchmark=below']") in lines
+    assert len(lines) == 4
+    # An entry written before labels were read is compared on its figures alone.
+    before = json.loads(json.dumps(was))
+    for s in before["sections"].values():
+        del s["labels"]
+    assert not lf.holds_labels(before)
+    figures_only = lf.differences(before, now)
+    assert len(figures_only) == 3 and not any(", labels: " in line for line in figures_only)
 
 
 # ── wording moves nothing ────────────────────────────────────────────────────
@@ -319,6 +452,102 @@ def test_rewording_the_factor_prose_moves_no_figure(tmp_path, monkeypatch):
     again = lf.render_book("frozen_book.db", tmp_path)
     for quarter, entry in GOLDEN["frozen_book.db"].items():
         assert lf.differences(entry, again[quarter]) == [], quarter
+
+
+# ── a label: its class is held, its words are free ──────────────────────────
+
+def test_a_moved_one_percent_cut_off_fails_on_the_labels_it_moves(tmp_path, monkeypatch):
+    """significance_label's 1% cut-off moved from 2.58 to 2.30: two labels in two locks
+    now state 1% where they stated 5%, the comparison fails on those labels and on
+    nothing else (no table cell reads this cut-off), and the writer refuses it."""
+    import src.prose_helpers as prose_helpers
+    tool, book = _tool(), "frozen_book.db"
+    monkeypatch.setattr(prose_helpers, "SIGNIFICANCE_CUT_OFFS",
+                        (("1%", 2.30), ("5%", 1.96), ("10%", 1.65)))
+    moved_cut_off = lf.render_book(book, tmp_path)
+    moved = {q: lf.differences(GOLDEN[book][q], moved_cut_off[q]) for q in GOLDEN[book]}
+    assert {q: lines for q, lines in moved.items() if lines} == {
+        "2025Q2": ["Benchmark Attribution, labels: no longer stated ['significance=5%']; "
+                   "now stated ['significance=1%']"],
+        "2026Q2": ["Factor Profile, labels: no longer stated ['significance=5%']; now "
+                   "stated ['significance=1%']"]}
+    with pytest.raises(SystemExit, match="figures moved in 2 lock.s. whose own records did "
+                                         "not change"):
+        tool.updated({book: GOLDEN[book]}, {book: moved_cut_off})
+    with pytest.raises(SystemExit, match="figures moved in 2 lock"):
+        tool.updated({book: GOLDEN[book]}, {book: moved_cut_off}, wording="the labels")
+
+
+def test_every_label_reworded_moves_nothing(tmp_path, monkeypatch):
+    """The significance words rewritten in prose_helpers, and every label's words in
+    every lock replaced as it is stated, each keeping its class: the golden holds."""
+    import src.prose_helpers as prose_helpers
+    monkeypatch.setattr(prose_helpers, "SIGNIFICANCE_WORDS", {
+        "1%": "significant at one percent", "5%": "significant at five percent",
+        "10%": "significant only at ten percent", "none": "indistinguishable from nothing"})
+    original, stated = lf.labelled, []
+
+    def reworded(family, cls, words):
+        stated.append((family, cls))
+        return original(family, cls, f"(said otherwise, 1 of 2 ways: {words.upper()})")
+
+    monkeypatch.setattr(lf, "labelled", reworded)
+    again = lf.render_book("frozen_book.db", tmp_path)
+    assert len(stated) >= sum(lf.count_labels(GOLDEN["frozen_book.db"][q])
+                              for q in GOLDEN["frozen_book.db"])
+    for quarter, entry in GOLDEN["frozen_book.db"].items():
+        assert lf.differences(entry, again[quarter]) == [], quarter
+
+
+def test_the_allocation_commentary_states_which_side_of_its_benchmark_weight(monkeypatch):
+    """allocation_weight is a label no committed lock states: no quarter's top
+    allocation effect has passed the 15 bps the commentary needs. So the golden will
+    hold it from the first lock that does, and its class is tested here."""
+    import pandas as pd
+
+    import src.prose_helpers as prose_helpers
+    from src import reports
+    monkeypatch.setattr(prose_helpers, "_label_reader", lf.labelled)
+    monkeypatch.setattr(reports, "_chart_b64", lambda *a, **k: None)
+    for w_p, w_b, cls in ((0.12, 0.08, "overweight"), (0.04, 0.08, "underweight")):
+        bf = pd.DataFrame([{"sleeve": "US Small Cap", "w_p": w_p, "w_b": w_b, "r_p": 0.05,
+                            "r_b": 0.04, "allocation_effect": 0.003, "selection_effect": 0.001,
+                            "total_effect": 0.004}])
+        bf.attrs.update(no_benchmark_sleeves=[], price_gaps=[], benchmark_gaps=[],
+                        cash_drag=0.0)
+        monkeypatch.setattr(reports, "brinson_fachler_period", lambda *a, **k: bf)
+        text = reports._build_attribution_section("2026-01-01", "2026-03-31")[
+            "alloc_commentary"]
+        assert lf.labels_in(text) == [f"allocation_weight={cls}"]
+        assert lf._unmarked(text).startswith(f"US Small Cap: {cls} vs benchmark")
+
+
+def test_the_writer_records_labels_once_and_refuses_a_moved_class():
+    tool, book = _tool(), "frozen_book.db"
+    render = {q: dict(e, cover="") for q, e in json.loads(json.dumps(GOLDEN[book])).items()}
+    # An entry from before labels were read gains them, with nothing else moving.
+    before = json.loads(json.dumps(GOLDEN[book]))
+    for entry in before.values():
+        for s in entry["sections"].values():
+            del s["labels"]
+    new, report = tool.updated({book: before}, {book: render})
+    assert new == {book: GOLDEN[book]}
+    assert report[0] == ("frozen_book.db 2025Q2: 26 labels recorded for the first time, "
+                         "no figure moved")
+    assert len(report) == 5
+    # The first recording of labels lets no figure through: an entry from before labels
+    # were read whose figures moved too, under unchanged records, is refused.
+    moved_too = json.loads(json.dumps(render))
+    moved_too["2026Q2"]["tiles"]["alpha_sp_str"] = "-289 bps"
+    with pytest.raises(SystemExit, match="figures moved in 1 lock"):
+        tool.updated({book: before}, {book: moved_too})
+    # A class that moves under unchanged records is refused, whatever is said.
+    flipped = json.loads(json.dumps(render))
+    flipped["2026Q2"]["sections"]["Performance"]["labels"] = ["duration_vs_benchmark=above"]
+    with pytest.raises(SystemExit, match="figures moved in 1 lock"):
+        tool.updated({book: GOLDEN[book]}, {book: flipped})
+    with pytest.raises(SystemExit, match="figures moved in 1 lock"):
+        tool.updated({book: GOLDEN[book]}, {book: flipped}, wording="the duration line")
 
 
 # ── the proof: a method parameter, alone and carried as a restatement ────────

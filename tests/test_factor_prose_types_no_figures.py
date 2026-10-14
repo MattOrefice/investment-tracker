@@ -130,7 +130,9 @@ def test_the_scan_reaches_the_prose_it_checks():
     assert "NO TYPED FIGURES" not in notes, "the docstring is not prose"
     term = " ".join(literal_texts(SOURCE, "_term_reading"))
     assert "The TERM loading is {} and {}" in term
-    assert "consistent with near-fully-invested US equity exposure." in " ".join(
+    # The reading is a label since #525's second decision, and the sentence's full stop
+    # is typed after it.
+    assert "consistent with near-fully-invested US equity exposure" in " ".join(
         literal_texts(SOURCE, "_market_reading"))
     assert "The {} loading of {} (t = {}) is {} " in " ".join(
         literal_texts(SOURCE, "_tilt_reading"))
@@ -144,10 +146,11 @@ def test_the_factor_prose_types_no_figure():
 
 # Each figure this pass removed: (the text now in the source, the text it replaced).
 REMOVED = {
-    # The sentence moved into _term_reading with #481; the figures it replaced are the same.
+    # The sentence moved into _term_reading with #481, and its reading into a label with
+    # #525 (the full stop is typed after it); the figures it replaced are the same.
     "VGIT's and SCHP's durations": (
-        "f\"the fund durations behind {line}.\")",
-        "\"VGIT's ~5.5-year effective duration and SCHP's ~6.8-year duration.\")",
+        "f\"the fund durations behind {line}\")",
+        "\"VGIT's ~5.5-year effective duration and SCHP's ~6.8-year duration\")",
         ["~5.5-year", "~6.8-year"]),
     "Korea's weight in VEA": (
         "South Korea as Developed, while \"",

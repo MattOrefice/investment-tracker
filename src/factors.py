@@ -43,7 +43,7 @@ from statsmodels.tools import add_constant
 from src.benchmarks import get_custom_blended_series
 from src.holdings import get_holdings_on_date, get_portfolio_account_id, get_portfolio_value_series
 from src.prices import get_prices, total_return_series
-from src.prose_helpers import significance_label
+from src.prose_helpers import label, significance_label, significance_level
 
 _ROOT = Path(__file__).resolve().parent.parent
 
@@ -1224,7 +1224,8 @@ def _listed_mix(parts: "list[str]") -> str:
 
 def _sign_word(beta: float) -> str:
     """The sign the regression found for a loading, as a word."""
-    return "positive" if beta > 0 else "negative" if beta < 0 else "zero"
+    sign = "positive" if beta > 0 else "negative" if beta < 0 else "zero"
+    return label("sign", sign, sign)
 
 
 # How near 1.0 a market loading must be to be read as full exposure: one band, for the
@@ -1235,7 +1236,7 @@ _NEAR_FULL_BETA = 0.15
 def _distinguishable(t: float) -> bool:
     """Whether a t-statistic earns any significance label but the last: the loading can
     be told from zero at some level significance_label names."""
-    return significance_label(t) != significance_label(0.0)
+    return significance_level(t) != "none"
 
 
 def _market_reading(b_mkt: float, t_mkt: float) -> str:
@@ -1247,12 +1248,17 @@ def _market_reading(b_mkt: float, t_mkt: float) -> str:
     _NEAR_FULL_BETA of one."""
     found = f"a {_sign_word(b_mkt)} loading that is {significance_label(t_mkt)}"
     if _distinguishable(t_mkt) and abs(b_mkt - 1.0) < _NEAR_FULL_BETA:
-        return f"{found}, consistent with near-fully-invested US equity exposure."
-    if _distinguishable(t_mkt):
-        return (f"{found}, and not the near-one loading a fully invested US equity "
-                f"sleeve shows.")
-    return (f"{found}, so this regression does not by itself show the sleeve's US "
-            f"equity exposure.")
+        reading = label("us_market_reading", "near_full",
+                        "consistent with near-fully-invested US equity exposure")
+    elif _distinguishable(t_mkt):
+        reading = label("us_market_reading", "not_near_full",
+                        "and not the near-one loading a fully invested US equity sleeve "
+                        "shows")
+    else:
+        reading = label("us_market_reading", "not_shown",
+                        "so this regression does not by itself show the sleeve's US "
+                        "equity exposure")
+    return f"{found}, {reading}."
 
 
 def _tilt_reading(factor: str, beta: float, t: float, tilt: str) -> str:
@@ -1264,10 +1270,13 @@ def _tilt_reading(factor: str, beta: float, t: float, tilt: str) -> str:
     found = (f"The {factor} loading of {beta:.3f} (t = {t:.2f}) is {_sign_word(beta)} "
              f"and {significance_label(t)}")
     if _distinguishable(t) and beta > 0:
-        return f"{found}, consistent with {tilt}."
+        return f"{found}, {label('tilt_reading', 'shown', f'consistent with {tilt}')}."
     if _distinguishable(t):
-        return f"{found}: this regression does not show {tilt}."
-    return f"{found}, so this regression does not by itself show {tilt}."
+        contrary = label("tilt_reading", "contrary", f"this regression does not show {tilt}")
+        return f"{found}: {contrary}."
+    not_shown = label("tilt_reading", "not_shown",
+                      f"so this regression does not by itself show {tilt}")
+    return f"{found}, {not_shown}."
 
 
 def _fi_alpha_reading(a_bps: float, t_a: float) -> str:
@@ -1282,12 +1291,17 @@ def _fi_alpha_reading(a_bps: float, t_a: float) -> str:
     found = (f"Annualized alpha of {a_bps:+.0f} bps (t = {t_a:.2f}) is "
              f"{_sign_word(a_bps)} and {significance_label(t_a)}")
     if _distinguishable(t_a):
-        return (f"{found}: return the TERM/CREDIT proxies do not explain. ETF-vs-index "
-                f"tracking differences and expense ratios can leave such a remainder, "
-                f"and this regression does not separate them from managerial skill.")
-    return (f"{found}: the return the TERM/CREDIT proxies leave unexplained cannot be "
-            f"told from zero at this sample length, so it is not evidence of managerial "
-            f"skill.")
+        reading = label(
+            "fi_alpha_reading", "unexplained",
+            "return the TERM/CREDIT proxies do not explain. ETF-vs-index tracking "
+            "differences and expense ratios can leave such a remainder, and this "
+            "regression does not separate them from managerial skill.")
+    else:
+        reading = label(
+            "fi_alpha_reading", "not_from_zero",
+            "the return the TERM/CREDIT proxies leave unexplained cannot be told from "
+            "zero at this sample length, so it is not evidence of managerial skill.")
+    return f"{found}: {reading}"
 
 
 def _term_reading(b_term: float, t_term: float, duration_line_location: str) -> str:
@@ -1302,13 +1316,19 @@ def _term_reading(b_term: float, t_term: float, duration_line_location: str) -> 
     line = f"the Fixed Income Effective Duration line {duration_line_location}"
     distinguishable = _distinguishable(t_term)
     if distinguishable and b_term > 0:
-        return (f"{found}: the sleeve carries interest-rate duration, consistent with "
-                f"the fund durations behind {line}.")
+        reading = label("term_reading", "duration",
+                        f"the sleeve carries interest-rate duration, consistent with "
+                        f"the fund durations behind {line}")
+        return f"{found}: {reading}."
     if distinguishable:
-        return (f"{found}: this regression does not show the interest-rate duration "
-                f"that the fund durations behind {line} imply.")
-    return (f"{found}, so this regression does not by itself show interest-rate "
-            f"duration; the fund durations are behind {line}.")
+        reading = label("term_reading", "contrary",
+                        f"this regression does not show the interest-rate duration "
+                        f"that the fund durations behind {line} imply")
+        return f"{found}: {reading}."
+    reading = label("term_reading", "not_shown",
+                    f"so this regression does not by itself show interest-rate "
+                    f"duration; the fund durations are behind {line}")
+    return f"{found}, {reading}."
 
 
 def build_factor_prose(
@@ -1864,9 +1884,12 @@ def build_benchmark_prose(
     s_end   = _fmt_date(result["sample_end"])
 
     bench_note = (
-        "consistent with near-full beta to the SAA benchmark"
+        label("benchmark_beta", "near_full",
+              "consistent with near-full beta to the SAA benchmark")
         if abs(b_bench - 1.0) < _NEAR_FULL_BETA
-        else "departing from benchmark (expected ≈ 1.0 for a fully-invested passive portfolio)"
+        else label("benchmark_beta", "departing",
+                   "departing from benchmark (expected ≈ 1.0 for a fully-invested "
+                   "passive portfolio)")
     )
 
     sig_label      = significance_label(t_a)
@@ -1885,6 +1908,12 @@ def build_benchmark_prose(
     else:
         _ci_part = f" (t = {t_a:.2f})"
 
+    # What a significant intercept is read as: the lead-in of the cross-reference.
+    selection = label(
+        "active_return_reading", "selection",
+        "This active return is consistent with the selection effects documented in the "
+        "Brinson-Fachler attribution")
+
     # Second paragraph: intercept interpretation + optional Brinson-Fachler cross-reference
     second_para = (
         f"The intercept, the active return after controlling for benchmark beta and style "
@@ -1895,7 +1924,8 @@ def build_benchmark_prose(
         parts = []
         for item in (bhb_top_selection or [])[:3]:
             bps    = item["sel_bps"]
-            verb   = "outperformed" if bps >= 0 else "underperformed"
+            verb   = (label("versus_benchmark", "out", "outperformed") if bps >= 0
+                      else label("versus_benchmark", "under", "underperformed"))
             parts.append(
                 f"{item['holding']} {verb} {item['bench']} by {abs(bps):.0f} bps"
             )
@@ -1906,16 +1936,14 @@ def build_benchmark_prose(
         else:
             joined = f"{parts[0]}, {parts[1]}, and {parts[2]}"
         second_para += (
-            f"This active return is consistent with the selection effects documented in the "
-            f"Brinson-Fachler attribution: {joined}. "
+            f"{selection}: {joined}. "
             f"The benchmark attribution regression aggregates these sleeve-level selection "
             f"effects into a single portfolio-level active return after controlling for "
             f"systematic style tilts. "
         )
     elif is_significant:
         second_para += (
-            "This active return is consistent with the selection effects documented in the "
-            "Brinson-Fachler attribution. "
+            f"{selection}. "
             "The benchmark attribution regression aggregates sleeve-level selection effects "
             "into a single portfolio-level active return after controlling for systematic "
             "style tilts. "

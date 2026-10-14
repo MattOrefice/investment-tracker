@@ -24,12 +24,25 @@ Then, in each locked section:
   * in everything else the code computed (a tile, a sentence, a caption) every NUMBER
     is compared, with its sign, dollar sign and unit, as a sorted list per section.
     The words around a number, and the order of the sentences, are free to change;
-  * a significance label ("statistically significant at the 1% level") is a word for a
-    t-statistic printed beside it, so the percentage inside it is not a figure;
+  * a LABEL, words that state a classification of a figure ("statistically significant
+    at the 1% level", "in line with benchmark", "outperforming"), is compared by the
+    CLASS it states and never by its words: the level, the side, the reading. The
+    report declares each one where it chooses the words
+    (prose_helpers.label(family, cls, words)), and the render made here carries the
+    class in two more invisible marks around the words. So moving a cut-off moves a
+    class and fails; rewording a label moves nothing. A number inside a label's words
+    (the "1%" above) is part of the words, not a figure;
   * text typed in the template is never compared: it is wording by construction.
 
 So a number a sentence types in its own source ("95% CI") counts as a figure: the
 render cannot tell it from a computed one. Charts are images and are not read.
+
+WHAT A LABEL IS, and the limit of this. A label is any word, clause or sentence the
+report's code picks by testing a computed figure. The families are
+prose_helpers.LABEL_CLASSES. A classification printed in a table cell (a significance
+star, a drift status) is not read as a label: the cell is compared whole, words and
+all. Nothing can find a word the code chooses without declaring it, so a new one
+added without label() is wording to this comparison.
 """
 from __future__ import annotations
 
@@ -61,6 +74,11 @@ DATA_FIRST = ("Date",)
 
 # Two invisible characters around every computed value in the marked render.
 OPEN, CLOSE = "⁣", "⁤"
+# Three more around every label: LABEL_OPEN family=class LABEL_SAYS the words LABEL_CLOSE.
+LABEL_OPEN, LABEL_SAYS, LABEL_CLOSE = "\u2061", "\u2062", "\u2060"
+MARKS = (OPEN, CLOSE, LABEL_OPEN, LABEL_SAYS, LABEL_CLOSE)
+_LABEL = re.compile(LABEL_OPEN + "([^" + LABEL_SAYS + "]*)" + LABEL_SAYS + "(.*?)" + LABEL_CLOSE,
+                    flags=re.S)
 
 # A number as printed: sign, dollar sign, thousands separators, decimals, unit. Not part
 # of a name ("FF5", "10Y", "Q2"), and a hyphen inside a date or a range is not a sign.
@@ -81,11 +99,27 @@ NAMES = ("S&P 500",)
 
 
 def numbers_in(text: str) -> "list[str]":
-    """Every number in a computed text, as printed, with significance labels and the
-    names above set aside."""
+    """Every number in a computed text, as printed, with every label's words and the
+    names above set aside. A label is found by its marks in a marked render, and a
+    significance label by its words in plain text."""
+    text = _LABEL.sub(" ", text)
     for words in significance_labels() + list(NAMES):
         text = text.replace(words, " ")
     return [" ".join(m.group(0).split()) for m in NUMBER.finditer(text)]
+
+
+def labelled(family: str, cls: str, words: str) -> str:
+    """What prose_helpers.label returns while this harness renders: the words, with
+    the class they state carried in the marks around them."""
+    return LABEL_OPEN + f"{family}={cls}" + LABEL_SAYS + words + LABEL_CLOSE
+
+
+def labels_in(text: str) -> "list[str]":
+    """Every label in a computed text, as "family=class", in the order printed."""
+    found = [m.group(1) for m in _LABEL.finditer(text)]
+    assert text.count(LABEL_OPEN) == text.count(LABEL_CLOSE) == len(found), (
+        "a label's marks are unbalanced or nested: a label holds words only")
+    return found
 
 
 # ── the marked render ────────────────────────────────────────────────────────
@@ -203,6 +237,10 @@ class _Section(HTMLParser):
 
 
 def _unmarked(text: str) -> str:
+    """``text`` as the report prints it: no mark, and each label as its words."""
+    text = _LABEL.sub(lambda m: m.group(2), text)
+    assert LABEL_OPEN not in text and LABEL_SAYS not in text and LABEL_CLOSE not in text, (
+        "a label's marks are unbalanced")
     return text.replace(OPEN, "").replace(CLOSE, "")
 
 
@@ -247,9 +285,10 @@ def template_numbers() -> "set[str]":
 
 
 def figures_of(section_html: str, *, typed_ok: "set[str] | None" = None) -> dict:
-    """One locked section's figures: {"tables": [[row, ...], ...], "text": [number, ...]}.
-    Each table is its rows of cells as printed, the label column left out; "text" is
-    every number in the section's other computed text, sorted."""
+    """One locked section's figures: {"tables": [[row, ...], ...], "text": [number, ...],
+    "labels": ["family=class", ...]}. Each table is its rows of cells as printed, the
+    label column left out; "text" is every number in the section's other computed text
+    and "labels" every class a label in that text states, each sorted."""
     parser = _Section()
     parser.feed(section_html)
     parser.close()
@@ -263,11 +302,13 @@ def figures_of(section_html: str, *, typed_ok: "set[str] | None" = None) -> dict
         tables.append([[_unmarked(cell) for cell in row[skip:]] for row in table["rows"]])
     computed, typed = _spans(" ".join(parser.text))
     text = sorted(n for span in computed for n in numbers_in(html_lib.unescape(span)))
+    labels = sorted(c for span in computed for c in labels_in(span))
+    assert not labels_in(typed), "a label reached the page outside a computed value"
     if typed_ok is not None:
         stray = sorted(set(numbers_in(typed)) - typed_ok)
         assert not stray, (f"numbers printed outside the marks that the template does not "
                            f"type: {stray}. A computed value reached the page unmarked.")
-    return {"tables": tables, "text": text}
+    return {"tables": tables, "text": text, "labels": labels}
 
 
 # ── a lock's own records ─────────────────────────────────────────────────────
@@ -345,6 +386,7 @@ def render_book(name: str, scratch_dir: Path, *, book: "Path | None" = None,
         import src.db as db
         import src.macro as macro
         import src.prices as prices
+        import src.prose_helpers as prose_helpers
         from src import reports
         mp.setattr(socket, "getaddrinfo", _offline)
         mp.setattr(prices._SESSION, "get", _offline)
@@ -358,6 +400,7 @@ def render_book(name: str, scratch_dir: Path, *, book: "Path | None" = None,
         make_env = reports._make_report_env
         if marked:
             mp.setattr(reports, "_make_report_env", lambda: _MarkingEnv(make_env()))
+            mp.setattr(prose_helpers, "_label_reader", labelled)
         pin_today(mp, _day_after_last_close(copy))
         try:
             for quarter, (end_iso, payload) in locks_in(source).items():
@@ -407,13 +450,38 @@ def count_figures(entry: dict) -> int:
             + sum(len(s["text"]) for s in entry["sections"].values()))
 
 
+def count_labels(entry: dict) -> int:
+    """How many labels one lock's entry holds."""
+    return sum(len(s.get("labels", ())) for s in entry["sections"].values())
+
+
+def holds_labels(entry: dict) -> bool:
+    """Whether an entry was written since labels were read (#525): every section
+    carries its list, empty or not."""
+    return all("labels" in s for s in entry["sections"].values())
+
+
 def load_golden() -> dict:
     return json.loads(GOLDEN.read_text(encoding="utf-8"))["locks"]
 
 
+def _moved(was: "list[str]", now: "list[str]") -> "tuple[list[str], list[str]]":
+    """(what ``was`` holds and ``now`` does not, what ``now`` holds and ``was`` does
+    not), each occurrence counted."""
+    gone, new = list(was), []
+    for item in now:
+        if item in gone:
+            gone.remove(item)
+        else:
+            new.append(item)
+    return gone, new
+
+
 def differences(golden: dict, rendered: dict) -> "list[str]":
-    """Every figure that differs between one lock's golden entry and its render, as
-    lines a reader can act on. Empty when none does."""
+    """Every figure and every label's class that differs between one lock's golden
+    entry and its render, as lines a reader can act on. Empty when none does. An entry
+    written before labels were read holds none, and its labels are not compared: the
+    golden's test requires every committed entry to hold them."""
     out = []
     for key, was in golden["tiles"].items():
         now = rendered["tiles"].get(key)
@@ -430,12 +498,9 @@ def differences(golden: dict, rendered: dict) -> "list[str]":
                 if grow != rrow:
                     out.append(f"{section}, table {t}, row {i}: {grow} -> {rrow}")
         if g["text"] != r["text"]:
-            gone = list(g["text"])
-            new = []
-            for n in r["text"]:
-                if n in gone:
-                    gone.remove(n)
-                else:
-                    new.append(n)
+            gone, new = _moved(g["text"], r["text"])
             out.append(f"{section}, text: no longer printed {gone}; now printed {new}")
+        if "labels" in g and g["labels"] != r["labels"]:
+            gone, new = _moved(g["labels"], r["labels"])
+            out.append(f"{section}, labels: no longer stated {gone}; now stated {new}")
     return out

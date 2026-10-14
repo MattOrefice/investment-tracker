@@ -1,5 +1,5 @@
 {
- "about": "Every figure each committed quarter lock's report prints (#525): the six sections built inside the lock and the Performance page's locked tiles. Written only by tools/update_locked_figures_golden.py; read by tests/test_locked_figures_golden.py. A figure here moves only with a change in its lock's own records (CLAUDE.md, 'Locked figures').",
+ "about": "Every figure each committed quarter lock's report prints (#525): the six sections built inside the lock and the Performance page's locked tiles, and the class each label in those sections states. Written only by tools/update_locked_figures_golden.py; read by tests/test_locked_figures_golden.py. A figure here moves only with a change in its lock's own records (CLAUDE.md, 'Locked figures').",
  "locks": {
   "demo.db": {
    "2025Q2": {
@@ -50,6 +50,11 @@
        "7.36%",
        "7.75%",
        "7.75%"
+      ],
+      "labels": [
+       "cape_regime=elevated",
+       "versus_benchmark=out",
+       "versus_benchmark=under"
       ]
      },
      "Holdings & Allocation": {
@@ -148,7 +153,8 @@
         ]
        ]
       ],
-      "text": []
+      "text": [],
+      "labels": []
      },
      "Performance": {
       "tables": [
@@ -319,11 +325,15 @@
        "6.0 yrs",
        "6.0 yrs",
        "9.5%"
+      ],
+      "labels": [
+       "duration_vs_benchmark=in_line"
       ]
      },
      "Brinson-Fachler Attribution": {
       "tables": [],
-      "text": []
+      "text": [],
+      "labels": []
      },
      "Factor Profile": {
       "tables": [
@@ -451,6 +461,27 @@
        "40%",
        "43.16",
        "60%"
+      ],
+      "labels": [
+       "fi_alpha_reading=not_from_zero",
+       "sign=positive",
+       "sign=positive",
+       "sign=positive",
+       "sign=positive",
+       "sign=positive",
+       "sign=positive",
+       "significance=1%",
+       "significance=1%",
+       "significance=1%",
+       "significance=1%",
+       "significance=10%",
+       "significance=5%",
+       "significance=none",
+       "significance=none",
+       "term_reading=duration",
+       "tilt_reading=shown",
+       "tilt_reading=shown",
+       "us_market_reading=near_full"
       ]
      },
      "Benchmark Attribution": {
@@ -518,6 +549,11 @@
        "40",
        "75.67",
        "95%"
+      ],
+      "labels": [
+       "active_return_reading=selection",
+       "benchmark_beta=near_full",
+       "significance=5%"
       ]
      }
     },
@@ -579,6 +615,11 @@
        "5.91%",
        "6.35%",
        "8.12%"
+      ],
+      "labels": [
+       "cape_regime=elevated",
+       "versus_benchmark=under",
+       "versus_benchmark=under"
       ]
      },
      "Holdings & Allocation": {
@@ -677,7 +718,8 @@
         ]
        ]
       ],
-      "text": []
+      "text": [],
+      "labels": []
      },
      "Performance": {
       "tables": [
@@ -725,6 +767,9 @@
        "6.0 yrs",
        "6.0 yrs",
        "9.1%"
+      ],
+      "labels": [
+       "duration_vs_benchmark=in_line"
       ]
      },
      "Brinson-Fachler Attribution": {
@@ -857,7 +902,8 @@
        "5.6%",
        "6.7%",
        "9.8%"
-      ]
+      ],
+      "labels": []
      },
      "Factor Profile": {
       "tables": [
@@ -985,6 +1031,27 @@
        "5.11",
        "60%",
        "60.36"
+      ],
+      "labels": [
+       "fi_alpha_reading=not_from_zero",
+       "sign=negative",
+       "sign=positive",
+       "sign=positive",
+       "sign=positive",
+       "sign=positive",
+       "sign=positive",
+       "significance=1%",
+       "significance=1%",
+       "significance=1%",
+       "significance=1%",
+       "significance=1%",
+       "significance=5%",
+       "significance=none",
+       "significance=none",
+       "term_reading=duration",
+       "tilt_reading=shown",
+       "tilt_reading=shown",
+       "us_market_reading=near_full"
       ]
      },
      "Benchmark Attribution": {
@@ -1052,6 +1119,10 @@
        "4",
        "78.38",
        "95%"
+      ],
+      "labels": [
+       "benchmark_beta=near_full",
+       "significance=none"
       ]
      }
     },
@@ -1113,6 +1184,11 @@
        "38 bps",
        "39.6x",
        "41 bps"
+      ],
+      "labels": [
+       "cape_regime=elevated",
+       "versus_benchmark=out",
+       "versus_benchmark=out"
       ]
      },
      "Holdings & Allocation": {
@@ -1211,7 +1287,8 @@
         ]
        ]
       ],
-      "text": []
+      "text": [],
+      "labels": []
      },
      "Performance": {
       "tables": [
@@ -1259,6 +1336,9 @@
        "6.0 yrs",
        "6.0 yrs",
        "8.9%"
+      ],
+      "labels": [
+       "duration_vs_benchmark=in_line"
       ]
      },
      "Brinson-Fachler Attribution": {
@@ -1391,7 +1471,8 @@
        "4.7%",
        "6.0%",
        "7.2%"
-      ]
+      ],
+      "labels": []
      },
      "Factor Profile": {
       "tables": [
@@ -1519,6 +1600,27 @@
        "6.22",
        "60%",
        "69.84"
+      ],
+      "labels": [
+       "fi_alpha_reading=not_from_zero",
+       "sign=negative",
+       "sign=positive",
+       "sign=positive",
+       "sign=positive",
+       "sign=positive",
+       "sign=positive",
+       "significance=1%",
+       "significance=1%",
+       "significance=1%",
+       "significance=1%",
+       "significance=1%",
+       "significance=none",
+       "significance=none",
+       "significance=none",
+       "term_reading=duration",
+       "tilt_reading=shown",
+       "tilt_reading=shown",
+       "us_market_reading=near_full"
       ]
      },
      "Benchmark Attribution": {
@@ -1586,6 +1688,10 @@
        "4",
        "5.48",
        "95%"
+      ],
+      "labels": [
+       "benchmark_beta=near_full",
+       "significance=none"
       ]
      }
     },
@@ -1647,6 +1753,11 @@
        "31",
        "37.0x",
        "727 bps"
+      ],
+      "labels": [
+       "cape_regime=elevated",
+       "versus_benchmark=out",
+       "versus_benchmark=out"
       ]
      },
      "Holdings & Allocation": {
@@ -1745,7 +1856,8 @@
         ]
        ]
       ],
-      "text": []
+      "text": [],
+      "labels": []
      },
      "Performance": {
       "tables": [
@@ -1793,6 +1905,9 @@
        "6.0 yrs",
        "6.0 yrs",
        "8.7%"
+      ],
+      "labels": [
+       "duration_vs_benchmark=in_line"
       ]
      },
      "Brinson-Fachler Attribution": {
@@ -1927,7 +2042,8 @@
        "40%",
        "60%",
        "8.6%"
-      ]
+      ],
+      "labels": []
      },
      "Factor Profile": {
       "tables": [
@@ -2055,6 +2171,27 @@
        "5.76",
        "60%",
        "62.24"
+      ],
+      "labels": [
+       "fi_alpha_reading=not_from_zero",
+       "sign=negative",
+       "sign=positive",
+       "sign=positive",
+       "sign=positive",
+       "sign=positive",
+       "sign=positive",
+       "significance=1%",
+       "significance=1%",
+       "significance=1%",
+       "significance=1%",
+       "significance=1%",
+       "significance=10%",
+       "significance=none",
+       "significance=none",
+       "term_reading=duration",
+       "tilt_reading=shown",
+       "tilt_reading=shown",
+       "us_market_reading=near_full"
       ]
      },
      "Benchmark Attribution": {
@@ -2127,6 +2264,14 @@
        "768 bps",
        "94.72",
        "95%"
+      ],
+      "labels": [
+       "active_return_reading=selection",
+       "benchmark_beta=near_full",
+       "significance=5%",
+       "versus_benchmark=out",
+       "versus_benchmark=out",
+       "versus_benchmark=out"
       ]
      }
     },
@@ -2325,6 +2470,11 @@
        "30",
        "40.5x",
        "52 bps"
+      ],
+      "labels": [
+       "cape_regime=elevated",
+       "versus_benchmark=out",
+       "versus_benchmark=under"
       ]
      },
      "Holdings & Allocation": {
@@ -2423,7 +2573,8 @@
         ]
        ]
       ],
-      "text": []
+      "text": [],
+      "labels": []
      },
      "Performance": {
       "tables": [
@@ -2471,6 +2622,9 @@
        "6.0 yrs",
        "6.0 yrs",
        "7.7%"
+      ],
+      "labels": [
+       "duration_vs_benchmark=in_line"
       ]
      },
      "Brinson-Fachler Attribution": {
@@ -2603,7 +2757,8 @@
        "21.4%",
        "24.4%",
        "8.8%"
-      ]
+      ],
+      "labels": []
      },
      "Factor Profile": {
       "tables": [
@@ -2731,6 +2886,27 @@
        "6.16",
        "60%",
        "64.83"
+      ],
+      "labels": [
+       "fi_alpha_reading=not_from_zero",
+       "sign=negative",
+       "sign=positive",
+       "sign=positive",
+       "sign=positive",
+       "sign=positive",
+       "sign=positive",
+       "significance=1%",
+       "significance=1%",
+       "significance=1%",
+       "significance=1%",
+       "significance=5%",
+       "significance=none",
+       "significance=none",
+       "significance=none",
+       "term_reading=duration",
+       "tilt_reading=shown",
+       "tilt_reading=shown",
+       "us_market_reading=near_full"
       ]
      },
      "Benchmark Attribution": {
@@ -2798,6 +2974,10 @@
        "8.22",
        "95%",
        "97.55"
+      ],
+      "labels": [
+       "benchmark_beta=near_full",
+       "significance=none"
       ]
      }
     },
@@ -2845,6 +3025,11 @@
        "4",
        "40.9x",
        "88 bps"
+      ],
+      "labels": [
+       "cape_regime=elevated",
+       "versus_benchmark=under",
+       "versus_benchmark=under"
       ]
      },
      "Holdings & Allocation": {
@@ -2943,7 +3128,8 @@
         ]
        ]
       ],
-      "text": []
+      "text": [],
+      "labels": []
      },
      "Performance": {
       "tables": [
@@ -2992,6 +3178,9 @@
        "5.5 yrs",
        "5.7 yrs",
        "7.6%"
+      ],
+      "labels": [
+       "duration_vs_benchmark=below"
       ]
      },
      "Brinson-Fachler Attribution": {
@@ -3126,7 +3315,8 @@
        "40%",
        "60%",
        "8.8%"
-      ]
+      ],
+      "labels": []
      },
      "Factor Profile": {
       "tables": [],
@@ -3135,7 +3325,8 @@
        "2026",
        "30",
        "31"
-      ]
+      ],
+      "labels": []
      },
      "Benchmark Attribution": {
       "tables": [],
@@ -3144,7 +3335,8 @@
        "2026",
        "30",
        "31"
-      ]
+      ],
+      "labels": []
      }
     },
     "tiles": {
@@ -3205,6 +3397,11 @@
        "7.36%",
        "7.75%",
        "7.75%"
+      ],
+      "labels": [
+       "cape_regime=elevated",
+       "versus_benchmark=out",
+       "versus_benchmark=under"
       ]
      },
      "Holdings & Allocation": {
@@ -3303,7 +3500,8 @@
         ]
        ]
       ],
-      "text": []
+      "text": [],
+      "labels": []
      },
      "Performance": {
       "tables": [
@@ -3474,11 +3672,15 @@
        "6.0 yrs",
        "6.0 yrs",
        "9.5%"
+      ],
+      "labels": [
+       "duration_vs_benchmark=in_line"
       ]
      },
      "Brinson-Fachler Attribution": {
       "tables": [],
-      "text": []
+      "text": [],
+      "labels": []
      },
      "Factor Profile": {
       "tables": [
@@ -3606,6 +3808,27 @@
        "40%",
        "43.16",
        "60%"
+      ],
+      "labels": [
+       "fi_alpha_reading=not_from_zero",
+       "sign=positive",
+       "sign=positive",
+       "sign=positive",
+       "sign=positive",
+       "sign=positive",
+       "sign=positive",
+       "significance=1%",
+       "significance=1%",
+       "significance=1%",
+       "significance=1%",
+       "significance=10%",
+       "significance=5%",
+       "significance=none",
+       "significance=none",
+       "term_reading=duration",
+       "tilt_reading=shown",
+       "tilt_reading=shown",
+       "us_market_reading=near_full"
       ]
      },
      "Benchmark Attribution": {
@@ -3673,6 +3896,11 @@
        "40",
        "75.67",
        "95%"
+      ],
+      "labels": [
+       "active_return_reading=selection",
+       "benchmark_beta=near_full",
+       "significance=5%"
       ]
      }
     },
@@ -3734,6 +3962,11 @@
        "5.91%",
        "6.35%",
        "8.12%"
+      ],
+      "labels": [
+       "cape_regime=elevated",
+       "versus_benchmark=under",
+       "versus_benchmark=under"
       ]
      },
      "Holdings & Allocation": {
@@ -3832,7 +4065,8 @@
         ]
        ]
       ],
-      "text": []
+      "text": [],
+      "labels": []
      },
      "Performance": {
       "tables": [
@@ -3880,6 +4114,9 @@
        "6.0 yrs",
        "6.0 yrs",
        "9.1%"
+      ],
+      "labels": [
+       "duration_vs_benchmark=in_line"
       ]
      },
      "Brinson-Fachler Attribution": {
@@ -4012,7 +4249,8 @@
        "5.6%",
        "6.7%",
        "9.8%"
-      ]
+      ],
+      "labels": []
      },
      "Factor Profile": {
       "tables": [
@@ -4140,6 +4378,27 @@
        "5.11",
        "60%",
        "60.36"
+      ],
+      "labels": [
+       "fi_alpha_reading=not_from_zero",
+       "sign=negative",
+       "sign=positive",
+       "sign=positive",
+       "sign=positive",
+       "sign=positive",
+       "sign=positive",
+       "significance=1%",
+       "significance=1%",
+       "significance=1%",
+       "significance=1%",
+       "significance=1%",
+       "significance=5%",
+       "significance=none",
+       "significance=none",
+       "term_reading=duration",
+       "tilt_reading=shown",
+       "tilt_reading=shown",
+       "us_market_reading=near_full"
       ]
      },
      "Benchmark Attribution": {
@@ -4207,6 +4466,10 @@
        "4",
        "78.38",
        "95%"
+      ],
+      "labels": [
+       "benchmark_beta=near_full",
+       "significance=none"
       ]
      }
     },
@@ -4268,6 +4531,11 @@
        "38 bps",
        "39.6x",
        "41 bps"
+      ],
+      "labels": [
+       "cape_regime=elevated",
+       "versus_benchmark=out",
+       "versus_benchmark=out"
       ]
      },
      "Holdings & Allocation": {
@@ -4366,7 +4634,8 @@
         ]
        ]
       ],
-      "text": []
+      "text": [],
+      "labels": []
      },
      "Performance": {
       "tables": [
@@ -4414,6 +4683,9 @@
        "6.0 yrs",
        "6.0 yrs",
        "8.9%"
+      ],
+      "labels": [
+       "duration_vs_benchmark=in_line"
       ]
      },
      "Brinson-Fachler Attribution": {
@@ -4546,7 +4818,8 @@
        "4.7%",
        "6.0%",
        "7.2%"
-      ]
+      ],
+      "labels": []
      },
      "Factor Profile": {
       "tables": [
@@ -4674,6 +4947,27 @@
        "6.22",
        "60%",
        "69.84"
+      ],
+      "labels": [
+       "fi_alpha_reading=not_from_zero",
+       "sign=negative",
+       "sign=positive",
+       "sign=positive",
+       "sign=positive",
+       "sign=positive",
+       "sign=positive",
+       "significance=1%",
+       "significance=1%",
+       "significance=1%",
+       "significance=1%",
+       "significance=1%",
+       "significance=none",
+       "significance=none",
+       "significance=none",
+       "term_reading=duration",
+       "tilt_reading=shown",
+       "tilt_reading=shown",
+       "us_market_reading=near_full"
       ]
      },
      "Benchmark Attribution": {
@@ -4741,6 +5035,10 @@
        "4",
        "5.48",
        "95%"
+      ],
+      "labels": [
+       "benchmark_beta=near_full",
+       "significance=none"
       ]
      }
     },
@@ -4802,6 +5100,11 @@
        "31",
        "37.0x",
        "727 bps"
+      ],
+      "labels": [
+       "cape_regime=elevated",
+       "versus_benchmark=out",
+       "versus_benchmark=out"
       ]
      },
      "Holdings & Allocation": {
@@ -4900,7 +5203,8 @@
         ]
        ]
       ],
-      "text": []
+      "text": [],
+      "labels": []
      },
      "Performance": {
       "tables": [
@@ -4948,6 +5252,9 @@
        "6.0 yrs",
        "6.0 yrs",
        "8.7%"
+      ],
+      "labels": [
+       "duration_vs_benchmark=in_line"
       ]
      },
      "Brinson-Fachler Attribution": {
@@ -5082,7 +5389,8 @@
        "40%",
        "60%",
        "8.6%"
-      ]
+      ],
+      "labels": []
      },
      "Factor Profile": {
       "tables": [
@@ -5210,6 +5518,27 @@
        "5.76",
        "60%",
        "62.24"
+      ],
+      "labels": [
+       "fi_alpha_reading=not_from_zero",
+       "sign=negative",
+       "sign=positive",
+       "sign=positive",
+       "sign=positive",
+       "sign=positive",
+       "sign=positive",
+       "significance=1%",
+       "significance=1%",
+       "significance=1%",
+       "significance=1%",
+       "significance=1%",
+       "significance=10%",
+       "significance=none",
+       "significance=none",
+       "term_reading=duration",
+       "tilt_reading=shown",
+       "tilt_reading=shown",
+       "us_market_reading=near_full"
       ]
      },
      "Benchmark Attribution": {
@@ -5282,6 +5611,14 @@
        "768 bps",
        "94.72",
        "95%"
+      ],
+      "labels": [
+       "active_return_reading=selection",
+       "benchmark_beta=near_full",
+       "significance=5%",
+       "versus_benchmark=out",
+       "versus_benchmark=out",
+       "versus_benchmark=out"
       ]
      }
     },
@@ -5480,6 +5817,11 @@
        "30",
        "40.5x",
        "52 bps"
+      ],
+      "labels": [
+       "cape_regime=elevated",
+       "versus_benchmark=out",
+       "versus_benchmark=under"
       ]
      },
      "Holdings & Allocation": {
@@ -5578,7 +5920,8 @@
         ]
        ]
       ],
-      "text": []
+      "text": [],
+      "labels": []
      },
      "Performance": {
       "tables": [
@@ -5626,6 +5969,9 @@
        "6.0 yrs",
        "6.0 yrs",
        "7.7%"
+      ],
+      "labels": [
+       "duration_vs_benchmark=in_line"
       ]
      },
      "Brinson-Fachler Attribution": {
@@ -5758,7 +6104,8 @@
        "21.4%",
        "24.4%",
        "8.8%"
-      ]
+      ],
+      "labels": []
      },
      "Factor Profile": {
       "tables": [
@@ -5886,6 +6233,27 @@
        "6.16",
        "60%",
        "64.83"
+      ],
+      "labels": [
+       "fi_alpha_reading=not_from_zero",
+       "sign=negative",
+       "sign=positive",
+       "sign=positive",
+       "sign=positive",
+       "sign=positive",
+       "sign=positive",
+       "significance=1%",
+       "significance=1%",
+       "significance=1%",
+       "significance=1%",
+       "significance=5%",
+       "significance=none",
+       "significance=none",
+       "significance=none",
+       "term_reading=duration",
+       "tilt_reading=shown",
+       "tilt_reading=shown",
+       "us_market_reading=near_full"
       ]
      },
      "Benchmark Attribution": {
@@ -5953,6 +6321,10 @@
        "8.22",
        "95%",
        "97.55"
+      ],
+      "labels": [
+       "benchmark_beta=near_full",
+       "significance=none"
       ]
      }
     },

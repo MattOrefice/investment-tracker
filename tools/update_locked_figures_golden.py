@@ -1,5 +1,6 @@
 """Rewrite tests/fixtures/locked_figures_golden.json: every figure each committed
-quarter lock's report prints, in data/demo.db and the frozen test book (#525).
+quarter lock's report prints, and the class every label in it states, in data/demo.db
+and the frozen test book (#525).
 
 tests/test_locked_figures_golden.py renders each lock and fails on any difference from
 that file. This is the only writer, and it holds the rule a moved figure has to meet
@@ -10,18 +11,23 @@ that file. This is the only writer, and it holds the rule a moved figure has to 
 
 So it REFUSES, and writes nothing, when a lock's figures moved while its records did
 not: that is a method change reaching a locked quarter with nothing in the lock, and
-so nothing on its cover, to say so. It names every figure that moved. It accepts:
+so nothing on its cover, to say so. It names every figure that moved. A label's class
+is held the same way: a significance level, a duration's side of its benchmark, a
+factor sentence's reading. A label's WORDS are not in the golden, so rewording one
+changes nothing here. It accepts:
 
   * a lock the golden does not hold yet (a quarter locked since);
   * a lock whose records changed, whether or not its figures did (a restatement, or a
     pending input completed);
+  * an entry written before labels were read, which gains them with no figure moved;
   * no change at all, in which case the file is left as it is.
 
 ONE KNOWN FALSE POSITIVE, and its way through. A number a sentence types in its own
 source ("95% CI") is read as a figure, because the render cannot tell it from a
 computed one. Rewording such a sentence moves the golden with no figure moving. Run
 with --wording and say what was reworded: the writer then accepts a lock whose
-RUNNING-TEXT numbers moved, and still refuses if any table cell or tile did.
+RUNNING-TEXT numbers moved, and still refuses if any table cell, tile or label's
+class did.
 
 It renders scratch copies of the two books, offline, and never opens a committed book
 for writing. How a figure is told from wording is in tests/locked_figures.py.
@@ -38,7 +44,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 ABOUT = ("Every figure each committed quarter lock's report prints (#525): the six sections "
-         "built inside the lock and the Performance page's locked tiles. Written only by "
+         "built inside the lock and the Performance page's locked tiles, and the class "
+         "each label in those sections states. Written only by "
          "tools/update_locked_figures_golden.py; read by tests/test_locked_figures_golden.py. "
          "A figure here moves only with a change in its lock's own records (CLAUDE.md, "
          "'Locked figures').")
@@ -46,7 +53,7 @@ ABOUT = ("Every figure each committed quarter lock's report prints (#525): the s
 
 def _only_text(moved: "list[str]") -> bool:
     """Whether every line of differences is a section's running text: no table cell,
-    no tile, no table added or removed."""
+    no tile, no table added or removed, no label's class."""
     return all(", text: " in line and ", table " not in line for line in moved)
 
 
@@ -82,6 +89,9 @@ def updated(golden: dict, rendered: dict, wording: "str | None" = None
                               "with its records")
             elif was["state"] != entry["state"]:
                 report.append(f"{book} {quarter}: its records changed and no figure moved")
+            elif not lf.holds_labels(was):
+                report.append(f"{book} {quarter}: {lf.count_labels(entry)} labels recorded "
+                              "for the first time, no figure moved")
     if refused:
         lines = [f"REFUSED: figures moved in {len(refused)} lock(s) whose own records did "
                  "not change. A moved locked figure needs a restatement record in the lock "
@@ -118,7 +128,9 @@ def main(argv: "list[str] | None" = None) -> int:
     for line in report:
         print(line)
     total = sum(lf.count_figures(e) for locks in new.values() for e in locks.values())
-    print(f"{lf.GOLDEN.name}: {sum(len(v) for v in new.values())} locks, {total} figures.")
+    labels = sum(lf.count_labels(e) for locks in new.values() for e in locks.values())
+    print(f"{lf.GOLDEN.name}: {sum(len(v) for v in new.values())} locks, {total} figures, "
+          f"{labels} labels.")
     return 0
 
 
