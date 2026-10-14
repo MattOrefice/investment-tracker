@@ -309,8 +309,9 @@ def test_the_sentence_is_read_from_the_lock(book):
 
 def _change_the_policy(db: Path) -> None:
     """Two points of target moved from US Large Core to Core Fixed Income (and from
-    Equity to Income), US Large Core's band widened, its benchmark changed, and PDBC
-    moved to another sleeve: a policy change made after every quarter locked."""
+    Equity to Income), US Large Core's band narrowed to one basis point, so any drift
+    would read as out of band, its benchmark changed, and PDBC moved to another sleeve:
+    a policy change made after every quarter locked."""
     con = sqlite3.connect(db)
     try:
         with con:
@@ -321,7 +322,7 @@ def _change_the_policy(db: Path) -> None:
                 args = (delta, name, parent) if parent else (delta, name)
                 assert con.execute(f"UPDATE asset_classes SET target_weight = target_weight "
                                    f"+ ? WHERE name = ? AND {where}", args).rowcount == 1
-            assert con.execute("UPDATE asset_classes SET tolerance_band = 0.05, "
+            assert con.execute("UPDATE asset_classes SET tolerance_band = 0.0001, "
                                "benchmark_ticker = 'VOO' WHERE name = 'US Large Core' AND "
                                "parent_id IS NOT NULL").rowcount == 1
             assert con.execute("UPDATE securities SET asset_class_id = 18 WHERE ticker = "
@@ -349,7 +350,7 @@ def test_inside_a_lock_every_reader_serves_the_held_policy_and_outside_it_the_bo
     monkeypatch.setattr(db, "DB_PATH", changed)
     monkeypatch.setattr(db, "_migrated_paths", set())
     monkeypatch.setattr(db, "_RUNTIME_CACHE", None)
-    assert _readings() == (0.153469, 0.05, "VOO", "International Small Value", False,
+    assert _readings() == (0.153469, 0.0001, "VOO", "International Small Value", False,
                            0.319728, 0.665552), "outside a lock: the book's policy"
     snap = get_quarter_snapshot("2026Q2")[0]
     with snapshot_price_context(snap):
