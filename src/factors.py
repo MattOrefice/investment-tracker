@@ -1287,8 +1287,15 @@ def _distinguishable(t: float) -> bool:
     return significance_level(t) != "none"
 
 
-def momentum_caption(b_mom: float, t_mom: float) -> str:
-    """The caption under the Factor Profile page's Carhart momentum table (#551).
+# The funds a momentum caption may name as the cause of a significant loading: SPHQ, the
+# US quality fund, the only one it has named. It names one only when the sleeve's
+# regression holds it (#560).
+_MOMENTUM_THROUGH_QUALITY = ("SPHQ",)
+
+
+def momentum_caption(b_mom: float, t_mom: float, tickers: "list[str]") -> str:
+    """The caption under the Factor Profile page's Carhart momentum table (#551), for the
+    sleeve whose regression runs on ``tickers``.
 
     Whether the loading can be told from zero is the significance label's call, by its
     cut-offs, as the benchmark prose's is (#542). The caption decided with its own
@@ -1296,11 +1303,20 @@ def momentum_caption(b_mom: float, t_mom: float) -> str:
     it, was read as "no systematic momentum tilt". It also called a significant loading
     "economically small", and said "the loading's size confirms momentum is not a
     deliberate tilt", whatever the loading was: no threshold defines a small momentum
-    loading, so those words go."""
+    loading, so those words go.
+
+    A significant loading's cause names a fund read from the sleeve's own funds. Both of
+    the page's expanders said momentum "leaks through the SPHQ quality factor", the
+    International Core sleeve's too, which holds no SPHQ (#560). With no such fund, the
+    caption states only what the loading shows."""
     head = f"Mom loading of {b_mom:+.3f} (t = {t_mom:.2f})"
     if _distinguishable(t_mom):
-        return (f"{head} is {significance_label(t_mom)}. Some incidental momentum exposure "
-                f"leaks through the SPHQ quality factor.")
+        found = f"{head} is {significance_label(t_mom)}."
+        held = [t for t in tickers if t in _MOMENTUM_THROUGH_QUALITY]
+        if not held:
+            return found
+        return (f"{found} Some incidental momentum exposure leaks through the {held[0]} "
+                f"quality factor.")
     return (f"{head} confirms the portfolio carries no systematic momentum tilt, consistent "
             f"with the tax-aware construction (high momentum turnover → short-term capital "
             f"gains).")

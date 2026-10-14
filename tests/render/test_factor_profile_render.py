@@ -113,25 +113,50 @@ def test_carhart_caption_uses_dynamic_mom_loading(factor_profile_app: AppTest) -
     )
 
 
+def _carhart_captions_with_their_funds(at: AppTest) -> "list[tuple[str, list[str]]]":
+    """Each "Mom loading" caption, with the funds the page printed for its sleeve: the
+    nearest "Tickers: " caption above it."""
+    pairs, funds = [], None
+    for c in at.caption:
+        value = c.value if isinstance(c.value, str) else ""
+        if value.startswith("Tickers: "):
+            funds = value[len("Tickers: "):].split(", ")
+        elif value.startswith("Mom loading of "):
+            pairs.append((value, funds))
+    return pairs
+
+
 def test_each_carhart_caption_reads_its_t_by_the_significance_label(
         factor_profile_app: AppTest) -> None:
     """#551, as rendered on the frozen book: each "Mom loading" caption is
-    factors.momentum_caption for the loading and t it prints, so it reads the t by the
-    significance label's levels and states no size it does not read."""
+    factors.momentum_caption for the loading and t it prints and its sleeve's funds, so
+    it reads the t by the significance label's levels and states no size it does not
+    read."""
     import re
 
     from src.factors import momentum_caption
     from src.prose_helpers import significance_level
-    captions = [c.value for c in factor_profile_app.caption
-                if isinstance(c.value, str) and c.value.startswith("Mom loading of ")]
-    assert len(captions) == 2, captions
+    pairs = _carhart_captions_with_their_funds(factor_profile_app)
+    assert len(pairs) == 2, pairs
     levels = set()
-    for caption in captions:
+    for caption, funds in pairs:
         b, t = re.match(r"Mom loading of ([+\-][\d.]+) \(t = (-?[\d.]+)\)", caption).groups()
-        assert caption == momentum_caption(float(b), float(t)), caption
+        assert funds and caption == momentum_caption(float(b), float(t), funds), caption
         assert "economically small" not in caption
         levels.add(significance_level(float(t)))
     assert levels, "premise: the book's two momentum regressions are read"
+
+
+def test_each_carhart_caption_names_only_funds_its_sleeve_holds(
+        factor_profile_app: AppTest) -> None:
+    """#560, as rendered on the frozen book, where both momentum loadings are significant:
+    the US sleeve's caption names SPHQ, which its regression holds, and the International
+    Core sleeve's, on VEA alone, names no fund."""
+    import re
+    pairs = _carhart_captions_with_their_funds(factor_profile_app)
+    assert [funds for _caption, funds in pairs] == [["VOO", "VTV", "SPHQ", "AVUV"], ["VEA"]]
+    named = [re.findall(r"\b[A-Z]{3,5}\b", caption) for caption, _funds in pairs]
+    assert named == [["SPHQ"], []], named
 
 
 def test_fi_sleeve_carhart_note_present(factor_profile_app: AppTest) -> None:

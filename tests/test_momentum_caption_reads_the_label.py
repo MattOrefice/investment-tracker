@@ -10,7 +10,9 @@ loading was "economically small" and that "the loading's size confirms momentum 
 deliberate tilt" without reading the loading: no threshold the code defines says what a
 small momentum loading is, so those words go.
 
-Both expanders now print factors.momentum_caption.
+Both expanders now print factors.momentum_caption. These tests read the US sleeve's
+caption, which names SPHQ when the loading is significant; which fund a caption may
+name is #560's, in test_momentum_caption_names_held_funds.py.
 """
 from __future__ import annotations
 
@@ -25,6 +27,7 @@ from src import factors
 
 ROOT = Path(__file__).resolve().parent.parent
 PAGE = ROOT / "pages" / "4_Factor_Profile.py"
+US = factors._SLEEVES["us"]["tickers"]
 NO_TILT = "confirms the portfolio carries no systematic momentum tilt"
 TEN_UP = (("1%", 2.58), ("5%", 1.96), ("10%", 1.80))
 TEN_DOWN = (("1%", 2.58), ("5%", 1.96), ("10%", 1.30))
@@ -37,7 +40,7 @@ T_VALUES = (0.0, 0.9, 1.3, 1.5, 1.65, 1.7, 1.8, 1.9, 1.96, 2.2, 2.6, 4.0, -1.7, 
 def test_the_caption_reads_the_level_the_label_names(monkeypatch, cut_offs):
     monkeypatch.setattr(prose_helpers, "SIGNIFICANCE_CUT_OFFS", cut_offs)
     for t in T_VALUES:
-        caption = factors.momentum_caption(0.041, t)
+        caption = factors.momentum_caption(0.041, t, US)
         level = prose_helpers.significance_level(t)
         if level == "none":
             assert NO_TILT in caption, (cut_offs, t, caption)
@@ -50,7 +53,7 @@ def test_a_loading_between_the_10_and_5_percent_cut_offs_is_not_read_as_no_tilt(
     """The case #551 names: t = 1.8 is starred in the table (p below 0.10) and named
     "marginally significant (10% level)" by the label. Under the caption's own 1.96 it
     read "confirms the portfolio carries no systematic momentum tilt"."""
-    caption = factors.momentum_caption(0.052, 1.8)
+    caption = factors.momentum_caption(0.052, 1.8, US)
     assert caption.startswith("Mom loading of +0.052 (t = 1.80) is marginally significant "
                               "(10% level). "), caption
     assert NO_TILT not in caption
@@ -60,11 +63,11 @@ def test_a_loading_between_the_10_and_5_percent_cut_offs_is_not_read_as_no_tilt(
 def test_the_caption_states_no_size_it_does_not_read():
     for b in (0.004, 0.05, 0.4, -0.3):
         for t in (0.5, 1.8, 2.5, 6.0):
-            caption = factors.momentum_caption(b, t)
+            caption = factors.momentum_caption(b, t, US)
             assert "economically" not in caption and "size" not in caption, caption
             assert caption.startswith(f"Mom loading of {b:+.3f} (t = {t:.2f}) "), caption
-    assert "nan" in factors.momentum_caption(0.1, math.nan) and NO_TILT in (
-        factors.momentum_caption(0.1, math.nan))
+    assert "nan" in factors.momentum_caption(0.1, math.nan, US) and NO_TILT in (
+        factors.momentum_caption(0.1, math.nan, US))
 
 
 def test_both_expanders_print_the_one_caption_and_the_page_types_no_cut_off():
