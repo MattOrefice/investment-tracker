@@ -295,7 +295,10 @@ the code that supports it; the two with none are listed at the end.
   `tests/test_locked_figures_golden.py` renders every lock and fails on any
   difference. Macro Context and Asset Evaluation are computed at each render and
   are not in it; neither are the cover, the methodology page or any wording. How
-  a figure is told from wording is in `tests/locked_figures.py`'s docstring.
+  a figure is told from wording is in `tests/locked_figures.py`'s docstring. A
+  figure printed in words is held whole beside the numbers (#541): an ordinal (the
+  CAPE's "99th percentile"), a date whose month is a word ("June 30, 2026"), a
+  number spelled out.
 - A LABEL IS HELD BY THE CLASS IT STATES, NOT ITS WORDS. Words a locked section's
   code picks by testing a computed figure (a significance level, "in line with
   benchmark", "outperforming", what a factor sentence reads from its loading) go
@@ -326,8 +329,9 @@ the code that supports it; the two with none are listed at the end.
   changed. Do not edit the JSON by hand to get past a refusal: the refusal is the
   finding.
 - A change that moves only wording does not touch the golden. One exception to
-  know: a number a sentence types in its own source ("95% CI") is read as a
-  figure, because the render cannot tell it from a computed one. Rewording such a
+  know: a number a sentence types in its own source ("95% CI", or spelled out,
+  "the one equity region") is read as a figure, because the render cannot tell it
+  from a computed one. Rewording such a
   sentence moves the golden with no figure moving: regenerate with `--wording
   "<what was reworded>"` and say so in the PR. The writer lets it through only
   when no table cell, no tile and no label's class moved.
