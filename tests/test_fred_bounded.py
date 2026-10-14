@@ -10,6 +10,9 @@ Each reader is proved with FRED stubbed to hang, on the live demo's arrangement:
 demo.db copy behind a fresh runtime cache, the fetch timer and the warm on. A watchdog
 releases FRED just past each bound, so a reader that never stops waiting fails the bound
 rather than hanging the run.
+
+The readers wait at tests/conftest.py's FRED_TEST_WAIT (0.5 s), not the live page's 15 s:
+waiting out the real wait was most of these tests' 50 s on GitHub's runner (#544).
 """
 from __future__ import annotations
 
@@ -27,16 +30,20 @@ import src.db as db
 import src.macro as macro
 import src.prices as prices
 
+from tests.conftest import FRED_TEST_WAIT
+
 ROOT = Path(__file__).resolve().parent.parent
-WAIT = macro.PAGE_WAIT_SECONDS
+WAIT = FRED_TEST_WAIT               # macro.PAGE_WAIT_SECONDS while these tests run (#544)
 BOUND = WAIT + 45                   # the wait plus a page's own render, generously
 
 
 @pytest.fixture
-def hanging_fred(tmp_path, monkeypatch):
-    """The live demo on a fresh container, FRED hanging until released. Yields the
-    release event; the warm is joined before the test ends."""
+def hanging_fred(tmp_path, monkeypatch, short_fred_wait):
+    """The live demo on a fresh container, FRED hanging until released, the readers'
+    wait at FRED_TEST_WAIT. Yields the release event; the warm is joined before the test
+    ends."""
     import streamlit as st
+    assert macro.PAGE_WAIT_SECONDS == WAIT, "premise: the readers wait FRED_TEST_WAIT"
     copy = tmp_path / "demo.db"
     shutil.copyfile(ROOT / "data" / "demo.db", copy)
     os.chmod(copy, 0o644)

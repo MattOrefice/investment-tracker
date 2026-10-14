@@ -56,9 +56,20 @@ def _tool():
 
 
 @pytest.fixture(scope="module")
-def rendered(tmp_path_factory):
-    """Both books' locks, rendered once for the module."""
-    return lf.render_all(tmp_path_factory.mktemp("locked-figures"))
+def renders(tmp_path_factory):
+    """Both books' locks, rendered once for the module: (their figures, their html), each
+    {book: {quarter: ...}}. A test that only reads a render reads this one: each
+    rendering of the frozen book's five locks took about 9 s of the CI step (#544)."""
+    scratch = tmp_path_factory.mktemp("locked-figures")
+    html = {name: {} for name in lf.BOOKS}
+    figures = {name: lf.render_book(name, scratch, html_out=html[name]) for name in lf.BOOKS}
+    return figures, html
+
+
+@pytest.fixture(scope="module")
+def rendered(renders):
+    """Both books' locks' figures, from the module's one render."""
+    return renders[0]
 
 
 # ── the golden and the committed locks ───────────────────────────────────────
@@ -388,14 +399,13 @@ def test_a_computed_number_that_reaches_the_page_unmarked_fails():
             lf.figures_of(f"<p>CAPE is {unmarked}</p>", typed_ok=typed)
 
 
-def test_the_marks_change_nothing_else_in_the_render(tmp_path):
+def test_the_marks_change_nothing_else_in_the_render(renders, tmp_path):
     """The reading rests on this: the marked render is the report the app renders,
     character for character, with the two invisible marks around computed values and
     the class of each label carried around its words. Every lock of the frozen book,
-    rendered both ways. A comparison the report makes on a label's words would make
-    the two differ here."""
-    with_marks, without = {}, {}
-    lf.render_book("frozen_book.db", tmp_path, html_out=with_marks)
+    rendered both ways: the marked render is the module's (#544). A comparison the
+    report makes on a label's words would make the two differ here."""
+    with_marks, without = renders[1]["frozen_book.db"], {}
     assert lf.render_book("frozen_book.db", tmp_path, marked=False, html_out=without) == {}
     assert sorted(with_marks) == sorted(without) == sorted(GOLDEN["frozen_book.db"])
     for quarter, html in with_marks.items():
@@ -455,21 +465,45 @@ def test_differences_names_each_figure_that_moved():
 
 # ── wording moves nothing ────────────────────────────────────────────────────
 
-def test_rewording_the_factor_prose_moves_no_figure(tmp_path, monkeypatch):
-    """Every sentence of the factor prose reordered, with words added: the golden still
-    holds, because the numbers the sentences print are the same."""
+@pytest.fixture(scope="module")
+def reworded(tmp_path_factory):
+    """The frozen book rendered once with both rewordings the two tests below make: the
+    factor prose reordered with words added, and every label's words replaced (the
+    significance words in prose_helpers too). Each test expects no figure to move, so
+    they share one render (#544). Returns (figures, html, the labels stated)."""
     import src.factors as factors
+    import src.prose_helpers as prose_helpers
     from src import reports
-    prose = reports.build_factor_prose
+    prose, original, stated = reports.build_factor_prose, lf.labelled, []
 
-    def reworded(*args, **kwargs):
+    def reworded_prose(*args, **kwargs):
         return ["In other words: " + s for s in reversed(prose(*args, **kwargs))]
 
-    monkeypatch.setattr(reports, "build_factor_prose", reworded)
-    monkeypatch.setattr(factors, "em_disclosure", lambda: "Another sentence altogether.")
-    again = lf.render_book("frozen_book.db", tmp_path)
+    def reworded_label(family, cls, words):
+        stated.append((family, cls))
+        return original(family, cls, f"(said otherwise, 1 of 2 ways: {words.upper()})")
+
+    html = {}
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(reports, "build_factor_prose", reworded_prose)
+        mp.setattr(factors, "em_disclosure", lambda: "Another sentence altogether.")
+        mp.setattr(prose_helpers, "SIGNIFICANCE_WORDS", {
+            "1%": "significant at one percent", "5%": "significant at five percent",
+            "10%": "significant only at ten percent", "none": "indistinguishable from nothing"})
+        mp.setattr(lf, "labelled", reworded_label)
+        figures = lf.render_book("frozen_book.db", tmp_path_factory.mktemp("reworded"),
+                                 html_out=html)
+    return figures, html, stated
+
+
+def test_rewording_the_factor_prose_moves_no_figure(reworded):
+    """Every sentence of the factor prose reordered, with words added: the golden still
+    holds, because the numbers the sentences print are the same."""
+    figures, html, _stated = reworded
+    assert any("In other words: " in h for h in html.values()), (
+        "premise: the factor prose was reworded")
     for quarter, entry in GOLDEN["frozen_book.db"].items():
-        assert lf.differences(entry, again[quarter]) == [], quarter
+        assert lf.differences(entry, figures[quarter]) == [], quarter
 
 
 # ── a label: its class is held, its words are free ──────────────────────────
@@ -496,25 +530,16 @@ def test_a_moved_one_percent_cut_off_fails_on_the_labels_it_moves(tmp_path, monk
         tool.updated({book: GOLDEN[book]}, {book: moved_cut_off}, wording="the labels")
 
 
-def test_every_label_reworded_moves_nothing(tmp_path, monkeypatch):
+def test_every_label_reworded_moves_nothing(reworded):
     """The significance words rewritten in prose_helpers, and every label's words in
     every lock replaced as it is stated, each keeping its class: the golden holds."""
-    import src.prose_helpers as prose_helpers
-    monkeypatch.setattr(prose_helpers, "SIGNIFICANCE_WORDS", {
-        "1%": "significant at one percent", "5%": "significant at five percent",
-        "10%": "significant only at ten percent", "none": "indistinguishable from nothing"})
-    original, stated = lf.labelled, []
-
-    def reworded(family, cls, words):
-        stated.append((family, cls))
-        return original(family, cls, f"(said otherwise, 1 of 2 ways: {words.upper()})")
-
-    monkeypatch.setattr(lf, "labelled", reworded)
-    again = lf.render_book("frozen_book.db", tmp_path)
+    figures, html, stated = reworded
     assert len(stated) >= sum(lf.count_labels(GOLDEN["frozen_book.db"][q])
                               for q in GOLDEN["frozen_book.db"])
+    assert any("(said otherwise, 1 of 2 ways: " in h for h in html.values()), (
+        "premise: the labels were reworded")
     for quarter, entry in GOLDEN["frozen_book.db"].items():
-        assert lf.differences(entry, again[quarter]) == [], quarter
+        assert lf.differences(entry, figures[quarter]) == [], quarter
 
 
 def test_the_allocation_commentary_states_which_side_of_its_benchmark_weight(monkeypatch):

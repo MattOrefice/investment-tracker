@@ -272,11 +272,13 @@ def fresh_container(tmp_path, monkeypatch, warm_on, render_env):
 
 
 def test_a_hanging_fred_holds_the_macro_page_for_its_wait_and_no_longer(fresh_container,
-                                                                         monkeypatch):
+                                                                         monkeypatch,
+                                                                         short_fred_wait):
     """FRED stubbed to hang: the warm's first fetch never returns until released. The
     page renders at its wait with the stored copies and their dates, and fetches
     nothing itself; once FRED answers, the warm finishes and the next visit reads
-    today's rows."""
+    today's rows. The wait is tests/conftest.py's FRED_TEST_WAIT, and the notices name
+    the wait the page read (#544): they typed the live page's "15 seconds"."""
     from streamlit.testing.v1 import AppTest
     release, calls = threading.Event(), []
     stored = _stored_fred()
@@ -306,7 +308,8 @@ def test_a_hanging_fred_holds_the_macro_page_for_its_wait_and_no_longer(fresh_co
         notices = [i.value for i in at.info if "did not arrive" in i.value]
         assert len(notices) == 1, notices
         notice = notices[0]
-        assert notice.startswith("Today's FRED data did not arrive within 15 seconds, so "
+        waited = f"{macro.PAGE_WAIT_SECONDS:.0f} seconds"
+        assert notice.startswith(f"Today's FRED data did not arrive within {waited}, so "
                                  "21 of 22 series are shown as stored, with the date each "
                                  "was fetched: USREC (July 16, 2026), "), notice
         for series_id, when in [("T10Y2Y", "2026-07-16"), ("DFF", "2026-05-27"),
@@ -315,8 +318,8 @@ def test_a_hanging_fred_holds_the_macro_page_for_its_wait_and_no_longer(fresh_co
         assert "NFCI" not in notice, "nothing stored for NFCI"
         nfci = [c.value for c in at.caption
                 if isinstance(c.value, str) and c.value.startswith("FREDStillFetching:")]
-        assert nfci == ["FREDStillFetching: FRED has not returned 'NFCI' within 15 "
-                        "seconds; no earlier copy is stored. The fetch continues in the "
+        assert nfci == [f"FREDStillFetching: FRED has not returned 'NFCI' within {waited}; "
+                        "no earlier copy is stored. The fetch continues in the "
                         "background."], nfci
         sources = " ".join(c.value for c in at.caption if isinstance(c.value, str))
         assert "stored copy fetched July 16, 2026" in sources

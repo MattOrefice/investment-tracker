@@ -257,9 +257,13 @@ def test_partial_state_through_a_real_pdf_build(monkeypatch):
     EXPENSIVE: a real build is ~190s, the largest single test in the suite. One
     state is the pin; four would pay minutes to re-prove the same agreement.
     WeasyPrint is never invoked — _render_pdf is stubbed — and nothing is written
-    to data/reports/.
+    to data/reports/. Offline (#544): the build reached the network for something
+    other than FRED, about 6 s of this test on GitHub's runner, and this test reads
+    nothing fetched.
     """
     import src.asset_evaluation as ae
+    from tests.conftest import block_network
+    block_network(monkeypatch)
 
     captured = {}
     monkeypatch.setattr(reports, "_render_pdf",

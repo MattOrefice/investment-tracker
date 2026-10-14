@@ -4,10 +4,14 @@ in a fresh subprocess without raising.  Guards against the dual try/except
 pattern that caused Streamlit Cloud ImportError on /Positioning (Phase 8e).
 """
 import os
+import shutil
 import subprocess
 import sys
 import pathlib
 import re
+import tempfile
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 
 import pytest
 
@@ -41,9 +45,31 @@ _SRC_MODULES = sorted(
 )
 
 
+# FOUR AT A TIME (#544). Each module still gets its own fresh interpreter, which is the
+# point of these tests; what changed is that four run at once, the cores of GitHub's
+# runner. One at a time, the two parametrized families below took 55 s of the CI step's
+# 786 s: a fresh `import src.reports` alone takes 1.8 s there. Each family's results are
+# gathered once per module and read by its tests, so every module keeps its own test id
+# and its own failure message.
+POOL_WORKERS = 4
+
+
+def run_four_at_a_time(jobs: "dict[str, object]") -> "dict[str, tuple[bool, str]]":
+    """{name: job()} for every job, POOL_WORKERS jobs at once, each its own process."""
+    with ThreadPoolExecutor(max_workers=POOL_WORKERS) as pool:
+        futures = {name: pool.submit(job) for name, job in jobs.items()}
+        return {name: future.result() for name, future in futures.items()}
+
+
+@pytest.fixture(scope="module")
+def importable() -> "dict[str, tuple[bool, str]]":
+    return run_four_at_a_time({m: partial(_importable, f"import src.{m}")
+                               for m in _SRC_MODULES})
+
+
 @pytest.mark.parametrize("module", _SRC_MODULES)
-def test_src_module_importable(module):
-    ok, err = _importable(f"import src.{module}")
+def test_src_module_importable(module, importable):
+    ok, err = importable[module]
     assert ok, f"src.{module} raised on import:\n{err}"
 
 
@@ -70,9 +96,18 @@ def test_src_module_importable(module):
 def _page_importable_offline(page_relpath: str) -> tuple[bool, str]:
     """Run a Streamlit page/router file through AppTest in a fresh, network-blocked
     subprocess. Returns (ok, stderr); ok is False if AppTest recorded an unhandled
-    exception or the subprocess itself crashed (e.g. an ImportError at module level)."""
+    exception or the subprocess itself crashed (e.g. an ImportError at module level).
+
+    The page's BE/ME breakpoints go to a temporary copy of data/cache's file (#544): the
+    Macro page refreshed the checkout's file from this subprocess, which the session's
+    redirect in tests/conftest.py does not reach."""
+    from tests.conftest import BEME_CACHE_IN_CHECKOUT
+    beme = pathlib.Path(tempfile.mkdtemp(prefix="beme_cache_")) / BEME_CACHE_IN_CHECKOUT.name
+    if BEME_CACHE_IN_CHECKOUT.exists():
+        shutil.copy2(BEME_CACHE_IN_CHECKOUT, beme)
+        os.chmod(beme, 0o644)
     script = f"""
-import sys, os
+import sys, os, pathlib
 sys.path.insert(0, {str(_ROOT)!r})
 os.environ["TRACKER_MODE"] = "demo"
 os.environ.pop("FRED_API_KEY", None)
@@ -80,6 +115,8 @@ os.environ.pop("FRED_API_KEY", None)
 import src.prices as _prices
 import src.macro as _macro
 import src.shiller as _shiller
+import src.factors as _factors
+_factors._BEME_CACHE = pathlib.Path({str(beme)!r})
 
 def _blocked(*args, **kwargs):
     raise RuntimeError("network disabled in import-smoke test")
@@ -217,9 +254,15 @@ def _run_with_db_trap(code: str) -> tuple[bool, str]:
 # `ae.sleeve_benchmarks()` is exactly this, and is fine.) What WOULD be a defect in a
 # page is a DB value cached ACROSS reruns (st.cache_* or session_state) without
 # invalidation, which is a render-staleness question, not an import-side-effect one.
+@pytest.fixture(scope="module")
+def db_free() -> "dict[str, tuple[bool, str]]":
+    return run_four_at_a_time({m: partial(_run_with_db_trap, f"import src.{m}")
+                               for m in _SRC_MODULES})
+
+
 @pytest.mark.parametrize("module", _SRC_MODULES)
-def test_src_module_import_touches_no_db(module):
-    ok, err = _run_with_db_trap(f"import src.{module}")
+def test_src_module_import_touches_no_db(module, db_free):
+    ok, err = db_free[module]
     assert ok, f"src.{module} opened a database connection at import time:\n{err}"
 
 
