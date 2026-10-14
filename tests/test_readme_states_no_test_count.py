@@ -10,6 +10,11 @@ end of every run.
 
 Pinned here: the README states no count of tests, in figures or in words, and says
 where the count is.
+
+docs/architecture.md's "Testing strategy" said "990 tests across three layers (942 pass by
+default as of 2026-07-05; ... see the README's Integrity Testing section for the current
+breakdown)": a July count, and a pointer to the breakdown #543 removed. It drops both
+(#552, decided by the owner on October 14, 2026), and is held to the same rule here.
 """
 from __future__ import annotations
 
@@ -18,6 +23,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 README = ROOT / "README.md"
+ARCHITECTURE = ROOT / "docs" / "architecture.md"
 
 _COUNTED = r"(passed|pass|skipped|skips?|deselected|failed|failures|tests?|test cases)"
 _A_NUMBER = r"(\d[\d,]*\+?|one|two|three|four|five|six|seven|eight|nine|ten|dozens?|hundreds?)"
@@ -37,6 +43,14 @@ def test_the_readme_states_no_test_count():
     text = README.read_text(encoding="utf-8")
     assert not [m.group(0) for m in COUNT.finditer(text)], [
         m.group(0) for m in COUNT.finditer(text)]
+
+
+def test_the_architecture_doc_states_no_test_count_and_points_at_no_breakdown():
+    text = ARCHITECTURE.read_text(encoding="utf-8")
+    assert "## Testing strategy" in text and "Tests in three layers" in text, "premise"
+    assert not [m.group(0) for m in COUNT.finditer(text)], [
+        m.group(0) for m in COUNT.finditer(text)]
+    assert "breakdown" not in text and "as of 2026-07-05" not in text
 
 
 def test_the_readme_says_each_run_reports_its_own_count():
