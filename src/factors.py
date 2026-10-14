@@ -1287,6 +1287,25 @@ def _distinguishable(t: float) -> bool:
     return significance_level(t) != "none"
 
 
+def momentum_caption(b_mom: float, t_mom: float) -> str:
+    """The caption under the Factor Profile page's Carhart momentum table (#551).
+
+    Whether the loading can be told from zero is the significance label's call, by its
+    cut-offs, as the benchmark prose's is (#542). The caption decided with its own
+    |t| >= 1.96, so a loading with t between 1.65 and 1.96, starred in the table above
+    it, was read as "no systematic momentum tilt". It also called a significant loading
+    "economically small", and said "the loading's size confirms momentum is not a
+    deliberate tilt", whatever the loading was: no threshold defines a small momentum
+    loading, so those words go."""
+    head = f"Mom loading of {b_mom:+.3f} (t = {t_mom:.2f})"
+    if _distinguishable(t_mom):
+        return (f"{head} is {significance_label(t_mom)}. Some incidental momentum exposure "
+                f"leaks through the SPHQ quality factor.")
+    return (f"{head} confirms the portfolio carries no systematic momentum tilt, consistent "
+            f"with the tax-aware construction (high momentum turnover → short-term capital "
+            f"gains).")
+
+
 def _market_reading(b_mkt: float, t_mkt: float) -> str:
     """The clause after the US sleeve's Mkt-RF loading, from the loading itself (#526).
 

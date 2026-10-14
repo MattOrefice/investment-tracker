@@ -113,6 +113,27 @@ def test_carhart_caption_uses_dynamic_mom_loading(factor_profile_app: AppTest) -
     )
 
 
+def test_each_carhart_caption_reads_its_t_by_the_significance_label(
+        factor_profile_app: AppTest) -> None:
+    """#551, as rendered on the frozen book: each "Mom loading" caption is
+    factors.momentum_caption for the loading and t it prints, so it reads the t by the
+    significance label's levels and states no size it does not read."""
+    import re
+
+    from src.factors import momentum_caption
+    from src.prose_helpers import significance_level
+    captions = [c.value for c in factor_profile_app.caption
+                if isinstance(c.value, str) and c.value.startswith("Mom loading of ")]
+    assert len(captions) == 2, captions
+    levels = set()
+    for caption in captions:
+        b, t = re.match(r"Mom loading of ([+\-][\d.]+) \(t = (-?[\d.]+)\)", caption).groups()
+        assert caption == momentum_caption(float(b), float(t)), caption
+        assert "economically small" not in caption
+        levels.add(significance_level(float(t)))
+    assert levels, "premise: the book's two momentum regressions are read"
+
+
 def test_fi_sleeve_carhart_note_present(factor_profile_app: AppTest) -> None:
     """FI sleeve must show Carhart-not-applicable caption. Pinned: Phase 41 Item 8."""
     captions = [c.value for c in factor_profile_app.caption]

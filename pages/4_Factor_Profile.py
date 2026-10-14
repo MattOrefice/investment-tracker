@@ -26,6 +26,7 @@ from src.factors import (
     run_intl_tilt_regressions,
     run_sleeve_regressions,
     run_sleeve_regressions_mom,
+    momentum_caption,
     SIG_LEGEND,
     fmt_p,
     sig_marker,
@@ -224,21 +225,9 @@ with col:
             if res_mom is not None:
                 with st.expander("Carhart Momentum Supplement (FF5 + UMD)", expanded=False):
                     _render_factor_table(res_mom, _FACTORS + ["Mom"], label="FF5 + Momentum")
-                    _mom_b = res_mom["betas"]["Mom"]
-                    _mom_t = res_mom["t_stats"]["Mom"]
-                    if abs(_mom_t) >= 1.96:
-                        st.caption(
-                            f"Mom loading of {_mom_b:+.3f} (t = {_mom_t:.2f}) is statistically "
-                            f"significant but economically small. Some incidental momentum exposure "
-                            f"leaks through the SPHQ quality factor, and the loading's size confirms "
-                            f"momentum is not a deliberate tilt."
-                        )
-                    else:
-                        st.caption(
-                            f"Mom loading of {_mom_b:+.3f} (t = {_mom_t:.2f}) confirms the portfolio "
-                            f"carries no systematic momentum tilt, consistent with the tax-aware "
-                            f"construction (high momentum turnover → short-term capital gains)."
-                        )
+                    # Read by the significance label's cut-offs (#551).
+                    st.caption(momentum_caption(res_mom["betas"]["Mom"],
+                                                res_mom["t_stats"]["Mom"]))
         else:
             _render_factor_table(res, _FACTORS)
             _render_fit_metrics(res)
@@ -247,21 +236,9 @@ with col:
             if res_mom is not None:
                 with st.expander("Carhart Momentum Supplement (FF5 + UMD)", expanded=False):
                     _render_factor_table(res_mom, _FACTORS + ["Mom"], label="FF5 + Momentum")
-                    _mom_b = res_mom["betas"]["Mom"]
-                    _mom_t = res_mom["t_stats"]["Mom"]
-                    if abs(_mom_t) >= 1.96:
-                        st.caption(
-                            f"Mom loading of {_mom_b:+.3f} (t = {_mom_t:.2f}) is statistically "
-                            f"significant but economically small. Some incidental momentum exposure "
-                            f"leaks through the SPHQ quality factor, and the loading's size confirms "
-                            f"momentum is not a deliberate tilt."
-                        )
-                    else:
-                        st.caption(
-                            f"Mom loading of {_mom_b:+.3f} (t = {_mom_t:.2f}) confirms the portfolio "
-                            f"carries no systematic momentum tilt, consistent with the tax-aware "
-                            f"construction (high momentum turnover → short-term capital gains)."
-                        )
+                    # Read by the significance label's cut-offs (#551).
+                    st.caption(momentum_caption(res_mom["betas"]["Mom"],
+                                                res_mom["t_stats"]["Mom"]))
 
         st.divider()
 
