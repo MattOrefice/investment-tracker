@@ -20,6 +20,7 @@ from src.factors import (
     build_factor_methodology_notes,
     build_factor_prose,
     build_intl_tilt_disclosure,
+    factor_data_caption,
     intl_residual_reading_order,
     regress_fi_sleeve,
     run_intl_tilt_regressions,
@@ -413,10 +414,5 @@ with col:
             "residual estimate is not yet stable; they reflect the sample length, not a "
             "methodological weakness."
         )
-        st.caption(
-            "Data: Ken French Data Library, Dartmouth (mba.tuck.dartmouth.edu). "
-            "US factors cached at data/ff_factors_us.csv; Developed ex-US at "
-            "data/ff_factors_developed_exus.csv; Momentum (UMD) at data/ff_umd_us.csv. "
-            "Committed copies, refreshed by hand and never fetched on read."
-        )
+        st.caption(factor_data_caption())
     render_footer()

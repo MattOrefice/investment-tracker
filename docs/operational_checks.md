@@ -71,8 +71,8 @@ diff.
 ### Review `_SAA_US` and `_FI_WEIGHTS` constants
 
 If SAA weights are ever revised, two constants in `src/factors.py` must be updated:
-- `_SAA_US` (line ~101): US equity sleeve weights in percent
-- `_FI_WEIGHTS` (line ~92): VGIT/SCHP proportional weights
+- `_SAA_US`: US equity sleeve weights in percent
+- `_FI_WEIGHTS`: VGIT/SCHP proportional weights
 
 The tests `test_prose_saa_us_constants_match_db` and `test_prose_fi_weights_constant_matches_db`
 will fail immediately if these drift from the DB, catching the mismatch on the next `pytest` run.

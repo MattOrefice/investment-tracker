@@ -24,13 +24,13 @@ Four external data sources feed the system:
 ```
 Yahoo Finance (v8/chart API)  →  src/prices.py  →  SQLite prices table
 FRED API                      →  src/macro.py   →  SQLite macro_cache table (24h TTL)
-Ken French Data Library       →  src/factors.py →  data/ff_factors_*.csv (7-day TTL)
+Ken French Data Library       →  src/factors.py →  data/cache/ff_factors_*.csv, ff_umd_us.csv (committed inputs, no TTL)
 multpl.com (Shiller's CAPE)   →  src/shiller.py →  data/shiller_cape.csv (committed input, no TTL)
 ```
 
 CAPE is read from multpl.com's monthly table of Robert Shiller's CAPE. Shiller's own Yale file is the fallback and has been stale since September 2023. `data/shiller_cape.csv` is a committed input with no TTL: `src/shiller.py` reads it and never fetches, and `tools/refresh_market_data.py` is its only writer.
 
-All reads from external sources are cached locally. `src/prices.py` calls the Yahoo Finance v8/chart endpoint directly via `requests` (not the `yfinance` library) with a browser User-Agent header to avoid 429 rate-limiting. Factor ZIPs from Ken French are downloaded on demand and unpacked to CSV; the cache is refreshed when the file is older than 7 days or the most recent factor date exceeds a 35-day publication lag.
+Prices and FRED series are cached locally as they are read. `src/prices.py` calls the Yahoo Finance v8/chart endpoint directly via `requests` (not the `yfinance` library) with a browser User-Agent header to avoid 429 rate-limiting. The Ken French factor files are committed inputs under `data/cache/` (`ff_factors_us.csv`, `ff_factors_developed_exus.csv` and `ff_umd_us.csv`) with no TTL: `src/factors.py` reads them and never fetches, and `tools/refresh_market_data.py` is their only writer.
 
 The SQLite database (`src/db.py`) is the single source of truth for portfolio state. `get_connection()` is the only connection factory; all modules that touch the DB import from there.
 
