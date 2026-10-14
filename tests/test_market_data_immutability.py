@@ -173,8 +173,13 @@ def test_page_render_writes_no_tracked_data(page, demo_db_copy, write_trap):
     _assert_no_attempts(write_trap, f"rendering {page}")
 
 
-def test_pdf_build_writes_no_tracked_data(demo_db_copy, write_trap):
+def test_pdf_build_writes_no_tracked_data(demo_db_copy, write_trap, monkeypatch):
+    """Offline (#544): the build reached the network for something other than FRED,
+    about 9 s of this test on GitHub's runner. A fetched value was never what this test
+    checked: it checks that nothing the build does writes a tracked file."""
     from src.reports import generate_quarterly_report_bytes
+    from tests.conftest import block_network
+    block_network(monkeypatch)
 
     try:
         out = generate_quarterly_report_bytes("2025-05-01", "2026-06-30", is_demo=True)
@@ -283,7 +288,9 @@ def test_the_warp_is_what_sends_a_loader_down_its_staleness_branch(write_trap, m
     import src.factors as factors
 
     assert _HAS_STALENESS_WINDOW == {"ff_beme_breakpoints"}
-    real_cache = factors._BEME_CACHE
+    # The checkout's file, which the session points the loader away from (#544).
+    from tests.conftest import BEME_CACHE_IN_CHECKOUT as real_cache
+    assert factors._BEME_CACHE != real_cache, "premise: the suite writes a temporary copy"
     assert os.path.normcase(str(real_cache.resolve())) not in _tracked_data_files(), (
         "the one file a stale loader still writes has become a tracked file")
 

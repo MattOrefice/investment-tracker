@@ -630,6 +630,76 @@ def no_ambient_db(tmp_path, monkeypatch):
     return empty
 
 
+# ── What the suite spends its time on (#544) ──────────────────────────────────
+# The live pages wait for FRED at most macro.PAGE_WAIT_SECONDS, 15 s. The tests that hold
+# FRED until a page gives up waited out the whole 15 s each, 67 s of the CI step's 786 s
+# (#544's measurement). They run at this wait instead, and read every bound and every
+# message from it, so they prove the same rule at the length the live page does not use.
+FRED_TEST_WAIT = 0.5
+
+
+@pytest.fixture
+def short_fred_wait(monkeypatch):
+    """macro.PAGE_WAIT_SECONDS at FRED_TEST_WAIT for this test (#544)."""
+    import src.macro
+    monkeypatch.setattr(src.macro, "PAGE_WAIT_SECONDS", FRED_TEST_WAIT)
+    return FRED_TEST_WAIT
+
+
+def block_network(mp: "pytest.MonkeyPatch") -> None:
+    """No network for the rest of this test: every DNS lookup, price fetch and FRED fetch
+    raises at once (#544). A real PDF build otherwise reached the network for something
+    other than FRED: blocking DNS cut the two PDF-build tests from 14.8 and 9.6 s to
+    5.6 and 3.9 s on GitHub's runner, where stubbing FRED alone changed little."""
+    import socket
+    import src.macro
+    import src.prices
+
+    def _offline(*_a, **_k):
+        raise OSError("network blocked: this test reads only the book it is given (#544)")
+
+    mp.setattr(socket, "getaddrinfo", _offline)
+    mp.setattr(src.prices._SESSION, "get", _offline)
+    mp.setattr(src.macro, "fetch_fred_series", _offline)
+
+
+# The one file in the checkout the suite could write: factors.load_beme_breakpoints
+# refreshes data/cache/ff_beme_breakpoints.csv (gitignored) when it is absent or older
+# than 30 days. Parallel runs would share it (#544). Tests write a temporary copy instead.
+BEME_CACHE_IN_CHECKOUT = _ROOT / "data" / "cache" / "ff_beme_breakpoints.csv"
+
+
+def _stat_or_none(path: Path):
+    try:
+        st = path.stat()
+    except OSError:
+        return None
+    return (st.st_size, st.st_mtime_ns)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _beme_cache_outside_the_checkout(tmp_path_factory):
+    """Point factors._BEME_CACHE at a temporary copy for the whole session, with the
+    checkout file's modification time so its staleness is the same, and fail the
+    session if the checkout's file changed anyway."""
+    import src.factors as factors
+    assert Path(factors._BEME_CACHE).resolve() == BEME_CACHE_IN_CHECKOUT.resolve(), (
+        "premise: the loader's cache is the checkout file this redirects")
+    copy = tmp_path_factory.mktemp("beme_cache") / BEME_CACHE_IN_CHECKOUT.name
+    if BEME_CACHE_IN_CHECKOUT.exists():
+        shutil.copy2(BEME_CACHE_IN_CHECKOUT, copy)
+        os.chmod(copy, 0o644)
+    before = _stat_or_none(BEME_CACHE_IN_CHECKOUT)
+    mp = pytest.MonkeyPatch()
+    mp.setattr(factors, "_BEME_CACHE", copy)
+    try:
+        yield copy
+    finally:
+        mp.undo()
+    assert _stat_or_none(BEME_CACHE_IN_CHECKOUT) == before, (
+        f"the suite wrote {BEME_CACHE_IN_CHECKOUT}: tests write a temporary copy (#544)")
+
+
 # ── The FROZEN TEST BOOK (#302, test half) ─────────────────────────────────────
 # tests/fixtures/frozen_book.db, built by tools/build_frozen_book.py from the PUBLIC
 # demo.db (never tracker.db), in #304's format, trimmed, with nothing date-keyed.
