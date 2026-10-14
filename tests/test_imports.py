@@ -3,6 +3,7 @@ Import smoke tests: every src module and every page must be importable
 in a fresh subprocess without raising.  Guards against the dual try/except
 pattern that caused Streamlit Cloud ImportError on /Positioning (Phase 8e).
 """
+import json
 import os
 import shutil
 import subprocess
@@ -87,27 +88,37 @@ def test_src_module_importable(module, importable):
 # AppTest harness (which correctly executes a script-style page/router, unlike a bare
 # 'import' — pages/3_Macro.py isn't even a valid module path due to the leading digit)
 # inside a fresh subprocess, with every live network endpoint (Yahoo Finance, FRED,
-# Yale/Shiller) monkeypatched to raise immediately — deterministic and offline
-# regardless of host secrets or connectivity. Both files already catch every individual
-# data-fetch failure internally and render an empty/error state rather than
-# propagating it, so blocking network here only isolates import-time breaks — exactly
-# the failure class this guard targets.
+# Yale/Shiller, Ken French's BE/ME breakpoints) monkeypatched to raise immediately, and
+# DNS and the price session refused beneath them, recording any call that reaches them —
+# deterministic and offline regardless of host secrets or connectivity. Both files
+# already catch every individual data-fetch failure internally and render an
+# empty/error state rather than propagating it, so blocking network here only isolates
+# import-time breaks — exactly the failure class this guard targets.
 
-def _page_importable_offline(page_relpath: str) -> tuple[bool, str]:
+# The BE/ME breakpoints the page subprocess reads (#561): Ken French's NYSE breakpoints,
+# June 1926 to June 2026, as factors.load_beme_breakpoints caches them, identical to a
+# fetch on October 14, 2026. Copied with today's modification time, so the loader takes
+# it as fresh and never fetches.
+BEME_FIXTURE = _ROOT / "tests" / "fixtures" / "ff_beme_breakpoints.csv"
+_REACHED = "NETWORK REACHED: "
+
+
+def _page_importable_offline(page_relpath: str) -> tuple[bool, str, list]:
     """Run a Streamlit page/router file through AppTest in a fresh, network-blocked
-    subprocess. Returns (ok, stderr); ok is False if AppTest recorded an unhandled
-    exception or the subprocess itself crashed (e.g. an ImportError at module level).
+    subprocess. Returns (ok, stderr, reached); ok is False if AppTest recorded an
+    unhandled exception or the subprocess itself crashed (e.g. an ImportError at module
+    level), and reached names every call that went to the network: a DNS lookup, the
+    price session, or the BE/ME fetch.
 
-    The page's BE/ME breakpoints go to a temporary copy of data/cache's file (#544): the
-    Macro page refreshed the checkout's file from this subprocess, which the session's
-    redirect in tests/conftest.py does not reach."""
+    The page's BE/ME breakpoints are a temporary copy of the fixture (#561), not
+    data/cache's file (#544): the Macro page fetched them from Ken French's server in
+    this subprocess whenever that file was absent or stale, as it is in CI."""
     from tests.conftest import BEME_CACHE_IN_CHECKOUT
     beme = pathlib.Path(tempfile.mkdtemp(prefix="beme_cache_")) / BEME_CACHE_IN_CHECKOUT.name
-    if BEME_CACHE_IN_CHECKOUT.exists():
-        shutil.copy2(BEME_CACHE_IN_CHECKOUT, beme)
-        os.chmod(beme, 0o644)
+    shutil.copyfile(BEME_FIXTURE, beme)
+    os.chmod(beme, 0o644)
     script = f"""
-import sys, os, pathlib
+import json, os, pathlib, socket, sys
 sys.path.insert(0, {str(_ROOT)!r})
 os.environ["TRACKER_MODE"] = "demo"
 os.environ.pop("FRED_API_KEY", None)
@@ -121,13 +132,25 @@ _factors._BEME_CACHE = pathlib.Path({str(beme)!r})
 def _blocked(*args, **kwargs):
     raise RuntimeError("network disabled in import-smoke test")
 
+_reached = []
+
+def _refused(name):
+    def _refuse(*args, **kwargs):
+        _reached.append(name)
+        raise RuntimeError("network disabled in import-smoke test")
+    return _refuse
+
 _prices.fetch_prices = _blocked
 _macro.fetch_fred_series = _blocked
 _shiller.fetch_cape_dataframe = _blocked
+_factors._fetch_beme_breakpoints = _refused("factors._fetch_beme_breakpoints")
+socket.getaddrinfo = _refused("socket.getaddrinfo")
+_prices._SESSION.get = _refused("prices._SESSION.get")
 
 from streamlit.testing.v1 import AppTest
 at = AppTest.from_file({page_relpath!r}, default_timeout=60)
 at.run()
+print({_REACHED!r} + json.dumps(_reached))
 if at.exception:
     print("EXC:", at.exception, file=sys.stderr)
     sys.exit(1)
@@ -143,12 +166,30 @@ if at.exception:
         cwd=str(_ROOT),
         env=env,
     )
-    return result.returncode == 0, result.stderr.strip()
+    lines = [ln for ln in result.stdout.splitlines() if ln.startswith(_REACHED)]
+    reached = json.loads(lines[-1][len(_REACHED):]) if lines else None
+    return result.returncode == 0, result.stderr.strip(), reached
+
+
+def test_a_fresh_copy_of_the_beme_fixture_is_read_without_a_fetch(tmp_path, monkeypatch):
+    """The loader reads the fixture as it reads its own cache, and a copy dated today does
+    not send it to Ken French's server (#561)."""
+    import src.factors as factors
+    copy = tmp_path / BEME_FIXTURE.name
+    shutil.copyfile(BEME_FIXTURE, copy)
+    fetched = []
+    monkeypatch.setattr(factors, "_BEME_CACHE", copy)
+    monkeypatch.setattr(factors, "_fetch_beme_breakpoints", lambda: fetched.append(1))
+    frame = factors.load_beme_breakpoints()
+    assert fetched == []
+    assert list(frame.columns) == [f"p{n}" for n in range(5, 105, 5)]
+    assert (str(frame.index[0].date()), str(frame.index[-1].date())) == (
+        "1926-06-30", "2026-06-30")
 
 
 def test_macro_page_importable_offline():
     """pages/3_Macro.py must execute without an unhandled exception in a fresh,
-    network-blocked subprocess.
+    network-blocked subprocess, and make no network call (#561).
 
     tests/render/test_macro_render.py already exercises this page's rendered content in
     depth, but every test there is @pytest.mark.live_data and excluded from the default
@@ -157,8 +198,9 @@ def test_macro_page_importable_offline():
     every fetch on the page is individually try/except-guarded and renders an empty
     state on failure, so blocking network here only isolates import-time correctness.
     """
-    ok, err = _page_importable_offline("pages/3_Macro.py")
+    ok, err, reached = _page_importable_offline("pages/3_Macro.py")
     assert ok, f"pages/3_Macro.py raised on import/render:\n{err}"
+    assert reached == [], f"pages/3_Macro.py went to the network: {reached}"
 
 
 def test_app_py_importable_offline():
@@ -170,8 +212,9 @@ def test_app_py_importable_offline():
     construction, a typo in a st.Page(...) call) has had no test in the default suite
     that would catch it before deployment.
     """
-    ok, err = _page_importable_offline("app.py")
+    ok, err, reached = _page_importable_offline("app.py")
     assert ok, f"app.py raised on import/render:\n{err}"
+    assert reached == [], f"app.py went to the network: {reached}"
 
 
 # ── CI guard: ban the dual try/except pattern ─────────────────────────────────
