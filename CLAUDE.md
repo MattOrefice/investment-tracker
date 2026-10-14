@@ -252,11 +252,16 @@ the code that supports it; the two with none are listed at the end.
   named inputs move from pending to held and every other byte of that lock,
   and every other lock, is unchanged.
   `tests/test_complete_demo_lock_inputs.py` fails while a committed lock waits
-  on an input the committed files cover.
+  on an input the committed files cover. Then regenerate the figures golden,
+  `python tools/update_locked_figures_golden.py`, and commit it with the book:
+  the sections that were pending print figures now, and
+  `tests/test_locked_figures_golden.py` fails until they are recorded (see
+  "Locked figures" below).
 - Run the lock tests: `python -m pytest -q tests/test_quarter_lock.py
   tests/test_quarter_lock_inputs.py tests/test_hyg_price_layer.py
   tests/test_one_blended_series.py tests/test_window_base_close.py
-  tests/test_style_box_withdrawn.py`. Re-baseline a golden only for the reason its
+  tests/test_style_box_withdrawn.py tests/test_locked_figures_golden.py`.
+  Re-baseline a golden only for the reason its
   docstring names, in its own commit: `test_q2_locked_headline_figures_golden`
   (frozen book) moves only with the lock rule, and
   `test_benchmark_gap_renormalization_is_numeric_stack_invariant` only with a
@@ -273,9 +278,45 @@ the code that supports it; the two with none are listed at the end.
   close, in either mode, and until those closes are filled the report steps back
   to the previous quarter and names them (`cache.quarter_lock_gaps`). Until the
   lock is committed, the demo's new quarter is locked only in each container's
-  runtime cache.
-- Not yet supported (#397), so not a step: a committed harness that renders
-  every earlier locked report for a byte-identical diff.
+  runtime cache. With the lock, commit its figures: `python
+  tools/update_locked_figures_golden.py` adds the new lock to the golden, and
+  `tests/test_locked_figures_golden.py` fails until it is there.
+- Every earlier lock's FIGURES are held to a committed golden since #525 (see
+  "Locked figures" below). Not yet supported (#397), so not a step: a committed
+  harness that diffs every earlier locked report's full TEXT byte for byte.
+
+## Locked figures
+- `tests/fixtures/locked_figures_golden.json` holds every figure each committed
+  quarter lock's report prints, in `data/demo.db` and the frozen book: the six
+  sections built inside the lock and the Performance page's locked tiles (#525).
+  `tests/test_locked_figures_golden.py` renders every lock and fails on any
+  difference. Macro Context and Asset Evaluation are computed at each render and
+  are not in it; neither are the cover, the methodology page or any wording. How
+  a figure is told from wording is in `tests/locked_figures.py`'s docstring.
+- A PR THAT MOVES A LOCKED FIGURE UPDATES THE GOLDEN IN THE SAME PR, and does one
+  of two things:
+    - carries a restatement: a record in each lock whose figures move and a
+      sentence on that lock's cover that reads the record, as the lot rebuild
+      (#450), the style box (#477), the filled closes (#491) and the gap rewrite
+      (#531) each did; or
+    - records a new rule in the locks taken after it and leaves the earlier
+      locks on the old one, as `benchmark_rule` does (#383), so no committed
+      figure moves and the golden changes only by the new locks' entries.
+  A lock holds no method: a changed constant, cut-off or formula reaches every
+  locked quarter the moment it merges. The golden is what makes that visible.
+- Regenerate it with `python tools/update_locked_figures_golden.py`, the
+  golden's only writer. It refuses, and writes nothing, when a lock's figures
+  moved while that lock's own records did not, and names each figure. It accepts
+  a lock taken since, a pending input completed, and a lock whose records
+  changed. Do not edit the JSON by hand to get past a refusal: the refusal is the
+  finding.
+- A change that moves only wording does not touch the golden. One exception to
+  know: a number a sentence types in its own source ("95% CI") is read as a
+  figure, because the render cannot tell it from a computed one. Rewording such a
+  sentence moves the golden with no figure moving: regenerate with `--wording
+  "<what was reworded>"` and say so in the PR. The writer lets it through only
+  when no table cell and no tile moved.
+- The personal book is not in it: it holds no committed lock.
 
 ## History baseline (post-2026-06-08 reorg)
 - History was reorganized twice on 2026-06-08, both as
