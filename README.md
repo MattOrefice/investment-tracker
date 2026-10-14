@@ -88,7 +88,7 @@ Three layers: (1) math identities that must hold by construction (BF effects sum
 | Yahoo Finance | Daily adjusted-close (all holdings and benchmarks) | SQLite; locked on quarterly report date to prevent retroactive revisions |
 | FRED | T10Y2Y, DFF, BAMLH0A0HYM2 (HY OAS), USREC | SQLite, 24-hour TTL |
 | multpl.com | Robert Shiller's CAPE (monthly). Shiller's own Yale file is the fallback, stale since September 2023 | Committed CSV (`data/shiller_cape.csv`), no TTL: only `tools/refresh_market_data.py` writes it |
-| Ken French Data Library | FF5 factors (US, Developed ex-US), UMD momentum | Downloaded and cached per regression run |
+| Ken French Data Library | FF5 factors (US, Developed ex-US), UMD momentum | Committed CSVs under `data/cache/` (`ff_factors_us.csv`, `ff_factors_developed_exus.csv`, `ff_umd_us.csv`), no TTL: only `tools/refresh_market_data.py` writes them |
 
 **Real Assets benchmark disclosure.** The portfolio holds PDBC (C-corp structure, no K-1 issued); the benchmark uses DBC (K-1-issuing). Selection effect in the Brinson-Fachler table captures the DBC–PDBC return spread. This asymmetry is documented rather than hidden. Real Assets sleeve is benchmarked as a 60% VNQ / 40% DBC blend; REITs are weighted higher than commodities because broad commodity futures carry negative roll yield in contango regimes that suppresses long-run total return.
 

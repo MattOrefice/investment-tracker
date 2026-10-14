@@ -310,6 +310,39 @@ def em_disclosure() -> str:
     )
 
 
+def committed_factor_files() -> "dict[str, str]":
+    """{what the file holds: its path from the repository root} for the three committed
+    Ken French files, read from the paths the loaders read (#527)."""
+    def rel(path: Path) -> str:
+        try:
+            return path.relative_to(_ROOT).as_posix()
+        except ValueError:      # a path outside the repository is named whole
+            return path.as_posix()
+
+    return {"US factors": rel(_FACTOR_CONFIG["us"]["cache"]),
+            "Developed ex-US": rel(_FACTOR_CONFIG["developed_exus"]["cache"]),
+            "Momentum (UMD)": rel(_UMD_CACHE)}
+
+
+def factor_data_caption(demo: "bool | None" = None) -> str:
+    """The Factor Profile page's data caption: the three committed files where the
+    loaders read them, that they have no TTL, and their only writer (#527). It named
+    data/ff_factors_us.csv and two more paths under data/ that hold no committed file;
+    the committed files are under data/cache/.
+
+    The writer is named by its path outside the public demo only. A visitor there can
+    do nothing with a maintainer's tool, and the demo's pages print no such path
+    (asof.staleness_note; tests/render/test_market_data_wording.py). ``demo`` defaults
+    to the running mode."""
+    if demo is None:
+        from src.config import IS_DEMO as demo
+    listed = "; ".join(f"{what} at {path}" for what, path in committed_factor_files().items())
+    writer = ("A maintainer's refresh tool" if demo else "tools/refresh_market_data.py")
+    return ("Data: Ken French Data Library, Dartmouth (mba.tuck.dartmouth.edu). "
+            f"Committed files with no TTL: {listed}. {writer} is "
+            "their only writer, and nothing fetches them on read.")
+
+
 # ── Utilities ─────────────────────────────────────────────────────────────────
 
 def _nw_lags(T: int) -> int:
