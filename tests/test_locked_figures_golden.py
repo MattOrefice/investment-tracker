@@ -478,16 +478,25 @@ def test_differences_names_each_figure_that_moved():
 @pytest.fixture(scope="module")
 def reworded(tmp_path_factory):
     """The frozen book rendered once with both rewordings the two tests below make: the
-    factor prose reordered with words added, and every label's words replaced (the
-    significance words in prose_helpers too). Each test expects no figure to move, so
-    they share one render (#544). Returns (figures, html, the labels stated)."""
-    import src.factors as factors
+    factor prose and the EM disclosure each reordered with words added, and every label's
+    words replaced (the significance words in prose_helpers too). Each test expects no
+    figure to move, so they share one render (#544). Returns (figures, html, the labels
+    stated, the disclosures said).
+
+    The disclosure is patched where the report calls it: src.reports imports
+    em_disclosure by name, so a patch on src.factors never reached the report (#562)."""
     import src.prose_helpers as prose_helpers
     from src import reports
     prose, original, stated = reports.build_factor_prose, lf.labelled, []
+    em, em_said = reports.em_disclosure, []
 
     def reworded_prose(*args, **kwargs):
         return ["In other words: " + s for s in reversed(prose(*args, **kwargs))]
+
+    def reworded_em():
+        said = "Put another way: " + " ".join(reversed(re.split(r"(?<=\.) ", em())))
+        em_said.append(said)
+        return said
 
     def reworded_label(family, cls, words):
         stated.append((family, cls))
@@ -496,20 +505,28 @@ def reworded(tmp_path_factory):
     html = {}
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(reports, "build_factor_prose", reworded_prose)
-        mp.setattr(factors, "em_disclosure", lambda: "Another sentence altogether.")
+        mp.setattr(reports, "em_disclosure", reworded_em)
         mp.setattr(prose_helpers, "SIGNIFICANCE_WORDS", {
             "1%": "significant at one percent", "5%": "significant at five percent",
             "10%": "significant only at ten percent", "none": "indistinguishable from nothing"})
         mp.setattr(lf, "labelled", reworded_label)
         figures = lf.render_book("frozen_book.db", tmp_path_factory.mktemp("reworded"),
                                  html_out=html)
-    return figures, html, stated
+    return figures, html, stated, em_said
 
 
 def test_rewording_the_factor_prose_moves_no_figure(reworded):
-    """Every sentence of the factor prose reordered, with words added: the golden still
-    holds, because the numbers the sentences print are the same."""
-    figures, html, _stated = reworded
+    """Every sentence of the factor prose and of the EM disclosure reordered, with words
+    added: the golden still holds, because the numbers the sentences print are the same.
+    The disclosure keeps the one figure it types, "the one equity region", which the
+    golden holds in words; a disclosure that dropped it would move the golden (#562)."""
+    from html import unescape
+    figures, html, _stated, em_said = reworded
+    assert em_said and len(set(em_said)) == 1, (
+        "premise: the report called the reworded EM disclosure, the same text each time")
+    for quarter in GOLDEN["frozen_book.db"]:
+        assert em_said[0] in unescape(html[quarter]), (
+            f"premise: {quarter}'s report printed the reworded EM disclosure")
     assert any("In other words: " in h for h in html.values()), (
         "premise: the factor prose was reworded")
     for quarter, entry in GOLDEN["frozen_book.db"].items():
@@ -543,7 +560,7 @@ def test_a_moved_one_percent_cut_off_fails_on_the_labels_it_moves(tmp_path, monk
 def test_every_label_reworded_moves_nothing(reworded):
     """The significance words rewritten in prose_helpers, and every label's words in
     every lock replaced as it is stated, each keeping its class: the golden holds."""
-    figures, html, stated = reworded
+    figures, html, stated, _em_said = reworded
     assert len(stated) >= sum(lf.count_labels(GOLDEN["frozen_book.db"][q])
                               for q in GOLDEN["frozen_book.db"])
     assert any("(said otherwise, 1 of 2 ways: " in h for h in html.values()), (
