@@ -376,28 +376,44 @@ def sig_marker(p: float) -> str:
     return ""
 
 
+def alpha_interval_bps(result: dict) -> "tuple[float, float] | None":
+    """
+    The annualized alpha's 95% Newey-West confidence interval, (low, high) in bps per
+    year, or None when the regression has no standard error for its constant.
+
+    THE ONE RULE for every page and the report (#525): the interval is the alpha
+    ± 1.96 standard errors, where SE is result['_hac_bse']['const'] (daily decimal
+    units) annualized over 252 trading days: SE_bps = SE_daily × 252 × 10000. The
+    report's benchmark prose computed it a second time, so a change to one copy would
+    have left a page and the PDF printing different intervals for one regression.
+    The interval applies to alpha only; betas are not bounded here.
+    """
+    se_daily = result.get("_hac_bse", {}).get("const", float("nan"))
+    if se_daily != se_daily:  # NaN check
+        return None
+    a_bps  = result["alpha_annual_bps"]
+    se_bps = se_daily * 252 * 10_000
+    return a_bps - 1.96 * se_bps, a_bps + 1.96 * se_bps
+
+
+def interval_end_str(bps: float) -> str:
+    """One end of an alpha interval in whole bps, with one minus sign (item 13): "-53",
+    "+307"."""
+    return f"-{abs(bps):.0f}" if bps < 0 else f"+{bps:.0f}"
+
+
 def alpha_ci_str(result: dict) -> str:
     """
-    Format annualized alpha with 95% Newey-West confidence interval.
-    Returns e.g. '+127 bps/yr [-53, +307]'.
-
-    SE is extracted from result['_hac_bse']['const'] (daily decimal units).
-    CI = alpha_bps ± 1.96 × SE_bps where SE_bps = SE_daily × 252 × 10000.
-    CI applies to alpha only; betas are not bounded here.
+    Format annualized alpha with its 95% Newey-West confidence interval
+    (alpha_interval_bps). Returns e.g. '+127 bps/yr [-53, +307]', or the alpha alone
+    when the regression has no standard error for its constant.
     """
-    hac_bse = result.get("_hac_bse", {})
-    se_daily = hac_bse.get("const", float("nan"))
-    a_bps    = result["alpha_annual_bps"]
-
-    if se_daily != se_daily:  # NaN check
+    a_bps = result["alpha_annual_bps"]
+    interval = alpha_interval_bps(result)
+    if interval is None:
         return f"{a_bps:+.0f} bps/yr"
-
-    se_bps = se_daily * 252 * 10_000
-    lo     = a_bps - 1.96 * se_bps
-    hi     = a_bps + 1.96 * se_bps
-    lo_s   = f"-{abs(lo):.0f}" if lo < 0 else f"+{lo:.0f}"      # one minus sign (item 13)
-    hi_s   = f"-{abs(hi):.0f}" if hi < 0 else f"+{hi:.0f}"
-    return f"{a_bps:+.0f} bps/yr [{lo_s}, {hi_s}]"
+    lo, hi = interval
+    return f"{a_bps:+.0f} bps/yr [{interval_end_str(lo)}, {interval_end_str(hi)}]"
 
 
 def _fmt_date(iso: str) -> str:
@@ -1895,16 +1911,12 @@ def build_benchmark_prose(
     sig_label      = significance_label(t_a)
     is_significant = abs(t_a) >= 1.65
 
-    # Compute 95% CI for alpha if HAC SE is available
-    _hac_bse  = result.get("_hac_bse", {})
-    _se_daily = _hac_bse.get("const", float("nan"))
-    if _se_daily == _se_daily:  # not NaN
-        _se_bps = _se_daily * 252 * 10_000
-        _ci_lo  = a_bps - 1.96 * _se_bps
-        _ci_hi  = a_bps + 1.96 * _se_bps
-        _lo_s   = f"-{abs(_ci_lo):.0f}" if _ci_lo < 0 else f"+{_ci_lo:.0f}"
-        _hi_s   = f"-{abs(_ci_hi):.0f}" if _ci_hi < 0 else f"+{_ci_hi:.0f}"
-        _ci_part = f" (95% CI: [{_lo_s}, {_hi_s}]; t = {t_a:.2f})"
+    # The alpha's 95% CI, by the rule the pages print it with (alpha_interval_bps).
+    _interval = alpha_interval_bps(result)
+    if _interval is not None:
+        _ci_lo, _ci_hi = _interval
+        _ci_part = (f" (95% CI: [{interval_end_str(_ci_lo)}, {interval_end_str(_ci_hi)}]; "
+                    f"t = {t_a:.2f})")
     else:
         _ci_part = f" (t = {t_a:.2f})"
 
