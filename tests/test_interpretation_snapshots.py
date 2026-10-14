@@ -369,7 +369,8 @@ class TestSleeveRegressionSnapshot:
 class TestBenchmarkAttributionSnapshot:
     """Snapshot tests — three benchmark attribution scenarios. Migrated deliberately by
     the writing sweep (audit item 14b): em dashes, the instructions to "see" the table,
-    and "fully-invested" restated; every clause is otherwise the same."""
+    and "fully-invested" restated; every clause is otherwise the same. Migrated again by
+    #559: a significant intercept names the level significance_label gives."""
 
     def test_close_to_1_no_style_tilts_insig_alpha(self):
         """Beta near 1, no significant style tilts, insignificant alpha — typical early period."""
@@ -424,8 +425,9 @@ class TestBenchmarkAttributionSnapshot:
             "cross-sleeve return dispersion or cash drag. "
             "No statistically significant residual style tilts beyond the SAA benchmark "
             "are detected at the current sample length.  "
-            "The active return intercept is statistically significant: a positive return "
-            "after accounting for both the SAA benchmark and residual style exposures. "
+            "The active return intercept is statistically significant at the 5% level: a "
+            "positive return after accounting for both the SAA benchmark and residual style "
+            "exposures. "
             "The regression table and the Interpretation section below give the full "
             "alpha estimate with its confidence interval."
         )
