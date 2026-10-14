@@ -18,10 +18,12 @@ def snap_db(tmp_path, monkeypatch):
     path = tmp_path / "snap.db"
     c = sqlite3.connect(path)
     c.executescript("""
-        CREATE TABLE securities (ticker TEXT PRIMARY KEY);
-        CREATE TABLE asset_classes (name TEXT, benchmark_ticker TEXT);
-        INSERT INTO securities VALUES ('VOO'), ('BADX'), ('SPAXX');
-        INSERT INTO asset_classes VALUES ('US Large Core', 'VOO'),
+        CREATE TABLE securities (ticker TEXT PRIMARY KEY, asset_class_id INTEGER);
+        CREATE TABLE asset_classes (asset_class_id INTEGER PRIMARY KEY, name TEXT,
+            parent_id INTEGER, target_weight REAL, tolerance_band REAL, sort_order INTEGER,
+            benchmark_ticker TEXT);
+        INSERT INTO securities (ticker) VALUES ('VOO'), ('BADX'), ('SPAXX');
+        INSERT INTO asset_classes (name, benchmark_ticker) VALUES ('US Large Core', 'VOO'),
             ('Real Assets', 'VNQ (60%) + DBC (40%)'), ('Broken', 'ZZZ (70%) + YYY (10%)');
     """)
     c.commit(); c.close()
