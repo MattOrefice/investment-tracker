@@ -1941,7 +1941,11 @@ def build_benchmark_prose(
     )
 
     sig_label      = significance_label(t_a)
-    is_significant = abs(t_a) >= 1.65
+    # Significant at any level the label above names, by the label's own cut-offs (#542):
+    # the cross-reference below decided with its own 1.65, so moving the label's 10%
+    # cut-off alone would have called the intercept indistinguishable from zero and then
+    # read it as the selection effects, or the reverse.
+    is_significant = _distinguishable(t_a)
 
     # The alpha's 95% CI, by the rule the pages print it with (alpha_interval_bps).
     _interval = alpha_interval_bps(result)
