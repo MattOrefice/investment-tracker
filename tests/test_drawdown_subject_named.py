@@ -305,13 +305,14 @@ def test_the_caption_drops_the_unverified_sleeve_figures():
 def test_the_caption_templates_bitcoins_figure_rather_than_stating_one():
     """MIGRATED at #529. The caption's closing sentences moved out of the template into
     asset_evaluation.drawdown_2022_note, so the verb can follow the table's figures.
-    What this protected is unchanged: Bitcoin's 2022 figure is the one handed in, never
-    a typed one."""
+    MIGRATED again at #536: the note takes the size of the fall as decline_in_year
+    returns it, not the signed drawdown as text. What this protected is unchanged:
+    Bitcoin's 2022 figure is the one handed in, never a typed one."""
     import src.asset_evaluation as ae
     html = TEMPLATE.read_text(encoding="utf-8")
     body = re.sub(r"\{#.*?#\}", "", html, flags=re.S)
     assert "{{ asset_eval.dd_2022_note }}" in body
     assert "&minus;65%" not in body and "65%" not in body
-    for figure in ("-66.9%", "-50.0%"):
-        assert f"while Bitcoin fell {figure}" in ae.drawdown_2022_note(figure, PORT)
-    assert "65%" not in ae.drawdown_2022_note("-50.0%", PORT)
+    for fall, figure in ((0.669, "66.9%"), (0.5, "50.0%")):
+        assert f"while Bitcoin fell {figure}" in ae.drawdown_2022_note(fall, PORT)
+    assert "65%" not in ae.drawdown_2022_note(0.5, PORT)

@@ -212,18 +212,20 @@ def test_the_reduced_argument_no_longer_presumes_a_direction():
 
 
 def test_the_note_under_the_table_follows_the_same_two_figures():
-    assert ae.drawdown_2022_note("-66.9%", PORT) == (
-        "That year equities and bonds fell together while Bitcoin fell -66.9%, so adding BTC "
+    """MIGRATED at #536: the note takes the size of Bitcoin's fall (decline_in_year's
+    0.669) and prints "fell 66.9%"; it printed the signed "-66.9%" it was handed."""
+    assert ae.drawdown_2022_note(0.669, PORT) == (
+        "That year equities and bonds fell together while Bitcoin fell 66.9%, so adding BTC "
         "deepened the portfolio's 2022 drawdown, from -23.3% at 0% allocation to -26.1% at "
         "10.0%, instead of cushioning it. 2022 is the critical test: diversification value "
         "eroded in the year it was most needed.")
-    assert ae.drawdown_2022_note("-66.9%", dict(PORT, mdd22_hi=-0.201)) == (
-        "That year equities and bonds fell together while Bitcoin fell -66.9%, and adding BTC "
+    assert ae.drawdown_2022_note(0.669, dict(PORT, mdd22_hi=-0.201)) == (
+        "That year equities and bonds fell together while Bitcoin fell 66.9%, and adding BTC "
         "cushioned the portfolio's 2022 drawdown, from -23.3% at 0% allocation to -20.1% at "
         "10.0%. 2022 is the critical test, and on these figures the allocation did not deepen "
         "it.")
-    assert ae.drawdown_2022_note("-66.9%", dict(PORT, mdd22_hi=-0.233)) == (
-        "That year equities and bonds fell together while Bitcoin fell -66.9%, and adding BTC "
+    assert ae.drawdown_2022_note(0.669, dict(PORT, mdd22_hi=-0.233)) == (
+        "That year equities and bonds fell together while Bitcoin fell 66.9%, and adding BTC "
         "left the portfolio's 2022 drawdown unchanged at -23.3%. 2022 is the critical test.")
     assert ae.drawdown_2022_note(None, {}) == (
         "That year equities and bonds fell together. What a BTC allocation did to the "
@@ -236,7 +238,7 @@ def test_the_template_prints_the_note_and_types_no_verb():
     assert "{{ asset_eval.dd_2022_note }}" in body
     for typed in ("deepened", "cushioning", "cushioned"):
         assert typed not in body, typed
-    note = ae.drawdown_2022_note("-66.9%", dict(PORT, mdd22_hi=-0.201))
+    note = ae.drawdown_2022_note(0.669, dict(PORT, mdd22_hi=-0.201))
     text = _printed(asset_eval={
         "disposition": "computed", "unavailable": [], "sample_start": "2018-01-01",
         "dd_rows": [{"alloc": "0%", "cagr": "1%", "max_dd": "-31.3%", "sharpe": "0.50",

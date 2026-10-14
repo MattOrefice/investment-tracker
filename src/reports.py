@@ -1606,7 +1606,8 @@ def _build_asset_eval_section() -> dict:
         "delta_sharpe_con": None,
         "msc_chart_b64":    None,
         "dd_rows":          [],
-        # Bitcoin's OWN 2022 drawdown, for the table caption. The caption used to
+        # Bitcoin's OWN 2022 drawdown, signed, for the case-against drawdown sentence;
+        # the caption reads the size of the fall instead (#536). The caption used to
         # describe a "2022 stress scenario: equities -20%, bonds -15%, BTC -65%",
         # which read as a hypothetical shock applied to the table — the column is
         # realized 2022 history. The two unverified sleeve figures are gone rather
@@ -1674,7 +1675,10 @@ def _build_asset_eval_section() -> dict:
     # here rather than inside 5h because it is a property of the candidate asset, not
     # of any blend — and because btc_ret is guaranteed non-empty past the loader
     # guard above, so the caption cannot silently lose its figure when the sweep
-    # fails. Stored preformatted: its only consumers are a caption and a sentence.
+    # fails. Stored preformatted: its one consumer is the case-against drawdown
+    # sentence ("Its 2022 drawdown of -66.9%"), signed as the table's drawdowns are.
+    # The note under the table says how far Bitcoin fell, so it reads the size of the
+    # fall from decline_in_year instead (#536).
     _btc_2022 = _max_drawdown(btc_ret.loc["2022-01-01":"2022-12-31"])
     if not np.isnan(_btc_2022):
         result["btc_2022_mdd"] = f"{_btc_2022:.1%}"
@@ -1877,7 +1881,9 @@ def _build_asset_eval_section() -> dict:
                     "mdd22_lo":  float(_base["2022 MDD"]),
                     "mdd22_hi":  float(_top["2022 MDD"]),
                 }
-            result["dd_2022_note"] = ae.drawdown_2022_note(result["btc_2022_mdd"], _port)
+            # The size of Bitcoin's 2022 fall, from the one function every "fell"
+            # sentence reads (#536): this note printed the signed drawdown above.
+            result["dd_2022_note"] = ae.drawdown_2022_note(ae.decline_in_year(btc_ret), _port)
     except Exception:
         result["unavailable"].append("drawdown")
 
