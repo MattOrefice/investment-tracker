@@ -205,6 +205,9 @@ def test_the_reports_live_sections_state_their_own_as_of(tmp_path, monkeypatch):
         assert "CAPE " in macro["as_of"]
         ae = reports._build_asset_eval_section()
         assert ae["as_of"].startswith("Live, not locked to the report's quarter: returns from ")
-        assert ae["as_of"].endswith(" through 2026-07-16."), ae["as_of"]
+        # MIGRATED at #523. The frozen book's tickers end on two days, so the line names
+        # each series' last date; it gave July 16 alone, the day three joined series shared.
+        assert "BTC-USD and GLD through 2026-07-16; " in ae["as_of"], ae["as_of"]
+        assert " and VOO through 2026-07-20. " in ae["as_of"], ae["as_of"]
     finally:
         unpin_leftovers()

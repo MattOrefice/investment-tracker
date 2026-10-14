@@ -393,6 +393,46 @@ def tickers_read(candidate: str = "BTC-USD", screened: str = "") -> "list[str]":
     return sorted(read)
 
 
+def series_ends(candidate: str = "BTC-USD") -> "dict[str, str | None]":
+    """{ticker: the date of its last stored close, ISO} for every ticker the section
+    reads (tickers_read), or None for one with no close. Read through the same reader
+    as the figures, so it is the last day each figure's series can reach."""
+    today = date.today().isoformat()
+    ends: "dict[str, str | None]" = {}
+    for ticker in tickers_read(candidate):
+        series = _price_series(ticker, SAMPLE_START, today)
+        ends[ticker] = None if series.empty else series.index.max().date().isoformat()
+    return ends
+
+
+def through_line(ends: "dict[str, str | None]", start: str = SAMPLE_START) -> str:
+    """The report section's first line: that it is live, and through when (#523).
+
+    One through-date only when every series the section reads ends on it. The line
+    gave the last day three joined series shared, as the section's through-date: on a
+    book whose tickers end on different days some rows read later closes than it said
+    (the univariate table runs each asset through its own last close). Otherwise it
+    names each series' last date, the earliest first, and one with no close as that."""
+    head = f"Live, not locked to the report's quarter: returns from {start}"
+    dated = {t: d for t, d in ends.items() if d}
+    missing = sorted(t for t, d in ends.items() if not d)
+    if not ends:
+        return f"{head}."
+    if dated and not missing and len(set(dated.values())) == 1:
+        return f"{head} through {next(iter(dated.values()))}."
+
+    def _names(tickers: "list[str]") -> str:
+        return tickers[0] if len(tickers) == 1 else ", ".join(tickers[:-1]) + " and " + tickers[-1]
+
+    groups = [f"{_names(sorted(t for t, d in dated.items() if d == day))} through {day}"
+              for day in sorted(set(dated.values()))]
+    if missing:
+        groups.append(f"{_names(missing)} with no close stored")
+    return (f"{head}. Its series do not all end on one day: " + "; ".join(groups) + ". "
+            f"A figure over the whole sample runs through the last day the series it "
+            f"reads share.")
+
+
 def price_gap_note(candidate: str = "BTC-USD", screened: str = "", *,
                    in_report: bool = False) -> "str | None":
     """What the page says when the book lacks a close inside the history of a ticker it
