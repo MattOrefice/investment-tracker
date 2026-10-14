@@ -298,7 +298,7 @@ the code that supports it; the two with none are listed at the end.
   a figure is told from wording is in `tests/locked_figures.py`'s docstring. A
   figure printed in words is held whole beside the numbers (#541): an ordinal (the
   CAPE's "99th percentile"), a date whose month is a word ("June 30, 2026"), a
-  number spelled out.
+  number spelled out. So is a quarter's label, "Q2 2026" (#553).
 - A LABEL IS HELD BY THE CLASS IT STATES, NOT ITS WORDS. Words a locked section's
   code picks by testing a computed figure (a significance level, "in line with
   benchmark", "outperforming", what a factor sentence reads from its loading) go
