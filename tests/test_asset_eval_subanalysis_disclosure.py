@@ -56,6 +56,7 @@ _BASE = {
     "disposition": "computed", "failure_reason": None, "unavailable": [],
     "rf_note": None,
     "gap_note": None,
+    "dd_2022_note": None,
 }
 
 

@@ -1209,6 +1209,53 @@ def _build_benchmark_section(start_date: str, end_date: str) -> Optional[dict]:
     }
 
 
+# Where the Macro Context percentiles start (#529). The 10Y-2Y spread and the fed funds
+# rate are ranked within their history from MACRO_PERCENTILE_SINCE. The HY spread is
+# asked for from _HY_ASKED_FROM and ranked within whatever series comes back: FRED
+# serves it over a rolling window, so its first date is read from the series, never
+# typed. CAPE is ranked within its whole committed record.
+MACRO_PERCENTILE_SINCE = "1990-01-01"
+_HY_ASKED_FROM = "2023-05-01"
+
+
+def _first_date(series) -> "date | None":
+    """A series' first observation date, or None when its index carries no date.
+    NEVER RAISES, for _obs_date's reason: it runs inside an indicator's try block."""
+    try:
+        first = series.dropna().index[0]
+        return first.date() if hasattr(first, "date") else date.fromisoformat(str(first))
+    except Exception:                                    # noqa: BLE001
+        return None
+
+
+def macro_windows_sentence(cape_from: "date | None", cut: "list[str]",
+                           hy_from: "date | None") -> "str | None":
+    """The sentence that says what each Macro Context percentile is ranked within, or
+    None when no reading has one (#529).
+
+    The footnote said "Historical percentile computed over available data window. HY
+    spread data available from May 2023 only due to FRED licensing restrictions", and
+    the methodology "available May 2023+". Two of the four are cut at
+    MACRO_PERCENTILE_SINCE, not ranked over the data available, and the HY series'
+    start moves with each fetch. ``cape_from`` is the first month of the CAPE record,
+    ``cut`` names the readings cut at the constant, ``hy_from`` is the first date of
+    the HY series the section read. A reading that is unavailable is left out."""
+    parts = []
+    if cape_from is not None:
+        parts.append(f"CAPE from {cape_from.strftime('%B')} {cape_from.year}, the start "
+                     f"of its record")
+    if cut:
+        parts.append(f"{' and '.join(cut)} from "
+                     f"{format_long_date(MACRO_PERCENTILE_SINCE)}, where this report cuts "
+                     f"{'their' if len(cut) > 1 else 'its'} history")
+    if hy_from is not None:
+        parts.append(f"the HY spread from {format_long_date(hy_from)}, the first date in "
+                     f"the series this report read")
+    if not parts:
+        return None
+    return "Each percentile ranks a reading within its own series: " + "; ".join(parts) + "."
+
+
 def _build_macro_section() -> dict:
     def _pct_str(series, val):
         try:
@@ -1224,6 +1271,10 @@ def _build_macro_section() -> dict:
     # Past FRED's wait (#435) a reading is taken from the stored copy; the as-of line
     # names each one and the date it was fetched.
     stored: dict[str, str] = {}
+    # What each percentile is ranked within, for the footnote and the methodology (#529).
+    cape_from: "date | None" = None
+    hy_from: "date | None" = None
+    cut: "list[str]" = []
 
     def _fred(label: str, series_id: str, start: str):
         try:
@@ -1240,6 +1291,7 @@ def _build_macro_section() -> dict:
         cape_val = current_cape()
         cape_s   = get_cape_series()
         observed["CAPE"] = _obs_date(cape_s)
+        cape_from = _first_date(cape_s)
         cape_read = _cape_read_sentence()
         # HANDLE None, DO NOT CATCH ITS TypeError. percentile() returns None on an
         # empty series BY CONTRACT, and its docstring names this caller's obligation:
@@ -1289,9 +1341,10 @@ def _build_macro_section() -> dict:
         }
 
     try:
-        yc     = _fred("10Y-2Y", "T10Y2Y", "1990-01-01")
+        yc     = _fred("10Y-2Y", "T10Y2Y", MACRO_PERCENTILE_SINCE)
         yc_val = float(yc.dropna().iloc[-1])
         observed["10Y-2Y"] = _obs_date(yc)
+        cut.append("the 10Y-2Y spread")
         note   = ("Positive slope — normalized rate environment."
                   if yc_val > 0 else
                   "Inverted — historically precedes recession; supports duration exposure.")
@@ -1302,23 +1355,27 @@ def _build_macro_section() -> dict:
         macro["yield_curve"] = {"value": "N/A", "percentile": "N/A", "note": "Data unavailable."}
 
     try:
-        ff     = _fred("Fed funds", "DFF", "1990-01-01")
+        ff     = _fred("Fed funds", "DFF", MACRO_PERCENTILE_SINCE)
         ff_val = float(ff.dropna().iloc[-1])
         observed["Fed funds"] = _obs_date(ff)
+        cut.append("the fed funds rate")
         macro["fed_funds"] = {
             "value": f"{ff_val:.2f}%", "percentile": _pct_str(ff, ff_val),
-            "note":  "Current rate level relative to post-1990 history.",
+            "note":  ("Current rate level relative to its history from "
+                      f"{format_long_date(MACRO_PERCENTILE_SINCE)}."),
         }
     except Exception:
         macro["fed_funds"] = {"value": "N/A", "percentile": "N/A", "note": "Data unavailable."}
 
     try:
-        hy     = _fred("HY OAS", "BAMLH0A0HYM2", "2023-05-01")
+        hy     = _fred("HY OAS", "BAMLH0A0HYM2", _HY_ASKED_FROM)
         hy_val = float(hy.dropna().iloc[-1])
         observed["HY OAS"] = _obs_date(hy)
+        hy_from = _first_date(hy)
         macro["hy_spread"] = {
             "value": f"{hy_val:.2f}%", "percentile": _pct_str(hy, hy_val),
-            "note":  "ICE BofA HY OAS; percentile relative to May 2023+ window (FRED restriction).",
+            "note":  ("ICE BofA HY OAS; percentile within the series read"
+                      + (f", from {format_long_date(hy_from)}." if hy_from else ".")),
         }
     except Exception:
         macro["hy_spread"] = {"value": "N/A", "percentile": "N/A", "note": "Data unavailable."}
@@ -1333,6 +1390,8 @@ def _build_macro_section() -> dict:
            " FRED did not answer in time, so these are stored copies, with the date each "
            "was fetched: " + ", ".join(f"{k} {v}" for k, v in stored.items()) + ".")
     )
+    # One sentence, printed under the table and again in the methodology (#529).
+    macro["windows"] = macro_windows_sentence(cape_from, cut, hy_from)
     return macro
 
 
@@ -1531,6 +1590,9 @@ def _build_asset_eval_section() -> dict:
         # than derived: accurate sleeve-level numbers would still describe
         # something the column does not compute. #276.
         "btc_2022_mdd":     None,
+        # How the Drawdown Sensitivity note closes: what adding BTC did to the
+        # portfolio's 2022 drawdown, the verb read from the table's two figures (#529).
+        "dd_2022_note":     None,
         # The risk-free rate every Sharpe figure here uses, and where it came from
         # (audit item 15a): the sample's average 3-month Treasury bill rate.
         "rf_note":          None,
@@ -1794,6 +1856,7 @@ def _build_asset_eval_section() -> dict:
                     "mdd22_lo":  float(_base["2022 MDD"]),
                     "mdd22_hi":  float(_top["2022 MDD"]),
                 }
+            result["dd_2022_note"] = ae.drawdown_2022_note(result["btc_2022_mdd"], _port)
     except Exception:
         result["unavailable"].append("drawdown")
 

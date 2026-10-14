@@ -1171,6 +1171,43 @@ def max_drawdown(returns) -> float:
     return float((cum / np.maximum.accumulate(cum) - 1).min())
 
 
+def drawdown_verb(mdd_without: float, mdd_with: float) -> str:
+    """What a BTC allocation did to the portfolio's 2022 drawdown, from the table's two
+    figures: its 2022 MDD at no allocation and at the largest one (#529). Drawdowns
+    are negative, so a lower figure is a deeper one. The texts said "deepened"
+    whatever the two figures were."""
+    if mdd_with < mdd_without:
+        return "deepened"
+    if mdd_with > mdd_without:
+        return "cushioned"
+    return "left unchanged"
+
+
+def drawdown_2022_note(btc_2022: "str | None", port: "dict | None") -> str:
+    """The sentences that close the Drawdown Sensitivity note: what Bitcoin did in
+    2022 and what adding it did to the portfolio's drawdown, read from the table's own
+    figures (#529). ``port`` is the dict drawdown_argument takes; without it the
+    direction is not stated, because nothing measured it."""
+    fell = (f"That year equities and bonds fell together while Bitcoin fell {btc_2022}"
+            if btc_2022 else "That year equities and bonds fell together")
+    if not port:
+        return (f"{fell}. What a BTC allocation did to the portfolio's 2022 drawdown is "
+                f"not available this run.")
+    verb = drawdown_verb(port["mdd22_lo"], port["mdd22_hi"])
+    moved = (f"from {port['mdd22_lo']:.1%} at 0% allocation to {port['mdd22_hi']:.1%} at "
+             f"{port['alloc_top']}")
+    if verb == "deepened":
+        return (f"{fell}, so adding BTC deepened the portfolio's 2022 drawdown, {moved}, "
+                f"instead of cushioning it. 2022 is the critical test: diversification "
+                f"value eroded in the year it was most needed.")
+    if verb == "cushioned":
+        return (f"{fell}, and adding BTC cushioned the portfolio's 2022 drawdown, {moved}. "
+                f"2022 is the critical test, and on these figures the allocation did not "
+                f"deepen it.")
+    return (f"{fell}, and adding BTC left the portfolio's 2022 drawdown unchanged at "
+            f"{port['mdd22_lo']:.1%}. 2022 is the critical test.")
+
+
 def drawdown_argument(btc_mdd: float, btc_2022: str | None,
                        port: dict, sample_start: str) -> str:
     """The case-against drawdown bullet, in one of TWO forms (#276).
@@ -1192,16 +1229,25 @@ def drawdown_argument(btc_mdd: float, btc_2022: str | None,
     head = (f"Bitcoin's own maximum drawdown is {btc_mdd:.1%} over "
             f"{sample_start}–present")
     if port and btc_2022:
-        return (
+        # The verb is the table's two figures' (#529): it read "deepened" whatever
+        # they were, and closed "with no diversification benefit" either way.
+        verb = drawdown_verb(port["mdd22_lo"], port["mdd22_hi"])
+        opening = (
             f"{head}, not the {port['max_dd']:.1%} in the table above, which is "
             f"the portfolio's. Its 2022 drawdown of {btc_2022} came while equities "
-            f"and bonds fell together. It deepened the portfolio's own 2022 drawdown "
-            f"from {port['mdd22_lo']:.1%} at 0% allocation to {port['mdd22_hi']:.1%} "
-            f"at {port['alloc_top']}, with no diversification benefit when it was most "
-            f"needed"
-        )
+            f"and bonds fell together. ")
+        if verb == "left unchanged":
+            return (f"{opening}It left the portfolio's own 2022 drawdown unchanged at "
+                    f"{port['mdd22_lo']:.1%}, from 0% allocation to {port['alloc_top']}")
+        moved = (f"It {verb} the portfolio's own 2022 drawdown "
+                 f"from {port['mdd22_lo']:.1%} at 0% allocation to {port['mdd22_hi']:.1%} "
+                 f"at {port['alloc_top']}")
+        if verb == "deepened":
+            return (f"{opening}{moved}, with no diversification benefit when it was most "
+                    f"needed")
+        return f"{opening}{moved}, so on this measure it did not deepen the year's loss"
     return (
-        f"{head}. The portfolio-level comparison (how much a BTC allocation "
-        f"deepened the 2022 drawdown) is not available this run: the drawdown "
+        f"{head}. The portfolio-level comparison (what a BTC allocation did to "
+        f"the 2022 drawdown) is not available this run: the drawdown "
         f"sweep did not produce data. Absent, not zero"
     )
