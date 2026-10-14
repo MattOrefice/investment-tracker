@@ -186,7 +186,7 @@ The personal portfolio (`TRACKER_MODE=personal`, `data/tracker.db`) is gitignore
 
 ## CI/CD
 
-GitHub Actions runs `python -m pytest` under `TRACKER_MODE=demo` on every push and pull request to `main`, taking about two minutes; see [Integrity Testing](#integrity-testing) above for the current pass/skip/deselect breakdown. Slow and live-data tests are excluded via `pytest.ini`, so no external API calls run on PRs. A separate scheduled workflow (`.github/workflows/live-data.yml`, daily plus manual dispatch) runs only the live-data integration tests against the live Ken French and Yahoo endpoints, so ingestion-contract coverage stays decoupled from PR gating. See `docs/ci_setup.md` for branch protection and secrets configuration.
+GitHub Actions runs `python -m pytest` under `TRACKER_MODE=demo` on every push and pull request to `main`; see [Integrity Testing](#integrity-testing) above for the current pass/skip/deselect breakdown. Slow and live-data tests are excluded via `pytest.ini`, so no external API calls run on PRs. A separate scheduled workflow (`.github/workflows/live-data.yml`, daily plus manual dispatch) runs only the live-data integration tests against the live Ken French and Yahoo endpoints, so ingestion-contract coverage stays decoupled from PR gating. See `docs/ci_setup.md` for branch protection and secrets configuration.
 
 ---
 

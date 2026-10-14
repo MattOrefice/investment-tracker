@@ -17,9 +17,10 @@ jobs:
     # verification leg rather than merely being annoying.
     #
     # Without this the job inherits GitHub's 360-minute default. Measured normal for
-    # the whole job is 8.5 to 11 minutes on GitHub's runner (October 2026: the test
-    # step's 8 to 10 minutes plus 30 to 55 seconds for the steps around it), so 30 is
-    # about 3x headroom and cannot fire on a merely slow run. This is the backstop for
+    # the whole job is 9.6 to 13.5 minutes on GitHub's runner (575 to 812 s in the ten
+    # runs of October 13, 2026, 38489180090 to 38498085712: the test step's 8.9 to 12.8
+    # minutes plus 37 to 51 seconds for the steps around it), so 30 is more than 2x
+    # headroom and cannot fire on a merely slow run. This is the backstop for
     # every step with no timeout of its own; the step-level values below are tighter
     # where a normal has been measured.
     timeout-minutes: 30
@@ -100,7 +101,11 @@ jobs:
       - name: Run fast tests (slow/network tests excluded)
         # Exclusions live in pytest.ini addopts (not slow and not live_data). Do NOT add a CLI -m here — it overrides addopts and silently re-includes the live_data tests (live external API calls on every push).
         run: python -m pytest --tb=long -q
-        # Measured normal: 8 to 10 minutes on GitHub's runner, October 2026 (#507). 20
+        # Measured normal: 8.9 to 12.8 minutes on GitHub's runner (533 to 768 s in the
+        # ten runs of October 13, 2026, 38489180090 to 38498085712, at 3,099 to 3,171
+        # tests). This is where the suite's duration is kept: the README states none,
+        # because a typed duration is out of date after the next PR that adds render
+        # tests (#533). Re-measure it here when a limit changes. 20
         # leaves room for a slow runner while still bounding a hang — a slow test run
         # and a hung one deserve different verdicts. At a limit of 10 the normal reached
         # it: two push runs on main were cut off on October 13 with no test failing.
