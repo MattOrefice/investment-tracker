@@ -71,7 +71,7 @@ jobs:
         timeout-minutes: 5
 
       - name: Show key package versions (diagnostic)
-        run: pip show streamlit weasyprint kaleido statsmodels | grep -E "^(Name|Version):"
+        run: pip show streamlit weasyprint kaleido plotly statsmodels | grep -E "^(Name|Version):"
 
       - name: Guard — render_sidebar_footer called in app.py
         run: grep -n "render_sidebar_footer" app.py

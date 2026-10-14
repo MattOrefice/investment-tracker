@@ -15,7 +15,14 @@ streamlit==1.57.0
 pandas>=2.2.0
 numpy>=2.1.0
 yfinance>=0.2.50
-plotly>=5.24.0
+# Pinned exactly: plotly 7 refuses kaleido 0.2.1 (from 7.0.0 it requires kaleido 1.0
+# or later), and the PDF then prints each chart as "chart not available" (#556). Under
+# the range this replaced, CI installed 7.1.0 from September 23, 2026. 6.9.0 is the
+# newest release that accepts kaleido 0.2.1; 6.7.0 is pinned because every local run
+# behind the audit used it, so CI and Cloud match that evidence.
+# tests/test_the_pdf_draws_its_charts.py renders one chart through the PDF's path in
+# CI. Moving to kaleido 1.0, which needs Chrome on Cloud, is #567.
+plotly==6.7.0
 # Pinned exactly: fredapi is a thin wrapper whose releases have changed return
 # shapes before, and the Macro page's FRED series feed dated computations. An
 # unpinned Cloud rebuild onto a new release could shift those silently — and the
