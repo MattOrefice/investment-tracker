@@ -535,6 +535,12 @@ def test_the_writer_records_labels_once_and_refuses_a_moved_class():
     assert report[0] == ("frozen_book.db 2025Q2: 26 labels recorded for the first time, "
                          "no figure moved")
     assert len(report) == 5
+    # The first recording of labels lets no figure through: an entry from before labels
+    # were read whose figures moved too, under unchanged records, is refused.
+    moved_too = json.loads(json.dumps(render))
+    moved_too["2026Q2"]["tiles"]["alpha_sp_str"] = "-289 bps"
+    with pytest.raises(SystemExit, match="figures moved in 1 lock"):
+        tool.updated({book: before}, {book: moved_too})
     # A class that moves under unchanged records is refused, whatever is said.
     flipped = json.loads(json.dumps(render))
     flipped["2026Q2"]["sections"]["Performance"]["labels"] = ["duration_vs_benchmark=above"]
