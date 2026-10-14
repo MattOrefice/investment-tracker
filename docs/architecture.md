@@ -92,7 +92,7 @@ Plotly figures are constructed in `src/` functions that return `go.Figure` objec
 
 ## Testing strategy
 
-990 tests across three layers (942 pass by default as of 2026-07-05; the rest gate on personal-mode data files not committed to the repo — see the README's Integrity Testing section for the current breakdown), organized to catch different failure modes:
+Tests in three layers, organized to catch different failure modes:
 
 **Layer 1 — Math identities**
 Unit tests against hand-calculated values. Cover TWR chain-linking, Modified Dietz mid-period deposits, Brinson-Fachler algebra (allocation + selection must equal active return within 0.001 bps), and factor regression plumbing. Located in `tests/test_returns.py`, `tests/test_attribution.py`, `tests/test_factors.py`.
