@@ -1992,9 +1992,13 @@ with col:
             fig_ttm.update_yaxes(range=_yr_ttm)
         st.plotly_chart(fig_ttm, width='stretch')
         st.metric("Trailing P/E (TTM)", f"{ttm_val:.1f}×")
+        # The full-history percentile ranks the reading within the committed series, so
+        # its first year is the series' own (#545): the caption typed "since 1871", true
+        # of data/trailing_pe.csv today and of nothing that holds it there.
+        _ttm_first = int(ttm_series.dropna().index[0].year)
         st.caption(
             f"{_ordinal(ttm_pctile_w)} percentile of {ttm_scope} "
-            f"· full history: {_ordinal(ttm_pctile)} pct since 1871 "
+            f"· full history: {_ordinal(ttm_pctile)} pct since {_ttm_first} "
             f"· data as of {ttm_asof} "
             "· Source: multpl.com, S&P 500 trailing-twelve-month P/E, monthly. "
             "Recent months are provisional until the underlying quarterly "
