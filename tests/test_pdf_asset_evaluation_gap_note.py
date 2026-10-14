@@ -73,13 +73,14 @@ def test_the_filled_book_names_nothing(book):
 
 
 def test_the_section_states_the_date_its_data_runs_through_either_way(book):
-    """The line the note sits under. Its date is the last day all three of the
-    section's series hold, read from the book here, with the gap and without it. On
-    the frozen book that is July 16, where BTC-USD ends; the funds run to July 20."""
+    """The line the note sits under, with the gap and without it. MIGRATED at #523: on
+    the frozen book BTC-USD and GLD end July 16 and the funds July 20, so the line
+    names each series' last date. It gave July 16 alone, the last day three joined
+    series shared (tests/test_asset_evaluation_through_line.py pins the line)."""
     through = _last_common_close()
     assert through == "2026-07-16", "premise: the frozen book's BTC-USD ends July 16"
-    expected = (f"Live, not locked to the report's quarter: returns from {ae.SAMPLE_START} "
-                f"through {through}.")
+    expected = ae.through_line(ae.series_ends())
+    assert f"BTC-USD and GLD through {through}; " in expected
     assert _section()["as_of"] == expected
     _delete(book, "BTC-USD", "2026-07-08")
     assert _section()["as_of"] == expected

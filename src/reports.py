@@ -1624,12 +1624,10 @@ def _build_asset_eval_section() -> dict:
 
     result = {k: (list(v) if isinstance(v, list) else v) for k, v in _empty.items()}
     # Live by design, not locked to the report's quarter (#368): say through when.
-    # The common end of the three series, since every figure here reads all three.
-    _through = min(pd.Timestamp(s.index.max()) for s in (btc_ret, slv_ret, spy_ret) if not s.empty)
-    result["as_of"] = (
-        f"Live, not locked to the report's quarter: returns from {ae.SAMPLE_START} "
-        f"through {_through.date().isoformat()}."
-    )
+    # One date only when every series the section reads ends on it; otherwise each
+    # series' last date (#523). It was the last day three joined series shared, which
+    # a row of the univariate table can run past.
+    result["as_of"] = ae.through_line(ae.series_ends())
     # The series above carry the close before a missing day forward, so a close the
     # book lacks changes this section's figures. The page names it; so does the PDF,
     # under the line that says through when its data runs (#521). No candidate screen
