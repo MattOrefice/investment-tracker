@@ -1189,7 +1189,12 @@ def decline_in_year(returns, year: int = 2022) -> float:
     fraction (the page's "fell 24.5%"): max_drawdown over that year, negated. NaN when
     the series has no returns in it. The 2022 paragraph reads bitcoin's own series and
     the naive benchmark's two legs for equities and bonds (#406 item 6); it typed
-    "roughly 20%", "15%", "approximately 65%" and "over 60%" before."""
+    "roughly 20%", "15%", "approximately 65%" and "over 60%" before.
+
+    The one place a fall's sign is handled: every sentence that says something "fell"
+    prints this figure, the page's two and the PDF's Drawdown Sensitivity note
+    (drawdown_2022_note). The PDF's printed the signed drawdown, "Bitcoin fell -66.9%"
+    (#536)."""
     return -max_drawdown(returns.loc[f"{year}-01-01":f"{year}-12-31"])
 
 
@@ -1223,13 +1228,17 @@ def drawdown_verb(mdd_without: float, mdd_with: float) -> str:
     return "left unchanged"
 
 
-def drawdown_2022_note(btc_2022: "str | None", port: "dict | None") -> str:
+def drawdown_2022_note(btc_fall: "float | None", port: "dict | None") -> str:
     """The sentences that close the Drawdown Sensitivity note: what Bitcoin did in
     2022 and what adding it did to the portfolio's drawdown, read from the table's own
-    figures (#529). ``port`` is the dict drawdown_argument takes; without it the
-    direction is not stated, because nothing measured it."""
-    fell = (f"That year equities and bonds fell together while Bitcoin fell {btc_2022}"
-            if btc_2022 else "That year equities and bonds fell together")
+    figures (#529). ``btc_fall`` is how far Bitcoin fell in 2022 as decline_in_year
+    returns it, a positive fraction, so the sentence prints the size of the fall as the
+    page's do (#536); None or NaN when the book has no 2022. ``port`` is the dict
+    drawdown_argument takes; without it the direction is not stated, because nothing
+    measured it."""
+    fell = (f"That year equities and bonds fell together while Bitcoin fell {btc_fall:.1%}"
+            if btc_fall is not None and np.isfinite(btc_fall)
+            else "That year equities and bonds fell together")
     if not port:
         return (f"{fell}. What a BTC allocation did to the portfolio's 2022 drawdown is "
                 f"not available this run.")
