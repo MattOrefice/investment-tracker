@@ -610,7 +610,9 @@ with col:
                 ]
                 _bt_series = pd.Series(_regime_num, index=_bt_common)
 
-                with st.expander("Historical regime backtest (since 1976)", expanded=False):
+                # The backtest's first month, read from the series it runs on (#535).
+                _bt_since = f" (since {_bt_common[0].year})" if len(_bt_common) else ""
+                with st.expander(f"Historical regime backtest{_bt_since}", expanded=False):
                     fig_bt = go.Figure()
                     for _num, _lbl in [(0, "Recession"), (1, "Early-cycle"),
                                        (2, "Mid-cycle"), (3, "Late-cycle")]:
@@ -1642,8 +1644,10 @@ with col:
         )
 
         st.caption(interpret_hy_spread(current_hy))
+        # The series' first month, read from it (#535): it typed "pre-2023" for a window
+        # FRED moves forward with each fetch.
         st.caption(
-            f"*FRED restricts this ICE BofA series to {hy_since}+; full pre-2023 history "
+            f"*FRED restricts this ICE BofA series to {hy_since}+: its history before that "
             "is unavailable from FRED's API.*"
         )
         st.divider()
@@ -2777,11 +2781,18 @@ with col:
 
     with st.expander("Data sources & freshness"):
         def _fred_src(label: str, series: "pd.Series | None") -> str:
+            # Each series' window as the page holds it, its first and last observation
+            # read from the series it charts (#535), as the report states the HY
+            # spread's (#529). The list typed "starts May 2023 (FRED restriction)" for
+            # the two ICE spreads, which FRED serves over a window that moves with each
+            # fetch, and "starts Jan 2003" for two more.
             if series is not None:
-                last = series.dropna().index[-1].strftime("%b %d, %Y")
+                held = series.dropna()
+                first = held.index[0].strftime("%b %d, %Y")
+                last = held.index[-1].strftime("%b %d, %Y")
                 stored = _stored_on.get(label.split()[1])
                 copy = f" · stored copy fetched {_long_date(stored)}" if stored else ""
-                return f"**{label}**: last observation **{last}**{copy}"
+                return f"**{label}**: first observation **{first}**, last observation **{last}**{copy}"
             return f"**{label}**: unavailable"
 
         _daily = [
@@ -2793,13 +2804,13 @@ with col:
             _fred_src("FRED DGS10 (10-Year Treasury Rate)",                    dgs10),
             _fred_src("FRED DGS20 (20-Year Treasury Rate)",                    dgs20),
             _fred_src("FRED DGS30 (30-Year Treasury Rate)",                    dgs30),
-            _fred_src("FRED T10YIE (10-Year Breakeven Inflation)",             t10yie)   + " · starts Jan 2003",
-            _fred_src("FRED DFII10 (10-Year TIPS Yield, Real Rate)",          dfii10)   + " · starts Jan 2003",
+            _fred_src("FRED T10YIE (10-Year Breakeven Inflation)",             t10yie),
+            _fred_src("FRED DFII10 (10-Year TIPS Yield, Real Rate)",          dfii10),
             _fred_src("FRED T10Y2Y (10Y−2Y Treasury spread)",                  t10y2y),
             _fred_src("FRED DFF (Fed Funds Rate)",                             dff),
             _fred_src("FRED BAMLC0A0CM (ICE BofA IG OAS)",                    ig_oas),
-            _fred_src("FRED BAMLH0A0HYM2 (ICE BofA HY OAS)",                  hy_oas)   + " · starts May 2023 (FRED restriction)",
-            _fred_src("FRED BAMLH0A3HYC (ICE BofA CCC OAS)",                  ccc_oas)  + " · starts May 2023 (FRED restriction)",
+            _fred_src("FRED BAMLH0A0HYM2 (ICE BofA HY OAS)",                  hy_oas),
+            _fred_src("FRED BAMLH0A3HYC (ICE BofA CCC OAS)",                  ccc_oas),
             _fred_src("FRED DTWEXBGS (Broad Trade-Weighted USD Index)",        dtwexbgs),
             "**ETF price series** (SPY, EFA): daily adjusted-close, locally cached in SQLite",
             "**Rate Volatility**: 21-day rolling realized vol of DGS10 daily changes, annualized (×√252); "
