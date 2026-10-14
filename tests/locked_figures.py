@@ -38,6 +38,9 @@ Then, in each locked section:
     ("three", "third"). The number scan reads a date's day and year but not its month,
     and no ordinal at all, so a moved percentile or month passed it. Words inside a
     label are the label's, as above;
+  * a QUARTER'S LABEL ("Q2 2026") is compared whole, as printed, as a sorted list per
+    section (#553). The number scan reads its year and takes "Q2" for a name, as it
+    takes "FF5", so a report that named the wrong quarter of the same year passed it;
   * text typed in the template is never compared: it is wording by construction.
 
 So a number a sentence types in its own source ("95% CI", or spelled out, "the one
@@ -127,6 +130,17 @@ IN_WORDS = re.compile(
     r"(?<![\w.,$])\d+(?:st|nd|rd|th)\b"
     rf"|\b(?:{_MONTHS})\.?(?:\s+\d{{1,2}},?)?\s+\d{{4}}\b"
     rf"|\b(?i:{_SPELLED})\b")
+
+
+# A quarter's label as the report prints it (#553): "Q2 2026".
+QUARTER = re.compile(r"\bQ[1-4]\s+\d{4}\b")
+
+
+def quarters_in(text: str) -> "list[str]":
+    """Every quarter's label in a computed text (#553), as printed, with every label's
+    words set aside as numbers_in sets them aside."""
+    text = _LABEL.sub(" ", text)
+    return [" ".join(m.group(0).split()) for m in QUARTER.finditer(text)]
 
 
 def in_words_in(text: str) -> "list[str]":
@@ -316,15 +330,16 @@ def template_numbers() -> "set[str]":
     types (#541). The harness checks that one it finds outside the marks is one of
     these, so a computed figure that reached the page unmarked cannot pass as wording."""
     text = _template_text()
-    return set(numbers_in(text)) | set(in_words_in(text))
+    return set(numbers_in(text)) | set(in_words_in(text)) | set(quarters_in(text))
 
 
 def figures_of(section_html: str, *, typed_ok: "set[str] | None" = None) -> dict:
     """One locked section's figures: {"tables": [[row, ...], ...], "text": [number, ...],
-    "labels": ["family=class", ...], "in_words": [figure, ...]}. Each table is its rows of
-    cells as printed, the label column left out; "text" is every number in the section's
-    other computed text, "labels" every class a label in that text states and "in_words"
-    every figure that text prints in words (#541), each sorted."""
+    "labels": ["family=class", ...], "in_words": [figure, ...], "quarters": [label, ...]}.
+    Each table is its rows of cells as printed, the label column left out; "text" is every
+    number in the section's other computed text, "labels" every class a label in that text
+    states, "in_words" every figure that text prints in words (#541) and "quarters" every
+    quarter's label it prints (#553), each sorted."""
     parser = _Section()
     parser.feed(section_html)
     parser.close()
@@ -340,12 +355,15 @@ def figures_of(section_html: str, *, typed_ok: "set[str] | None" = None) -> dict
     text = sorted(n for span in computed for n in numbers_in(html_lib.unescape(span)))
     labels = sorted(c for span in computed for c in labels_in(span))
     in_words = sorted(w for span in computed for w in in_words_in(html_lib.unescape(span)))
+    quarters = sorted(q for span in computed for q in quarters_in(html_lib.unescape(span)))
     assert not labels_in(typed), "a label reached the page outside a computed value"
     if typed_ok is not None:
-        stray = sorted((set(numbers_in(typed)) | set(in_words_in(typed))) - typed_ok)
+        stray = sorted((set(numbers_in(typed)) | set(in_words_in(typed))
+                        | set(quarters_in(typed))) - typed_ok)
         assert not stray, (f"numbers printed outside the marks that the template does not "
                            f"type: {stray}. A computed value reached the page unmarked.")
-    return {"tables": tables, "text": text, "labels": labels, "in_words": in_words}
+    return {"tables": tables, "text": text, "labels": labels, "in_words": in_words,
+            "quarters": quarters}
 
 
 # ── a lock's own records ─────────────────────────────────────────────────────
@@ -503,6 +521,17 @@ def count_in_words(entry: dict) -> int:
     return sum(len(s.get("in_words", ())) for s in entry["sections"].values())
 
 
+def count_quarters(entry: dict) -> int:
+    """How many quarter labels one lock's entry holds (#553)."""
+    return sum(len(s.get("quarters", ())) for s in entry["sections"].values())
+
+
+def holds_quarters(entry: dict) -> bool:
+    """Whether an entry was written since quarter labels were read (#553): every section
+    carries its list, empty or not."""
+    return all("quarters" in s for s in entry["sections"].values())
+
+
 def holds_in_words(entry: dict) -> bool:
     """Whether an entry was written since figures in words were read (#541): every
     section carries its list, empty or not."""
@@ -528,8 +557,9 @@ def _moved(was: "list[str]", now: "list[str]") -> "tuple[list[str], list[str]]":
 def differences(golden: dict, rendered: dict) -> "list[str]":
     """Every figure and every label's class that differs between one lock's golden
     entry and its render, as lines a reader can act on. Empty when none does. An entry
-    written before labels, or figures in words, were read holds none, and they are not
-    compared: the golden's test requires every committed entry to hold them."""
+    written before labels, figures in words or quarter labels were read holds none, and
+    they are not compared: the golden's test requires every committed entry to hold
+    them."""
     out = []
     for key, was in golden["tiles"].items():
         now = rendered["tiles"].get(key)
@@ -554,4 +584,7 @@ def differences(golden: dict, rendered: dict) -> "list[str]":
         if "in_words" in g and g["in_words"] != r["in_words"]:
             gone, new = _moved(g["in_words"], r["in_words"])
             out.append(f"{section}, in words: no longer printed {gone}; now printed {new}")
+        if "quarters" in g and g["quarters"] != r["quarters"]:
+            gone, new = _moved(g["quarters"], r["quarters"])
+            out.append(f"{section}, quarters: no longer printed {gone}; now printed {new}")
     return out

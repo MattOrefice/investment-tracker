@@ -20,16 +20,16 @@ changes nothing here. It accepts:
   * a lock whose records changed, whether or not its figures did (a restatement, or a
     pending input completed);
   * an entry written before labels were read, or before figures printed in words were
-    (an ordinal, a date's month, a number spelled out: #541), which gains them with no
-    figure moved;
+    (an ordinal, a date's month, a number spelled out: #541), or before quarter labels
+    were ("Q2 2026": #553), which gains them with no figure moved;
   * no change at all, in which case the file is left as it is.
 
 ONE KNOWN FALSE POSITIVE, and its way through. A number a sentence types in its own
 source ("95% CI", or spelled out, "the one equity region") is read as a figure, because
 the render cannot tell it from a computed one. Rewording such a sentence moves the
 golden with no figure moving. Run with --wording and say what was reworded: the writer
-then accepts a lock whose RUNNING-TEXT numbers, or figures in words, moved, and still
-refuses if any table cell, tile or label's class did.
+then accepts a lock whose RUNNING-TEXT numbers, figures in words or quarter labels
+moved, and still refuses if any table cell, tile or label's class did.
 
 It renders scratch copies of the two books, offline, and never opens a committed book
 for writing. How a figure is told from wording is in tests/locked_figures.py.
@@ -47,8 +47,8 @@ sys.path.insert(0, str(ROOT))
 
 ABOUT = ("Every figure each committed quarter lock's report prints (#525): the six sections "
          "built inside the lock and the Performance page's locked tiles, the class "
-         "each label in those sections states, and each figure they print in words "
-         "(#541). Written only by "
+         "each label in those sections states, each figure they print in words "
+         "(#541) and each quarter's label they print (#553). Written only by "
          "tools/update_locked_figures_golden.py; read by tests/test_locked_figures_golden.py. "
          "A figure here moves only with a change in its lock's own records (CLAUDE.md, "
          "'Locked figures').")
@@ -58,8 +58,8 @@ def _only_text(moved: "list[str]") -> bool:
     """Whether every line of differences is a section's running text, its numbers or
     its figures in words: no table cell, no tile, no table added or removed, no label's
     class."""
-    return all((", text: " in line or ", in words: " in line) and ", table " not in line
-               for line in moved)
+    return all((", text: " in line or ", in words: " in line or ", quarters: " in line)
+               and ", table " not in line for line in moved)
 
 
 def updated(golden: dict, rendered: dict, wording: "str | None" = None
@@ -100,6 +100,9 @@ def updated(golden: dict, rendered: dict, wording: "str | None" = None
             elif not lf.holds_in_words(was):
                 report.append(f"{book} {quarter}: {lf.count_in_words(entry)} figures in words "
                               "recorded for the first time, no figure moved")
+            elif not lf.holds_quarters(was):
+                report.append(f"{book} {quarter}: {lf.count_quarters(entry)} quarter labels "
+                              "recorded for the first time, no figure moved")
     if refused:
         lines = [f"REFUSED: figures moved in {len(refused)} lock(s) whose own records did "
                  "not change. A moved locked figure needs a restatement record in the lock "
@@ -138,8 +141,9 @@ def main(argv: "list[str] | None" = None) -> int:
     total = sum(lf.count_figures(e) for locks in new.values() for e in locks.values())
     labels = sum(lf.count_labels(e) for locks in new.values() for e in locks.values())
     in_words = sum(lf.count_in_words(e) for locks in new.values() for e in locks.values())
+    quarters = sum(lf.count_quarters(e) for locks in new.values() for e in locks.values())
     print(f"{lf.GOLDEN.name}: {sum(len(v) for v in new.values())} locks, {total} figures, "
-          f"{labels} labels, {in_words} figures in words.")
+          f"{labels} labels, {in_words} figures in words, {quarters} quarter labels.")
     return 0
 
 

@@ -1,5 +1,5 @@
 {
- "about": "Every figure each committed quarter lock's report prints (#525): the six sections built inside the lock and the Performance page's locked tiles, the class each label in those sections states, and each figure they print in words (#541). Written only by tools/update_locked_figures_golden.py; read by tests/test_locked_figures_golden.py. A figure here moves only with a change in its lock's own records (CLAUDE.md, 'Locked figures').",
+ "about": "Every figure each committed quarter lock's report prints (#525): the six sections built inside the lock and the Performance page's locked tiles, the class each label in those sections states, each figure they print in words (#541) and each quarter's label they print (#553). Written only by tools/update_locked_figures_golden.py; read by tests/test_locked_figures_golden.py. A figure here moves only with a change in its lock's own records (CLAUDE.md, 'Locked figures').",
  "locks": {
   "demo.db": {
    "2025Q2": {
@@ -60,6 +60,10 @@
        "97th",
        "June 2025",
        "June 30, 2025"
+      ],
+      "quarters": [
+       "Q2 2025",
+       "Q2 2025"
       ]
      },
      "Holdings & Allocation": {
@@ -160,7 +164,8 @@
       ],
       "text": [],
       "labels": [],
-      "in_words": []
+      "in_words": [],
+      "quarters": []
      },
      "Performance": {
       "tables": [
@@ -335,13 +340,15 @@
       "labels": [
        "duration_vs_benchmark=in_line"
       ],
-      "in_words": []
+      "in_words": [],
+      "quarters": []
      },
      "Brinson-Fachler Attribution": {
       "tables": [],
       "text": [],
       "labels": [],
-      "in_words": []
+      "in_words": [],
+      "quarters": []
      },
      "Factor Profile": {
       "tables": [
@@ -501,7 +508,8 @@
        "May 2, 2025",
        "May 2, 2025",
        "one"
-      ]
+      ],
+      "quarters": []
      },
      "Benchmark Attribution": {
       "tables": [
@@ -579,6 +587,9 @@
        "June 30, 2025",
        "May 2, 2025",
        "May 2, 2025"
+      ],
+      "quarters": [
+       "Q2 2025"
       ]
      }
     },
@@ -650,6 +661,10 @@
        "99th",
        "September 2025",
        "September 30, 2025"
+      ],
+      "quarters": [
+       "Q3 2025",
+       "Q3 2025"
       ]
      },
      "Holdings & Allocation": {
@@ -750,7 +765,8 @@
       ],
       "text": [],
       "labels": [],
-      "in_words": []
+      "in_words": [],
+      "quarters": []
      },
      "Performance": {
       "tables": [
@@ -802,7 +818,10 @@
       "labels": [
        "duration_vs_benchmark=in_line"
       ],
-      "in_words": []
+      "in_words": [],
+      "quarters": [
+       "Q3 2025"
+      ]
      },
      "Brinson-Fachler Attribution": {
       "tables": [
@@ -936,7 +955,8 @@
        "9.8%"
       ],
       "labels": [],
-      "in_words": []
+      "in_words": [],
+      "quarters": []
      },
      "Factor Profile": {
       "tables": [
@@ -1096,7 +1116,8 @@
        "September 30, 2025",
        "September 30, 2025",
        "one"
-      ]
+      ],
+      "quarters": []
      },
      "Benchmark Attribution": {
       "tables": [
@@ -1173,6 +1194,9 @@
        "May 2, 2025",
        "September 30, 2025",
        "September 30, 2025"
+      ],
+      "quarters": [
+       "Q3 2025"
       ]
      }
     },
@@ -1244,6 +1268,10 @@
        "99th",
        "December 2025",
        "December 31, 2025"
+      ],
+      "quarters": [
+       "Q4 2025",
+       "Q4 2025"
       ]
      },
      "Holdings & Allocation": {
@@ -1344,7 +1372,8 @@
       ],
       "text": [],
       "labels": [],
-      "in_words": []
+      "in_words": [],
+      "quarters": []
      },
      "Performance": {
       "tables": [
@@ -1396,7 +1425,10 @@
       "labels": [
        "duration_vs_benchmark=in_line"
       ],
-      "in_words": []
+      "in_words": [],
+      "quarters": [
+       "Q4 2025"
+      ]
      },
      "Brinson-Fachler Attribution": {
       "tables": [
@@ -1530,7 +1562,8 @@
        "7.2%"
       ],
       "labels": [],
-      "in_words": []
+      "in_words": [],
+      "quarters": []
      },
      "Factor Profile": {
       "tables": [
@@ -1690,7 +1723,8 @@
        "May 2, 2025",
        "May 2, 2025",
        "one"
-      ]
+      ],
+      "quarters": []
      },
      "Benchmark Attribution": {
       "tables": [
@@ -1767,6 +1801,9 @@
        "December 31, 2025",
        "May 2, 2025",
        "May 2, 2025"
+      ],
+      "quarters": [
+       "Q4 2025"
       ]
      }
     },
@@ -1838,6 +1875,10 @@
        "98th",
        "March 2026",
        "March 31, 2026"
+      ],
+      "quarters": [
+       "Q1 2026",
+       "Q1 2026"
       ]
      },
      "Holdings & Allocation": {
@@ -1938,7 +1979,8 @@
       ],
       "text": [],
       "labels": [],
-      "in_words": []
+      "in_words": [],
+      "quarters": []
      },
      "Performance": {
       "tables": [
@@ -1990,7 +2032,10 @@
       "labels": [
        "duration_vs_benchmark=in_line"
       ],
-      "in_words": []
+      "in_words": [],
+      "quarters": [
+       "Q1 2026"
+      ]
      },
      "Brinson-Fachler Attribution": {
       "tables": [
@@ -2126,7 +2171,8 @@
        "8.6%"
       ],
       "labels": [],
-      "in_words": []
+      "in_words": [],
+      "quarters": []
      },
      "Factor Profile": {
       "tables": [
@@ -2286,7 +2332,8 @@
        "May 2, 2025",
        "May 2, 2025",
        "one"
-      ]
+      ],
+      "quarters": []
      },
      "Benchmark Attribution": {
       "tables": [
@@ -2372,6 +2419,9 @@
        "March 31, 2026",
        "May 2, 2025",
        "May 2, 2025"
+      ],
+      "quarters": [
+       "Q1 2026"
       ]
      }
     },
@@ -2580,6 +2630,10 @@
        "99th",
        "June 2026",
        "June 30, 2026"
+      ],
+      "quarters": [
+       "Q2 2026",
+       "Q2 2026"
       ]
      },
      "Holdings & Allocation": {
@@ -2680,7 +2734,8 @@
       ],
       "text": [],
       "labels": [],
-      "in_words": []
+      "in_words": [],
+      "quarters": []
      },
      "Performance": {
       "tables": [
@@ -2732,7 +2787,10 @@
       "labels": [
        "duration_vs_benchmark=in_line"
       ],
-      "in_words": []
+      "in_words": [],
+      "quarters": [
+       "Q2 2026"
+      ]
      },
      "Brinson-Fachler Attribution": {
       "tables": [
@@ -2866,7 +2924,8 @@
        "8.8%"
       ],
       "labels": [],
-      "in_words": []
+      "in_words": [],
+      "quarters": []
      },
      "Factor Profile": {
       "tables": [
@@ -3026,7 +3085,8 @@
        "May 2, 2025",
        "May 2, 2025",
        "one"
-      ]
+      ],
+      "quarters": []
      },
      "Benchmark Attribution": {
       "tables": [
@@ -3103,6 +3163,9 @@
        "June 30, 2026",
        "May 2, 2025",
        "May 2, 2025"
+      ],
+      "quarters": [
+       "Q2 2026"
       ]
      }
     },
@@ -3161,6 +3224,10 @@
        "October 4, 2026",
        "September 2026",
        "September 30, 2026"
+      ],
+      "quarters": [
+       "Q3 2026",
+       "Q3 2026"
       ]
      },
      "Holdings & Allocation": {
@@ -3261,7 +3328,8 @@
       ],
       "text": [],
       "labels": [],
-      "in_words": []
+      "in_words": [],
+      "quarters": []
      },
      "Performance": {
       "tables": [
@@ -3314,7 +3382,10 @@
       "labels": [
        "duration_vs_benchmark=below"
       ],
-      "in_words": []
+      "in_words": [],
+      "quarters": [
+       "Q3 2026"
+      ]
      },
      "Brinson-Fachler Attribution": {
       "tables": [
@@ -3450,7 +3521,8 @@
        "8.8%"
       ],
       "labels": [],
-      "in_words": []
+      "in_words": [],
+      "quarters": []
      },
      "Factor Profile": {
       "tables": [],
@@ -3464,7 +3536,8 @@
       "in_words": [
        "August 31, 2026",
        "September 30, 2026"
-      ]
+      ],
+      "quarters": []
      },
      "Benchmark Attribution": {
       "tables": [],
@@ -3478,7 +3551,8 @@
       "in_words": [
        "August 31, 2026",
        "September 30, 2026"
-      ]
+      ],
+      "quarters": []
      }
     },
     "tiles": {
@@ -3549,6 +3623,10 @@
        "97th",
        "June 2025",
        "June 30, 2025"
+      ],
+      "quarters": [
+       "Q2 2025",
+       "Q2 2025"
       ]
      },
      "Holdings & Allocation": {
@@ -3649,7 +3727,8 @@
       ],
       "text": [],
       "labels": [],
-      "in_words": []
+      "in_words": [],
+      "quarters": []
      },
      "Performance": {
       "tables": [
@@ -3824,13 +3903,15 @@
       "labels": [
        "duration_vs_benchmark=in_line"
       ],
-      "in_words": []
+      "in_words": [],
+      "quarters": []
      },
      "Brinson-Fachler Attribution": {
       "tables": [],
       "text": [],
       "labels": [],
-      "in_words": []
+      "in_words": [],
+      "quarters": []
      },
      "Factor Profile": {
       "tables": [
@@ -3990,7 +4071,8 @@
        "May 2, 2025",
        "May 2, 2025",
        "one"
-      ]
+      ],
+      "quarters": []
      },
      "Benchmark Attribution": {
       "tables": [
@@ -4068,6 +4150,9 @@
        "June 30, 2025",
        "May 2, 2025",
        "May 2, 2025"
+      ],
+      "quarters": [
+       "Q2 2025"
       ]
      }
     },
@@ -4139,6 +4224,10 @@
        "99th",
        "September 2025",
        "September 30, 2025"
+      ],
+      "quarters": [
+       "Q3 2025",
+       "Q3 2025"
       ]
      },
      "Holdings & Allocation": {
@@ -4239,7 +4328,8 @@
       ],
       "text": [],
       "labels": [],
-      "in_words": []
+      "in_words": [],
+      "quarters": []
      },
      "Performance": {
       "tables": [
@@ -4291,7 +4381,10 @@
       "labels": [
        "duration_vs_benchmark=in_line"
       ],
-      "in_words": []
+      "in_words": [],
+      "quarters": [
+       "Q3 2025"
+      ]
      },
      "Brinson-Fachler Attribution": {
       "tables": [
@@ -4425,7 +4518,8 @@
        "9.8%"
       ],
       "labels": [],
-      "in_words": []
+      "in_words": [],
+      "quarters": []
      },
      "Factor Profile": {
       "tables": [
@@ -4585,7 +4679,8 @@
        "September 30, 2025",
        "September 30, 2025",
        "one"
-      ]
+      ],
+      "quarters": []
      },
      "Benchmark Attribution": {
       "tables": [
@@ -4662,6 +4757,9 @@
        "May 2, 2025",
        "September 30, 2025",
        "September 30, 2025"
+      ],
+      "quarters": [
+       "Q3 2025"
       ]
      }
     },
@@ -4733,6 +4831,10 @@
        "99th",
        "December 2025",
        "December 31, 2025"
+      ],
+      "quarters": [
+       "Q4 2025",
+       "Q4 2025"
       ]
      },
      "Holdings & Allocation": {
@@ -4833,7 +4935,8 @@
       ],
       "text": [],
       "labels": [],
-      "in_words": []
+      "in_words": [],
+      "quarters": []
      },
      "Performance": {
       "tables": [
@@ -4885,7 +4988,10 @@
       "labels": [
        "duration_vs_benchmark=in_line"
       ],
-      "in_words": []
+      "in_words": [],
+      "quarters": [
+       "Q4 2025"
+      ]
      },
      "Brinson-Fachler Attribution": {
       "tables": [
@@ -5019,7 +5125,8 @@
        "7.2%"
       ],
       "labels": [],
-      "in_words": []
+      "in_words": [],
+      "quarters": []
      },
      "Factor Profile": {
       "tables": [
@@ -5179,7 +5286,8 @@
        "May 2, 2025",
        "May 2, 2025",
        "one"
-      ]
+      ],
+      "quarters": []
      },
      "Benchmark Attribution": {
       "tables": [
@@ -5256,6 +5364,9 @@
        "December 31, 2025",
        "May 2, 2025",
        "May 2, 2025"
+      ],
+      "quarters": [
+       "Q4 2025"
       ]
      }
     },
@@ -5327,6 +5438,10 @@
        "98th",
        "March 2026",
        "March 31, 2026"
+      ],
+      "quarters": [
+       "Q1 2026",
+       "Q1 2026"
       ]
      },
      "Holdings & Allocation": {
@@ -5427,7 +5542,8 @@
       ],
       "text": [],
       "labels": [],
-      "in_words": []
+      "in_words": [],
+      "quarters": []
      },
      "Performance": {
       "tables": [
@@ -5479,7 +5595,10 @@
       "labels": [
        "duration_vs_benchmark=in_line"
       ],
-      "in_words": []
+      "in_words": [],
+      "quarters": [
+       "Q1 2026"
+      ]
      },
      "Brinson-Fachler Attribution": {
       "tables": [
@@ -5615,7 +5734,8 @@
        "8.6%"
       ],
       "labels": [],
-      "in_words": []
+      "in_words": [],
+      "quarters": []
      },
      "Factor Profile": {
       "tables": [
@@ -5775,7 +5895,8 @@
        "May 2, 2025",
        "May 2, 2025",
        "one"
-      ]
+      ],
+      "quarters": []
      },
      "Benchmark Attribution": {
       "tables": [
@@ -5861,6 +5982,9 @@
        "March 31, 2026",
        "May 2, 2025",
        "May 2, 2025"
+      ],
+      "quarters": [
+       "Q1 2026"
       ]
      }
     },
@@ -6069,6 +6193,10 @@
        "99th",
        "June 2026",
        "June 30, 2026"
+      ],
+      "quarters": [
+       "Q2 2026",
+       "Q2 2026"
       ]
      },
      "Holdings & Allocation": {
@@ -6169,7 +6297,8 @@
       ],
       "text": [],
       "labels": [],
-      "in_words": []
+      "in_words": [],
+      "quarters": []
      },
      "Performance": {
       "tables": [
@@ -6221,7 +6350,10 @@
       "labels": [
        "duration_vs_benchmark=in_line"
       ],
-      "in_words": []
+      "in_words": [],
+      "quarters": [
+       "Q2 2026"
+      ]
      },
      "Brinson-Fachler Attribution": {
       "tables": [
@@ -6355,7 +6487,8 @@
        "8.8%"
       ],
       "labels": [],
-      "in_words": []
+      "in_words": [],
+      "quarters": []
      },
      "Factor Profile": {
       "tables": [
@@ -6515,7 +6648,8 @@
        "May 2, 2025",
        "May 2, 2025",
        "one"
-      ]
+      ],
+      "quarters": []
      },
      "Benchmark Attribution": {
       "tables": [
@@ -6592,6 +6726,9 @@
        "June 30, 2026",
        "May 2, 2025",
        "May 2, 2025"
+      ],
+      "quarters": [
+       "Q2 2026"
       ]
      }
     },
