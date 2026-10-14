@@ -332,13 +332,15 @@ def test_run_sleeve_regressions_returns_none_on_insufficient_data():
 
 def test_us_sleeve_has_embedded_weights_summing_to_one():
     """
-    _SLEEVES['us'] must carry embedded SAA-proportional weights so that
-    _get_sleeve_return_series never needs to call get_holdings_on_date.
+    _SLEEVES['us'] must carry SAA-proportional weights so that
+    _get_sleeve_return_series never needs to call get_holdings_on_date. They are its
+    funds' sleeve targets, read when the regression runs (#525); they were embedded
+    constants.
     """
-    from src.factors import _SLEEVES
+    from src.factors import _SLEEVES, us_weights
     us = _SLEEVES["us"]
-    assert "weights" in us, "_SLEEVES['us'] must have a 'weights' key"
-    w = us["weights"]
+    assert "funds" in us, "_SLEEVES['us'] must name the funds its weights are read for"
+    w = us_weights()
     assert set(w.keys()) == set(us["tickers"]), "Weight keys must match tickers"
     assert abs(sum(w.values()) - 1.0) < 1e-10, f"Weights sum to {sum(w.values())}, not 1.0"
     assert all(v > 0 for v in w.values()), "All weights must be positive"
@@ -879,11 +881,14 @@ def test_factor_section_values_match_raw_result(no_ambient_db):
     # international_sleeves is mocked with the rest of the data layer: the sleeve
     # label and EM disclosure are resolved from the DB at CALL time now (they were
     # import-frozen constants before), so under no_ambient_db they must be
-    # intercepted at the module boundary like every other data dependency.
+    # intercepted at the module boundary like every other data dependency. So are the
+    # sleeve weights, which read the SAA targets since #525.
     with patch("src.factors._get_sleeve_return_series", return_value=mock_ret), \
          patch("src.factors.load_factors", return_value=mock_ff), \
          patch("src.reports.get_inception_date", return_value="2025-05-01"), \
          patch("src.reports.get_portfolio_account_id", return_value=1), \
+         patch("src.factors.target_weights",
+               side_effect=lambda funds: {f: 1 / len(funds) for f in funds}), \
          patch("src.sleeve_config.international_sleeves",
                return_value=("International Developed",)):
         section = _build_factor_section("2025-09-30")
@@ -1019,13 +1024,13 @@ def test_factor_sleeve_weights_cover_their_tickers_exactly():
     dropped from the regression's synthetic series; a weight key with no ticker
     would be dead config. Neither raises today.
     """
-    from src.factors import _SLEEVES
+    from src.factors import _SLEEVES, target_weights
 
     for key, spec in _SLEEVES.items():
-        if "weights" not in spec:
+        if "funds" not in spec:
             continue
-        assert set(spec["weights"]) == set(spec["tickers"]), (
-            f"_SLEEVES['{key}'] weights {sorted(spec['weights'])} do not match its "
+        assert set(target_weights(spec["funds"])) == set(spec["tickers"]), (
+            f"_SLEEVES['{key}'] weights {sorted(spec['funds'])} do not match its "
             f"tickers {sorted(spec['tickers'])}."
         )
 

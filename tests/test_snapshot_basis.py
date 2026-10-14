@@ -92,7 +92,8 @@ def test_a_legacy_blob_is_detected_by_its_missing_close_key(tmp_path, monkeypatc
     conn.execute("CREATE TABLE securities (ticker TEXT, asset_class_id INTEGER)")
     conn.execute("CREATE TABLE asset_classes (asset_class_id INTEGER PRIMARY KEY, "
                  "name TEXT, parent_id INTEGER, target_weight REAL, "
-                 "tolerance_band REAL, benchmark_ticker TEXT, rationale TEXT)")
+                 "tolerance_band REAL, sort_order INTEGER, benchmark_ticker TEXT, "
+                 "rationale TEXT)")
     conn.commit()
     conn.close()
     monkeypatch.setattr(src.db, "DB_PATH", db)
@@ -176,7 +177,8 @@ def test_capture_stores_both_bases(tmp_path, monkeypatch):
     conn.execute("INSERT INTO securities VALUES ('VOO', 1)")
     conn.execute("CREATE TABLE asset_classes (asset_class_id INTEGER PRIMARY KEY, "
                  "name TEXT, parent_id INTEGER, target_weight REAL, "
-                 "tolerance_band REAL, benchmark_ticker TEXT, rationale TEXT)")
+                 "tolerance_band REAL, sort_order INTEGER, benchmark_ticker TEXT, "
+                 "rationale TEXT)")
     # get_connection() runs _auto_migrate on first touch, which inspects these.
     conn.execute("CREATE TABLE trades (account_id INTEGER, ticker TEXT, "
                  "trade_date TEXT, shares REAL, action TEXT, lot_source TEXT)")
@@ -215,7 +217,8 @@ def test_a_captured_snapshot_round_trips_both_bases(tmp_path, monkeypatch):
     conn.execute("INSERT INTO securities VALUES ('VOO', 1)")
     conn.execute("CREATE TABLE asset_classes (asset_class_id INTEGER PRIMARY KEY, "
                  "name TEXT, parent_id INTEGER, target_weight REAL, "
-                 "tolerance_band REAL, benchmark_ticker TEXT, rationale TEXT)")
+                 "tolerance_band REAL, sort_order INTEGER, benchmark_ticker TEXT, "
+                 "rationale TEXT)")
     # get_connection() runs _auto_migrate on first touch, which inspects these.
     conn.execute("CREATE TABLE trades (account_id INTEGER, ticker TEXT, "
                  "trade_date TEXT, shares REAL, action TEXT, lot_source TEXT)")

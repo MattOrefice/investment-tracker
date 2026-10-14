@@ -42,6 +42,7 @@ from tests.conftest import (
     pin_today,
     point_at_frozen_book,
     q2_2026_before_its_closes_were_filled,
+    record_the_policy,
     unpin_leftovers,
 )
 
@@ -424,10 +425,14 @@ def test_the_tool_restores_the_committed_locks_exactly_and_twice_changes_nothing
     assert tool.main(RESTATED_ON) == 0
     assert capsys.readouterr().out.strip() == (
         "2026Q2 restated on 2026-10-13 in demo.db and frozen_book.db: 32 closes filled.")
-    # The committed lock is that restatement followed by the gap record (#478).
+    # The committed lock is that restatement followed by the gap record (#478) and the
+    # SAA policy recorded in it (#525).
     gap = _load("restate_demo_gap_record")
     assert gap.main(demo) == 0 and gap.main(frozen) == 0
     assert capsys.readouterr().out.count("1 lock(s) given the record") == 2
+    record_the_policy(demo)
+    record_the_policy(frozen)
+    assert capsys.readouterr().out.count("1 lock(s) given the SAA policy") == 2
     assert _locks(demo) == _locks(DEMO) and _locks(frozen) == _locks(FROZEN_BOOK)
     assert tool.main(date(2026, 10, 14)) == 0
     assert "already restated" in capsys.readouterr().out

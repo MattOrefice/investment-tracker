@@ -33,13 +33,14 @@ from pathlib import Path
 
 import pytest
 
-from tests.conftest import FROZEN_BOOK, before_the_gap_record
+from tests.conftest import FROZEN_BOOK, before_the_gap_record, before_the_policy_was_held
 
 ROOT = Path(__file__).resolve().parent.parent
 DEMO = ROOT / "data" / "demo.db"
 Q3 = "2026Q3"
-COVER = ("This quarter's lock holds prices, dividends, CAPE, the HYG credit proxy and the "
-         "fund durations, and is waiting on the Fama-French factors and the momentum factor. "
+COVER = ("This quarter's lock holds prices, dividends, CAPE, the HYG credit proxy, the "
+         "fund durations and the SAA policy, and is waiting on the Fama-French factors and "
+         "the momentum factor. "
          "Macro Context and Asset Evaluation are not locked: they are computed each time the "
          "report is generated.")
 PENDING = {"ff5_us": "2026-08-31", "ff5_developed_exus": "2026-08-31", "umd": "2026-08-31"}
@@ -92,7 +93,10 @@ def _digest(text: str) -> str:
 
 @pytest.fixture(scope="module")
 def payload() -> dict:
-    return json.loads(_locks(DEMO)[Q3][2])
+    """The lock as it was taken and completed. The SAA policy recorded in it afterwards
+    (#525) is undone first; tests/test_locks_hold_the_policy.py pins the undoing and the
+    policy."""
+    return json.loads(before_the_policy_was_held(_locks(DEMO)[Q3][2]))
 
 
 @pytest.fixture

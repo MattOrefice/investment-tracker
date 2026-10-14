@@ -21,6 +21,9 @@
     {% if lock_holds_note %}
     <p class="cover-staleness">{{ lock_holds_note }}</p>
     {% endif %}
+    {% if policy_recorded_note %}
+    <p class="cover-staleness">{{ policy_recorded_note }}</p>
+    {% endif %}
     {% if snapshot_captured_at and snapshot_gaps %}
     <p class="cover-staleness">Except {{ snapshot_gaps|length }} series that could not be fetched when prices were locked ({{ snapshot_gaps|map(attribute=0)|join(", ") }}): figures that use them read current prices, not locked ones.</p>
     {% endif %}

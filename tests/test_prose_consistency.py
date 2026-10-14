@@ -229,96 +229,74 @@ def test_prose_equity_parent_name_matches():
 
 
 def test_prose_factor_profile_fi_caption_matches_weights():
-    """FI sleeve caption weight percentages (60%/40%) are derived from _FI_WEIGHTS.
+    """FI sleeve caption weight percentages (60%/40%) are derived from fi_weights.
 
-    pages/4_Factor_Profile.py renders the FI proportions inline using _FI_WEIGHTS.
-    This test verifies the rendered string is well-formed and that VGIT carries
-    more weight than SCHP (consistent with Core FI 9% > TIPS 6%).
+    pages/4_Factor_Profile.py renders the FI proportions inline using fi_weights, the
+    regression's own weights (the SAA targets since #525). This test verifies the
+    rendered string is well-formed and that VGIT carries more weight than SCHP
+    (consistent with Core FI 6% > TIPS 4%).
     """
-    from src.factors import _FI_WEIGHTS
+    from src.factors import fi_weights
 
     fi_tickers = ["VGIT", "SCHP"]
-    pct_parts = [round(_FI_WEIGHTS.get(t, 0) * 100) for t in fi_tickers]
+    pct_parts = [round(fi_weights().get(t, 0) * 100) for t in fi_tickers]
 
     assert sum(pct_parts) == 100, (
         f"FI caption weights don't sum to 100%: {pct_parts}. "
-        "Check _FI_WEIGHTS in src/factors.py."
+        "Check fi_weights in src/factors.py."
     )
     assert all(p > 0 for p in pct_parts), (
         f"FI caption has a zero-weight ticker: {list(zip(fi_tickers, pct_parts))}."
     )
     assert pct_parts[0] > pct_parts[1], (
-        f"Expected VGIT weight > SCHP weight (Core FI 9% > TIPS 6%); "
+        f"Expected VGIT weight > SCHP weight (Core FI 6% > TIPS 4%); "
         f"got VGIT={pct_parts[0]}% SCHP={pct_parts[1]}%."
     )
 
 
-def test_prose_fi_weights_constant_matches_db():
-    """_FI_WEIGHTS in src/factors.py must reflect DB proportions for Core FI and TIPS.
-
-    _FI_WEIGHTS = {"VGIT": 9/15, "SCHP": 6/15} weights the FI sleeve return series
-    in regress_fi_sleeve(). If either sleeve's target_weight changes, the constant
-    must be updated too — otherwise the factor regression uses wrong weights silently.
-    """
+def _db_target_shares(tickers) -> "dict[str, float]":
+    """Each ticker's sleeve target over the sum of theirs, read here with SQL of its own,
+    not through the code under test."""
     from src.db import get_connection
-    from src.factors import _FI_WEIGHTS
-
+    marks = ",".join("?" * len(tickers))
     with get_connection() as conn:
-        rows = conn.execute(
-            "SELECT name, target_weight FROM asset_classes "
-            "WHERE name IN ('Core Fixed Income', 'TIPS')"
-        ).fetchall()
-
-    db_wts = {r["name"]: r["target_weight"] for r in rows}
-    assert "Core Fixed Income" in db_wts, "'Core Fixed Income' sleeve missing from DB"
-    assert "TIPS" in db_wts, "'TIPS' sleeve missing from DB"
-
-    total = db_wts["Core Fixed Income"] + db_wts["TIPS"]
-    expected_vgit = db_wts["Core Fixed Income"] / total
-    expected_schp = db_wts["TIPS"] / total
-
-    assert abs(_FI_WEIGHTS["VGIT"] - expected_vgit) < 1e-6, (
-        f"_FI_WEIGHTS['VGIT'] = {_FI_WEIGHTS['VGIT']:.6f} but DB implies "
-        f"{expected_vgit:.6f} (Core FI / (Core FI + TIPS)). "
-        "Update _FI_WEIGHTS in src/factors.py to match."
-    )
-    assert abs(_FI_WEIGHTS["SCHP"] - expected_schp) < 1e-6, (
-        f"_FI_WEIGHTS['SCHP'] = {_FI_WEIGHTS['SCHP']:.6f} but DB implies "
-        f"{expected_schp:.6f} (TIPS / (Core FI + TIPS)). "
-        "Update _FI_WEIGHTS in src/factors.py to match."
-    )
-
-
-def test_prose_saa_us_constants_match_db():
-    """_SAA_US in src/factors.py must match DB target_weights for US equity sleeves.
-
-    _SAA_US = {"VOO": 16, "SPHQ": 14, "VTV": 8, "AVUV": 7} stores weights as integers
-    (percent × 100). Each value must equal round(db_target_weight * 100). Designed to
-    work without a DB call at runtime, but tested here to catch SAA weight changes.
-    """
-    from src.db import get_connection
-    from src.factors import _SAA_US
-
-    with get_connection() as conn:
-        rows = conn.execute("""
+        rows = conn.execute(f"""
             SELECT s.ticker, ac.target_weight
             FROM securities s
             JOIN asset_classes ac ON s.asset_class_id = ac.asset_class_id
-            WHERE s.ticker IN ('VOO', 'SPHQ', 'VTV', 'AVUV')
-              AND ac.parent_id IS NOT NULL
-        """).fetchall()
-
+            WHERE s.ticker IN ({marks}) AND ac.parent_id IS NOT NULL
+        """, tuple(tickers)).fetchall()
     db_wts = {r["ticker"]: r["target_weight"] for r in rows}
-    for ticker, pct_int in _SAA_US.items():
-        assert ticker in db_wts, (
-            f"Ticker '{ticker}' from _SAA_US not found in securities→asset_classes."
-        )
-        db_pct = round(db_wts[ticker] * 100)
-        assert pct_int == db_pct, (
-            f"_SAA_US['{ticker}'] = {pct_int}% but DB target_weight = "
-            f"{db_wts[ticker]:.4f} ({db_pct}%). "
-            "Update _SAA_US in src/factors.py and reseed asset_classes."
-        )
+    assert sorted(db_wts) == sorted(tickers), f"a fund has no sleeve: {sorted(db_wts)}"
+    total = sum(db_wts[t] for t in tickers)
+    return {t: db_wts[t] / total for t in tickers}
+
+
+def test_prose_fi_weights_come_from_the_db_targets():
+    """The FI sleeve regression's weights are Core Fixed Income's and TIPS's targets
+    (#525). They were the constant _FI_WEIGHTS, which this test held to the book; now a
+    target change reaches the regression with no code change. On the demo book the
+    targets are 6 and 4 ninety-eighths, so the weights are 60/40, bit for bit."""
+    from src.factors import fi_weights
+    weights = fi_weights()
+    assert weights == _db_target_shares(["VGIT", "SCHP"])
+    assert list(weights) == ["VGIT", "SCHP"], "the order the return series sums in"
+    assert weights == {"VGIT": 0.6, "SCHP": 0.4}
+
+
+def test_prose_us_weights_come_from_the_db_targets():
+    """The US equity sleeve regression's weights are its four funds' sleeve targets
+    (#525). They were the constant _SAA_US (17/15/9/8 of 49), which this test held to
+    the book. On the demo book the targets are 17, 15, 9 and 8 ninety-eighths, so the
+    weights are those of 49: SPHQ's and VTV's bit for bit, VOO's and AVUV's within one
+    unit in the last place (the stored targets are not the nearest doubles to 17/98
+    and 8/98)."""
+    from src.factors import us_weights
+    weights = us_weights()
+    assert weights == _db_target_shares(["VOO", "SPHQ", "VTV", "AVUV"])
+    assert list(weights) == ["VOO", "SPHQ", "VTV", "AVUV"], "the order the series sums in"
+    for ticker, parts in {"VOO": 17, "SPHQ": 15, "VTV": 9, "AVUV": 8}.items():
+        assert abs(weights[ticker] - parts / 49) <= 6e-17, ticker
 
 
 def test_prose_methodology_has_no_hardcoded_weight_defaults():

@@ -44,26 +44,6 @@ import src.benchmarks as bm
 _W = ("2025-05-01", "2026-06-10")
 
 
-class _FakeConn:
-    """Minimal stand-in for the sqlite3 connection context manager, returning
-    hand-picked asset_classes rows instead of touching a real database."""
-
-    def __init__(self, rows):
-        self._rows = rows
-
-    def execute(self, *args, **kwargs):
-        return self
-
-    def fetchall(self):
-        return self._rows
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *args):
-        return False
-
-
 def _fail_fetch_for(monkeypatch, *tickers):
     """Patch src.benchmarks' module-local get_prices to raise for the given
     tickers only, delegating everything else to the real function — a targeted
@@ -132,10 +112,13 @@ def test_custom_blended_series_hand_calculation(monkeypatch):
         "SleeveA": [("TICKA", 1.0)],
         "SleeveB": [("TICKB", 1.0)],
     })
-    monkeypatch.setattr(bm, "get_connection", lambda: _FakeConn([
-        {"name": "SleeveA", "target_weight": 0.6},
-        {"name": "SleeveB", "target_weight": 0.4},
-    ]))
+    # The targets are read through src/policy.py since #525 (the lock's inside a quarter
+    # lock, the book's outside), so the synthetic targets are served there.
+    import src.policy as policy
+    monkeypatch.setattr(policy, "sleeves", lambda: [
+        {"name": "SleeveA", "target_weight": 0.6, "parent_id": 1},
+        {"name": "SleeveB", "target_weight": 0.4, "parent_id": 1},
+    ])
 
     def _fake_price_series(ticker, start_date, end_date, col="adj_close"):
         return {"TICKA": price_a, "TICKB": price_b}[ticker]
@@ -390,36 +373,13 @@ def test_unknown_sleeve_retained_with_na_marker(monkeypatch):
         pytest.skip("no non-cash holdings at window start")
     orphan = row["ticker"]
 
-    class _Rows:
-        def __init__(self, rows):
-            self._rows = rows
-
-        def fetchall(self):
-            return self._rows
-
-    class _OrphanConn:
-        """Delegates to the real connection but drops the orphaned ticker from
-        the securities join, so it lands in the 'Unknown' sleeve."""
-
-        def __init__(self, conn):
-            self._conn = conn
-
-        def execute(self, sql, *params):
-            cur = self._conn.execute(sql, *params)
-            if "FROM securities" in sql:
-                return _Rows([r for r in cur.fetchall() if r["ticker"] != orphan])
-            return cur
-
-        def __enter__(self):
-            self._conn.__enter__()
-            return self
-
-        def __exit__(self, *args):
-            return self._conn.__exit__(*args)
-
-    monkeypatch.setattr(
-        attr_mod, "get_connection", lambda: _OrphanConn(real_get_connection())
-    )
+    # Drop the orphaned ticker from the ticker-to-sleeve mapping, so it lands in the
+    # 'Unknown' sleeve. The mapping is read through src/policy.py since #525; this
+    # dropped it from the securities join attribution ran itself.
+    import src.policy as policy
+    real_ticker_classes = policy.ticker_classes
+    monkeypatch.setattr(policy, "ticker_classes", lambda: [
+        (t, c) for t, c in real_ticker_classes() if t != orphan])
 
     bf_df = attr_mod.brinson_fachler_period(*_W, account_id=1)   # bare: a failure here IS the bug
 

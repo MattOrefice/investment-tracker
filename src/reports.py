@@ -39,6 +39,7 @@ from src.cache import (
     inputs_restatement_note,
     lock_holds_note,
     lot_rebuild_note,
+    policy_recorded_note,
     price_data_lock_note,
     restatement_note,
     style_box_withdrawn_note,
@@ -102,12 +103,9 @@ def sleeve_holding_ticker() -> dict[str, str]:
 
 
 def sleeve_bench_ticker() -> dict[str, str]:
-    with get_connection() as conn:
-        rows = conn.execute(
-            "SELECT name, benchmark_ticker FROM asset_classes "
-            "WHERE parent_id IS NOT NULL AND benchmark_ticker IS NOT NULL"
-        ).fetchall()
-    return {r["name"]: r["benchmark_ticker"] for r in rows}
+    from src import policy
+    return {r["name"]: r["benchmark_ticker"] for r in policy.sleeves()
+            if r["benchmark_ticker"] is not None}
 
 
 def _sleeve_driver_tickers(
@@ -774,11 +772,9 @@ def _build_holdings_section(end_date: str) -> dict:
     if sw.empty:
         return {"rows": [], "chart_b64": None}
 
-    with get_connection() as conn:
-        band_rows = conn.execute(
-            "SELECT name, tolerance_band FROM asset_classes WHERE parent_id IS NOT NULL"
-        ).fetchall()
-    band_map = {r["name"]: r["tolerance_band"] * 10_000 for r in band_rows}
+    # The book's bands, or the lock's inside a quarter lock that holds them (#525).
+    from src import policy
+    band_map = {r["name"]: r["tolerance_band"] * 10_000 for r in policy.sleeves()}
 
     rows = []
     for sleeve, row in sw.iterrows():
@@ -1990,30 +1986,29 @@ def _build_methodology_vars() -> dict:
     """Return DB-derived values used in the PDF methodology section.
 
     Keeps the quarterly_report.html template free of hardcoded SAA numerics.
-    Called once per report render; the DB queries are lightweight.
+    Called once per report render. Inside a quarter lock that holds the book's policy
+    it reads the lock's (#525), so a locked report's methodology states the policy its
+    figures were computed with.
     """
+    import math
+
+    from src import policy
     from src.benchmarks import _sleeve_benchmarks
 
-    with get_connection() as conn:
-        # Phase 38a — strategic SAA only (target_weight > 0). Cash / SPAXX and
-        # any non-SAA residual are operational, excluded from the methodology.
-        parent_rows = conn.execute(
-            "SELECT name, target_weight FROM asset_classes "
-            "WHERE parent_id IS NULL AND target_weight > 0 ORDER BY asset_class_id"
-        ).fetchall()
-        sleeve_count = conn.execute(
-            "SELECT COUNT(*) FROM asset_classes WHERE parent_id IS NOT NULL AND target_weight > 0"
-        ).fetchone()[0]
-        band_rows = conn.execute(
-            "SELECT DISTINCT CAST(ROUND(tolerance_band * 10000) AS INTEGER) AS band_bps "
-            "FROM asset_classes WHERE parent_id IS NOT NULL AND target_weight > 0 ORDER BY band_bps"
-        ).fetchall()
-        strategic_order = [
-            r["name"] for r in conn.execute(
-                "SELECT name FROM asset_classes WHERE parent_id IS NOT NULL "
-                "AND target_weight > 0 ORDER BY COALESCE(sort_order, asset_class_id)"
-            ).fetchall()
-        ]
+    classes = policy.asset_classes()
+    # Phase 38a — strategic SAA only (target_weight > 0). Cash / SPAXX and
+    # any non-SAA residual are operational, excluded from the methodology.
+    parent_rows = [r for r in classes if r["parent_id"] is None and r["target_weight"] > 0]
+    strategic = [r for r in classes if r["parent_id"] is not None and r["target_weight"] > 0]
+    sleeve_count = len(strategic)
+    # As SQLite's ROUND, half away from zero, on a band that is never negative.
+    band_rows = [{"band_bps": b} for b in sorted(
+        {int(math.floor(r["tolerance_band"] * 10000 + 0.5)) for r in strategic})]
+    strategic_order = [
+        r["name"] for r in sorted(
+            strategic, key=lambda r: r["sort_order"] if r["sort_order"] is not None
+            else r["asset_class_id"])
+    ]
 
     # "Equity 80% / Income 10% / Real Assets 10%" (ex-cash strategic parents)
     parent_weight_str = " / ".join(
@@ -2241,6 +2236,9 @@ def generate_quarterly_report_bytes(
         bench_attr_data  = (_build_benchmark_section(start_date, end_date)
                             if has_trades and not bench_pending else None)
         thesis_data      = _build_thesis_section(start_date, end_date, account_id=report_acct)
+        # The methodology states the policy the figures were computed with: the lock's,
+        # inside a quarter lock that holds one (#525).
+        methodology_vars = _build_methodology_vars()
     # LIVE BY DESIGN, so built OUTSIDE the lock. Both read through today (the macro
     # dashboard, and candidate returns that include tickers the lock does not
     # carry); inside a working lock, the locked tickers' series would stop at the
@@ -2325,7 +2323,9 @@ def generate_quarterly_report_bytes(
         macro          = macro_data,
         thesis         = thesis_data,
         asset_eval     = asset_eval_data,
-        **_build_methodology_vars(),
+        # The book's policy recorded after this quarter locked (#525).
+        policy_recorded_note = policy_recorded_note(snap_df),
+        **methodology_vars,
     )
 
     return _render_pdf(html_content)

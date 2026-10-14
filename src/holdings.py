@@ -635,19 +635,10 @@ def _sleeve_weights_impl(date_str: str) -> "tuple[pd.DataFrame, list[TickerStatu
     if holdings.empty:
         return pd.DataFrame(), statuses
 
-    with get_connection() as conn:
-        sec_rows = conn.execute(
-            """SELECT s.ticker, ac.name AS sleeve
-               FROM securities s
-               JOIN asset_classes ac ON s.asset_class_id = ac.asset_class_id""",
-        ).fetchall()
-        ticker_to_sleeve = {r["ticker"]: r["sleeve"] for r in sec_rows}
-
-        target_rows = conn.execute(
-            """SELECT name, target_weight
-               FROM asset_classes WHERE parent_id IS NOT NULL""",
-        ).fetchall()
-        target_weights = {r["name"]: r["target_weight"] for r in target_rows}
+    # The book's policy, or the lock's inside a quarter lock that holds one (#525).
+    from src import policy
+    ticker_to_sleeve = policy.sleeve_of_ticker()
+    target_weights = {r["name"]: r["target_weight"] for r in policy.sleeves()}
 
     # Look back up to 5 trading days from the newest STORED price (#302); per ticker,
     # because each ticker's cache can end on a different day.

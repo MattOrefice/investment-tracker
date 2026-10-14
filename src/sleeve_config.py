@@ -13,10 +13,14 @@ resolving to weight 0.0 downstream (the 120bps silent-drift bug).
 
 Mode/DB is read at CALL TIME via src.db.get_connection(), so the same code
 yields the 9-sleeve map in personal mode and the 12-sleeve map in demo mode.
+
+Read through src/policy.py (#525): inside a quarter lock that holds the book's policy,
+these maps are the lock's, so a locked report does not move when the book's sleeves,
+targets or benchmarks change; outside one they are the book's.
 """
 import re
 
-from src.db import get_connection
+from src import policy
 
 _CASH_SLEEVE = "Cash / SPAXX"
 
@@ -75,12 +79,7 @@ def _strategic_rows(include_cash: bool):
     benchmark subsystem wants it (BIL is a real reference leg), the mean-variance
     subsystem excludes it (near-zero variance distorts the optimisation).
     """
-    with get_connection() as conn:
-        rows = conn.execute(
-            "SELECT name, target_weight, benchmark_ticker, sort_order "
-            "FROM asset_classes WHERE parent_id IS NOT NULL "
-            "ORDER BY sort_order"
-        ).fetchall()
+    rows = sorted(policy.sleeves(), key=lambda r: policy.nulls_first(r["sort_order"]))
     if include_cash:
         return rows
     return [r for r in rows if r["name"] != _CASH_SLEEVE]
@@ -119,14 +118,11 @@ def sleeve_holdings() -> dict[str, list[str]]:
     Assets holding should not rely on this for that sleeve.
     """
     out: dict[str, list[str]] = {}
-    with get_connection() as conn:
-        rows = conn.execute(
-            """SELECT ac.name AS sleeve, s.ticker AS ticker
-                 FROM securities s
-                 JOIN asset_classes ac ON s.asset_class_id = ac.asset_class_id
-                WHERE ac.parent_id IS NOT NULL
-                ORDER BY ac.sort_order, s.rowid"""
-        ).fetchall()
+    classes = {r["asset_class_id"]: r for r in policy.sleeves()}
+    held = [(classes[cls], i, ticker)
+            for i, (ticker, cls) in enumerate(policy.ticker_classes()) if cls in classes]
+    held.sort(key=lambda h: (policy.nulls_first(h[0]["sort_order"]), h[1]))
+    rows = [{"sleeve": c["name"], "ticker": ticker} for c, _i, ticker in held]
     bench = sleeve_benchmarks(include_cash=True)
     for r in rows:
         sleeve, ticker = r["sleeve"], r["ticker"]

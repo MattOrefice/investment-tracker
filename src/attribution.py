@@ -383,21 +383,13 @@ def brinson_fachler_period(
     benchmark_gaps: list[tuple[str, str, str]] = []
 
     # ── Load DB reference data ────────────────────────────────────────────────
+    # The book's policy, or the lock's inside a quarter lock that holds one (#525).
+    from src import policy
+    ticker_to_sleeve = policy.sleeve_of_ticker()
+    # Target weights (benchmark weights)
+    benchmark_weights = {r["name"]: r["target_weight"] for r in policy.sleeves()}
+
     with get_connection() as conn:
-        # Ticker → sleeve mapping
-        sec_rows = conn.execute(
-            """SELECT s.ticker, ac.name AS sleeve
-               FROM securities s
-               JOIN asset_classes ac ON s.asset_class_id = ac.asset_class_id"""
-        ).fetchall()
-        ticker_to_sleeve = {r["ticker"]: r["sleeve"] for r in sec_rows}
-
-        # Target weights (benchmark weights)
-        wt_rows = conn.execute(
-            "SELECT name, target_weight FROM asset_classes WHERE parent_id IS NOT NULL"
-        ).fetchall()
-        benchmark_weights = {r["name"]: r["target_weight"] for r in wt_rows}
-
         # Holdings at start of period. DRIP lots (lot_source='drip') are EXCLUDED:
         # sleeves are valued at adj_close, which already embeds dividend
         # reinvestment, so counting DRIP-reinvested shares on top would

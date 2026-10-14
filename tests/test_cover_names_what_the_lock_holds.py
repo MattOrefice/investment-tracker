@@ -39,10 +39,11 @@ COMMITTED = {"2025Q2": "June 2025", "2025Q3": "September 2025", "2025Q4": "Decem
              "2026Q1": "March 2026", "2026Q2": "June 2026"}
 LIVE = ("Macro Context and Asset Evaluation are not locked: they are computed each time "
         "the report is generated.")
-# What each committed lock holds: its seven inputs, less the ETF metadata, which holds no
-# duration in a lock taken before #455.
+# What each committed lock holds: its eight inputs, less the ETF metadata, which holds no
+# duration in a lock taken before #455. The SAA policy was recorded in each after it was
+# taken (#525), and the cover says that in a sentence of its own.
 HOLDS = ("This quarter's lock holds prices, dividends, CAPE, the Fama-French factors, the "
-         "momentum factor and the HYG credit proxy. " + LIVE)
+         "momentum factor, the HYG credit proxy and the SAA policy. " + LIVE)
 
 
 @pytest.fixture(params=BOOKS, ids=lambda p: p.name)
@@ -65,7 +66,7 @@ def test_every_committed_locks_cover_says_what_it_holds_in_the_same_words(book):
     for q in COMMITTED:
         snap = get_quarter_snapshot(q)[0]
         assert set(snap.inputs) == set(ALL_INPUTS) and not snap.inputs_pending, (
-            q, "premise: the lock's list names all seven inputs and none waits")
+            q, "premise: the lock's list names all eight inputs and none waits")
         assert lock_holds_note(snap) == HOLDS, q
 
 
@@ -101,7 +102,7 @@ def test_the_sentence_follows_the_locks_own_lists(book):
     dated = dict(snap.inputs)
     dated[ETF_METADATA] = {"VGIT": {"duration_years": 4.9, "as_of": "2026-06-30"}}
     assert lock_holds_note(snap._replace(inputs=dated)) == HOLDS.replace(
-        " and the HYG credit proxy.", ", the HYG credit proxy and the fund durations.")
+        ", the HYG credit proxy and", ", the HYG credit proxy, the fund durations and")
     assert "fund durations" not in lock_holds_note(snap), (
         "a lock taken before #455 holds the file with no duration in it")
     # A lock from before inputs were locked holds prices and says so.
@@ -140,14 +141,15 @@ def _builders_by_lock() -> "tuple[set, set]":
 def test_the_sections_named_as_unlocked_are_the_ones_built_outside_the_lock():
     from src.cache import UNLOCKED_SECTIONS
     inside, outside = _builders_by_lock()
+    # The methodology page's text (the targets, the bands and the benchmark basket) is
+    # built inside the lock since #525, so it states the policy the lock holds, the one
+    # the figures were computed with. It is not a section of figures.
     assert inside == {"_build_executive_summary", "_build_holdings_section",
                       "_build_performance_section", "_build_attribution_section",
                       "_build_positioning_section", "_build_factor_section",
-                      "_build_benchmark_section", "_build_thesis_section"}
-    # Two sections, and the methodology page's own text (targets and the benchmark
-    # basket, read from the book), which is not a section of figures.
-    assert outside == {"_build_macro_section", "_build_asset_eval_section",
-                       "_build_methodology_vars"}
+                      "_build_benchmark_section", "_build_thesis_section",
+                      "_build_methodology_vars"}
+    assert outside == {"_build_macro_section", "_build_asset_eval_section"}
     assert UNLOCKED_SECTIONS == ("Macro Context", "Asset Evaluation")
     # Each is the heading its section prints, so the reader can find what the cover names.
     template = (ROOT / "templates" / "quarterly_report.html").read_text(encoding="utf-8")

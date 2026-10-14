@@ -23,6 +23,7 @@ from src.input_lock import (
     FF5_DEVELOPED_EXUS,
     FF5_US,
     HYG,
+    POLICY,
     UMD,
     input_context,
 )
@@ -241,6 +242,7 @@ _INPUT_WORDS = {
     UMD: "the momentum factor",
     HYG: "the HYG credit proxy",
     ETF_METADATA: "the fund durations",
+    POLICY: "the SAA policy",
 }
 
 # The report sections built outside the lock, as their headings name them. They read
@@ -417,11 +419,15 @@ def _dec(payload):
         return payload["data"]
     if kind == "dividends":
         return {t: _dec(p) for t, p in payload["data"].items()}
+    if kind == "policy":
+        from src.policy import decode
+        return decode(payload)
     raise ValueError(f"unknown locked-input kind {kind!r}")
 
 
 def _capture_inputs(end: date, tickers: "list[str]",
-                    only: "tuple | None" = None) -> "tuple[dict, dict, dict]":
+                    only: "tuple | None" = None,
+                    policy_after_lock: bool = False) -> "tuple[dict, dict, dict]":
     """(encoded, through, pending) for every input, or only those in ``only``.
 
     Each input as its section's reader returns it, cut at the quarter's last day
@@ -437,7 +443,12 @@ def _capture_inputs(end: date, tickers: "list[str]",
     rule (dividends through the quarter's last day) and the French gate (#386). The
     ETF metadata is a hand-kept file of fund durations, each stamped with its source
     date; it covers a quarter when every stamp falls inside the quarter, so a file
-    nobody has updated renders the duration line as pending rather than locking."""
+    nobody has updated renders the duration line as pending rather than locking.
+
+    The SAA policy (src/policy.py: the asset classes, their targets, bands and
+    benchmarks, and each ticker's sleeve) is held as it stands on the day it is read,
+    which is never pending (#525). ``policy_after_lock`` marks it as given to a lock
+    already taken, whose quarter it may not describe."""
     from src import etf_metadata, factors, shiller
     from src.asof import QUARTER_END_COVERAGE_DAYS
 
@@ -507,6 +518,12 @@ def _capture_inputs(end: date, tickers: "list[str]",
             s = _prices_module.get_dividends(t, _INPUT_START, end.isoformat())
             divs[t] = _enc_series(s, "date")
         enc[DIVIDENDS] = {"kind": "dividends", "data": divs}
+    if POLICY in want:
+        from src.asof import today_et
+        from src import policy
+        held_on = today_et().isoformat()
+        enc[POLICY] = policy.encode(policy.read_book(), held_on, policy_after_lock)
+        through[POLICY] = held_on
     return enc, through, pending
 
 
@@ -692,6 +709,22 @@ def filled_closes_note(snap: "SnapshotFrames | None") -> "str | None":
             f"are now filled from the provider.")
 
 
+def policy_recorded_note(snap: "SnapshotFrames | None") -> "str | None":
+    """The cover line for a lock given the book's SAA policy after it was taken, or None
+    (#525). The eleven locks committed before locks held a policy were given it as it
+    stood on the day it was recorded (tools/hold_policy_in_demo_locks.py), not as it
+    stood at the quarter's close; a lock taken since holds it as it stood when taken,
+    and needs no line."""
+    held = (getattr(snap, "inputs", None) or {}).get(POLICY) if snap is not None else None
+    if not held or not held.get("recorded_after_lock"):
+        return None
+    on = date.fromisoformat(held["held_on"])
+    return (f"The SAA policy this report reads (its sleeves, their target weights, "
+            f"tolerance bands and benchmarks, and each fund's sleeve) was recorded "
+            f"{on.strftime('%B')} {on.day}, {on.year}, after this quarter locked: it is "
+            f"the policy as it stood that day.")
+
+
 def lot_rebuild_note(snap: "SnapshotFrames | None") -> "str | None":
     """The cover line for a quarter whose DRIP lots were rebuilt after it locked, or
     None. What moved is every figure that counts reinvested shares: market value,
@@ -813,7 +846,9 @@ def complete_quarter_inputs(quarter_id: str) -> "SnapshotFrames | None":
         return get_quarter_snapshot(quarter_id)[0]
     end = date.fromisoformat(row["snapshot_date"])
     tickers = list(blob["adj_close"].get("columns", []))
-    enc, through, pending = _capture_inputs(end, tickers, only=todo)
+    # The lock is already taken, so a policy captured here is today's, not the
+    # quarter's (#525); a lock with inputs never waits on one.
+    enc, through, pending = _capture_inputs(end, tickers, only=todo, policy_after_lock=True)
     blob.setdefault("inputs", {}).update(enc)
     blob.setdefault("inputs_through", {}).update(through)
     blob["inputs_pending"] = pending

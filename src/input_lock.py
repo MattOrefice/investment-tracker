@@ -33,8 +33,9 @@ HYG = "hyg"                            # factors.regress_fi_sleeve's credit prox
 CAPE = "cape"                          # shiller.get_cape_series()
 ETF_METADATA = "etf_metadata"          # etf_metadata.load_metadata()
 DIVIDENDS = "dividends"                # prices.get_dividends(), per ticker
+POLICY = "policy"                      # policy.read_book(): the SAA policy (#525)
 
-ALL_INPUTS = (FF5_US, FF5_DEVELOPED_EXUS, UMD, HYG, CAPE, ETF_METADATA, DIVIDENDS)
+ALL_INPUTS = (FF5_US, FF5_DEVELOPED_EXUS, UMD, HYG, CAPE, ETF_METADATA, DIVIDENDS, POLICY)
 
 
 class InputPending(Exception):
