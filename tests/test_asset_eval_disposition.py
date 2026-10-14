@@ -50,6 +50,8 @@ _BASE = {
     "rf_note": None,
     # Added by #521 (a close the book lacks, named in the section), caught the same way.
     "gap_note": None,
+    # Added by #529 (the drawdown note's closing sentences), caught the same way.
+    "dd_2022_note": None,
 }
 
 

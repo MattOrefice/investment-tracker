@@ -550,8 +550,7 @@
 
   <p class="muted">CAPE is {{ cape_credit }}; Shiller's own Yale data file is the fallback,
   and a figure read from it says so. Yield curve, Fed Funds,
-  and HY spread from FRED (St. Louis Fed). Historical percentile computed over available
-  data window. HY spread data available from May 2023 only due to FRED licensing restrictions.</p>
+  and HY spread from FRED (St. Louis Fed).{% if macro and macro.windows %} {{ macro.windows }}{% endif %}</p>
 </section>
 
 {# ── Page 8: Asset Evaluation ─────────────────────────────────────────────── #}
@@ -750,11 +749,7 @@
   <p class="muted">The <strong>2022 MDD</strong> column is <strong>realized history, not a
   hypothetical shock</strong>: each blend's worst peak-to-trough loss over calendar
   2022 as it actually happened, from the same daily series as the rest of the table.
-  {% if asset_eval.btc_2022_mdd %}That year equities and bonds fell together while Bitcoin
-  fell {{ asset_eval.btc_2022_mdd }}, so adding BTC deepened the drawdown instead of
-  cushioning it.{% else %}That year equities and bonds fell together, and a BTC allocation
-  deepened the drawdown instead of cushioning it.{% endif %} 2022 is the critical test:
-  diversification value eroded in the year it was most needed.</p>
+  {{ asset_eval.dd_2022_note }}</p>
   {% endif %}
 
   <h3>Decision Framework</h3>
@@ -867,7 +862,7 @@
 
           <dt>Macro Data</dt>
           <dd>FRED (St. Louis Fed). T10Y2Y = 10Y&minus;2Y Treasury spread. DFF = Fed Funds Rate.
-          BAMLH0A0HYM2 = ICE BofA HY OAS (available May 2023+).</dd>
+          BAMLH0A0HYM2 = ICE BofA HY OAS.{% if macro and macro.windows %} {{ macro.windows }}{% endif %}</dd>
 
           <dt>SAA &amp; Sleeve Targets</dt>
           <dd>{{ methodology_parent_weights }}. {{ methodology_sleeve_count }} sleeves; full rationale in the SAA section.</dd>
