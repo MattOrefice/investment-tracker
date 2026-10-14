@@ -2089,7 +2089,7 @@ def build_benchmark_methodology(result: Optional[dict]) -> list[str]:
 
 # ── Per-sleeve and per-regression dynamic interpretation ──────────────────────
 
-_T_SIG = 2.0   # |t| threshold for "statistically significant"
+_T_SIG = 2.0   # |t| threshold interpret_sleeve_regression reads; no page calls it (#559)
 _R2_LOW = 0.70  # R² below this flags a weak model fit
 
 
@@ -2184,6 +2184,13 @@ def interpret_benchmark_attribution(result: dict) -> str:
     This is NOT a Brinson-Fachler decomposition; that lives on the
     Performance page.
 
+    Whether a style loading or the intercept can be told from zero is the significance
+    label's call, by its cut-offs, as the report's benchmark prose's is (#542) and the
+    momentum caption's (#551). This caption decided with its own |t| >= 2.0, so a
+    loading or intercept with t between 1.65 and 2.0, starred in the page's table and
+    given a level in the report, was read here as not significant (#559). The intercept
+    sentence names the level the label gives.
+
     Args:
         result: result dict from run_benchmark_attribution_regression.
     """
@@ -2221,7 +2228,7 @@ def interpret_benchmark_attribution(result: dict) -> str:
         ("SMB", b_smb, t_smb, "small-cap tilt (AVUV)", "small-cap"),
         ("RMW", b_rmw, t_rmw, "profitability tilt (SPHQ, AVUV)", "profitability"),
     ]:
-        if abs(tstat) >= _T_SIG:
+        if _distinguishable(tstat):
             if beta > 0:
                 style_parts.append(f"{fname}: positive {context}")
             else:
@@ -2240,13 +2247,13 @@ def interpret_benchmark_attribution(result: dict) -> str:
             "are detected at the current sample length. "
         )
 
-    # Alpha sentence — significance and direction only, numbers live in the table
-    alpha_sig = abs(t_alpha) >= _T_SIG
-    if alpha_sig:
+    # Alpha sentence — the level the label names and the direction; the estimate lives in
+    # the table
+    if _distinguishable(t_alpha):
         alpha_dir = "positive" if a_bps > 0 else "negative"
         alpha_sentence = (
-            f"The active return intercept is statistically significant: a {alpha_dir} return "
-            "after accounting for both the SAA benchmark and residual style exposures. "
+            f"The active return intercept is {significance_label(t_alpha)}: a {alpha_dir} "
+            "return after accounting for both the SAA benchmark and residual style exposures. "
             "The regression table and the Interpretation section below give the full "
             "alpha estimate with its confidence interval."
         )
