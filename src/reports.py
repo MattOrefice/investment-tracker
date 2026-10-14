@@ -488,20 +488,35 @@ _CAPE_UNKNOWN: tuple[str, str] = (
     "Uncertain", "suggest maintaining SAA diversification")
 
 
+def _cape_regime_class(pct_int: int) -> str:
+    """The band a CAPE percentile rank (0-100, rounded) falls in: >=80 elevated, >=60
+    above_average, >=40 moderate, else below_average."""
+    if pct_int >= 80:
+        return "elevated"
+    if pct_int >= 60:
+        return "above_average"
+    if pct_int >= 40:
+        return "moderate"
+    return "below_average"
+
+
+# Each band's (regime label, allocation stance).
+_CAPE_REGIME_WORDS = {
+    "elevated": ("Elevated", "support the SAA's diversification across non-US equity and real asset sleeves"),
+    "above_average": ("Above-average", "support modest diversification away from US large-cap"),
+    "moderate": ("Moderate", "are consistent with the long-run average; no strong tilt signal"),
+    "below_average": ("Below-average", "support increased US equity exposure relative to SAA targets"),
+}
+
+
 def _cape_regime(pct_int: int) -> tuple[str, str]:
     """Map a CAPE percentile rank (0-100, rounded) to (regime label, allocation stance).
 
-    Bands: >=80 Elevated, >=60 Above-average, >=40 Moderate, else Below-average. The
-    label reports what the reading IS ("Elevated versus history"); the stance is the
-    allocation conclusion the Macro Context section renders.
+    Bands: >=80 Elevated, >=60 Above-average, >=40 Moderate, else Below-average
+    (_cape_regime_class). The label reports what the reading IS ("Elevated versus
+    history"); the stance is the allocation conclusion the Macro Context section renders.
     """
-    if pct_int >= 80:
-        return "Elevated", "support the SAA's diversification across non-US equity and real asset sleeves"
-    if pct_int >= 60:
-        return "Above-average", "support modest diversification away from US large-cap"
-    if pct_int >= 40:
-        return "Moderate", "are consistent with the long-run average; no strong tilt signal"
-    return "Below-average", "support increased US equity exposure relative to SAA targets"
+    return _CAPE_REGIME_WORDS[_cape_regime_class(pct_int)]
 
 
 def not_computed_sentence(subject: str, exc: BaseException, consequence: str) -> str:
@@ -525,12 +540,13 @@ def _cape_reading_sentence(cape_val: float, cape_pct: float) -> str:
     is months old, and a reading taken before its month ended can be told from the
     month's own. That replaced a "(CAPE data through ...)" clause shown only when the
     series was stale."""
-    from src.prose_helpers import ordinal
+    from src.prose_helpers import label, ordinal
     from src.shiller import latest_reading, reading_label
-    label, _ = _cape_regime(int(round(cape_pct)))
+    band = _cape_regime_class(int(round(cape_pct)))
+    regime = label("cape_regime", band, _CAPE_REGIME_WORDS[band][0])
     sentence = (
         f"CAPE stands at {cape_val:.1f}x, in the {ordinal(cape_pct)} percentile: "
-        f"{label} versus history"
+        f"{regime} versus history"
     )
     # Inside a quarter lock the reading is the quarter's last monthly observation by
     # design (#382). A lock taken before readings were dated holds no read date, and
@@ -649,14 +665,21 @@ def _build_executive_summary(start_date: str, end_date: str) -> dict:
     # alpha_sp_bps/alpha_bl_bps — "outperforming/underperforming by nan bps"
     # is never a sentence to construct, so each half degrades independently
     # to an explicit unavailable clause instead.
+    from src.prose_helpers import label
+
+    def _versus(alpha_bps: float) -> str:
+        # The gap prints as a magnitude, so the verb is what carries its sign.
+        return (label("versus_benchmark", "out", "outperforming") if alpha_bps >= 0
+                else label("versus_benchmark", "under", "underperforming"))
+
     sp_phrase = (
-        f"{'outperforming' if alpha_sp_bps >= 0 else 'underperforming'} "
+        f"{_versus(alpha_sp_bps)} "
         f"the S&P 500 by {abs(alpha_sp_bps):.0f} bps"
         if not np.isnan(alpha_sp_bps)
         else "the S&P 500 comparison unavailable this period (benchmark data gap)"
     )
     bl_phrase = (
-        f"{'outperforming' if alpha_bl_bps >= 0 else 'underperforming'} "
+        f"{_versus(alpha_bl_bps)} "
         f"the custom blended benchmark by {abs(alpha_bl_bps):.0f} bps"
         if not np.isnan(alpha_bl_bps)
         else "the custom blended benchmark comparison unavailable this period (benchmark data gap)"
@@ -1021,8 +1044,10 @@ def _build_attribution_section(start_date: str, end_date: str) -> dict:
         if not _bf_ranked.empty else None
     )
     if top_alloc is not None and abs(top_alloc["allocation_effect"]) * 10_000 > 15:
+        from src.prose_helpers import label
         sleeve    = top_alloc["sleeve"]
         direction = "overweight" if top_alloc["w_p"] > top_alloc["w_b"] else "underweight"
+        direction = label("allocation_weight", direction, direction)
         alloc_commentary = (
             f"{sleeve}: {direction} vs benchmark "
             f"({top_alloc['w_p']*100:.1f}% vs {top_alloc['w_b']*100:.1f}%), "
@@ -1505,12 +1530,14 @@ def _build_positioning_section(end_date: str,
         agg_name  = dur["agg_name"]
         fi_wt     = dur["fi_weight_pct"]
         cash_wt   = dur["cash_weight_pct"]
+        from src.prose_helpers import label
         dur_diff  = abs(fi_dur - agg_dur)
         if dur_diff < 0.05:
-            dur_vs = "in line with benchmark"
+            dur_vs = label("duration_vs_benchmark", "in_line", "in line with benchmark")
         else:
             vs_agg = "below" if fi_dur < agg_dur else "above"
-            dur_vs = f"{vs_agg} benchmark by {dur_diff:.1f} yrs"
+            dur_vs = (label("duration_vs_benchmark", vs_agg, f"{vs_agg} benchmark")
+                      + f" by {dur_diff:.1f} yrs")
         duration_line = (
             f"Fixed Income sleeve (Core FI + TIPS) effective duration: {fi_dur} yrs "
             f"vs {agg_dur} yrs for {agg_name} ({dur_vs}). "
