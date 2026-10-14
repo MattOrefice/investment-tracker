@@ -36,8 +36,10 @@ from tests.conftest import (
     FROZEN_BOOK,
     GAP_RECORD_APPENDED,
     before_the_gap_record,
+    before_the_policy_was_held,
     pin_today,
     point_at_frozen_book,
+    record_the_policy,
     unpin_leftovers,
 )
 
@@ -113,15 +115,17 @@ def test_each_of_the_five_locks_carries_the_record_and_no_other_does(book):
 @pytest.mark.parametrize("book", BOOKS, ids=lambda p: p.name)
 def test_nothing_else_in_any_lock_changed(book):
     """Per lock: the stored text is main's, every byte, with the record appended as its
-    last key. A lock taken since is main's text exactly."""
+    last key. A lock taken since is main's text exactly. Each lock was later given the
+    SAA policy (#525), which is undone first (tests/test_locks_hold_the_policy.py pins
+    the undoing)."""
     rows = _rows(book)
     for q in QUARTERS:
-        text = rows[q][2]
+        assert json.dumps(json.loads(rows[q][2])) == rows[q][2], (book.name, q, "round-trips")
+        text = before_the_policy_was_held(rows[q][2])
         assert text.endswith(APPENDED), (book.name, q)
         assert _sha(text[:-len(APPENDED)] + "}") == PAYLOAD_BEFORE[q], (book.name, q)
-        assert json.dumps(json.loads(text)) == text, (book.name, q, "it round-trips")
     for q in sorted(set(rows) - set(QUARTERS)):
-        assert _sha(rows[q][2]) == PAYLOAD_BEFORE[q], (book.name, q)
+        assert _sha(before_the_policy_was_held(rows[q][2])) == PAYLOAD_BEFORE[q], (book.name, q)
     assert set(rows) - set(QUARTERS) == ({"2026Q3"} if book == DEMO else set())
 
 
@@ -134,7 +138,9 @@ def test_the_appended_text_is_the_record_as_the_tool_writes_it():
     assert list(tool.QUARTERS) == QUARTERS
     text = _rows(DEMO)["2026Q1"][2]
     assert _sha(before_the_gap_record(text)) == PAYLOAD_BEFORE["2026Q1"]
-    assert before_the_gap_record(_rows(DEMO)["2026Q3"][2]) == _rows(DEMO)["2026Q3"][2]
+    q3 = _rows(DEMO)["2026Q3"][2]
+    assert before_the_gap_record(q3) == before_the_policy_was_held(q3), (
+        "a lock with no record is left as it was before the policy")
 
 
 def test_the_two_books_hold_the_same_five_locks():
@@ -227,6 +233,8 @@ def _before_image(src: Path, dst: Path) -> None:
             for q in QUARTERS:
                 (text,), = con.execute("SELECT snapshot_data FROM quarter_snapshots WHERE "
                                        "quarter_id = ?", (q,)).fetchall()
+                # The SAA policy was recorded after the record (#525).
+                text = before_the_policy_was_held(text)
                 assert text.endswith(APPENDED), q
                 old = text[:-len(APPENDED)] + "}"
                 assert _sha(old) == PAYLOAD_BEFORE[q], q
@@ -245,6 +253,8 @@ def test_the_tool_makes_the_committed_locks_and_twice_changes_nothing(
     assert _rows(before) != _rows(committed), "premise: the before-image differs"
     assert tool.main(before) == 0
     assert "5 lock(s) given the record of the 2026-09-28 rewrite" in capsys.readouterr().out
+    # The committed locks are the record followed by the SAA policy (#525).
+    record_the_policy(before)
     assert _rows(before) == _rows(committed)
     assert tool.main(before) == 0
     assert "0 lock(s) given the record" in capsys.readouterr().out

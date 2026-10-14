@@ -229,9 +229,12 @@ the code that supports it; the two with none are listed at the end.
   that month's last NYSE session (#478 I06). A refresh run earlier files the month's
   reading so far under the month, and CAPE stays pending until it is run again.
 - Generate the quarter's report (Performance page, "Most recent completed
-  quarter"). That takes the lock. Prices, dividends, HYG, CAPE and in-quarter
-  durations lock now; the French factors and momentum wait, and the factor and
-  benchmark sections render as pending with the date French ends. `python -c
+  quarter"). That takes the lock. Prices, dividends, HYG, CAPE, in-quarter
+  durations and the book's SAA policy lock now (the policy is the asset classes,
+  their targets, bands and benchmarks, and each ticker's sleeve, as they stand
+  that day: `src/policy.py`, #525); the French factors and momentum wait, and
+  the factor and benchmark sections render as pending with the date French
+  ends. `python -c
   "from src.cache import get_quarter_snapshot as g;
   print(g('2026Q3')[0].inputs_pending)"` lists what waits (quarter id YYYYQn).
 - When French publishes the quarter's final month (about a month after it
@@ -312,8 +315,10 @@ the code that supports it; the two with none are listed at the end.
     - records a new rule in the locks taken after it and leaves the earlier
       locks on the old one, as `benchmark_rule` does (#383), so no committed
       figure moves and the golden changes only by the new locks' entries.
-  A lock holds no method: a changed constant, cut-off or formula reaches every
-  locked quarter the moment it merges. The golden is what makes that visible.
+  A lock holds the book's SAA policy (#525), so a changed target, band,
+  benchmark or sleeve moves no locked quarter. It holds no method: a changed
+  constant, cut-off or formula reaches every locked quarter the moment it merges.
+  The golden is what makes that visible.
 - Regenerate it with `python tools/update_locked_figures_golden.py`, the
   golden's only writer. It refuses, and writes nothing, when a lock's figures
   moved while that lock's own records did not, and names each figure. It accepts

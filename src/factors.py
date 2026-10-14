@@ -108,18 +108,55 @@ _FF5_MOM_FACTORS = ["Mkt-RF", "SMB", "HML", "RMW", "CMA", "Mom"]
 _BENCH_FACTORS   = ["Bench-RF", "HML", "SMB", "RMW"]
 _FI_FACTORS      = ["TERM", "CREDIT"]
 
-# FI sleeve weights proportional to SAA targets (VGIT 6%, SCHP 4%)
-_FI_WEIGHTS = {"VGIT": 6.0 / 10.0, "SCHP": 4.0 / 10.0}
+# ── The regressions' sleeve weights: the SAA targets (#525) ──────────────────
+#
+# The US equity sleeve's return series is its four funds' returns, and the
+# fixed-income sleeve's its two funds', each fund weighted by its own sleeve's SAA
+# target, normalized over the funds. The weights were fixed in code (_SAA_US 17/15/9/8,
+# _FI_WEIGHTS 60/40), equal to the demo book's targets and held equal by two tests;
+# they read the targets now, through src/policy.py: the lock's inside a quarter lock
+# that holds the book's policy, so a target changed after a quarter locked does not
+# move its loadings, and the book's own outside one.
+_US_FUNDS = ("VOO", "SPHQ", "VTV", "AVUV")
+_FI_FUNDS = ("VGIT", "SCHP")
+
+
+def target_weights(funds) -> "dict[str, float]":
+    """{fund: weight} for ``funds``, in that order: each fund's sleeve's SAA target over
+    the sum of their sleeves' targets.
+
+    Raises ValueError when a fund has no sleeve with a positive target, or two funds
+    share a sleeve, whose one target would then have no rule to split it."""
+    from src import policy
+    sleeve_of = policy.sleeve_of_ticker()
+    targets = {r["name"]: r["target_weight"] for r in policy.sleeves()}
+    sleeves = []
+    for fund in funds:
+        sleeve = sleeve_of.get(fund)
+        if sleeve not in targets or not targets[sleeve] > 0:
+            raise ValueError(f"{fund} has no sleeve with a positive SAA target ({sleeve!r}), "
+                             f"so its regression weight cannot be read from the targets")
+        sleeves.append(sleeve)
+    if len(set(sleeves)) != len(sleeves):
+        raise ValueError(f"two of {list(funds)} share a sleeve ({sleeves}): its target has "
+                         f"no rule to split it between them")
+    total = sum(targets[s] for s in sleeves)
+    return {fund: targets[s] / total for fund, s in zip(funds, sleeves)}
+
+
+def us_weights() -> "dict[str, float]":
+    """The US equity sleeve regression's weights: VOO, SPHQ, VTV and AVUV at their
+    sleeves' targets."""
+    return target_weights(_US_FUNDS)
+
+
+def fi_weights() -> "dict[str, float]":
+    """The fixed-income sleeve regression's weights: VGIT and SCHP at their sleeves'
+    targets (Core Fixed Income and TIPS)."""
+    return target_weights(_FI_FUNDS)
+
 
 # ── Equity sleeve definitions ──────────────────────────────────────────────────
-
-# SAA target weights for the US equity sleeve (Phase 1 locked).
-# Used to compute the sleeve's value-weighted return series without requiring
-# a DB call — eliminates the `get_holdings_on_date` dependency in environments
-# where the portfolio database is empty or unavailable (e.g., Streamlit Cloud
-# in personal mode, fresh deployments, or test environments).
-_SAA_US = {"VOO": 17, "SPHQ": 15, "VTV": 9, "AVUV": 8}
-_SAA_US_TOTAL = sum(_SAA_US.values())  # 49
 
 
 def _intl_core_label() -> str:
@@ -143,20 +180,13 @@ _SLEEVES = {
         "label":   "US Equity Sleeve",
         "tickers": ["VOO", "VTV", "SPHQ", "AVUV"],
         "region":  "us",
-        # Phase 8g — Conditions that require refreshing these embedded weights:
-        #   1. SAA target weight changes — Phase 1 weights are locked; any SAA review
-        #      must also update _SAA_US above and reseed the asset_classes table.
-        #   2. A holding is added to or removed from this sleeve — update _SAA_US keys
-        #      to match and re-run the seeding scripts.
-        #   3. Portfolio age reaches ~3+ years — cumulative drift from the SAA launch
-        #      weights may then be large enough that inception-market-value weighting
-        #      (the DB-backed fallback path) would produce meaningfully different factor
-        #      loadings. Revisit at the Phase 1 target reset review.
-        # Assumption: buy-and-hold from a single-day initialization keeps actual weights
-        # close to SAA proportions for the early years. The regression result is not
-        # sensitive to ±5% weight deviations because it measures daily return structure,
-        # not cumulative wealth attribution.
-        "weights": {t: w / _SAA_US_TOTAL for t, w in _SAA_US.items()},
+        # The funds are weighted by their sleeves' SAA targets, read when the
+        # regression runs (us_weights, #525). A target change reaches the weights with
+        # no code change; a fund added to or removed from the sleeve is a change to
+        # _US_FUNDS. Assumption: buy-and-hold from a single-day initialization keeps
+        # actual weights close to the targets for the early years, and the regression
+        # measures daily return structure, not cumulative wealth attribution.
+        "funds": _US_FUNDS,
     },
     "developed_exus": {
         # Phase 39: this regression has always been VEA-only, which is the
@@ -954,7 +984,7 @@ def run_sleeve_regressions(inception: str, end_date: str) -> dict:
                 region=spec["region"],
                 inception=inception,
                 end_date=end_date,
-                weights=spec.get("weights"),
+                weights=target_weights(spec["funds"]) if "funds" in spec else None,
             )
         except Exception:
             results[key] = None
@@ -1020,7 +1050,8 @@ def run_sleeve_regressions_mom(inception: str, end_date: str) -> dict:
     for key, spec in _SLEEVES.items():
         try:
             daily_ret = _get_sleeve_return_series(
-                spec["tickers"], inception, end_date, weights=spec.get("weights")
+                spec["tickers"], inception, end_date,
+                weights=target_weights(spec["funds"]) if "funds" in spec else None,
             )
             daily_ret.index = pd.to_datetime(daily_ret.index)
 
@@ -1138,7 +1169,8 @@ def run_intl_tilt_regressions(inception: str, end_date: str) -> dict:
 
 def regress_fi_sleeve(inception: str, end_date: str) -> Optional[dict]:
     """
-    TERM/CREDIT two-factor model for the FI sleeve (VGIT 60% + SCHP 40%).
+    TERM/CREDIT two-factor model for the FI sleeve: VGIT and SCHP at their sleeves'
+    SAA targets (fi_weights).
 
     TERM   = IEF daily return − BIL daily return  (duration premium proxy)
     CREDIT = HYG daily return − IEF daily return  (credit spread premium proxy)
@@ -1148,9 +1180,9 @@ def regress_fi_sleeve(inception: str, end_date: str) -> Optional[dict]:
     """
     date_range = pd.date_range(start=inception, end=end_date, freq="D")
 
-    # FI sleeve return (value-weighted VGIT + SCHP, SAA-proportional weights)
+    # FI sleeve return (VGIT + SCHP at their sleeves' SAA targets)
     fi_ret = pd.Series(0.0, index=date_range)
-    for ticker, w in _FI_WEIGHTS.items():
+    for ticker, w in fi_weights().items():
         p = get_prices(ticker, inception, end_date)
         p.index = pd.to_datetime(p.index)
         series = total_return_series(p)
@@ -1225,7 +1257,7 @@ def regress_fi_sleeve(inception: str, end_date: str) -> Optional[dict]:
         "_ols_bse": res_ols.bse.to_dict(),
         "_hac_bse": res_hac.bse.to_dict(),
         "sleeve_label": "FI Sleeve — TERM / CREDIT",
-        "tickers":      ["VGIT", "SCHP"],
+        "tickers":      list(_FI_FUNDS),
         "sample_start": merged.index[0].date().isoformat(),
         "sample_end":   merged.index[-1].date().isoformat(),
     }
@@ -1450,9 +1482,9 @@ def build_factor_prose(
         a_bps_fi = fi_result["alpha_annual_bps"]
         t_a_fi   = fi_result["t_alpha"]
         T_fi     = fi_result["T"]
-        # The regression's own weights (_FI_WEIGHTS), as the page's caption reads
+        # The regression's own weights (fi_weights), as the page's caption reads
         # them. The paragraph typed "VGIT 60% / SCHP 40%".
-        fi_mix = " / ".join(f"{t} {round(w * 100):.0f}%" for t, w in _FI_WEIGHTS.items())
+        fi_mix = " / ".join(f"{t} {round(w * 100):.0f}%" for t, w in fi_weights().items())
 
         lines.append(
             f"The FI sleeve ({fi_mix}, {T_fi} trading days) loads on the "
@@ -1598,8 +1630,8 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
 
     NO TYPED FIGURES, as build_factor_prose (#481). The Factor Profile page prints
     these. Each figure is read from the code it describes or is gone:
-      * the US and FI sleeve weights are the regression's own (_SLEEVES["us"]["weights"],
-        _FI_WEIGHTS). The notes typed 35.6/31.1/17.8/15.6% "proportional to the locked
+      * the US and FI sleeve weights are the regression's own (us_weights,
+        fi_weights). The notes typed 35.6/31.1/17.8/15.6% "proportional to the locked
         Phase 1 sleeve targets of 16/14/8/7%" beside weights of 17/15/9/8, and "9%/6%
         SAA targets" beside a comment saying 6% and 4%;
       * "VNQ 60%, DBC 40%" is gone from the real-assets sentences, as it went from the
@@ -1648,8 +1680,8 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
     # The one refresh the momentum note cites, read from its record (#526).
     _umd_ev = UMD_REFRESH_EVIDENCE
     # The regressions' own fixed weights, as they are applied (#481).
-    us_mix = _listed_mix([f"{t} {w:.1%}" for t, w in _SLEEVES["us"]["weights"].items()])
-    fi_mix = " + ".join(f"{t} ({round(w * 100):.0f}%)" for t, w in _FI_WEIGHTS.items())
+    us_mix = _listed_mix([f"{t} {w:.1%}" for t, w in us_weights().items()])
+    fi_mix = " + ".join(f"{t} ({round(w * 100):.0f}%)" for t, w in fi_weights().items())
 
     notes = [
         f"Samples: US equity sleeve {T_us} US trading days ({us_window}), L = {L_us}. "

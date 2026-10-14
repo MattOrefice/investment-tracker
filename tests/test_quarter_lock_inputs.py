@@ -141,7 +141,8 @@ def test_the_lock_holds_every_input_through_the_quarter_end(book, tmp_path, monk
     """#371's rule for every input: data through the quarter's last day. The files
     here run past the quarter, so a lock that kept later rows would be caught."""
     from src.cache import capture_quarter_snapshot, get_quarter_snapshot
-    from src.input_lock import ALL_INPUTS, CAPE, DIVIDENDS, ETF_METADATA, FF5_US, HYG
+    from src.input_lock import (ALL_INPUTS, CAPE, DIVIDENDS, ETF_METADATA, FF5_US, HYG,
+                                POLICY)
     from src.prices import get_prices
     assert max(get_prices("HYG", "2026-06-01", "2026-09-30").index) > date(2026, 6, 30), (
         "premise: the price layer holds HYG past the quarter")
@@ -156,6 +157,10 @@ def test_the_lock_holds_every_input_through_the_quarter_end(book, tmp_path, monk
     for name, value in snap.inputs.items():
         if name == ETF_METADATA:
             assert isinstance(value, dict) and value
+        elif name == POLICY:
+            # Held as it stands when the lock is taken, never pending (#525).
+            assert value["asset_classes"] and value["securities"], name
+            assert value["recorded_after_lock"] is False, name
         elif name == DIVIDENDS:
             assert value and all(max(s.index, default=date(2020, 1, 1)) <= end.date()
                                  for s in value.values())
@@ -344,7 +349,7 @@ def test_the_demo_ships_its_completed_quarters_locked_with_every_input(monkeypat
     rest (WAITING)."""
     import src.db as db
     from src.cache import INPUTS_RULE, QUARTER_END_RULE, _parse_quarter_end, get_quarter_snapshot
-    from src.input_lock import ALL_INPUTS, DIVIDENDS, ETF_METADATA
+    from src.input_lock import ALL_INPUTS, DIVIDENDS, ETF_METADATA, POLICY
     root = Path(__file__).resolve().parent.parent
     monkeypatch.setattr(db, "DB_PATH", root / "data" / "demo.db")
     monkeypatch.setattr(db, "_RUNTIME_CACHE", None)
@@ -360,5 +365,5 @@ def test_the_demo_ships_its_completed_quarters_locked_with_every_input(monkeypat
         assert snap.inputs_pending == pending, qid
         assert set(snap.inputs) == set(ALL_INPUTS) - set(pending), qid
         for name, value in snap.inputs.items():
-            if name not in (DIVIDENDS, ETF_METADATA):
+            if name not in (DIVIDENDS, ETF_METADATA, POLICY):
                 assert value.index.max() <= end, (qid, name)

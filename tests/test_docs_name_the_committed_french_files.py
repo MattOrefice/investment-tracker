@@ -210,19 +210,24 @@ def test_the_rendered_page_carries_it_in_each_mode(book, monkeypatch, demo):
 # ── the operational check ────────────────────────────────────────────────────
 
 def test_the_operational_check_cites_the_two_constants_by_name_not_by_line():
+    """It cited _SAA_US and _FI_WEIGHTS by line number (#527), then by name. #525 removed
+    both: the weights read the SAA targets. The check now names what they come from, by
+    name, and no constant that is gone."""
     text = _read("docs/operational_checks.md")
     assert not re.search(r"\(line\s*~?\s*\d+\)|\bline ~", text), (
         "a line number in a doc is false after the next edit above it")
-    for name in ("_SAA_US", "_FI_WEIGHTS"):
-        assert f"- `{name}`: " in text, name
-        assert isinstance(getattr(factors, name), dict), f"factors.{name} is gone"
-    assert "two constants in `src/factors.py`" in text
+    for name in ("target_weights", "_US_FUNDS", "_FI_FUNDS"):
+        assert f"`factors.{name}`" in text, name
+        assert hasattr(factors, name), f"factors.{name} is gone"
+    for gone in ("_SAA_US", "_FI_WEIGHTS"):
+        assert gone not in text, gone
+        assert not hasattr(factors, gone), f"factors.{gone} is back"
 
 
 def test_the_tests_the_operational_check_names_exist():
     text = _read("docs/operational_checks.md")
     consistency = _read("tests/test_prose_consistency.py")
-    for name in ("test_prose_saa_us_constants_match_db",
-                 "test_prose_fi_weights_constant_matches_db"):
+    for name in ("test_prose_us_weights_come_from_the_db_targets",
+                 "test_prose_fi_weights_come_from_the_db_targets"):
         assert f"`{name}`" in text
         assert f"def {name}(" in consistency, f"{name} is named in the doc and is not a test"

@@ -6,7 +6,6 @@ from datetime import date, timedelta
 
 import pandas as pd
 
-from src.db import get_connection
 from src.prices import get_prices, total_return_series
 from src.sleeve_config import sleeve_benchmarks as _derive_benchmarks
 
@@ -292,13 +291,9 @@ def _fresh_basket_series(start_date: str, end_date: str | None = None) -> pd.Ser
     end = end_date or date.today().isoformat()
     date_range = pd.date_range(start=start_date, end=end, freq="D")
 
-    with get_connection() as conn:
-        rows = conn.execute(
-            """SELECT name, target_weight
-               FROM asset_classes
-               WHERE parent_id IS NOT NULL""",
-        ).fetchall()
-    sleeve_weights = {r["name"]: r["target_weight"] for r in rows}
+    # The book's targets, or the lock's inside a quarter lock that holds them (#525).
+    from src import policy
+    sleeve_weights = {r["name"]: r["target_weight"] for r in policy.sleeves()}
     _bench_map = _benchmarks_for(sleeve_weights)
 
     # Build price matrix for each component ticker

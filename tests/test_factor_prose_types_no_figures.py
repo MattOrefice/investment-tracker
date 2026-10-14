@@ -254,7 +254,7 @@ def test_the_fi_sleeves_mix_is_the_regressions_own_weights(monkeypatch):
     import src.factors as factors
     assert "The FI sleeve (VGIT 60% / SCHP 40%, 290 trading days)" in (
         factors.build_factor_prose({}, fi_result=_FI)[0])
-    monkeypatch.setattr(factors, "_FI_WEIGHTS", {"VGIT": 0.7, "SCHP": 0.3})
+    monkeypatch.setattr(factors, "fi_weights", lambda: {"VGIT": 0.7, "SCHP": 0.3})
     assert "The FI sleeve (VGIT 70% / SCHP 30%, 290 trading days)" in (
         factors.build_factor_prose({}, fi_result=_FI)[0])
 
@@ -358,10 +358,9 @@ def _note(start: str, results=None, fi=_NOTES_FI) -> str:
 
 def test_the_notes_us_weights_are_the_regressions_own(monkeypatch):
     import src.factors as factors
-    weights = factors._SLEEVES["us"]["weights"]
-    assert weights == {t: w / sum(factors._SAA_US.values())
-                       for t, w in factors._SAA_US.items()}, (
-        "premise: the regression weights the US sleeve by _SAA_US")
+    weights = factors.us_weights()
+    assert weights == factors.target_weights(factors._SLEEVES["us"]["funds"]), (
+        "premise: the regression weights the US sleeve by its funds' targets")
     parts = [f"{t} {w * 100:.1f}%" for t, w in weights.items()]
     mix = ", ".join(parts[:-1]) + " and " + parts[-1]
     assert mix == "VOO 34.7%, SPHQ 30.6%, VTV 18.4% and AVUV 16.3%", mix
@@ -370,7 +369,7 @@ def test_the_notes_us_weights_are_the_regressions_own(monkeypatch):
         f"return of its funds at the regression's fixed weights: {mix}. Weights are held "
         "constant. The Developed sleeve is VEA's daily adjusted-close return.")
     # The contrast: the note follows the weights the regression applies.
-    monkeypatch.setitem(factors._SLEEVES["us"], "weights", {"VOO": 0.5, "AVUV": 0.5})
+    monkeypatch.setattr(factors, "us_weights", lambda: {"VOO": 0.5, "AVUV": 0.5})
     assert "fixed weights: VOO 50.0% and AVUV 50.0%. " in _note("Sleeve return series:")
 
 
@@ -378,7 +377,7 @@ def test_the_notes_fi_weights_are_the_regressions_own(monkeypatch):
     import src.factors as factors
     assert ("FI sleeve return: VGIT (60%) + SCHP (40%), the regression's fixed weights. "
             in _note("FI sleeve model:"))
-    monkeypatch.setattr(factors, "_FI_WEIGHTS", {"VGIT": 0.7, "SCHP": 0.3})
+    monkeypatch.setattr(factors, "fi_weights", lambda: {"VGIT": 0.7, "SCHP": 0.3})
     assert ("FI sleeve return: VGIT (70%) + SCHP (30%), the regression's fixed weights. "
             in _note("FI sleeve model:"))
 

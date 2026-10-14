@@ -692,12 +692,45 @@ GAP_RECORD_APPENDED = (', "gap_corrections": {"restated_on": "2026-09-28", '
                        '"removed": ["VNQ+DBC"]}}')
 
 
+def before_the_policy_was_held(text: str) -> str:
+    """A lock's stored payload as it stood before the book's SAA policy was recorded in it
+    (#525): the same text with inputs["policy"] and inputs_through["policy"] removed. A
+    lock that holds none is returned as it is. tests/test_locks_hold_the_policy.py pins
+    that this is main's lock at 46b5300, byte for byte, so a test that pins what a lock
+    held before the policy undoes it with this first."""
+    import json
+    blob = json.loads(text)
+    if "policy" not in (blob.get("inputs") or {}):
+        return text
+    del blob["inputs"]["policy"]
+    del blob["inputs_through"]["policy"]
+    return json.dumps(blob)
+
+
+def record_the_policy(book) -> None:
+    """Run tools/hold_policy_in_demo_locks.py on ``book``, a test's copy, over every lock
+    it holds: the last step that made the committed locks (#525). A test that rebuilds a
+    committed lock by replaying the tools that made it ends with this."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "hold_policy_in_demo_locks", _ROOT / "tools" / "hold_policy_in_demo_locks.py")
+    tool = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(tool)
+    con = sqlite3.connect(f"file:{Path(book).as_posix()}?mode=ro", uri=True)
+    try:
+        quarters = [q for (q,) in con.execute("SELECT quarter_id FROM quarter_snapshots")]
+    finally:
+        con.close()
+    assert tool.main(book, quarters=quarters) == 0
+
+
 def before_the_gap_record(text: str) -> str:
     """A lock's stored payload as it stood before the gap record was appended (#478): the
     same text less the record. A lock that carries none is returned as it is.
     tests/test_gap_rewrite_is_recorded.py pins that this is main's lock at cc9c31d, byte
     for byte, so a test that pins what a lock held before the record undoes it with this
-    first."""
+    first. The SAA policy was recorded after it (#525), so that is undone first."""
+    text = before_the_policy_was_held(text)
     if text.endswith(GAP_RECORD_APPENDED):
         return text[:-len(GAP_RECORD_APPENDED)] + "}"
     return text

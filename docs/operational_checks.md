@@ -68,14 +68,18 @@ the file's newest reading is older than `asof.MARKET_DATA_STALE_DAYS_VALUATION` 
 To refresh it, run `python tools/refresh_market_data.py --files cape pe` and commit the
 diff.
 
-### Review `_SAA_US` and `_FI_WEIGHTS` constants
+### The factor regressions' sleeve weights read the SAA targets
 
-If SAA weights are ever revised, two constants in `src/factors.py` must be updated:
-- `_SAA_US`: US equity sleeve weights in percent
-- `_FI_WEIGHTS`: VGIT/SCHP proportional weights
+The US equity and fixed-income sleeve regressions weight each fund by its sleeve's SAA
+target, read when the regression runs (`factors.target_weights`, #525). A revised
+target reaches them with no code change, and a quarter lock holds the targets its report
+was computed with, so a revision moves no locked quarter. Nothing here needs updating
+when the SAA changes; a fund added to or removed from a regressed sleeve is a change to
+`factors._US_FUNDS` or `factors._FI_FUNDS`.
 
-The tests `test_prose_saa_us_constants_match_db` and `test_prose_fi_weights_constant_matches_db`
-will fail immediately if these drift from the DB, catching the mismatch on the next `pytest` run.
+The tests `test_prose_us_weights_come_from_the_db_targets` and
+`test_prose_fi_weights_come_from_the_db_targets` fail if the weights stop following the
+targets.
 
 ---
 

@@ -84,7 +84,11 @@ def as_taken(text: str) -> str:
 
 @pytest.fixture(scope="module")
 def committed() -> str:
-    return _locks(DEMO)[Q3][2]
+    """The committed lock as the completion left it. The SAA policy recorded in it
+    afterwards (#525) is undone first; test_a_run_writes_the_committed_lock_and_nothing_
+    else records it again and arrives at the committed bytes."""
+    from tests.conftest import before_the_policy_was_held
+    return before_the_policy_was_held(_locks(DEMO)[Q3][2])
 
 
 @pytest.fixture
@@ -145,6 +149,11 @@ def test_a_run_writes_the_committed_lock_and_nothing_else(staged, committed, cap
     assert tool.main(Q3, list(COMPLETED), book=book) == 0
     assert "Nothing was written" in capsys.readouterr().out
     assert _sha(book) == image
+
+    # The committed lock is that completion followed by the SAA policy (#525).
+    from tests.conftest import record_the_policy
+    record_the_policy(book)
+    assert _locks(book)[Q3] == _locks(DEMO)[Q3]
 
 
 def test_it_is_the_report_paths_own_completion(staged, committed):

@@ -14,13 +14,13 @@ render_page_header()
 require_portfolio_account("Factor Profile")
 
 from src.factors import (
-    _FI_WEIGHTS,
     em_disclosure,
     alpha_ci_str,
     build_factor_methodology_notes,
     build_factor_prose,
     build_intl_tilt_disclosure,
     factor_data_caption,
+    fi_weights,
     intl_residual_reading_order,
     regress_fi_sleeve,
     run_intl_tilt_regressions,
@@ -351,8 +351,10 @@ with col:
             _get_fi_result.clear()
             st.rerun()
     else:
+        # The regression's weights: the book's SAA targets (#525).
+        _fi_w = fi_weights()
         _fi_pcts = " / ".join(
-            f"{round(_FI_WEIGHTS.get(t, 0) * 100):.0f}%"
+            f"{round(_fi_w.get(t, 0) * 100):.0f}%"
             for t in fi_result["tickers"]
         )
         st.caption(

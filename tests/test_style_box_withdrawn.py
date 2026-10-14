@@ -37,6 +37,7 @@ from tests.conftest import (
     pin_today,
     point_at_frozen_book,
     q2_2026_before_its_closes_were_filled,
+    record_the_policy,
     unpin_leftovers,
 )
 
@@ -296,8 +297,10 @@ def test_the_tool_restores_the_committed_book_exactly_and_twice_changes_nothing(
     monkeypatch.setattr(tool, "DEMO_DB", before)
     assert tool.main(date(2026, 9, 28)) == 0
     assert "5 lock(s) restated on 2026-09-28" in capsys.readouterr().out
-    # The committed locks are that restatement followed by the gap record (#478).
+    # The committed locks are that restatement followed by the gap record (#478) and
+    # the SAA policy recorded in each (#525).
     assert _gap_tool().main(before) == 0
+    record_the_policy(before)
     capsys.readouterr()
     committed, rebuilt = _ro(ROOT / "data" / "demo.db"), _ro(before)
     try:
