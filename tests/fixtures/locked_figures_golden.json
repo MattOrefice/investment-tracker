@@ -1,5 +1,5 @@
 {
- "about": "Every figure each committed quarter lock's report prints (#525): the six sections built inside the lock and the Performance page's locked tiles, and the class each label in those sections states. Written only by tools/update_locked_figures_golden.py; read by tests/test_locked_figures_golden.py. A figure here moves only with a change in its lock's own records (CLAUDE.md, 'Locked figures').",
+ "about": "Every figure each committed quarter lock's report prints (#525): the six sections built inside the lock and the Performance page's locked tiles, the class each label in those sections states, and each figure they print in words (#541). Written only by tools/update_locked_figures_golden.py; read by tests/test_locked_figures_golden.py. A figure here moves only with a change in its lock's own records (CLAUDE.md, 'Locked figures').",
  "locks": {
   "demo.db": {
    "2025Q2": {
@@ -55,6 +55,11 @@
        "cape_regime=elevated",
        "versus_benchmark=out",
        "versus_benchmark=under"
+      ],
+      "in_words": [
+       "97th",
+       "June 2025",
+       "June 30, 2025"
       ]
      },
      "Holdings & Allocation": {
@@ -154,7 +159,8 @@
        ]
       ],
       "text": [],
-      "labels": []
+      "labels": [],
+      "in_words": []
      },
      "Performance": {
       "tables": [
@@ -328,12 +334,14 @@
       ],
       "labels": [
        "duration_vs_benchmark=in_line"
-      ]
+      ],
+      "in_words": []
      },
      "Brinson-Fachler Attribution": {
       "tables": [],
       "text": [],
-      "labels": []
+      "labels": [],
+      "in_words": []
      },
      "Factor Profile": {
       "tables": [
@@ -482,6 +490,17 @@
        "tilt_reading=shown",
        "tilt_reading=shown",
        "us_market_reading=near_full"
+      ],
+      "in_words": [
+       "June 30, 2025",
+       "June 30, 2025",
+       "June 30, 2025",
+       "June 30, 2025",
+       "May 2, 2025",
+       "May 2, 2025",
+       "May 2, 2025",
+       "May 2, 2025",
+       "one"
       ]
      },
      "Benchmark Attribution": {
@@ -554,6 +573,12 @@
        "active_return_reading=selection",
        "benchmark_beta=near_full",
        "significance=5%"
+      ],
+      "in_words": [
+       "June 30, 2025",
+       "June 30, 2025",
+       "May 2, 2025",
+       "May 2, 2025"
       ]
      }
     },
@@ -620,6 +645,11 @@
        "cape_regime=elevated",
        "versus_benchmark=under",
        "versus_benchmark=under"
+      ],
+      "in_words": [
+       "99th",
+       "September 2025",
+       "September 30, 2025"
       ]
      },
      "Holdings & Allocation": {
@@ -719,7 +749,8 @@
        ]
       ],
       "text": [],
-      "labels": []
+      "labels": [],
+      "in_words": []
      },
      "Performance": {
       "tables": [
@@ -770,7 +801,8 @@
       ],
       "labels": [
        "duration_vs_benchmark=in_line"
-      ]
+      ],
+      "in_words": []
      },
      "Brinson-Fachler Attribution": {
       "tables": [
@@ -903,7 +935,8 @@
        "6.7%",
        "9.8%"
       ],
-      "labels": []
+      "labels": [],
+      "in_words": []
      },
      "Factor Profile": {
       "tables": [
@@ -1052,6 +1085,17 @@
        "tilt_reading=shown",
        "tilt_reading=shown",
        "us_market_reading=near_full"
+      ],
+      "in_words": [
+       "May 2, 2025",
+       "May 2, 2025",
+       "May 2, 2025",
+       "May 2, 2025",
+       "September 30, 2025",
+       "September 30, 2025",
+       "September 30, 2025",
+       "September 30, 2025",
+       "one"
       ]
      },
      "Benchmark Attribution": {
@@ -1123,6 +1167,12 @@
       "labels": [
        "benchmark_beta=near_full",
        "significance=none"
+      ],
+      "in_words": [
+       "May 2, 2025",
+       "May 2, 2025",
+       "September 30, 2025",
+       "September 30, 2025"
       ]
      }
     },
@@ -1189,6 +1239,11 @@
        "cape_regime=elevated",
        "versus_benchmark=out",
        "versus_benchmark=out"
+      ],
+      "in_words": [
+       "99th",
+       "December 2025",
+       "December 31, 2025"
       ]
      },
      "Holdings & Allocation": {
@@ -1288,7 +1343,8 @@
        ]
       ],
       "text": [],
-      "labels": []
+      "labels": [],
+      "in_words": []
      },
      "Performance": {
       "tables": [
@@ -1339,7 +1395,8 @@
       ],
       "labels": [
        "duration_vs_benchmark=in_line"
-      ]
+      ],
+      "in_words": []
      },
      "Brinson-Fachler Attribution": {
       "tables": [
@@ -1472,7 +1529,8 @@
        "6.0%",
        "7.2%"
       ],
-      "labels": []
+      "labels": [],
+      "in_words": []
      },
      "Factor Profile": {
       "tables": [
@@ -1621,6 +1679,17 @@
        "tilt_reading=shown",
        "tilt_reading=shown",
        "us_market_reading=near_full"
+      ],
+      "in_words": [
+       "December 31, 2025",
+       "December 31, 2025",
+       "December 31, 2025",
+       "December 31, 2025",
+       "May 2, 2025",
+       "May 2, 2025",
+       "May 2, 2025",
+       "May 2, 2025",
+       "one"
       ]
      },
      "Benchmark Attribution": {
@@ -1692,6 +1761,12 @@
       "labels": [
        "benchmark_beta=near_full",
        "significance=none"
+      ],
+      "in_words": [
+       "December 31, 2025",
+       "December 31, 2025",
+       "May 2, 2025",
+       "May 2, 2025"
       ]
      }
     },
@@ -1758,6 +1833,11 @@
        "cape_regime=elevated",
        "versus_benchmark=out",
        "versus_benchmark=out"
+      ],
+      "in_words": [
+       "98th",
+       "March 2026",
+       "March 31, 2026"
       ]
      },
      "Holdings & Allocation": {
@@ -1857,7 +1937,8 @@
        ]
       ],
       "text": [],
-      "labels": []
+      "labels": [],
+      "in_words": []
      },
      "Performance": {
       "tables": [
@@ -1908,7 +1989,8 @@
       ],
       "labels": [
        "duration_vs_benchmark=in_line"
-      ]
+      ],
+      "in_words": []
      },
      "Brinson-Fachler Attribution": {
       "tables": [
@@ -2043,7 +2125,8 @@
        "60%",
        "8.6%"
       ],
-      "labels": []
+      "labels": [],
+      "in_words": []
      },
      "Factor Profile": {
       "tables": [
@@ -2192,6 +2275,17 @@
        "tilt_reading=shown",
        "tilt_reading=shown",
        "us_market_reading=near_full"
+      ],
+      "in_words": [
+       "March 31, 2026",
+       "March 31, 2026",
+       "March 31, 2026",
+       "March 31, 2026",
+       "May 2, 2025",
+       "May 2, 2025",
+       "May 2, 2025",
+       "May 2, 2025",
+       "one"
       ]
      },
      "Benchmark Attribution": {
@@ -2272,6 +2366,12 @@
        "versus_benchmark=out",
        "versus_benchmark=out",
        "versus_benchmark=out"
+      ],
+      "in_words": [
+       "March 31, 2026",
+       "March 31, 2026",
+       "May 2, 2025",
+       "May 2, 2025"
       ]
      }
     },
@@ -2475,6 +2575,11 @@
        "cape_regime=elevated",
        "versus_benchmark=out",
        "versus_benchmark=under"
+      ],
+      "in_words": [
+       "99th",
+       "June 2026",
+       "June 30, 2026"
       ]
      },
      "Holdings & Allocation": {
@@ -2574,7 +2679,8 @@
        ]
       ],
       "text": [],
-      "labels": []
+      "labels": [],
+      "in_words": []
      },
      "Performance": {
       "tables": [
@@ -2625,7 +2731,8 @@
       ],
       "labels": [
        "duration_vs_benchmark=in_line"
-      ]
+      ],
+      "in_words": []
      },
      "Brinson-Fachler Attribution": {
       "tables": [
@@ -2758,7 +2865,8 @@
        "24.4%",
        "8.8%"
       ],
-      "labels": []
+      "labels": [],
+      "in_words": []
      },
      "Factor Profile": {
       "tables": [
@@ -2907,6 +3015,17 @@
        "tilt_reading=shown",
        "tilt_reading=shown",
        "us_market_reading=near_full"
+      ],
+      "in_words": [
+       "June 30, 2026",
+       "June 30, 2026",
+       "June 30, 2026",
+       "June 30, 2026",
+       "May 2, 2025",
+       "May 2, 2025",
+       "May 2, 2025",
+       "May 2, 2025",
+       "one"
       ]
      },
      "Benchmark Attribution": {
@@ -2978,6 +3097,12 @@
       "labels": [
        "benchmark_beta=near_full",
        "significance=none"
+      ],
+      "in_words": [
+       "June 30, 2026",
+       "June 30, 2026",
+       "May 2, 2025",
+       "May 2, 2025"
       ]
      }
     },
@@ -3030,6 +3155,12 @@
        "cape_regime=elevated",
        "versus_benchmark=under",
        "versus_benchmark=under"
+      ],
+      "in_words": [
+       "99th",
+       "October 4, 2026",
+       "September 2026",
+       "September 30, 2026"
       ]
      },
      "Holdings & Allocation": {
@@ -3129,7 +3260,8 @@
        ]
       ],
       "text": [],
-      "labels": []
+      "labels": [],
+      "in_words": []
      },
      "Performance": {
       "tables": [
@@ -3181,7 +3313,8 @@
       ],
       "labels": [
        "duration_vs_benchmark=below"
-      ]
+      ],
+      "in_words": []
      },
      "Brinson-Fachler Attribution": {
       "tables": [
@@ -3316,7 +3449,8 @@
        "60%",
        "8.8%"
       ],
-      "labels": []
+      "labels": [],
+      "in_words": []
      },
      "Factor Profile": {
       "tables": [],
@@ -3326,7 +3460,11 @@
        "30",
        "31"
       ],
-      "labels": []
+      "labels": [],
+      "in_words": [
+       "August 31, 2026",
+       "September 30, 2026"
+      ]
      },
      "Benchmark Attribution": {
       "tables": [],
@@ -3336,7 +3474,11 @@
        "30",
        "31"
       ],
-      "labels": []
+      "labels": [],
+      "in_words": [
+       "August 31, 2026",
+       "September 30, 2026"
+      ]
      }
     },
     "tiles": {
@@ -3402,6 +3544,11 @@
        "cape_regime=elevated",
        "versus_benchmark=out",
        "versus_benchmark=under"
+      ],
+      "in_words": [
+       "97th",
+       "June 2025",
+       "June 30, 2025"
       ]
      },
      "Holdings & Allocation": {
@@ -3501,7 +3648,8 @@
        ]
       ],
       "text": [],
-      "labels": []
+      "labels": [],
+      "in_words": []
      },
      "Performance": {
       "tables": [
@@ -3675,12 +3823,14 @@
       ],
       "labels": [
        "duration_vs_benchmark=in_line"
-      ]
+      ],
+      "in_words": []
      },
      "Brinson-Fachler Attribution": {
       "tables": [],
       "text": [],
-      "labels": []
+      "labels": [],
+      "in_words": []
      },
      "Factor Profile": {
       "tables": [
@@ -3829,6 +3979,17 @@
        "tilt_reading=shown",
        "tilt_reading=shown",
        "us_market_reading=near_full"
+      ],
+      "in_words": [
+       "June 30, 2025",
+       "June 30, 2025",
+       "June 30, 2025",
+       "June 30, 2025",
+       "May 2, 2025",
+       "May 2, 2025",
+       "May 2, 2025",
+       "May 2, 2025",
+       "one"
       ]
      },
      "Benchmark Attribution": {
@@ -3901,6 +4062,12 @@
        "active_return_reading=selection",
        "benchmark_beta=near_full",
        "significance=5%"
+      ],
+      "in_words": [
+       "June 30, 2025",
+       "June 30, 2025",
+       "May 2, 2025",
+       "May 2, 2025"
       ]
      }
     },
@@ -3967,6 +4134,11 @@
        "cape_regime=elevated",
        "versus_benchmark=under",
        "versus_benchmark=under"
+      ],
+      "in_words": [
+       "99th",
+       "September 2025",
+       "September 30, 2025"
       ]
      },
      "Holdings & Allocation": {
@@ -4066,7 +4238,8 @@
        ]
       ],
       "text": [],
-      "labels": []
+      "labels": [],
+      "in_words": []
      },
      "Performance": {
       "tables": [
@@ -4117,7 +4290,8 @@
       ],
       "labels": [
        "duration_vs_benchmark=in_line"
-      ]
+      ],
+      "in_words": []
      },
      "Brinson-Fachler Attribution": {
       "tables": [
@@ -4250,7 +4424,8 @@
        "6.7%",
        "9.8%"
       ],
-      "labels": []
+      "labels": [],
+      "in_words": []
      },
      "Factor Profile": {
       "tables": [
@@ -4399,6 +4574,17 @@
        "tilt_reading=shown",
        "tilt_reading=shown",
        "us_market_reading=near_full"
+      ],
+      "in_words": [
+       "May 2, 2025",
+       "May 2, 2025",
+       "May 2, 2025",
+       "May 2, 2025",
+       "September 30, 2025",
+       "September 30, 2025",
+       "September 30, 2025",
+       "September 30, 2025",
+       "one"
       ]
      },
      "Benchmark Attribution": {
@@ -4470,6 +4656,12 @@
       "labels": [
        "benchmark_beta=near_full",
        "significance=none"
+      ],
+      "in_words": [
+       "May 2, 2025",
+       "May 2, 2025",
+       "September 30, 2025",
+       "September 30, 2025"
       ]
      }
     },
@@ -4536,6 +4728,11 @@
        "cape_regime=elevated",
        "versus_benchmark=out",
        "versus_benchmark=out"
+      ],
+      "in_words": [
+       "99th",
+       "December 2025",
+       "December 31, 2025"
       ]
      },
      "Holdings & Allocation": {
@@ -4635,7 +4832,8 @@
        ]
       ],
       "text": [],
-      "labels": []
+      "labels": [],
+      "in_words": []
      },
      "Performance": {
       "tables": [
@@ -4686,7 +4884,8 @@
       ],
       "labels": [
        "duration_vs_benchmark=in_line"
-      ]
+      ],
+      "in_words": []
      },
      "Brinson-Fachler Attribution": {
       "tables": [
@@ -4819,7 +5018,8 @@
        "6.0%",
        "7.2%"
       ],
-      "labels": []
+      "labels": [],
+      "in_words": []
      },
      "Factor Profile": {
       "tables": [
@@ -4968,6 +5168,17 @@
        "tilt_reading=shown",
        "tilt_reading=shown",
        "us_market_reading=near_full"
+      ],
+      "in_words": [
+       "December 31, 2025",
+       "December 31, 2025",
+       "December 31, 2025",
+       "December 31, 2025",
+       "May 2, 2025",
+       "May 2, 2025",
+       "May 2, 2025",
+       "May 2, 2025",
+       "one"
       ]
      },
      "Benchmark Attribution": {
@@ -5039,6 +5250,12 @@
       "labels": [
        "benchmark_beta=near_full",
        "significance=none"
+      ],
+      "in_words": [
+       "December 31, 2025",
+       "December 31, 2025",
+       "May 2, 2025",
+       "May 2, 2025"
       ]
      }
     },
@@ -5105,6 +5322,11 @@
        "cape_regime=elevated",
        "versus_benchmark=out",
        "versus_benchmark=out"
+      ],
+      "in_words": [
+       "98th",
+       "March 2026",
+       "March 31, 2026"
       ]
      },
      "Holdings & Allocation": {
@@ -5204,7 +5426,8 @@
        ]
       ],
       "text": [],
-      "labels": []
+      "labels": [],
+      "in_words": []
      },
      "Performance": {
       "tables": [
@@ -5255,7 +5478,8 @@
       ],
       "labels": [
        "duration_vs_benchmark=in_line"
-      ]
+      ],
+      "in_words": []
      },
      "Brinson-Fachler Attribution": {
       "tables": [
@@ -5390,7 +5614,8 @@
        "60%",
        "8.6%"
       ],
-      "labels": []
+      "labels": [],
+      "in_words": []
      },
      "Factor Profile": {
       "tables": [
@@ -5539,6 +5764,17 @@
        "tilt_reading=shown",
        "tilt_reading=shown",
        "us_market_reading=near_full"
+      ],
+      "in_words": [
+       "March 31, 2026",
+       "March 31, 2026",
+       "March 31, 2026",
+       "March 31, 2026",
+       "May 2, 2025",
+       "May 2, 2025",
+       "May 2, 2025",
+       "May 2, 2025",
+       "one"
       ]
      },
      "Benchmark Attribution": {
@@ -5619,6 +5855,12 @@
        "versus_benchmark=out",
        "versus_benchmark=out",
        "versus_benchmark=out"
+      ],
+      "in_words": [
+       "March 31, 2026",
+       "March 31, 2026",
+       "May 2, 2025",
+       "May 2, 2025"
       ]
      }
     },
@@ -5822,6 +6064,11 @@
        "cape_regime=elevated",
        "versus_benchmark=out",
        "versus_benchmark=under"
+      ],
+      "in_words": [
+       "99th",
+       "June 2026",
+       "June 30, 2026"
       ]
      },
      "Holdings & Allocation": {
@@ -5921,7 +6168,8 @@
        ]
       ],
       "text": [],
-      "labels": []
+      "labels": [],
+      "in_words": []
      },
      "Performance": {
       "tables": [
@@ -5972,7 +6220,8 @@
       ],
       "labels": [
        "duration_vs_benchmark=in_line"
-      ]
+      ],
+      "in_words": []
      },
      "Brinson-Fachler Attribution": {
       "tables": [
@@ -6105,7 +6354,8 @@
        "24.4%",
        "8.8%"
       ],
-      "labels": []
+      "labels": [],
+      "in_words": []
      },
      "Factor Profile": {
       "tables": [
@@ -6254,6 +6504,17 @@
        "tilt_reading=shown",
        "tilt_reading=shown",
        "us_market_reading=near_full"
+      ],
+      "in_words": [
+       "June 30, 2026",
+       "June 30, 2026",
+       "June 30, 2026",
+       "June 30, 2026",
+       "May 2, 2025",
+       "May 2, 2025",
+       "May 2, 2025",
+       "May 2, 2025",
+       "one"
       ]
      },
      "Benchmark Attribution": {
@@ -6325,6 +6586,12 @@
       "labels": [
        "benchmark_beta=near_full",
        "significance=none"
+      ],
+      "in_words": [
+       "June 30, 2026",
+       "June 30, 2026",
+       "May 2, 2025",
+       "May 2, 2025"
       ]
      }
     },

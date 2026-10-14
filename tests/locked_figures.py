@@ -32,10 +32,17 @@ Then, in each locked section:
     class in two more invisible marks around the words. So moving a cut-off moves a
     class and fails; rewording a label moves nothing. A number inside a label's words
     (the "1%" above) is part of the words, not a figure;
+  * a figure printed IN WORDS (#541) is compared too, whole and as printed, as a sorted
+    list per section beside the numbers: an ordinal (the CAPE's "99th percentile"), a
+    date whose month is a word ("June 30, 2026", "June 2026"), a number spelled out
+    ("three", "third"). The number scan reads a date's day and year but not its month,
+    and no ordinal at all, so a moved percentile or month passed it. Words inside a
+    label are the label's, as above;
   * text typed in the template is never compared: it is wording by construction.
 
-So a number a sentence types in its own source ("95% CI") counts as a figure: the
-render cannot tell it from a computed one. Charts are images and are not read.
+So a number a sentence types in its own source ("95% CI", or spelled out, "the one
+equity region") counts as a figure: the render cannot tell it from a computed one.
+Charts are images and are not read.
 
 WHAT A LABEL IS, and the limit of this. A label is any word, clause or sentence the
 report's code picks by testing a computed figure. The families are
@@ -106,6 +113,29 @@ def numbers_in(text: str) -> "list[str]":
     for words in significance_labels() + list(NAMES):
         text = text.replace(words, " ")
     return [" ".join(m.group(0).split()) for m in NUMBER.finditer(text)]
+
+
+# A figure printed in words (#541): an ordinal in digits, a date with its month as a word
+# (day optional, year required, so "may" the verb is not one), or a number spelled out.
+_MONTHS = ("January|February|March|April|May|June|July|August|September|October|November|"
+           "December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sept?|Oct|Nov|Dec")
+_SPELLED = ("zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|"
+            "fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|"
+            "sixty|seventy|eighty|ninety|hundred|thousand|million|billion|first|second|third|"
+            "fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|twelfth")
+IN_WORDS = re.compile(
+    r"(?<![\w.,$])\d+(?:st|nd|rd|th)\b"
+    rf"|\b(?:{_MONTHS})\.?(?:\s+\d{{1,2}},?)?\s+\d{{4}}\b"
+    rf"|\b(?i:{_SPELLED})\b")
+
+
+def in_words_in(text: str) -> "list[str]":
+    """Every figure printed in words in a computed text (#541), as printed, with every
+    label's words and the names above set aside as numbers_in sets them aside."""
+    text = _LABEL.sub(" ", text)
+    for words in significance_labels() + list(NAMES):
+        text = text.replace(words, " ")
+    return [" ".join(m.group(0).split()) for m in IN_WORDS.finditer(text)]
 
 
 def labelled(family: str, cls: str, words: str) -> str:
@@ -271,24 +301,30 @@ def cover_of(report_html: str) -> str:
     return " ".join(_unmarked(html_lib.unescape(re.sub(r"<[^>]+>", " ", cover))).split())
 
 
-def template_numbers() -> "set[str]":
-    """Every number TYPED in the template's own text: Jinja tags, comments and markup
-    removed. The harness checks that a number it finds outside the marks is one of
-    these, so a computed figure that reached the page unmarked cannot pass as wording."""
+def _template_text() -> str:
+    """The template's own typed text: Jinja tags, comments and markup removed."""
     src = TEMPLATE.read_text(encoding="utf-8")
     src = re.sub(r"\{#.*?#\}", " ", src, flags=re.S)
     src = re.sub(r"\{%.*?%\}", " ", src, flags=re.S)
     src = re.sub(r"\{\{.*?\}\}", " ", src, flags=re.S)
     src = re.sub(r"<style.*?</style>", " ", src, flags=re.S)
-    text = html_lib.unescape(re.sub(r"<[^>]+>", " ", src))
-    return set(numbers_in(text))
+    return html_lib.unescape(re.sub(r"<[^>]+>", " ", src))
+
+
+def template_numbers() -> "set[str]":
+    """Every number TYPED in the template's own text, and every figure in words it
+    types (#541). The harness checks that one it finds outside the marks is one of
+    these, so a computed figure that reached the page unmarked cannot pass as wording."""
+    text = _template_text()
+    return set(numbers_in(text)) | set(in_words_in(text))
 
 
 def figures_of(section_html: str, *, typed_ok: "set[str] | None" = None) -> dict:
     """One locked section's figures: {"tables": [[row, ...], ...], "text": [number, ...],
-    "labels": ["family=class", ...]}. Each table is its rows of cells as printed, the
-    label column left out; "text" is every number in the section's other computed text
-    and "labels" every class a label in that text states, each sorted."""
+    "labels": ["family=class", ...], "in_words": [figure, ...]}. Each table is its rows of
+    cells as printed, the label column left out; "text" is every number in the section's
+    other computed text, "labels" every class a label in that text states and "in_words"
+    every figure that text prints in words (#541), each sorted."""
     parser = _Section()
     parser.feed(section_html)
     parser.close()
@@ -303,12 +339,13 @@ def figures_of(section_html: str, *, typed_ok: "set[str] | None" = None) -> dict
     computed, typed = _spans(" ".join(parser.text))
     text = sorted(n for span in computed for n in numbers_in(html_lib.unescape(span)))
     labels = sorted(c for span in computed for c in labels_in(span))
+    in_words = sorted(w for span in computed for w in in_words_in(html_lib.unescape(span)))
     assert not labels_in(typed), "a label reached the page outside a computed value"
     if typed_ok is not None:
-        stray = sorted(set(numbers_in(typed)) - typed_ok)
+        stray = sorted((set(numbers_in(typed)) | set(in_words_in(typed))) - typed_ok)
         assert not stray, (f"numbers printed outside the marks that the template does not "
                            f"type: {stray}. A computed value reached the page unmarked.")
-    return {"tables": tables, "text": text, "labels": labels}
+    return {"tables": tables, "text": text, "labels": labels, "in_words": in_words}
 
 
 # ── a lock's own records ─────────────────────────────────────────────────────
@@ -461,6 +498,17 @@ def holds_labels(entry: dict) -> bool:
     return all("labels" in s for s in entry["sections"].values())
 
 
+def count_in_words(entry: dict) -> int:
+    """How many figures printed in words one lock's entry holds (#541)."""
+    return sum(len(s.get("in_words", ())) for s in entry["sections"].values())
+
+
+def holds_in_words(entry: dict) -> bool:
+    """Whether an entry was written since figures in words were read (#541): every
+    section carries its list, empty or not."""
+    return all("in_words" in s for s in entry["sections"].values())
+
+
 def load_golden() -> dict:
     return json.loads(GOLDEN.read_text(encoding="utf-8"))["locks"]
 
@@ -480,8 +528,8 @@ def _moved(was: "list[str]", now: "list[str]") -> "tuple[list[str], list[str]]":
 def differences(golden: dict, rendered: dict) -> "list[str]":
     """Every figure and every label's class that differs between one lock's golden
     entry and its render, as lines a reader can act on. Empty when none does. An entry
-    written before labels were read holds none, and its labels are not compared: the
-    golden's test requires every committed entry to hold them."""
+    written before labels, or figures in words, were read holds none, and they are not
+    compared: the golden's test requires every committed entry to hold them."""
     out = []
     for key, was in golden["tiles"].items():
         now = rendered["tiles"].get(key)
@@ -503,4 +551,7 @@ def differences(golden: dict, rendered: dict) -> "list[str]":
         if "labels" in g and g["labels"] != r["labels"]:
             gone, new = _moved(g["labels"], r["labels"])
             out.append(f"{section}, labels: no longer stated {gone}; now stated {new}")
+        if "in_words" in g and g["in_words"] != r["in_words"]:
+            gone, new = _moved(g["in_words"], r["in_words"])
+            out.append(f"{section}, in words: no longer printed {gone}; now printed {new}")
     return out

@@ -21,6 +21,9 @@ Pinned here:
     words and their order are free;
   * a label is held by the class it states, not its words: every committed entry holds
     each section's labels, a moved 1% cut-off fails, and every label reworded passes;
+  * a figure printed in words (an ordinal, a date's month, a number spelled out) is
+    read whole beside the numbers (#541): every committed entry holds each section's,
+    and a CAPE percentile moved by one rank fails on its ordinal alone;
   * the proof: a significance cut-off moved from 10% to 20% fails the comparison and
     the tool refuses it; the same change carried with a record in each lock passes.
 """
@@ -201,14 +204,15 @@ def test_text_typed_in_the_template_is_not_a_figure():
     section = (f"<p>Sum of effects reconciles within 1 bp. Cash drag: <strong>{_m('-12 bps')}"
                f"</strong> across the {_m('12')} sleeves.</p>")
     assert lf.figures_of(section) == {"tables": [], "text": ["-12 bps", "12"],
-                                      "labels": []}
+                                      "labels": [], "in_words": []}
 
 
 def test_a_number_in_a_computed_sentence_is_a_figure_and_its_words_are_not():
     one = lf.figures_of("<p>" + _m("The sleeve loads on Mkt-RF at 0.97 (t = 45.12).") + "</p>")
     two = lf.figures_of("<p>" + _m("With t = 45.12, its market loading is 0.97, as found.")
                         + "</p><p>" + _m("A sentence with no number.") + "</p>")
-    assert one == two == {"tables": [], "text": ["0.97", "45.12"], "labels": []}
+    assert one == two == {"tables": [], "text": ["0.97", "45.12"], "labels": [],
+                          "in_words": []}
 
 
 def test_a_significance_label_is_a_word_for_the_t_statistic_beside_it():
@@ -235,7 +239,8 @@ def test_a_label_is_read_as_its_class_and_its_words_are_not():
     two = lf.figures_of(section("significant at five percent, 95 in 100", "short of the Agg"))
     assert one == two == {"tables": [], "text": ["0.083", "0.2 yrs", "2.34", "5.9 yrs",
                                                  "6.1 yrs"],
-                          "labels": ["duration_vs_benchmark=below", "significance=5%"]}
+                          "labels": ["duration_vs_benchmark=below", "significance=5%"],
+                          "in_words": []}
     other = lf.figures_of(section("statistically significant at the 5% level",
                                   "below benchmark").replace("significance=5%",
                                                              "significance=1%"))
@@ -255,7 +260,8 @@ def test_a_label_prints_as_its_words():
     table = ("<table class='data-table'><thead><tr><th>Sleeve</th><th>Status</th></tr>"
              f"</thead><tbody><tr><td>{_m('US')}</td><td>{_m(lf.labelled('sign', 'zero', 'Flat'))}"
              "</td></tr></tbody></table>")
-    assert lf.figures_of(table) == {"tables": [[["Flat"]]], "text": [], "labels": []}
+    assert lf.figures_of(table) == {"tables": [[["Flat"]]], "text": [], "labels": [],
+                                    "in_words": []}
 
 
 def test_a_label_outside_a_computed_value_or_with_unbalanced_marks_fails():
@@ -352,7 +358,7 @@ def test_a_table_cell_is_compared_whole_and_its_row_label_is_not():
              f"<tr><td>{_m('SMB')}</td><td>{_m('0.177')}</td><td>{_m('')}</td></tr>"
              "</tbody></table>")
     assert lf.figures_of(table) == {"tables": [[["0.083", "**"], ["0.177", ""]]],
-                                    "text": [], "labels": []}
+                                    "text": [], "labels": [], "in_words": []}
     renamed = table.replace("HML", "Value").replace("Loading", "Beta")
     assert lf.figures_of(renamed) == lf.figures_of(table), "a label is a name"
     trades = ("<table class='data-table'><thead><tr><th>Date</th><th>Ticker</th></tr></thead>"
@@ -376,6 +382,10 @@ def test_a_computed_number_that_reaches_the_page_unmarked_fails():
     assert lf.figures_of("<p>Brinson-Fachler 1985</p>", typed_ok=typed)["text"] == []
     with pytest.raises(AssertionError, match="reached the page unmarked"):
         lf.figures_of("<p>Portfolio return 12.23%</p>", typed_ok=typed)
+    # A figure in words too (#541): an ordinal carries no number the scan reads.
+    for unmarked in ("in the 99th percentile", "a reading for June 2026"):
+        with pytest.raises(AssertionError, match="reached the page unmarked"):
+            lf.figures_of(f"<p>CAPE is {unmarked}</p>", typed_ok=typed)
 
 
 def test_the_marks_change_nothing_else_in_the_render(tmp_path):
@@ -418,6 +428,9 @@ def test_differences_names_each_figure_that_moved():
     labels = now["sections"]["Performance"]["labels"]
     assert labels == ["duration_vs_benchmark=in_line"], "premise"
     labels[0] = "duration_vs_benchmark=below"
+    in_words = now["sections"]["Executive Summary"]["in_words"]
+    assert in_words[0] == "99th", "premise"
+    in_words[0] = "98th"
     lines = lf.differences(was, now)
     assert lines[0] == "Performance tile alpha_sp_str: '-290 bps' -> '-289 bps'"
     assert any(line.startswith("Factor Profile, table 1, row 3: ") for line in lines)
@@ -425,14 +438,19 @@ def test_differences_names_each_figure_that_moved():
                                "['9.9%']") for line in lines)
     assert ("Performance, labels: no longer stated ['duration_vs_benchmark=in_line']; now "
             "stated ['duration_vs_benchmark=below']") in lines
-    assert len(lines) == 4
-    # An entry written before labels were read is compared on its figures alone.
+    assert ("Executive Summary, in words: no longer printed ['99th']; now printed ['98th']"
+            in lines)
+    assert len(lines) == 5
+    # An entry written before labels, or figures in words, were read is compared on its
+    # figures alone.
     before = json.loads(json.dumps(was))
     for s in before["sections"].values():
         del s["labels"]
-    assert not lf.holds_labels(before)
+        del s["in_words"]
+    assert not lf.holds_labels(before) and not lf.holds_in_words(before)
     figures_only = lf.differences(before, now)
-    assert len(figures_only) == 3 and not any(", labels: " in line for line in figures_only)
+    assert len(figures_only) == 3 and not any(
+        ", labels: " in line or ", in words: " in line for line in figures_only)
 
 
 # ── wording moves nothing ────────────────────────────────────────────────────
@@ -548,6 +566,109 @@ def test_the_writer_records_labels_once_and_refuses_a_moved_class():
         tool.updated({book: GOLDEN[book]}, {book: flipped})
     with pytest.raises(SystemExit, match="figures moved in 1 lock"):
         tool.updated({book: GOLDEN[book]}, {book: flipped}, wording="the duration line")
+
+
+# ── a figure printed in words (#541) ──────────────────────────────────────────
+
+def test_a_figure_printed_in_words_is_read_whole_and_the_words_around_it_are_not():
+    """The CAPE sentence as the report prints it: its percentile is an ordinal and its
+    reading's month a word, so the number scan read "40.9x" and the years and nothing
+    of either. Each is read whole now, and rewording around them moves nothing."""
+    said = _m("CAPE stands at 40.9x, in the 99th percentile (June 2026, read October 13, "
+              "2026 from multpl.com). The window ran May 2, 2025 to June 30, 2026.")
+    again = _m("At 40.9x, CAPE ranks 99th on its history; read October 13, 2026, for June "
+               "2026, over the window from May 2, 2025 to June 30, 2026.")
+    one, two = lf.figures_of(f"<p>{said}</p>"), lf.figures_of(f"<p>{again}</p>")
+    assert one == two == {"tables": [], "labels": [],
+                          "text": ["13", "2", "2025", "2026", "2026", "2026", "30", "40.9x"],
+                          "in_words": ["99th", "June 2026", "June 30, 2026", "May 2, 2025",
+                                       "October 13, 2026"]}
+    # A spelled-out number is one; a name holding a digit, "may" the verb and a
+    # label's words are not.
+    assert lf.in_words_in("Three sleeves in Q2 2026 on FF5 terms may move.") == ["Three"]
+    assert lf.figures_of("<p>" + _m("is " + lf.labelled(
+        "significance", "none", "not distinguishable from zero")) + "</p>")["in_words"] == []
+
+
+def test_every_committed_entry_holds_its_figures_in_words():
+    """Each section of each committed entry carries its figures in words, so no entry is
+    one written before they were read; and the count the golden was written with. Every
+    lock's executive summary prints the CAPE percentile as one ordinal."""
+    ordinals = set()
+    for book, quarter in CASES:
+        entry = GOLDEN[book][quarter]
+        assert lf.holds_in_words(entry), (book, quarter)
+        for s in entry["sections"].values():
+            assert s["in_words"] == sorted(s["in_words"])
+        said = [w for w in entry["sections"]["Executive Summary"]["in_words"]
+                if re.fullmatch(r"\d+(st|nd|rd|th)", w)]
+        assert len(said) == 1, (book, quarter, said)
+        ordinals.update(said)
+    assert ordinals == {"97th", "98th", "99th"}
+    assert sum(lf.count_in_words(GOLDEN[b][q]) for b, q in CASES) == 168, (
+        "the count the golden was written with")
+
+
+def test_a_cape_percentile_moved_by_one_rank_fails_on_its_ordinal_alone(
+        tmp_path, monkeypatch):
+    """The proof for #541: the CAPE percentile computed one rank lower. No number, cell,
+    tile or label moves (97th to 99th less one stays elevated), so before the golden
+    read figures in words this passed. It fails now, on each lock's ordinal and nothing
+    else, and the writer refuses it."""
+    from src import reports
+    tool, book = _tool(), "frozen_book.db"
+    ranked = reports.percentile
+    monkeypatch.setattr(reports, "percentile", lambda series, value: ranked(series, value) - 1)
+    lower = lf.render_book(book, tmp_path)
+    moved = {q: lf.differences(GOLDEN[book][q], lower[q]) for q in GOLDEN[book]}
+    for quarter, lines in moved.items():
+        was = [w for w in GOLDEN[book][quarter]["sections"]["Executive Summary"]["in_words"]
+               if w.endswith(("st", "nd", "rd", "th"))]
+        now = f"{int(was[0][:-2]) - 1}th"
+        assert lines == [f"Executive Summary, in words: no longer printed {was}; now "
+                         f"printed [{now!r}]"], (quarter, lines)
+    # The same move against entries without their figures in words: nothing differs,
+    # which is what the golden held before #541.
+    without = json.loads(json.dumps(GOLDEN[book]))
+    for entry in without.values():
+        for s in entry["sections"].values():
+            del s["in_words"]
+    assert all(lf.differences(without[q], lower[q]) == [] for q in without)
+    with pytest.raises(SystemExit, match="figures moved in 5 lock.s. whose own records did "
+                                         "not change"):
+        tool.updated({book: GOLDEN[book]}, {book: lower})
+
+
+def test_the_writer_records_figures_in_words_once_and_lets_a_reworded_one_through():
+    tool, book = _tool(), "frozen_book.db"
+    render = {q: dict(e, cover="") for q, e in json.loads(json.dumps(GOLDEN[book])).items()}
+    # An entry from before figures in words were read gains them, nothing else moving.
+    before = json.loads(json.dumps(GOLDEN[book]))
+    for entry in before.values():
+        for s in entry["sections"].values():
+            del s["in_words"]
+    new, report = tool.updated({book: before}, {book: render})
+    assert new == {book: GOLDEN[book]}
+    assert report[0] == ("frozen_book.db 2025Q2: 16 figures in words recorded for the first "
+                         "time, no figure moved")
+    assert len(report) == 5
+    # The first recording lets no figure through.
+    moved_too = json.loads(json.dumps(render))
+    moved_too["2026Q2"]["tiles"]["alpha_sp_str"] = "-289 bps"
+    with pytest.raises(SystemExit, match="figures moved in 1 lock"):
+        tool.updated({book: before}, {book: moved_too})
+    # A typed number word reworded away ("the one equity region") is running text: it is
+    # refused, and goes through with --wording.
+    reworded = json.loads(json.dumps(render))
+    words = reworded["2026Q2"]["sections"]["Factor Profile"]["in_words"]
+    assert "one" in words, "premise: the cap-weight sentence types 'one'"
+    words.remove("one")
+    with pytest.raises(SystemExit, match="figures moved in 1 lock"):
+        tool.updated({book: GOLDEN[book]}, {book: reworded})
+    new, report = tool.updated({book: GOLDEN[book]}, {book: reworded},
+                               wording="the cap-weight sentence")
+    assert report == ["frozen_book.db 2026Q2: 1 line(s) of running-text numbers moved by "
+                      "rewording (the cap-weight sentence)"]
 
 
 # ── the proof: a method parameter, alone and carried as a restatement ────────
