@@ -10,8 +10,9 @@ or intercept with t between 1.65 and 2.0 was starred in the table and given a le
 the report, and read here as not significant.
 
 The caption now asks the label: a style loading is listed when the label names a level,
-and a significant intercept is called by that level's words. `_T_SIG` stays only for
-interpret_sleeve_regression, which no page calls.
+and a significant intercept is called by that level's words. `_T_SIG` stayed for
+interpret_sleeve_regression alone, which no page called. Both are deleted, with that
+function's tests (#559's second question, decided by the owner on October 14, 2026).
 """
 from __future__ import annotations
 
@@ -94,3 +95,11 @@ def test_the_page_prints_the_caption_and_types_no_cut_off():
              and any(isinstance(c, ast.Constant) and isinstance(c.value, float)
                      for c in ast.walk(n))]
     assert typed == [], typed
+
+
+def test_the_dead_function_and_its_cut_off_are_gone():
+    """interpret_sleeve_regression, which no page called, read `_T_SIG = 2.0` and the
+    `_R2_LOW` beside it, which nothing else read. A dead function with its own cut-off is
+    how the 2.0 outlived the label's cut-offs (#559), so all three are deleted."""
+    for name in ("interpret_sleeve_regression", "_T_SIG", "_R2_LOW"):
+        assert not hasattr(factors, name), name

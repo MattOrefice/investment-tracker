@@ -36,7 +36,6 @@ from src.macro import (
 from src.factors import (
     interpret_benchmark_attribution,
     interpret_correlations,
-    interpret_sleeve_regression,
 )
 
 
@@ -241,86 +240,6 @@ class TestInterpretUsVsIntlSpread:
     def test_no_unrendered_placeholders(self):
         for spread, mean in [(20.0, 5.0), (8.0, 5.0), (5.0, 5.0), (-5.0, 5.0), (-15.0, 5.0)]:
             _assert_no_placeholders(interpret_us_vs_intl_spread(spread, mean))
-
-
-# ── 6. interpret_sleeve_regression ──────────────────────────────────────────
-
-def _make_res(
-    betas: dict,
-    t_stats: dict,
-    alpha_bps: float = 0.0,
-    t_alpha: float = 0.5,
-    r2: float = 0.92,
-    T: int = 250,
-) -> dict:
-    p_values = {f: 0.05 if abs(t) >= 2.0 else 0.30 for f, t in t_stats.items()}
-    return {
-        "betas":            betas,
-        "t_stats":          t_stats,
-        "p_values":         p_values,
-        "alpha_annual_bps": alpha_bps,
-        "t_alpha":          t_alpha,
-        "p_alpha":          0.06 if abs(t_alpha) >= 1.65 else 0.30,
-        "r_squared":        r2,
-        "adj_r_squared":    r2 - 0.01,
-        "T":                T,
-        "nw_lags":          4,
-        "sleeve_label":     "Test Sleeve",
-        "sample_start":     "2025-05-01",
-        "sample_end":       "2026-05-01",
-        "tickers":          ["TST"],
-    }
-
-
-class TestInterpretSleeveRegression:
-    def test_significant_hml_appears(self):
-        res = _make_res(
-            betas={"Mkt-RF": 1.0, "HML": 0.30, "SMB": 0.05, "RMW": -0.10, "CMA": 0.02},
-            t_stats={"Mkt-RF": 20.0, "HML": 3.5, "SMB": 0.8, "RMW": -2.5, "CMA": 0.4},
-        )
-        text = interpret_sleeve_regression(res, ["Mkt-RF", "HML", "SMB", "RMW", "CMA"])
-        assert "HML" in text
-        assert "+0.300" in text or "0.300" in text
-
-    def test_alpha_insignificant_says_so(self):
-        res = _make_res(
-            betas={"Mkt-RF": 1.0, "HML": 0.2},
-            t_stats={"Mkt-RF": 18.0, "HML": 1.0},
-            alpha_bps=25.0, t_alpha=0.9,
-        )
-        text = interpret_sleeve_regression(res, ["Mkt-RF", "HML"])
-        assert "not statistically significant" in text.lower() or "statistically" in text.lower()
-
-    def test_significant_alpha_flagged(self):
-        res = _make_res(
-            betas={"Mkt-RF": 1.0, "HML": 0.1},
-            t_stats={"Mkt-RF": 15.0, "HML": 0.5},
-            alpha_bps=800.0, t_alpha=2.8,
-        )
-        text = interpret_sleeve_regression(res, ["Mkt-RF", "HML"])
-        assert "800" in text
-        assert "significant" in text.lower()
-
-    def test_low_r2_flagged(self):
-        res = _make_res(
-            betas={"Mkt-RF": 0.5},
-            t_stats={"Mkt-RF": 5.0},
-            r2=0.45,
-        )
-        text = interpret_sleeve_regression(res, ["Mkt-RF"])
-        assert "0.45" in text or "low" in text.lower() or "R²" in text
-
-    def test_none_result_returns_unavailable(self):
-        text = interpret_sleeve_regression(None)
-        assert "unavailable" in text.lower()
-
-    def test_no_unrendered_placeholders(self):
-        res = _make_res(
-            betas={"Mkt-RF": 1.0, "HML": 0.30, "SMB": 0.05, "RMW": -0.10, "CMA": 0.02},
-            t_stats={"Mkt-RF": 20.0, "HML": 3.5, "SMB": 0.8, "RMW": -2.5, "CMA": 0.4},
-        )
-        text = interpret_sleeve_regression(res, ["Mkt-RF", "HML", "SMB", "RMW", "CMA"])
-        _assert_no_placeholders(text)
 
 
 # ── 7. interpret_benchmark_attribution ──────────────────────────────────────
