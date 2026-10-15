@@ -999,11 +999,21 @@ def capture_quarter_snapshot(quarter_id: str) -> tuple:
     between its own first and last, on which another ticker holds one, refuses the
     same way (_interior_gaps): the lock would freeze the gap.
 
-    A ticker with NO usable prices at all stays what #204 made it, a disclosed gap
-    read live and named on the cover. That is a different fact: the symbol cannot
-    be priced from any source (the personal book holds 46 household-only symbols
-    with no price rows), and refusing on it would make every personal lock
-    impossible.
+    THE LOCK FETCHES WHAT THE BOOK LACKS (#594, decided by the owner on October 15,
+    2026). Every ticker is read through prices.get_prices, which fetches and stores
+    as any read does. A ticker with no stored closes is fetched whole, whatever
+    get_prices' gap fetch says. With the gap fetch on, as in personal mode, a ticker
+    whose first stored close is later than this read's 2020-01-01 start is fetched
+    back to it. The personal book's household-only symbols, held in accounts other
+    than the portfolio's, have no stored closes until its first lock, and most are
+    exchange-listed funds the provider prices. So that lock stores their histories and
+    holds them as priced tickers. The portfolio's figures do not depend on it: its
+    reads are scoped to its own account. The demo's committed locks are taken offline
+    (tools/lock_demo_quarters.py), from the committed book.
+
+    A ticker for which the provider returns nothing stays what #204 made it, a
+    disclosed gap read live and named on the cover. That is a different fact from a
+    short or gapped history: refusing on it would make every personal lock impossible.
 
     Raises ValueError if the quarter has not yet ended.
     """
