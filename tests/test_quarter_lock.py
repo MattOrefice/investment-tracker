@@ -204,8 +204,9 @@ def test_a_quarter_the_data_does_not_reach_is_refused_naming_the_dates(tmp_path,
 ])
 def test_coverage_requires_the_quarters_last_session_close(end, served, refused):
     """Two-sided, both ends (#454). This pinned a 5-day allowance
-    (QUARTER_END_COVERAGE_DAYS) until the allowance was found to lock a weekday quarter
-    on the previous session's close; it pins the rule that replaced it."""
+    (QUARTER_END_COVERAGE_DAYS, removed with #466) until the allowance was found to lock
+    a weekday quarter on the previous session's close; it pins the rule that replaced
+    it."""
     from src.cache import _short_coverage, last_session_on_or_before
     from src.coverage import TickerStatus
     need = last_session_on_or_before(end)

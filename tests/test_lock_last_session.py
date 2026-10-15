@@ -14,6 +14,11 @@ previous session's: measured on Q2 2026, SPY 741.00 against 746.77. Now:
   * is_quarter_complete reads New York's date.
 
 And every committed lock is checked against the rule.
+
+The French factors and momentum kept a five-calendar-day allowance until #466 (decided
+by the owner on September 28, 2026). They now need the quarter's last NYSE session too:
+French publishes whole months, so a file ends on a month's last business day, and
+Q3 2026's pending French inputs need September 30 under either rule.
 """
 from __future__ import annotations
 
@@ -28,6 +33,7 @@ from tests.conftest import pin_today, point_at_frozen_book, unpin_leftovers
 
 ROOT = Path(__file__).resolve().parent.parent
 BOOKS = [ROOT / "data" / "demo.db", ROOT / "tests" / "fixtures" / "frozen_book.db"]
+FRENCH = ("ff5_us", "ff5_developed_exus", "umd")
 
 
 def _drop(path, sql, *args):
@@ -145,3 +151,39 @@ def test_every_committed_lock_reaches_its_last_session(book):
             short = {t: d for t, d in _ends(b[basis]).items() if d < need}
             assert short == {}, (book.name, qid, basis, short)
         assert b["inputs_through"]["hyg"] >= need, (book.name, qid)
+        for name in FRENCH:
+            if name in b["inputs_through"]:
+                assert b["inputs_through"][name] >= need, (book.name, qid, name)
+            else:
+                assert name in b["inputs_pending"], (book.name, qid, name)
+
+
+@pytest.mark.parametrize("end, last, held", [
+    # A weekday quarter end: the day before it was inside the old five-day allowance.
+    (date(2026, 9, 30), date(2026, 9, 29), False),
+    (date(2026, 9, 30), date(2026, 9, 30), True),
+    (date(2026, 9, 30), date(2026, 8, 31), False),    # Q3 2026's committed files today
+    # A quarter ending on a Saturday: that Friday's row covers it, Thursday's does not.
+    (date(2028, 9, 30), date(2028, 9, 29), True),
+    (date(2028, 9, 30), date(2028, 9, 28), False),
+])
+def test_the_french_inputs_need_the_quarters_last_session(end, last, held, monkeypatch):
+    """Both sides of the rule, and two cases the five-day allowance took as covering."""
+    import pandas as pd
+    from src import cache, factors
+    days = pd.bdate_range("2026-01-02", last.isoformat(), name="Date")
+    frame = pd.DataFrame(0.0, index=days, columns=["Mkt-RF", "SMB", "HML", "RMW", "CMA", "RF"])
+    monkeypatch.setattr(factors, "load_factors", lambda region: frame)
+    monkeypatch.setattr(factors, "load_umd_factor", lambda: frame["RF"].rename("Mom"))
+    enc, through, pending = cache._capture_inputs(end, [], only=FRENCH)
+    if held:
+        assert set(enc) == set(FRENCH) and through == dict.fromkeys(FRENCH, last.isoformat())
+        assert pending == {}
+    else:
+        assert enc == {} and through == {}
+        assert pending == dict.fromkeys(FRENCH, last.isoformat())
+
+
+def test_the_five_day_allowance_is_gone():
+    import src.asof as asof
+    assert not hasattr(asof, "QUARTER_END_COVERAGE_DAYS")
