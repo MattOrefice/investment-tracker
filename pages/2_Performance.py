@@ -739,6 +739,9 @@ with col:
         "spy":     "S&P 500 (SPY)",
         "60_40":   _6040,
     }
+    # The 60/40 series' gaps, disclosed under its row as the Stage 1 chart discloses
+    # them. The page-level notices above already cover the blended and SPY series.
+    _risk_bm_gaps: list = []
     if _risk_bm_kind == "blended":
         _bl_for_metrics = bl / float(bl.iloc[0])
         _risk_bm_label  = "Custom Blended SAA"
@@ -746,7 +749,9 @@ with col:
         _bl_for_metrics = sp / float(sp.iloc[0])
         _risk_bm_label  = "S&P 500 (SPY)"
     else:
-        _naive_60_40 = _load_naive_benchmark(start_val, _C, "60_40")
+        # A (series, gaps) pair since 710e9d3; this branch used the pair as the series
+        # and raised on .index (#417).
+        _naive_60_40, _risk_bm_gaps = _load_naive_benchmark(start_val, _C, "60_40")
         _naive_60_40 = _naive_60_40[_naive_60_40.index <= _C_ts]
         _bl_for_metrics = _naive_60_40 / float(_naive_60_40.iloc[0])
         _risk_bm_label  = _6040_full
@@ -844,6 +849,8 @@ with col:
             _b4.metric("Max DD",         _fmt_pct(_m["bench_max_drawdown_pct"]))
             _b5.metric("VaR (95%)",      _fmt_pct(_m["bench_var_95_pct"]))
             _b6.metric("CVaR (95%)",     _fmt_pct(_m["bench_cvar_95_pct"]))
+            if _risk_bm_gaps:
+                st.warning(benchmark_gap_notice(_risk_bm_gaps))
 
             _rf_sel = _rf_by_window[_RISK_WINDOW_CODES[_window_label]]
             if _rf_sel is not None:
