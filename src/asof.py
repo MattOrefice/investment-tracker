@@ -7,13 +7,6 @@ from zoneinfo import ZoneInfo
 # and the label is "ET" for both.
 ET = ZoneInfo("America/New_York")
 
-# The calendar-day allowance the French factors and momentum are still gated on
-# (cache._capture_inputs): French publishes whole months, so their rows end on a
-# month's last business day. It was the price rule too, for the lock until #454 and
-# for the reportable-quarter cap until #458; both now need the close of the
-# quarter's last NYSE session (cache.last_session_on_or_before).
-QUARTER_END_COVERAGE_DAYS = 5
-
 # ── Committed market-data staleness (factor / valuation inputs) ────────────────
 # The tracked market-data files (Ken French factor caches, Shiller CAPE,
 # trailing P/E) are refreshed ONLY by tools/refresh_market_data.py — loaders
@@ -134,7 +127,7 @@ def _quarter_end_is_priceable(q_end: date, frontier: date | None) -> bool:
     """True when committed data holds the close of the quarter's last NYSE session:
     the lock's rule (#454), so the page names a quarter only once its lock can be taken
     (#458). A quarter ending on a weekend or holiday needs the session before it, and
-    no earlier one. It used to allow data ending up to QUARTER_END_COVERAGE_DAYS short,
+    no earlier one. It used to allow data ending up to five calendar days short,
     so for one to five days the page named the new quarter and showed the lock's
     refusal instead of stepping back.
 

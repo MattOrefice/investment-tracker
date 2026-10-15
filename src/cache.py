@@ -432,12 +432,18 @@ def _capture_inputs(end: date, tickers: "list[str]",
 
     Each input as its section's reader returns it, cut at the quarter's last day
     (#371's rule, applied to every input). An input whose data stops short of the
-    quarter is PENDING instead: the French factors (and momentum) when they end
-    more than QUARTER_END_COVERAGE_DAYS before the quarter does, HYG without the close
-    of the quarter's last NYSE session (the price gate's rule, #454), and CAPE until
-    the quarter's last month has a reading made after that month's last NYSE session
+    quarter is PENDING instead: the French factors (and momentum) and HYG without the
+    quarter's last NYSE session (the price gate's rule, #454), and CAPE until the
+    quarter's last month has a reading made after that month's last NYSE session
     (#478 I06). French publishes about a month late, so on October 1 a Q3 lock holds
     prices, and CAPE once it has been read again, while its factor sections wait.
+
+    The French files were held to a five-calendar-day allowance until #466 (decided by
+    the owner on September 28, 2026): rows ending up to five days before the quarter's
+    last day were taken as covering it. French publishes whole months, so a file ends
+    on a month's last business day, and every committed lock's French inputs reach
+    their quarter's last session; the allowance goes, and one rule covers every dated
+    input.
 
     HYG, the FI regression's credit proxy, comes from the price layer with the price
     rule (dividends through the quarter's last day) and the French gate (#386). The
@@ -450,12 +456,11 @@ def _capture_inputs(end: date, tickers: "list[str]",
     which is never pending (#525). ``policy_after_lock`` marks it as given to a lock
     already taken, whose quarter it may not describe."""
     from src import etf_metadata, factors, shiller
-    from src.asof import QUARTER_END_COVERAGE_DAYS
 
     want = set(only or ALL_INPUTS)
     end_ts = pd.Timestamp(end)
     start_ts = pd.Timestamp(_INPUT_START)
-    floor = end - timedelta(days=QUARTER_END_COVERAGE_DAYS)
+    floor = last_session_on_or_before(end)      # the price gate's rule (#454, #466)
     enc: dict = {}
     through: dict = {}
     pending: dict = {}
@@ -878,7 +883,7 @@ def _short_coverage(statuses: "list[TickerStatus]", end: date) -> "list[str]":
 
     THE RULE (#454): every ticker the lock covers must have the close of the
     quarter's last NYSE session (last_session_on_or_before). It used to allow prices
-    ending up to QUARTER_END_COVERAGE_DAYS short, meant for a quarter ending on a
+    ending up to five calendar days short, meant for a quarter ending on a
     weekend or holiday; on a weekday quarter end that let a lock taken before the
     last close was stored freeze the quarter on the previous session's, measured on
     Q2 2026 (SPY 741.00 against 746.77). A weekend or holiday end needs the session
