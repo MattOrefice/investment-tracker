@@ -191,3 +191,156 @@ def test_off_the_timer_the_page_keeps_its_retry_buttons(page, monkeypatch):
     captions, retry, unavailable = _render(monkeypatch)
     assert unavailable and len(retry) == len(unavailable)
     assert not any(c.startswith("FREDRetryWait:") for c in captions)
+
+
+# ── a read that finds the cache locked (#580) ─────────────────────────────────
+#
+# Under -n 4 on GitHub's runner the warm held the runtime cache locked past SQLite's
+# busy timeout (5 seconds), and the Macro page's read of USREC raised "OperationalError:
+# database is locked" inside its 15-second wait: run 38757697063, the third render of
+# test_the_macro_page_does_not_fetch_fred_between_renders[warm-fetches]. These tests
+# shorten the timeout to BUSY_TIMEOUT so a lock held past it costs about a second.
+
+BUSY_TIMEOUT = 0.2
+HOLD = 1.5
+
+
+def _short_busy_timeout(monkeypatch) -> None:
+    """Every SQLite connection the test opens waits BUSY_TIMEOUT for a lock."""
+    import sqlite3
+    real = sqlite3.connect
+    monkeypatch.setattr(sqlite3, "connect",
+                        lambda *a, **k: real(*a, **{**k, "timeout": BUSY_TIMEOUT}))
+
+
+def _warm_on(monkeypatch) -> None:
+    monkeypatch.setenv("DEMO_FRED_WARM", "1")
+    monkeypatch.setattr(macro, "_WARM_THREAD", None)
+    monkeypatch.setattr(macro, "_WARM_DAY", None)
+    monkeypatch.setattr(macro, "_SERIES_LOCKS", {})
+    monkeypatch.setattr(macro, "_STALLED_WARM", None)
+
+
+def _record_locked_reads(monkeypatch) -> "list[str]":
+    """The sqlite error names of the read steps that raised, as each raised. A read step
+    opens the cache twice, for the table check and for the row, and either can find it
+    locked."""
+    errors: list[str] = []
+
+    def recording(real):
+        def step(*a, **k):
+            try:
+                return real(*a, **k)
+            except Exception as exc:
+                errors.append(str(getattr(exc, "sqlite_errorname", type(exc).__name__)))
+                raise
+        return step
+
+    for name in ("_ensure_cache_table", "_read_cached"):
+        monkeypatch.setattr(macro, name, recording(getattr(macro, name)))
+    return errors
+
+
+def test_a_read_waits_out_a_warm_that_holds_the_cache_past_the_busy_timeout(fred,
+                                                                            monkeypatch):
+    """The warm's USREC commit holds the cache for HOLD seconds, past BUSY_TIMEOUT. The
+    read finds it locked, reads again, and returns the row once the commit lands."""
+    import json
+    import sqlite3
+    import time
+    _clock, calls, up = fred
+    up["fred"] = True
+    _warm_on(monkeypatch)
+    _short_busy_timeout(monkeypatch)
+    errors = _record_locked_reads(monkeypatch)
+    real_store = macro._fetch_and_store
+    held: list[float] = []
+
+    def slow_commit(series_id, start_date, today):
+        if series_id != "USREC":
+            return real_store(series_id, start_date, today)
+        raw = macro.fetch_fred_series(series_id, start_date)
+        payload = {"dates": [str(d.date()) for d in raw.index],
+                   "values": [float(v) for v in raw.values],
+                   "requested_start": start_date}
+        conn = sqlite3.connect(str(db._RUNTIME_CACHE[1]), isolation_level=None)
+        try:
+            conn.execute("BEGIN EXCLUSIVE")
+            conn.execute("INSERT OR REPLACE INTO runtime_macro_cache "
+                         "(series_id, fetch_date, data) VALUES (?, ?, ?)",
+                         (series_id, today, json.dumps(payload)))
+            held.append(time.monotonic())
+            time.sleep(HOLD)
+            conn.execute("COMMIT")
+        finally:
+            conn.close()
+        return raw
+
+    monkeypatch.setattr(macro, "_fetch_and_store", slow_commit)
+    try:
+        series = macro.get_series("USREC", "1945-01-01")
+    finally:
+        _join_warm()                   # no thread outlives the test, even on failure
+    assert held, "premise: the warm held the cache while it wrote USREC"
+    assert errors and all(e.startswith("SQLITE_BUSY") for e in errors), (
+        "premise: a read found the cache locked past the busy timeout", errors)
+    assert not series.empty and calls[0] == "USREC"
+
+
+def test_a_cache_locked_past_the_deadline_still_ends_the_wait(fred, monkeypatch):
+    """The page's wait stays bounded: a lock that does not lift ends the read soon after
+    its deadline, and the read reports it. The lock is lifted at SAFETY seconds whatever
+    happens, so a read that waited past its deadline ends there and fails the bound
+    rather than hanging the suite."""
+    import sqlite3
+    import threading
+    import time
+    SAFETY = 8.0
+    _warm_on(monkeypatch)
+    _short_busy_timeout(monkeypatch)
+    errors = _record_locked_reads(monkeypatch)
+    blocker = sqlite3.connect(str(db._RUNTIME_CACHE[1]), isolation_level=None,
+                              check_same_thread=False)
+    guard = threading.Lock()
+    held = [False]
+
+    def release():
+        with guard:
+            if held[0]:
+                blocker.execute("ROLLBACK")
+                held[0] = False
+
+    timer = threading.Timer(SAFETY, release)
+    try:
+        blocker.execute("BEGIN EXCLUSIVE")
+        held[0] = True
+        timer.start()
+        start = time.monotonic()
+        with pytest.raises(sqlite3.OperationalError, match="database is locked"):
+            macro.get_series("USREC", "1945-01-01", deadline=start + 1.0)
+        elapsed = time.monotonic() - start
+    finally:
+        timer.cancel()
+        timer.join()
+        release()
+        blocker.close()
+        warm = macro._WARM_THREAD
+        _join_warm()
+    assert len(errors) >= 2, ("premise: it read again after a locked read", errors)
+    assert 1.0 <= elapsed < 5.0, elapsed
+    assert warm is None, "a locked read starts no warm"
+
+
+def test_a_read_error_other_than_a_lock_still_raises(fred, monkeypatch):
+    """Only the busy timeout reads again. Any other OperationalError is not a row that
+    has yet to arrive, and raises as it did."""
+    import sqlite3
+    _warm_on(monkeypatch)
+
+    def broken(*_a, **_k):
+        raise sqlite3.OperationalError("no such table: runtime_macro_cache")
+
+    monkeypatch.setattr(macro, "_read_cached", broken)
+    with pytest.raises(sqlite3.OperationalError, match="no such table"):
+        macro.get_series("USREC", "1945-01-01")
+    assert macro._WARM_THREAD is None
