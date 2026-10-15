@@ -50,8 +50,11 @@
 
 ## Before every push
 - Run the full CI-style suite on the tip you will push: `TRACKER_MODE=demo
-  python -m pytest -q` in a worktree with no `data/tracker.db`. A targeted run
-  cannot see a relationship between two correct lines (#366, #380, #387).
+  python -m pytest -q -n 4` in a worktree with no `data/tracker.db`, with
+  `requirements-ci.txt` installed: it is `requirements.txt` plus pytest-xdist,
+  pinned, which only the test run needs and Streamlit Cloud never installs (#544).
+  A targeted run cannot see a relationship between two correct lines (#366, #380,
+  #387).
 - For any PR that changes a rendered page, ALSO run the `live_data` tests in
   demo mode, as the scheduled job does: `TRACKER_MODE=demo python -m pytest -m
   live_data -q`. pytest.ini excludes them from the default suite and PR CI, so a
@@ -91,11 +94,16 @@
       personal fixtures are present. Guards UP (see below) — since
       #269/#270 both guard states give identical failure sets by name,
       so guards-up is the default rather than merely permitted.
-    - CI, demo mode: `python -m pytest --tb=long -q` with
+    - CI, demo mode: `python -m pytest --tb=long -q -n 4` with
       TRACKER_MODE=demo and NO data/tracker.db (it is gitignored, so
       tests keyed on the personal cache skip). This is the only
       demo-mode full suite that matters — verify it by SHA rather than
       reproducing it locally.
+  CI runs the suite on four workers since #544 (October 14, 2026); the
+  personal harness stays serial. A test whose outcome differs between a
+  serial run and a parallel one, now or later, is a STOP: diff the two by
+  junit id, outcome and message. Under `-n` the summary line prints no
+  deselected count, so take the selected count from `--collect-only`.
   No count is written here on purpose: like a tip SHA, a baseline
   figure is false the moment the next PR adds a test. Re-measure and
   quote the harness with it.

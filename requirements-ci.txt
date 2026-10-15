@@ -1,0 +1,7 @@
+# What CI installs, and the local CI-style harness (CLAUDE.md, "Before every push"):
+# the app's requirements plus what only the test run needs. Streamlit Cloud installs
+# requirements.txt alone, so nothing listed here reaches the deployed app (#544).
+-r requirements.txt
+# Pinned exactly: CI runs the suite on four workers with it (-n 4). 3.8.0 is the
+# version #544's trial ran, serially and in parallel, on GitHub's runner.
+pytest-xdist==3.8.0

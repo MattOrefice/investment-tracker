@@ -186,7 +186,7 @@ The personal portfolio (`TRACKER_MODE=personal`, `data/tracker.db`) is gitignore
 
 ## CI/CD
 
-GitHub Actions runs `python -m pytest` under `TRACKER_MODE=demo` on every push and pull request to `main`, and each run reports its own pass, skip and deselect counts. Slow and live-data tests are excluded via `pytest.ini`, so no external API calls run on PRs. A separate scheduled workflow (`.github/workflows/live-data.yml`, daily plus manual dispatch) runs only the live-data integration tests against the live Ken French and Yahoo endpoints, so ingestion-contract coverage stays decoupled from PR gating. See `docs/ci_setup.md` for branch protection and secrets configuration.
+GitHub Actions runs `python -m pytest -n 4` under `TRACKER_MODE=demo` on every push and pull request to `main`, on four workers with pytest-xdist (installed from `requirements-ci.txt`, which Streamlit Cloud never reads), and each run reports its own pass and skip counts. Slow and live-data tests are excluded via `pytest.ini`, so no external API calls run on PRs. A separate scheduled workflow (`.github/workflows/live-data.yml`, daily plus manual dispatch) runs only the live-data integration tests against the live Ken French and Yahoo endpoints, so ingestion-contract coverage stays decoupled from PR gating. See `docs/ci_setup.md` for branch protection and secrets configuration.
 
 ---
 

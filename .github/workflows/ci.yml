@@ -22,11 +22,11 @@ jobs:
     # verification leg rather than merely being annoying.
     #
     # Without this the job inherits GitHub's 360-minute default. Measured normal for
-    # the whole job: about 12 minutes on GitHub's runner, as of October 14, 2026 (run
-    # 38596909747, 728 s: the test step plus about 40 seconds around it, after #544 cut
-    # the suite's four slowest causes). An approximation dated to its measurement, not
-    # a range: a single run can take longer. 30 is more than 2x that
-    # and cannot fire on a merely slow run. This is the backstop for
+    # the whole job: about 6 minutes on GitHub's runner with the suite on four workers,
+    # as of October 14, 2026 (run 38636521102, #544's trial: 368, 318 and 391 s, against
+    # 735 s for a serial job on the same commit). An approximation dated to its
+    # measurement, not a range: a single run can take longer. 30 is more than 2x the
+    # serial job too, and cannot fire on a merely slow run. This is the backstop for
     # every step with no timeout of its own; the step-level values below are tighter
     # where a normal has been measured.
     timeout-minutes: 30
@@ -70,13 +70,16 @@ jobs:
       # test, which is a different question from this one and is filed, not assumed.
 
       - name: Install Python dependencies
-        run: pip install -r requirements.txt
+        run: pip install -r requirements-ci.txt
+        # requirements-ci.txt is requirements.txt plus pytest-xdist, which only the test
+        # run needs. Streamlit Cloud installs requirements.txt alone, so the deployed app
+        # never carries it (#544).
         # pip is now the only network-bound install step and the natural heir to the
         # hang risk. Observed normal ~30s (00:41:34 -> 00:42:03).
         timeout-minutes: 5
 
       - name: Show key package versions (diagnostic)
-        run: pip show streamlit weasyprint kaleido plotly statsmodels | grep -E "^(Name|Version):"
+        run: pip show streamlit weasyprint kaleido plotly statsmodels pytest-xdist | grep -E "^(Name|Version):"
 
       - name: Guard — render_sidebar_footer called in app.py
         run: grep -n "render_sidebar_footer" app.py
@@ -106,19 +109,24 @@ jobs:
 
       - name: Run fast tests (slow/network tests excluded)
         # Exclusions live in pytest.ini addopts (not slow and not live_data). Do NOT add a CLI -m here — it overrides addopts and silently re-includes the live_data tests (live external API calls on every push).
-        run: python -m pytest --tb=long -q
-        # Measured normal: about 11.5 minutes on GitHub's runner, as of October 14, 2026
-        # (run 38596909747: 685 s for this step at 3,351 tests, after #544 cut the
-        # suite's four slowest causes; 788 and 800 s before them, runs 38574952856 and
-        # 38589667339). An approximation dated to its measurement, not a range: a
-        # single run can take longer, and the next measurement replaces this one. This
-        # is where the suite's duration is kept: the README states none, because a
-        # typed duration is out of date after the next PR that adds render tests
-        # (#533). Re-measure it here when a limit changes. 20
+        run: python -m pytest --tb=long -q -n 4
+        # Four workers (pytest-xdist, -n 4), as the owner decided on October 14, 2026
+        # (#544), after a trial on one commit gave all 3,368 tests the same outcome and
+        # message serially and in three runs with -n 4 (run 38636521102). A test whose
+        # outcome differs between a serial run and a parallel one, now or later, is a
+        # STOP: compare them by test id, outcome and message, as the trial did.
+        # Measured normal: about 5 minutes on GitHub's runner, as of October 14, 2026
+        # (run 38636521102: 326, 274 and 346 s for this step with -n 4, against 694 s
+        # serially on the same commit). An approximation dated to its measurement, not
+        # a range: a single run can take longer, and the next measurement replaces this
+        # one. This is where the suite's duration is kept: the README states none,
+        # because a typed duration is out of date after the next PR that adds render
+        # tests (#533). Re-measure it here when a limit changes. 20
         # leaves room for a slow runner while still bounding a hang — a slow test run
-        # and a hung one deserve different verdicts. At a limit of 10 the normal reached
-        # it: two push runs on main were cut off on October 13 with no test failing.
-        # Running the suite in parallel is a separate, measured trial (#544).
+        # and a hung one deserve different verdicts. At a limit of 10 the serial normal
+        # reached it: two push runs on main were cut off on October 13 with no test
+        # failing. 20 also holds a serial run (685 s, run 38596909747), so the limit
+        # stands if the suite ever runs without -n.
         timeout-minutes: 20
         env:
           TRACKER_MODE: demo
