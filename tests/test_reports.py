@@ -136,7 +136,9 @@ def test_cumulative_return_chart_has_y_tick_values():
     """Cumulative return chart must carry explicit tickvals with % ticktext."""
     fig = _build_cumulative_chart(_PV_PCT, _SP_PCT, _BL_PCT)
     yaxis = fig.layout.yaxis
-    assert yaxis.tickvals is not None, "tickvals must be set (kaleido 0.2.1 ignores ticksuffix)"
+    assert yaxis.tickvals is not None, (
+        "tickvals must be set: the % labels are explicit ticks, written when kaleido 0.2.1 "
+        "ignored ticksuffix, so they do not depend on the exporter")
     assert yaxis.ticktext is not None
     assert len(yaxis.tickvals) == len(yaxis.ticktext)
     assert all("%" in t for t in yaxis.ticktext)

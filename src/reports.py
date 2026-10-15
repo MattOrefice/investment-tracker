@@ -3,7 +3,7 @@ Quarterly PDF report generator.
 
 Primary renderer: WeasyPrint (Linux / Streamlit Cloud).
 Windows fallback: xhtml2pdf (no GTK required).
-Charts: Plotly + kaleido 0.2.1.
+Charts: Plotly + kaleido 1.5.0, which drives an installed Chrome or Chromium (#567).
 """
 import base64
 import io
@@ -335,9 +335,11 @@ def _render_pdf(html_content: str) -> bytes:
 def _render_chart_to_png(fig: go.Figure, width: int = 700, height: int = 310) -> Optional[bytes]:
     """
     Render Plotly figure to PNG bytes via kaleido with a 25-second timeout.
-    Uses a daemon thread so a hanging kaleido process (Windows sandbox/AV issue)
-    does not block PDF generation — the chart renders as a placeholder instead.
-    Charts render correctly on Linux/Streamlit Cloud.
+    Uses a daemon thread so a hanging export does not block PDF generation: the chart
+    renders as a placeholder instead. The guard was written for kaleido 0.2.1, which
+    hung on the owner's Windows machine. It stays with kaleido 1.5.0 (#567), which
+    launches an installed Chrome or Chromium for each export: one that cannot be found
+    or does not answer costs a placeholder, not the report.
     """
     import threading
     result: list = [None]

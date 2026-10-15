@@ -15,13 +15,12 @@ streamlit==1.57.0
 pandas>=2.2.0
 numpy>=2.1.0
 yfinance>=0.2.50
-# Pinned exactly: plotly 7 refuses kaleido 0.2.1 (from 7.0.0 it requires kaleido 1.0
-# or later), and the PDF then prints each chart as "chart not available" (#556). Under
-# the range this replaced, CI installed 7.1.0 from September 23, 2026. 6.9.0 is the
-# newest release that accepts kaleido 0.2.1; 6.7.0 is pinned because every local run
-# behind the audit used it, so CI and Cloud match that evidence.
-# tests/test_the_pdf_draws_its_charts.py renders one chart through the PDF's path in
-# CI. Moving to kaleido 1.0, which needs Chrome on Cloud, is #567.
+# Pinned exactly: 6.7.0 is the version every local run behind the audit used, so CI and
+# Cloud match that evidence (#556). Under the range this replaced, CI installed 7.1.0
+# from September 23, 2026, which refused the kaleido then pinned (0.2.1), and the PDF
+# printed each chart as "chart not available". plotly 6.7.0's own kaleido extra asks for
+# kaleido 1.1.0 or later, so it accepts the 1.5.0 pinned below (#567).
+# tests/test_the_pdf_draws_its_charts.py renders one chart through the PDF's path.
 plotly==6.7.0
 # Pinned exactly: fredapi is a thin wrapper whose releases have changed return
 # shapes before, and the Macro page's FRED series feed dated computations. An
@@ -37,7 +36,11 @@ openpyxl>=3.1.0
 jinja2>=3.1.0
 weasyprint>=70.0
 xhtml2pdf>=0.2.10; sys_platform == 'win32'
-kaleido==0.2.1
+# Pinned exactly (#567, decided by the owner on October 15, 2026). kaleido 1.x bundles no
+# browser: it drives an installed Chrome or Chromium, one launch per export. On Cloud
+# that is Debian's chromium package (packages.txt); in CI, the Chrome GitHub's runner
+# already has; on Windows, the installed Chrome. It does not download one.
+kaleido==1.5.0
 lxml>=4.9.0
 statsmodels>=0.14.0
 scipy>=1.14.0

@@ -99,6 +99,6 @@ If a CI run shows red:
 4. Common failure modes:
    - `st.secrets` exception escaping the `except` block → `src/config.py` version guard
    - WeasyPrint missing system libs → the `apt-get install` step in ci.yml should cover this
-   - `kaleido==0.2.1` install failure on Ubuntu 24.04 → no test calls kaleido, but pip failure blocks the suite
+   - `tests/test_the_pdf_draws_its_charts.py` printing "chart not available" → kaleido 1.5.0 found no browser or got none back. CI uses the Chrome GitHub's runner already has, with no apt step, so a runner image without Chrome shows here first (#567)
 
 See `docs/phase_12_2_ci_diagnostic.md` for the Phase 12 root-cause analysis and applied fixes.
