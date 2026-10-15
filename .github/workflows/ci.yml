@@ -8,7 +8,12 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # PINNED TO ubuntu-24.04, NOT ubuntu-latest (decided by the owner, October 15,
+    # 2026). GitHub moves ubuntu-latest to Ubuntu 26.04 gradually between October 19
+    # and November 19, 2026, so during that month one SHA could run on either image,
+    # and a green run would not say which image it was green on. live-data.yml is
+    # pinned the same way. Moving to 26.04 is a trial for later (#585).
+    runs-on: ubuntu-24.04
 
     # A HUNG RUN IS WORSE THAN A FAILED ONE. A failure is a signal; a hang is the
     # absence of one, and an absence invites "it would have passed" — the exact
