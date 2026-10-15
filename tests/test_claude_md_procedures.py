@@ -30,12 +30,15 @@ def test_the_quarterly_close_out_names_the_code_behind_each_step():
                    "refresh_market_data.py --files cape pe",
                    "refresh_market_data.py --files ff_us ff_developed_exus",
                    "complete_quarter_inputs", "inputs_pending", "-m live_data",
+                   "holiday_table_refusal", "NYSE_UNSCHEDULED_CLOSURES",
                    "Not yet supported (#397)"):
         assert needle in s.replace("\n  ", " "), needle
     # The named files and functions exist.
     for path in re.findall(r"tests/test_\w+\.py|tools/\w+\.py", s):
         assert (ROOT / path).exists(), path
-    from src import asof, cache, holdings
+    from src import asof, cache, demo_refresh, holdings
+    assert callable(demo_refresh.holiday_table_refusal)
+    assert demo_refresh.NYSE_UNSCHEDULED_CLOSURES <= demo_refresh.NYSE_HOLIDAYS
     assert callable(holdings.committed_price_frontier)
     assert callable(cache.complete_quarter_inputs) and callable(cache.get_quarter_snapshot)
     assert callable(asof.most_recent_reportable_quarter)

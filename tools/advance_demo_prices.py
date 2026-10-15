@@ -248,6 +248,11 @@ def main(argv: "list[str]") -> int:
     if len(argv) != 2:
         print(__doc__.strip().splitlines()[-1].strip())
         return 2
+    from src.demo_refresh import holiday_table_refusal
+    refusal = holiday_table_refusal()
+    if refusal:
+        print(f"ABORT: {refusal}")
+        return 1
     try:
         report = advance(date.fromisoformat(argv[1]))
     except AdvanceError as exc:

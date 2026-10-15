@@ -181,6 +181,13 @@
 After the quarter's last close, in this order, in the mode whose book you are
 closing (personal from `.env`; demo with `TRACKER_MODE=demo`). Every step names
 the code that supports it; the two with none are listed at the end.
+- First, the NYSE holiday table in `src/demo_refresh.py` must reach the end of next
+  year: `python -c "from src.demo_refresh import holiday_table_refusal as r;
+  print(r())"` prints `None`. The demo's close-out tools (advance, check, lock,
+  complete) refuse to run until it does (#466). Extend it from
+  nyse.com/markets/hours-calendars, and enter an unscheduled closure by hand from
+  NYSE's notice (`NYSE_UNSCHEDULED_CLOSURES`). Nothing falls back when an expected
+  session never trades: a lock waits on that close until the closure is entered.
 - Enter the quarter's durations in `data/etf_metadata.json`: every entry is a
   fund's duration (AGG's stands for the Bloomberg US Agg), with its
   `duration_measure`, `duration_source` and `as_of`; give each a figure dated

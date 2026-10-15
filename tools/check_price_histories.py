@@ -94,6 +94,11 @@ def history_gaps(db_path: Path) -> "list[tuple[str, str, str]]":
 
 def main(argv: "list[str]") -> int:
     from src import config, db
+    from src.demo_refresh import holiday_table_refusal
+    refusal = holiday_table_refusal()
+    if refusal:
+        print(f"ABORT: {refusal}")
+        return 1
     demo = config.IS_DEMO
     path = Path(argv[1]) if len(argv) > 1 else (DEMO_DB if demo else Path(db.DB_PATH))
     if demo:

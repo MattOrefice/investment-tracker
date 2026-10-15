@@ -40,6 +40,11 @@ def _completed_quarters(first_trade: date, today: date) -> "list[str]":
 
 
 def main() -> int:
+    from src.demo_refresh import holiday_table_refusal
+    refusal = holiday_table_refusal()
+    if refusal:
+        print(f"ABORT: {refusal}")
+        return 1
     os.environ.setdefault("DEMO_DAILY_FETCH", "0")
     import src.db as db
     import src.prices as prices

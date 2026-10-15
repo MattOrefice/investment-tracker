@@ -121,6 +121,10 @@ def completed(text: str, names: "list[str]", new: str) -> "str | None":
 
 
 def main(quarter_id: str, names: "list[str]", book: Path = DEMO_DB) -> int:
+    from src.demo_refresh import holiday_table_refusal
+    refusal = holiday_table_refusal()
+    if refusal:
+        raise SystemExit(f"ABORT: {refusal}")
     con = sqlite3.connect(book)
     try:
         before = {r[0]: tuple(r[1:]) for r in con.execute(LOCKS)}
