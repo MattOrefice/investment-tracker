@@ -1313,7 +1313,8 @@ def momentum_caption(b_mom: float, t_mom: float, tickers: "list[str]") -> str:
     A loading the label cannot tell from zero gives no reason either. It said the absence
     was "consistent with the tax-aware construction (high momentum turnover → short-term
     capital gains)", a cause that names no fund and that the regression does not show
-    (#573)."""
+    (#573). It says "the sleeve", the one whose regression the table above it shows; it
+    said "the portfolio" (#581)."""
     head = f"Mom loading of {b_mom:+.3f} (t = {t_mom:.2f})"
     if _distinguishable(t_mom):
         found = f"{head} is {significance_label(t_mom)}."
@@ -1322,7 +1323,7 @@ def momentum_caption(b_mom: float, t_mom: float, tickers: "list[str]") -> str:
             return found
         return (f"{found} Some incidental momentum exposure leaks through the {held[0]} "
                 f"quality factor.")
-    return f"{head} confirms the portfolio carries no systematic momentum tilt."
+    return f"{head} confirms the sleeve carries no systematic momentum tilt."
 
 
 def _market_reading(b_mkt: float, t_mkt: float) -> str:
@@ -1765,9 +1766,7 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
         "(F-F_Momentum_Factor_daily_CSV.zip) added as a sixth regressor alongside FF5 "
         "to test whether the portfolio systematically loads on the momentum premium. "
         "The supplementary table is diagnostic; the primary FF5 result "
-        "is authoritative. Momentum exposure is structurally avoided in this portfolio "
-        "for tax-efficiency reasons (high turnover → short-term gains), so a near-zero "
-        "Mom loading is expected and confirms the construction is tax-aware.",
+        "is authoritative.",
 
         "Momentum (UMD) vintage: Mom loadings are computed against the Ken French "
         f"momentum series. {data_vintage('Momentum factor', _umd_f)} Loadings shift between "

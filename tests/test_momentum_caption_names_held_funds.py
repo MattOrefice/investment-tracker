@@ -12,6 +12,11 @@ A loading the label cannot tell from zero gives no reason either (#573, decided 
 owner on October 14, 2026, by #560's rule: a caption states what the loading shows, and a
 cause only when the data names it). It said the absence was "consistent with the
 tax-aware construction (high momentum turnover → short-term capital gains)".
+
+The no-tilt sentence says "the sleeve", since it sits under one sleeve's table, and the
+page's methodology note follows #573's rule: it gave the same tax reason and said a
+near-zero loading was expected, whatever the loadings beside it were (#581, decided by
+the owner on October 14, 2026).
 """
 from __future__ import annotations
 
@@ -63,8 +68,23 @@ def test_an_insignificant_loading_states_what_it_shows_and_gives_no_reason():
         for t in (0.0, 0.5, 1.5, -1.2, float("nan")):
             assert prose_helpers.significance_level(t) == "none", t
             assert factors.momentum_caption(-0.012, t, funds) == (
-                f"Mom loading of -0.012 (t = {t:.2f}) confirms the portfolio carries no "
+                f"Mom loading of -0.012 (t = {t:.2f}) confirms the sleeve carries no "
                 f"systematic momentum tilt."), (funds, t)
+
+
+def test_the_methodology_note_gives_no_reason_or_expectation_for_the_loadings():
+    """It said momentum is "structurally avoided in this portfolio for tax-efficiency
+    reasons (high turnover → short-term gains), so a near-zero Mom loading is expected
+    and confirms the construction is tax-aware", beside two loadings that are
+    significant at the 1% level on both committed books (#581)."""
+    notes = factors.build_factor_methodology_notes({"us": None, "developed_exus": None})
+    momentum = [n for n in notes if n.startswith("Carhart Momentum supplement")]
+    assert len(momentum) == 1, "premise: the page prints the momentum note"
+    assert momentum[0].endswith("The supplementary table is diagnostic; the primary FF5 "
+                                "result is authoritative."), momentum[0]
+    text = " ".join(notes).lower()
+    for words in ("tax", "near-zero", "is expected", "structurally avoided", "turnover"):
+        assert words not in text, words
 
 
 def test_both_expanders_pass_their_sleeves_funds():
