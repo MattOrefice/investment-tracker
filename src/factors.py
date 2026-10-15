@@ -1308,7 +1308,12 @@ def momentum_caption(b_mom: float, t_mom: float, tickers: "list[str]") -> str:
     A significant loading's cause names a fund read from the sleeve's own funds. Both of
     the page's expanders said momentum "leaks through the SPHQ quality factor", the
     International Core sleeve's too, which holds no SPHQ (#560). With no such fund, the
-    caption states only what the loading shows."""
+    caption states only what the loading shows.
+
+    A loading the label cannot tell from zero gives no reason either. It said the absence
+    was "consistent with the tax-aware construction (high momentum turnover → short-term
+    capital gains)", a cause that names no fund and that the regression does not show
+    (#573)."""
     head = f"Mom loading of {b_mom:+.3f} (t = {t_mom:.2f})"
     if _distinguishable(t_mom):
         found = f"{head} is {significance_label(t_mom)}."
@@ -1317,9 +1322,7 @@ def momentum_caption(b_mom: float, t_mom: float, tickers: "list[str]") -> str:
             return found
         return (f"{found} Some incidental momentum exposure leaks through the {held[0]} "
                 f"quality factor.")
-    return (f"{head} confirms the portfolio carries no systematic momentum tilt, consistent "
-            f"with the tax-aware construction (high momentum turnover → short-term capital "
-            f"gains).")
+    return f"{head} confirms the portfolio carries no systematic momentum tilt."
 
 
 def _market_reading(b_mkt: float, t_mkt: float) -> str:
