@@ -129,9 +129,8 @@ def _carhart_captions_with_their_funds(at: AppTest) -> "list[tuple[str, list[str
 def test_each_carhart_caption_reads_its_t_by_the_significance_label(
         factor_profile_app: AppTest) -> None:
     """#551, as rendered on the frozen book: each "Mom loading" caption is
-    factors.momentum_caption for the loading and t it prints and its sleeve's funds, so
-    it reads the t by the significance label's levels and states no size it does not
-    read."""
+    factors.momentum_caption for the loading and t it prints, so it reads the t by the
+    significance label's levels and states no size it does not read."""
     import re
 
     from src.factors import momentum_caption
@@ -139,24 +138,35 @@ def test_each_carhart_caption_reads_its_t_by_the_significance_label(
     pairs = _carhart_captions_with_their_funds(factor_profile_app)
     assert len(pairs) == 2, pairs
     levels = set()
-    for caption, funds in pairs:
+    for caption, _funds in pairs:
         b, t = re.match(r"Mom loading of ([+\-][\d.]+) \(t = (-?[\d.]+)\)", caption).groups()
-        assert funds and caption == momentum_caption(float(b), float(t), funds), caption
+        assert caption == momentum_caption(float(b), float(t)), caption
         assert "economically small" not in caption
         levels.add(significance_level(float(t)))
     assert levels, "premise: the book's two momentum regressions are read"
 
 
-def test_each_carhart_caption_names_only_funds_its_sleeve_holds(
-        factor_profile_app: AppTest) -> None:
-    """#560, as rendered on the frozen book, where both momentum loadings are significant:
-    the US sleeve's caption names SPHQ, which its regression holds, and the International
-    Core sleeve's, on VEA alone, names no fund."""
+def test_each_carhart_caption_names_no_fund(factor_profile_app: AppTest) -> None:
+    """#584, as rendered on the frozen book, where both momentum loadings are significant:
+    neither caption names a fund, the US sleeve's included, though its regression holds
+    SPHQ, the fund #560 let it name."""
     import re
     pairs = _carhart_captions_with_their_funds(factor_profile_app)
     assert [funds for _caption, funds in pairs] == [["VOO", "VTV", "SPHQ", "AVUV"], ["VEA"]]
     named = [re.findall(r"\b[A-Z]{3,5}\b", caption) for caption, _funds in pairs]
-    assert named == [["SPHQ"], []], named
+    assert named == [[], []], named
+
+
+def test_the_momentum_note_names_the_two_sleeves_it_tests(
+        factor_profile_app: AppTest) -> None:
+    """#584, as rendered on the frozen book, whose developed-international sleeve is
+    International Core: the methodology note named "the portfolio" for a test run per
+    sleeve."""
+    notes = [m.value for m in factor_profile_app.markdown
+             if m.value.startswith("- Carhart Momentum supplement")]
+    assert len(notes) == 1, notes
+    assert ("to test whether the US Equity and International Core sleeves each load "
+            "systematically on the momentum premium. ") in notes[0], notes[0]
 
 
 def test_fi_sleeve_carhart_note_present(factor_profile_app: AppTest) -> None:

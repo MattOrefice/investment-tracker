@@ -1287,15 +1287,9 @@ def _distinguishable(t: float) -> bool:
     return significance_level(t) != "none"
 
 
-# The funds a momentum caption may name as the cause of a significant loading: SPHQ, the
-# US quality fund, the only one it has named. It names one only when the sleeve's
-# regression holds it (#560).
-_MOMENTUM_THROUGH_QUALITY = ("SPHQ",)
-
-
-def momentum_caption(b_mom: float, t_mom: float, tickers: "list[str]") -> str:
-    """The caption under the Factor Profile page's Carhart momentum table (#551), for the
-    sleeve whose regression runs on ``tickers``.
+def momentum_caption(b_mom: float, t_mom: float) -> str:
+    """The caption under the Factor Profile page's Carhart momentum table (#551): the
+    loading, its t, and the significance label's words for that t, and nothing more.
 
     Whether the loading can be told from zero is the significance label's call, by its
     cut-offs, as the benchmark prose's is (#542). The caption decided with its own
@@ -1305,25 +1299,16 @@ def momentum_caption(b_mom: float, t_mom: float, tickers: "list[str]") -> str:
     deliberate tilt", whatever the loading was: no threshold defines a small momentum
     loading, so those words go.
 
-    A significant loading's cause names a fund read from the sleeve's own funds. Both of
-    the page's expanders said momentum "leaks through the SPHQ quality factor", the
-    International Core sleeve's too, which holds no SPHQ (#560). With no such fund, the
-    caption states only what the loading shows.
-
-    A loading the label cannot tell from zero gives no reason either. It said the absence
-    was "consistent with the tax-aware construction (high momentum turnover → short-term
-    capital gains)", a cause that names no fund and that the regression does not show
-    (#573). It says "the sleeve", the one whose regression the table above it shows; it
-    said "the portfolio" (#581)."""
+    It names no fund and adds no sentence (#584, decided by the owner on October 15,
+    2026). Under a significant loading it said "Some incidental momentum exposure leaks
+    through the SPHQ quality factor", once the sleeve's regression held SPHQ (#560): a
+    sleeve's regression cannot show which of its funds carries its loading, and #560
+    settled only which fund the caption could name. Under a loading the label cannot
+    tell from zero it said the loading "confirms the sleeve carries no systematic
+    momentum tilt" (#573, #581); that loading is now stated in the label's words like
+    any other."""
     head = f"Mom loading of {b_mom:+.3f} (t = {t_mom:.2f})"
-    if _distinguishable(t_mom):
-        found = f"{head} is {significance_label(t_mom)}."
-        held = [t for t in tickers if t in _MOMENTUM_THROUGH_QUALITY]
-        if not held:
-            return found
-        return (f"{found} Some incidental momentum exposure leaks through the {held[0]} "
-                f"quality factor.")
-    return f"{head} confirms the sleeve carries no systematic momentum tilt."
+    return f"{head} is {significance_label(t_mom)}."
 
 
 def _market_reading(b_mkt: float, t_mkt: float) -> str:
@@ -1764,7 +1749,8 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
 
         "Carhart Momentum supplement (FF5+MOM): Ken French daily UMD factor "
         "(F-F_Momentum_Factor_daily_CSV.zip) added as a sixth regressor alongside FF5 "
-        "to test whether the portfolio systematically loads on the momentum premium. "
+        f"to test whether the US Equity and {_intl_core_label()} sleeves each load "
+        "systematically on the momentum premium. "
         "The supplementary table is diagnostic; the primary FF5 result "
         "is authoritative.",
 
