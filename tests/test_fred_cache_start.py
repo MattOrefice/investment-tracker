@@ -9,7 +9,6 @@ rendering Macro made 17 fetches in 11.9 s before and none in 3.3 s after.
 from __future__ import annotations
 
 import json
-from datetime import date
 
 import pandas as pd
 import pytest
@@ -42,7 +41,7 @@ def fred(tmp_path, monkeypatch):
     monkeypatch.setattr(macro, "fetch_fred_series", fetch)
     with db.get_connection() as conn:          # the committed rows are dated earlier days
         assert not conn.execute("SELECT 1 FROM macro_cache WHERE fetch_date = ?",
-                                (date.today().isoformat(),)).fetchone()
+                                (macro._cache_day(),)).fetchone()
     return calls
 
 
@@ -74,7 +73,7 @@ def _legacy_row(first: str):
     macro._ensure_cache_table()
     with db.get_connection() as conn:
         conn.execute("INSERT OR REPLACE INTO macro_cache (series_id, fetch_date, data) "
-                     "VALUES (?, ?, ?)", ("DGS10", date.today().isoformat(), json.dumps(payload)))
+                     "VALUES (?, ?, ?)", ("DGS10", macro._cache_day(), json.dumps(payload)))
 
 
 def test_a_legacy_row_falls_back_to_the_first_observation(fred):

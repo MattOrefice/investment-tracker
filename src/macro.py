@@ -143,11 +143,22 @@ def series_or_stored(series_id: str, start_date: str = "1990-01-01", *,
         return exc.stored, exc.stored_on
 
 
+def _cache_day() -> str:
+    """The FRED cache's day: New York's date (asof.today_et), as every rendered date is
+    since #451. A row is stored under it as its fetch_date, a stored copy is labelled
+    "fetched" with it, and the warm runs once per such day, so the demo's daily
+    re-fetch comes at midnight Eastern. It was the server's date, which on the demo's
+    UTC server turns at 8 PM Eastern (listed in #451, decided by the owner on September
+    28, 2026)."""
+    from src.asof import today_et
+    return today_et().isoformat()
+
+
 def _get_series_now(series_id: str, start_date: str) -> pd.Series:
     """The unbounded read: today's cached row, or a fetch. The warm reads this way,
     since it is what the bounded readers wait for."""
     _ensure_cache_table()
-    today = date.today().isoformat()
+    today = _cache_day()
     cached = _read_cached(series_id, start_date, today)
     if cached is not None:
         return cached
@@ -315,7 +326,7 @@ def warm_cache_in_background(*, again: bool = False) -> "threading.Thread | None
     global _WARM_THREAD, _WARM_DAY
     if not warm_enabled():
         return None
-    today = date.today().isoformat()
+    today = _cache_day()
     with _WARM_GUARD:
         if _WARM_THREAD is not None and _WARM_THREAD.is_alive():
             return None
@@ -385,7 +396,7 @@ def _wait_for_warm(series_id: str, start_date: str, deadline: float) -> pd.Serie
     while True:
         # Read BEFORE the row: a warm seen finished here has written all it will.
         running = _warm_running()
-        cached = _read_cached(series_id, start_date, date.today().isoformat())
+        cached = _read_cached(series_id, start_date, _cache_day())
         if cached is not None:
             return cached
         wait = _retry_wait(series_id)
