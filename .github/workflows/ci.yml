@@ -22,9 +22,9 @@ jobs:
     # verification leg rather than merely being annoying.
     #
     # Without this the job inherits GitHub's 360-minute default. Measured normal for
-    # the whole job: about 6 minutes on GitHub's runner with the suite on four workers,
-    # as of October 14, 2026 (run 38636521102, #544's trial: 368, 318 and 391 s, against
-    # 735 s for a serial job on the same commit). An approximation dated to its
+    # the whole job: about 6 minutes on GitHub's runner, as of October 14, 2026, with
+    # the suite on four workers (run 38636521102, #544's trial: 368, 318 and 391 s,
+    # against 735 s for a serial job on the same commit). An approximation dated to its
     # measurement, not a range: a single run can take longer. 30 is more than 2x the
     # serial job too, and cannot fire on a merely slow run. This is the backstop for
     # every step with no timeout of its own; the step-level values below are tighter
@@ -112,7 +112,7 @@ jobs:
         run: python -m pytest --tb=long -q -n 4
         # Four workers (pytest-xdist, -n 4), as the owner decided on October 14, 2026
         # (#544), after a trial on one commit gave all 3,368 tests the same outcome and
-        # message serially and in three runs with -n 4 (run 38636521102). A test whose
+        # message serially and in three runs with -n 4 (the run below). A test whose
         # outcome differs between a serial run and a parallel one, now or later, is a
         # STOP: compare them by test id, outcome and message, as the trial did.
         # Measured normal: about 5 minutes on GitHub's runner, as of October 14, 2026

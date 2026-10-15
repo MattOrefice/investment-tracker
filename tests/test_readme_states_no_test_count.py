@@ -15,6 +15,10 @@ docs/architecture.md's "Testing strategy" said "990 tests across three layers (9
 default as of 2026-07-05; ... see the README's Integrity Testing section for the current
 breakdown)": a July count, and a pointer to the breakdown #543 removed. It drops both
 (#552, decided by the owner on October 14, 2026), and is held to the same rule here.
+
+Since #544's second decision (October 14, 2026) CI runs the suite on four workers, and
+pytest-xdist's summary line prints no deselected count, so the README says each run
+reports its passed and skipped counts.
 """
 from __future__ import annotations
 
@@ -59,11 +63,11 @@ def test_the_readme_says_each_run_reports_its_own_count():
     (tests/test_connection_closes.py: only Windows refuses to delete an open file)."""
     integrity, ci = _section("### Integrity Testing"), _section("## CI/CD")
     assert "All three layers run on every push via GitHub Actions" in integrity, "premise"
-    assert "each run reports its own passed, skipped and deselected counts" in integrity
+    assert "each run reports its own passed and skipped counts" in integrity
     assert "Most skips gate on personal-mode data files" in integrity
     assert "so those skip identically in CI and in a fresh local clone" in integrity
-    assert "each run reports its own pass, skip and deselect counts" in ci
-    assert "breakdown" not in ci
+    assert "each run reports its own pass and skip counts" in ci
+    assert "breakdown" not in ci and "deselect" not in ci + integrity
 
 
 def test_the_count_pattern_finds_the_counts_the_readme_stated():

@@ -13,6 +13,10 @@ approximation, "about N minutes ..., as of <date>", not a range: the October 13 
 top was 768 s, and main's push runs for 1462b89 and 66f69c5 on October 14 reported 769.72
 and 797.44 s, which read as breaches of a normal that was only ever a sample.
 
+Since #544's second decision (October 14, 2026) CI runs the suite on four workers, so
+each normal is the parallel trial's, read from run 38636521102, and the README names the
+command with its `-n 4`.
+
 Pinned here:
   * the README's CI section states no duration;
   * the CI file states a measured normal for the job and for the test step, each an
@@ -37,7 +41,7 @@ def _readme_ci_section() -> str:
 
 def test_the_readme_states_no_ci_duration():
     section = _readme_ci_section()
-    assert "GitHub Actions runs `python -m pytest`" in section, "premise: the CI section"
+    assert "GitHub Actions runs `python -m pytest -n 4`" in section, "premise: the CI section"
     assert not re.search(r"\b(\d+|one|two|three|five|ten)\s*(-\s*)?(minutes?|seconds?|mins?)\b",
                          section, flags=re.I), section
 
@@ -65,8 +69,9 @@ def test_the_ci_file_carries_the_measured_normal_and_its_runs():
     normals = _normals()
     assert normals["step"][0] < normals["job"][0], "the job holds the step"
     assert normals["step"][1] == normals["job"][1] == "October 14, 2026"
-    # The run it was read from, so the next measurement can be set beside it.
-    assert text.count("38596909747") == 2
+    # The run it was read from, so the next measurement can be set beside it: #544's
+    # parallel trial, once for each normal.
+    assert text.count("38636521102") == 2
     assert "#533" in text and "#544" in text
 
 
