@@ -225,11 +225,10 @@ with col:
             if res_mom is not None:
                 with st.expander("Carhart Momentum Supplement (FF5 + UMD)", expanded=False):
                     _render_factor_table(res_mom, _FACTORS + ["Mom"], label="FF5 + Momentum")
-                    # Read by the significance label's cut-offs (#551); a cause names
-                    # only a fund this sleeve's regression holds (#560).
+                    # Read by the significance label's cut-offs (#551), and nothing
+                    # more: no fund, no cause (#584).
                     st.caption(momentum_caption(res_mom["betas"]["Mom"],
-                                                res_mom["t_stats"]["Mom"],
-                                                res_mom["tickers"]))
+                                                res_mom["t_stats"]["Mom"]))
         else:
             _render_factor_table(res, _FACTORS)
             _render_fit_metrics(res)
@@ -238,11 +237,10 @@ with col:
             if res_mom is not None:
                 with st.expander("Carhart Momentum Supplement (FF5 + UMD)", expanded=False):
                     _render_factor_table(res_mom, _FACTORS + ["Mom"], label="FF5 + Momentum")
-                    # Read by the significance label's cut-offs (#551); a cause names
-                    # only a fund this sleeve's regression holds (#560).
+                    # Read by the significance label's cut-offs (#551), and nothing
+                    # more: no fund, no cause (#584).
                     st.caption(momentum_caption(res_mom["betas"]["Mom"],
-                                                res_mom["t_stats"]["Mom"],
-                                                res_mom["tickers"]))
+                                                res_mom["t_stats"]["Mom"]))
 
         st.divider()
 
