@@ -409,9 +409,9 @@ THREADS_ALLOWED_TO_OUTLIVE = {
     # nothing else: no database, no module state.
     "src.reports._render_chart_to_png.<locals>._render":
         "abandoned after its 25 s join when kaleido hangs; touches no shared state",
-    # kaleido's reader for its own subprocess's stderr, alive as long as that process.
-    "kaleido.scopes.base.BaseScope._collect_standard_error":
-        "kaleido's stderr reader, alive as long as kaleido's subprocess",
+    # kaleido 0.2.1's stderr reader (kaleido.scopes.base.BaseScope._collect_standard_error)
+    # was allowed here too. kaleido 1.5.0 (#567) starts no thread that outlives an
+    # export: the four tests that render a chart left none, so it is not listed.
 }
 _THREAD_JOIN_SECONDS = 5.0
 _threads_before: "set[threading.Thread]" = set()

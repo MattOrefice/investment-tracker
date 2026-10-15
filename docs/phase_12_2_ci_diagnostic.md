@@ -63,6 +63,9 @@ version that fails to build from source.
 
 ### Vector 3 (lower probability): kaleido==0.2.1 incompatible on ubuntu-24.04
 
+*(A record of Phase 12. Since #567, October 2026, the pin is kaleido 1.5.0, which bundles
+no browser and drives an installed Chrome or Chromium; a test now renders a chart in CI.)*
+
 `kaleido==0.2.1` uses orca (a bundled Chromium renderer). The `manylinux1_x86_64` wheel
 ships a glibc-2.5+ binary. On Ubuntu 24.04 (glibc 2.39), the wheel installs but orca
 may fail at runtime due to missing sandbox capabilities. No test calls kaleido rendering
