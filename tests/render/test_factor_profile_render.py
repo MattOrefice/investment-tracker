@@ -167,6 +167,7 @@ def test_the_momentum_note_names_the_two_sleeves_it_tests(
     assert len(notes) == 1, notes
     assert ("to test whether the US Equity and International Core sleeves each load "
             "systematically on the momentum premium. ") in notes[0], notes[0]
+    assert "portfolio" not in notes[0], notes[0]
 
 
 def test_fi_sleeve_carhart_note_present(factor_profile_app: AppTest) -> None:

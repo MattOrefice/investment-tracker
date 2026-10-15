@@ -27,6 +27,7 @@ import re
 from pathlib import Path
 
 import src.prose_helpers as prose_helpers
+import src.sleeve_config as sleeve_config
 from src import factors
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -111,10 +112,19 @@ def test_the_methodology_note_names_the_two_sleeves_the_supplement_tests(monkeyp
     assert len(set(notes_by_name.values())) == len(SLEEVE_NAMES), notes_by_name
 
 
-def test_the_methodology_note_names_the_configured_books_sleeve():
-    note = _momentum_note(
-        factors.build_factor_methodology_notes({"us": None, "developed_exus": None}))
-    assert f"the US Equity and {factors._intl_core_label()} sleeves each load" in note, note
+def test_the_methodology_note_reads_the_international_sleeve_from_the_book(monkeypatch):
+    """The personal book's VEA sleeve is International Developed; the demo's is
+    International Core. The name comes from the book's international sleeves
+    (sleeve_config.international_sleeves), through _intl_core_label (#591). The check this
+    replaces compared the note with _intl_core_label() itself, so it held whatever the
+    label returned."""
+    for intl, name in ((["International Developed", "Emerging Markets"], "International Developed"),
+                       (["International Core", "International Value"], "International Core")):
+        monkeypatch.setattr(sleeve_config, "international_sleeves", lambda intl=intl: intl)
+        assert factors._intl_core_label() == name, "premise: the label is read from the book"
+        note = _momentum_note(
+            factors.build_factor_methodology_notes({"us": None, "developed_exus": None}))
+        assert f"whether the US Equity and {name} sleeves each load" in note, (name, note)
 
 
 def test_the_methodology_note_gives_no_reason_or_expectation_for_the_loadings():
