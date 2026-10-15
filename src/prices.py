@@ -125,6 +125,16 @@ def _date_to_unix(date_str: str) -> int:
     return int(dt.timestamp())
 
 
+# One store at a time in this process (#580). The demo's refresh fetches on four
+# threads (src.demo_refresh._WORKERS), and each fetch stored through its own connection
+# to the runtime cache, so two stores at once meant one waited on the other's write
+# lock. In one of twenty CI runs under -n 4 the wait outlasted sqlite3's 5-second busy
+# timeout: "database is locked", a holding's fetch failed, and the refresh with it.
+# fetch_prices stores under this lock for every caller, so the fetches still run in
+# parallel and the stores take turns. The connection's 5-second wait is unchanged.
+_STORE_LOCK = threading.Lock()
+
+
 def fetch_prices(
     ticker: str,
     start_date: str,
@@ -266,7 +276,7 @@ def fetch_prices(
 
     wanted = None if only_missing is None else set(only_missing)
     stored: "list[str]" = []
-    with get_connection() as conn:
+    with _STORE_LOCK, get_connection() as conn:
         # Auto-migrate: ensure dividends table exists in pre-existing DBs
         conn.execute(
             """CREATE TABLE IF NOT EXISTS dividends (

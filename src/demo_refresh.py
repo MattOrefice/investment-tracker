@@ -42,7 +42,7 @@ RETRY_AFTER = timedelta(minutes=30)
 # The provider publishes a session's close a little after 16:00 New York.
 _PUBLISH_MARGIN = timedelta(minutes=30)
 # Four requests at a time: the whole set in a few seconds rather than half a minute,
-# without the burst that draws a 429.
+# without the burst that draws a 429. Their stores take turns (prices._STORE_LOCK, #580).
 _WORKERS = 4
 
 

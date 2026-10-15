@@ -9,6 +9,8 @@ from __future__ import annotations
 import hashlib
 import os
 import shutil
+import threading
+import time
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -120,6 +122,44 @@ def test_a_non_holding_that_fails_does_not_fail_the_fetch_and_a_holding_does(dem
     st = refresh.refresh_if_due(NOW + timedelta(days=1))
     assert st.status == "failed" and [t for t, _ in st.failed] == ["VOO"], _why(st)
     assert st.fetched_before == NOW.isoformat(timespec="minutes"), "the earlier success is recorded"
+
+
+def test_the_refresh_stores_one_fetch_at_a_time(demo, monkeypatch):
+    """#580: the refresh fetches on four threads (refresh._WORKERS), and each fetch stored
+    its rows through its own connection to the runtime cache, so two stores at once
+    meant one waited on the other's write lock. In one of twenty CI runs under -n 4 that
+    wait outlasted sqlite3's 5-second busy timeout: "database is locked", a holding's
+    fetch failed, and the attempt with it. fetch_prices now stores under one
+    process-wide lock (prices._STORE_LOCK): the fetches still run in parallel, and the
+    stores take turns.
+
+    Here SQLite's wait is cut to 10 ms and each store is held open 100 ms past its first
+    row, so two stores that overlap fail as #580's did."""
+    _copy, _calls, answer = demo
+    real = db._runtime_overlay_connection
+    held = []
+
+    def short_wait_long_store(committed, cache):
+        conn = real(committed, cache)
+        conn.execute("PRAGMA busy_timeout = 10")
+        inserts = []
+
+        def trace(sql):
+            if sql.lstrip().upper().startswith("INSERT"):
+                inserts.append(sql)
+                if len(inserts) == 2:              # the first row's write lock is held
+                    held.append(threading.current_thread().name)
+                    time.sleep(0.1)
+
+        conn.set_trace_callback(trace)
+        return conn
+
+    monkeypatch.setattr(db, "_runtime_overlay_connection", short_wait_long_store)
+    answer()
+    st = refresh.refresh_if_due(NOW)
+    assert st.status == "fetched" and st.failed == (), _why(st)
+    assert len(held) > 30 and len(set(held)) > 1, (
+        "premise: every ticker's store was held open, on more than one thread", held)
 
 
 def test_the_refresh_is_off_in_the_suite_and_without_the_cache(monkeypatch):
