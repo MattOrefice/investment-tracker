@@ -29,6 +29,17 @@ _SNAPSHOT = _ROOT / "tests" / "fixtures" / "frozen_book.db"
 NOW = datetime(2026, 9, 24, 22, 0, tzinfo=timezone.utc)      # after the New York close
 
 
+def _why(st) -> str:
+    """What an assertion on a refresh prints when it fails: the attempt's status, what it
+    served, and each fetch that raised, as (ticker, reason). Two CI runs under -n 4
+    recorded `failed` on the stubbed provider, and their logs could not say which fetch
+    raised or why (#580)."""
+    if st is None:
+        return "no refresh attempt was recorded"
+    return (f"status {st.status!r}, served through {st.served_through}, failed fetches "
+            f"{list(st.failed)}, gaps left {list(st.gaps)}")
+
+
 @pytest.fixture
 def demo(tmp_path, monkeypatch):
     """A demo.db copy standing in for the committed file, the runtime cache on, the
@@ -103,11 +114,11 @@ def test_a_non_holding_that_fails_does_not_fail_the_fetch_and_a_holding_does(dem
     _copy, _calls, answer = demo
     answer(fail=("XLK",))
     st = refresh.refresh_if_due(NOW)
-    assert st.status == "fetched" and [t for t, _ in st.failed] == ["XLK"]
+    assert st.status == "fetched" and [t for t, _ in st.failed] == ["XLK"], _why(st)
     refresh._STATE = None
     answer(fail=("VOO",))
     st = refresh.refresh_if_due(NOW + timedelta(days=1))
-    assert st.status == "failed" and [t for t, _ in st.failed] == ["VOO"]
+    assert st.status == "failed" and [t for t, _ in st.failed] == ["VOO"], _why(st)
     assert st.fetched_before == NOW.isoformat(timespec="minutes"), "the earlier success is recorded"
 
 
@@ -185,8 +196,9 @@ def test_the_landing_banner_reports_the_fetched_date_before_it_renders(tmp_path,
     served = today_et()
     while served.weekday() > 4:
         served -= timedelta(days=1)
-    assert "fetched" in banner, banner
-    assert f"{served.strftime('%B')} {served.day}, {served.year}" in banner, banner
+    assert "fetched" in banner, f"{_why(refresh.state())}; banner: {banner}"
+    assert f"{served.strftime('%B')} {served.day}, {served.year}" in banner, (
+        f"{_why(refresh.state())}; banner: {banner}")
     assert hashlib.sha256(_DEMO.read_bytes()).hexdigest() == before
 
 
