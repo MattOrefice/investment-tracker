@@ -556,6 +556,19 @@ def _cape_reading_sentence(cape_val: float, cape_pct: float) -> str:
     return f"{sentence} ({reading_label(latest_reading(), note)})."
 
 
+def _versus_benchmark(alpha_bps: float, benchmark: str) -> str:
+    """The summary's comparison with a benchmark: "outperforming the S&P 500 by 12 bps".
+    The gap prints as a magnitude, so the verb is what carries its sign. A gap that
+    rounds to 0 bps has no sign to carry: it read "outperforming ... by 0 bps" (#426),
+    and reads "in line with" instead, with no figure."""
+    from src.prose_helpers import label
+    if f"{abs(alpha_bps):.0f}" == "0":              # the figure it would print
+        return f"{label('versus_benchmark', 'in_line', 'in line with')} {benchmark}"
+    verb = (label("versus_benchmark", "out", "outperforming") if alpha_bps > 0
+            else label("versus_benchmark", "under", "underperforming"))
+    return f"{verb} {benchmark} by {abs(alpha_bps):.0f} bps"
+
+
 # ── Section builders ──────────────────────────────────────────────────────────
 
 def _build_executive_summary(start_date: str, end_date: str) -> dict:
@@ -665,22 +678,13 @@ def _build_executive_summary(start_date: str, end_date: str) -> dict:
     # alpha_sp_bps/alpha_bl_bps — "outperforming/underperforming by nan bps"
     # is never a sentence to construct, so each half degrades independently
     # to an explicit unavailable clause instead.
-    from src.prose_helpers import label
-
-    def _versus(alpha_bps: float) -> str:
-        # The gap prints as a magnitude, so the verb is what carries its sign.
-        return (label("versus_benchmark", "out", "outperforming") if alpha_bps >= 0
-                else label("versus_benchmark", "under", "underperforming"))
-
     sp_phrase = (
-        f"{_versus(alpha_sp_bps)} "
-        f"the S&P 500 by {abs(alpha_sp_bps):.0f} bps"
+        _versus_benchmark(alpha_sp_bps, "the S&P 500")
         if not np.isnan(alpha_sp_bps)
         else "the S&P 500 comparison unavailable this period (benchmark data gap)"
     )
     bl_phrase = (
-        f"{_versus(alpha_bl_bps)} "
-        f"the custom blended benchmark by {abs(alpha_bl_bps):.0f} bps"
+        _versus_benchmark(alpha_bl_bps, "the custom blended benchmark")
         if not np.isnan(alpha_bl_bps)
         else "the custom blended benchmark comparison unavailable this period (benchmark data gap)"
     )
@@ -717,8 +721,10 @@ def _build_executive_summary(start_date: str, end_date: str) -> dict:
     if _gap_check_failures:
         # Stated where the notices it replaces would have appeared, and phrased as what
         # the reader must NOT conclude — the honest content of a check that did not run.
+        # Plain text: the PDF's HTML is autoescaped, so markdown's "**" printed as
+        # literal asterisks around the lead (#426).
         narrative.append(
-            "**Coverage checks incomplete:** " + "; ".join(_gap_check_failures)
+            "Coverage checks incomplete: " + "; ".join(_gap_check_failures)
             + " did not complete. Any data gaps they would have listed are therefore not "
             "listed above, and the absence of a gap notice is not evidence that no gaps "
             "exist."
@@ -1628,6 +1634,9 @@ def _build_asset_eval_section() -> dict:
         "gap_note":         None,
         "args_for":         [],
         "args_against":     [],
+        # The marginal-Sharpe curve's highest allocation, for the "none found" banner,
+        # which names the range it read (#426). None until the curve is read.
+        "sharpe_curve_top": None,
         # Without the rolling series: no figures and no date. 5c replaces it (#478 I11).
         "conclusion": ae.conclusion(),
     }
@@ -1772,19 +1781,17 @@ def _build_asset_eval_section() -> dict:
             )
             result["rolling_chart_b64"] = _chart_b64(fig_roll, 700, 200)
 
+            # The averages, and nothing they were not read for (#426). Each carried a
+            # reading whatever its figure: "consistent with the 'uncorrelated
+            # alternative' narrative" and "persistently elevated after
+            # institutionalization; correlation rises when diversification is most
+            # needed". No label read those from the averages beside them.
             pre_avg, post_avg, _ = ae.pre_post_2020(rolling_corr)
             prose_parts: list[str] = []
             if not np.isnan(pre_avg):
-                prose_parts.append(
-                    f"Pre-2020 average: {pre_avg:.2f} "
-                    "(consistent with the 'uncorrelated alternative' narrative)."
-                )
+                prose_parts.append(f"Pre-2020 average: {pre_avg:.2f}.")
             if not np.isnan(post_avg):
-                prose_parts.append(
-                    f"Post-2020 average: {post_avg:.2f}, persistently elevated after "
-                    "institutionalization; correlation rises when diversification "
-                    "is most needed."
-                )
+                prose_parts.append(f"Post-2020 average: {post_avg:.2f}.")
             result["rolling_prose"] = " ".join(prose_parts)
     except Exception:
         result["unavailable"].append("rolling")
@@ -1894,23 +1901,30 @@ def _build_asset_eval_section() -> dict:
         args_for: list[str]     = []
         args_against: list[str] = []
 
-        if not msc.empty:
-            rows_0  = msc[msc["btc_alloc"] == 0.00]
-            rows_10 = msc[msc["btc_alloc"] == 0.10]
-            if not rows_0.empty and not rows_10.empty:
-                saa_sh0  = float(rows_0["sharpe"].iloc[0])
-                saa_sh10 = float(rows_10["sharpe"].iloc[0])
-                if saa_sh10 > saa_sh0:
-                    mvo_ok    = bool(
-                        mv_result
-                        and mv_result.get("sharpe_con_with", 0) > mv_result.get("sharpe_con_no", 0)
-                    )
-                    mvo_note = "; the MVO sanity check is directionally consistent" if mvo_ok else ""
-                    args_for.append(
-                        f"Sharpe-improving against SAA target weights at 10% allocation "
-                        f"({saa_sh0:.3f} → {saa_sh10:.3f}, "
-                        f"{saa_sh10 - saa_sh0:+.3f} over {ae.SAMPLE_START}–present){mvo_note}"
-                    )
+        # The whole curve the chart above plots, not its 10% point alone (#426). It
+        # compared 10% with 0%, so a curve that rose at a lower weight and fell back by
+        # 10% printed "none found" and said no weight improved the Sharpe ratio. The
+        # banner says "none found" only when the curve was read (sharpe_curve_top is
+        # set): with no curve, or none at 0%, it says nothing was assessed.
+        rows_0 = msc[msc["btc_alloc"] == 0.00] if not msc.empty else msc
+        above  = msc[msc["btc_alloc"] > 0.00] if not msc.empty else msc
+        if not rows_0.empty and not above.empty:
+            saa_sh0 = float(rows_0["sharpe"].iloc[0])
+            best    = above.loc[above["sharpe"].idxmax()]
+            best_w, best_sh = float(best["btc_alloc"]), float(best["sharpe"])
+            result["sharpe_curve_top"] = f"{float(above['btc_alloc'].max()):.0%}"
+            if best_sh > saa_sh0:
+                mvo_ok    = bool(
+                    mv_result
+                    and mv_result.get("sharpe_con_with", 0) > mv_result.get("sharpe_con_no", 0)
+                )
+                mvo_note = "; the MVO sanity check is directionally consistent" if mvo_ok else ""
+                args_for.append(
+                    f"Sharpe-improving against SAA target weights: the curve's highest "
+                    f"Sharpe is at {best_w:.0%} allocation ({saa_sh0:.3f} at 0% → "
+                    f"{best_sh:.3f}, {best_sh - saa_sh0:+.3f} over "
+                    f"{ae.SAMPLE_START}–present){mvo_note}"
+                )
 
         if not corr.empty:
             btc_spy_j = float(corr.get("US Large Core", float("nan")))
@@ -1982,12 +1996,30 @@ def _build_asset_eval_section() -> dict:
 
 # ── Methodology template variables ───────────────────────────────────────────
 
-# SAA rule: sleeves with target weight ≥10% → ±300 bps; <10% → ±200 bps.
-# Real Assets is the boundary case at exactly 10% and is assigned to the 200bps
-# tier as a deliberate exception — so MIN(target_weight) for the 300bps DB group
-# returns 0.14 (US Large Quality), not 0.10. Use the rule constant directly; do
-# not infer the threshold from DB data.
-_TOLERANCE_BAND_LARGE_CUTOFF_PCT = 10
+def _drift_bands_sentence(strategic: list, order: list) -> str:
+    """Each sleeve's tolerance band from the policy, as Drift Status applies it
+    (_build_holdings_section): "±300 bps for US Large Core and US Large Quality;
+    ±200 bps for every other sleeve" (#426). The methodology stated a size rule, ±300 bps
+    for sleeves of 10% target or more, which Real Assets (10.2%, a 200 bps band) does
+    not follow. The bands are named, so no sleeve is an exception to them. The band
+    held by the most sleeves comes last, as "every other sleeve"."""
+    import math
+    by_band: dict = {}
+    for name in order:
+        row = next(r for r in strategic if r["name"] == name)
+        # As SQLite's ROUND, half away from zero, on a band that is never negative.
+        by_band.setdefault(int(math.floor(row["tolerance_band"] * 10000 + 0.5)), []).append(name)
+    if len(by_band) == 1:
+        return f"±{next(iter(by_band))} bps for every sleeve"
+    widest = max(by_band, key=lambda b: (len(by_band[b]), b))
+    parts = []
+    for band in sorted(by_band, reverse=True):
+        if band != widest:
+            names = by_band[band]
+            who = names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+            parts.append(f"±{band} bps for {who}")
+    parts.append(f"±{widest} bps for every other sleeve")
+    return "; ".join(parts)
 
 
 def _build_methodology_vars() -> dict:
@@ -1998,8 +2030,6 @@ def _build_methodology_vars() -> dict:
     it reads the lock's (#525), so a locked report's methodology states the policy its
     figures were computed with.
     """
-    import math
-
     from src import policy
     from src.benchmarks import _sleeve_benchmarks
 
@@ -2009,9 +2039,6 @@ def _build_methodology_vars() -> dict:
     parent_rows = [r for r in classes if r["parent_id"] is None and r["target_weight"] > 0]
     strategic = [r for r in classes if r["parent_id"] is not None and r["target_weight"] > 0]
     sleeve_count = len(strategic)
-    # As SQLite's ROUND, half away from zero, on a band that is never negative.
-    band_rows = [{"band_bps": b} for b in sorted(
-        {int(math.floor(r["tolerance_band"] * 10000 + 0.5)) for r in strategic})]
     strategic_order = [
         r["name"] for r in sorted(
             strategic, key=lambda r: r["sort_order"] if r["sort_order"] is not None
@@ -2043,22 +2070,12 @@ def _build_methodology_vars() -> dict:
             basket_parts.append(_fmt_bench(_comps))
     methodology_benchmark_basket = ", ".join(basket_parts)
 
-    # Drift band tiers: smallest band (200 bps) and largest (300 bps)
-    band_bps_vals = [int(r["band_bps"]) for r in band_rows]
-    if len(band_bps_vals) >= 2:
-        drift_small_bps = band_bps_vals[0]
-        drift_large_bps = band_bps_vals[-1]
-    else:
-        drift_small_bps, drift_large_bps = 200, 300
-
     return {
         "methodology_parent_weights":      parent_weight_str,
         "methodology_sleeve_count":        sleeve_count,
         "methodology_ra_bench":            ra_bench_str,
         "methodology_benchmark_basket":    methodology_benchmark_basket,
-        "methodology_drift_large_bps":     drift_large_bps,
-        "methodology_drift_small_bps":     drift_small_bps,
-        "methodology_drift_large_min_pct": _TOLERANCE_BAND_LARGE_CUTOFF_PCT,
+        "methodology_drift_bands":         _drift_bands_sentence(strategic, strategic_order),
     }
 
 
@@ -2188,7 +2205,7 @@ def generate_quarterly_report_bytes(
     infrastructure one visitor's report never lands on a shared disk path where
     another visitor's session could glob and download it.
 
-    When zero trades exist, produces a structural report (SAA + macro + theses only).
+    When zero trades exist, produces a structural report (SAA + macro only).
     `is_demo` defaults to the app's resolved TRACKER_MODE (src.config.IS_DEMO) so a
     report generated from the public demo is labeled demo/illustrative rather than
     as a real personal account; pass explicitly to override (e.g. in tests).
@@ -2352,7 +2369,7 @@ def generate_quarterly_report(
     Retained for CLI / personal-mode / test use. The public Streamlit page does
     NOT call this — it uses generate_quarterly_report_bytes() and serves the bytes
     from memory, so no PDF is written to the shared Cloud filesystem (audit #6).
-    When zero trades exist, produces a structural report (SAA + macro + theses only).
+    When zero trades exist, produces a structural report (SAA + macro only).
     `is_demo` defaults to the app's resolved TRACKER_MODE (src.config.IS_DEMO) so a
     report generated from the public demo is labeled demo/illustrative rather than
     as a real personal account; pass explicitly to override (e.g. in tests).

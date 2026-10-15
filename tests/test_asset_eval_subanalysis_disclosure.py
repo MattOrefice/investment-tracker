@@ -52,7 +52,7 @@ _BASE = {
     "con_rows": [], "sharpe_con_no": None, "sharpe_con_with": None,
     "delta_sharpe_con": None, "msc_chart_b64": None, "dd_rows": [],
     "btc_2022_mdd": None,
-    "args_for": [], "args_against": [], "conclusion": "x",
+    "args_for": [], "args_against": [], "sharpe_curve_top": None, "conclusion": "x",
     "disposition": "computed", "failure_reason": None, "unavailable": [],
     "rf_note": None,
     "gap_note": None,
@@ -94,16 +94,27 @@ def test_a_failed_curve_blocks_the_one_sided_verdict_reading():
 
 
 def test_a_computed_curve_with_no_improvement_says_none_found():
-    """The other half of the distinction — a real result, stated as one."""
-    body = _render(_ctx(unavailable=[], args_for=[]))
+    """The other half of the distinction — a real result, stated as one, with the range
+    of weights the curve was read over (#426)."""
+    body = _render(_ctx(unavailable=[], args_for=[], sharpe_curve_top="10%"))
     assert "Arguments for inclusion: none found" in body
+    assert "no weight between 0% and 10% improved" in body
     assert "This is a result, not a gap" in body
     assert "not assessed" not in body
 
 
+def test_a_curve_that_was_not_read_is_not_none_found():
+    """An empty curve is not a failure (nothing is recorded as unavailable), and it
+    assessed nothing either: "none found" is said only of a curve that was read (#426)."""
+    body = _render(_ctx(unavailable=[], args_for=[], sharpe_curve_top=None))
+    assert "Arguments for inclusion: not assessed" in body
+    assert "none found" not in body
+
+
 def test_the_two_states_render_differently():
     """A per-state marker passes while both branches say the same thing. Contrast."""
-    assert _render(_ctx(unavailable=["marginal_sharpe"])) != _render(_ctx(unavailable=[]))
+    assert _render(_ctx(unavailable=["marginal_sharpe"])) != _render(
+        _ctx(unavailable=[], sharpe_curve_top="10%"))
 
 
 def test_a_real_case_for_inclusion_still_renders():

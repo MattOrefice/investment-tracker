@@ -481,11 +481,12 @@ def test_prose_saa_real_assets_db_label_matches_computed_split():
 
 
 def test_prose_pdf_drift_thresholds_match_db():
-    """PDF drift threshold description derives from DB tolerance_band values.
+    """The configured book's sleeves hold two tolerance bands, 200 and 300 bps.
 
-    templates/quarterly_report.html lines ~598-599 render the per-sleeve tolerance
-    bands from _build_methodology_vars(). This test verifies the DB contains exactly
-    the two-tier structure (200 bps / 300 bps) that the prose template assumes.
+    The PDF's Drift Status rule assumed exactly these two tiers until #426; it now names
+    each sleeve's band from the policy, whatever bands it holds
+    (test_the_pdf_drift_rule_names_each_sleeves_band_from_the_policy). This keeps the
+    book's own two-band structure in view.
     """
     from src.db import get_connection
 
@@ -511,27 +512,55 @@ def test_prose_pdf_drift_thresholds_match_db():
     )
 
 
-def test_prose_drift_threshold_matches_rule_constant():
-    """_TOLERANCE_BAND_LARGE_CUTOFF_PCT must equal 10, not the data-inferred value.
+def test_the_pdf_drift_rule_names_each_sleeves_band_from_the_policy(tmp_path):
+    """On the frozen book in every mode: its policy holds the case the old rule
+    misstated, which the configured book need not."""
+    from tests.conftest import pin_today, point_at_frozen_book, unpin_leftovers
+    with pytest.MonkeyPatch.context() as mp:
+        pin_today(mp)
+        point_at_frozen_book(mp, tmp_path)
+        _the_drift_rule_names_each_sleeves_band()
+    unpin_leftovers()
 
-    The SAA rule is: sleeves with target weight ≥10% → ±300 bps.  Real Assets sits
-    at exactly 10% but is assigned to the 200 bps tier as a deliberate exception, so
-    MIN(target_weight) for the 300 bps DB group returns 14 (US Large Quality).
-    The PDF methodology prose must describe the rule (≥10%), not the DB minimum (≥14%).
+
+def _the_drift_rule_names_each_sleeves_band():
+    """The methodology's Drift Status rule names each sleeve's tolerance band from the
+    policy, as the Drift Status column applies it (#426, decided by the owner on
+    October 15, 2026).
+
+    It stated a size rule: ±300 bps for sleeves with a target of 10% or more, ±200 bps
+    for smaller ones, with the cutoff typed as _TOLERANCE_BAND_LARGE_CUTOFF_PCT = 10 so
+    that it was not inferred from the data. Real Assets, a 10.2% target with a 200 bps
+    band, does not follow it, while the column applied its 200 bps. The sentence now
+    names the bands, so there is no cutoff to infer and no exception to leave out.
     """
-    from src.reports import _TOLERANCE_BAND_LARGE_CUTOFF_PCT, _build_methodology_vars
+    import re
+    from src import policy
+    from src.reports import TEMPLATES_DIR, _build_methodology_vars
+    from jinja2 import Environment
 
-    assert _TOLERANCE_BAND_LARGE_CUTOFF_PCT == 10, (
-        f"Rule constant is {_TOLERANCE_BAND_LARGE_CUTOFF_PCT}, expected 10. "
-        "The SAA spec says ≥10% target weight → ±300 bps tolerance band."
-    )
+    sleeves = [r for r in policy.sleeves() if r["target_weight"] > 0]
+    bands = {r["name"]: round(r["tolerance_band"] * 10_000) for r in sleeves}
+    assert any(bands[r["name"]] == 200 and r["target_weight"] >= 0.10 for r in sleeves), (
+        "premise: a sleeve with a 10% target or more holds a 200 bps band")
+    sentence = _build_methodology_vars()["methodology_drift_bands"]
+    named, other_band = {}, None
+    for clause in sentence.split("; "):
+        band, who = re.fullmatch(r"±(\d+) bps for (.+)", clause).groups()
+        if who in ("every other sleeve", "every sleeve"):
+            other_band = int(band)
+        else:
+            for name in re.split(r", | and ", who):
+                named[name] = int(band)
+    for name, band in bands.items():
+        assert named.get(name, other_band) == band, (name, band, sentence)
+    assert set(named) < set(bands), sentence
 
-    vars_ = _build_methodology_vars()
-    assert vars_["methodology_drift_large_min_pct"] == 10, (
-        f"_build_methodology_vars() returned drift_large_min_pct="
-        f"{vars_['methodology_drift_large_min_pct']}, expected 10. "
-        "Must use _TOLERANCE_BAND_LARGE_CUTOFF_PCT, not MIN(target_weight) from DB."
-    )
+    tpl = (TEMPLATES_DIR / "quarterly_report.html").read_text(encoding="utf-8")
+    block = re.search(r"<dt>Drift Status</dt>\s*<dd>.*?</dd>", tpl, re.S).group(0)
+    text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", Environment(autoescape=True)
+                  .from_string(block).render(**_build_methodology_vars())))
+    assert re.sub(r"\s+", " ", sentence) in text and "smaller sleeves" not in text, text
 
 
 # ── Phase 13 additions — SAA investment thesis paragraph ─────────────────────

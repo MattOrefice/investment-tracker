@@ -929,20 +929,38 @@ def test_neither_gap_check_swallows_its_failure_any_more():
     )
 
 
-def test_an_incomplete_gap_check_is_stated_where_its_notice_would_have_gone():
+def test_an_incomplete_gap_check_is_stated_where_its_notice_would_have_gone(tmp_path):
     """And phrased as what the reader must NOT conclude, which is the only honest content
-    of a check that did not run."""
-    src = _reports_src()
-    assert "Coverage checks incomplete" in src
-    assert "not evidence that no gaps" in src, (
-        "the notice does not block the all-clear reading, which is its entire purpose"
-    )
-    # ASSERT THE APPEND, not the text. Composing the sentence is not rendering it — a
-    # mutant that changed `narrative.append(...)` to `_unused = (...)` left every string
-    # above intact and this test stayed green (D10). Presence is not use, and for a
-    # DISCLOSURE that gap is the whole defect: the notice existing in the source while
-    # never reaching the reader is indistinguishable from not having written it.
-    i = src.index("**Coverage checks incomplete:**")
-    assert "narrative.append(" in src[max(0, i - 120):i], (
-        "the incomplete-check notice is composed but never appended to the narrative"
-    )
+    of a check that did not run.
+
+    READ OFF THE RENDERED TEXT (#426, decided by the owner on October 15, 2026). This
+    read the source: it found the sentence and asserted `narrative.append(` before it,
+    since a mutant that composed the sentence and never appended it left every string
+    intact (D10). The source held "**Coverage checks incomplete:**", and the PDF printed
+    the asterisks: its HTML is autoescaped, so markdown is text there. Rendering the
+    summary's narrative through the template covers both: an unappended notice does not
+    render, and an asterisk would."""
+    import re
+    from tests.conftest import pin_today, point_at_frozen_book, unpin_leftovers
+
+    def boom(*_a, **_k):
+        raise RuntimeError("forced by test")
+
+    with pytest.MonkeyPatch.context() as mp:
+        pin_today(mp)
+        point_at_frozen_book(mp, tmp_path)
+        mp.setattr(rpt, "brinson_fachler_period", boom)
+        mp.setattr(rpt, "distribution_gaps_for_holdings", boom)
+        mp.setattr(rpt, "_render_chart_to_png", lambda *a, **k: None)
+        summary = rpt._build_executive_summary("2026-03-31", "2026-06-30")
+    unpin_leftovers()
+
+    block = re.search(r'<div class="narrative">.*?</div>', _template_src(), re.S).group(0)
+    html = rpt._make_report_env().from_string(block).render(exec=summary)
+    text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html)).strip()
+    assert ("Coverage checks incomplete: the distribution-gap check for holdings "
+            "(RuntimeError); the price- and benchmark-gap checks for attribution "
+            "(RuntimeError) did not complete.") in text, text
+    assert "not evidence that no gaps" in text, (
+        "the notice does not block the all-clear reading, which is its entire purpose")
+    assert "*" not in text, text
