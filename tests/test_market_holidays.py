@@ -4,31 +4,120 @@ demo_refresh.is_session counted every weekday, so the day after a market holiday
 a current frontier as a close behind, and the banner said "weekdays" because that is
 what it counted. The table is static, with no calendar dependency, so it runs out:
 the first test here fails from January 1 of its last year, a year before it does.
+
+Since #466 (decided by the owner on September 28, 2026) the table holds 2025 as well,
+January 9, 2025 included: the national day of mourning, a closure no calendar
+scheduled, entered by hand from NYSE's notice. The close-out refuses to run when the
+table does not reach the end of next year, by the same rule as the first test.
 """
-from datetime import date, datetime, timezone
+import importlib.util
+import sqlite3
+from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 
 import src.demo_refresh as refresh
 
+ROOT = Path(__file__).resolve().parent.parent
+
 
 def test_the_table_is_extended_before_its_last_year():
     first, last = refresh.NYSE_HOLIDAY_YEARS
-    assert date.today().year < last, (
+    assert refresh.holiday_table_refusal() is None, (
         f"The NYSE holiday table in src/demo_refresh.py ends in {last}. Extend it from "
         "nyse.com/markets/hours-calendars: past its last year every weekday counts as a "
         "session again, and the banner reads the day after a holiday as a close behind.")
 
 
+def test_the_refusal_needs_the_table_through_the_end_of_next_year():
+    last = refresh.NYSE_HOLIDAY_YEARS[1]
+    assert refresh.holiday_table_refusal(date(last - 1, 1, 1)) is None
+    assert refresh.holiday_table_refusal(date(last - 1, 12, 31)) is None
+    refusal = refresh.holiday_table_refusal(date(last, 1, 1))
+    assert refusal and f"ends with {last}" in refusal, refusal
+    assert f"through December 31, {last + 1}" in refusal, refusal
+
+
 def test_the_table_covers_its_stated_years_and_only_weekdays():
     first, last = refresh.NYSE_HOLIDAY_YEARS
+    assert (first, last) == (2025, 2028)
     years = {d.year for d in refresh.NYSE_HOLIDAYS}
     assert years == set(range(first, last + 1))
     assert all(d.weekday() < 5 for d in refresh.NYSE_HOLIDAYS), "a weekend is no session anyway"
-    assert all(8 <= sum(d.year == y for d in refresh.NYSE_HOLIDAYS) <= 10 for y in years)
+    scheduled = refresh.NYSE_HOLIDAYS - refresh.NYSE_UNSCHEDULED_CLOSURES
+    assert all(8 <= sum(d.year == y for d in scheduled) <= 10 for y in years)
+    assert refresh.NYSE_UNSCHEDULED_CLOSURES == {date(2025, 1, 9)}
+    assert not refresh.NYSE_UNSCHEDULED_CLOSURES & refresh._SCHEDULED_CLOSURES
+
+
+@pytest.mark.parametrize("book", ["data/demo.db", "tests/fixtures/frozen_book.db"])
+def test_the_committed_books_spy_closes_agree_with_2025s_table(book):
+    """SPY, the session reference, holds a close on every 2025 weekday the table calls a
+    session and on none it calls a closure, January 9 among them."""
+    conn = sqlite3.connect(f"file:{ROOT / book}?mode=ro", uri=True)
+    try:
+        closes = {date.fromisoformat(d) for (d,) in conn.execute(
+            "SELECT price_date FROM prices WHERE ticker = 'SPY' AND price_date "
+            "BETWEEN '2025-01-01' AND '2025-12-31'")}
+    finally:
+        conn.close()
+    weekdays = [date(2025, 1, 1) + timedelta(days=i) for i in range(365)]
+    weekdays = [d for d in weekdays if d.weekday() < 5]
+    assert len(weekdays) == 261 and len(closes) == 250, (len(weekdays), len(closes))
+    assert [d for d in weekdays if refresh.is_session(d) != (d in closes)] == []
+
+
+def _tool(name: str):
+    spec = importlib.util.spec_from_file_location(name, ROOT / "tools" / f"{name}.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_each_close_out_tool_refuses_to_run_on_a_short_table(monkeypatch, tmp_path, capsys):
+    """Before it reads or writes anything."""
+    import src.db as db
+    monkeypatch.setattr(refresh, "holiday_table_refusal",
+                        lambda today=None: "the table is short")
+
+    def _ran(*_a, **_k):
+        raise AssertionError("the tool ran past the refusal")
+
+    advance = _tool("advance_demo_prices")
+    monkeypatch.setattr(advance, "advance", _ran)
+    assert advance.main(["advance_demo_prices.py", "2026-09-30"]) == 1
+
+    check = _tool("check_price_histories")
+    monkeypatch.setattr(check, "history_ends", _ran)
+    assert check.main(["check_price_histories.py"]) == 1
+
+    # Past a missing refusal the lock tool points src.db at demo.db and switches off the
+    # price layer's gap fills before it locks: the state is restored here, and the
+    # switch stops it.
+    import src.prices as prices
+    path = db.DB_PATH
+    for name in ("DB_PATH", "_migrated_paths", "_RUNTIME_CACHE"):
+        monkeypatch.setattr(db, name, getattr(db, name))
+    monkeypatch.setattr(prices, "set_gap_fetch", _ran)
+    assert _tool("lock_demo_quarters").main() == 1
+    assert db.DB_PATH == path, "the lock tool pointed the app at demo.db before refusing"
+
+    book = tmp_path / "absent.db"
+    with pytest.raises(SystemExit, match="ABORT: the table is short"):
+        _tool("complete_demo_lock_inputs").main("2026Q3", ["umd"], book)
+    assert not book.exists(), "the completion tool opened the book before refusing"
+
+    assert capsys.readouterr().out.count("ABORT: the table is short") == 3
 
 
 @pytest.mark.parametrize("day, session", [
+    (date(2025, 1, 9), False),     # the national day of mourning, by NYSE's notice
+    (date(2025, 1, 10), True),
+    (date(2025, 4, 18), False),    # Good Friday
+    (date(2025, 6, 19), False),    # Juneteenth
+    (date(2025, 11, 28), True),    # the day after Thanksgiving closes early: a session
+    (date(2025, 12, 31), True),
     (date(2026, 9, 7), False),     # Labor Day
     (date(2026, 7, 3), False),     # Independence Day observed (July 4 is a Saturday)
     (date(2027, 12, 24), False),   # Christmas observed

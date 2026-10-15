@@ -83,14 +83,19 @@ def state() -> Optional[RefreshState]:
     return _STATE
 
 
-# NYSE full-day closures, as nyse.com/markets/hours-calendars listed them on
-# 2026-09-26 (observed dates where a holiday falls on a weekend; no New Year's closure
-# in 2028, when January 1 is a Saturday). Static, so no calendar dependency. Early
-# closes are sessions. Outside these years every weekday counts as a session, the
-# rule before this table, so tests/test_market_holidays.py fails from January 1 of
-# the last year listed: extend the table from the same page before then.
-NYSE_HOLIDAY_YEARS = (2026, 2028)
-NYSE_HOLIDAYS = frozenset(date.fromisoformat(d) for d in (
+# NYSE full-day closures. The scheduled ones for 2025 as NYSE Group's 2025-2027 holiday
+# calendar listed them (announced November 11, 2024), and for 2026 to 2028 as
+# nyse.com/markets/hours-calendars listed them on 2026-09-26 (observed dates where a
+# holiday falls on a weekend; no New Year's closure in 2028, when January 1 is a
+# Saturday). Static, so no calendar dependency. Early closes are sessions. Outside
+# these years every weekday counts as a session, the rule before this table, so the
+# close-out refuses to run (holiday_table_refusal), and tests/test_market_holidays.py
+# fails, once the table does not reach the end of next year: extend it from the same
+# page before then (#466).
+NYSE_HOLIDAY_YEARS = (2025, 2028)
+_SCHEDULED_CLOSURES = frozenset(date.fromisoformat(d) for d in (
+    "2025-01-01", "2025-01-20", "2025-02-17", "2025-04-18", "2025-05-26",
+    "2025-06-19", "2025-07-04", "2025-09-01", "2025-11-27", "2025-12-25",
     "2026-01-01", "2026-01-19", "2026-02-16", "2026-04-03", "2026-05-25",
     "2026-06-19", "2026-07-03", "2026-09-07", "2026-11-26", "2026-12-25",
     "2027-01-01", "2027-01-18", "2027-02-15", "2027-03-26", "2027-05-31",
@@ -98,6 +103,33 @@ NYSE_HOLIDAYS = frozenset(date.fromisoformat(d) for d in (
     "2028-01-17", "2028-02-21", "2028-04-14", "2028-05-29", "2028-06-19",
     "2028-07-04", "2028-09-04", "2028-11-23", "2028-12-25",
 ))
+# Closures no calendar schedules, each entered by hand from NYSE's notice. Nothing
+# falls back when an expected session never trades: a lock waits on the close of its
+# quarter's last session until the closure is entered here (#466). January 9, 2025:
+# the national day of mourning for President Carter (NYSE Group's notice of December
+# 30, 2024).
+NYSE_UNSCHEDULED_CLOSURES = frozenset({date(2025, 1, 9)})
+NYSE_HOLIDAYS = _SCHEDULED_CLOSURES | NYSE_UNSCHEDULED_CLOSURES
+
+
+def holiday_table_refusal(today: "date | None" = None) -> "str | None":
+    """Why the quarterly close-out may not run, or None: the NYSE holiday table must
+    reach the end of next year (#466, decided by the owner on September 28, 2026).
+
+    A lock waits on the close of its quarter's last NYSE session
+    (cache.last_session_on_or_before), and past the table every weekday counts as a
+    session. So a closure the table does not hold is a session that never trades, and
+    a quarter ending there would wait indefinitely: March 31, 2029 is a Saturday and the
+    Friday before it is Good Friday. ``today`` is New York's date by default."""
+    from src.asof import today_et
+    needed = (today or today_et()).year + 1
+    last = NYSE_HOLIDAY_YEARS[1]
+    if last >= needed:
+        return None
+    return (f"the NYSE holiday table in src/demo_refresh.py ends with {last}, and the "
+            f"close-out needs it through December 31, {needed}. Extend it from "
+            f"nyse.com/markets/hours-calendars, and enter any unscheduled closure by "
+            f"hand from NYSE's notice.")
 
 
 def is_session(d: date) -> bool:
