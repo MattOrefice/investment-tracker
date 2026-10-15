@@ -7,6 +7,11 @@ sleeve's included. That sleeve's regression runs on VEA alone, and SPHQ is a US 
 cause the caption states now names a fund read from the sleeve's own funds: the tickers
 its regression runs on, which the page prints above the table. With none to name, the
 caption states only what the loading shows.
+
+A loading the label cannot tell from zero gives no reason either (#573, decided by the
+owner on October 14, 2026, by #560's rule: a caption states what the loading shows, and a
+cause only when the data names it). It said the absence was "consistent with the
+tax-aware construction (high momentum turnover → short-term capital gains)".
 """
 from __future__ import annotations
 
@@ -51,6 +56,15 @@ def test_every_fund_a_caption_names_is_one_its_sleeve_holds():
 def test_an_insignificant_loading_names_no_fund():
     for funds in SLEEVES:
         assert FUND.findall(factors.momentum_caption(0.01, 0.5, funds)) == [], funds
+
+
+def test_an_insignificant_loading_states_what_it_shows_and_gives_no_reason():
+    for funds in SLEEVES:
+        for t in (0.0, 0.5, 1.5, -1.2, float("nan")):
+            assert prose_helpers.significance_level(t) == "none", t
+            assert factors.momentum_caption(-0.012, t, funds) == (
+                f"Mom loading of -0.012 (t = {t:.2f}) confirms the portfolio carries no "
+                f"systematic momentum tilt."), (funds, t)
 
 
 def test_both_expanders_pass_their_sleeves_funds():
