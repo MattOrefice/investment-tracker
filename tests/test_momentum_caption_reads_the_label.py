@@ -28,7 +28,7 @@ from src import factors
 ROOT = Path(__file__).resolve().parent.parent
 PAGE = ROOT / "pages" / "4_Factor_Profile.py"
 US = factors._SLEEVES["us"]["tickers"]
-NO_TILT = "confirms the portfolio carries no systematic momentum tilt"
+NO_TILT = "confirms the sleeve carries no systematic momentum tilt"
 TEN_UP = (("1%", 2.58), ("5%", 1.96), ("10%", 1.80))
 TEN_DOWN = (("1%", 2.58), ("5%", 1.96), ("10%", 1.30))
 T_VALUES = (0.0, 0.9, 1.3, 1.5, 1.65, 1.7, 1.8, 1.9, 1.96, 2.2, 2.6, 4.0, -1.7, -3.1,
