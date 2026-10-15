@@ -12,7 +12,10 @@ on:
 
 jobs:
   live-data:
-    runs-on: ubuntu-latest
+    # PINNED TO ubuntu-24.04, NOT ubuntu-latest, for the reason ci.yml gives: GitHub
+    # moves ubuntu-latest to Ubuntu 26.04 gradually between October 19 and November
+    # 19, 2026. Moving to 26.04 is a trial for later (#585).
+    runs-on: ubuntu-24.04
     # issues: write for the failure step below; contents: read for checkout.
     permissions:
       contents: read
