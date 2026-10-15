@@ -2,6 +2,7 @@
 import json
 import math
 import os
+import sqlite3
 import sys
 import threading
 import time
@@ -387,16 +388,37 @@ def get_series_for_page(series_id: str, start_date: str, deadline: float) -> pd.
 _STALLED_WARM: "threading.Thread | None" = None
 
 
+def _cache_locked(exc: Exception) -> bool:
+    """Whether a SQLite error is its busy timeout: another connection held the cache's
+    lock for longer than this one waits for it (sqlite3's default, 5 seconds)."""
+    return (isinstance(exc, sqlite3.OperationalError)
+            and str(getattr(exc, "sqlite_errorname", "")).startswith("SQLITE_BUSY"))
+
+
 def _wait_for_warm(series_id: str, start_date: str, deadline: float) -> pd.Series:
     """The bounded read (see get_series): today's row, the series' retry wait, or the
-    warm's fetch until ``deadline``; past it, FREDStillFetching with the stored copy."""
+    warm's fetch until ``deadline``; past it, FREDStillFetching with the stored copy.
+
+    A read that finds the cache locked past SQLite's busy timeout has not found the row
+    yet, and reads again until ``deadline``, like a read that finds no row (#580). It
+    raised. Under -n 4 on GitHub's runner the warm, the only other connection to that
+    test's cache, held it locked past the timeout, and the Macro page's read of USREC
+    raised "OperationalError: database is locked" in a render that took 6.8 of its 15
+    seconds. Both USREC panels showed that error while the other 21 series rendered. The
+    demo's page reads the same cache while its warm and its price refresh write it."""
     global _STALLED_WARM
-    _ensure_cache_table()
     started = False
     while True:
         # Read BEFORE the row: a warm seen finished here has written all it will.
         running = _warm_running()
-        cached = _read_cached(series_id, start_date, _cache_day())
+        try:
+            _ensure_cache_table()
+            cached = _read_cached(series_id, start_date, _cache_day())
+            locked = False
+        except sqlite3.OperationalError as exc:
+            if not _cache_locked(exc):
+                raise
+            cached, locked = None, True
         if cached is not None:
             return cached
         wait = _retry_wait(series_id)
@@ -409,7 +431,7 @@ def _wait_for_warm(series_id: str, start_date: str, deadline: float) -> pd.Serie
             if running:
                 _STALLED_WARM = _WARM_THREAD
             break
-        if not running:
+        if not running and not locked:
             if started:
                 break                  # it ran without resolving this series
             warm_cache_in_background(again=True)
