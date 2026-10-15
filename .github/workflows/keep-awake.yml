@@ -20,7 +20,12 @@ on:
 
 jobs:
   wake:
-    runs-on: ubuntu-latest
+    # PINNED TO ubuntu-24.04, NOT ubuntu-latest, for the reason ci.yml gives: GitHub
+    # moves ubuntu-latest to Ubuntu 26.04 gradually between October 19 and November
+    # 19, 2026. This job runs no tests, but `playwright install --with-deps` installs
+    # OS packages, and a wake that fails on the new image lets the demo sleep (decided
+    # by the owner, October 15, 2026). Moving to 26.04 is part of the trial in #585.
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Checkout

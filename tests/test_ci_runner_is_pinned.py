@@ -1,5 +1,5 @@
-"""CI and the live-data job run on ubuntu-24.04, not ubuntu-latest (decided by the
-owner, October 15, 2026).
+"""CI, the live-data job and the keep-awake job run on ubuntu-24.04, not ubuntu-latest
+(decided by the owner, October 15, 2026).
 
 GitHub moves ubuntu-latest from Ubuntu 24.04 to 26.04 gradually between October 19 and
 November 19, 2026 (its changelog of September 17, 2026). During that month one SHA could
@@ -7,7 +7,9 @@ run on either image, so a green run would not say which image it was green on. T
 workflows that run the suite name their image; moving them to 26.04 is a trial for later
 (#585).
 
-keep-awake.yml runs no tests and was left on the label, so it is not checked here.
+keep-awake.yml runs no tests and was first left on the label. It names ubuntu-24.04 too
+(#585, decided by the owner, October 15, 2026): its Playwright step installs OS packages,
+and a wake that fails on 26.04 lets the demo sleep.
 """
 from __future__ import annotations
 
@@ -29,3 +31,10 @@ def test_the_workflows_that_run_the_suite_name_ubuntu_24_04():
         images = _runs_on(text)
         assert images, f"premise: {name} names a runner for its job"
         assert set(images) == {"ubuntu-24.04"}, (name, images)
+
+
+def test_the_keep_awake_job_names_ubuntu_24_04():
+    text = (WORKFLOWS / "keep-awake.yml").read_text(encoding="utf-8")
+    assert "playwright install --with-deps chromium" in text, (
+        "premise: the keep-awake job installs OS packages for its browser")
+    assert _runs_on(text) == ["ubuntu-24.04"], _runs_on(text)
