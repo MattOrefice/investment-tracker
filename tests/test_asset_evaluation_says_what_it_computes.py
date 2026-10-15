@@ -150,7 +150,7 @@ def test_on_the_frozen_book_the_conclusion_cites_only_the_average_the_section_pr
     with the date the rolling series ends on."""
     from src.asof import format_long_date
     section, rolling = _section_on(monkeypatch)
-    printed = re.search(r"Post-2020 average: (-?\d\.\d\d),", section["rolling_prose"])
+    printed = re.search(r"Post-2020 average: (-?\d\.\d\d)\.", section["rolling_prose"])
     assert printed and "Pre-2020 average" not in section["rolling_prose"]
     through = format_long_date(rolling.index.max().date())
     assert (f"its pre-2020 level: this sample holds none before 2020, and it has averaged "
@@ -187,7 +187,7 @@ def test_on_the_demo_book_the_conclusion_cites_both_averages_the_section_prints(
     monkeypatch.setattr(db, "_RUNTIME_CACHE", None)
     prices._reset_trailing_memo()
     section, rolling = _section_on(monkeypatch)
-    printed = re.search(r"Pre-2020 average: (-?\d\.\d\d) .*Post-2020 average: (-?\d\.\d\d),",
+    printed = re.search(r"Pre-2020 average: (-?\d\.\d\d)\. Post-2020 average: (-?\d\.\d\d)\.",
                         section["rolling_prose"])
     cited = re.search(r"it averaged (-?\d\.\d\d) before 2020 and (-?\d\.\d\d) from 2020 "
                       r"through ([A-Z][a-z]+ \d+, \d{4})\. That would indicate",

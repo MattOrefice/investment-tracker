@@ -19,8 +19,8 @@ LABEL_CLASSES = {
     # The sign of a loading or an alpha.
     "sign": ("positive", "negative", "zero"),
     # Whether a return beat or trailed the one it is set against, where the sentence
-    # prints the gap as a magnitude.
-    "versus_benchmark": ("out", "under"),
+    # prints the gap as a magnitude; or, when that gap rounds to 0 bps, neither (#426).
+    "versus_benchmark": ("out", "under", "in_line"),
     # The CAPE percentile's band (reports._cape_regime_class).
     "cape_regime": ("elevated", "above_average", "moderate", "below_average"),
     # The FI sleeve's duration against the benchmark's (reports._build_positioning_section).

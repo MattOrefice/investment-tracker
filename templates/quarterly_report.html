@@ -96,7 +96,7 @@
   {% else %}
   <div class="empty-banner">
     No trades have been logged. This report contains structural information only:
-    SAA targets, investment theses, and macro context. Performance and attribution
+    SAA targets and macro context. Performance and attribution
     sections populate after the first trade is recorded.
   </div>
   {% endif %}
@@ -761,7 +761,10 @@
      DIRECTIONAL: args_for is entirely derived from the marginal-Sharpe curve, while
      three of the four args_against are hardcoded and survive every failure. So a
      computation that did not run produced a one-sided verdict. #}
-  {% if "marginal_sharpe" in asset_eval.unavailable %}
+  {# "none found" only from a curve that was read: sharpe_curve_top is set when it was
+     (#426). An empty curve is not a failure, and assessed nothing either. #}
+  {% if "marginal_sharpe" in asset_eval.unavailable
+        or not (asset_eval.args_for or asset_eval.sharpe_curve_top) %}
   <p><strong>Arguments for inclusion: not assessed.</strong> The marginal-Sharpe curve
   could not be computed, so no case for inclusion was evaluated. <strong>The arguments
   against listed below were not weighed against anything. This is a gap in the
@@ -775,7 +778,8 @@
   </ul>
   {% else %}
   <p><strong>Arguments for inclusion: none found.</strong> The marginal-Sharpe curve was
-  computed across BTC allocations and no weight improved the portfolio's Sharpe ratio
+  computed at BTC allocations from 0% to {{ asset_eval.sharpe_curve_top }}, and no weight
+  between 0% and {{ asset_eval.sharpe_curve_top }} improved the portfolio's Sharpe ratio
   against SAA targets. This is a result, not a gap.</p>
   {% endif %}
 
@@ -825,7 +829,8 @@
           <dt>Time-Weighted Return</dt>
           <dd>Daily-linked chain-linked TWR (GIPS-compliant). For each day t:
           r<sub>t</sub> = (V<sub>t</sub> &minus; V<sub>t&minus;1</sub> &minus; CF<sub>t</sub>) / V<sub>t&minus;1</sub>.
-          Cash flows assumed at beginning of day. Cumulative return is
+          Cash flows count at the end of the day: a day&rsquo;s flow is netted from that day&rsquo;s
+          value change and earns nothing that day. Cumulative return is
           &prod;(1 + r<sub>t</sub>) &minus; 1.{% if si_days is defined and si_days < 365 %}
           1Y note: while history is under one year (currently {{ si_days }}d), the 1Y period equals SI.{% endif %}</dd>
 
@@ -845,9 +850,8 @@
           return within 1 basis point.</dd>
 
           <dt>Drift Status</dt>
-          <dd>Flagged &ldquo;Drift&rdquo; when absolute drift exceeds the per-sleeve tolerance band
-          (&plusmn;{{ methodology_drift_large_bps }}&nbsp;bps for sleeves with &ge;{{ methodology_drift_large_min_pct }}% target weight;
-          &plusmn;{{ methodology_drift_small_bps }}&nbsp;bps for smaller sleeves)
+          <dd>Flagged &ldquo;Drift&rdquo; when absolute drift exceeds the sleeve&rsquo;s tolerance band
+          in the SAA policy ({{ methodology_drift_bands }})
           <em>or</em> relative drift exceeds 20% of target weight.
           Both thresholds must be satisfied for &ldquo;Within&rdquo; status.</dd>
 
@@ -868,7 +872,7 @@
           BAMLH0A0HYM2 = ICE BofA HY OAS.{% if macro and macro.windows %} {{ macro.windows }}{% endif %}</dd>
 
           <dt>SAA &amp; Sleeve Targets</dt>
-          <dd>{{ methodology_parent_weights }}. {{ methodology_sleeve_count }} sleeves; full rationale in the SAA section.</dd>
+          <dd>{{ methodology_parent_weights }}. {{ methodology_sleeve_count }} sleeves.</dd>
 
         </dl>
       </td>
