@@ -3,7 +3,7 @@
 ## Overview
 
 CI runs on every push and PR to `main` via `.github/workflows/ci.yml`.  
-Fast tests (no `@pytest.mark.slow`) run on `ubuntu-24.04` / Python 3.11 with `TRACKER_MODE=demo`.
+Fast tests (no `@pytest.mark.slow`) run on `ubuntu-24.04` / Python 3.11 with `TRACKER_MODE=demo`, on four workers (`-n 4`, pytest-xdist from `requirements-ci.txt`, #544).
 
 ---
 
