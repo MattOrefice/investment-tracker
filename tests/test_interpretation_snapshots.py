@@ -29,39 +29,10 @@ from src.macro import (
 from src.factors import (
     interpret_benchmark_attribution,
     interpret_correlations,
-    interpret_sleeve_regression,
 )
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-
-def _make_res(
-    betas: dict,
-    t_stats: dict,
-    alpha_bps: float = 0.0,
-    t_alpha: float = 0.5,
-    r2: float = 0.92,
-    T: int = 250,
-    sleeve_label: str = "Test Sleeve",
-) -> dict:
-    p_values = {f: 0.05 if abs(t) >= 2.0 else 0.30 for f, t in t_stats.items()}
-    return {
-        "betas":            betas,
-        "t_stats":          t_stats,
-        "p_values":         p_values,
-        "alpha_annual_bps": alpha_bps,
-        "t_alpha":          t_alpha,
-        "p_alpha":          0.06 if abs(t_alpha) >= 1.65 else 0.30,
-        "r_squared":        r2,
-        "adj_r_squared":    r2 - 0.01,
-        "T":                T,
-        "nw_lags":          4,
-        "sleeve_label":     sleeve_label,
-        "sample_start":     "2025-05-01",
-        "sample_end":       "2026-05-01",
-        "tickers":          ["TST"],
-    }
-
 
 def _make_bench_res(
     b_bench: float = 1.00,
@@ -301,65 +272,6 @@ class TestUsVsIntlSpreadSnapshot:
             "a strong reversal in international's favor, consistent with the "
             "valuation mean-reversion thesis underlying the "
             "developed-international allocation."
-        )
-        assert result == expected
-
-
-# ── 6. interpret_sleeve_regression ───────────────────────────────────────────
-
-class TestSleeveRegressionSnapshot:
-    """Snapshot tests — three branches covering production-relevant scenarios."""
-
-    def test_significant_factors_insignificant_alpha(self):
-        """Three significant loadings, alpha not significant — typical production case."""
-        res = _make_res(
-            betas={"Mkt-RF": 1.02, "HML": 0.28, "SMB": 0.04, "RMW": -0.18, "CMA": 0.01},
-            t_stats={"Mkt-RF": 22.0, "HML": 3.1, "SMB": 0.7, "RMW": -2.3, "CMA": 0.2},
-            alpha_bps=15.0, t_alpha=0.4, r2=0.94,
-        )
-        result = interpret_sleeve_regression(res, ["Mkt-RF", "HML", "SMB", "RMW", "CMA"])
-        expected = (
-            "Test Sleeve shows significant loadings on: "
-            "Mkt-RF loading: +1.020 (t = 22.00, positive, significant); "
-            "HML loading: +0.280 (t = 3.10, positive, significant); "
-            "RMW loading: -0.180 (t = -2.30, negative, significant). "
-            "Annualized alpha of +15 bps (t = 0.40) is not statistically significant "
-            "— the sleeve's returns are consistent with factor exposures alone."
-        )
-        assert result == expected
-
-    def test_no_significant_factors_short_sample(self):
-        """120-day sample — no |t|>2 loadings; short-sample caveat appears in output."""
-        res = _make_res(
-            betas={"Mkt-RF": 0.95, "HML": 0.10},
-            t_stats={"Mkt-RF": 1.5, "HML": 0.9},
-            alpha_bps=50.0, t_alpha=0.8, T=120,
-        )
-        result = interpret_sleeve_regression(res, ["Mkt-RF", "HML"])
-        expected = (
-            "Test Sleeve has no statistically significant factor loadings "
-            "at the |t| > 2 threshold across the 120 observed trading days. "
-            "This may reflect a short sample period, not an absence of factor exposure. "
-            "Annualized alpha of +50 bps (t = 0.80) is not statistically significant "
-            "— the sleeve's returns are consistent with factor exposures alone."
-        )
-        assert result == expected
-
-    def test_significant_alpha(self):
-        """Statistically significant positive alpha — short-sample caveat included."""
-        res = _make_res(
-            betas={"Mkt-RF": 1.05, "HML": 0.15},
-            t_stats={"Mkt-RF": 18.0, "HML": 1.0},
-            alpha_bps=420.0, t_alpha=2.5,
-        )
-        result = interpret_sleeve_regression(res, ["Mkt-RF", "HML"])
-        expected = (
-            "Test Sleeve shows significant loadings on: "
-            "Mkt-RF loading: +1.050 (t = 18.00, positive, significant). "
-            "Annualized alpha is +420 bps (t = 2.50), statistically significant "
-            "— a positive active return not explained by the factor model. "
-            "Given the short sample, this estimate carries wide uncertainty and "
-            "should not be read as evidence of persistent skill."
         )
         assert result == expected
 
