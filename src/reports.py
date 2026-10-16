@@ -1614,14 +1614,6 @@ def _build_asset_eval_section() -> dict:
         "delta_sharpe_con": None,
         "msc_chart_b64":    None,
         "dd_rows":          [],
-        # Bitcoin's OWN 2022 drawdown, signed, for the case-against drawdown sentence;
-        # the caption reads the size of the fall instead (#536). The caption used to
-        # describe a "2022 stress scenario: equities -20%, bonds -15%, BTC -65%",
-        # which read as a hypothetical shock applied to the table — the column is
-        # realized 2022 history. The two unverified sleeve figures are gone rather
-        # than derived: accurate sleeve-level numbers would still describe
-        # something the column does not compute. #276.
-        "btc_2022_mdd":     None,
         # How the Drawdown Sensitivity note closes: what adding BTC did to the
         # portfolio's 2022 drawdown, the verb read from the table's two figures (#529).
         "dd_2022_note":     None,
@@ -1681,18 +1673,6 @@ def _build_asset_eval_section() -> dict:
     # window is the returns' own dates, the line above this one in the section.
     result["rf_note"] = ("Risk-free rate: " + risk_free.describe(
         _rf, name_series=True, window="the sample's own window") + ".")
-
-    # Bitcoin's OWN realized 2022 drawdown, for the table caption (#276). Computed
-    # here rather than inside 5h because it is a property of the candidate asset, not
-    # of any blend — and because btc_ret is guaranteed non-empty past the loader
-    # guard above, so the caption cannot silently lose its figure when the sweep
-    # fails. Stored preformatted: its one consumer is the case-against drawdown
-    # sentence ("Its 2022 drawdown of -66.9%"), signed as the table's drawdowns are.
-    # The note under the table says how far Bitcoin fell, so it reads the size of the
-    # fall from decline_in_year instead (#536).
-    _btc_2022 = _max_drawdown(btc_ret.loc["2022-01-01":"2022-12-31"])
-    if not np.isnan(_btc_2022):
-        result["btc_2022_mdd"] = f"{_btc_2022:.1%}"
 
     # 5a: Univariate statistics
     try:
@@ -1891,9 +1871,24 @@ def _build_asset_eval_section() -> dict:
                     "mdd22_lo":  float(_base["2022 MDD"]),
                     "mdd22_hi":  float(_top["2022 MDD"]),
                 }
-            # The size of Bitcoin's 2022 fall, from the one function every "fell"
-            # sentence reads (#536): this note printed the signed drawdown above.
-            result["dd_2022_note"] = ae.drawdown_2022_note(ae.decline_in_year(btc_ret), _port)
+            # 2022 stated once, as the page's 5h states it (#604, decided by the owner
+            # on October 15, 2026): each series' calendar-year return from the book, the
+            # naive benchmark's two legs and bitcoin. The note printed bitcoin's
+            # peak-to-trough fall, and the case-against bullet printed it again, signed.
+            # The caption above the table once described a "2022 stress scenario:
+            # equities -20%, bonds -15%, BTC -65%" that nothing computed (#276).
+            from src.benchmarks import NAIVE_60_40
+            (_eq_t, _), (_bd_t, _) = NAIVE_60_40
+
+            def _year_return(ticker: str) -> float:
+                try:
+                    return ae.return_in_year(ae.get_candidate_returns(ticker, ae.SAMPLE_START))
+                except Exception:
+                    return float("nan")
+
+            _r22 = {_eq_t: _year_return(_eq_t), _bd_t: _year_return(_bd_t),
+                    "BTC": ae.return_in_year(btc_ret)}
+            result["dd_2022_note"] = ae.drawdown_2022_note(_r22, _port)
     except Exception:
         result["unavailable"].append("drawdown")
 
@@ -1949,8 +1944,7 @@ def _build_asset_eval_section() -> dict:
         # The PORTFOLIO half comes from 5h, which can fail on its own — hence two
         # forms, and the reduced one says the contrast is ABSENT rather than
         # quietly dropping it. A missing contrast otherwise reads as no contrast.
-        args_against.append(_drawdown_argument(
-            _max_drawdown(btc_ret), result["btc_2022_mdd"], _port, ae.SAMPLE_START))
+        args_against.append(_drawdown_argument(_max_drawdown(btc_ret), _port, ae.SAMPLE_START))
 
         args_against.extend([
             # Bitcoin's tax line, the Asset Evaluation page's own text (audit item 15d).

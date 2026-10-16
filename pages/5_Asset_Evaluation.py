@@ -1106,22 +1106,23 @@ with col:
             _port = {"max_dd": float(_b["Max DD"]), "alloc_top": str(_t["BTC Alloc"]),
                      "mdd22_lo": float(_b["2022 MDD"]), "mdd22_hi": float(_t["2022 MDD"])}
     args_against.extend([
-        # No 2022 figure of Bitcoin's own: 5h states 2022 once, as calendar-year returns
-        # (#425). The PDF still passes its own; #604 asks whether the decision reaches it.
-        _drawdown_argument(_max_drawdown(btc_ret), None, _port, ae.SAMPLE_START),
+        _drawdown_argument(_max_drawdown(btc_ret), _port, ae.SAMPLE_START),
         ae.BITCOIN_TAX_LINE,
         "Operational complexity: self-custody introduces key management risk "
         "and exchange-held BTC introduces counterparty risk (FTX 2022). The "
         "2024 launch of spot Bitcoin ETFs (IBIT, FBTC, BITB) materially reduces "
         "these operational frictions for retail and most institutional "
         "implementations. Bitcoin can now be held in a standard brokerage "
-        "account at 0.12–0.25% expense ratios, with creation/redemption "
-        "mechanics that mirror commodity ETF wrappers. The remaining "
-        "operational considerations are the expense drag, which is real over a "
-        "multi-year hold, and tax classification. Spot Bitcoin ETFs are structured "
-        "as grantor trusts, so they pass through as direct ownership of the bitcoin, "
-        "which is property for tax purposes. There is no qualified-dividend treatment, "
-        "and the wash-sale rule does not apply under current IRS guidance",
+        "account, with creation/redemption mechanics that mirror commodity ETF "
+        "wrappers. The remaining operational considerations are the expense drag, "
+        "which is real over a multi-year hold, and tax classification. "
+        # Cited, as #604 decided on October 15, 2026. A typed "0.12–0.25%" fee range went,
+        # as did "no qualified-dividend treatment" and "the wash-sale rule does not apply
+        # under current IRS guidance", which cited nothing.
+        "IBIT's sponsor treats the trust as a grantor trust for U.S. federal income tax "
+        "purposes, so its shareholders are taxed as if they directly owned a pro rata "
+        "share of its bitcoin (iShares Bitcoin Trust ETF, annual report on Form 10-K for "
+        "2025, filed February 27, 2026)",
         "No intrinsic cash flow, earnings, or fundamental anchor for valuation: "
         "expected return is purely sentiment-driven, making MV inputs highly unreliable",
     ])

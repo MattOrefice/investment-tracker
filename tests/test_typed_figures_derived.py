@@ -21,7 +21,7 @@ import pandas as pd
 import pytest
 
 from src import benchmarks
-from src.asset_evaluation import decline_in_year
+from src.asset_evaluation import return_in_year
 from src.prose_figures import render
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -147,11 +147,14 @@ def test_spaxx_says_cash_is_untargeted_and_types_no_weight():
 
 # ── item 6 ───────────────────────────────────────────────────────────────────
 
-def test_decline_in_year_is_that_years_drawdown():
+def test_the_2022_figure_is_that_years_return():
+    """MIGRATED at #604: decline_in_year went with the last sentence that printed a
+    fall. What this protected, a 2022 figure derived from the series' own returns in
+    that year and no other, is return_in_year's now."""
     idx = pd.to_datetime(["2021-12-31", "2022-01-03", "2022-06-01", "2022-12-30", "2023-01-03"])
     r = pd.Series([0.50, 0.10, -0.50, 0.20, -0.90], index=idx)
-    assert decline_in_year(r) == pytest.approx(0.50)   # 1.10 -> 0.55; 2021 and 2023 ignored
-    assert np.isnan(decline_in_year(r.loc[:"2021"]))
+    assert return_in_year(r) == pytest.approx(1.10 * 0.50 * 1.20 - 1)  # 2021, 2023 ignored
+    assert np.isnan(return_in_year(r.loc[:"2021"]))
 
 
 def test_the_2022_paragraph_types_no_figure():

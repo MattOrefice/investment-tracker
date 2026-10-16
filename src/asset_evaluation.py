@@ -1245,9 +1245,10 @@ def return_in_year(returns, year: int = 2022) -> float:
     compounded, as a signed fraction. NaN when the series has no returns in it.
 
     The Asset Evaluation page states 2022 once, as each series' calendar-year return
-    (#425, decided by the owner on October 15, 2026). It printed bitcoin's 2022 fall three
-    times in two signs: a peak-to-trough decline within the year (decline_in_year) in
-    5h's two paragraphs, and the same figure signed, its 2022 drawdown, in 5j's bullet."""
+    (#425, decided by the owner on October 15, 2026), and the PDF's Drawdown Sensitivity
+    note does the same since #604. The page printed bitcoin's 2022 fall three times in
+    two signs: a peak-to-trough decline within the year in 5h's two paragraphs, and the
+    same figure signed, its 2022 drawdown, in 5j's bullet."""
     s = returns.loc[f"{year}-01-01":f"{year}-12-31"].dropna()
     if s.empty:
         return float("nan")
@@ -1283,20 +1284,6 @@ def stress_2022_sentences(returns: "dict[str, float]", year: int = 2022) -> str:
             "the full-sample average correlation, is the relevant measure of risk.")
 
 
-def decline_in_year(returns, year: int = 2022) -> float:
-    """How far a series fell from its peak within one calendar year, as a POSITIVE
-    fraction ("fell 66.9%"): max_drawdown over that year, negated. NaN when the series
-    has no returns in it. The page's 2022 paragraph read it for bitcoin and the naive
-    benchmark's two legs (#406 item 6), after typing "roughly 20%", "15%", "approximately
-    65%" and "over 60%"; since #425 the page states calendar-year returns instead
-    (return_in_year).
-
-    The one place a fall's sign is handled: every sentence that says something "fell"
-    prints this figure, now the PDF's Drawdown Sensitivity note alone
-    (drawdown_2022_note). It printed the signed drawdown, "Bitcoin fell -66.9%" (#536)."""
-    return -max_drawdown(returns.loc[f"{year}-01-01":f"{year}-12-31"])
-
-
 def max_drawdown(returns) -> float:
     """Worst peak-to-trough loss of a daily return series, as a NEGATIVE fraction.
 
@@ -1327,37 +1314,39 @@ def drawdown_verb(mdd_without: float, mdd_with: float) -> str:
     return "left unchanged"
 
 
-def drawdown_2022_note(btc_fall: "float | None", port: "dict | None") -> str:
-    """The sentences that close the Drawdown Sensitivity note: what Bitcoin did in
-    2022 and what adding it did to the portfolio's drawdown, read from the table's own
-    figures (#529). ``btc_fall`` is how far Bitcoin fell in 2022 as decline_in_year
-    returns it, a positive fraction, so the sentence prints the size of the fall as the
-    page's do (#536); None or NaN when the book has no 2022. ``port`` is the dict
-    drawdown_argument takes; without it the direction is not stated, because nothing
-    measured it."""
-    fell = (f"That year equities and bonds fell together while Bitcoin fell {btc_fall:.1%}"
-            if btc_fall is not None and np.isfinite(btc_fall)
-            else "That year equities and bonds fell together")
+def drawdown_2022_note(returns: "dict[str, float] | None", port: "dict | None") -> str:
+    """The sentences that close the PDF's Drawdown Sensitivity note: 2022 stated once, as
+    each series' calendar-year return read from the book, then what adding BTC did to the
+    portfolio's 2022 drawdown, read from the table's two figures (#529).
+
+    #604, decided by the owner on October 15, 2026, as #425 decided for the page: the
+    note said "That year equities and bonds fell together while Bitcoin fell 66.9%", a
+    peak-to-trough fall, and the case-against bullet gave the same fall again, signed.
+    The returns are the page's 5h sentence (stress_2022_sentences), so a figure that
+    prints as 0.0% reads "was flat" and a missing one drops the sentence. ``returns``
+    maps the naive benchmark's two legs and "BTC" to return_in_year's figures. ``port``
+    is the dict drawdown_argument takes; without it the direction is not stated, because
+    nothing measured it."""
+    year = stress_2022_sentences(returns or {})
+    lead = f"{year} " if year else ""
     if not port:
-        return (f"{fell}. What a BTC allocation did to the portfolio's 2022 drawdown is "
-                f"not available this run.")
+        return (f"{lead}What a BTC allocation did to the portfolio's 2022 drawdown is not "
+                f"available this run.")
     verb = drawdown_verb(port["mdd22_lo"], port["mdd22_hi"])
     moved = (f"from {port['mdd22_lo']:.1%} at 0% allocation to {port['mdd22_hi']:.1%} at "
              f"{port['alloc_top']}")
     if verb == "deepened":
-        return (f"{fell}, so adding BTC deepened the portfolio's 2022 drawdown, {moved}, "
-                f"instead of cushioning it. 2022 is the critical test: diversification "
-                f"value eroded in the year it was most needed.")
+        return (f"{lead}Adding BTC deepened the portfolio's 2022 drawdown, {moved}, instead "
+                f"of cushioning it. 2022 is the critical test: diversification value eroded "
+                f"in the year it was most needed.")
     if verb == "cushioned":
-        return (f"{fell}, and adding BTC cushioned the portfolio's 2022 drawdown, {moved}. "
-                f"2022 is the critical test, and on these figures the allocation did not "
-                f"deepen it.")
-    return (f"{fell}, and adding BTC left the portfolio's 2022 drawdown unchanged at "
+        return (f"{lead}Adding BTC cushioned the portfolio's 2022 drawdown, {moved}. 2022 is "
+                f"the critical test, and on these figures the allocation did not deepen it.")
+    return (f"{lead}Adding BTC left the portfolio's 2022 drawdown unchanged at "
             f"{port['mdd22_lo']:.1%}. 2022 is the critical test.")
 
 
-def drawdown_argument(btc_mdd: float, btc_2022: str | None,
-                       port: dict, sample_start: str) -> str:
+def drawdown_argument(btc_mdd: float, port: dict, sample_start: str) -> str:
     """The case-against drawdown bullet, in one of TWO forms (#276).
 
     The figure was never the defect. ">80%" was TRUE — -81.5% over this report's
@@ -1367,7 +1356,10 @@ def drawdown_argument(btc_mdd: float, btc_2022: str | None,
     PORTFOLIO's and four times smaller, so the two read as a contradiction.
 
     FULL form when the sweep ran: names Bitcoin's own figure, names the table's as
-    something else, and sizes what a BTC allocation did to 2022.
+    something else, and sizes what a BTC allocation did to 2022. It gives no 2022 figure
+    of Bitcoin's own: the page and the PDF state 2022 once, as calendar-year returns
+    (#425, #604). It added "Its 2022 drawdown of -66.9% came while equities and bonds fell
+    together", the PDF's note having just said how far Bitcoin fell.
 
     REDUCED form when 5h failed: Bitcoin's own figure still renders (btc_ret is
     guaranteed past the loader guard), and the missing portfolio contrast is
@@ -1380,14 +1372,8 @@ def drawdown_argument(btc_mdd: float, btc_2022: str | None,
         # The verb is the table's two figures' (#529): it read "deepened" whatever
         # they were, and closed "with no diversification benefit" either way.
         verb = drawdown_verb(port["mdd22_lo"], port["mdd22_hi"])
-        # Bitcoin's own 2022 figure only when the caller passes one: the page states
-        # its 2022 once, in 5h, and passes None (#425). The portfolio contrast still
-        # renders: the sweep ran, which is all the full form needs.
-        opening = (
-            f"{head}, not the {port['max_dd']:.1%} in the table above, which is "
-            f"the portfolio's. "
-            + (f"Its 2022 drawdown of {btc_2022} came while equities "
-               f"and bonds fell together. " if btc_2022 else ""))
+        opening = (f"{head}, not the {port['max_dd']:.1%} in the table above, which is "
+                   f"the portfolio's. ")
         if verb == "left unchanged":
             return (f"{opening}It left the portfolio's own 2022 drawdown unchanged at "
                     f"{port['mdd22_lo']:.1%}, from 0% allocation to {port['alloc_top']}")

@@ -178,6 +178,7 @@ def test_the_first_date_helper_never_raises():
 # ── the drawdown verb ────────────────────────────────────────────────────────
 
 PORT = {"max_dd": -0.313, "alloc_top": "10.0%", "mdd22_lo": -0.233, "mdd22_hi": -0.261}
+R22 = {"SPY": -0.18175, "AGG": -0.13022, "BTC": -0.64265}
 
 
 @pytest.mark.parametrize("without, with_btc, verb", [
@@ -188,17 +189,17 @@ def test_the_verb_is_the_two_figures(without, with_btc, verb):
 
 
 def test_the_argument_says_deepened_only_when_the_drawdown_is_deeper():
-    deeper = ae.drawdown_argument(-0.815, "-66.9%", PORT, "2018-01-01")
+    deeper = ae.drawdown_argument(-0.815, PORT, "2018-01-01")
     assert deeper.endswith(
         "It deepened the portfolio's own 2022 drawdown from -23.3% at 0% allocation to "
         "-26.1% at 10.0%, with no diversification benefit when it was most needed")
-    shallower = ae.drawdown_argument(-0.815, "-66.9%", dict(PORT, mdd22_hi=-0.201),
+    shallower = ae.drawdown_argument(-0.815, dict(PORT, mdd22_hi=-0.201),
                                      "2018-01-01")
     assert shallower.endswith(
         "It cushioned the portfolio's own 2022 drawdown from -23.3% at 0% allocation to "
         "-20.1% at 10.0%, so on this measure it did not deepen the year's loss")
     assert "deepened" not in shallower and "no diversification benefit" not in shallower
-    same = ae.drawdown_argument(-0.815, "-66.9%", dict(PORT, mdd22_hi=-0.233), "2018-01-01")
+    same = ae.drawdown_argument(-0.815, dict(PORT, mdd22_hi=-0.233), "2018-01-01")
     assert same.endswith("It left the portfolio's own 2022 drawdown unchanged at -23.3%, "
                          "from 0% allocation to 10.0%")
     for text in (deeper, shallower, same):
@@ -206,30 +207,31 @@ def test_the_argument_says_deepened_only_when_the_drawdown_is_deeper():
 
 
 def test_the_reduced_argument_no_longer_presumes_a_direction():
-    reduced = ae.drawdown_argument(-0.815, "-66.9%", {}, "2018-01-01")
+    reduced = ae.drawdown_argument(-0.815, {}, "2018-01-01")
     assert "(what a BTC allocation did to the 2022 drawdown) is not available this run" in reduced
     assert "deepened" not in reduced and reduced.endswith("Absent, not zero")
 
 
 def test_the_note_under_the_table_follows_the_same_two_figures():
-    """MIGRATED at #536: the note takes the size of Bitcoin's fall (decline_in_year's
-    0.669) and prints "fell 66.9%"; it printed the signed "-66.9%" it was handed."""
-    assert ae.drawdown_2022_note(0.669, PORT) == (
-        "That year equities and bonds fell together while Bitcoin fell 66.9%, so adding BTC "
-        "deepened the portfolio's 2022 drawdown, from -23.3% at 0% allocation to -26.1% at "
-        "10.0%, instead of cushioning it. 2022 is the critical test: diversification value "
-        "eroded in the year it was most needed.")
-    assert ae.drawdown_2022_note(0.669, dict(PORT, mdd22_hi=-0.201)) == (
-        "That year equities and bonds fell together while Bitcoin fell 66.9%, and adding BTC "
-        "cushioned the portfolio's 2022 drawdown, from -23.3% at 0% allocation to -20.1% at "
-        "10.0%. 2022 is the critical test, and on these figures the allocation did not deepen "
-        "it.")
-    assert ae.drawdown_2022_note(0.669, dict(PORT, mdd22_hi=-0.233)) == (
-        "That year equities and bonds fell together while Bitcoin fell 66.9%, and adding BTC "
-        "left the portfolio's 2022 drawdown unchanged at -23.3%. 2022 is the critical test.")
+    """MIGRATED at #536: the note took the size of Bitcoin's fall and printed "fell
+    66.9%". MIGRATED again at #604 (decided by the owner on October 15, 2026): it states
+    2022 once, as the three calendar-year returns the page states, and "equities and
+    bonds fell together" is gone. The verb still follows the table's two figures."""
+    lead = "Over calendar 2022, SPY returned -18.2%, AGG returned -13.0% and BTC returned -64.3%: all three fell in the same year. This joint stress scenario, not the full-sample average correlation, is the relevant measure of risk. "
+    assert ae.drawdown_2022_note(R22, PORT) == (
+        lead + "Adding BTC deepened the portfolio's 2022 drawdown, from -23.3% at 0% "
+        "allocation to -26.1% at 10.0%, instead of cushioning it. 2022 is the critical "
+        "test: diversification value eroded in the year it was most needed.")
+    assert ae.drawdown_2022_note(R22, dict(PORT, mdd22_hi=-0.201)) == (
+        lead + "Adding BTC cushioned the portfolio's 2022 drawdown, from -23.3% at 0% "
+        "allocation to -20.1% at 10.0%. 2022 is the critical test, and on these figures "
+        "the allocation did not deepen it.")
+    assert ae.drawdown_2022_note(R22, dict(PORT, mdd22_hi=-0.233)) == (
+        lead + "Adding BTC left the portfolio's 2022 drawdown unchanged at -23.3%. 2022 is "
+        "the critical test.")
     assert ae.drawdown_2022_note(None, {}) == (
-        "That year equities and bonds fell together. What a BTC allocation did to the "
-        "portfolio's 2022 drawdown is not available this run.")
+        "What a BTC allocation did to the portfolio's 2022 drawdown is not available this "
+        "run.")
 
 
 def test_the_template_prints_the_note_and_types_no_verb():
@@ -238,12 +240,12 @@ def test_the_template_prints_the_note_and_types_no_verb():
     assert "{{ asset_eval.dd_2022_note }}" in body
     for typed in ("deepened", "cushioning", "cushioned"):
         assert typed not in body, typed
-    note = ae.drawdown_2022_note(0.669, dict(PORT, mdd22_hi=-0.201))
+    note = ae.drawdown_2022_note(R22, dict(PORT, mdd22_hi=-0.201))
     text = _printed(asset_eval={
         "disposition": "computed", "unavailable": [], "sample_start": "2018-01-01",
         "dd_rows": [{"alloc": "0%", "cagr": "1%", "max_dd": "-31.3%", "sharpe": "0.50",
                      "mdd22": "-23.3%"}],
-        "dd_2022_note": note, "btc_2022_mdd": "-66.9%"})
+        "dd_2022_note": note})
     assert f"from the same daily series as the rest of the table. {note}" in text
 
 
@@ -285,7 +287,7 @@ def test_on_the_demo_book_the_verb_agrees_with_the_table_it_sits_under(
     lo, hi = (float(section["dd_rows"][i]["mdd22"].rstrip("%")) for i in (0, -1))
     verb = "deepened" if hi < lo else "cushioned" if hi > lo else "left"
     assert verb == "deepened", "premise: on this book the allocation deepened 2022"
-    assert f"adding BTC {verb} the portfolio's 2022 drawdown, from {lo:.1f}% at 0% " in (
+    assert f"Adding BTC {verb} the portfolio's 2022 drawdown, from {lo:.1f}% at 0% " in (
         section["dd_2022_note"])
     argument = next(a for a in section["args_against"] if a.startswith("Bitcoin's own"))
     assert f"It {verb} the portfolio's own 2022 drawdown from {lo:.1f}% at 0% allocation to " \
@@ -304,7 +306,7 @@ def test_with_the_tables_figures_reversed_the_section_says_cushioned(tmp_path, m
 
     monkeypatch.setattr(ae, "compute_drawdown_sensitivity", shallower)
     section = _dd_section(tmp_path, monkeypatch)
-    assert "adding BTC cushioned the portfolio's 2022 drawdown, from -25.0% at 0% " in (
+    assert "Adding BTC cushioned the portfolio's 2022 drawdown, from -25.0% at 0% " in (
         section["dd_2022_note"])
     argument = next(a for a in section["args_against"] if a.startswith("Bitcoin's own"))
     assert "It cushioned the portfolio's own 2022 drawdown from -25.0% at 0% allocation to " \
@@ -324,9 +326,11 @@ def test_a_book_with_no_2022_closes_states_no_direction(tmp_path, monkeypatch):
     finally:
         unpin_leftovers()
     assert section["dd_rows"] and {row["mdd22"] for row in section["dd_rows"]} == {"\u2014"}
+    # MIGRATED at #604: with no 2022 there are no calendar-year returns to state, and
+    # "That year equities and bonds fell together" went with the claim it made.
     assert section["dd_2022_note"] == (
-        "That year equities and bonds fell together. What a BTC allocation did to the "
-        "portfolio's 2022 drawdown is not available this run.")
+        "What a BTC allocation did to the portfolio's 2022 drawdown is not available this "
+        "run.")
     argument = next(a for a in section["args_against"] if a.startswith("Bitcoin's own"))
     assert "is not available this run" in argument
     for text in (section["dd_2022_note"], argument):

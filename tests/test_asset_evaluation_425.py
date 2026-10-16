@@ -40,7 +40,7 @@ def test_it_is_not_the_peak_to_trough_decline():
     """The same year in the two measures: 1.10 falls to 0.55 within it (a 50% decline),
     and the year ends 34% down. The page printed the first and now prints the second."""
     r = _returns()
-    assert ae.decline_in_year(r) == pytest.approx(0.50)
+    assert -ae.max_drawdown(r.loc["2022"]) == pytest.approx(0.50)
     assert ae.return_in_year(r) == pytest.approx(-0.34)
 
 
@@ -99,7 +99,7 @@ def test_a_flat_figure_did_not_fall():
 def test_without_bitcoins_2022_figure_the_bullet_keeps_the_portfolio_contrast():
     """The page passes no 2022 figure of bitcoin's own, which 5h states; the bullet still
     sets bitcoin's drawdown against the table's and sizes what the allocation did."""
-    text = ae.drawdown_argument(-0.815, None, PORT, "2018-01-01")
+    text = ae.drawdown_argument(-0.815, PORT, "2018-01-01")
     assert text == (
         "Bitcoin's own maximum drawdown is -81.5% over 2018-01-01–present, not the -31.5% "
         "in the table above, which is the portfolio's. It deepened the portfolio's own "
@@ -107,15 +107,13 @@ def test_without_bitcoins_2022_figure_the_bullet_keeps_the_portfolio_contrast():
         "diversification benefit when it was most needed")
 
 
-def test_with_it_the_bullet_states_it_as_the_pdf_passes_it():
-    text = ae.drawdown_argument(-0.815, "-66.9%", PORT, "2018-01-01")
-    assert ("which is the portfolio's. Its 2022 drawdown of -66.9% came while equities and "
-            "bonds fell together. It deepened") in text
-
-
-def test_without_the_sweep_the_reduced_form_is_unchanged():
-    assert (ae.drawdown_argument(-0.815, None, {}, "2018-01-01")
-            == ae.drawdown_argument(-0.815, "-66.9%", {}, "2018-01-01"))
+def test_the_bullet_has_no_2022_figure_of_bitcoins_own_in_either_form():
+    """MIGRATED at #604: the PDF passed bitcoin's 2022 drawdown and the bullet printed
+    it; the parameter is gone, so neither form can."""
+    for port in (PORT, {}):
+        text = ae.drawdown_argument(-0.815, port, "2018-01-01")
+        assert "Its 2022 drawdown" not in text and "fell together" not in text
+    assert ae.drawdown_argument(-0.815, {}, "2018-01-01").endswith("Absent, not zero")
 
 
 # ── the candidate's mixed verdict ─────────────────────────────────────────────
