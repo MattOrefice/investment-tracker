@@ -284,6 +284,25 @@ _FRENCH_EMERGING_LIST = ('his "Description of Fama/French 5 Factors for Emerging
 _MSCI_EM_FACTSHEET = 'MSCI\'s factsheet for the MSCI Emerging Markets Index, as of September 30, 2026'
 _MSCI_CONTROL_FACTSHEET = 'MSCI\'s factsheet for that index, as of September 30, 2026'
 
+# The universe claims the controls note and the residual-reading note make (#623, decided by
+# the owner on October 16, 2026), each read that day from its owner's dated document:
+#   * MSCI's EAFE factsheet (as of September 30, 2026): 21 Developed Markets countries,
+#     "excluding the US and Canada";
+#   * MSCI's factsheet for IVLU's index, MSCI World ex USA Enhanced Value (as of September
+#     30, 2026): 22 DM countries, Canada among them and Korea not, as for IQLT's index;
+#   * FTSE's Focused Value ground rules (v2.4, August 2026) draw ISVL's index from the FTSE
+#     Developed ex US ex Korea Small Cap Index, and FTSE's classification as at April 7, 2026
+#     lists Canada as Developed;
+#   * French's developed-markets country table lists Canada, and neither Korea nor Israel.
+# The controls note gave the tilt funds' Canada weight as ~11-13%. No fund factsheet giving
+# it was found, so it went, and with it the claim that the tilt funds hold Canada.
+_MSCI_EAFE_FACTSHEET = "MSCI's factsheet for the MSCI EAFE Index, as of September 30, 2026"
+_MSCI_CONTROLS_FACTSHEETS = ("MSCI's factsheets for the MSCI World ex USA Sector Neutral "
+                             "Quality and MSCI World ex USA Enhanced Value indexes, both as of "
+                             "September 30, 2026")
+_FTSE_FOCUSED_VALUE_RULES = ('FTSE Russell\'s "FTSE Focused Value Index Series" ground rules, '
+                             'v2.4, August 2026')
+
 _INTL_TILT_SLEEVES = [
     {
         "sleeve":        "International Quality",
@@ -1569,9 +1588,11 @@ def intl_residual_reading_order() -> str:
         "is noise, and the interval shown with each number says so. "
         "**(2) Universe / classification mismatch.** The fund's index and the Ken French "
         "factor universe classify countries differently. South Korea is developed to "
-        "S&P and to FTSE (VEA's index) but emerging to Ken French; Canada is in the "
-        "factor universe but out of MSCI EAFE. Returns that fall outside the factor span "
-        "accumulate in the residual with no skill involved. "
+        f"S&P ({_SP_CLASSIFICATION}) and to FTSE, which provides VEA's index "
+        f"({_FTSE_CLASSIFICATION}), but emerging to Ken French ({_FRENCH_EMERGING_LIST}). "
+        f"Canada is in the factor universe ({_FRENCH_COUNTRY_TABLE}) but out of MSCI EAFE "
+        f"({_MSCI_EAFE_FACTSHEET}). Returns that fall outside the factor span accumulate "
+        "in the residual with no skill involved. "
         "**(3) Construction differences** between an investable fund and the academic "
         "factors. The factors are computed gross of foreign dividend withholding, while a "
         "fund reports net-of-withholding NAV. The factors rebalance costlessly and are "
@@ -1582,6 +1603,24 @@ def intl_residual_reading_order() -> str:
         "produces a non-zero residual without it. Each fund is shown beside a passive, "
         "Canada-matched control so the residual has an investable yardstick: a control "
         "that carries a large residual too is measuring construction, not selection."
+    )
+
+
+def intl_controls_note() -> str:
+    """Why EFV and SCZ are not the tilt sleeves' controls, each universe claim cited to its
+    owner's dated document (#623)."""
+    return (
+        "**EFV and SCZ are not the controls.** The Ken French Developed ex-US factors include "
+        f"Canada and leave Korea out ({_FRENCH_COUNTRY_TABLE}); MSCI EAFE (EFV, SCZ) "
+        f"excludes Canada ({_MSCI_EAFE_FACTSHEET}). Canada's return is in the factors but not "
+        "in EFV or SCZ, so against these factors a control without Canada carries a residual "
+        "that comes from the missing country, not from how the control is built. It would "
+        "read as a clean gauge while hiding the missing Canada return, so IQLT, IVLU, and "
+        "ISVL are used instead: each covers Canada and leaves Korea out, as the factors do. "
+        "IQLT's and IVLU's indexes cover MSCI's 22 Developed Markets countries, Canada among "
+        f"them and Korea not ({_MSCI_CONTROLS_FACTSHEETS}). ISVL's index selects from the "
+        f"FTSE Developed ex US ex Korea Small Cap Index ({_FTSE_FOCUSED_VALUE_RULES}), and "
+        f"FTSE classes Canada as Developed ({_FTSE_CLASSIFICATION})."
     )
 
 

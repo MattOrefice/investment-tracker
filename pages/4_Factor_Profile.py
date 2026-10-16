@@ -21,6 +21,7 @@ from src.factors import (
     build_intl_tilt_disclosure,
     factor_data_caption,
     fi_weights,
+    intl_controls_note,
     intl_residual_reading_order,
     regress_fi_sleeve,
     run_intl_tilt_regressions,
@@ -260,16 +261,7 @@ with col:
             "not the SAA attribution benchmarks (EFV, SCZ), which track MSCI EAFE and "
             "exclude Canada."
         )
-        st.info(
-            "**EFV and SCZ are not the controls.** The Ken French Developed ex-US "
-            "factor universe includes Canada; MSCI EAFE (EFV, SCZ) excludes it, and "
-            "the tilt funds hold it at ~11–13%. Canada's return is in the factors "
-            "and in the tilt funds but not in EFV or SCZ, so against these factors a "
-            "control without Canada carries a residual the tilt funds do not share. It "
-            "would read as a clean gauge while hiding the missing Canada return, so "
-            "IQLT, IVLU, and ISVL are used instead: each matches the factor universe on "
-            "both counts (Canada in, Korea out)."
-        )
+        st.info(intl_controls_note())
         st.markdown(intl_residual_reading_order())
         st.divider()
 
