@@ -76,9 +76,17 @@ HOLDINGS = [
         "expense_ratio": 0.0004,
         "er_source": 'Vanguard fund page', "er_as_of": _ER_AS_OF,
         "holding_rationale": (
-            "VTV captures the value factor through CRSP's multi-metric methodology (P/B, P/E, P/S, "
-            "P/CF, and dividend yield) rather than the P/B-heavy single metric Russell uses in IWD, "
-            "the benchmark. Multi-metric is academically superior: relying solely on P/B overweights "
+            # The two indexes' methods as their own documents give them (#427, decided by
+            # the owner on October 15, 2026). It listed P/CF among CRSP's value ratios,
+            # which has none, and called Russell's method "the P/B-heavy single metric".
+            "VTV captures the value factor through a multi-factor model. The index it tracks, "
+            "CRSP US Large Cap Value (renamed Morningstar US Large Cap Value in July 2026), scores "
+            "value on five ratios: book-to-price, future and historical earnings-to-price, "
+            "dividend-to-price and sales-to-price (Morningstar Market Indexes Methodology Guide, "
+            "July 2026). IWD, the benchmark, tracks the Russell 1000 Value, whose style score uses "
+            "one value variable, book-to-price, beside two growth variables (Russell US Equity "
+            "Indexes Construction and Methodology, v7.2, August 2026, section 8.2.1). Multi-metric "
+            "is academically superior: relying solely on P/B overweights "
             "asset-heavy industries and underweights intangible-rich businesses where book value "
             "poorly proxies intrinsic value. VTV also costs {{er:VTV}} vs IWD's {{er:IWD}}. The holding differs"
             " from the benchmark by design.\n"
@@ -215,9 +223,12 @@ HOLDINGS = [
             "consequence: the factor exhibit, not attribution, shows whether the tilt is being paid.\n"
             "\n"
             "At {{er:AVDV}} it is among the portfolio's costliest positions and its highest-conviction one;"
-            " the fee buys factor exposure rather than index replication. AVDV holds no South Korea, "
-            "verified at the position level, so the universe mismatch that inflates the developed-"
-            "core residual doesn't apply here.\n"
+            # The filing the Factor Profile page reads, by its date (#427): it said "verified
+            # at the position level" and named no filing.
+            " the fee buys factor exposure rather than index replication. As of the Avantis "
+            "N-PORT holdings disclosure for the period ending {{nport}}, the filing the Factor "
+            "Profile page reads, AVDV held no South Korea position, so the universe mismatch "
+            "that inflates the developed-core residual does not apply to it.\n"
             "\n"
             "**Would revisit if** the small-value interaction proved materially weaker in "
             "developed ex-US than domestically, or if a passive international small-value fund "

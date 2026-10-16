@@ -73,16 +73,21 @@ def test_notable_pairs_high_sentence(corr_app: AppTest) -> None:
 
 
 def test_bond_equity_regime_lead(corr_app: AppTest) -> None:
-    """Bond-equity regime block must lead with the post-2020 shift sentence.
-    Pinned: Phase 45B Item B3b."""
+    """The bond-equity block leads with its two figures. Pinned: Phase 45B Item B3b, as
+    "Bond–equity correlations have shifted materially since 2020".
+
+    MIGRATED at #427 (decided by the owner on October 15, 2026): that lead and "This is
+    a regime, not a permanent structural change" printed whatever the two averages were.
+    What the pin protected, the block's place and its figures, is held here."""
+    import re
     if corr_app.exception:
         pytest.skip("Page raised an exception — data-dependent test skipped.")
     all_md = " ".join(m.value for m in corr_app.markdown)
-    assert "Bond–equity correlations have shifted materially since 2020" in all_md, (
-        "Bond-equity regime lead not found — Phase 45B Item B3b regression: "
-        "'Bond–equity correlations have shifted materially since 2020.' "
-        "must open the bond-equity regime block."
-    )
+    assert re.search(r"Core Fixed Income's average pairwise correlation with the equity "
+                     r"sleeves was ρ ≈ -?\d\.\d\d before 2020", all_md), (
+        "Bond-equity block not found — Phase 45B Item B3b regression.")
+    for gone in ("shifted materially", "This is a regime"):
+        assert gone not in all_md, gone
 
 
 def test_asset_evaluation_cross_reference(corr_app: AppTest) -> None:

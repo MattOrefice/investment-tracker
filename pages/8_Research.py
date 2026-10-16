@@ -216,9 +216,12 @@ with col:
             "Both are true: a tilt costs more than a plain index fund and less than "
             "the standard fund for the same style. This page compares to the latter, "
             "so selection measures implementation, not the premium.\n"
+            # What the loop above computes (#427): it said "sleeve-weighted to reflect
+            # actual portfolio allocations", and the weights are the SAA targets.
             "- **ER savings**: calculated as "
-            "`Σ(sleeve_weight × (benchmark_ER − holding_ER)) × portfolio_size`, "
-            "sleeve-weighted to reflect actual portfolio allocations. "
+            "`Σ(holding_weight × (benchmark_ER − holding_ER)) × portfolio_size`, where "
+            "each holding's weight is its sleeve's SAA target split equally across the "
+            "sleeve's holdings, not the portfolio's actual allocation. "
             # Derived from the same live values as the headline above, so the
             # example can never restale (it used to hardcode $436/yr / 17 bps).
             f"The \\${_savings_250k:,}/yr figure at \\$250k uses full float precision; "
@@ -339,8 +342,9 @@ with col:
             "AUM from Morningstar. Sleeve target weights locked at portfolio "
             "inception (May 2025).\n\n"
             "**ER savings**: calculated as "
-            "`Σ(sleeve_weight × (benchmark_ER − holding_ER)) × portfolio_size`, "
-            "sleeve-weighted to reflect actual portfolio exposure. "
+            "`Σ(holding_weight × (benchmark_ER − holding_ER)) × portfolio_size`, where "
+            "each holding's weight is its sleeve's SAA target split equally across the "
+            "sleeve's holdings, not the portfolio's actual exposure. "
             # Derived live (see the identical note in the 'How to read this page'
             # expander) — was hardcoded $436/yr / 17 bps, stale after reseeding.
             f"The \\${_savings_250k:,}/yr figure at \\$250k uses full float precision; "

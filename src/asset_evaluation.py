@@ -113,6 +113,26 @@ def rolling_averages_sentence(pre: float, post: float) -> str:
     return " ".join(s for s in (first, second) if s)
 
 
+def bond_equity_paragraph(pre: float, now: float, window: int) -> str:
+    """The Correlations page's bond-equity paragraph: Core Fixed Income's average
+    correlation with the equity sleeves before 2020 and over the trailing window, and no
+    reading of the two (#427, decided by the owner on October 15, 2026). It opened
+    "Bond–equity correlations have shifted materially since 2020" and called the change
+    "a regime, not a permanent structural change", whatever the two were. The pre-2020
+    figure is called consistent with 60/40's negative-correlation assumption only when it
+    is negative as printed."""
+    pre_s = fmt_corr(pre)
+    return (
+        f"Core Fixed Income's average pairwise correlation with the equity sleeves was "
+        f"ρ ≈ {pre_s} before 2020"
+        + (", consistent with the negative-correlation assumption that underpins most "
+           "60/40 frameworks" if float(pre_s) < 0 else "")
+        + f". The trailing {window}-day estimate is ρ ≈ {fmt_corr(now)}. The 2022 joint "
+        "drawdown, when Core Fixed Income declined alongside equities, is the relevant "
+        "stress test for this allocation."
+    )
+
+
 def only_positive_difference(diff: pd.Series) -> "str | None":
     """5d's sentence on the weekly-minus-daily correlations, read from the table: which
     sleeve's difference is the only positive one, when exactly one is (#425). It named

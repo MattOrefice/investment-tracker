@@ -291,7 +291,7 @@ with col:
                 st.dataframe(highest, hide_index=True, width="stretch",
                              column_config=_corr_col_cfg)
 
-            _corr_interp = interpret_correlations(corr)
+            _corr_interp = interpret_correlations(corr, set(ae.equity_sleeve_names()))
             if _corr_interp:
                 st.markdown(_corr_interp)
 
@@ -330,23 +330,11 @@ with col:
                 )
 
                 if avg_be is not None and pre2020_be is not None:
-                    st.markdown(
-                        f"Bond–equity correlations have shifted materially since 2020. "
-                        f"Core Fixed Income's average pairwise correlation with the equity "
-                        f"sleeves was ρ ≈ {pre2020_be:.2f} before 2020, consistent with "
-                        f"the negative-correlation assumption that underpins most 60/40 "
-                        f"frameworks. "
-                        f"The trailing {window}-day estimate is now ρ ≈ {avg_be:.2f}. "
-                        f"This is a regime, not a permanent structural change: when "
-                        f"inflation is the dominant macro risk, rising rates move bonds and "
-                        f"equities in the same direction. The 2022 joint drawdown, "
-                        f"when Core Fixed Income declined alongside equities, is the "
-                        f"relevant stress test for this allocation."
-                    )
+                    # The two figures and no reading of them (#427).
+                    st.markdown(ae.bond_equity_paragraph(pre2020_be, avg_be, window))
                     st.caption(
-                        "The same rolling-window methodology underlies the correlation "
-                        "analysis in the Asset Evaluation page, where the post-2020 "
-                        "correlation shift is the central analytical finding."
+                        "The same rolling-window methodology underlies the rolling BTC–SPY "
+                        "correlation on the Asset Evaluation page."
                     )
 
     # ── Pair time-series view ─────────────────────────────────────────────────
