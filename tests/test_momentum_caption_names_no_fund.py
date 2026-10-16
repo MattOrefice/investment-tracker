@@ -133,8 +133,9 @@ def test_the_methodology_note_gives_no_reason_or_expectation_for_the_loadings():
     and confirms the construction is tax-aware", beside two loadings that are
     significant at the 1% level on both committed books (#581)."""
     notes = factors.build_factor_methodology_notes({"us": None, "developed_exus": None})
-    assert _momentum_note(notes).endswith("The supplementary table is diagnostic; the "
-                                          "primary FF5 result is authoritative.")
+    # MIGRATED at #590: the sentence speaks of each sleeve's table and FF5 result.
+    assert _momentum_note(notes).endswith("Each sleeve's supplementary table is diagnostic; "
+                                          "its FF5 result is authoritative.")
     text = " ".join(notes).lower()
     for words in ("tax", "near-zero", "is expected", "structurally avoided", "turnover"):
         assert words not in text, words

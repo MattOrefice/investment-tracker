@@ -129,9 +129,30 @@ def _render(monkeypatch):
     assert not at.exception, [str(e.value) for e in at.exception]
     captions = [c.value for c in at.caption if isinstance(c.value, str)]
     retry_buttons = [b.key for b in at.button if b.label == "Retry"]
-    unavailable = [m.value for m in at.markdown
-                   if isinstance(m.value, str) and "temporarily unavailable" in m.value]
-    return captions, retry_buttons, unavailable
+    return captions, retry_buttons, _unavailable_panels(at)
+
+
+def _unavailable_panels(at) -> "list[str]":
+    """Each unavailable panel's heading with the caption the page prints under it,
+    "{type(exc).__name__}: {exc}" (#592): a failure listed the headings alone, so run
+    38757697063 could not say which exception USREC's read raised."""
+    found: "list[str]" = []
+
+    def walk(node) -> None:
+        kids = list(node.children.values()) if hasattr(node, "children") else []
+        for i, kid in enumerate(kids):
+            # .value only on text elements: a widget's reads session state.
+            if getattr(kid, "type", None) == "markdown":
+                value = kid.value
+                if isinstance(value, str) and "temporarily unavailable" in value:
+                    nxt = kids[i + 1] if i + 1 < len(kids) else None
+                    shown = (nxt.value if getattr(nxt, "type", None) == "caption"
+                             else "(no caption)")
+                    found.append(f"{value} -> {shown}")
+            walk(kid)
+
+    walk(at.main)
+    return found
 
 
 @pytest.fixture
@@ -175,12 +196,16 @@ def test_the_macro_page_does_not_fetch_fred_between_renders(page, monkeypatch, w
     waits = [c for c in captions if c.startswith("FREDRetryWait:")]
     assert len(waits) == len(unavailable) and not retry
     assert all("it retries after September 25, 2026 at 12:30 PM ET" in c for c in waits)
+    # The pairing the last assertion's message relies on (#592): each unavailable panel
+    # carries the caption printed under it, here the timer's wait.
+    assert all(" -> FREDRetryWait: " in u for u in unavailable), unavailable
 
     up["fred"] = True
     clock[0] = T0 + refresh.RETRY_AFTER
     _caps, retry, unavailable = _render(monkeypatch)
     _join_warm()
-    assert len(calls) > first and not unavailable, "after the wait, the page fetches and renders"
+    assert len(calls) > first, "after the wait, the page fetches"
+    assert not unavailable, f"after the wait, the page renders; still unavailable: {unavailable}"
 
 
 def test_off_the_timer_the_page_keeps_its_retry_buttons(page, monkeypatch):
