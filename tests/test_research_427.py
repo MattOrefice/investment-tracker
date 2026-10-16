@@ -131,7 +131,10 @@ def test_intra_equity_is_said_when_every_top_pair_is_equity():
               [[1.0, 0.90, 0.10, 0.85], [0.90, 1.0, 0.05, 0.80],
                [0.10, 0.05, 1.0, 0.02], [0.85, 0.80, 0.02, 1.0]])
     text = interpret_correlations(m, EQUITY | {"International Core"})
-    assert text.startswith("High intra-equity co-movement means the equity sleeves")
+    # MIGRATED at #608: the claim is "intra-equity" and the pairs' correlations, no grade.
+    assert text.startswith("The top intra-equity pairs are US Large Core × US Small Cap "
+                           "(ρ = 0.90), US Large Core × International Core (ρ = 0.85), and "
+                           "US Small Cap × International Core (ρ = 0.80)."), text
 
 
 def test_a_top_pair_with_a_bond_sleeve_is_not_called_intra_equity():
