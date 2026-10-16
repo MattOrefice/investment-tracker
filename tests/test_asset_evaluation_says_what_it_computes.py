@@ -129,8 +129,11 @@ def test_without_the_rolling_series_it_gives_no_figure_and_no_date():
 
 def test_the_other_two_triggers_and_the_opening_are_as_they_were():
     text = ae.conclusion(_rolling())
-    assert text.startswith("Bitcoin's sample-period Sharpe improvement is real but almost "
-                           "entirely attributable to its exceptional 2020–2021 bull market")
+    # MIGRATED at #625 (decided by the owner on October 16, 2026): the opening said the
+    # Sharpe improvement was "almost entirely attributable to its exceptional 2020–2021
+    # bull market return", which nothing computes. It opens with what IBIT's 10-K states.
+    assert text.startswith('IBIT\'s shares are "intended to constitute a simple means of '
+                           'making an investment similar to an investment in bitcoin')
     assert text.count("\n- ") == 3
     assert "- A 5–10% allocation produces a positive Sharpe contribution after" in text
     assert text.rstrip().endswith("analysis is the relevant counter-example).")
@@ -215,9 +218,11 @@ def test_with_no_average_before_2020_the_trigger_says_so():
 # ── a full-sample figure is labelled as one ───────────────────────────────────
 
 def test_the_equity_like_bullet_says_which_sample_its_figure_is_from():
+    # MIGRATED at #625: "co-movement spikes during stress, when a hedge is most valuable"
+    # went; no figure the report prints shows a spike in stress.
     assert ae.equity_like_argument(0.31) == (
         "Equity-like correlation with US Large Core (0.31 over the full sample, 2018 to "
-        "present): co-movement spikes during stress, when a hedge is most valuable")
+        "present)")
     assert ae.SAMPLE_START[:4] == "2018"
     assert "post-2020" not in ae.equity_like_argument(0.31)
 

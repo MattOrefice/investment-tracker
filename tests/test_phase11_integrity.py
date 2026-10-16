@@ -309,7 +309,9 @@ def _macro_with_cape(cape_val: float, cape_series: pd.Series) -> dict:
 
 
 def test_macro_section_regime_dispatch_elevated():
-    """pct_int >= 80 → regime='Elevated', action references diversification."""
+    """pct_int >= 80 → regime='Elevated', and no stance. MIGRATED at #625 (decided by the
+    owner on October 16, 2026): this asserted the elevated stance referenced
+    diversification; that sentence went, so the band renders none."""
     # Value at the top of a 6-element series → 100th percentile
     cape_s = pd.Series([10.0, 15.0, 20.0, 25.0, 30.0, 36.0], dtype=float)
     macro = _macro_with_cape(36.0, cape_s)
@@ -317,7 +319,7 @@ def test_macro_section_regime_dispatch_elevated():
     assert macro["cape"]["regime"] == "Elevated", (
         f"Expected 'Elevated' for high-percentile CAPE, got {macro['cape']['regime']!r}"
     )
-    assert "diversif" in macro["cape"]["regime_action"].lower()
+    assert macro["cape"]["regime_action"] is None
 
 
 def test_macro_section_regime_dispatch_moderate():

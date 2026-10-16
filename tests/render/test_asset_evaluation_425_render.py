@@ -91,7 +91,8 @@ def test_5d_names_the_only_positive_difference_the_table_shows(page):
 def test_5j_states_one_tax_treatment_and_no_2022_figure_of_bitcoins_own(page):
     _, markdown, _ = page
     text = " ".join(markdown)
-    assert text.count("the IRS treats bitcoin as property (Notice 2014-21)") == 1
+    # Since #625 the Notice carries its bulletin's date.
+    assert text.count("the IRS treats bitcoin as property (Notice 2014-21, ") == 1
     assert "commodity classification" not in text
     assert "Its 2022 drawdown of" not in text
     assert "Bitcoin's own maximum drawdown is" in text, "premise: the bullet renders"

@@ -96,8 +96,11 @@ def test_every_cape_figure_on_the_macro_page_carries_its_read_date(macro_page):
     # The tile: its label carries the month and the read date.
     month = f"{reading.month.strftime('%b')} {reading.month.year}"
     assert metrics.get(f"Shiller CAPE ({month}, {short})") == figure, metrics
-    # The panel's two captions.
-    panel = next(t for t in texts if "full history" in t and "Implied 10Y real return" in t)
+    # The panel's two captions. MIGRATED at #625: the panel was found by its implied-return
+    # sentence, which went with the formula; it is found by its percentile line now,
+    # whose "· full history: " no other caption prints.
+    panel = next(t for t in texts if "· full history: " in t)
+    assert "Implied 10Y real return" not in panel
     assert (f"· {reading.month.strftime('%B')} {reading.month.year} reading, {long} "
             f"· Source: {shiller.CREDIT}, monthly") in panel
     assert any(t.startswith(f"CAPE ({short}) is in the ") for t in texts)
@@ -126,7 +129,7 @@ def test_a_figure_read_from_yale_says_so_on_the_macro_page(macro_page_from_yale)
     texts, metrics, notes, reading = macro_page_from_yale
     assert reading.source == shiller.YALE, "premise: the patched file is the one rendered"
     figure = f"{reading.value:.1f}×"
-    panel = next(t for t in texts if "full history" in t and "Implied 10Y real return" in t)
+    panel = next(t for t in texts if "· full history: " in t)
     assert "from Robert Shiller's Yale data file, the fallback source" in panel
     assert "· Source: Robert Shiller's Yale data file, monthly" in panel
     assert shiller.CREDIT not in panel

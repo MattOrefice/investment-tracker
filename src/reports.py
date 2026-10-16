@@ -68,7 +68,7 @@ from src.holdings import (
     get_portfolio_value_series,
     get_sleeve_weights_on_date,
 )
-from src.macro import FREDStillFetching, compute_cape_implied_return, get_series, percentile
+from src.macro import FREDStillFetching, get_series, percentile
 from src.positioning import get_effective_duration
 from src.input_lock import ETF_METADATA, FF5_DEVELOPED_EXUS, FF5_US, HYG, UMD
 from src.returns import period_return, twr_daily_linked
@@ -500,21 +500,25 @@ def _cape_regime_class(pct_int: int) -> str:
     return "below_average"
 
 
-# Each band's (regime label, allocation stance).
+# Each band's (regime label, allocation stance). The elevated band has no stance: its
+# sentence, "Elevated US equity valuations (CAPE 99th) support the SAA's diversification
+# across non-US equity and real asset sleeves", went (#625, decided by the owner on
+# October 16, 2026), and the Macro Context section prints no stance at that band.
 _CAPE_REGIME_WORDS = {
-    "elevated": ("Elevated", "support the SAA's diversification across non-US equity and real asset sleeves"),
+    "elevated": ("Elevated", None),
     "above_average": ("Above-average", "support modest diversification away from US large-cap"),
     "moderate": ("Moderate", "are consistent with the long-run average; no strong tilt signal"),
     "below_average": ("Below-average", "support increased US equity exposure relative to SAA targets"),
 }
 
 
-def _cape_regime(pct_int: int) -> tuple[str, str]:
+def _cape_regime(pct_int: int) -> "tuple[str, str | None]":
     """Map a CAPE percentile rank (0-100, rounded) to (regime label, allocation stance).
 
     Bands: >=80 Elevated, >=60 Above-average, >=40 Moderate, else Below-average
     (_cape_regime_class). The label reports what the reading IS ("Elevated versus
-    history"); the stance is the allocation conclusion the Macro Context section renders.
+    history"); the stance is the allocation conclusion the Macro Context section renders,
+    None for the elevated band, which renders none (#625).
     """
     return _CAPE_REGIME_WORDS[_cape_regime_class(pct_int)]
 
@@ -1342,8 +1346,10 @@ def _build_macro_section() -> dict:
             pct_str  = ordinal(_raw_pct)          # "{:.0f}th" printed "1th" (item 9)
             pct_int  = int(round(_raw_pct))
             _regime, _regime_action = _cape_regime(pct_int)
-            _note = f"{_regime} vs. history ({pct_str}); valuations {_regime_action}."
-        cape_implied = compute_cape_implied_return(cape_val)
+            _note = (f"{_regime} vs. history ({pct_str}); valuations {_regime_action}."
+                     if _regime_action else f"{_regime} vs. history ({pct_str}).")
+        # The implied 10-year real return went (#625): its formula, r = -0.070 x
+        # ln(CAPE/16) + 0.066, was fitted here through two anchor points and cited no source.
         macro["cape"] = {
             "value":          f"{cape_val:.1f}x",
             "percentile":     pct_str,
@@ -1351,7 +1357,6 @@ def _build_macro_section() -> dict:
             "regime":         _regime,
             "regime_action":  _regime_action,
             "note":           _note,
-            "implied_return": f"{cape_implied:+.2%}",
         }
     except Exception:
         # Anything that RAISES (a missing committed CSV raises FileNotFoundError by
@@ -1366,7 +1371,6 @@ def _build_macro_section() -> dict:
             "regime":         _CAPE_UNKNOWN[0],
             "regime_action":  _CAPE_UNKNOWN[1],
             "note":           "Data unavailable.",
-            "implied_return": None,
         }
 
     try:
@@ -1558,6 +1562,47 @@ from src.asset_evaluation import drawdown_argument as _drawdown_argument  # noqa
 from src.asset_evaluation import max_drawdown as _max_drawdown  # noqa: E402
 
 
+def _bold_runs(line: str) -> "list[tuple[bool, str]]":
+    """A line's runs, (bold, text) in order, split on markdown's "**"."""
+    parts = line.split("**")
+    if len(parts) % 2 == 0:
+        raise ValueError(f"unbalanced ** in {line!r}")
+    return [(i % 2 == 1, p) for i, p in enumerate(parts) if p]
+
+
+def markdown_blocks(text: str) -> "list[dict]":
+    """Light markdown as blocks the PDF template prints as HTML: paragraphs of runs
+    ({"kind": "p", "runs": [...]}) and bulleted lists ({"kind": "ul", "items": [runs,
+    ...]}), each run (bold, text). The template escapes every run.
+
+    The Asset Evaluation conclusion is markdown, written for the page, and the PDF printed
+    it inside one autoescaped <p>: its bold printed as literal "**", its list as " - ", and
+    its line breaks collapsed (#625). A blank line ends a paragraph; a line starting "- "
+    is a list item; other lines join into the paragraph they are in."""
+    blocks: "list[dict]" = []
+    for para in text.split("\n\n"):
+        prose: "list[str]" = []
+        items: "list[list[tuple[bool, str]]]" = []
+        for line in para.split("\n"):
+            if not line.strip():
+                continue
+            if line.startswith("- "):
+                if prose:
+                    blocks.append({"kind": "p", "runs": _bold_runs(" ".join(prose))})
+                    prose = []
+                items.append(_bold_runs(line[2:]))
+            else:
+                if items:
+                    blocks.append({"kind": "ul", "items": items})
+                    items = []
+                prose.append(line.strip())
+        if prose:
+            blocks.append({"kind": "p", "runs": _bold_runs(" ".join(prose))})
+        if items:
+            blocks.append({"kind": "ul", "items": items})
+    return blocks
+
+
 def _build_asset_eval_section() -> dict:
     """Build the Asset Evaluation section — same source as pages/5_Asset_Evaluation.py.
 
@@ -1631,6 +1676,8 @@ def _build_asset_eval_section() -> dict:
         "sharpe_curve_top": None,
         # Without the rolling series: no figures and no date. 5c replaces it (#478 I11).
         "conclusion": ae.conclusion(),
+        # The conclusion as the PDF prints it: paragraphs, bold runs and a list (#625).
+        "conclusion_blocks": markdown_blocks(ae.conclusion()),
     }
 
     try:
@@ -1986,6 +2033,8 @@ def _build_asset_eval_section() -> dict:
     else:
         result["disposition"] = "no_data"
 
+    # The conclusion is markdown, shared with the page; the PDF prints it as blocks (#625).
+    result["conclusion_blocks"] = markdown_blocks(result["conclusion"])
     return result
 
 

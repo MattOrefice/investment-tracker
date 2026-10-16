@@ -719,7 +719,6 @@ def test_exec_and_macro_cape_stances_never_contradict(monkeypatch):
 
     # Isolate CAPE: block FRED (yield curve / fed funds / HY go to N/A, no percentile call)
     monkeypatch.setattr(rpt, "get_series", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no fred")))
-    monkeypatch.setattr(rpt, "compute_cape_implied_return", lambda cv: 0.0)
     monkeypatch.setattr(rpt, "get_cape_series", lambda: pd.Series([10.0, 20.0, 30.0]))
 
     for cape_val, pct in [(40.9, 99), (24.0, 85), (18.0, 62), (16.0, 50), (14.0, 25), (11.0, 8)]:
@@ -736,7 +735,10 @@ def test_exec_and_macro_cape_stances_never_contradict(monkeypatch):
         # Exec reports the same label and does NOT carry the action → cannot contradict it
         exec_s = _cape_reading_sentence(cape_val, float(pct))
         assert exp_label in exec_s, exec_s
-        assert exp_action not in exec_s, f"exec carried the Macro stance: {exec_s}"
+        # The elevated band has no stance since #625; the others still carry one.
+        assert (exp_action is None) == (pct >= 80), (pct, exp_action)
+        assert exp_action is None or exp_action not in exec_s, (
+            f"exec carried the Macro stance: {exec_s}")
         assert "diversif" not in exec_s.lower() and "us equity" not in exec_s.lower()
 
 

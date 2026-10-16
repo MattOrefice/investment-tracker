@@ -166,7 +166,8 @@ def test_the_bitcoin_tax_line_is_the_pages_and_says_property():
     page = (pathlib.Path(rp.__file__).resolve().parent.parent / "pages"
             / "5_Asset_Evaluation.py").read_text(encoding="utf-8")
     assert "ae.BITCOIN_TAX_LINE," in page
-    assert "the IRS treats bitcoin as property (Notice 2014-21)" in ae.BITCOIN_TAX_LINE
+    # Since #625 the Notice carries its bulletin's date.
+    assert "the IRS treats bitcoin as property (Notice 2014-21, " in ae.BITCOIN_TAX_LINE
     assert "Commodity tax treatment" not in src + page
 
 
