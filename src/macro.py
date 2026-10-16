@@ -291,6 +291,13 @@ MACRO_PAGE_SERIES: "tuple[tuple[str, str], ...]" = (
     ("NFCI", "1971-01-01"),
 )
 
+# The series FRED serves over a rolling window, the ICE BofA option-adjusted spreads
+# (about three years). No stored copy of one reaches back further than the window did
+# on its fetch day, so each later copy starts later, and _read_stored takes the newest
+# copy for them (#442).
+ROLLING_WINDOW_SERIES: "frozenset[str]" = frozenset(
+    {"BAMLH0A0HYM2", "BAMLC0A0CM", "BAMLH0A3HYC"})
+
 # How long the Macro page waits for today's FRED rows before it renders the stored
 # copies with the date each was fetched. One visit in #429's measurements took 184 s,
 # cause unrecorded; past this wait the page renders and the warm carries on.
@@ -451,7 +458,14 @@ def _read_stored(series_id: str, start_date: str) -> "tuple[pd.Series | None, st
     ``start_date`` or earlier. An older row, without that record, is judged by its first
     observation: it reaches back when no other stored row of the series starts earlier.
     Other callers request some series from later starts (the PDF asks for T10Y2Y from
-    1990, the page from 1976), and their rows must not shorten a panel's history."""
+    1990, the page from 1976), and their rows must not shorten a panel's history.
+
+    A ROLLING-WINDOW SERIES TAKES THE NEWEST COPY (#442, decided by the owner on October
+    16, 2026). FRED serves the ICE BofA spreads (ROLLING_WINDOW_SERIES) over a rolling
+    window, so no copy reaches back further than its fetch day's window, and "starts as
+    early as any stored copy" picked an old one: demo.db's HY OAS served the copy fetched
+    2026-05-03, ending 2026-04-30, where one ending 2026-05-26 is stored. Every other
+    series keeps the rule above (#429)."""
     with get_connection() as conn:
         rows = conn.execute(
             "SELECT fetch_date, data FROM macro_cache WHERE series_id = ?",
@@ -468,6 +482,9 @@ def _read_stored(series_id: str, start_date: str) -> "tuple[pd.Series | None, st
         parsed.append((row["fetch_date"], payload.get("requested_start"), valid.index[0], s))
     if not parsed:
         return None, None
+    if series_id in ROLLING_WINDOW_SERIES:
+        fetched, _requested, _first, s = max(parsed, key=lambda r: r[0])
+        return s[s.index >= start_date], fetched
     earliest = min(first for _, _, first, _ in parsed)
     reaching = [(fetched, s) for fetched, requested, first, s in parsed
                 if (requested <= start_date if requested is not None else first == earliest)]

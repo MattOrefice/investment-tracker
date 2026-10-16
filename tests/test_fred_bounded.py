@@ -131,13 +131,14 @@ def test_the_pdfs_macro_section_names_its_stored_copies(hanging_fred):
     section = reports._build_macro_section()
     assert time.monotonic() - t0 < WAIT + 10
     assert section["yield_curve"]["value"] != "N/A"
-    # HY OAS's copy is the one fetched 2026-05-03: FRED serves the ICE series over a
-    # rolling three years, so each later copy starts later. macro._read_stored (#429)
-    # takes the newest of the copies that start earliest (2023-05-02: those fetched
-    # 05-02 and 05-03), not the newest copy (05-27, starting 2023-05-29).
+    # MIGRATED at #442 (decided by the owner on October 16, 2026): HY OAS's copy is the
+    # newest, fetched 2026-05-27. FRED serves the ICE series over a rolling three years,
+    # so each later copy starts later, and macro._read_stored (#429) took the newest of
+    # the copies that start earliest (2023-05-02: those fetched 05-02 and 05-03). The
+    # rolling-window series take the newest copy now; 10Y-2Y keeps #429's rule.
     assert section["as_of"].endswith(
         "FRED did not answer in time, so these are stored copies, with the date each was "
-        "fetched: 10Y-2Y 2026-07-16, Fed funds 2026-05-27, HY OAS 2026-05-03."), section["as_of"]
+        "fetched: 10Y-2Y 2026-07-16, Fed funds 2026-05-27, HY OAS 2026-05-27."), section["as_of"]
 
 
 def test_one_stalled_warm_costs_the_first_reader_the_wait_and_later_readers_nothing(
