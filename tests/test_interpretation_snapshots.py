@@ -170,41 +170,15 @@ class TestCurveSpreadSnapshot:
 # ── 3. interpret_hy_spread ────────────────────────────────────────────────────
 
 class TestHySpreadSnapshot:
-    """Snapshot tests — pins exact output for tight and recessionary HY spread branches.
+    """MIGRATED at #606 (decided by the owner on October 15, 2026): the tight, normal and
+    recessionary branches graded the spread on fixed cuts with no window, so each is the
+    spread alone now. The three snapshots pin that."""
 
-    Tight fires during late-cycle complacency; recessionary fires during crisis episodes.
-    """
-
-    def test_tight_branch(self):
-        """Below-300-bps spreads — late-cycle credit complacency."""
-        result = interpret_hy_spread(250.0)
-        expected = (
-            "HY spreads at 250 bps are historically tight (below 300 bps), a sign of "
-            "late-cycle credit market complacency. Tight spreads limit the cushion for "
-            "further compression; historical episodes of sub-300 bps spreads have preceded "
-            "equity peaks and subsequent spread blowouts."
-        )
-        assert result == expected
-
-    def test_normal_branch(self):
-        """Mid-cycle normal range — healthy credit environment."""
-        result = interpret_hy_spread(375.0)
-        expected = (
-            "HY spreads at 375 bps are in the normal mid-cycle range "
-            "(300–450 bps), consistent with moderate default risk and a healthy "
-            "credit environment."
-        )
-        assert result == expected
-
-    def test_recessionary_branch(self):
-        """Above-800-bps spreads — pricing severe recession and elevated defaults."""
-        result = interpret_hy_spread(900.0)
-        expected = (
-            "HY spreads at 900 bps are at recessionary levels (above 800 bps). Credit markets"
-            " are pricing severe recession and elevated default rates; such levels have "
-            "historically coincided with the most severe equity drawdowns."
-        )
-        assert result == expected
+    @pytest.mark.parametrize("bps, expected", [
+        (250.0, "HY spreads at 250 bps."), (375.0, "HY spreads at 375 bps."),
+        (900.0, "HY spreads at 900 bps.")])
+    def test_each_former_branch(self, bps, expected):
+        assert interpret_hy_spread(bps) == expected
 
 
 # ── 4. interpret_gdp_growth ───────────────────────────────────────────────────

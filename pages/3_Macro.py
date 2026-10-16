@@ -575,13 +575,16 @@ with col:
 
         with st.expander("How regimes transition", expanded=False):
             st.caption(
-                "Cycle regimes shift gradually as the three input variables evolve. Mid-cycle becomes "
-                "late-cycle as the yield curve flattens or inverts (Fed tightening to slow growth), "
-                "unemployment troughs and begins rising from cycle lows, and credit spreads compress "
-                "before widening on rising defaults. Late-cycle becomes recession when NBER officially "
-                "declares it (with a 6–18 month lag) and unemployment rises sharply. Recession becomes "
-                "early-cycle as the curve re-steepens (Fed easing), unemployment peaks and begins "
-                "falling, and credit spreads peak and start tightening. The classifier itself "
+                # The classifier's three inputs, named (#606): credit spreads moved through
+                # each transition here, and the classifier reads none.
+                "Cycle regimes shift gradually as the classifier's three inputs evolve: the NBER "
+                "recession indicator (USREC), the 10Y−2Y Treasury spread (T10Y2Y) and the "
+                "unemployment rate (UNRATE). Mid-cycle becomes late-cycle as the yield curve "
+                "flattens or inverts (Fed tightening to slow growth) and unemployment troughs and "
+                "begins rising from cycle lows. Late-cycle becomes recession when NBER officially "
+                "declares it (with a 6–18 month lag) and unemployment rises sharply. Recession "
+                "becomes early-cycle as the curve re-steepens (Fed easing) and unemployment peaks "
+                "and begins falling. The classifier itself "
                 "reads levels: each month's label comes from where the three variables stand "
                 "against fixed thresholds, so it changes only once a threshold is crossed and "
                 "does not predict turning points."
@@ -651,13 +654,18 @@ with col:
             pass
 
         with st.expander("Methodology", expanded=False):
+            # The cuts as the classifier's rules, read from its constants (#606). Each
+            # carried a grade: "(labor still healing, curve not inverted)", false of a
+            # curve between the trigger and zero, and "(inverted curve or historically
+            # tight labor)", graded on no window.
             st.caption(
                 "The regime classifier maps three FRED variables to one of four labels (Recession, "
                 "Late-cycle, Mid-cycle, or Early-cycle): USREC (NBER recession indicator), T10Y2Y "
                 "(10Y minus 2Y Treasury spread), and UNRATE (unemployment rate). Rules are applied in "
-                "priority order: (1) Recession when USREC = 1; (2) Early-cycle when UNRATE > 5.5% "
-                "and T10Y2Y > -0.25 (labor still healing, curve not inverted); (3) Late-cycle when "
-                "T10Y2Y < -0.25 or UNRATE < 4.2% (inverted curve or historically tight labor); "
+                f"priority order: (1) Recession when USREC = 1; (2) Early-cycle when UNRATE > "
+                f"{macro.REGIME_UNRATE_EARLY:.1f}% and T10Y2Y > {macro.REGIME_CURVE_TRIGGER:.2f}; "
+                f"(3) Late-cycle when T10Y2Y < {macro.REGIME_CURVE_TRIGGER:.2f} or UNRATE < "
+                f"{macro.REGIME_UNRATE_TIGHT:.1f}%; "
                 "(4) Mid-cycle as the default. The full rules and threshold rationale are in "
                 "docs/regime_classifier.md. This is a rules-based heuristic, not a forecast or "
                 "trading signal. USREC is declared retroactively by the NBER and may lag actual "
@@ -1510,14 +1518,9 @@ with col:
 
         _hy_ig_extra = ""
         if _shared_hy_bps is not None and current_ig > 0:
-            _ratio = _shared_hy_bps / current_ig
-            if _ratio > 4.5:
-                _ratio_framing = "elevated, consistent with tail-risk concerns in lower-quality debt"
-            elif _ratio > 3.0:
-                _ratio_framing = "moderate, within historical mid-cycle norms"
-            else:
-                _ratio_framing = "compressed, indicating tight spreads across the corporate credit stack"
-            _hy_ig_extra = f" HY/IG ratio: {_ratio:.1f}× ({_ratio_framing})."
+            # The ratio alone (#606): it was graded "elevated", "moderate, within
+            # historical mid-cycle norms" or "compressed" on fixed cuts of 4.5× and 3.0×.
+            _hy_ig_extra = f" HY/IG ratio: {_shared_hy_bps / current_ig:.1f}×."
 
         st.caption(
             macro.credit_reading("IG", current_ig, ig_pctile_w, ig_since)
@@ -2224,9 +2227,7 @@ with col:
         dtwex_as_of    = dtwex_clean.index[-1].strftime("%b %d, %Y")
         dtwex_since    = dtwex_clean.index[0].strftime("%b %Y")
 
-        dtwex_1y_data  = dtwex_clean[dtwex_clean.index <= ONE_YR_AGO]
-        dtwex_1y_ago   = float(dtwex_1y_data.iloc[-1]) if not dtwex_1y_data.empty else current_dtwex
-        dtwex_1y_pct   = (current_dtwex / dtwex_1y_ago - 1) * 100 if dtwex_1y_ago != 0 else 0.0
+        dtwex_1y_chg   = macro.year_change_phrase(dtwex_clean, ONE_YR_AGO)
 
         dtwex_window = st.radio(
             "Window", ["5Y", "10Y", "Max"],
@@ -2262,10 +2263,9 @@ with col:
             fig_dtwex.update_yaxes(range=_yr)
         st.plotly_chart(fig_dtwex, width='stretch')
         st.metric("Broad USD Index (DTWEXBGS)", f"{current_dtwex:.1f}")
-        chg_sign = "+" if dtwex_1y_pct >= 0 else ""
         st.caption(
-            f"{chg_sign}{dtwex_1y_pct:.1f}% over 12 months · "
-            f"{_ordinal(dtwex_pctile_w)} percentile of {dtwex_scope} "
+            (f"{dtwex_1y_chg} · " if dtwex_1y_chg else "")
+            + f"{_ordinal(dtwex_pctile_w)} percentile of {dtwex_scope} "
             f"(data since {dtwex_since})"
         )
 
