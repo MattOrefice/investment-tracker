@@ -1995,7 +1995,15 @@ def build_benchmark_prose(
         parts = []
         for item in (bhb_top_selection or [])[:3]:
             bps    = item["sel_bps"]
-            verb   = (label("versus_benchmark", "out", "outperformed") if bps >= 0
+            # A difference whose printed figure is 0 has no sign to carry. It read
+            # "outperformed ... by 0 bps", and reads "performed in line with", the class
+            # #600 added to this family for the summary's alpha (#602).
+            if f"{abs(bps):.0f}" == "0":
+                parts.append(f"{item['holding']} "
+                             f"{label('versus_benchmark', 'in_line', 'performed in line with')} "
+                             f"{item['bench']}")
+                continue
+            verb   = (label("versus_benchmark", "out", "outperformed") if bps > 0
                       else label("versus_benchmark", "under", "underperformed"))
             parts.append(
                 f"{item['holding']} {verb} {item['bench']} by {abs(bps):.0f} bps"
