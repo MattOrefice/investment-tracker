@@ -34,7 +34,10 @@ python-dateutil>=2.9.0
 requests>=2.31.0
 openpyxl>=3.1.0
 jinja2>=3.1.0
-weasyprint>=70.0
+# Pinned exactly at the version CI installed on October 16, 2026 (#299, decided by the
+# owner that day). With an open upper end, a release that makes harfbuzz-subset
+# required could reach Streamlit Cloud on the same push that turns CI red.
+weasyprint==70.0
 xhtml2pdf>=0.2.10; sys_platform == 'win32'
 # Pinned exactly (#567, decided by the owner on October 15, 2026). kaleido 1.x bundles no
 # browser: it drives an installed Chrome or Chromium, one launch per export. On Cloud
