@@ -682,13 +682,14 @@ def test_performance_page_serves_reports_from_session_not_shared_dir():
 def test_cape_regime_band_boundaries():
     """The single derivation both sections consume. Bands: >=80 / >=60 / >=40 / else."""
     from src.reports import _cape_regime
-    assert _cape_regime(80)[0] == "Elevated"
-    assert _cape_regime(79)[0] == "Above-average"
-    assert _cape_regime(60)[0] == "Above-average"
-    assert _cape_regime(59)[0] == "Moderate"
-    assert _cape_regime(40)[0] == "Moderate"
-    assert _cape_regime(39)[0] == "Below-average"
-    assert _cape_regime(0)[0] == "Below-average"
+    # Since #627 _cape_regime returns the label alone; no band carries a stance.
+    assert _cape_regime(80) == "Elevated"
+    assert _cape_regime(79) == "Above-average"
+    assert _cape_regime(60) == "Above-average"
+    assert _cape_regime(59) == "Moderate"
+    assert _cape_regime(40) == "Moderate"
+    assert _cape_regime(39) == "Below-average"
+    assert _cape_regime(0) == "Below-average"
 
 
 def test_exec_cape_sentence_reports_regime_not_allocation():
@@ -710,9 +711,10 @@ def test_exec_cape_sentence_reports_regime_not_allocation():
 
 
 def test_exec_and_macro_cape_stances_never_contradict(monkeypatch):
-    """Across constructed low/mid/high CAPE regimes, the Macro section's stance is the
-    shared _cape_regime action and the exec reports the SAME regime label without carrying
-    that action — so the two can never state opposite conclusions from one percentile."""
+    """Across constructed low/mid/high CAPE regimes, the Macro section and the exec report
+    the SAME regime label, from the shared _cape_regime. MIGRATED at #627 (decided by the
+    owner on October 16, 2026): the Macro section also drew a stance per band, and the
+    exec had to not carry it. Every stance went, so neither section carries one."""
     import pandas as pd
     import src.reports as rpt
     from src.reports import _cape_regime, _cape_reading_sentence
@@ -726,19 +728,15 @@ def test_exec_and_macro_cape_stances_never_contradict(monkeypatch):
         monkeypatch.setattr(rpt, "percentile", lambda series, val, p=pct: float(p))
 
         macro = rpt._build_macro_section()["cape"]
-        exp_label, exp_action = _cape_regime(pct)
+        exp_label = _cape_regime(pct)
 
-        # Macro consumes the shared derivation (not re-inlined bands)
+        # Macro consumes the shared derivation (not re-inlined bands), and draws no stance
         assert macro["regime"] == exp_label, (pct, macro["regime"])
-        assert macro["regime_action"] == exp_action, (pct, macro["regime_action"])
+        assert "regime_action" not in macro, (pct, macro)
 
-        # Exec reports the same label and does NOT carry the action → cannot contradict it
+        # Exec reports the same label and draws no stance either
         exec_s = _cape_reading_sentence(cape_val, float(pct))
         assert exp_label in exec_s, exec_s
-        # The elevated band has no stance since #625; the others still carry one.
-        assert (exp_action is None) == (pct >= 80), (pct, exp_action)
-        assert exp_action is None or exp_action not in exec_s, (
-            f"exec carried the Macro stance: {exec_s}")
         assert "diversif" not in exec_s.lower() and "us equity" not in exec_s.lower()
 
 

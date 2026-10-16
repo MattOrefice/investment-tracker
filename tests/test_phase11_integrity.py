@@ -319,7 +319,8 @@ def test_macro_section_regime_dispatch_elevated():
     assert macro["cape"]["regime"] == "Elevated", (
         f"Expected 'Elevated' for high-percentile CAPE, got {macro['cape']['regime']!r}"
     )
-    assert macro["cape"]["regime_action"] is None
+    # MIGRATED at #627: no band carries a stance any more.
+    assert "regime_action" not in macro["cape"]
 
 
 def test_macro_section_regime_dispatch_moderate():
@@ -334,7 +335,9 @@ def test_macro_section_regime_dispatch_moderate():
 
 
 def test_macro_section_regime_dispatch_below_average():
-    """pct_int < 40 → regime='Below-average', action references increased US equity."""
+    """pct_int < 40 → regime='Below-average'. MIGRATED at #627 (decided by the owner on
+    October 16, 2026): this asserted the stance referenced increased US equity; every
+    stance went."""
     # CAPE at 10 when series spans 10–40 → near 0th percentile
     cape_s = pd.Series(list(range(10, 41)), dtype=float)
     macro = _macro_with_cape(10.0, cape_s)
@@ -342,7 +345,7 @@ def test_macro_section_regime_dispatch_below_average():
     assert macro["cape"]["regime"] == "Below-average", (
         f"Expected 'Below-average' for low-percentile CAPE, got {macro['cape']['regime']!r}"
     )
-    assert "US equity" in macro["cape"]["regime_action"]
+    assert "regime_action" not in macro["cape"]
 
 
 def test_macro_section_regime_pct_int_in_output():

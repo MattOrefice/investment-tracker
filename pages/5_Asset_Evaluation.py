@@ -1109,13 +1109,11 @@ with col:
         _drawdown_argument(_max_drawdown(btc_ret), _port, ae.SAMPLE_START),
         ae.BITCOIN_TAX_LINE,
         "Operational complexity: self-custody introduces key management risk "
-        "and exchange-held BTC introduces counterparty risk (FTX 2022). The "
-        "2024 launch of spot Bitcoin ETFs (IBIT, FBTC, BITB) materially reduces "
-        "these operational frictions for retail and most institutional "
-        "implementations. Bitcoin can now be held in a standard brokerage "
-        "account, with creation/redemption mechanics that mirror commodity ETF "
-        "wrappers. The remaining operational considerations are the expense drag, "
-        "which is real over a multi-year hold, and tax classification. "
+        "and exchange-held BTC introduces counterparty risk (FTX 2022). "
+        # Three sentences went (#627, decided by the owner on October 16, 2026), none cited:
+        # spot ETFs "materially reduce these operational frictions", bitcoin held "with
+        # creation/redemption mechanics that mirror commodity ETF wrappers", and "the
+        # expense drag ... and tax classification" as what remains.
         # Cited, as #604 decided on October 15, 2026. A typed "0.12–0.25%" fee range went,
         # as did "no qualified-dividend treatment" and "the wash-sale rule does not apply
         # under current IRS guidance", which cited nothing.
@@ -1140,13 +1138,15 @@ with col:
         # A "Tax: commodity classification" bullet went (#425): it contradicted the case
         # against's tax line two bullets up, the IRS treating bitcoin as property
         # (Notice 2014-21), which stays.
-        "- **Operational:** custodial complexity; ETF alternatives simplify ops "
-        "at the cost of fee drag and tracking risk\n"
+        # "ETF alternatives simplify ops at the cost of fee drag and tracking risk" went
+        # (#627): it cited nothing.
+        "- **Operational:** custodial complexity\n"
         "- **Mandate fit:** no explicit SAA mandate; would require a new sleeve "
         "or an overweight to Real Assets with a sub-allocation"
     )
 
-    st.markdown(f"**Conclusion:**\n\n{ae.conclusion(rolling_corr)}")
+    # The second trigger names the range this page's own curve was read over (#627).
+    st.markdown(f"**Conclusion:**\n\n{ae.conclusion(rolling_corr, ae.curve_top_allocation(msc))}")
     st.caption("This page updates automatically as new data arrives.")
 
     st.divider()

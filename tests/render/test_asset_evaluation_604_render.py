@@ -37,3 +37,32 @@ def test_the_notice_2014_21_line_stays_once(bullet):
     page, _ = bullet
     # Since #625 the Notice carries its bulletin's date.
     assert page.count("the IRS treats bitcoin as property (Notice 2014-21, ") == 1
+
+
+# ── #627 (decided by the owner on October 16, 2026) ───────────────────────────
+
+def test_the_operational_bullet_keeps_only_custody_risk_and_the_cited_grantor_trust(bullet):
+    _, text = bullet
+    assert text.startswith("Operational complexity: self-custody introduces key management "
+                           "risk and exchange-held BTC introduces counterparty risk (FTX "
+                           "2022). IBIT's sponsor treats the trust as a grantor trust")
+    for gone in ("2024 launch of spot Bitcoin ETFs", "materially reduces",
+                 "standard brokerage account", "mirror commodity ETF wrappers",
+                 "expense drag", "tax classification"):
+        assert gone not in text, gone
+
+
+def test_the_allocator_side_operational_bullet_keeps_custodial_complexity_alone(bullet):
+    page, _ = bullet
+    assert "**Operational:** custodial complexity\n" in page
+    for gone in ("ETF alternatives simplify ops", "fee drag and tracking risk"):
+        assert gone not in page, gone
+
+
+def test_the_pages_second_trigger_names_its_own_curves_range(bullet):
+    import re
+    page, _ = bullet
+    assert re.search(r"An allocation of up to \d+% improves the portfolio's Sharpe ratio "
+                     r"after explicit tax-drag adjustment \(the analytical gap in the "
+                     r"constrained mean-variance analysis\)\.", page), "the trigger's range"
+    assert "5–10%" not in page

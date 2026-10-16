@@ -138,7 +138,7 @@ def _macro_paragraph(macro: dict) -> str:
 def test_an_elevated_cape_renders_no_stance_and_no_implied_return():
     macro = _macro(36.0, pd.Series([10.0, 15.0, 20.0, 25.0, 30.0, 36.0]))
     assert macro["cape"]["regime"] == "Elevated", "premise: the elevated band"
-    assert macro["cape"]["regime_action"] is None
+    assert "regime_action" not in macro["cape"], "no band carries a stance since #627"
     assert "implied_return" not in macro["cape"]
     text = _macro_paragraph(macro)
     for gone in ("US equity valuations", "support the SAA", "diversification",
@@ -148,11 +148,15 @@ def test_an_elevated_cape_renders_no_stance_and_no_implied_return():
            "targets." in text
 
 
-def test_control_a_below_average_cape_still_renders_its_stance():
-    """The contrast through the same template: the conditional drops only a band with no
-    stance. The other bands' stances are not part of #625's decision."""
+def test_a_below_average_cape_renders_no_stance_either():
+    """MIGRATED at #627 (decided by the owner on October 16, 2026). This was #625's
+    control: a below-average CAPE still rendered its stance through the same template.
+    Every stance went, so the paragraph keeps only its policy sentence at every band."""
     macro = _macro(10.0, pd.Series([float(v) for v in range(10, 41)]))
     assert macro["cape"]["regime"] == "Below-average", "premise: the below-average band"
     text = _macro_paragraph(macro)
-    assert "Below-average US equity valuations (CAPE" in text
-    assert "support increased US equity exposure relative to SAA targets." in text
+    for gone in ("US equity valuations", "support increased US equity exposure",
+                 "modest diversification", "no strong tilt signal"):
+        assert gone not in text, gone
+    assert "Indicators are reference data; tactical positioning remains anchored to SAA " \
+           "targets." in text

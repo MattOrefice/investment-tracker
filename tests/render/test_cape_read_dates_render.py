@@ -176,3 +176,17 @@ def test_without_the_real_10_year_the_ecy_panel_says_so_and_prints_no_cape_yield
     assert not any("CAPE yield" in t for t in texts)
     assert any(t.startswith("**Excess CAPE Yield (ECY)**: data temporarily unavailable")
                for t in texts), [t[:80] for t in texts if "ECY" in t]
+
+
+def test_the_cape_percentile_caption_ends_at_its_reading(macro_page):
+    """#627 (decided by the owner on October 16, 2026): "Periods of extreme valuation have
+    preceded materially below-average decade-ahead returns" cited nothing and printed at
+    every percentile, and the next sentence tied US Large Value's thesis to US CAPE, where
+    src/seed_investment_theses.py has that sleeve read the value-growth CAPE spread."""
+    texts, _, _, _ = macro_page
+    caption = next(t for t in texts if t.startswith("CAPE (") and " percentile of its "
+                   "history: " in t)
+    for gone in ("Periods of extreme valuation", "decade-ahead", "most directly relevant",
+                 "discount-to-US-CAPE", "US Large Value"):
+        assert gone not in caption, gone
+    assert caption.endswith("."), caption
