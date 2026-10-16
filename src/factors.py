@@ -261,6 +261,29 @@ _FTSE_CLASSIFICATION = ('"Markets classified under the FTSE Equity Country '
 _FRENCH_COUNTRY_TABLE = ('the country table in his "Description of Fama/French 5 Factors '
                          'for Developed Markets", read October 4, 2026')
 
+# The South Korea classification claims IDHQ's note makes, each cited to its owner's own
+# dated document (#614, decided by the owner on October 16, 2026), as read that day:
+#   * S&P's Quality Indices methodology (March 2025) draws the S&P Quality Developed
+#     Ex-U.S. LargeMidCap Index, IDHQ's, from the S&P Developed Ex-U.S. LargeMidCap Index,
+#     and takes the top quintile by quality score, with no rule per country;
+#   * S&P DJI's 2026 consultation (July 14, 2026) lists South Korea under "S&P DJI
+#     Developed" in Appendix B, with country weights as of May 15, 2026;
+#   * French's emerging-markets page lists South Korea among the emerging markets;
+#   * MSCI's factsheets as of September 30, 2026: the Emerging Markets Index's lists Korea
+#     among its 24 EM countries, and the IQLT control's index's lists its 22 DM countries,
+#     Canada among them and Korea not.
+# The note gave the S&P screen's Korea weight as near 9.5% in the first half of 2026 and
+# roughly 2% after the June reconstitution. No S&P document for those figures was found,
+# so they went, and the note no longer says how much of the residual Korea explains.
+_SP_QUALITY_METHODOLOGY = 'S&P\'s "S&P Quality Indices Methodology", March 2025'
+_SP_CLASSIFICATION = ('Appendix B of S&P Dow Jones Indices\' "2026 Equity Country '
+                      'Classification Consultation – Extended", July 14, 2026, with country '
+                      'weights as of May 15, 2026')
+_FRENCH_EMERGING_LIST = ('his "Description of Fama/French 5 Factors for Emerging Markets", '
+                         'read October 16, 2026')
+_MSCI_EM_FACTSHEET = 'MSCI\'s factsheet for the MSCI Emerging Markets Index, as of September 30, 2026'
+_MSCI_CONTROL_FACTSHEET = 'MSCI\'s factsheet for that index, as of September 30, 2026'
+
 _INTL_TILT_SLEEVES = [
     {
         "sleeve":        "International Quality",
@@ -1566,9 +1589,10 @@ def build_intl_tilt_disclosure(entry: dict) -> list[str]:
     """Per-fund disclosure paragraphs for one international tilt sleeve.
 
     ASYMMETRIC by design (`entry['disclosure']`):
-      - IDHQ ('idhq') guards against reading the residual as skill — its residual
-        is largely a Korea universe artifact. The Korea mechanism is stated
-        STRUCTURALLY (reconstitution-varying), never as a pinned weight.
+      - IDHQ ('idhq') guards against reading the residual as skill — part of its
+        residual can be a Korea universe artifact. The Korea mechanism is stated
+        STRUCTURALLY (reconstitution-varying), never as a pinned weight, and each
+        classification it rests on cites its owner's dated document (#614).
       - AVDV / AVIV ('avantis') guard against OVER-applying the Korea excuse —
         they are actively managed and observed Korea-clear, so the residual is
         construction (Israel, costs, withholding, a window-specific materials /
@@ -1583,22 +1607,29 @@ def build_intl_tilt_disclosure(entry: dict) -> list[str]:
 
     if kind == "idhq":
         paras.append(
-            f"**{fund}'s residual is largely a universe artifact, not skill.** "
-            f"{fund} tracks S&P's Developed ex-US quality universe, which "
-            "classifies South Korea as **developed** and holds it; the Ken French "
-            "Developed ex-US factor universe (and the "
-            f"{control} control) classify Korea as emerging and exclude it entirely. "
-            "Korean equities' return therefore falls outside the factor span and "
-            f"lands in {fund}'s residual with no selection involved."
+            f"**Part of {fund}'s residual can be a universe artifact rather than "
+            f"skill.** {fund}'s index, the S&P Quality Developed Ex-U.S. LargeMidCap "
+            "Index, selects from the S&P Developed Ex-U.S. LargeMidCap Index "
+            f"({_SP_QUALITY_METHODOLOGY}), and S&P classifies South Korea as "
+            f"**developed**: {_SP_CLASSIFICATION}, lists it among S&P's Developed "
+            f"markets. So Korean stocks are eligible for {fund}'s quality screen. Ken "
+            f"French counts South Korea among the emerging markets ({_FRENCH_EMERGING_LIST}) "
+            f"and leaves it out of his Developed ex-US factors ({_FRENCH_COUNTRY_TABLE}). "
+            f"The {control} control leaves it out too: MSCI classifies Korea as an "
+            f"Emerging Market ({_MSCI_EM_FACTSHEET}), and the control's index, {cidx}, "
+            "covers 22 Developed Markets countries that include Canada and not Korea "
+            f"({_MSCI_CONTROL_FACTSHEET}). The return of any Korean stock {fund} holds "
+            f"therefore falls outside the factor span and lands in {fund}'s residual "
+            "with no selection involved."
         )
         paras.append(
-            "The exposure driving this is **reconstitution-varying, not a fixed "
-            "weight**: the S&P screen's Korea weight stood near 9.5% in the first "
-            "half of 2026 and steps down to roughly 2% after the June "
-            "reconstitution. A residual channel that rises and falls with an index "
-            "rebalance is the signature of a universe mismatch, not persistent "
-            "skill. That is why the weights above are dated rather than given as a "
-            "constant the residual could be 'corrected' by."
+            "The exposure is **not a fixed weight**. S&P reconstitutes the index twice "
+            "a year, after the close on the third Friday of June and of December, and "
+            "weights each stock by its market capitalization times its quality score, "
+            "within the methodology's caps. So Korea's share of the index can change at "
+            "each reconstitution, and with it the part of the residual that Korea "
+            "explains. A residual channel that rises and falls with an index rebalance "
+            "is the signature of a universe mismatch, not persistent skill."
         )
         paras.append(
             "One residual channel does come from the screen rather than the universe. "

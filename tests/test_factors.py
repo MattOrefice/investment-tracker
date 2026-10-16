@@ -3,6 +3,7 @@ Tests for src/factors.py — FF5 data ingestion and regression engine.
 """
 from __future__ import annotations
 
+import re
 import sys
 import pathlib
 from datetime import date, timedelta
@@ -1127,7 +1128,10 @@ def test_intl_tilt_disclosure_idhq_states_korea_structurally():
     entry = {**entry, "fund_result": None, "control_result": None}
     text = " ".join(build_intl_tilt_disclosure(entry))
     assert "reconstitution" in text.lower(), "Korea weight must be framed as reconstitution-varying"
-    assert "9.5%" in text and "2%" in text, "the H1-2026→post-June range must appear as a mechanism"
+    # MIGRATED at #614 (decided by the owner on October 16, 2026): this asserted the
+    # typed Korea weights (9.5% in the first half of 2026, roughly 2% after June). No S&P
+    # document for them was found, so they went; the note types no weight now.
+    assert not re.search(r"\d%", text), "the IDHQ note types a weight again"
     assert "RMW" in text, "the quality-score / RMW cousin note must be present"
     assert "IQLT" in text, "must point the reader to the Canada-matched IQLT control"
     assert "skill" in text.lower()
