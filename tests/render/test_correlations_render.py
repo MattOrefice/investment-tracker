@@ -60,16 +60,32 @@ def test_stationarity_caveat_present(corr_app: AppTest) -> None:
 
 
 def test_notable_pairs_high_sentence(corr_app: AppTest) -> None:
-    """Notable pairs prose must open with the intra-equity conclusion (em-dash form).
-    Pinned: Phase 45B Item B5."""
+    """Notable pairs prose opens with the intra-equity conclusion when the pairs it names
+    are all equity. Pinned: Phase 45B Item B5, unconditionally.
+
+    MIGRATED at #609 (#427, decided by the owner on October 15, 2026): "intra-equity" is
+    said only when both sleeves of every top pair sit in equity sleeves. The demo book's
+    top three pairs are all equity, so CI kept passing; on a book whose top three include
+    a pair of non-equity sleeves the conclusion is withheld, and the old pin failed there.
+    The top pairs are read off the page's own "Most correlated" table, and the book's
+    equity sleeves from asset_evaluation, as the page passes them."""
+    from src import asset_evaluation as ae
     if corr_app.exception:
         pytest.skip("Page raised an exception — data-dependent test skipped.")
     all_md = " ".join(m.value for m in corr_app.markdown)
-    assert "High intra-equity co-movement" in all_md, (
-        "Notable pairs high sentence not found — Phase 45B Item B5 regression: "
-        "'High intra-equity co-movement — {pairs} — means the equity sleeves "
-        "largely share a single global market beta.' must be present."
-    )
+    tables = [df.value for df in corr_app.dataframe
+              if list(df.value.columns) == ["Sleeve A", "Sleeve B", "Correlation"]]
+    assert len(tables) == 2, "premise: the lowest and highest tables render"
+    highest = max(tables, key=lambda t: t["Correlation"].max())
+    equity = set(ae.equity_sleeve_names())
+    named = [(a, b) for a, b, r in highest.itertuples(index=False) if 0 < r < 0.999]
+    assert named, "premise: the page names a positive top pair"
+    if all(a in equity and b in equity for a, b in named):
+        assert "High intra-equity co-movement" in all_md, (
+            "Notable pairs high sentence not found — Phase 45B Item B5 regression.")
+    else:
+        assert "intra-equity" not in all_md, named
+        assert "The top pairs are " in all_md or "The top pair is " in all_md
 
 
 def test_bond_equity_regime_lead(corr_app: AppTest) -> None:
