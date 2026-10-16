@@ -53,10 +53,11 @@ import pytest
 # thing — an environment's resolved version rather than the library's requirements.
 #
 # The SET is the contract. The result depends on the INSTALLED WeasyPrint version, by
-# design: requirements.txt's floor (`>=70.0`, the reviewed version) stops any
-# environment resolving a version OLDER than the reviewed set, and the open upper end
-# lets a NEWER version whose set differs turn this red, which is the intended signal
-# to re-review packages.txt. A version difference matters only if it changes the set, which the set test catches directly — so the
+# design. requirements.txt pins it exactly since #299 (`==70.0`, the reviewed version):
+# a newer one reaches CI and Cloud only when the pin moves, and this test is then the
+# check that packages.txt still covers its set. Before the pin, requirements.txt's floor
+# (`>=70.0`) left the upper end open, so a release could reach Cloud on the push that
+# turned this red. A version difference matters only if it changes the set, which the set test catches directly — so the
 # version belongs in that test's FAILURE MESSAGE, where a reader needs it, and not
 # in an assertion of its own.
 #
@@ -86,10 +87,12 @@ REVIEWED_OPTIONAL = {"libharfbuzz-subset-0", "libharfbuzz-vector-0"}
 # HarfBuzz 13+ package for it is moot for that reason and unchecked.
 #
 # Also new in 70.0: when libharfbuzz-subset-0 is ABSENT, WeasyPrint warns that it "will be
-# required by future versions". When that happens it moves to the required set,
-# test_weasyprints_required_libraries_are_the_reviewed_set goes red, and
-# packages.txt needs its Debian package (libharfbuzz-subset0, #299), which it does not name
-# today.
+# required by future versions". packages.txt names its Debian package, libharfbuzz-subset0,
+# since #299. A python:3.11-slim container on GitHub's runner (Debian 13, trixie; run
+# 38847336247, October 16, 2026) installed it from packages.txt (10.2.0-1+deb13u1), and
+# WeasyPrint 70.0 loaded it with no warning and rendered a PDF. The same container with
+# packages.txt's earlier four packages alone already had it, pulled in by one of them, so
+# naming it holds what Cloud already had rather than adding something new.
 #
 # NONE OF THIS IS AN ENVIRONMENT CLAIM. What actually degrades on Streamlit Cloud is
 # answerable only by rendering a PDF there — #255.
@@ -160,10 +163,10 @@ def test_weasyprints_required_libraries_are_the_reviewed_set():
     stops covering the set it was reviewed against — and the first symptom would
     otherwise be a RuntimeError in front of a user.
 
-    The result depends on the installed WeasyPrint version, by design. The floor in
-    requirements.txt stops any environment resolving a version older than the reviewed
-    set; a newer version whose set differs turns this red, which is the intended signal
-    to re-review packages.txt. An earlier version of this file ALSO asserted
+    The result depends on the installed WeasyPrint version, by design.
+    requirements.txt pins it exactly (#299), so a newer version arrives only with the
+    pin, and a set that differs then turns this red, the signal to re-review
+    packages.txt. An earlier version of this file ALSO asserted
     the installed version equalled the reviewed one, and that failed CI on sight —
     see the note at REVIEWED_AGAINST_WEASYPRINT.
     """
@@ -217,3 +220,21 @@ def test_this_file_disclaims_being_pdf_build_coverage():
         "the scope disclaimer left the module docstring — without it this file reads "
         "like evidence that the PDF builds, which it cannot show")
     assert "no claim whatsoever about any environment" in doc
+
+
+def test_requirements_pins_the_reviewed_weasyprint_exactly():
+    """#299 (decided by the owner on October 16, 2026): weasyprint is pinned at the
+    version this set was reviewed against, so moving the pin is what asks for the next
+    review."""
+    reqs = (PACKAGES_TXT.parent / "requirements.txt").read_text(encoding="utf-8")
+    pins = [ln.strip() for ln in reqs.splitlines() if ln.strip().startswith("weasyprint")]
+    assert pins == [f"weasyprint=={REVIEWED_AGAINST_WEASYPRINT}"], pins
+
+
+def test_packages_txt_names_harfbuzz_subset():
+    """WeasyPrint 70.0 loads libharfbuzz-subset-0 when present and warns that a future
+    version will require it. packages.txt names its Debian package, confirmed in a
+    python:3.11-slim (Debian 13) container: run 38847336247 (#299)."""
+    declared = {ln.strip() for ln in PACKAGES_TXT.read_text(encoding="utf-8").splitlines()
+                if ln.strip() and not ln.strip().startswith("#")}
+    assert "libharfbuzz-subset0" in declared, declared
