@@ -10,7 +10,7 @@ import streamlit as st
 st.set_page_config(page_title="Macro Dashboard", layout="wide")
 
 from src import factor_regime, factor_valuation, macro, shiller
-from src.asof import _when, as_of_banner, today_et
+from src.asof import _when, as_of_banner, format_long_date, today_et
 from src.config import IS_DEMO
 from src.macro import (
     format_ur_delta,
@@ -1357,7 +1357,7 @@ with col:
     if rate_vol_21 is not None and not rate_vol_21.empty:
 
         current_rv = float(rate_vol_21.iloc[-1])
-        rv_as_of   = rate_vol_21.index[-1].strftime("%b %d, %Y")
+        rv_as_of   = format_long_date(rate_vol_21.index[-1])
 
         rv_window = st.radio(
             "Window", ["5Y", "10Y", "20Y", "Max"],
@@ -1658,7 +1658,7 @@ with col:
 
         nfci_clean   = nfci.dropna()
         current_nfci = float(nfci_clean.iloc[-1])
-        nfci_as_of   = nfci_clean.index[-1].strftime("%b %d, %Y")
+        nfci_as_of   = format_long_date(nfci_clean.index[-1])
         nfci_since   = nfci_clean.index[0].strftime("%b %Y")
         # Full-history percentile (NOT windowed) — consistent with the valuation and
         # factor-regime reads; a windowed percentile on financial conditions would rest
@@ -1845,7 +1845,7 @@ with col:
             _ttm_df["pe"].values, index=pd.DatetimeIndex(_ttm_df["date"])
         ).sort_index()
         ttm_val    = float(ttm_series.iloc[-1])
-        ttm_asof   = pd.Timestamp(_ttm_df["obs_date"].iloc[-1]).strftime("%b %d, %Y")
+        ttm_asof   = format_long_date(pd.Timestamp(_ttm_df["obs_date"].iloc[-1]))
         ttm_median = float(ttm_series.median())
         ttm_ok = True
     except Exception:
@@ -2221,7 +2221,7 @@ with col:
 
         dtwex_clean    = dtwexbgs.dropna()
         current_dtwex  = float(dtwex_clean.iloc[-1])
-        dtwex_as_of    = dtwex_clean.index[-1].strftime("%b %d, %Y")
+        dtwex_as_of    = format_long_date(dtwex_clean.index[-1])
         dtwex_since    = dtwex_clean.index[0].strftime("%b %Y")
 
         dtwex_1y_chg   = macro.year_change_phrase(dtwex_clean, ONE_YR_AGO)
@@ -2478,8 +2478,8 @@ with col:
             if etf_pct is not None:
                 st.caption(f"{_ordinal(etf_pct)} percentile of its history ({_etf_base})")
 
-        _ff_as_of  = ff_dt.strftime("%b %d, %Y")  if ff_dt  is not None else "n/a"
-        _etf_as_of = etf_dt.strftime("%b %d, %Y") if etf_dt is not None else "n/a"
+        _ff_as_of  = format_long_date(ff_dt)  if ff_dt  is not None else "n/a"
+        _etf_as_of = format_long_date(etf_dt) if etf_dt is not None else "n/a"
         from src.asof import data_vintage as _data_vintage
         st.caption(
             f"{_data_vintage('Fama-French factor', ff_dt.date() if ff_dt is not None else None)} "
@@ -2665,8 +2665,8 @@ with col:
             # fetch, and "starts Jan 2003" for two more.
             if series is not None:
                 held = series.dropna()
-                first = held.index[0].strftime("%b %d, %Y")
-                last = held.index[-1].strftime("%b %d, %Y")
+                first = format_long_date(held.index[0])
+                last = format_long_date(held.index[-1])
                 stored = _stored_on.get(label.split()[1])
                 copy = f" · stored copy fetched {_long_date(stored)}" if stored else ""
                 return f"**{label}**: first observation **{first}**, last observation **{last}**{copy}"

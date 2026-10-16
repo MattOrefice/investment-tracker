@@ -7,7 +7,7 @@ import streamlit as st
 
 st.set_page_config(page_title="Tax Lot Inventory", layout="wide")
 
-from src.asof import as_of_banner, today_et
+from src.asof import as_of_banner, format_long_date, today_et
 from src.prose_figures import render
 from src.tax_lots import (
     HARVEST_MATERIALITY_THRESHOLD,
@@ -379,8 +379,8 @@ with st.expander("Tax-Loss Harvest Candidates", expanded=_has_candidates):
         rows = []
         for c in _candidates:
             ws = (
-                f"{c['wash_sale_start_date'].strftime('%b %d, %Y')} – "
-                f"{c['wash_sale_end_date'].strftime('%b %d, %Y')}"
+                f"{format_long_date(c['wash_sale_start_date'])} – "
+                f"{format_long_date(c['wash_sale_end_date'])}"
             )
             rows.append(
                 {
@@ -424,8 +424,8 @@ with st.expander("Tax-Loss Harvest Candidates", expanded=_has_candidates):
             sleeve  = c["sleeve"]
             repl    = c["replacement_ticker"]
             note    = render(c["replacement_rationale"])   # SCHP's sleeve weight
-            ws_s    = c["wash_sale_start_date"].strftime("%B %d, %Y")
-            ws_e    = c["wash_sale_end_date"].strftime("%B %d, %Y")
+            ws_s    = format_long_date(c["wash_sale_start_date"])
+            ws_e    = format_long_date(c["wash_sale_end_date"])
 
             st.markdown("---")
 

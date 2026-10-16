@@ -226,7 +226,8 @@ def test_a_lock_waiting_on_its_metadata_renders_the_duration_pending(frozen, mon
     html = _html(monkeypatch, *Q2)
     snap = get_quarter_snapshot("2026Q2")[0]
     assert ETF_METADATA in snap.inputs_pending, "premise: the fresh lock waits on the file"
-    assert ("Pending: this duration figure locks when the ETF fact-sheet data covers the "
+    # Since #488 the input carries the cover's name, "the fund durations".
+    assert ("Pending: this duration figure locks when the fund durations cover the "
             "quarter.") in html
     assert "effective duration:" not in html
     assert "Fixed Income Effective Duration" in html, "the heading stands over the line"
