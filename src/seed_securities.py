@@ -85,10 +85,10 @@ HOLDINGS = [
             "dividend-to-price and sales-to-price (Morningstar Market Indexes Methodology Guide, "
             "July 2026). IWD, the benchmark, tracks the Russell 1000 Value, whose style score uses "
             "one value variable, book-to-price, beside two growth variables (Russell US Equity "
-            "Indexes Construction and Methodology, v7.2, August 2026, section 8.2.1). Multi-metric "
-            "is academically superior: relying solely on P/B overweights "
-            "asset-heavy industries and underweights intangible-rich businesses where book value "
-            "poorly proxies intrinsic value. VTV also costs {{er:VTV}} vs IWD's {{er:IWD}}. The holding differs"
+            "Indexes Construction and Methodology, v7.2, August 2026, section 8.2.1). "
+            # "Multi-metric is academically superior: relying solely on P/B overweights
+            # asset-heavy industries ..." followed, citing nothing (#608).
+            "VTV also costs {{er:VTV}} vs IWD's {{er:IWD}}. The holding differs"
             " from the benchmark by design.\n"
             "\n"
             "**Would revisit if** the multi-metric value definition stopped distinguishing itself "
@@ -163,10 +163,11 @@ HOLDINGS = [
             "QUAL relationship exactly. Cost is a wash ({{er:IDHQ}} against IQLT's {{er:IQLT}}), so this is a "
             "methodology decision, the same one already made domestically.\n"
             "\n"
-            "The known asymmetry: S&P classifies South Korea as developed where MSCI does not, so "
-            "IDHQ holds Korea and IQLT doesn't. That is a real universe difference, disclosed on the "
-            "Factor Profile page, and it moves with each semi-annual reconstitution rather than "
-            "sitting at a fixed weight.\n"
+            # "S&P classifies South Korea as developed where MSCI does not" was here (#608):
+            # the pages src/factors.py cites, FTSE's classification and French's country
+            # table, say nothing of either S&P's or MSCI's.
+            "The Factor Profile page sets out how IDHQ's universe treats South Korea against "
+            "the factors'.\n"
             "\n"
             "**Would revisit if** S&P's quality screen diverged materially from MSCI's over a full"
             " cycle, which would mean the two are measuring different things and the SPHQ-IDHQ "

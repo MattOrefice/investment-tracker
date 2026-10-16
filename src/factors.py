@@ -2242,10 +2242,13 @@ def interpret_correlations(corr: pd.DataFrame,
                  if len(high_parts) > 2 else " and ".join(high_parts))
     all_equity = bool(high_parts) and all(
         a in equity and b in equity for a, b, r in highest if 0 < r < 0.999)
+    # The top pairs and their correlations, and no grade of them (#608, decided by the
+    # owner on October 15, 2026). It opened "High intra-equity co-movement means the
+    # equity sleeves largely share a single global market beta" for any top pair above
+    # zero: "high" named no cut, and the reading followed from the grade.
     high_sentence = (
-        ("High intra-equity co-movement means the equity sleeves largely share a single "
-         "global market beta. " if all_equity else "")
-        + f"The top {'pairs are' if len(high_parts) > 1 else 'pair is'} {high_list}."
+        f"The top {'intra-equity ' if all_equity else ''}"
+        f"{'pairs are' if len(high_parts) > 1 else 'pair is'} {high_list}."
     ) if high_parts else ""
 
     # Lowest correlations sentence — frame as cross-asset structural difference

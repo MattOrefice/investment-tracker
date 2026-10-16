@@ -81,8 +81,11 @@ def test_notable_pairs_high_sentence(corr_app: AppTest) -> None:
     named = [(a, b) for a, b, r in highest.itertuples(index=False) if 0 < r < 0.999]
     assert named, "premise: the page names a positive top pair"
     if all(a in equity and b in equity for a, b in named):
-        assert "High intra-equity co-movement" in all_md, (
+        # MIGRATED again at #608: "High" and its reading went; the sentence names the
+        # pairs as intra-equity and states their correlations.
+        assert "The top intra-equity pairs are " in all_md, (
             "Notable pairs high sentence not found — Phase 45B Item B5 regression.")
+        assert "High intra-equity" not in all_md and "global market beta" not in all_md
     else:
         assert "intra-equity" not in all_md, named
         assert "The top pairs are " in all_md or "The top pair is " in all_md

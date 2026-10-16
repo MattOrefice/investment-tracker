@@ -339,8 +339,14 @@ with col:
         st.markdown(
             "**Data sources**: expense ratios from fund issuer prospectuses "
             "(Vanguard, iShares, Avantis, Invesco, Schwab, Fidelity); "
-            "AUM from Morningstar. Sleeve target weights locked at portfolio "
-            "inception (May 2025).\n\n"
+            # It said "Sleeve target weights locked at portfolio inception (May 2025)":
+            # the targets were renormalized since, and nothing locked them (#608). A lock
+            # taken before locks held the policy (#525) was given it on the day it was
+            # recorded, and its cover says so (cache.policy_recorded_note).
+            "AUM from Morningstar. Sleeve target weights are the book's current SAA "
+            "targets. Each quarter's lock holds the policy as it stood when that lock "
+            "was taken, or, for a lock taken before locks held it, as it stood on the "
+            "day it was recorded, which that lock's cover states.\n\n"
             "**ER savings**: calculated as "
             "`Σ(holding_weight × (benchmark_ER − holding_ER)) × portfolio_size`, where "
             "each holding's weight is its sleeve's SAA target split equally across the "

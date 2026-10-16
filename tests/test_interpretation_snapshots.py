@@ -333,9 +333,11 @@ class TestCorrelationsSnapshot:
         # equity, so the matrix's equity sleeves are passed; the text is unchanged.
         result = interpret_correlations(
             _make_corr(), {"US Large Core", "US Large Quality", "US Small Cap"})
+        # MIGRATED at #608 (decided by the owner on October 15, 2026): "High" and the
+        # reading it carried ("means the equity sleeves largely share a single global
+        # market beta") went; the top pairs and their correlations stay.
         expected = (
-            "High intra-equity co-movement means the equity sleeves largely share a single "
-            "global market beta. The top pairs are US Large Core × US Large Quality (ρ = "
+            "The top intra-equity pairs are US Large Core × US Large Quality (ρ = "
             "0.92), US Large Core × US Small Cap (ρ = 0.85), and US Large Quality × US Small "
             "Cap (ρ = 0.80).  \n"
             "The lowest correlations are US Small Cap × Core Fixed Income (ρ = 0.05) and US "
