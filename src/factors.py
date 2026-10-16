@@ -2198,7 +2198,8 @@ def interpret_benchmark_attribution(result: dict) -> str:
     return bench_sentence + " " + style_sentence + " " + alpha_sentence
 
 
-def interpret_correlations(corr: pd.DataFrame) -> str:
+def interpret_correlations(corr: pd.DataFrame,
+                           equity: "set[str] | frozenset[str]" = frozenset()) -> str:
     """
     Generate 2–3 sentences interpreting a correlation matrix of sleeve returns.
 
@@ -2206,8 +2207,14 @@ def interpret_correlations(corr: pd.DataFrame) -> str:
     and flags any unexpected correlations. Returns an empty string if the
     matrix has fewer than 3 sleeves.
 
+    The top pairs are called intra-equity co-movement only when both sleeves of every
+    pair named are in ``equity`` (#427, decided by the owner on October 15, 2026): the
+    sentence said so whatever the pairs were. With no equity set given, nothing is
+    called equity.
+
     Args:
         corr: square correlation DataFrame (sleeves as both index and columns).
+        equity: the book's equity sleeves (asset_evaluation.equity_sleeve_names()).
     """
     if corr.empty or len(corr) < 3:
         return ""
@@ -2233,10 +2240,12 @@ def interpret_correlations(corr: pd.DataFrame) -> str:
     ]
     high_list = (", ".join(high_parts[:-1]) + ", and " + high_parts[-1]
                  if len(high_parts) > 2 else " and ".join(high_parts))
+    all_equity = bool(high_parts) and all(
+        a in equity and b in equity for a, b, r in highest if 0 < r < 0.999)
     high_sentence = (
-        "High intra-equity co-movement means the equity sleeves largely share a single "
-        f"global market beta. The top {'pairs are' if len(high_parts) > 1 else 'pair is'} "
-        f"{high_list}."
+        ("High intra-equity co-movement means the equity sleeves largely share a single "
+         "global market beta. " if all_equity else "")
+        + f"The top {'pairs are' if len(high_parts) > 1 else 'pair is'} {high_list}."
     ) if high_parts else ""
 
     # Lowest correlations sentence — frame as cross-asset structural difference

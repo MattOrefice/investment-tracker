@@ -342,7 +342,10 @@ class TestInterpretCorrelations:
         assert "Core Fixed Income" in text or "diversif" in text.lower() or "ballast" in text.lower()
 
     def test_bond_equity_cross_asset_noted(self):
-        text = interpret_correlations(_make_corr())
+        """MIGRATED at #427: the equity sleeves are passed, since "intra-equity" is said
+        only of pairs whose sleeves are all equity."""
+        text = interpret_correlations(
+            _make_corr(), {"US Large Core", "US Large Quality", "US Small Cap"})
         assert "bond" in text.lower() or "equity" in text.lower()
 
     def test_empty_returns_empty_string(self):

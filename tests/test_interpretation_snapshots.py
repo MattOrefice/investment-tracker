@@ -355,7 +355,10 @@ class TestCorrelationsSnapshot:
 
     def test_standard_correlation_matrix(self):
         """Pins the exact 3-sentence output for the canonical sleeve correlation matrix."""
-        result = interpret_correlations(_make_corr())
+        # MIGRATED at #427: "intra-equity" is said only of pairs whose sleeves are all
+        # equity, so the matrix's equity sleeves are passed; the text is unchanged.
+        result = interpret_correlations(
+            _make_corr(), {"US Large Core", "US Large Quality", "US Small Cap"})
         expected = (
             "High intra-equity co-movement means the equity sleeves largely share a single "
             "global market beta. The top pairs are US Large Core × US Large Quality (ρ = "

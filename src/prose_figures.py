@@ -16,6 +16,9 @@ targets and the book:
   {{er:TICKER}}          the fund's expense ratio, as the securities table holds it
   {{dur:TICKER}}         the fund's duration, as data/etf_metadata.json holds it with
                          its measure, source and as-of date (#455)
+  {{nport}}              the period end of the Avantis N-PORT filing the Factor Profile
+                         page reads (src.factors._NPORT_ASOF), so a fund rationale citing
+                         that filing names the one the page does (#427)
 
 Weights and shares print to one decimal, as the SAA page does; an expense ratio prints to
 two, as the Research page does. A name that is not a sleeve of the book, or a ticker with
@@ -119,6 +122,9 @@ def render(text: "str | None", *, targets: "dict[str, float] | None" = None) -> 
             return _expense_ratio(arg)
         if kind == "dur":
             return _duration(arg)
+        if kind == "nport":
+            from src.factors import _NPORT_ASOF
+            return _NPORT_ASOF
         raise KeyError(f"unknown prose token {m.group(0)}")
 
     return TOKEN.sub(fill, text)
