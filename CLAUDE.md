@@ -55,6 +55,11 @@
   pinned, which only the test run needs and Streamlit Cloud never installs (#544).
   A targeted run cannot see a relationship between two correct lines (#366, #380,
   #387).
+- A local suite run never shares the machine with another suite run (#612). Two
+  `-n 4` runs started together put two kaleido Chrome sessions side by side, and
+  the PDF chart test's teardown caught kaleido's pipe-logger thread still running.
+  The same tree gave no such error run alone. Start the CI-style suite, the
+  `live_data` tests or the personal harness only when no other run is going.
 - For any PR that changes a rendered page, ALSO run the `live_data` tests in
   demo mode, as the scheduled job does: `TRACKER_MODE=demo python -m pytest -m
   live_data -q`. pytest.ini excludes them from the default suite and PR CI, so a
