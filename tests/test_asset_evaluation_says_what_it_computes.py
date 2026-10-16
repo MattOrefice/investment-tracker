@@ -92,12 +92,15 @@ def _rolling() -> pd.Series:
 
 
 def test_the_trigger_gives_the_two_averages_the_section_prints_and_their_date():
+    """MIGRATED at #425: the trigger names the figure that would move, the average from
+    2020 on falling to the pre-2020 one, as the owner decided on October 15, 2026."""
     pre, post, through = ae.pre_post_2020(_rolling())
     assert (round(pre, 2), round(post, 2), through) == (-0.01, 0.39, pd.Timestamp("2026-07-16"))
     text = ae.conclusion(_rolling())
-    assert ("- The rolling 60-day correlation with SPY returns to its pre-2020 level: it "
-            "averaged -0.01 before 2020 and 0.39 from 2020 through July 16, 2026. That would "
-            "indicate a return to diversifying behavior.\n") in text
+    assert ("- The rolling 60-day correlation with SPY, on average from 2020 on, falls "
+            "to its pre-2020 average: it averaged -0.01 before 2020 and 0.39 from 2020 "
+            "through July 16, 2026. That would indicate a return to diversifying "
+            "behavior.\n") in text
 
 
 def test_the_verdict_is_dated_and_no_longer_says_currently():
@@ -117,8 +120,9 @@ def test_the_typed_threshold_and_its_baseline_are_gone():
 def test_without_the_rolling_series_it_gives_no_figure_and_no_date():
     text = ae.conclusion()
     assert "**Bitcoin does not belong in this portfolio's SAA.**" in text
-    assert ("- The rolling 60-day correlation with SPY returns to its pre-2020 level. That "
-            "would indicate a return to diversifying behavior.\n") in text
+    assert ("- The rolling 60-day correlation with SPY, on average from 2020 on, falls "
+            "to its pre-2020 average. That would indicate a return to diversifying "
+            "behavior.\n") in text
     assert "As of" not in text and "averaged" not in text
     assert ae.conclusion(pd.Series(dtype=float)) == text
 
@@ -153,7 +157,7 @@ def test_on_the_frozen_book_the_conclusion_cites_only_the_average_the_section_pr
     printed = re.search(r"Post-2020 average: (-?\d\.\d\d)\.", section["rolling_prose"])
     assert printed and "Pre-2020 average" not in section["rolling_prose"]
     through = format_long_date(rolling.index.max().date())
-    assert (f"its pre-2020 level: this sample holds none before 2020, and it has averaged "
+    assert (f"its pre-2020 average: this sample holds none before 2020, and it has averaged "
             f"{printed.group(1)} from 2020 through {through}. That would indicate"
             ) in section["conclusion"]
     assert f"**As of {through}, Bitcoin does not belong" in section["conclusion"]
@@ -201,9 +205,10 @@ def test_on_the_demo_book_the_conclusion_cites_both_averages_the_section_prints(
 def test_with_no_average_before_2020_the_trigger_says_so():
     late = _rolling().loc["2020-01-01":]
     text = ae.conclusion(late)
-    assert ("- The rolling 60-day correlation with SPY returns to its pre-2020 level: this "
-            "sample holds none before 2020, and it has averaged 0.39 from 2020 through "
-            "July 16, 2026. That would indicate a return to diversifying behavior.\n") in text
+    assert ("- The rolling 60-day correlation with SPY, on average from 2020 on, falls "
+            "to its pre-2020 average: this sample holds none before 2020, and it has "
+            "averaged 0.39 from 2020 through July 16, 2026. That would indicate a return "
+            "to diversifying behavior.\n") in text
     assert "**As of July 16, 2026, Bitcoin does not belong" in text
 
 

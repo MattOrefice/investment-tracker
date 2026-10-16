@@ -1785,13 +1785,14 @@ def _build_asset_eval_section() -> dict:
             # reading whatever its figure: "consistent with the 'uncorrelated
             # alternative' narrative" and "persistently elevated after
             # institutionalization; correlation rises when diversification is most
-            # needed". No label read those from the averages beside them.
+            # needed". No label read those from the averages beside them. Each prints
+            # as the page and the conclusion print it, never "-0.00" (fmt_corr, #425).
             pre_avg, post_avg, _ = ae.pre_post_2020(rolling_corr)
             prose_parts: list[str] = []
             if not np.isnan(pre_avg):
-                prose_parts.append(f"Pre-2020 average: {pre_avg:.2f}.")
+                prose_parts.append(f"Pre-2020 average: {ae.fmt_corr(pre_avg)}.")
             if not np.isnan(post_avg):
-                prose_parts.append(f"Post-2020 average: {post_avg:.2f}.")
+                prose_parts.append(f"Post-2020 average: {ae.fmt_corr(post_avg)}.")
             result["rolling_prose"] = " ".join(prose_parts)
     except Exception:
         result["unavailable"].append("rolling")
