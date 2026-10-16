@@ -133,7 +133,8 @@ def test_the_drawdown_argument_is_the_pdfs_and_names_its_subject(asset_evaluatio
 
 def test_bitcoin_is_property_for_tax_not_a_commodity(asset_evaluation):
     _, text, _ = asset_evaluation
-    assert "the IRS treats bitcoin as property (Notice 2014-21)" in text
+    # Since #625 the Notice carries its bulletin's date.
+    assert "the IRS treats bitcoin as property (Notice 2014-21, " in text
     assert "commodity under US tax law" not in text
     assert "direct commodity ownership" not in text
 

@@ -53,6 +53,8 @@ _BASE = {
     "delta_sharpe_con": None, "msc_chart_b64": None, "dd_rows": [],
     "btc_2022_mdd": None,
     "args_for": [], "args_against": [], "sharpe_curve_top": None, "conclusion": "x",
+    # Added by #625 (the conclusion as the PDF prints it), caught the same way.
+    "conclusion_blocks": [{"kind": "p", "runs": [(False, "x")]}],
     "disposition": "computed", "failure_reason": None, "unavailable": [],
     "rf_note": None,
     "gap_note": None,

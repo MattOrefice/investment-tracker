@@ -35,4 +35,5 @@ def test_the_uncited_fee_range_and_tax_claims_are_gone(bullet):
 
 def test_the_notice_2014_21_line_stays_once(bullet):
     page, _ = bullet
-    assert page.count("the IRS treats bitcoin as property (Notice 2014-21)") == 1
+    # Since #625 the Notice carries its bulletin's date.
+    assert page.count("the IRS treats bitcoin as property (Notice 2014-21, ") == 1
