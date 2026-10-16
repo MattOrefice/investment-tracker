@@ -31,16 +31,15 @@ TEMPLATE = (pathlib.Path(rp.__file__).resolve().parent.parent
 # no assertion below depends on these numbers being current.
 PORT = {"max_dd": -0.313, "alloc_top": "10.0%", "mdd22_lo": -0.233, "mdd22_hi": -0.261}
 BTC_MDD = -0.8153
-BTC_2022 = "-66.9%"
 START = "2018-01-01"
 
 
 def _full():
-    return rp._drawdown_argument(BTC_MDD, BTC_2022, PORT, START)
+    return rp._drawdown_argument(BTC_MDD, PORT, START)
 
 
 def _reduced():
-    return rp._drawdown_argument(BTC_MDD, BTC_2022, {}, START)
+    return rp._drawdown_argument(BTC_MDD, {}, START)
 
 
 # ── the contract: both subjects named ─────────────────────────────────────────
@@ -116,7 +115,7 @@ def test_the_figure_tracks_the_data_rather_than_a_literal(mdd, shown):
     computation — the computation was already correct, and a mutant restoring a
     hardcoded number is the regression that matters. A literal '-81.5%' survives
     any assertion that merely looks for '-81.5%'; it dies here."""
-    text = rp._drawdown_argument(mdd, BTC_2022, PORT, START)
+    text = rp._drawdown_argument(mdd, PORT, START)
     assert shown in text
     assert "-81.5%" not in text
 
@@ -124,7 +123,7 @@ def test_the_figure_tracks_the_data_rather_than_a_literal(mdd, shown):
 def test_the_portfolio_figures_track_the_sweep_too():
     """Both sides of the comparison must move, not just Bitcoin's."""
     other = dict(PORT, max_dd=-0.44, mdd22_lo=-0.11, mdd22_hi=-0.19)
-    text = rp._drawdown_argument(BTC_MDD, BTC_2022, other, START)
+    text = rp._drawdown_argument(BTC_MDD, other, START)
     assert "-44.0% in the table above" in text
     assert "-11.0% at 0% allocation to -19.0%" in text
     assert "-31.3%" not in text
@@ -306,13 +305,15 @@ def test_the_caption_templates_bitcoins_figure_rather_than_stating_one():
     """MIGRATED at #529. The caption's closing sentences moved out of the template into
     asset_evaluation.drawdown_2022_note, so the verb can follow the table's figures.
     MIGRATED again at #536: the note takes the size of the fall as decline_in_year
-    returns it, not the signed drawdown as text. What this protected is unchanged:
-    Bitcoin's 2022 figure is the one handed in, never a typed one."""
+    returns it, not the signed drawdown as text. MIGRATED again at #604: the note takes
+    each series' calendar-year return, bitcoin's among them. What this protected is
+    unchanged: Bitcoin's 2022 figure is the one handed in, never a typed one."""
     import src.asset_evaluation as ae
     html = TEMPLATE.read_text(encoding="utf-8")
     body = re.sub(r"\{#.*?#\}", "", html, flags=re.S)
     assert "{{ asset_eval.dd_2022_note }}" in body
     assert "&minus;65%" not in body and "65%" not in body
-    for fall, figure in ((0.669, "66.9%"), (0.5, "50.0%")):
-        assert f"while Bitcoin fell {figure}" in ae.drawdown_2022_note(fall, PORT)
-    assert "65%" not in ae.drawdown_2022_note(0.5, PORT)
+    for btc, figure in ((-0.64265, "-64.3%"), (-0.5, "-50.0%")):
+        note = ae.drawdown_2022_note({"SPY": -0.18, "AGG": -0.13, "BTC": btc}, PORT)
+        assert f"and BTC returned {figure}" in note
+    assert "65%" not in ae.drawdown_2022_note({"SPY": -0.18, "AGG": -0.13, "BTC": -0.5}, PORT)
