@@ -4,7 +4,8 @@ item D; the derivations themselves are in tests/test_typed_figures_derived.py).
   * #406 item 7: SPAXX's rationale on the Research page states the same operational cash
     share the SAA page's own caption measures, and that cash is untargeted.
   * #406 item 10: Stage 1's caption names the naive benchmark that is selected.
-  * #406 item 6: Asset Evaluation's 2022 paragraph states each series' own decline.
+  * #406 item 6: Asset Evaluation's 2022 paragraph states each series' own figure, since
+    #425 its calendar-year return.
 """
 from __future__ import annotations
 
@@ -93,10 +94,13 @@ def test_stage_1_names_the_naive_benchmark_that_is_selected():
     assert "SAA blend vs. S&P 500" in texts and "SAA blend vs. 60/40" not in texts
 
 
-def test_the_2022_paragraph_states_each_series_decline(tmp_path, monkeypatch):
+def test_the_2022_paragraph_states_each_series_calendar_year_return(tmp_path, monkeypatch):
     """On a copy of demo.db, offline: the frozen test book starts in 2024 and has no
-    2022. The figures are the book's own, as read off it on 2026-09-27: bitcoin fell
-    66.9% from its 2022 peak, SPY 24.5% and AGG 16.0%."""
+    2022. MIGRATED at #425 (decided by the owner on October 15, 2026): the page states
+    2022 once, as each series' calendar-year return. The figures are the book's own, as
+    read off it on 2026-10-15: SPY returned -18.2%, AGG -13.0% and bitcoin -64.3%. The
+    peak-to-trough falls it printed before (66.9%, 24.5% and 16.0%) are gone, and so is
+    bitcoin's 2022 drawdown in 5j's bullet."""
     import streamlit as st
     import src.db as db
     import src.macro as macro
@@ -121,8 +125,13 @@ def test_the_2022_paragraph_states_each_series_decline(tmp_path, monkeypatch):
     finally:
         st.cache_data.clear()
     assert not at.exception, [str(e.value) for e in at.exception]
-    para = next(t for t in _texts(at) if "is the most important stress-test period" in t)
-    assert ("portfolio impact: equities (SPY) fell 24.5%, bonds (AGG) fell 16.0%, and BTC "
-            "fell 66.9%, all at the same time. Each is a peak-to-trough decline within "
-            "2022, not a calendar-year return.") in para, para
-    assert "In 2022, when BTC fell 66.9% from its peak and equities sold off" in para, para
+    texts = _texts(at)
+    para = next(t for t in texts if "is the most important stress-test period" in t)
+    assert ("portfolio impact. Over calendar 2022, SPY returned -18.2%, AGG returned -13.0% "
+            "and BTC returned -64.3%: all three fell in the same year. This joint stress "
+            "scenario") in para, para
+    assert "Within calendar 2022, the portfolio's maximum drawdown shifts from" in para, para
+    page = " ".join(texts)
+    assert page.count("-64.3%") == 1, "bitcoin's 2022 figure is stated once"
+    for gone in ("66.9%", "24.5%", "16.0%", "Its 2022 drawdown of"):
+        assert gone not in page, gone

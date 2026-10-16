@@ -210,10 +210,11 @@ with col:
             "This page applies a five-step framework to Bitcoin as a worked case study for SAA "
             "inclusion. The framework is **descriptive, not prescriptive**: its numbers quantify "
             "observed behavior over the 2018–present sample period and are not a forecast.\n\n"
-            "**Sections in order:** univariate statistics → correlation behavior (full-sample and "
-            "rolling) → regime-conditional correlation by NBER cycle phase → mean-variance "
-            "contribution (unconstrained and constrained tangency) → drawdown sensitivity table → "
-            "decision framework.\n\n"
+            "**Sections in order:** univariate statistics (5a) → correlation behavior: "
+            "full-sample (5b), rolling 60-day (5c), and daily against weekly (5d) → "
+            "mean-variance tangency, unconstrained (5e) and constrained (5f) → marginal Sharpe "
+            "contribution (5g) → drawdown sensitivity (5h) → regime-conditional correlation by "
+            "NBER cycle phase (5i) → decision framework (5j).\n\n"
             "The **decision framework** section is the conclusion. It separates sample-period "
             "arithmetic (which favors high-return assets mechanically) from forward-looking "
             "allocator considerations: liquidity, tax treatment, operational complexity, mandate "
@@ -233,7 +234,7 @@ with col:
         "the existing portfolio."
     )
     st.markdown(
-        "**Correlation behavior** is evaluated at two frequencies. Full-sample Pearson correlation "
+        "**Correlation behavior** is evaluated over two windows. Full-sample Pearson correlation "
         "against each SAA sleeve measures the average co-movement since 2018. Rolling 60-day "
         "correlation against SPY shows regime changes: correlations that look low on average "
         "can spike toward 1 during market stress, when diversification is most needed. "
@@ -258,7 +259,7 @@ with col:
         "candidate does to the actual portfolio."
     )
     st.markdown(
-        "**Decision framework:** this page surfaces tradeoffs, not a single recommendation. "
+        "**Decision framework:** the page ends with its conclusion (5j). "
         "Mean-variance analysis captures return and risk but ignores liquidity, tax treatment, "
         "operational complexity, and mandate fit, all of them material considerations "
         "for a taxable individual investor. An improvement in constrained portfolio Sharpe "
@@ -604,10 +605,12 @@ with col:
 
         fi_note = ""
         if not np.isnan(fi_corr):
+            # The figure, with no reading of it: "is near zero, which is consistent with
+            # Bitcoin offering some diversification relative to duration" printed whatever
+            # the correlation was (#425).
             fi_note = (
-                f"The Core Fixed Income correlation ({_c(fi_corr)}) is near zero, "
-                "which is consistent with Bitcoin offering some diversification relative "
-                "to duration. It says nothing about behavior during equity stress. "
+                f"The Core Fixed Income correlation is {_c(fi_corr)}. As a full-sample "
+                "figure, it says nothing about behavior during equity stress. "
             )
 
         ra_note = ""
@@ -668,28 +671,11 @@ with col:
         )
         st.plotly_chart(fig_roll, width="stretch", config={"displayModeBar": False})
 
-        # Prose
-        pre_2020_avg, post_2020_avg, _ = ae.pre_post_2020(rolling_corr)
-
-        pre_note = (
-            f"Prior to 2020, BTC's rolling 60-day correlation with SPY averaged "
-            f"near {pre_2020_avg:.2f}, broadly consistent with the 'uncorrelated alternative' "
-            "narrative that drove early institutional interest. "
-        ) if not np.isnan(pre_2020_avg) else ""
-
-        post_note = ""
-        if not np.isnan(post_2020_avg):
-            post_note = (
-                f"Post-COVID, the correlation has remained persistently elevated at "
-                f"{post_2020_avg:.2f} on average, undermining the diversification claim. "
-                "One plausible mechanism: as Bitcoin entered professional portfolios post-2020, "
-                "it began trading with the risk-on/risk-off dynamics that characterize equity "
-                "markets, reducing its value as a diversifier when correlations are most costly. "
-                "The data supports the correlation shift. The institutional-flows hypothesis is "
-                "consistent with the timing but is not the only possible explanation."
-            )
-
-        st.markdown(pre_note + post_note)
+        # The two averages, as the PDF states them since #600, and no reading of them
+        # (#601): rolling_averages_sentence says what the paragraph said before.
+        _averages = ae.rolling_averages_sentence(*ae.pre_post_2020(rolling_corr)[:2])
+        if _averages:
+            st.markdown(_averages)
 
     st.divider()
 
@@ -732,16 +718,13 @@ with col:
             "settlement lags or thin-market days materially distort the daily figure."
         )
 
-        tips_diff = float(diff_corr.get("TIPS", float("nan"))) if "TIPS" in diff_corr.index else float("nan")
-        if not np.isnan(tips_diff) and tips_diff > 0:
-            st.markdown(
-                f"TIPS shows the only positive daily-to-weekly difference ({tips_diff:+.2f}); "
-                "the magnitude is small but inconsistent with the broader pattern. "
-                "The likely explanation: TIPS trades less actively than equity ETFs, so daily "
-                "readings may understate true co-movement while weekly aggregation captures it. "
-                "The overall robustness conclusion stands: the daily-frequency "
-                "correlations across equity sleeves are not microstructure artifacts."
-            )
+        # Which sleeves' differences are positive, read from the table (#425). This said
+        # "TIPS shows the only positive daily-to-weekly difference" whenever TIPS's was
+        # positive, whatever the others were, and followed it with an explanation and a
+        # verdict ("the overall robustness conclusion stands") that read no figure.
+        _only_positive = ae.only_positive_difference(diff_corr)
+        if _only_positive:
+            st.markdown(_only_positive)
 
     st.divider()
 
@@ -861,7 +844,7 @@ with col:
             f"{btc_wt_note}. "
             f"The constrained Sharpe is {sharpe_con_no:.3f} (without BTC) "
             f"and {sharpe_con_with:.3f} (with BTC), a change of {delta_sharpe_con:+.3f}. "
-            "This result is driven by BTC's high expected return over the sample period. "
+            "This result is driven by BTC's high sample return. "
             "It does not account for estimation error in the mean, which is extremely large "
             f"for {a_or_an(_years_s)} {_years_s}-year history of a volatile, regime-shifting asset. "
             "Section 5g's SAA-anchored marginal contribution analysis is the primary "
@@ -870,8 +853,8 @@ with col:
         st.caption(
             f"The {btc_wt_con:.1%} allocation is the sample-period mean-variance optimum. "
             "It does not account for tax treatment, operational complexity, liquidity "
-            "constraints, or out-of-sample expected-return shrinkage; the decision framework "
-            "in Section 5j addresses all of them explicitly."
+            "constraints, or out-of-sample expected-return shrinkage. The decision framework "
+            "in Section 5j weighs the first three; it does not model shrinkage."
         )
 
     st.divider()
@@ -979,14 +962,16 @@ with col:
         dd_0_row  = dd_sens[dd_sens["BTC Alloc"] == "0.0%"]
         dd_10_row = dd_sens[dd_sens["BTC Alloc"] == "10.0%"]
         dd_note = ""
-        # 2022's declines from the book's own series: bitcoin's, and the naive
-        # benchmark's two legs for equities and bonds (#406 item 6).
+        # 2022 from the book's own prices, stated once: each series' calendar-year return
+        # (#425, decided by the owner on October 15, 2026). Bitcoin's 2022 fall printed
+        # twice here as a peak-to-trough decline within the year, and again in 5j's
+        # bullet as its 2022 drawdown; 5j now leaves 2022 to this paragraph. Equities and
+        # bonds are the naive benchmark's two legs (#406 item 6).
         from src.benchmarks import NAIVE_60_40
         (_eq_t, _), (_bd_t, _) = NAIVE_60_40
-        _btc22 = ae.decline_in_year(btc_ret)
-        _eq22 = ae.decline_in_year(_load_candidate_returns(_eq_t))
-        _bd22 = ae.decline_in_year(_load_candidate_returns(_bd_t))
-        _all22 = all(np.isfinite(x) for x in (_btc22, _eq22, _bd22))
+        _r22 = {_eq_t: ae.return_in_year(_load_candidate_returns(_eq_t)),
+                _bd_t: ae.return_in_year(_load_candidate_returns(_bd_t)),
+                "BTC": ae.return_in_year(btc_ret)}
         if not dd_0_row.empty and not dd_10_row.empty:
             dd_0   = float(dd_0_row["Max DD"].iloc[0])
             dd_10  = float(dd_10_row["Max DD"].iloc[0])
@@ -994,30 +979,21 @@ with col:
             mdd22_10 = float(dd_10_row["2022 MDD"].iloc[0])
             _dd_verb = ("deepens" if dd_10 < dd_0 else "narrows" if dd_10 > dd_0
                         else "leaves unchanged")
-            _btc22_s = (f"BTC fell {_btc22:.1%} from its peak and equities"
-                        if np.isfinite(_btc22) else "BTC and equities")
             dd_note = (
                 f"Adding a 10% BTC allocation {_dd_verb} portfolio maximum drawdown "
                 f"from {dd_0:.1%} to {dd_10:.1%} over the full sample. "
-                f"In 2022, when {_btc22_s} "
-                f"sold off at the same time, the portfolio's maximum drawdown within that calendar "
-                f"year shifts from {mdd22_0:.1%} (0% BTC) to {mdd22_10:.1%} (10% BTC). "
+                f"Within calendar 2022, the portfolio's maximum drawdown shifts from "
+                f"{mdd22_0:.1%} (0% BTC) to {mdd22_10:.1%} (10% BTC). "
             )
 
+        # "All at the same time ... That eliminated any diversification benefit and
+        # amplified drawdown" printed whatever the figures were. The joint-stress
+        # sentence now renders only when all three fell over the year.
         st.markdown(
             dd_note
             + "2022 is the most important stress-test period for evaluating Bitcoin's "
-            # Peak to trough within the year (decline_in_year), labelled as such: SPY's
-            # calendar 2022 total return is -18.2% on the same committed series, so an
-            # unlabelled 24.5% reads as an error.
-            + (f"portfolio impact: equities ({_eq_t}) fell {_eq22:.1%}, bonds ({_bd_t}) fell "
-               f"{_bd22:.1%}, and BTC fell {_btc22:.1%}, all at the same time. Each is a "
-               "peak-to-trough decline within 2022, not a calendar-year return. "
-               if _all22 else
-               "portfolio impact: equities, bonds, and BTC fell at the same time. ")
-            + "That eliminated any diversification benefit "
-            "and amplified drawdown. This joint stress scenario, not the full-sample "
-            "average correlation, is the relevant measure of risk."
+            "portfolio impact. "
+            + ae.stress_2022_sentences(_r22)
         )
 
     st.divider()
@@ -1129,11 +1105,10 @@ with col:
         if not np.isnan(_b["2022 MDD"]) and not np.isnan(_t["2022 MDD"]):
             _port = {"max_dd": float(_b["Max DD"]), "alloc_top": str(_t["BTC Alloc"]),
                      "mdd22_lo": float(_b["2022 MDD"]), "mdd22_hi": float(_t["2022 MDD"])}
-    _btc_2022 = _max_drawdown(btc_ret.loc["2022-01-01":"2022-12-31"])
-    _btc_2022_s = None if np.isnan(_btc_2022) else f"{_btc_2022:.1%}"
-
     args_against.extend([
-        _drawdown_argument(_max_drawdown(btc_ret), _btc_2022_s, _port, ae.SAMPLE_START),
+        # No 2022 figure of Bitcoin's own: 5h states 2022 once, as calendar-year returns
+        # (#425). The PDF still passes its own; #604 asks whether the decision reaches it.
+        _drawdown_argument(_max_drawdown(btc_ret), None, _port, ae.SAMPLE_START),
         ae.BITCOIN_TAX_LINE,
         "Operational complexity: self-custody introduces key management risk "
         "and exchange-held BTC introduces counterparty risk (FTX 2022). The "
@@ -1161,8 +1136,9 @@ with col:
         "**Allocator-side considerations:**\n"
         "- **Liquidity:** BTC is highly liquid on a 24/7 basis, but institutional "
         "liquidity in regulated ETF wrappers is limited to equity market hours\n"
-        "- **Tax:** commodity classification, no qualified-dividend treatment, "
-        "wash-sale rules do not apply (potential harvesting benefit)\n"
+        # A "Tax: commodity classification" bullet went (#425): it contradicted the case
+        # against's tax line two bullets up, the IRS treating bitcoin as property
+        # (Notice 2014-21), which stays.
         "- **Operational:** custodial complexity; ETF alternatives simplify ops "
         "at the cost of fee drag and tracking risk\n"
         "- **Mandate fit:** no explicit SAA mandate; would require a new sleeve "

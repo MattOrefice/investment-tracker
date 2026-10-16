@@ -1,12 +1,18 @@
 """A fall prints as a magnitude, "fell 66.9%", never "fell -66.9%" (#536).
 
-Three sentences say Bitcoin "fell": the Asset Evaluation page's two and the PDF's
+Three sentences said Bitcoin "fell": the Asset Evaluation page's two and the PDF's
 Drawdown Sensitivity note. The page's read asset_evaluation.decline_in_year, which
 returns a fall as a positive fraction. The PDF's printed the signed drawdown it was
 handed, so on the committed demo book every report said "Bitcoin fell -66.9%". Decided by
 the owner on October 14, 2026: the PDF's sentence prints the size of the fall as the
 page's do, and the sign is handled in one place that all three read. That place is
 decline_in_year.
+
+MIGRATED at #425 (decided by the owner on October 15, 2026): the page states 2022 once,
+as each series' calendar-year return (asset_evaluation.return_in_year), so its two
+"fell" sentences are gone and the PDF's note is the one left. The census below holds
+both halves: the note's figure is decline_in_year's, and the page's 2022 figures are
+return_in_year's.
 
 A signed drawdown with a noun stays signed: "Its 2022 drawdown of -66.9%" in the case
 against is the table's convention (max_drawdown's docstring), not a fall.
@@ -29,8 +35,9 @@ def _section_texts(section: dict) -> "list[str]":
 
 def test_on_the_demo_book_the_pdf_says_bitcoin_fell_66_9_percent(tmp_path, monkeypatch):
     """The section as the report builds it, on a copy of the committed demo book,
-    offline. The figure is the page's own: tests/render/test_typed_figures_render.py
-    pins "BTC fell 66.9% from its peak" and "BTC fell 66.9%" on the same book."""
+    offline. The figure is decline_in_year's on the same book, a peak-to-trough fall
+    within 2022; the page prints the calendar-year return instead since #425, which
+    tests/render/test_typed_figures_render.py pins."""
     section = _dd_section(tmp_path, monkeypatch)
     fall = ae.decline_in_year(ae.get_candidate_returns("BTC-USD", ae.SAMPLE_START))
     assert f"{fall:.1%}" == "66.9%", "premise: the committed book's 2022 fall"
@@ -91,27 +98,18 @@ def _is_decline_in_year(node) -> bool:
 
 
 def test_every_fell_sentence_prints_a_figure_decline_in_year_returned():
-    """Every f-string in the app's code that prints a figure after "fell ": the page's
-    names are each bound to a decline_in_year call, and the PDF note's figure is its
-    btc_fall parameter, which the report hands it from decline_in_year. A new "fell"
-    sentence with a figure from anywhere else fails here."""
+    """Every f-string in the app's code that prints a figure after "fell ": the PDF
+    note's, whose figure is its btc_fall parameter, which the report hands it from
+    decline_in_year. A new "fell" sentence with a figure from anywhere else fails here.
+
+    MIGRATED at #425: the page's four sites, each bound to decline_in_year, are gone, so
+    the census is the PDF note's alone, and the page's 2022 figures are pinned to
+    return_in_year by the test below."""
     files = sorted([ROOT / "app.py", *(ROOT / "src").rglob("*.py"),
                     *(ROOT / "pages").rglob("*.py")])
     sites = {p.relative_to(ROOT).as_posix(): _fell_figures(p) for p in files}
     sites = {k: v for k, v in sites.items() if v}
-    assert set(sites) == {"pages/5_Asset_Evaluation.py", "src/asset_evaluation.py"}, sites
-
-    page = ast.parse((ROOT / "pages" / "5_Asset_Evaluation.py").read_text(encoding="utf-8"))
-    bound = {t.id for node in ast.walk(page) if isinstance(node, ast.Assign)
-             and _is_decline_in_year(node.value)
-             for t in node.targets if isinstance(t, ast.Name)}
-    page_names = [name for name, _, _ in sites["pages/5_Asset_Evaluation.py"]]
-    assert page_names == ["_btc22", "_eq22", "_bd22", "_btc22"], page_names
-    assert set(page_names) <= bound, (page_names, bound)
-    other = {t.id for node in ast.walk(page) if isinstance(node, ast.Assign)
-             and not _is_decline_in_year(node.value)
-             for t in node.targets if isinstance(t, ast.Name)}
-    assert not set(page_names) & other, "a 'fell' figure is bound to something else too"
+    assert set(sites) == {"src/asset_evaluation.py"}, sites
 
     [(name, _, func)] = sites["src/asset_evaluation.py"]
     assert func.name == "drawdown_2022_note" and name == func.args.args[0].arg == "btc_fall"
@@ -121,3 +119,21 @@ def test_every_fell_sentence_prints_a_figure_decline_in_year_returned():
              and isinstance(n.func, ast.Attribute) and n.func.attr == "drawdown_2022_note"]
     assert len(calls) == 1 and _is_decline_in_year(calls[0].args[0]), [
         ast.unparse(c) for c in calls]
+
+
+def test_the_pages_2022_figures_are_each_a_calendar_year_return():
+    """#425: the page states 2022 once, from one dict whose every value is a
+    return_in_year call, handed to stress_2022_sentences. decline_in_year is no longer
+    called on the page, and nothing else on it is passed to the sentence."""
+    page = ast.parse((ROOT / "pages" / "5_Asset_Evaluation.py").read_text(encoding="utf-8"))
+    calls = [n for n in ast.walk(page) if isinstance(n, ast.Call)
+             and isinstance(n.func, ast.Attribute)]
+    assert not [n for n in calls if n.func.attr == "decline_in_year"]
+    assert not [n for n in calls if n.func.attr == "year_returns_sentence"]
+    [sentence] = [n for n in calls if n.func.attr == "stress_2022_sentences"]
+    [arg] = sentence.args
+    [bound] = [n.value for n in ast.walk(page) if isinstance(n, ast.Assign)
+               and any(isinstance(t, ast.Name) and t.id == arg.id for t in n.targets)]
+    assert isinstance(bound, ast.Dict) and len(bound.values) == 3, ast.unparse(bound)
+    assert all(isinstance(v, ast.Call) and isinstance(v.func, ast.Attribute)
+               and v.func.attr == "return_in_year" for v in bound.values), ast.unparse(bound)

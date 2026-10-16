@@ -53,20 +53,24 @@ def test_how_to_read_sample_start_reasoning(ae_app: AppTest) -> None:
     )
 
 
-def test_5c_correlations_most_costly_preserved(ae_app: AppTest) -> None:
-    """Section 5c close must say Bitcoin lost diversifier value when correlations are most
-    costly. Pinned: Phase 44 Item 15.
+def test_5c_states_the_two_averages_and_no_reading(ae_app: AppTest) -> None:
+    """Section 5c closes on the rolling correlation's two averages. Pinned: Phase 44
+    Item 15, as "reducing its value as a diversifier when correlations are most costly".
 
-    This sentence is the institutional clincher for the rolling-correlation section. If it disappears,
-    the section loses its analytical punchline. The 14b writing sweep dropped the intensifiers
-    ("genuine", "precisely"); the pin now names the whole clause they sat in.
+    MIGRATED at #601 (decided by the owner on October 15, 2026): that clause sat in a
+    mechanism ("as Bitcoin entered professional portfolios post-2020 ...") that, with
+    "persistently elevated" and the "uncorrelated alternative" narrative, printed
+    whatever the two averages were. The section states the averages, as the PDF does
+    since #426, and the conclusion's trigger cites the same two. What the pin protected,
+    the section's closing figures, is held here.
     """
+    import re
     all_md = " ".join(m.value for m in ae_app.markdown)
-    assert "reducing its value as a diversifier when correlations are most costly" in all_md, (
-        "Section 5c closing sentence missing — Phase 44 Item 15: "
-        "'reducing its value as a diversifier when correlations are most costly' must be "
-        "preserved verbatim."
-    )
+    assert re.search(r"Before 2020, BTC's rolling 60-day correlation with SPY averaged "
+                     r"-?\d\.\d\d\. From 2020 on, it has averaged -?\d\.\d\d\.", all_md)
+    for gone in ("most costly", "persistently elevated", "uncorrelated alternative' narrative",
+                 "institutional-flows hypothesis"):
+        assert gone not in all_md, gone
 
 
 def test_5h_joint_stress_framing(ae_app: AppTest) -> None:
@@ -74,6 +78,9 @@ def test_5h_joint_stress_framing(ae_app: AppTest) -> None:
 
     This sentence frames the 2022 data as the analytically relevant stress test, not just a
     data point. If it disappears, the drawdown section loses its risk-management argument.
+    Since #425 it renders only when SPY, AGG and bitcoin all fell over calendar 2022, as
+    they did on the demo book; tests/test_asset_evaluation_425.py covers figures where one
+    did not (asset_evaluation.stress_2022_sentences).
     """
     all_md = " ".join(m.value for m in ae_app.markdown)
     assert "This joint stress scenario, not the full-sample average correlation" in all_md, (

@@ -97,9 +97,38 @@ def pre_post_2020(rolling: "pd.Series | None") -> "tuple[float, float, pd.Timest
             pd.Timestamp(rolling.index.max()))
 
 
+def rolling_averages_sentence(pre: float, post: float) -> str:
+    """The page's sentence under its rolling chart: the two averages pre_post_2020
+    returns, and no reading of them (#601, decided by the owner on October 15, 2026), as
+    the PDF states them since #426. It called the pre-2020 average "broadly consistent
+    with the 'uncorrelated alternative' narrative" and the later one "persistently
+    elevated ... undermining the diversification claim", with a mechanism after it,
+    whatever the two were. Each average renders only when there is one; empty when
+    neither is."""
+    first = (f"Before 2020, BTC's rolling 60-day correlation with SPY averaged "
+             f"{fmt_corr(pre)}." if np.isfinite(pre) else "")
+    subject = "it" if first else "BTC's rolling 60-day correlation with SPY"
+    second = (f"From 2020 on, {subject} has averaged {fmt_corr(post)}."
+              if np.isfinite(post) else "")
+    return " ".join(s for s in (first, second) if s)
+
+
+def only_positive_difference(diff: pd.Series) -> "str | None":
+    """5d's sentence on the weekly-minus-daily correlations, read from the table: which
+    sleeve's difference is the only positive one, when exactly one is (#425). It named
+    TIPS whenever TIPS's was positive, whatever the others were. A difference is positive
+    as the table prints it, to two places, so +0.004 is not."""
+    shown = diff.dropna().round(2)
+    positive = shown[shown > 0]
+    if len(positive) != 1:
+        return None
+    return (f"{positive.index[0]} shows the only positive daily-to-weekly difference "
+            f"({float(positive.iloc[0]):+.2f}).")
+
+
 def conclusion(rolling_corr: "pd.Series | None" = None) -> str:
-    """The section's conclusion, for the page and the PDF, from the rolling BTC-SPY
-    correlation the section charts.
+    """The section's conclusion, for the page (pages/5_Asset_Evaluation.py, which ends
+    with it) and the PDF, from the rolling BTC-SPY correlation the section charts.
 
     IT READS THE SECTION'S OWN FIGURES, WITH THEIR DATE (#478 I11). It was a constant.
     Its first re-evaluation trigger was a rolling 5-year correlation "below 0.20 (the
@@ -118,14 +147,18 @@ def conclusion(rolling_corr: "pd.Series | None" = None) -> str:
     else:
         verdict = (f"**As of {format_long_date(through.date())}, Bitcoin does not belong "
                    "in this portfolio's SAA.**")
-    trigger = "- The rolling 60-day correlation with SPY returns to its pre-2020 level"
+    # The trigger as the owner decided it on October 15, 2026 (#425): the average from
+    # 2020 on falls to the pre-2020 average the page prints. It read "returns to its
+    # pre-2020 level", which did not say which figure would have to move.
+    trigger = ("- The rolling 60-day correlation with SPY, on average from 2020 on, falls "
+               "to its pre-2020 average")
     if through is not None and not np.isnan(post):
-        since = f"{post:.2f} from 2020 through {format_long_date(through.date())}"
+        since = f"{fmt_corr(post)} from 2020 through {format_long_date(through.date())}"
         # A book whose candidate history starts in 2020 or later has no rolling
         # correlation before it: the section prints no pre-2020 average, so none is cited.
         trigger += (f": this sample holds none before 2020, and it has averaged {since}"
                     if np.isnan(pre) else
-                    f": it averaged {pre:.2f} before 2020 and {since}")
+                    f": it averaged {fmt_corr(pre)} before 2020 and {since}")
     trigger += ". That would indicate a return to diversifying behavior.\n"
     return (
         _CONCLUSION_OPENING + verdict + "\n\n"
@@ -1169,13 +1202,16 @@ def interpret_candidate_diversification(
             "It is additive: it fills a correlation gap the current SAA sleeves do not cover."
         )
     else:
-        verdict = (
-            "is a mixed case: partial overlap with the equity sleeves but meaningful offset "
-            "elsewhere"
-        )
+        # "But meaningful offset elsewhere" printed beside "No sleeve offers a low or
+        # negative correlation" when no sleeve fell below the offset cut (#425). The offset
+        # is claimed only when one was found.
+        verdict = ("is a mixed case: partial overlap with the equity sleeves"
+                   + (" and some offset elsewhere" if not offsets.empty else ""))
         tail = (
             "It is neither a pure double-down nor a clean diversifier; the case turns on "
             "the specific sleeve overlaps set against the offsets."
+            if not offsets.empty else
+            "It is neither a pure double-down nor a clean diversifier."
         )
 
     return (
@@ -1184,17 +1220,60 @@ def interpret_candidate_diversification(
     )
 
 
+def return_in_year(returns, year: int = 2022) -> float:
+    """A daily return series' calendar-year return: every return dated in ``year``
+    compounded, as a signed fraction. NaN when the series has no returns in it.
+
+    The Asset Evaluation page states 2022 once, as each series' calendar-year return
+    (#425, decided by the owner on October 15, 2026). It printed bitcoin's 2022 fall three
+    times in two signs: a peak-to-trough decline within the year (decline_in_year) in
+    5h's two paragraphs, and the same figure signed, its 2022 drawdown, in 5j's bullet."""
+    s = returns.loc[f"{year}-01-01":f"{year}-12-31"].dropna()
+    if s.empty:
+        return float("nan")
+    return float((1 + s).prod() - 1)
+
+
+def year_returns_sentence(returns: "dict[str, float]", year: int = 2022) -> "str | None":
+    """ "Over calendar 2022, SPY returned -18.2%, AGG returned -13.0% and BTC
+    returned -64.3%", from return_in_year's figures by name, in the order given. A
+    figure that prints as 0.0% reads "was flat". None when any figure is missing: the
+    sentence states all three or none (#425)."""
+    if not returns or not all(np.isfinite(v) for v in returns.values()):
+        return None
+    parts = [f"{name} was flat" if f"{abs(v):.1%}" == "0.0%" else f"{name} returned {v:.1%}"
+             for name, v in returns.items()]
+    joined = parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1]
+    return f"Over calendar {year}, {joined}"
+
+
+def stress_2022_sentences(returns: "dict[str, float]", year: int = 2022) -> str:
+    """What the Drawdown Sensitivity paragraph says of 2022 after its opening: the
+    year-returns sentence, and the joint-stress reading only when every series fell
+    (#425). It said "all at the same time. That eliminated any diversification benefit
+    and amplified drawdown" whatever the figures were. A figure that prints as flat did
+    not fall. Empty when a figure is missing."""
+    sentence = year_returns_sentence(returns, year)
+    if sentence is None:
+        return ""
+    if not all(v < 0 and f"{abs(v):.1%}" != "0.0%" for v in returns.values()):
+        return f"{sentence}."
+    every = "all three" if len(returns) == 3 else "all"
+    return (f"{sentence}: {every} fell in the same year. This joint stress scenario, not "
+            "the full-sample average correlation, is the relevant measure of risk.")
+
+
 def decline_in_year(returns, year: int = 2022) -> float:
     """How far a series fell from its peak within one calendar year, as a POSITIVE
-    fraction (the page's "fell 24.5%"): max_drawdown over that year, negated. NaN when
-    the series has no returns in it. The 2022 paragraph reads bitcoin's own series and
-    the naive benchmark's two legs for equities and bonds (#406 item 6); it typed
-    "roughly 20%", "15%", "approximately 65%" and "over 60%" before.
+    fraction ("fell 66.9%"): max_drawdown over that year, negated. NaN when the series
+    has no returns in it. The page's 2022 paragraph read it for bitcoin and the naive
+    benchmark's two legs (#406 item 6), after typing "roughly 20%", "15%", "approximately
+    65%" and "over 60%"; since #425 the page states calendar-year returns instead
+    (return_in_year).
 
     The one place a fall's sign is handled: every sentence that says something "fell"
-    prints this figure, the page's two and the PDF's Drawdown Sensitivity note
-    (drawdown_2022_note). The PDF's printed the signed drawdown, "Bitcoin fell -66.9%"
-    (#536)."""
+    prints this figure, now the PDF's Drawdown Sensitivity note alone
+    (drawdown_2022_note). It printed the signed drawdown, "Bitcoin fell -66.9%" (#536)."""
     return -max_drawdown(returns.loc[f"{year}-01-01":f"{year}-12-31"])
 
 
@@ -1277,14 +1356,18 @@ def drawdown_argument(btc_mdd: float, btc_2022: str | None,
     """
     head = (f"Bitcoin's own maximum drawdown is {btc_mdd:.1%} over "
             f"{sample_start}–present")
-    if port and btc_2022:
+    if port:
         # The verb is the table's two figures' (#529): it read "deepened" whatever
         # they were, and closed "with no diversification benefit" either way.
         verb = drawdown_verb(port["mdd22_lo"], port["mdd22_hi"])
+        # Bitcoin's own 2022 figure only when the caller passes one: the page states
+        # its 2022 once, in 5h, and passes None (#425). The portfolio contrast still
+        # renders: the sweep ran, which is all the full form needs.
         opening = (
             f"{head}, not the {port['max_dd']:.1%} in the table above, which is "
-            f"the portfolio's. Its 2022 drawdown of {btc_2022} came while equities "
-            f"and bonds fell together. ")
+            f"the portfolio's. "
+            + (f"Its 2022 drawdown of {btc_2022} came while equities "
+               f"and bonds fell together. " if btc_2022 else ""))
         if verb == "left unchanged":
             return (f"{opening}It left the portfolio's own 2022 drawdown unchanged at "
                     f"{port['mdd22_lo']:.1%}, from 0% allocation to {port['alloc_top']}")
