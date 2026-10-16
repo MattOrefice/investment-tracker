@@ -1821,14 +1821,15 @@ with col:
         )
 
         pctile_label_cape = percentile_label(cape_pctile)
+        # Two sentences went (#627, decided by the owner on October 16, 2026): "Periods of
+        # extreme valuation have preceded materially below-average decade-ahead returns"
+        # cited nothing and printed at every percentile, and the next tied US Large Value's
+        # thesis to US CAPE, where src/seed_investment_theses.py has that sleeve read the
+        # value-growth CAPE spread.
         st.caption(
-            f"CAPE ({cape_read_short}) is in the {_ordinal(cape_pctile)} percentile of its "
-            f"history: {pctile_label_cape}. "
-            + cape_forty_sentence(cape_series, cape_val) +
-            "Periods of extreme valuation have preceded materially below-average decade-ahead "
-            "returns. The reading is most directly relevant to the international developed and US Large Value "
-            "sleeves, where the discount-to-US-CAPE thesis depends on US valuations remaining "
-            "above historical norms."
+            (f"CAPE ({cape_read_short}) is in the {_ordinal(cape_pctile)} percentile of its "
+             f"history: {pctile_label_cape}. "
+             + cape_forty_sentence(cape_series, cape_val)).rstrip()
         )
 
     st.divider()

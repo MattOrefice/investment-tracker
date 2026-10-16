@@ -76,16 +76,27 @@ def test_absent_percentile_does_not_render_a_valuation_stance(monkeypatch):
     assert FABRICATED not in body, (
         "an unknown percentile still renders a confident valuation stance — the "
         "fabricated 50 reached _cape_regime again")
-    assert "Uncertain" in body
+    # MIGRATED at #627 (decided by the owner on October 16, 2026): this asserted the
+    # rendered "Uncertain" stance sentence. Every stance went, and the paragraph keeps only
+    # its policy sentence, so an unknown percentile reads "N/A" in the CAPE row and nothing
+    # more; the label "Uncertain" stays in the builder's output.
+    assert macro["cape"]["regime"] == "Uncertain"
+    assert macro["cape"]["percentile"] == "N/A"
+    assert "US equity valuations" not in body
 
 
 def test_absent_percentile_renders_the_default_to_policy_action(monkeypatch):
-    """The action must not depend on the missing input. 'Maintain SAA
-    diversification' is what policy says regardless of CAPE, so it is correct when
-    nothing is known; 'consistent with the long-run average' asserts a specific
-    relationship to a history that produced no observations."""
+    """The action must not depend on the missing input. MIGRATED at #627: this asserted
+    "maintaining SAA diversification", the unknown band's stance, which went with every
+    other stance. What policy says regardless of CAPE is the paragraph's own sentence,
+    which renders whatever the percentile; and the unknown note draws no reading."""
     macro = _macro_with(monkeypatch, get_cape_series=lambda *a, **k: _all_nan_series())
-    assert "maintaining SAA diversification" in _render_macro(macro)
+    body = _render_macro(macro)
+    assert "Indicators are reference data; tactical positioning remains anchored to SAA " \
+           "targets." in body
+    assert "maintaining SAA diversification" not in body
+    assert macro["cape"]["note"].endswith("so no valuation reading is drawn from it."), (
+        macro["cape"]["note"])
 
 
 def test_none_is_handled_not_caught(monkeypatch):
@@ -112,13 +123,15 @@ def test_raising_paths_also_render_no_stance(monkeypatch, trigger, exc):
         **{trigger: lambda *a, **k: (_ for _ in ()).throw(exc)})
     body = _render_macro(macro)
     assert FABRICATED not in body
-    assert "Uncertain" in body
+    # MIGRATED at #627: "Uncertain" rendered in the stance sentence, which went.
+    assert macro["cape"]["regime"] == "Uncertain"
     assert macro["cape"]["pct_int"] is None
 
 
 def test_a_real_percentile_still_renders_its_real_stance(monkeypatch):
-    """Non-vacuity, and the direction that matters: a fix that suppressed the stance
-    unconditionally would satisfy every assertion above."""
+    """Non-vacuity, and the direction that matters: a real percentile is ranked and
+    labelled, not called "Uncertain". (Since #627 no band renders a stance, so this pins
+    the rank and the label rather than a stance sentence; the name is kept.)"""
     series = pd.Series([10.0, 15.0, 20.0, 25.0, 30.0, 36.0],
                        index=pd.date_range("2020-01-01", periods=6))
     macro = _macro_with(monkeypatch,

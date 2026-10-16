@@ -135,7 +135,11 @@ def test_the_other_two_triggers_and_the_opening_are_as_they_were():
     assert text.startswith('IBIT\'s shares are "intended to constitute a simple means of '
                            'making an investment similar to an investment in bitcoin')
     assert text.count("\n- ") == 3
-    assert "- A 5–10% allocation produces a positive Sharpe contribution after" in text
+    # MIGRATED at #627 (decided by the owner on October 16, 2026): the second trigger typed
+    # "A 5–10% allocation"; it reads its range from the curve now, and with none names no size.
+    assert ("- A Bitcoin allocation improves the portfolio's Sharpe ratio after explicit "
+            "tax-drag adjustment (the analytical gap in the constrained mean-variance "
+            "analysis).\n") in text
     assert text.rstrip().endswith("analysis is the relevant counter-example).")
 
 
@@ -164,7 +168,8 @@ def test_on_the_frozen_book_the_conclusion_cites_only_the_average_the_section_pr
             f"{printed.group(1)} from 2020 through {through}. That would indicate"
             ) in section["conclusion"]
     assert f"**As of {through}, Bitcoin does not belong" in section["conclusion"]
-    assert section["conclusion"] == ae.conclusion(rolling)
+    # Since #627 the conclusion also reads the curve's range.
+    assert section["conclusion"] == ae.conclusion(rolling, section["sharpe_curve_top"])
 
 
 def test_on_the_demo_book_the_conclusion_cites_both_averages_the_section_prints(
@@ -202,7 +207,8 @@ def test_on_the_demo_book_the_conclusion_cites_both_averages_the_section_prints(
     assert printed and cited, (section["rolling_prose"], section["conclusion"][-420:])
     assert cited.groups()[:2] == printed.groups()
     assert cited.group(3) == format_long_date(rolling.index.max().date())
-    assert section["conclusion"] == ae.conclusion(rolling)
+    # Since #627 the conclusion also reads the curve's range.
+    assert section["conclusion"] == ae.conclusion(rolling, section["sharpe_curve_top"])
 
 
 def test_with_no_average_before_2020_the_trigger_says_so():

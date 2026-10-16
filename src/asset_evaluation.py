@@ -153,7 +153,21 @@ def only_positive_difference(diff: pd.Series) -> "str | None":
             f"({float(positive.iloc[0]):+.2f}).")
 
 
-def conclusion(rolling_corr: "pd.Series | None" = None) -> str:
+def curve_top_allocation(curve: "pd.DataFrame | None") -> "str | None":
+    """The marginal-Sharpe curve's highest Bitcoin allocation as a percent ("10%"), when
+    the curve holds its 0% point and at least one weight above it; else None. The PDF's
+    "none found" banner and the conclusion's second trigger name the range the curve was
+    read over (#426, #627); the page and the PDF read it here, the same way."""
+    if curve is None or curve.empty:
+        return None
+    above = curve[curve["btc_alloc"] > 0.00]
+    if curve[curve["btc_alloc"] == 0.00].empty or above.empty:
+        return None
+    return f"{float(above['btc_alloc'].max()):.0%}"
+
+
+def conclusion(rolling_corr: "pd.Series | None" = None,
+               sharpe_curve_top: "str | None" = None) -> str:
     """The section's conclusion, for the page (pages/5_Asset_Evaluation.py, which ends
     with it) and the PDF, from the rolling BTC-SPY correlation the section charts.
 
@@ -165,6 +179,10 @@ def conclusion(rolling_corr: "pd.Series | None" = None) -> str:
     trigger now names the correlation the section computes and gives its two averages,
     and the verdict carries the date that series runs through. With no series (the
     rolling analysis unavailable) both stand without figures and without a date.
+
+    The second trigger reads its range from the marginal-Sharpe curve the section reads,
+    ``sharpe_curve_top`` (curve_top_allocation). It typed "A 5–10% allocation", which
+    nothing read (#627). With no curve it names no size.
 
     Excludes the page's "updates automatically" sentence, which the PDF cannot say."""
     from src.asof import format_long_date
@@ -191,7 +209,7 @@ def conclusion(rolling_corr: "pd.Series | None" = None) -> str:
         _CONCLUSION_OPENING + verdict + "\n\n"
         "The framework would re-evaluate inclusion if any of the following "
         "observable conditions are met:\n"
-        + trigger + _CONCLUSION_OTHER_TRIGGERS
+        + trigger + _sharpe_trigger(sharpe_curve_top) + _CONCLUSION_STRESS_TRIGGER
     )
 
 
@@ -230,10 +248,17 @@ _CONCLUSION_OPENING = (
     "The barriers to inclusion are analytical (the post-2020 correlation regime and the "
     "2022 joint stress) and fundamental (no cash flow anchor for valuation). "
 )
-_CONCLUSION_OTHER_TRIGGERS = (
-    "- A 5–10% allocation produces a positive Sharpe contribution after "
-    "explicit tax-drag adjustment (the analytical gap in the constrained "
-    "mean-variance analysis).\n"
+def _sharpe_trigger(sharpe_curve_top: "str | None") -> str:
+    """The conclusion's second re-evaluation trigger, as the owner decided it on October 16,
+    2026 (#627): its range is the marginal-Sharpe curve's, and with no curve it names no
+    size."""
+    size = (f"An allocation of up to {sharpe_curve_top}" if sharpe_curve_top
+            else "A Bitcoin allocation")
+    return (f"- {size} improves the portfolio's Sharpe ratio after explicit tax-drag "
+            "adjustment (the analytical gap in the constrained mean-variance analysis).\n")
+
+
+_CONCLUSION_STRESS_TRIGGER = (
     "- A negative-correlation episode is observed during a defined equity "
     "stress period (the 2022 joint drawdown in the drawdown-sensitivity "
     "analysis is the relevant counter-example)."

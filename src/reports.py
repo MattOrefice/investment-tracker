@@ -470,22 +470,18 @@ def _fmt_bps(v: float) -> str:
     return f"{sign}{v:.0f} bps"
 
 
-# ── CAPE valuation regime — single source for two sections ─────────────────────
-# The executive summary REPORTS the regime label; the Macro Context section draws the
-# allocation stance. Both derive from this one function, so they can never state
-# opposite conclusions from the same CAPE percentile (the pre-fix bug: the exec asserted
-# "supporting the diversification rationale" unconditionally while Macro said "increase
-# US equity exposure" below the 40th percentile — a same-PDF contradiction).
+# ── CAPE valuation regime — the label, one source ─────────────────────────────
+# The executive summary REPORTS the regime label, from this one function. The Macro
+# Context section drew an allocation stance per band; every stance went (#625 the
+# elevated one, #627 the rest, decided by the owner on October 16, 2026), and that
+# section keeps only its policy sentence. The labels stay. (The pre-#244 bug this block
+# once guarded: the exec asserted "supporting the diversification rationale"
+# unconditionally while Macro said "increase US equity exposure" below the 40th
+# percentile, a same-PDF contradiction. With no stance there is nothing to contradict.)
 
-# The honest form, defined ONCE so the two paths that need it cannot drift apart.
-# "Uncertain" is a stated stance, not a withheld one — the absence of a stance is not
-# a neutral stance — and the action is what SAA policy says regardless of CAPE, so it
-# is a default that is correct when nothing is known rather than a reading of absent
-# data. That is the test a fallback stance has to pass: does its action DEPEND on the
-# missing input? "Moderate / consistent with the long-run average" fails it, because
-# it asserts a specific relationship to a history that produced no observations.
-_CAPE_UNKNOWN: tuple[str, str] = (
-    "Uncertain", "suggest maintaining SAA diversification")
+# The label for a CAPE no percentile ranks, defined ONCE so the two paths that need it
+# cannot drift apart. Its stance, "suggest maintaining SAA diversification", went (#627).
+_CAPE_UNKNOWN = "Uncertain"
 
 
 def _cape_regime_class(pct_int: int) -> str:
@@ -500,25 +496,25 @@ def _cape_regime_class(pct_int: int) -> str:
     return "below_average"
 
 
-# Each band's (regime label, allocation stance). The elevated band has no stance: its
-# sentence, "Elevated US equity valuations (CAPE 99th) support the SAA's diversification
-# across non-US equity and real asset sleeves", went (#625, decided by the owner on
-# October 16, 2026), and the Macro Context section prints no stance at that band.
+# Each band's regime label. Their allocation stances went: the elevated one, "support the
+# SAA's diversification across non-US equity and real asset sleeves" (#625), and the
+# others, "support modest diversification away from US large-cap", "are consistent with
+# the long-run average; no strong tilt signal" and "support increased US equity exposure
+# relative to SAA targets" (#627).
 _CAPE_REGIME_WORDS = {
-    "elevated": ("Elevated", None),
-    "above_average": ("Above-average", "support modest diversification away from US large-cap"),
-    "moderate": ("Moderate", "are consistent with the long-run average; no strong tilt signal"),
-    "below_average": ("Below-average", "support increased US equity exposure relative to SAA targets"),
+    "elevated": "Elevated",
+    "above_average": "Above-average",
+    "moderate": "Moderate",
+    "below_average": "Below-average",
 }
 
 
-def _cape_regime(pct_int: int) -> "tuple[str, str | None]":
-    """Map a CAPE percentile rank (0-100, rounded) to (regime label, allocation stance).
+def _cape_regime(pct_int: int) -> str:
+    """Map a CAPE percentile rank (0-100, rounded) to its regime label.
 
     Bands: >=80 Elevated, >=60 Above-average, >=40 Moderate, else Below-average
     (_cape_regime_class). The label reports what the reading IS ("Elevated versus
-    history"); the stance is the allocation conclusion the Macro Context section renders,
-    None for the elevated band, which renders none (#625).
+    history"). No band carries an allocation stance (#625, #627).
     """
     return _CAPE_REGIME_WORDS[_cape_regime_class(pct_int)]
 
@@ -547,7 +543,7 @@ def _cape_reading_sentence(cape_val: float, cape_pct: float) -> str:
     from src.prose_helpers import label, ordinal
     from src.shiller import latest_reading, reading_label
     band = _cape_regime_class(int(round(cape_pct)))
-    regime = label("cape_regime", band, _CAPE_REGIME_WORDS[band][0])
+    regime = label("cape_regime", band, _CAPE_REGIME_WORDS[band])
     sentence = (
         f"CAPE stands at {cape_val:.1f}x, in the {ordinal(cape_pct)} percentile: "
         f"{regime} versus history"
@@ -1337,17 +1333,15 @@ def _build_macro_section() -> dict:
         _raw_pct = percentile(cape_s, cape_val)
         if _raw_pct is None:
             pct_str, pct_int = "N/A", None
-            _regime, _regime_action = _CAPE_UNKNOWN
+            _regime = _CAPE_UNKNOWN
             _note = (f"{_regime}: no historical percentile is available to rank CAPE "
-                     f"{cape_val:.1f}x against, so no valuation reading is drawn from "
-                     f"it; valuations {_regime_action}.")
+                     f"{cape_val:.1f}x against, so no valuation reading is drawn from it.")
         else:
             from src.prose_helpers import ordinal
             pct_str  = ordinal(_raw_pct)          # "{:.0f}th" printed "1th" (item 9)
             pct_int  = int(round(_raw_pct))
-            _regime, _regime_action = _cape_regime(pct_int)
-            _note = (f"{_regime} vs. history ({pct_str}); valuations {_regime_action}."
-                     if _regime_action else f"{_regime} vs. history ({pct_str}).")
+            _regime = _cape_regime(pct_int)
+            _note = f"{_regime} vs. history ({pct_str})."
         # The implied 10-year real return went (#625): its formula, r = -0.070 x
         # ln(CAPE/16) + 0.066, was fitted here through two anchor points and cited no source.
         macro["cape"] = {
@@ -1355,7 +1349,6 @@ def _build_macro_section() -> dict:
             "percentile":     pct_str,
             "pct_int":        pct_int,
             "regime":         _regime,
-            "regime_action":  _regime_action,
             "note":           _note,
         }
     except Exception:
@@ -1368,8 +1361,7 @@ def _build_macro_section() -> dict:
             "value":          "N/A",
             "percentile":     "N/A",
             "pct_int":        None,
-            "regime":         _CAPE_UNKNOWN[0],
-            "regime_action":  _CAPE_UNKNOWN[1],
+            "regime":         _CAPE_UNKNOWN,
             "note":           "Data unavailable.",
         }
 
@@ -1783,12 +1775,14 @@ def _build_asset_eval_section() -> dict:
     except Exception:
         result["unavailable"].append("correlation")
 
-    # 5c: Rolling 60-day correlation (BTC vs SPY)
+    # 5c: Rolling 60-day correlation (BTC vs SPY). The conclusion cites this series and
+    # the marginal-Sharpe curve's range (#627), so it is built once both are read, below.
+    _conclusion_rolling = None
     try:
         rolling_corr = ae.compute_rolling_correlation(btc_ret, spy_ret, window=60)
         if not rolling_corr.empty:
             # The conclusion cites this series' two averages and its date.
-            result["conclusion"] = ae.conclusion(rolling_corr)
+            _conclusion_rolling = rolling_corr
             fig_roll = go.Figure()
             fig_roll.add_hline(y=0, line_dash="dash", line_color="#9E9E9E", line_width=1)
             fig_roll.add_trace(go.Scatter(
@@ -1955,7 +1949,7 @@ def _build_asset_eval_section() -> dict:
             saa_sh0 = float(rows_0["sharpe"].iloc[0])
             best    = above.loc[above["sharpe"].idxmax()]
             best_w, best_sh = float(best["btc_alloc"]), float(best["sharpe"])
-            result["sharpe_curve_top"] = f"{float(above['btc_alloc'].max()):.0%}"
+            result["sharpe_curve_top"] = ae.curve_top_allocation(msc)
             if best_sh > saa_sh0:
                 mvo_ok    = bool(
                     mv_result
@@ -2033,7 +2027,9 @@ def _build_asset_eval_section() -> dict:
     else:
         result["disposition"] = "no_data"
 
-    # The conclusion is markdown, shared with the page; the PDF prints it as blocks (#625).
+    # The conclusion reads the rolling series' averages and the curve's range (#627). It is
+    # markdown, shared with the page; the PDF prints it as blocks (#625).
+    result["conclusion"] = ae.conclusion(_conclusion_rolling, result["sharpe_curve_top"])
     result["conclusion_blocks"] = markdown_blocks(result["conclusion"])
     return result
 
