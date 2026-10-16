@@ -690,9 +690,15 @@ def classify_miss(
 
 def get_dividends(ticker: str, start_date: str, end_date: str) -> pd.Series:
     """
-    Return dividend-per-share amounts indexed by ex_date for ticker in [start_date, end_date].
-    Fetches from Yahoo Finance (and caches) if not already stored.
-    Returns an empty Series if no dividends exist in the range.
+    Return dividend-per-share amounts indexed by ex_date for ticker in [start_date, end_date],
+    from what is stored. Returns an empty Series if none is stored in the range.
+
+    IT NEVER FETCHES (#494, decided by the owner on October 16, 2026). Dividends arrive
+    with the price fetches that store them: fetch_prices stores a ticker's dividends
+    with its closes. A window with no stored dividend used to fetch that window's prices
+    to load them, and fetch_prices stores every close it receives, so a start later than
+    the day after the ticker's last stored close left the closes in between unfetched: a
+    gap inside the history (shown on a copy of the frozen book on #494).
     """
     end = end_date or date.today().isoformat()
 
@@ -723,18 +729,6 @@ def get_dividends(ticker: str, start_date: str, end_date: str) -> pd.Series:
                 return []
 
     rows = _query_cache()
-    if not rows and _GAP_FETCH:
-        # Prices may be cached but dividends not yet (first run after migration).
-        # Re-fetch prices — fetch_prices now also stores dividends as a side effect.
-        # Gated like the gap fills: a window with no dividends at all re-fetched on
-        # every call, which under the daily refresh is exactly the per-render retry
-        # it exists to prevent.
-        try:
-            fetch_prices(ticker, start_date, end)
-            rows = _query_cache()
-        except Exception:
-            pass
-
     if not rows:
         return pd.Series(dtype=float)
 
@@ -743,13 +737,38 @@ def get_dividends(ticker: str, start_date: str, end_date: str) -> pd.Series:
     return s.sort_index()
 
 
+def _last_stored_close(ticker: str) -> "str | None":
+    """The ticker's newest stored close date, or None when none is stored."""
+    with get_connection() as conn:
+        row = conn.execute("SELECT MAX(price_date) FROM prices WHERE ticker = ?",
+                           (ticker,)).fetchone()
+    return row[0] if row and row[0] else None
+
+
 def bulk_refresh(tickers: list, start_date: str) -> None:
     """
     Pre-warm the price cache for multiple tickers from start_date to today.
     Skips individual failures with a warning rather than raising.
+
+    REFUSES A START THAT WOULD LEAVE A GAP (#494, decided by the owner on October 16,
+    2026): a start later than the day after any ticker's last stored close raises
+    ValueError, naming each such ticker and its last close, and fetches nothing.
+    fetch_prices stores every close it receives, so a later start would leave the
+    closes in between unstored, a gap inside the history that nothing fills.
     """
     end = date.today().isoformat()
     errors = []
+
+    late = []
+    for ticker in tickers:
+        last = _last_stored_close(ticker)
+        if last is not None and start_date > _to_iso(date.fromisoformat(last) + timedelta(days=1)):
+            late.append(f"{ticker} (last stored close {last})")
+    if late:
+        raise ValueError(
+            f"bulk_refresh refuses start {start_date}: it is later than the day after the "
+            f"last stored close of {', '.join(late)}, so the closes in between would be "
+            "left unstored")
 
     for i, ticker in enumerate(tickers, 1):
         if i > 1:

@@ -101,8 +101,8 @@ def test_a_failed_fetch_serves_the_snapshot_and_waits_for_its_timer(demo):
 
 
 def test_reads_do_not_fetch_once_the_refresh_runs(demo):
-    """The per-render retry the timer exists to prevent: gap fills and the dividend
-    re-fetch are off, and a read serves what the cache holds."""
+    """The per-render retry the timer exists to prevent: gap fills are off, a dividend
+    read never fetches (#494), and a read serves what the cache holds."""
     _copy, calls, answer = demo
     answer(fail="all")
     refresh.refresh_if_due(NOW)

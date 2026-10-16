@@ -23,8 +23,9 @@ unscoped reads were compared per ticker on each book and differed nowhere. The
 defect is only expressible against a second account, so the fixture below is not
 an illustration of the fix; it is the only place the fix is observable at all.
 
-NETWORK. ``get_dividends`` fetches from Yahoo on a cache miss (src/prices.py:476-480),
-so the tests that run the backfill patch ``drip.get_dividends`` and
+NETWORK. ``drip.get_prices`` fetches on a cache miss, and ``get_dividends`` did until
+#494 (it reads only what is stored now), so the tests that run the backfill patch
+``drip.get_dividends`` and
 ``drip.get_prices`` — the names bound INTO src.drip's namespace by its ``from
 src.prices import ...``. Patching ``src.prices.get_prices`` would NOT intercept:
 drip.py holds its own reference, and reaching for the wrong one is a trap this
