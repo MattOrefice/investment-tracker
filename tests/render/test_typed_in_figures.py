@@ -76,14 +76,15 @@ def test_the_nport_clearance_is_the_latest_read_not_the_latest_filed(factor_prof
     assert "most recent Avantis N-PORT" not in text
 
 
-def test_the_idhq_note_no_longer_denies_the_numbers_it_gives():
-    from src.factors import _INTL_TILT_SLEEVES, build_intl_tilt_disclosure
-    entry = next(s for s in _INTL_TILT_SLEEVES if s["fund"] == "IDHQ")
-    text = " ".join(build_intl_tilt_disclosure({**entry, "fund_result": None,
-                                                 "control_result": None}))
-    assert "9.5%" in text and "2%" in text
+def test_the_idhq_note_no_longer_denies_the_numbers_it_gives(factor_profile):
+    # MIGRATED at #614 (decided by the owner on October 16, 2026): the note gave the S&P
+    # screen's Korea weight (9.5%, then roughly 2%) and said the weights were dated. No
+    # S&P document for them was found, so they went. Read off the rendered page now.
+    _, text = factor_profile
+    assert "Part of IDHQ's residual can be a universe artifact" in text, "premise: it renders"
+    assert "9.5%" not in text and "roughly 2%" not in text
     assert "rather than pinned as a number" not in text
-    assert "the weights above are dated" in text
+    assert "the weights above are dated" not in text
 
 
 # ── Asset Evaluation ──────────────────────────────────────────────────────────
