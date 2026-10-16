@@ -69,6 +69,16 @@ def test_the_canada_box_carries_no_figures_from_one_old_window(factor_profile):
         assert stale not in text, stale
 
 
+def test_the_controls_box_and_the_reading_order_render_their_sources(factor_profile):
+    """#623: the rendered page carries each note as written, sources and all, and no
+    longer types the tilt funds' Canada weight."""
+    from src.factors import intl_controls_note, intl_residual_reading_order
+    _, text = factor_profile
+    assert intl_controls_note() in text
+    assert intl_residual_reading_order() in text
+    assert "11–13%" not in text
+
+
 def test_the_nport_clearance_is_the_latest_read_not_the_latest_filed(factor_profile):
     from src.factors import _NPORT_ASOF
     _, text = factor_profile
