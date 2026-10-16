@@ -110,11 +110,13 @@ def page(tmp_path_factory):
 
 
 def test_each_fred_line_states_its_series_first_and_last_observation(page):
-    last = "Sep 30, 2026"
-    for label, first in (("FRED BAMLH0A0HYM2", "Oct 16, 2023"),
-                         ("FRED BAMLH0A3HYC", "Oct 16, 2023"),
-                         ("FRED T10YIE", "Jan 02, 2003"), ("FRED DFII10", "Jan 02, 2003"),
-                         ("FRED DGS10", "Jan 01, 1990"), ("FRED UNRATE", "Jan 01, 1948")):
+    # Since #488 the dates are written as asof.format_long_date writes them; they read
+    # "Sep 30, 2026" and "Jan 02, 2003", padding days 1 to 9.
+    last = "September 30, 2026"
+    for label, first in (("FRED BAMLH0A0HYM2", "October 16, 2023"),
+                         ("FRED BAMLH0A3HYC", "October 16, 2023"),
+                         ("FRED T10YIE", "January 2, 2003"), ("FRED DFII10", "January 2, 2003"),
+                         ("FRED DGS10", "January 1, 1990"), ("FRED UNRATE", "January 1, 1948")):
         line = _line(page, label)
         assert f"first observation **{first}**, last observation **{last}**" in line, line
         assert " · starts " not in line and "FRED restriction" not in line, line
@@ -164,8 +166,8 @@ def test_a_later_first_date_gives_a_later_line(tmp_path, monkeypatch):
     trailing P/E series that starts in 1900."""
     later = dict(FIRSTS, BAMLH0A0HYM2="2024-01-02", BAMLH0A3HYC="2024-01-02")
     texts = _render(tmp_path, monkeypatch, later, pe_from="1900-01-01")
-    assert "first observation **Jan 02, 2024**" in _line(texts, "FRED BAMLH0A0HYM2")
-    assert "first observation **Jan 02, 2024**" in _line(texts, "FRED BAMLH0A3HYC")
+    assert "first observation **January 2, 2024**" in _line(texts, "FRED BAMLH0A0HYM2")
+    assert "first observation **January 2, 2024**" in _line(texts, "FRED BAMLH0A3HYC")
     assert "restricts this ICE BofA series to Jan 2024+" in " ".join(texts)
     caption = _pe_caption(texts)
     assert " pct since 1900 · data as of " in caption and "1871" not in caption, caption
