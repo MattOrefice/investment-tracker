@@ -186,8 +186,11 @@ class TestInterpretGdpGrowth:
         assert str(GDP_TREND) in text
 
     def test_near_trend(self):
-        text = interpret_gdp_growth((GDP_TREND + GDP_ABOVE_TREND) / 2)  # 3.0%
-        assert "near" in text.lower() or "mid-cycle" in text.lower() or "goldilocks" in text.lower()
+        """MIGRATED at #424: the band reads the growth rate alone, no "near trend"."""
+        text = interpret_gdp_growth((GDP_TREND + GDP_ABOVE_TREND) / 2)  # 2.75%
+        assert text == f"Real GDP growth is {(GDP_TREND + GDP_ABOVE_TREND) / 2:.1f}%."
+        for gone in ("near", "mid-cycle", "goldilocks", "trend"):
+            assert gone not in text.lower(), gone
 
     def test_above_trend(self):
         text = interpret_gdp_growth(GDP_ABOVE_TREND + 0.5)  # 4.0%

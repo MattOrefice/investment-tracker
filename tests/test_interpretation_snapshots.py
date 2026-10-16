@@ -225,17 +225,19 @@ class TestGdpGrowthSnapshot:
         assert result == expected
 
     def test_near_trend_branch(self):
-        """Near-trend growth (3.0%) — Goldilocks mid-cycle range."""
-        # The trend was "~2.5%" with no source (the page said "CBO estimate"); it is the
-        # FOMC's longer-run median, cited (2026-09-25 audit, item 5).
-        result = interpret_gdp_growth(3.0)
-        expected = (
-            "Real GDP growth of 3.0% is near the long-run trend of ~2.0% (the FOMC's "
-            "longer-run median projection, September 2026), a mid-cycle Goldilocks range. "
-            "On-trend growth is associated with stable corporate earnings and balanced equity"
-            " risk premiums; the SAA is calibrated for this baseline environment."
-        )
-        assert result == expected
+        """From the trend to GDP_ABOVE_TREND (3.0%) the growth rate stands alone.
+
+        MIGRATED at #424 (decided by the owner on October 15, 2026): this branch read
+        "near the long-run trend of ~2.0% ..., a mid-cycle Goldilocks range" up to 3.5%.
+        The trend's source, cited since the 2026-09-25 audit's item 5, is held by the
+        below-trend branch's snapshot below."""
+        assert interpret_gdp_growth(3.0) == "Real GDP growth is 3.0%."
+
+    def test_below_trend_branch_cites_the_trend(self):
+        result = interpret_gdp_growth(1.2)
+        assert result.startswith(
+            "Real GDP growth of 1.2% is below the long-run trend of ~2.0% (the FOMC's "
+            "longer-run median projection, September 2026).")
 
 
 # ── 5. interpret_us_vs_intl_spread ────────────────────────────────────────────

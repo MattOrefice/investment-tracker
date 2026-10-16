@@ -138,8 +138,18 @@ def test_rate_volatility_is_in_basis_points(macro_page):
 
 
 def test_the_gdp_trend_cites_its_source_not_cbo(macro_page):
+    """MIGRATED at #424: from the trend to 3.5% the growth rate stands alone, so the
+    caption cites the trend only outside that band. The demo book's latest quarter
+    decides which; either way the trend is never the CBO's."""
+    from src import macro
     _, texts = macro_page
-    assert _any(texts, "the FOMC's longer-run median projection, September 2026")
+    caption = next(t for t in texts if "FRED A191RL1Q225SBEA" in t)
+    rate = float(caption.split("%")[0].split()[-1])
+    if macro.GDP_TREND <= rate < macro.GDP_ABOVE_TREND:
+        assert caption.startswith(f"Real GDP growth is {rate:.1f}%. FRED"), caption
+        assert "near the long-run trend" not in caption
+    else:
+        assert "the FOMC's longer-run median projection, September 2026" in caption
     assert not _any(texts, "CBO estimate")     # not "CBO": the rate-vol caption names CBOE
 
 

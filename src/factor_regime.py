@@ -283,12 +283,23 @@ def _strength_phrase(pctile: float, winning: bool) -> str:
     return "a middling reading by historical standards"
 
 
+def _printed_sign(x: float) -> int:
+    """The sign of a trailing-12m figure as the page prints it, to one place: +0.04
+    prints +0.0 and is zero (#424)."""
+    if f"{abs(x):.1f}" == "0.0":
+        return 0
+    return 1 if x > 0 else -1
+
+
 def interpret_factor(
     ff_value: float,
     ff_pctile: float,
     etf_value: float,
     etf_pctile: float,
     factor_name: str,
+    *,
+    ff_as_of: "date | None" = None,
+    proxy_as_of: "date | None" = None,
 ) -> str:
     """
     Dynamic interpretation of one factor's trailing-12m state.
@@ -296,62 +307,79 @@ def interpret_factor(
     Leads with the Fama-French reading (the textbook long-short factor, but
     carrying ~1-month publication lag), conditioned on BOTH its sign (winning vs
     lagging over the trailing year) and its historical percentile (how extreme
-    the reading is). Then cites the long-only ETF proxy as the current
-    cross-check, noting agreement or disagreement of direction. Closes on what
-    the reading means for the corresponding SAA tilt.
+    the reading is). Then cites the long-only ETF proxy as a cross-check, noting
+    agreement or disagreement of direction. Closes on what the reading means for
+    the corresponding SAA tilt.
+
+    THE PROXY'S DATE IS STATED, NOT ASSUMED (#424). It was called "current to today"
+    and "the more recent reading" whatever its price date was; the demo's IWB and IWF
+    closes once ended 2026-06-08, before the Fama-French data (#406 item 8). The
+    proxy's reading names ``proxy_as_of``, and is called more recent only when it is
+    later than ``ff_as_of``. A figure that prints as 0.0% is zero: it outperformed
+    nothing, and the tilt was neither rewarded nor a headwind.
 
     Percentiles are on the 0–100 scale (see ``factor_percentile``). Matches the
     institutional voice of ``src.macro.interpret_*``.
     """
+    from src.asof import format_long_date
     v = _FACTOR_VOCAB[factor_name]
-    ff_pos  = ff_value >= 0
-    etf_pos = etf_value >= 0
-    agree   = ff_pos == etf_pos
+    ff_s, etf_s = _printed_sign(ff_value), _printed_sign(etf_value)
+    later = ff_as_of is not None and proxy_as_of is not None and proxy_as_of > ff_as_of
 
     # Sentence 1 — Fama-French reading (sign × percentile).
-    if ff_pos:
+    if ff_s > 0:
         s1 = (
             f"Over the trailing year, {v['winner']} {v['verb']} outperformed {v['loser']}: "
             f"the {v['ff_name']} is {ff_value:+.1f}%, in the {_ordinal(ff_pctile)} "
             f"percentile of its history, {_strength_phrase(ff_pctile, winning=True)}."
         )
-    else:
+    elif ff_s < 0:
         s1 = (
             f"Over the trailing year, {v['winner']} {v['verb']} lagged {v['loser']}: "
             f"the {v['ff_name']} is {ff_value:+.1f}%, in the {_ordinal(ff_pctile)} "
             f"percentile of its history, {_strength_phrase(ff_pctile, winning=False)}."
         )
-
-    # Sentence 2 — ETF proxy cross-check (current to today; FF carries a lag).
-    if agree:
-        s2 = (
-            f" The long-only proxy ({v['proxy_name']}) reads {etf_value:+.1f}%, "
-            "current to today and confirming the same direction."
-        )
     else:
-        s2 = (
-            f" The long-only proxy ({v['proxy_name']}), current to today, reads "
-            f"{etf_value:+.1f}%, the opposite sign, so the most recent month sends "
-            "a mixed signal rather than a clean confirmation."
+        s1 = (
+            f"Over the trailing year, {v['winner']} {v['verb']} matched {v['loser']}: "
+            f"the {v['ff_name']} is 0.0%, in the {_ordinal(ff_pctile)} percentile of its "
+            "history."
         )
+
+    # Sentence 2 — ETF proxy cross-check, with the date its prices run to.
+    dated = f" as of {format_long_date(proxy_as_of)}" if proxy_as_of is not None else ""
+    head = (f" The long-only proxy ({v['proxy_name']}) reads "
+            f"{'0.0%' if etf_s == 0 else f'{etf_value:+.1f}%'}{dated}")
+    if ff_s != 0 and etf_s == ff_s:
+        s2 = f"{head}, confirming the same direction."
+    elif ff_s != 0 and etf_s == -ff_s:
+        s2 = (f"{head}, the opposite sign, so "
+              + ("its more recent reading sends a mixed signal rather than a clean "
+                 "confirmation." if later else
+                 "the two measures send a mixed signal rather than a clean confirmation."))
+    else:
+        s2 = f"{head}."
 
     # Sentence 3 — SAA tilt read.
-    if ff_pos and agree:
+    if ff_s > 0 and etf_s > 0:
         s3 = f" The SAA's {v['tilt']} is currently being rewarded."
-    elif ff_pos and not agree:
-        s3 = (
-            f" The SAA's {v['tilt']} is being rewarded on the academic measure, "
-            "but the proxy's more recent reading suggests that edge may be fading."
-        )
-    elif (not ff_pos) and agree:
+    elif ff_s > 0:
+        s3 = (f" The SAA's {v['tilt']} is being rewarded on the academic measure"
+              + (", but the proxy's more recent reading suggests that edge may be fading."
+                 if later and etf_s < 0 else
+                 ", but the long-only proxy disagrees." if etf_s < 0 else "."))
+    elif ff_s < 0 and etf_s < 0:
         s3 = (
             f" The SAA's {v['tilt']} has been a headwind over the trailing year, "
             "a drag on relative performance."
         )
+    elif ff_s < 0:
+        s3 = (f" The SAA's {v['tilt']} has been a headwind on the academic measure"
+              + (", though the proxy's more recent reading hints the drag may be turning."
+                 if later and etf_s > 0 else
+                 ", though the long-only proxy disagrees." if etf_s > 0 else "."))
     else:
-        s3 = (
-            f" The SAA's {v['tilt']} has been a headwind on the academic measure, "
-            "though the proxy's more recent reading hints the drag may be turning."
-        )
+        s3 = (f" The SAA's {v['tilt']} has been neither rewarded nor a headwind on the "
+              "academic measure over the trailing year.")
 
     return s1 + s2 + s3
