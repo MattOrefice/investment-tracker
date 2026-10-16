@@ -774,17 +774,6 @@ def get_regime_signals(as_of_date: str | None = None) -> dict:
     }
 
 
-def compute_cape_implied_return(cape: float) -> float:
-    """
-    Implied 10-year annualized real return from CAPE via log-linear regression.
-    Formula: r ≈ −0.070 × ln(CAPE/16) + 0.066
-    Calibration: fitted to Shiller long-run data anchored at (CAPE=16, r=6.6%)
-    and (CAPE=35, r=1.1%), consistent with Campbell & Shiller (1998) and
-    subsequent replications of the log-linear CAPE-to-forward-return relationship.
-    """
-    return -0.070 * math.log(cape / 16.0) + 0.066
-
-
 def compute_ecy_real(cape: float, real10y_pct: float) -> float:
     """Excess CAPE Yield from the 10-year real yield itself (DFII10, the TIPS yield):
     ECY = 100 / CAPE − real 10Y. The Macro page reads DFII10 for its real-yield panel

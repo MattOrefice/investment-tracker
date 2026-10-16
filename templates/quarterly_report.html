@@ -545,11 +545,8 @@
     </tbody>
   </table>
 
-  <p class="muted">{{ macro.cape.regime }} US equity valuations (CAPE {{ macro.cape.percentile }})
-  {{ macro.cape.regime_action }}.{% if macro.cape.implied_return %}
-  Implied 10Y real return (r&nbsp;&asymp;&nbsp;&minus;0.070&nbsp;&times;&nbsp;ln(CAPE/16)&nbsp;+&nbsp;0.066):
-  <strong>{{ macro.cape.implied_return }}</strong> (historical relationship, not a forecast).{% endif %}
-  Indicators are reference data; tactical positioning remains anchored to SAA targets.</p>
+  <p class="muted">{% if macro.cape.regime_action %}{{ macro.cape.regime }} US equity valuations (CAPE {{ macro.cape.percentile }})
+  {{ macro.cape.regime_action }}. {% endif %}Indicators are reference data; tactical positioning remains anchored to SAA targets.</p>
 
   <p class="muted">CAPE is {{ cape_credit }}; Shiller's own Yale data file is the fallback,
   and a figure read from it says so. Yield curve, Fed Funds,
@@ -792,7 +789,11 @@
 
   <div class="bf-commentary">
     <p class="bf-comm-title">Conclusion</p>
-    <p style="font-size:9.5pt; margin:0;">{{ asset_eval.conclusion }}</p>
+    {% for block in asset_eval.conclusion_blocks %}{% if block.kind == "ul" %}
+    <ul style="font-size:9.5pt; margin:0.2em 0 0.4em 0;">{% for item in block["items"] %}
+      <li>{% for bold, run in item %}{% if bold %}<strong>{{ run }}</strong>{% else %}{{ run }}{% endif %}{% endfor %}</li>{% endfor %}
+    </ul>{% else %}
+    <p style="font-size:9.5pt; margin:0 0 0.4em 0;">{% for bold, run in block.runs %}{% if bold %}<strong>{{ run }}</strong>{% else %}{{ run }}{% endif %}{% endfor %}</p>{% endif %}{% endfor %}
   </div>
 
   {% endif %}
@@ -864,8 +865,7 @@
           <dd>From {{ cape_credit }}, one reading a month. Shiller's own
           Yale data file is the fallback, and a figure read from it says so. Each figure states the
           month it describes and the date it was read. A locked quarter's executive summary cites
-          the quarter's last month; Macro Context shows the latest reading on file.
-          Implied 10-year real return: r &asymp; &minus;0.070 &times; ln(CAPE/16) + 0.066.</dd>
+          the quarter's last month; Macro Context shows the latest reading on file.</dd>
 
           <dt>Macro Data</dt>
           <dd>FRED (St. Louis Fed). T10Y2Y = 10Y&minus;2Y Treasury spread. DFF = Fed Funds Rate.

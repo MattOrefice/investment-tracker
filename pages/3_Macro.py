@@ -1724,7 +1724,6 @@ with col:
             cape_reading = _load_cape_reading()
         cape_val     = float(cape_series.dropna().iloc[-1])
         cape_pctile  = macro.percentile(cape_series, cape_val)
-        cape_implied = macro.compute_cape_implied_return(cape_val)
         cape_median  = float(cape_series.median())
         cape_std     = float(cape_series.std())
         cape_ok = True
@@ -1808,7 +1807,7 @@ with col:
         # series (#401): the captions said "since 1881", "145-year" and "1999–2001",
         # where the file begins in 1871, spans 155 years, and last reached 40 before
         # the current run in September 2000.
-        _cape_first, _cape_years = cape_record_span(cape_series)
+        _cape_first, _ = cape_record_span(cape_series)
         # Yale is the fallback, and a figure read from it says so (cape_read names it).
         _cape_source = (f"Source: {shiller.CREDIT}, monthly"
                         if cape_reading.source != shiller.YALE else
@@ -1817,11 +1816,8 @@ with col:
             f"{_ordinal(cape_pctile_w)} percentile of {cape_scope} "
             f"· full history: {_ordinal(cape_pctile)} pct since {_cape_first} "
             f"· {cape_last_date.strftime('%B %Y')} reading, {cape_read} "
-            f"· {_cape_source}  \n"
-            f"Implied 10Y real return at this CAPE is approximately {cape_implied:+.2%} "
-            "based on the long-run historical relationship between starting CAPE and forward "
-            f"10-year returns. The relationship is empirically robust over the full "
-            f"{_cape_years}-year Shiller record but not a forecast for any single 10-year window."
+            f"· {_cape_source}"
+            # The implied 10-year real return went (#625): its formula cited no source.
         )
 
         pctile_label_cape = percentile_label(cape_pctile)

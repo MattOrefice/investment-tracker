@@ -20,11 +20,18 @@ from src.prices import get_prices, total_return_series
 # PDF (audit item 15d). The PDF's copy read "Commodity tax treatment: short-term ordinary
 # income / long-term capital gains, no qualified-dividend treatment", which is a commodity
 # fund's vocabulary, not bitcoin's: the IRS treats bitcoin as property.
+# Each clause says what its IRS source says, with the source's date (#625, decided by the
+# owner on October 16, 2026): Notice 2014-21 for the property treatment, and the IRS's
+# virtual-currency FAQ (A4, A6) for the gain and its holding period. "Short-term at
+# ordinary rates within 12 months" cited nothing, and "That is unfavorable vs. ETFs, which
+# qualify for in-kind creation/redemption" went: in-kind redemption limits a fund's own
+# distributions, not how a holder's sale is taxed.
 BITCOIN_TAX_LINE = (
-    "Capital gains tax treatment: the IRS treats bitcoin as property (Notice 2014-21), "
-    "so a sale is a capital gain or loss, short-term at ordinary rates within 12 months "
-    "and long-term after. That is unfavorable vs. ETFs, "
-    "which qualify for in-kind creation/redemption"
+    "Capital gains tax treatment: the IRS treats bitcoin as property (Notice 2014-21, "
+    "Internal Revenue Bulletin 2014-16, April 14, 2014). A sale is a capital gain or loss, "
+    "short-term if the bitcoin was held one year or less and long-term if it was held more "
+    "than one year (the IRS's \"Frequently asked questions on virtual currency "
+    "transactions\", last reviewed or updated June 30, 2026)"
 )
 
 SAMPLE_START  = "2018-01-01"
@@ -200,21 +207,28 @@ def equity_like_argument(corr_us_large_core: float) -> "str | None":
     a different number: the rolling correlation's average from 2020 on."""
     if np.isnan(corr_us_large_core) or corr_us_large_core <= EQUITY_LIKE_ABOVE:
         return None
+    # "Co-movement spikes during stress, when a hedge is most valuable" went (#625): no
+    # figure the report prints shows a correlation spike in stress.
     return (f"Equity-like correlation with US Large Core ({corr_us_large_core:.2f} over "
-            f"the full sample, {SAMPLE_START[:4]} to present): "
-            "co-movement spikes during stress, when a hedge is most valuable")
+            f"the full sample, {SAMPLE_START[:4]} to present)")
 
 
+# The conclusion's opening (#625, decided by the owner on October 16, 2026). It said the
+# Sharpe improvement was "real but almost entirely attributable to its exceptional
+# 2020–2021 bull market return", which nothing here computes, and that "IBIT, FBTC, and
+# similar wrappers remove the custody and counterparty frictions that defined the pre-2024
+# implementation landscape", which IBIT's 10-K does not say. The spot-ETF sentence keeps
+# what the 10-K states, as #611 cited it; "not operational" went with the frictions claim,
+# which it restated.
 _CONCLUSION_OPENING = (
-    "Bitcoin's sample-period Sharpe improvement is real but almost entirely "
-    "attributable to its exceptional 2020–2021 bull market return. "
-    "The 2024 spot ETF launches have already partially satisfied the "
-    "operational-risk concern that historically gated institutional adoption: "
-    "IBIT, FBTC, and similar wrappers remove the custody and counterparty "
-    "frictions that defined the pre-2024 implementation landscape. "
-    "The remaining barriers to inclusion are analytical (the post-2020 "
-    "correlation regime and the 2022 joint stress) and fundamental (no cash "
-    "flow anchor for valuation), not operational. "
+    "IBIT's shares are \"intended to constitute a simple means of making an investment "
+    "similar to an investment in bitcoin rather than by acquiring, holding and trading "
+    "bitcoin directly on a peer-to-peer or other basis or via a digital asset platform\", "
+    "and custodians hold the trust's bitcoin: Coinbase Custody Trust Company, with "
+    "Anchorage Digital Bank as an additional available custodian (iShares Bitcoin Trust "
+    "ETF, annual report on Form 10-K for 2025, filed February 27, 2026). "
+    "The barriers to inclusion are analytical (the post-2020 correlation regime and the "
+    "2022 joint stress) and fundamental (no cash flow anchor for valuation). "
 )
 _CONCLUSION_OTHER_TRIGGERS = (
     "- A 5–10% allocation produces a positive Sharpe contribution after "

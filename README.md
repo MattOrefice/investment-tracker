@@ -75,7 +75,7 @@ Evaluates prospective asset additions using marginal Sharpe contribution, drawdo
 
 ### Macro Panel
 
-Tracks four indicators — Shiller CAPE (with implied 10-year real return r ≈ −0.070 × ln(CAPE/16) + 0.066), yield curve (10Y−2Y), Fed Funds Rate, and ICE BofA HY OAS — via FRED integration with a 24-hour SQLite cache. Each indicator includes historical percentile context relative to the available data window. A rules-based regime classifier summarizes the combined macro environment relative to SAA positioning.
+Tracks four indicators — Shiller CAPE, yield curve (10Y−2Y), Fed Funds Rate, and ICE BofA HY OAS — via FRED integration with a 24-hour SQLite cache. Each indicator includes historical percentile context relative to the available data window. A rules-based regime classifier summarizes the combined macro environment relative to SAA positioning.
 
 ### Integrity Testing
 

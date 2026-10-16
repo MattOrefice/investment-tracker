@@ -42,6 +42,8 @@ _BASE = {
     "btc_2022_mdd": None,
     # Added by #426: the curve was read over 0% to 10%, the state "none found" needs.
     "args_for": [], "args_against": [], "sharpe_curve_top": "10%", "conclusion": "x",
+    # Added by #625 (the conclusion as the PDF prints it), caught the same way.
+    "conclusion_blocks": [{"kind": "p", "runs": [(False, "x")]}],
     "disposition": "computed", "failure_reason": None,
     # Added by #249. Present here because this file's own premise-check
     # (test_the_harness_context_leaves_nothing_undefined_inside_the_section)
