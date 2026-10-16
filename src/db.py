@@ -9,6 +9,11 @@ from pathlib import Path
 from src.config import _ROOT, get_db_path
 
 DB_PATH = get_db_path()
+# The book this module chose at import. A tool that means to write demo.db assigns
+# DB_PATH itself (lock_demo_quarters, restate_demo_hyg and the rest), which replaces
+# this object: get_connection opens the read-only overlay by default only while
+# DB_PATH is still this one (#440).
+_IMPORTED_DB_PATH = DB_PATH
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS accounts (
@@ -568,12 +573,32 @@ def _runtime_overlay_connection(committed: Path, cache: Path):
     return conn
 
 
+def _reads_the_committed_demo_by_default() -> bool:
+    """True in a demo-mode process whose DB_PATH is still the one this module set at
+    import, the committed demo.db. A tool that repoints DB_PATH, at a scratch copy or
+    at demo.db itself, has said where it writes and is left alone."""
+    from src import config
+    return (DB_PATH is _IMPORTED_DB_PATH and config.IS_DEMO
+            and Path(DB_PATH).resolve() == (_ROOT / "data" / "demo.db").resolve())
+
+
 def get_connection():
     """Return a SQLite connection with foreign keys enabled. Used as a context
     manager it commits (or rolls back) and then closes; see _ClosingConnection.
 
     To the committed demo.db while the runtime cache is in use, the connection is
-    the read-only overlay described above _RUNTIME_TABLES."""
+    the read-only overlay described above _RUNTIME_TABLES.
+
+    EVERY DEMO-MODE PROCESS IS ON THE OVERLAY FROM ITS FIRST CONNECTION (#440, decided
+    by the owner on October 16, 2026). app.py entered it with use_runtime_cache()
+    before anything read, and a process that imported src in demo mode without that
+    call got a plain writable connection: a price read's gap fill wrote 168 rows and 3
+    dividends into the committed demo.db (#440). The first connection now enters it
+    whenever DB_PATH is still the committed demo.db this module chose, so a script, a
+    probe or a notebook writes to the runtime cache as the app does. Tools that write
+    demo.db repoint DB_PATH, as they did."""
+    if _RUNTIME_CACHE is None and _reads_the_committed_demo_by_default():
+        use_runtime_cache()
     if _RUNTIME_CACHE is not None and Path(DB_PATH).resolve() == _RUNTIME_CACHE[0]:
         return _runtime_overlay_connection(*_RUNTIME_CACHE)
     conn = sqlite3.connect(DB_PATH, factory=_ClosingConnection)
