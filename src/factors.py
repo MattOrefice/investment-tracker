@@ -1751,8 +1751,10 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
         "(F-F_Momentum_Factor_daily_CSV.zip) added as a sixth regressor alongside FF5 "
         f"to test whether the US Equity and {_intl_core_label()} sleeves each load "
         "systematically on the momentum premium. "
-        "The supplementary table is diagnostic; the primary FF5 result "
-        "is authoritative.",
+        # Each sleeve has its own table beside its own FF5 result (#590, decided by the
+        # owner on October 15, 2026): the sentence spoke of one table and one result.
+        "Each sleeve's supplementary table is diagnostic; its FF5 result is "
+        "authoritative.",
 
         "Momentum (UMD) vintage: Mom loadings are computed against the Ken French "
         f"momentum series. {data_vintage('Momentum factor', _umd_f)} Loadings shift between "

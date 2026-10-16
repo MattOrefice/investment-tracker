@@ -98,7 +98,7 @@ If a CI run shows red:
 3. The "Show key package versions" step shows which Streamlit/WeasyPrint/kaleido versions CI resolved — useful for environment-mismatch debugging
 4. Common failure modes:
    - `st.secrets` exception escaping the `except` block → `src/config.py` version guard
-   - WeasyPrint missing system libs → the `apt-get install` step in ci.yml should cover this
+   - WeasyPrint missing system libs → ci.yml installs no apt package; its REMOVED note records why (the step hung, and nothing CI asserted needed it). CI has only the libraries the runner image already carries. Streamlit Cloud installs Pango and HarfBuzz from packages.txt (#598)
    - `tests/test_the_pdf_draws_its_charts.py` printing "chart not available" → kaleido 1.5.0 found no browser or got none back. CI uses the Chrome GitHub's runner already has, with no apt step, so a runner image without Chrome shows here first (#567)
 
 See `docs/phase_12_2_ci_diagnostic.md` for the Phase 12 root-cause analysis and applied fixes.
