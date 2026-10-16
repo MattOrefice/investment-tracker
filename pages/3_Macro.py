@@ -89,16 +89,17 @@ def _non_us_equity_pct() -> str:
 _NON_US_PCT = _non_us_equity_pct()
 
 
-def _sleeve_pct(name: str) -> str:
-    """One SAA sleeve's target, to one decimal, from the DB (audit item 5): the page
-    said "the 6% TIPS sleeve" and "7% small-cap and 8% value" beside targets of 4.1%,
-    8.2% and 9.2%. A numberless phrase if the DB cannot answer."""
+def _sized(name: str, noun: str) -> str:
+    """A sleeve's noun with its SAA target before it, to one decimal, from the DB
+    (audit item 5): the page said "the 6% TIPS sleeve" and "7% small-cap and 8% value"
+    beside targets of 4.1%, 8.2% and 9.2%. The noun alone if the DB cannot answer: the
+    fallback was "its", which read "the its TIPS sleeve" (#424)."""
     try:
         from src.sleeve_config import strategic_sleeve_weights
         w = strategic_sleeve_weights().get(name)
-        return f"{w * 100:.1f}%" if w else "its"
     except Exception:
-        return "its"
+        w = None
+    return f"{w * 100:.1f}% {noun}" if w is not None else noun
 
 
 def _window_pctile(series: pd.Series, current_val: float, w_start: str):
@@ -480,8 +481,8 @@ with col:
         ),
         "Early-cycle": (
             "Historically the strongest phase for small-cap and value factor returns. "
-            f"The SAA's {_sleeve_pct('US Small Cap')} small-cap and "
-            f"{_sleeve_pct('US Large Value')} value sleeves are positioned for this environment."
+            f"The SAA's {_sized('US Small Cap', 'small-cap')} and "
+            f"{_sized('US Large Value', 'value')} sleeves are positioned for this environment."
         ),
         "Mid-cycle":   (
             "The regime indicators on this page are context; positions follow the SAA, which is "
@@ -580,9 +581,10 @@ with col:
                 "before widening on rising defaults. Late-cycle becomes recession when NBER officially "
                 "declares it (with a 6–18 month lag) and unemployment rises sharply. Recession becomes "
                 "early-cycle as the curve re-steepens (Fed easing), unemployment peaks and begins "
-                "falling, and credit spreads peak and start tightening. Because the transitions "
-                "follow gradual shifts in the underlying variables, the regime classifier captures "
-                "direction of travel rather than predicting turning points."
+                "falling, and credit spreads peak and start tightening. The classifier itself "
+                "reads levels: each month's label comes from where the three variables stand "
+                "against fixed thresholds, so it changes only once a threshold is crossed and "
+                "does not predict turning points."
             )
 
         try:
@@ -869,24 +871,10 @@ with col:
             f"{_ordinal(cfnai_pctile_w)} percentile of {cfnai_scope}"
         )
 
-        if current_cfnai > 0:
-            _cfnai_direction = "above zero, indicating above-trend economic breadth"
-            _cfnai_cycle = (
-                "Positive diffusion is consistent with mid-to-late-cycle expansion momentum "
-                "and correlates with tightening credit spreads and support for cyclical equity sleeves."
-            )
-        else:
-            _cfnai_direction = "below zero, indicating below-trend economic breadth"
-            _cfnai_cycle = (
-                "Negative diffusion is consistent with below-trend activity or early-cycle conditions. "
-                "It has historically preceded credit-spread widening and supports a quality bias in "
-                "equity sleeves."
-            )
         st.caption(
             f"CFNAIDIFF (ISM PMI proxy; NAPM series unavailable on FRED) measures the breadth of "
             f"economic indicators above vs. below trend. Zero is the neutral line; positive is expansionary. "
-            f"At {sign_cfnai}{current_cfnai:.2f}, the index is {_cfnai_direction}. "
-            + _cfnai_cycle
+            + macro.cfnai_sentence(current_cfnai)
             + " FRED CFNAIDIFF."
         )
         st.divider()
@@ -935,7 +923,7 @@ with col:
         ))
         fig_cpi.add_hline(
             y=2.0, line_dash="dash", line_color=_C["ref"], line_width=1,
-            annotation_text="Fed target 2%",
+            annotation_text=macro.INFLATION_TARGET_LINE,
             annotation_position="right", annotation_font_size=10,
         )
         _add_current_annotation(
@@ -953,39 +941,15 @@ with col:
             f"As of {cpi_as_of} · "
             f"{_ordinal(cpi_pctile_w)} percentile of {cpi_scope}"
         )
+        # It went on to call core CPI "the Fed's preferred gauge of underlying inflation
+        # trends"; the Fed's 2% target is set for PCE inflation (#424).
         st.caption(
             "Core CPI strips out food and energy because commodity-price shocks make them "
-            "volatile month to month. The core reading is the Fed's preferred gauge of underlying "
-            "inflation trends because it more closely tracks the wage-and-services dynamics that "
-            "monetary policy can influence."
+            "volatile month to month."
         )
 
-        if current_cpi > 4.0:
-            _cpi_interp = (
-                f"Core CPI at {current_cpi:.1f}% is well above the Fed's 2% target, "
-                "an inflationary regime in which TIPS and Real Assets provide direct portfolio hedging."
-            )
-        elif current_cpi > 2.5:
-            _cpi_interp = (
-                f"Core CPI at {current_cpi:.1f}% remains above target; "
-                "disinflation is in progress but not complete. "
-                "Whether this reflects stalled disinflation or sticky services inflation "
-                "matters for the TIPS sleeve: a persistent plateau near 3% is more bearish for "
-                "nominal bonds than a CPI still trending gradually toward 2%."
-            )
-        elif current_cpi > 1.5:
-            _cpi_interp = (
-                f"Core CPI at {current_cpi:.1f}% is near the Fed's 2% target, "
-                "a regime in which nominal duration (Core Fixed Income) is reasonably priced."
-            )
-        else:
-            _cpi_interp = (
-                f"Core CPI at {current_cpi:.1f}% is below target. "
-                "Disinflationary conditions historically support nominal bond returns "
-                "and may reduce the immediate urgency of the TIPS inflation hedge."
-            )
         st.caption(
-            _cpi_interp + " "
+            macro.interpret_core_cpi(current_cpi) + " "
             "FRED CPILFESL: CPI for All Urban Consumers, All Items Less Food and Energy, "
             "12-month percent change."
         )
@@ -1029,7 +993,7 @@ with col:
         ))
         fig_be.add_hline(
             y=2.0, line_dash="dash", line_color=_C["ref"], line_width=1,
-            annotation_text="Fed target 2%",
+            annotation_text=macro.INFLATION_TARGET_LINE,
             annotation_position="right", annotation_font_size=10,
         )
         _add_current_annotation(
@@ -1048,20 +1012,13 @@ with col:
             f"(data since {be_since})"
         )
 
-        _cpi_ref = f"{_shared_cpi_pct:.1f}%" if _shared_cpi_pct is not None else "N/A"
-        if _shared_cpi_pct is not None and _shared_cpi_pct > current_be + 0.3:
-            _be_framing = "pricing disinflation toward target: it expects inflation to fall from current levels"
-        elif _shared_cpi_pct is not None and abs(_shared_cpi_pct - current_be) <= 0.3:
-            _be_framing = "in line with current realized inflation and is not pricing significant directional change"
-        else:
-            _be_framing = "pricing persistence near or above current CPI levels"
-
+        _be_vs_cpi = macro.breakeven_vs_cpi(current_be, _shared_cpi_pct)
         st.caption(
             f"10Y breakeven at {current_be:.2f}% is the market-implied average inflation rate "
             f"over 10 years (nominal 10Y yield minus TIPS yield, FRED-computed). "
-            f"Compared to Core CPI at {_cpi_ref}, the market is {_be_framing}. "
-            f"Breakeven is the hurdle rate for TIPS-vs-nominal-Treasury outperformance, "
-            f"directly relevant to the {_sleeve_pct('TIPS')} TIPS sleeve."
+            + (f"{_be_vs_cpi} " if _be_vs_cpi else "")
+            + f"Breakeven is the hurdle rate for TIPS-vs-nominal-Treasury outperformance, "
+            f"directly relevant to the {_sized('TIPS', 'TIPS')} sleeve."
         )
         st.divider()
     else:
@@ -1123,27 +1080,8 @@ with col:
             f"(data since {real10y_since})"
         )
 
-        if current_real10y > 1.5:
-            _real10y_interp = (
-                f"Real 10Y at {current_real10y:+.2f}% is well above zero, a structural shift from "
-                f"the ZIRP era of 2010–2022. Positive real rates above 1.5% raise discount rates for "
-                f"long-duration growth equities, support USD strength, and make TIPS attractive as "
-                f"a source of real yield with inflation protection."
-            )
-        elif current_real10y > 0:
-            _real10y_interp = (
-                f"Real 10Y at {current_real10y:+.2f}% is modestly positive: above the ZIRP era but "
-                f"below the threshold typically associated with broad rate-driven equity pressure. "
-                f"TIPS yield at this level offers positive real return for the TIPS sleeve."
-            )
-        else:
-            _real10y_interp = (
-                f"Real 10Y at {current_real10y:+.2f}% is negative, consistent with financial repression "
-                f"or aggressive policy easing. Negative real rates are historically supportive of equities, "
-                f"real assets, and gold, but reduce the real return available from the TIPS sleeve."
-            )
         st.caption(
-            _real10y_interp + " "
+            macro.interpret_real_10y(current_real10y) + " "
             "FRED DFII10: 10-Year Treasury Inflation-Indexed Security Yield (TIPS)."
         )
         st.divider()
@@ -1213,7 +1151,9 @@ with col:
         )
 
         st.caption(interpret_curve_spread(current_spread_bps))
-        st.caption("Percentile computed relative to the selected window.")
+        # "Percentile computed relative to the selected window" followed, false whenever
+        # the window fell back to the full series (#424); the caption above names
+        # the scope the percentile was computed on.
         st.divider()
     else:
         _panel_error("2/10 Yield Curve Spread", _t10y2y_err, "retry_yc")
@@ -1288,7 +1228,7 @@ with col:
         else:
             _yc_shape = "flat to mildly upward-sloping"
 
-        _series_list = ", ".join(f"DGS{m.replace('M','MO')}" for m, _ in _yc_pts)
+        _series_list = ", ".join(macro.treasury_series_id(m) for m, _ in _yc_pts)
         st.caption(
             f"The Treasury yield curve is the term structure of risk-free nominal yields across "
             f"maturities. Its shape conveys market expectations of future short rates plus a term "
@@ -1579,16 +1519,9 @@ with col:
                 _ratio_framing = "compressed, indicating tight spreads across the corporate credit stack"
             _hy_ig_extra = f" HY/IG ratio: {_ratio:.1f}× ({_ratio_framing})."
 
-        if ig_pctile_w < 25:
-            _ig_tier = "historically tight, reflecting strong demand for IG credit with low perceived default risk"
-        elif ig_pctile_w < 60:
-            _ig_tier = "near the median, consistent with a mid-cycle credit environment"
-        else:
-            _ig_tier = "elevated, reflecting credit stress or risk-off positioning even in higher-quality issuers"
-
         st.caption(
-            f"IG OAS at {current_ig:.0f} bps, the investment-grade corporate spread over Treasuries, is "
-            f"{_ig_tier}.{_hy_ig_extra} "
+            macro.credit_reading("IG", current_ig, ig_pctile_w, ig_since)
+            + f"{_hy_ig_extra} "
             "FRED BAMLC0A0CM: ICE BofA US Corporate Index OAS."
         )
         st.divider()
@@ -1702,29 +1635,8 @@ with col:
             f"{_ordinal(ccc_pctile_w)} percentile of available history (data from {ccc_since})"
         )
 
-        if ccc_pctile_w < 25:
-            _ccc_interp = (
-                f"CCC OAS at {current_ccc:.0f} bps is historically tight: "
-                "broad risk-on appetite is reaching into distressed names. "
-                "Tight CCC alongside tight BB indicates few idiosyncratic stress situations."
-            )
-        elif ccc_pctile_w < 60:
-            _ccc_interp = (
-                f"CCC OAS at {current_ccc:.0f} bps is near the median for available history, "
-                "a moderate credit environment with a mix of distressed and recovering issuers."
-            )
-        else:
-            _ccc_interp = (
-                f"CCC OAS at {current_ccc:.0f} bps is elevated. "
-                + (
-                    f"The CCC/HY spread differential is {current_ccc - _shared_hy_bps:.0f} bps. "
-                    if _shared_hy_bps is not None else ""
-                )
-                + "CCC widening ahead of broad HY is a leading indicator of credit stress "
-                "concentrating in tail names; the IG and HY panels above complete the spread stack."
-            )
         st.caption(
-            _ccc_interp
+            macro.credit_reading("CCC", current_ccc, ccc_pctile_w, ccc_since, _shared_hy_bps)
             + " FRED BAMLH0A3HYC: ICE BofA US High Yield CCC and Lower OAS."
         )
         st.divider()
@@ -2006,19 +1918,7 @@ with col:
         )
 
         if cape_ok:
-            _earn_gap = cape_val / ttm_val - 1.0
-            st.markdown(
-                f"**Reading the gap.** The same market prices at {ttm_val:.1f}× trailing "
-                f"twelve-month earnings but {cape_val:.1f}× its ten-year average of real "
-                f"earnings (CAPE, {cape_read_short}). Algebraically, current S&P 500 "
-                f"earnings are running "
-                f"≈{_earn_gap:.0%} above their inflation-adjusted ten-year average. CAPE "
-                "smooths away that elevated-earnings base, which is the structural reason "
-                "CAPE has read \"extreme\" for a decade while the market compounded. When "
-                "earnings grow persistently, the ten-year average lags behind, and the ratio "
-                "stays high even when prices are not unusually high relative to *current* "
-                "profits."
-            )
+            st.markdown(macro.earnings_gap_paragraph(ttm_val, cape_val, cape_read_short))
             st.markdown(
                 "**Each lens's weakness.** CAPE drifts upward across decades because "
                 "accounting-standard changes, buyback-driven per-share growth, and sector mix "
@@ -2129,18 +2029,8 @@ with col:
                     "overstates it."
                 )
                 if ttm_ok and cape_ok:
-                    st.markdown(
-                        f"**Three lenses, one market.** Trailing {ttm_val:.1f}× (what "
-                        f"was earned), forward {_fwd_pe:.1f}× (what analysts expect), "
-                        f"CAPE {cape_val:.1f}× (ten-year real average, "
-                        f"{cape_read_short}). Forward sits "
-                        "lowest because its denominator is the largest and most "
-                        "optimistic; CAPE sits highest because its denominator "
-                        "averages away the recent earnings surge. When the three "
-                        "disagree, the gap shows that the market is priced for the "
-                        "earnings analysts expect rather than the earnings it has "
-                        "averaged."
-                    )
+                    st.markdown(macro.three_lenses_paragraph(
+                        ttm_val, _fwd_pe, cape_val, cape_read_short))
 
     if not _fwd_hidden:
         st.divider()
@@ -2379,24 +2269,8 @@ with col:
             f"(data since {dtwex_since})"
         )
 
-        if dtwex_pctile_w > 70:
-            _dtwex_strength = "historically strong"
-            _dtwex_impl = (
-                "A strong dollar is a headwind for unhedged international and EM equity holdings "
-                "through translation losses."
-            )
-        elif dtwex_pctile_w > 30:
-            _dtwex_strength = "near its historical median"
-            _dtwex_impl = (
-                "A dollar near its historical median exerts a neutral translation effect on "
-                "international equity sleeves, with no significant currency tailwind or headwind."
-            )
-        else:
-            _dtwex_strength = "historically weak"
-            _dtwex_impl = (
-                "A weak dollar is a tailwind for unhedged international and EM equity holdings "
-                "through positive translation, supporting the developed-international and EM sleeves."
-            )
+        _dtwex_strength, _dtwex_impl = macro.dollar_reading(
+            dtwex_pctile_w, "series" if _dtwex_pct.fell_back else "window")
 
         st.caption(
             "The Broad Trade-Weighted USD Index (DTWEXBGS) measures the value of the US dollar "
@@ -2618,7 +2492,9 @@ with col:
         )
         if ff_val is not None and etf_val is not None:
             st.caption(factor_regime.interpret_factor(
-                ff_val, ff_pct, etf_val, etf_pct, factor_name))
+                ff_val, ff_pct, etf_val, etf_pct, factor_name,
+                ff_as_of=ff_dt.date() if ff_dt is not None else None,
+                proxy_as_of=etf_dt.date() if etf_dt is not None else None))
 
     # ── Chart 1 — Size: Small-cap vs Large-cap ────────────────────────────────
     st.markdown("#### Size: Small-cap vs Large-cap (trailing 12M)")

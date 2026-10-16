@@ -872,7 +872,16 @@ def interpret_excess_cape(value: float, percentile: float) -> str:
 
 
 def interpret_curve_spread(value_bps: float) -> str:
-    """Dynamic 1–2 sentence interpretation of the 10Y−2Y yield curve spread (in bps)."""
+    """Dynamic 1–2 sentence interpretation of the 10Y−2Y yield curve spread (in bps).
+
+    A spread that prints as 0 bps reads as zero (#424): 0 bps read "positive but
+    compressed", and -0.4 bps, printed "-0 bps", read "inverted"."""
+    if f"{abs(value_bps):.0f}" == "0":
+        return (
+            "The yield curve is flat at 0 bps: the 10Y−2Y spread is zero. A flat curve "
+            "reflects limited term premium and implies bond markets expect short rates to "
+            "remain near current levels."
+        )
     if value_bps < CURVE_INVERTED:
         # The regime classifier counts an inversion only below its trigger (-25 bps), so
         # a shallower one says so here rather than contradicting the verdict (item 5).
@@ -948,7 +957,14 @@ def interpret_hy_spread(value_bps: float) -> str:
 
 
 def interpret_gdp_growth(value: float) -> str:
-    """Dynamic 1–2 sentence interpretation of real GDP growth (QoQ annualized, percent)."""
+    """Dynamic 1–2 sentence interpretation of real GDP growth (QoQ annualized, percent).
+
+    From the trend to GDP_ABOVE_TREND the growth rate stands alone (#424, decided by the
+    owner on October 15, 2026). That band read "near the long-run trend of ~2.0%, a
+    mid-cycle Goldilocks range" up to 3.5%, one and a half points above the trend it
+    named. A rate that prints as 0.0% reads as zero."""
+    if f"{abs(value):.1f}" == "0.0":
+        return "Real GDP growth is 0.0%: output was flat."
     if value < 0.0:
         return (
             f"Real GDP growth of {value:.1f}% is negative. Two consecutive quarters of negative "
@@ -964,12 +980,7 @@ def interpret_gdp_growth(value: float) -> str:
             "duration (Core Fixed Income, TIPS) gains defensive value."
         )
     elif value < GDP_ABOVE_TREND:
-        return (
-            f"Real GDP growth of {value:.1f}% is near the long-run trend of "
-            f"~{GDP_TREND:.1f}% ({GDP_TREND_SOURCE}), a mid-cycle Goldilocks range. On-trend growth is associated "
-            "with stable corporate earnings and balanced equity risk premiums; "
-            "the SAA is calibrated for this baseline environment."
-        )
+        return f"Real GDP growth is {value:.1f}%."
     else:
         return (
             f"Real GDP growth of {value:.1f}% is well above the long-run trend of ~{GDP_TREND:.1f}%. "
@@ -977,6 +988,223 @@ def interpret_gdp_growth(value: float) -> str:
             "also upward inflation pressure; cyclical sleeves (US Small Cap, Emerging Markets) "
             "tend to outperform, while TIPS provides inflation protection if growth is sustained."
         )
+
+
+def treasury_series_id(tenor: str) -> str:
+    """FRED's series ID for a constant-maturity Treasury tenor as the Macro page labels
+    it: "10Y" is DGS10 and "3M" is DGS3MO. Only a month tenor carries "MO" (#424): the
+    yield-curve caption printed "DGS1Y" to "DGS30Y", which FRED does not have."""
+    n, unit = tenor[:-1], tenor[-1:]
+    if not n.isdigit() or unit not in ("M", "Y"):
+        raise ValueError(f"not a Treasury tenor: {tenor!r}")
+    return f"DGS{n}MO" if unit == "M" else f"DGS{n}"
+
+
+# The 2% reference line on the Core CPI and breakeven charts, as the owner decided on
+# October 15, 2026 (#424). It read "Fed target 2%" over two series that are not the one
+# the target is set for: the FOMC states its 2% goal for the annual change in the PCE
+# price index (Statement on Longer-Run Goals and Monetary Policy Strategy, adopted
+# January 25, 2012).
+INFLATION_TARGET_LINE = "2% (the Fed's target is set for PCE inflation)"
+
+
+def cfnai_sentence(value: float) -> str:
+    """The CFNAIDIFF caption's reading: which side of zero the index sits on, and what
+    that side has been consistent with. An index that prints as 0.00 sits on the neutral
+    line and gets no cycle reading (#424): it read "below zero, indicating below-trend
+    economic breadth"."""
+    if f"{abs(value):.2f}" == "0.00":
+        return "At 0.00, the index is at zero, the neutral line."
+    if value > 0:
+        return (
+            f"At {value:+.2f}, the index is above zero, indicating above-trend economic "
+            "breadth. Positive diffusion is consistent with mid-to-late-cycle expansion "
+            "momentum and correlates with tightening credit spreads and support for cyclical "
+            "equity sleeves."
+        )
+    return (
+        f"At {value:.2f}, the index is below zero, indicating below-trend economic breadth. "
+        "Negative diffusion is consistent with below-trend activity or early-cycle "
+        "conditions. It has historically preceded credit-spread widening and supports a "
+        "quality bias in equity sleeves."
+    )
+
+
+def interpret_core_cpi(value: float) -> str:
+    """The Core CPI panel's reading of the year-over-year rate against 2% (#424). It
+    measured core CPI against "the Fed's 2% target", which the FOMC sets for PCE
+    inflation (INFLATION_TARGET_LINE), and said "disinflation is in progress but not
+    complete" without reading which way the series was moving."""
+    if value > 4.0:
+        return (
+            f"Core CPI at {value:.1f}% is well above 2%, an inflationary regime in which TIPS "
+            "and Real Assets provide direct portfolio hedging."
+        )
+    if value > 2.5:
+        return (
+            f"Core CPI at {value:.1f}% is above 2%. Whether this reflects stalled "
+            "disinflation or sticky services inflation matters for the TIPS sleeve: a "
+            "persistent plateau near 3% is more bearish for nominal bonds than a CPI still "
+            "trending gradually toward 2%."
+        )
+    if value > 1.5:
+        return (
+            f"Core CPI at {value:.1f}% is near 2%, a regime in which nominal duration (Core "
+            "Fixed Income) is reasonably priced."
+        )
+    return (
+        f"Core CPI at {value:.1f}% is below 2%. Disinflationary conditions historically "
+        "support nominal bond returns and may reduce the immediate urgency of the TIPS "
+        "inflation hedge."
+    )
+
+
+def breakeven_vs_cpi(breakeven: float, core_cpi: "float | None") -> "str | None":
+    """The breakeven caption's comparison with core CPI, or None with no core CPI
+    reading (#424): it read "Compared to Core CPI at N/A, the market is pricing
+    persistence near or above current CPI levels"."""
+    if core_cpi is None or not math.isfinite(core_cpi):
+        return None
+    if core_cpi > breakeven + 0.3:
+        framing = "pricing disinflation: it expects inflation to fall from current levels"
+    elif abs(core_cpi - breakeven) <= 0.3:
+        framing = ("in line with current realized inflation and is not pricing significant "
+                   "directional change")
+    else:
+        framing = "pricing persistence near or above current CPI levels"
+    return f"Compared to Core CPI at {core_cpi:.1f}%, the market is {framing}."
+
+
+def interpret_real_10y(value: float) -> str:
+    """The real 10-year yield's reading. A yield that prints as 0.00% is at zero (#424):
+    it read "is negative", and +0.003% read "modestly positive" beside "+0.00%"."""
+    if f"{abs(value):.2f}" == "0.00":
+        return "Real 10Y at 0.00% is at zero."
+    if value > 1.5:
+        return (
+            f"Real 10Y at {value:+.2f}% is well above zero, a structural shift from the ZIRP "
+            "era of 2010–2022. Positive real rates above 1.5% raise discount rates for "
+            "long-duration growth equities, support USD strength, and make TIPS attractive as "
+            "a source of real yield with inflation protection."
+        )
+    if value > 0:
+        return (
+            f"Real 10Y at {value:+.2f}% is modestly positive: above the ZIRP era but below the "
+            "threshold typically associated with broad rate-driven equity pressure. TIPS yield "
+            "at this level offers positive real return for the TIPS sleeve."
+        )
+    return (
+        f"Real 10Y at {value:+.2f}% is negative, consistent with financial repression or "
+        "aggressive policy easing. Negative real rates are historically supportive of "
+        "equities, real assets, and gold, but reduce the real return available from the TIPS "
+        "sleeve."
+    )
+
+
+def credit_reading(series: str, current_bps: float, pctile: float, since: str,
+                   hy_bps: "float | None" = None) -> str:
+    """The IG or CCC OAS panel's reading of its percentile, graded against the history
+    the panel holds and saying so (#424). Each called a bottom-quartile reading
+    "historically tight" against FRED's ICE BofA window, about three years. ``series``
+    is "IG" or "CCC"; ``since`` is the month the panel's history starts; ``hy_bps`` is
+    the HY spread, which an elevated CCC reading is set against when there is one."""
+    span = f"its history since {since}"
+    if series == "IG":
+        head = (f"IG OAS at {current_bps:.0f} bps, the investment-grade corporate spread "
+                "over Treasuries, is")
+        if pctile < 25:
+            return (f"{head} tight against {span}, reflecting strong demand for IG credit "
+                    "with low perceived default risk.")
+        if pctile < 60:
+            return (f"{head} near the median of {span}, consistent with a mid-cycle credit "
+                    "environment.")
+        return (f"{head} elevated against {span}, reflecting credit stress or risk-off "
+                "positioning even in higher-quality issuers.")
+    head = f"CCC OAS at {current_bps:.0f} bps is"
+    if pctile < 25:
+        return (f"{head} tight against {span}: broad risk-on appetite is reaching into "
+                "distressed names. Tight CCC alongside tight BB indicates few idiosyncratic "
+                "stress situations.")
+    if pctile < 60:
+        return (f"{head} near the median of {span}, a moderate credit environment with a "
+                "mix of distressed and recovering issuers.")
+    return (f"{head} elevated against {span}. "
+            + (f"The CCC/HY spread differential is {current_bps - hy_bps:.0f} bps. "
+               if hy_bps is not None else "")
+            + "CCC widening ahead of broad HY is a leading indicator of credit stress "
+            "concentrating in tail names; the IG and HY panels above complete the spread "
+            "stack.")
+
+
+def dollar_reading(pctile: float, span: str) -> "tuple[str, str]":
+    """The broad dollar's grade from its window percentile, and what that grade means
+    for the international sleeves. The grade names the span it is read against (#424):
+    it said "historically strong" and "near its historical median" from a percentile of
+    the selected window. ``span`` is "window" or, on a fallback, "series"."""
+    if pctile > 70:
+        return (f"strong for that {span}",
+                "A strong dollar is a headwind for unhedged international and EM equity "
+                "holdings through translation losses.")
+    if pctile > 30:
+        return (f"near that {span}'s median",
+                f"A dollar near its median for that {span} exerts a neutral translation effect on "
+                "international equity sleeves, with no significant currency tailwind or "
+                "headwind.")
+    return (f"weak for that {span}",
+            "A weak dollar is a tailwind for unhedged international and EM equity holdings "
+            "through positive translation, supporting the developed-international and EM "
+            "sleeves.")
+
+
+def earnings_gap_paragraph(ttm: float, cape: float, cape_read: str) -> str:
+    """"Reading the gap": trailing P/E against CAPE, and what their ratio says of current
+    earnings against their ten-year real average (#424). It printed "≈-12% above" when
+    CAPE sat below the trailing multiple, and explained an "elevated-earnings base"
+    whatever the gap was; the explanation renders only when earnings run above the
+    average."""
+    gap = cape / ttm - 1.0
+    head = (
+        f"**Reading the gap.** The same market prices at {ttm:.1f}× trailing twelve-month "
+        f"earnings but {cape:.1f}× its ten-year average of real earnings (CAPE, "
+        f"{cape_read}). Algebraically, current S&P 500 earnings are running "
+    )
+    if f"{abs(gap):.0%}" == "0%":
+        return head + "level with their inflation-adjusted ten-year average."
+    if gap < 0:
+        return head + f"≈{-gap:.0%} below their inflation-adjusted ten-year average."
+    return head + (
+        f"≈{gap:.0%} above their inflation-adjusted ten-year average. CAPE smooths away "
+        "that elevated-earnings base, which is the structural reason CAPE has read "
+        "\"extreme\" for a decade while the market compounded. When earnings grow "
+        "persistently, the ten-year average lags behind, and the ratio stays high even when "
+        "prices are not unusually high relative to *current* profits."
+    )
+
+
+def three_lenses_paragraph(ttm: float, fwd: float, cape: float, cape_read: str) -> str:
+    """"Three lenses, one market": the three multiples, then which sits lowest and
+    highest only as the printed figures order them (#424). It called forward P/E the
+    lowest and CAPE the highest whatever the three were, and closed on a reading of that
+    order."""
+    shown = {k: float(f"{v:.1f}") for k, v in (("trailing", ttm), ("forward", fwd),
+                                                ("cape", cape))}
+    forward_lowest = shown["forward"] < min(shown["trailing"], shown["cape"])
+    cape_highest = shown["cape"] > max(shown["trailing"], shown["forward"])
+    parts = [
+        f"**Three lenses, one market.** Trailing {ttm:.1f}× (what was earned), forward "
+        f"{fwd:.1f}× (what analysts expect), CAPE {cape:.1f}× (ten-year real average, "
+        f"{cape_read})."
+    ]
+    if forward_lowest:
+        parts.append("Forward sits lowest because its denominator is the largest and most "
+                     "optimistic.")
+    if cape_highest:
+        parts.append("CAPE sits highest because its denominator averages away the recent "
+                     "earnings surge.")
+    if forward_lowest and cape_highest:
+        parts.append("When the three disagree, the gap shows that the market is priced for "
+                     "the earnings analysts expect rather than the earnings it has averaged.")
+    return " ".join(parts)
 
 
 def interpret_us_vs_intl_spread(spread_pp: float, rolling_mean_pp: float) -> str:
