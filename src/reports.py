@@ -2168,24 +2168,29 @@ _PENDING_WORDS = {
     FF5_US: _FRENCH_PENDING, FF5_DEVELOPED_EXUS: _FRENCH_PENDING, UMD: _FRENCH_PENDING,
     HYG: ("the HYG price data", "the HYG price data on file ends {}",
           "no HYG price data is on file for the quarter"),
-    ETF_METADATA: ("the ETF fact-sheet data", "the ETF fact-sheet data on file is dated {}",
-                   "no ETF fact-sheet data is on file"),
+    # The cover's name for the input (#488, decided by the owner on October 16, 2026). It
+    # was "the ETF fact-sheet data", a name from the withdrawn style box (#477): the file
+    # holds fund durations only, and SCHP's comes from its N-CSRS, not a fact sheet.
+    ETF_METADATA: ("the fund durations", "the fund durations on file are dated {}",
+                   "no fund durations are on file"),
 }
+# The pending names that take a plural verb: "the fund durations cover the quarter".
+_PLURAL_PENDING = frozenset({_PENDING_WORDS[ETF_METADATA][0]})
 
 
 def _metadata_clause(pending_date: str, quarter_end: str) -> str:
-    """The ETF fact-sheet file's waiting clause (#463): the date that disqualifies it,
+    """The fund durations' waiting clause (#463): the date that disqualifies the file,
     and which way. The lock records the newest date when the file is too new for the
     quarter and the oldest when it is too old."""
     d, end = date.fromisoformat(pending_date), date.fromisoformat(quarter_end)
     start = date(end.year, end.month - 2, 1)
     if d > end:
-        return (f"the newest ETF fact-sheet data on file is dated {format_long_date(d)}, "
+        return (f"the newest fund durations on file are dated {format_long_date(d)}, "
                 f"after the quarter ended {format_long_date(end)}")
     if d < start:
-        return (f"the oldest ETF fact-sheet data on file is dated {format_long_date(d)}, "
+        return (f"the oldest fund durations on file are dated {format_long_date(d)}, "
                 f"before the quarter began {format_long_date(start)}")
-    return f"the ETF fact-sheet data on file is dated {format_long_date(d)}"
+    return f"the fund durations on file are dated {format_long_date(d)}"
 
 
 def _pending_note(snap, section: str, subject: str = "section") -> Optional[str]:
@@ -2193,7 +2198,7 @@ def _pending_note(snap, section: str, subject: str = "section") -> Optional[str]
 
     French publishes a month's factors about a month after it ends, so on October 1
     the Q3 factor and benchmark sections wait for them rather than lock on two-thirds
-    of the quarter (#382). HYG and the ETF fact-sheet file wait the same way (#386),
+    of the quarter (#382). HYG and the fund durations wait the same way (#386),
     and the line names each input that is waiting, with its date."""
     pending = (getattr(snap, "inputs_pending", None) or {}) if snap is not None else {}
     waiting = [n for n in SECTION_INPUTS[section] if n in pending]
@@ -2212,7 +2217,7 @@ def _pending_note(snap, section: str, subject: str = "section") -> Optional[str]
             bound_named = True
             continue
         clauses.append(dated.format(format_long_date(min(known))) if known else missing)
-    verb = "covers" if len(whats) == 1 else "cover"
+    verb = "covers" if len(whats) == 1 and whats[0] not in _PLURAL_PENDING else "cover"
     closed = (f"; the quarter ended {format_long_date(q_end)}"
               if q_end and not (bound_named and len(clauses) == 1) else "")
     data = "; ".join(clauses)

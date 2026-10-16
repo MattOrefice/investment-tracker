@@ -99,7 +99,7 @@ def test_trailing_pe_has_one_date(render):
     caption = next(t for t in texts if "data as of" in t and "Source: multpl" in t
                    and "percentile" in t and "Shiller" not in t)
     warned = re.search(r"Trailing P/E data ends (\w+) (\d+), (\d{4})", warning).groups()
-    shown = re.search(r"data as of (\w{3}) (\d+), (\d{4})", caption).groups()
-    # Compared as dates: the caption pads the day ("Oct 02"), the warning does not.
-    assert (warned[0][:3], int(warned[1]), warned[2]) == (
-        shown[0], int(shown[1]), shown[2]), (warning, caption)
+    shown = re.search(r"data as of (\w+) (\d+), (\d{4})", caption).groups()
+    # Since #488 both print the date as asof.format_long_date writes it ("October 2,
+    # 2026"); the caption padded the day ("Oct 02"), so this compared them as dates.
+    assert warned == shown, (warning, caption)

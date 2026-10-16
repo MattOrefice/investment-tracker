@@ -162,8 +162,9 @@ def test_a_stale_metadata_file_leaves_only_the_duration_line_pending(book, tmp_p
     snap, _ = capture_quarter_snapshot("2026Q2")
     note = reports._pending_note(snap, "positioning", subject="duration figure")
     # #463: the line names the date that disqualifies the file, and which way.
-    assert note == ("Pending: this duration figure locks when the ETF fact-sheet data covers the "
-                    "quarter. The oldest ETF fact-sheet data on file is dated January 15, "
+    # Since #488 the input carries the cover's name, "the fund durations".
+    assert note == ("Pending: this duration figure locks when the fund durations cover the "
+                    "quarter. The oldest fund durations on file are dated January 15, "
                     "2026, before the quarter began April 1, 2026.")
     html = _html(monkeypatch, *Q2)
     assert note in html

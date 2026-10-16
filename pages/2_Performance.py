@@ -928,19 +928,19 @@ with col:
         x=pv_norm.index, y=(pv_norm - 1) * 100,
         name="Portfolio",
         line=dict(color=_PALETTE["portfolio"], width=2.5),
-        hovertemplate="<b>Portfolio</b><br>%{x|%b %d, %Y}<br>Return: %{y:.2f}%<extra></extra>",
+        hovertemplate="<b>Portfolio</b><br>%{x|%B %-d, %Y}<br>Return: %{y:.2f}%<extra></extra>",
     ))
     fig.add_trace(go.Scatter(
         x=sp_norm.index, y=(sp_norm - 1) * 100,
         name="S&P 500 (SPY)",
         line=dict(color=_PALETTE["sp500"], width=1.5, dash="dot"),
-        hovertemplate="<b>S&P 500</b><br>%{x|%b %d, %Y}<br>Return: %{y:.2f}%<extra></extra>",
+        hovertemplate="<b>S&P 500</b><br>%{x|%B %-d, %Y}<br>Return: %{y:.2f}%<extra></extra>",
     ))
     fig.add_trace(go.Scatter(
         x=bl_norm.index, y=(bl_norm - 1) * 100,
         name="Custom Blended",
         line=dict(color=_PALETTE["blended"], width=1.5, dash="dash"),
-        hovertemplate="<b>Custom Blended</b><br>%{x|%b %d, %Y}<br>Return: %{y:.2f}%<extra></extra>",
+        hovertemplate="<b>Custom Blended</b><br>%{x|%B %-d, %Y}<br>Return: %{y:.2f}%<extra></extra>",
     ))
 
     fig.update_layout(

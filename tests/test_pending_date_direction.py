@@ -19,7 +19,8 @@ import pytest
 
 from tests.conftest import pin_today, point_at_frozen_book, unpin_leftovers
 
-HEAD = "Pending: this duration figure locks when the ETF fact-sheet data covers the quarter. "
+# Since #488 the input carries the cover's name, "the fund durations".
+HEAD = "Pending: this duration figure locks when the fund durations cover the quarter. "
 
 
 @pytest.fixture
@@ -64,7 +65,7 @@ def test_a_file_too_new_names_its_newest_date(q2_unlocked):
     assert stamps[0] >= "2026-04-01" and stamps[-1] == "2026-09-25", "premise: too new only"
     recorded, line = _lock_and_line()
     assert recorded == "2026-09-25"
-    assert line == HEAD + ("The newest ETF fact-sheet data on file is dated September 25, "
+    assert line == HEAD + ("The newest fund durations on file are dated September 25, "
                            "2026, after the quarter ended June 30, 2026.")
 
 
@@ -72,7 +73,7 @@ def test_a_file_too_old_names_its_oldest_date(q2_unlocked, tmp_path, monkeypatch
     _dated(tmp_path, monkeypatch, "2026-01-15", "2026-05-15")
     recorded, line = _lock_and_line()
     assert recorded == "2026-01-15"
-    assert line == HEAD + ("The oldest ETF fact-sheet data on file is dated January 15, "
+    assert line == HEAD + ("The oldest fund durations on file are dated January 15, "
                            "2026, before the quarter began April 1, 2026.")
 
 
@@ -80,7 +81,7 @@ def test_a_file_both_too_old_and_too_new_names_its_oldest(q2_unlocked, tmp_path,
     _dated(tmp_path, monkeypatch, "2026-01-15", "2026-07-15")
     recorded, line = _lock_and_line()
     assert recorded == "2026-01-15"
-    assert "The oldest ETF fact-sheet data on file is dated January 15, 2026" in line
+    assert "The oldest fund durations on file are dated January 15, 2026" in line
 
 
 def test_a_file_inside_the_quarter_waits_on_nothing(q2_unlocked, tmp_path, monkeypatch):

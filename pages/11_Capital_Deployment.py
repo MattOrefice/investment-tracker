@@ -6,7 +6,7 @@ st.set_page_config(page_title="Capital Deployment", layout="wide")
 import pandas as pd
 from datetime import date, timedelta
 
-from src.asof import as_of_banner, today_et
+from src.asof import as_of_banner, format_long_date, today_et
 from src.config import get_demo_banner_text, IS_DEMO, is_write_enabled
 from src.db import get_connection
 from src.holdings import sleeve_weights_with_coverage, get_holdings_on_date, get_portfolio_account, get_portfolio_account_id
@@ -470,7 +470,7 @@ if contrib_cash > 0 and not _unfunded and not _gap_note:
                 _execute_confirm_dialog(
                     _trades_for_confirm,
                     float(contrib_cash),
-                    _today.strftime("%B %d, %Y"),
+                    format_long_date(_today),
                     int(_dep_acct["account_id"]),
                     _dep_acct["name"],
                 )
