@@ -70,6 +70,14 @@ def test_before_every_push_runs_the_suite_and_the_live_data_tests():
     assert "run them with the network up and FRED_API_KEY set" not in flat
 
 
+def test_a_local_suite_run_never_shares_the_machine():
+    """#612, decided by the owner on October 16, 2026, with no code change: two local
+    runs at once put two kaleido Chrome sessions side by side, and the PDF chart test's
+    teardown caught kaleido's pipe-logger thread still running. The rule lives here."""
+    flat = " ".join(_section("Before every push").split())
+    assert "A local suite run never shares the machine with another suite run (#612)" in flat
+
+
 def test_the_scheduled_live_data_job_sets_no_fred_key():
     """The premise of "as the scheduled job does". If the job is ever given the key,
     this fails, and the pre-push step has to change with it: the two must run the
