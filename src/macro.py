@@ -617,7 +617,7 @@ class RegimeVerdict(NamedTuple):
 
 # The classifier's thresholds, named once so the verdict and its explanation read the
 # same numbers (audit item 5). Rationale in docs/regime_classifier.md.
-REGIME_UNRATE_EARLY: float = 5.5    # UNRATE above: Early-cycle (with the curve not inverted)
+REGIME_UNRATE_EARLY: float = 5.5    # UNRATE above: Early-cycle (with T10Y2Y above the trigger)
 REGIME_UNRATE_TIGHT: float = 4.2    # UNRATE below: the tight-labor Late-cycle trigger
 REGIME_CURVE_TRIGGER: float = -0.25  # T10Y2Y below, in percent: the inverted-curve trigger
 
@@ -805,12 +805,6 @@ CURVE_INVERTED: float =   0.0
 CURVE_FLAT:     float =  50.0   # 0–50 bps
 CURVE_NORMAL:   float = 150.0   # 50–150 bps
 
-# HY credit spreads (basis points)
-HY_SPREAD_TIGHT:        float = 300.0
-HY_SPREAD_NORMAL:       float = 450.0
-HY_SPREAD_WIDE:         float = 600.0
-HY_SPREAD_RECESSIONARY: float = 800.0
-
 # GDP growth rate (QoQ annualized, percent)
 # The FOMC's longer-run median projection for real GDP growth, Summary of Economic
 # Projections, September 16, 2026 (federalreserve.gov/monetarypolicy/fomcprojtabl20260916.htm).
@@ -918,42 +912,13 @@ def interpret_curve_spread(value_bps: float) -> str:
 
 
 def interpret_hy_spread(value_bps: float) -> str:
-    """Dynamic 1–2 sentence interpretation of HY credit spreads (OAS, in bps)."""
-    if value_bps < HY_SPREAD_TIGHT:
-        return (
-            f"HY spreads at {value_bps:.0f} bps are historically tight (below {HY_SPREAD_TIGHT:.0f} bps), "
-            "a sign of late-cycle credit market complacency. Tight spreads limit the cushion for further "
-            f"compression; historical episodes of sub-{HY_SPREAD_TIGHT:.0f} bps spreads have preceded "
-            "equity peaks and subsequent spread blowouts."
-        )
-    elif value_bps < HY_SPREAD_NORMAL:
-        return (
-            f"HY spreads at {value_bps:.0f} bps are in the normal mid-cycle range "
-            f"({HY_SPREAD_TIGHT:.0f}–{HY_SPREAD_NORMAL:.0f} bps), "
-            "consistent with moderate default risk and a healthy credit environment."
-        )
-    elif value_bps < HY_SPREAD_WIDE:
-        return (
-            f"HY spreads at {value_bps:.0f} bps are elevated "
-            f"(above the {HY_SPREAD_NORMAL:.0f} bps neutral threshold), "
-            "signalling rising market concern about credit and default risk. "
-            "This level has historically been associated with late-cycle or early recessionary "
-            "conditions and has preceded equity market weakness."
-        )
-    elif value_bps < HY_SPREAD_RECESSIONARY:
-        return (
-            f"HY spreads at {value_bps:.0f} bps are in the stress zone "
-            f"({HY_SPREAD_WIDE:.0f}–{HY_SPREAD_RECESSIONARY:.0f} bps). "
-            "Credit markets are pricing meaningful recession risk; defensive positioning via "
-            "Core Fixed Income and high-quality equity sleeves is warranted."
-        )
-    else:
-        return (
-            f"HY spreads at {value_bps:.0f} bps are at recessionary levels (above "
-            f"{HY_SPREAD_RECESSIONARY:.0f} bps). Credit markets are pricing severe recession "
-            "and elevated default rates; such levels have historically coincided with "
-            "the most severe equity drawdowns."
-        )
+    """The HY OAS panel's sentence: the spread, standing alone (#606, decided by the owner
+    on October 15, 2026). It graded the spread on fixed cuts that named no window:
+    "historically tight" below 300 bps, "the normal mid-cycle range", "elevated", "the
+    stress zone" and "recessionary levels" above 800 bps, each followed by a reading the
+    grade carried. The panel's caption gives the spread's percentile within the history
+    it holds."""
+    return f"HY spreads at {value_bps:.0f} bps."
 
 
 def interpret_gdp_growth(value: float) -> str:
@@ -1122,9 +1087,10 @@ def credit_reading(series: str, current_bps: float, pctile: float, since: str,
                 "positioning even in higher-quality issuers.")
     head = f"CCC OAS at {current_bps:.0f} bps is"
     if pctile < 25:
+        # "Tight CCC alongside tight BB indicates few idiosyncratic stress situations"
+        # followed: the page computes no BB spread (#606).
         return (f"{head} tight against {span}: broad risk-on appetite is reaching into "
-                "distressed names. Tight CCC alongside tight BB indicates few idiosyncratic "
-                "stress situations.")
+                "distressed names.")
     if pctile < 60:
         return (f"{head} near the median of {span}, a moderate credit environment with a "
                 "mix of distressed and recovering issuers.")
@@ -1134,6 +1100,23 @@ def credit_reading(series: str, current_bps: float, pctile: float, since: str,
             + "CCC widening ahead of broad HY is a leading indicator of credit stress "
             "concentrating in tail names; the IG and HY panels above complete the spread "
             "stack.")
+
+
+def year_change_phrase(series: pd.Series, year_ago: str) -> "str | None":
+    """The broad dollar caption's change over 12 months, "+2.3% over 12 months", from the
+    last observation on or before ``year_ago`` to the latest. None when the series holds
+    no observation that far back (#606): it fell back to the latest value and printed
+    "+0.0% over 12 months". A change that prints as 0.0% carries no sign."""
+    clean = series.dropna()
+    if clean.empty:
+        return None
+    then = clean[clean.index <= year_ago]
+    if then.empty or float(then.iloc[-1]) == 0:
+        return None
+    pct = (float(clean.iloc[-1]) / float(then.iloc[-1]) - 1) * 100
+    if f"{abs(pct):.1f}" == "0.0":
+        return "0.0% over 12 months"
+    return f"{pct:+.1f}% over 12 months"
 
 
 def dollar_reading(pctile: float, span: str) -> "tuple[str, str]":

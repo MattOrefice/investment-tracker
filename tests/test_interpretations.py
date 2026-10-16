@@ -20,10 +20,6 @@ from src.macro import (
     CURVE_FLAT,
     CURVE_INVERTED,
     CURVE_NORMAL,
-    HY_SPREAD_NORMAL,
-    HY_SPREAD_RECESSIONARY,
-    HY_SPREAD_TIGHT,
-    HY_SPREAD_WIDE,
     GDP_TREND,
     GDP_ABOVE_TREND,
     interpret_curve_spread,
@@ -135,38 +131,20 @@ class TestInterpretCurveSpread:
 # ── 3. interpret_hy_spread ───────────────────────────────────────────────────
 
 class TestInterpretHySpread:
-    def test_tight(self):
-        text = interpret_hy_spread(HY_SPREAD_TIGHT - 50)  # 250 bps
-        assert "tight" in text.lower() or "complacency" in text.lower()
+    """MIGRATED at #606 (decided by the owner on October 15, 2026): the five grades on
+    fixed cuts (300, 450, 600 and 800 bps) and the readings they carried are gone, and
+    the spread stands alone. The branch tests became one test across the old bands."""
 
-    def test_normal(self):
-        text = interpret_hy_spread((HY_SPREAD_TIGHT + HY_SPREAD_NORMAL) / 2)  # 375 bps
-        assert "normal" in text.lower() or "neutral" in text.lower() or "mid-cycle" in text.lower()
-
-    def test_wide(self):
-        text = interpret_hy_spread((HY_SPREAD_NORMAL + HY_SPREAD_WIDE) / 2)  # 525 bps
-        assert "elevated" in text.lower() or "stress" in text.lower() or "recessionary" in text.lower()
-
-    def test_stress(self):
-        text = interpret_hy_spread((HY_SPREAD_WIDE + HY_SPREAD_RECESSIONARY) / 2)  # 700 bps
-        assert "stress" in text.lower() or "recession" in text.lower()
-
-    def test_recessionary(self):
-        text = interpret_hy_spread(HY_SPREAD_RECESSIONARY + 100)  # 900 bps
-        assert "recessionary" in text.lower() or "severe" in text.lower()
+    @pytest.mark.parametrize("bps", [0.0, 250.0, 375.0, 525.0, 700.0, 900.0])
+    def test_the_spread_stands_alone(self, bps):
+        text = interpret_hy_spread(bps)
+        assert text == f"HY spreads at {bps:.0f} bps."
+        for grade in ("tight", "normal", "mid-cycle", "elevated", "stress", "recession"):
+            assert grade not in text.lower(), grade
 
     def test_returns_f_string_with_value(self):
         text = interpret_hy_spread(350.0)
         assert "350" in text
-
-    def test_tight_branch_renders_threshold_value(self):
-        # The tight branch must render the HY_SPREAD_TIGHT constant (300), not leave a placeholder
-        text = interpret_hy_spread(250.0)
-        assert "300" in text, f"HY_SPREAD_TIGHT value not rendered — possible f-string bug: {text!r}"
-
-    def test_tight_branch_no_unrendered_placeholders(self):
-        # Specifically tests the branch that had the f-string bug
-        _assert_no_placeholders(interpret_hy_spread(250.0))
 
     def test_no_unrendered_placeholders(self):
         for val in [200.0, 250.0, 375.0, 525.0, 700.0, 900.0]:
