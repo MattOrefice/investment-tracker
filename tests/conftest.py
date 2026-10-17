@@ -333,15 +333,21 @@ def _no_live_marks_carried_between_tests(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _no_gap_fetch_failures_carried_between_tests(monkeypatch):
-    """Each test starts with no failed gap fetch on record (#637).
+def _no_gap_fetch_failures_carried_between_tests():
+    """Each test starts, and ends, with no failed gap fetch on record (#637).
 
     src.prices keeps that record per process, as the banner and the half-hour retry
     need. In a test process one test's blocked fetch would skip a later test's fetch of
     the same window and reach its banner, so the reset is autouse, as the live marks'
-    is above."""
+    is above. The record is CLEARED IN PLACE, before and after each test, rather than
+    swapped for the test's duration: a module-scoped fixture renders outside any one
+    test, and a failure it recorded into the swapped-out record outlived its module.
+    The next module's render then skipped fetches the record said had failed (an SAA
+    weight moved 0.1 and a page rendered no metrics, in one -n 4 run)."""
     import src.prices as prices
-    monkeypatch.setattr(prices, "_GAP_FAILURES", {})
+    prices._GAP_FAILURES.clear()
+    yield
+    prices._GAP_FAILURES.clear()
 
 
 @pytest.fixture(autouse=True)

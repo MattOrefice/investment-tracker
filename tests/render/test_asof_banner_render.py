@@ -11,6 +11,7 @@ back in, and requires every differing element to be a banner element. No stored
 baseline, no diff to read by eye, and it fails rather than reports.
 """
 import os
+import re
 import shutil
 import socket
 import sqlite3
@@ -244,6 +245,10 @@ def test_partial_banner_differs_from_control_banner(page, tmp_path, monkeypatch)
     control, partial = banner_of("control"), banner_of("partial")
     assert control and partial, f"{page}: no banner element found"
     if page == "8_Research.py":
+        # The vintage is compared; a failed update's clause (#637) names the time of
+        # each render's own attempt, so it is set aside.
+        control, partial = ([re.sub(r" The price update failed .*?retries after .*? ET\.",
+                                    "", e) for e in b] for b in (control, partial))
         assert control == partial, (
             "a page with no coverage record must report the same vintage in both "
             f"conditions — it cannot see the gap: {control} vs {partial}")
