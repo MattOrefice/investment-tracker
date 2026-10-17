@@ -54,8 +54,10 @@ def test_the_pdfs_conclusion_reads_the_curve_the_section_read():
     src = inspect.getsource(reports._build_asset_eval_section)
     assert ('result["conclusion"] = ae.conclusion(_conclusion_rolling, '
             'result["sharpe_curve_top"])') in src
-    assert src.index('result["sharpe_curve_top"] = ae.curve_top_allocation(msc)') < src.index(
-        'result["conclusion"] = ae.conclusion(_conclusion_rolling')
+    # Since #629 the curve's top comes from ae.sharpe_argument, which reads it through
+    # curve_top_allocation for the page and the PDF alike.
+    assert src.index('result["sharpe_curve_top"] = ae.sharpe_argument(msc, mv_result)') < (
+        src.index('result["conclusion"] = ae.conclusion(_conclusion_rolling'))
 
 
 def test_every_cape_band_keeps_its_label_and_draws_no_stance():

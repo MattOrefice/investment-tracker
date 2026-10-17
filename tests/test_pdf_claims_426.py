@@ -71,7 +71,8 @@ def test_a_curve_that_peaks_below_ten_percent_names_its_best_weight(monkeypatch)
     assert len(out["args_for"]) == 1, out["args_for"]
     assert out["args_for"][0].startswith(
         "Sharpe-improving against SAA target weights: the curve's highest Sharpe is at 3% "
-        "allocation (0.500 at 0% → 0.560, +0.060 over 2018-01-01–present)"), out["args_for"]
+        "allocation (0.500 at 0% → 0.560, +0.060 over the full sample, 2018 to present)"
+    ), out["args_for"]  # the window as equity_like_argument names it, since #629
     body = _render({**_BASE, **out})
     assert "none found" not in body and "not assessed" not in body
 

@@ -1070,22 +1070,12 @@ with col:
     args_for: list[str] = []
     args_against: list[str] = []
 
-    # Primary frame: SAA-based marginal Sharpe at 10% BTC (from marginal Sharpe curve, section 5g)
-    if not msc.empty:
-        _rows_0   = msc[msc["btc_alloc"] == 0.00]
-        _rows_10  = msc[msc["btc_alloc"] == 0.10]
-        if not _rows_0.empty and not _rows_10.empty:
-            _saa_sh0  = float(_rows_0["sharpe"].iloc[0])
-            _saa_sh10 = float(_rows_10["sharpe"].iloc[0])
-            if _saa_sh10 > _saa_sh0:
-                _mvo_ok = bool(mv and mv["sharpe_con_with"] > mv["sharpe_con_no"])
-                _mvo_note = "; the MVO sanity check is directionally consistent" if _mvo_ok else ""
-                args_for.append(
-                    f"Sharpe-improving against SAA target weights at 10% allocation "
-                    f"({_saa_sh0:.3f} → {_saa_sh10:.3f}, "
-                    f"{_saa_sh10 - _saa_sh0:+.3f} over the {ae.SAMPLE_START[:4]}-present "
-                    f"sample){_mvo_note}"
-                )
+    # The case the marginal-Sharpe curve (section 5g) makes, read as the PDF reads it
+    # (#629): the curve's best weight above 0% against its 0% point. It compared the 10%
+    # point alone, which #426 had already moved the PDF off.
+    _sharpe_case, _ = ae.sharpe_argument(msc, mv)
+    if _sharpe_case:
+        args_for.append(_sharpe_case)
 
     if not corr.empty:
         low_corr_sleeves = [s for s in ae.sleeve_names() if not np.isnan(corr.get(s, float("nan"))) and corr[s] < 0.1]

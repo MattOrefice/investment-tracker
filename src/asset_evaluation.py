@@ -166,6 +166,39 @@ def curve_top_allocation(curve: "pd.DataFrame | None") -> "str | None":
     return f"{float(above['btc_alloc'].max()):.0%}"
 
 
+def sharpe_argument(curve: "pd.DataFrame | None", mv: "dict | None" = None
+                    ) -> "tuple[str | None, str | None]":
+    """The case for inclusion the marginal-Sharpe curve makes, and the range the curve was
+    read over, for the page and the PDF alike (#426, #629): (argument, curve_top).
+
+    It reads the whole curve: the best weight above 0% against the 0% point. Compared at
+    10% alone, a curve that rose at a lower weight and fell back by 10% made no argument.
+    #426 fixed that in the PDF; the page kept the 10% comparison until #629. The MVO note
+    is added when the constrained mean-variance Sharpe with Bitcoin beats the one without.
+    The argument names the sample it was measured over, as equity_like_argument does.
+
+    curve_top is curve_top_allocation(curve): None with no curve or no 0% point. The
+    argument is None then too, and when no weight above 0% beats the 0% point (a missing
+    Sharpe beats nothing)."""
+    top = curve_top_allocation(curve)
+    if top is None:
+        return None, None
+    sh0 = float(curve.loc[curve["btc_alloc"] == 0.00, "sharpe"].iloc[0])
+    above = curve[curve["btc_alloc"] > 0.00].dropna(subset=["sharpe"])
+    if above.empty:
+        return None, top
+    best = above.loc[above["sharpe"].idxmax()]
+    best_w, best_sh = float(best["btc_alloc"]), float(best["sharpe"])
+    if not best_sh > sh0:
+        return None, top
+    mvo_ok = bool(mv and mv.get("sharpe_con_with", 0) > mv.get("sharpe_con_no", 0))
+    mvo_note = "; the MVO sanity check is directionally consistent" if mvo_ok else ""
+    return (f"Sharpe-improving against SAA target weights: the curve's highest Sharpe is at "
+            f"{best_w:.0%} allocation ({sh0:.3f} at 0% → {best_sh:.3f}, "
+            f"{best_sh - sh0:+.3f} over the full sample, {SAMPLE_START[:4]} to present)"
+            f"{mvo_note}"), top
+
+
 def conclusion(rolling_corr: "pd.Series | None" = None,
                sharpe_curve_top: "str | None" = None) -> str:
     """The section's conclusion, for the page (pages/5_Asset_Evaluation.py, which ends

@@ -66,3 +66,17 @@ def test_the_pages_second_trigger_names_its_own_curves_range(bullet):
                      r"after explicit tax-drag adjustment \(the analytical gap in the "
                      r"constrained mean-variance analysis\)\.", page), "the trigger's range"
     assert "5–10%" not in page
+
+
+def test_the_pages_sharpe_argument_reads_the_whole_curve(bullet):
+    """#629: the page's argument is ae.sharpe_argument's, as the PDF's is: the curve's best
+    weight against its 0% point, with its window named."""
+    import re
+    page, _ = bullet
+    assert re.search(r"Sharpe-improving against SAA target weights: the curve's highest "
+                     r"Sharpe is at \d+% allocation \(\d\.\d{3} at 0% → \d\.\d{3}, "
+                     r"[+-]\d\.\d{3} over the full sample, 2018 to present\)", page), (
+        "the page's Sharpe argument")
+    # The page's old form: "Sharpe-improving against SAA target weights at 10% allocation
+    # (0.496 → 0.582, +0.086 over the 2018-present sample)".
+    assert "target weights at 10% allocation" not in page and "-present sample" not in page
