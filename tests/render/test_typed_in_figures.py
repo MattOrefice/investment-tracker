@@ -104,7 +104,9 @@ def test_sharpe_changes_are_in_sharpe_units(asset_evaluation):
     unc = next(m for m in at.metric if m.label == "Sharpe with BTC (unconstrained)")
     assert re.fullmatch(r"[+-]\d\.\d{3}", str(unc.delta)), unc.delta
     assert re.search(r"\(with BTC\), a change of [+-]\d\.\d{3}\.", text)
-    assert re.search(r"→ \d\.\d{3}, [+-]\d\.\d{3} over the 2018-present sample", text)
+    # Since #629 the page's argument reads the whole curve and names its window as
+    # equity_like_argument does; it read "over the 2018-present sample".
+    assert re.search(r"→ \d\.\d{3}, [+-]\d\.\d{3} over the full sample, 2018 to present", text)
     assert not re.search(r"(improvement of|, \+)\d+ bps", text)
 
 

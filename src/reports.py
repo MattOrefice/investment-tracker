@@ -1938,30 +1938,13 @@ def _build_asset_eval_section() -> dict:
         args_for: list[str]     = []
         args_against: list[str] = []
 
-        # The whole curve the chart above plots, not its 10% point alone (#426). It
-        # compared 10% with 0%, so a curve that rose at a lower weight and fell back by
-        # 10% printed "none found" and said no weight improved the Sharpe ratio. The
-        # banner says "none found" only when the curve was read (sharpe_curve_top is
-        # set): with no curve, or none at 0%, it says nothing was assessed.
-        rows_0 = msc[msc["btc_alloc"] == 0.00] if not msc.empty else msc
-        above  = msc[msc["btc_alloc"] > 0.00] if not msc.empty else msc
-        if not rows_0.empty and not above.empty:
-            saa_sh0 = float(rows_0["sharpe"].iloc[0])
-            best    = above.loc[above["sharpe"].idxmax()]
-            best_w, best_sh = float(best["btc_alloc"]), float(best["sharpe"])
-            result["sharpe_curve_top"] = ae.curve_top_allocation(msc)
-            if best_sh > saa_sh0:
-                mvo_ok    = bool(
-                    mv_result
-                    and mv_result.get("sharpe_con_with", 0) > mv_result.get("sharpe_con_no", 0)
-                )
-                mvo_note = "; the MVO sanity check is directionally consistent" if mvo_ok else ""
-                args_for.append(
-                    f"Sharpe-improving against SAA target weights: the curve's highest "
-                    f"Sharpe is at {best_w:.0%} allocation ({saa_sh0:.3f} at 0% → "
-                    f"{best_sh:.3f}, {best_sh - saa_sh0:+.3f} over "
-                    f"{ae.SAMPLE_START}–present){mvo_note}"
-                )
+        # The whole curve the chart above plots, not its 10% point alone (#426), read by
+        # ae.sharpe_argument, which the page calls too (#629). The banner says "none
+        # found" only when the curve was read (sharpe_curve_top is set): with no curve, or
+        # none at 0%, it says nothing was assessed.
+        _sharpe_case, result["sharpe_curve_top"] = ae.sharpe_argument(msc, mv_result)
+        if _sharpe_case:
+            args_for.append(_sharpe_case)
 
         if not corr.empty:
             btc_spy_j = float(corr.get("US Large Core", float("nan")))
