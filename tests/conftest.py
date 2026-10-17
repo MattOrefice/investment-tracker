@@ -401,6 +401,19 @@ def pytest_configure(config):
 # test. Measured 2026-09-27 over the CI-style suite (2629 tests): 4 tests left a thread
 # alive at teardown, 3 of them the PDF's chart render below and 1 the warm.
 #
+# ONE EXCEPTION to the no-grace-period rule (decided by the owner on October 17, 2026,
+# #635): a threading.Timer already cancelled when it is reported, its finished event
+# set, is joined and fails only if it is still alive after the join. A cancelled Timer
+# can never start its function, so it is not the hazard this check exists for. What is
+# left of it is a wait that has already returned, and it ends at once on any machine.
+# Streamlit's st.spinner, which st.cache_data shows by default, starts one and cancels
+# it on exit. A page render under AppTest left one alive in the instant before it ended,
+# and failed CI on a test whose body passed (#635). Whether it is cancelled is read when
+# it is reported, before the join, so a Timer never cancelled fails as any thread does,
+# even one that fires and ends within the join. A Timer cancelled while its function
+# runs is joined like the rest and fails if the join does not end it. thread_target
+# names a Timer by the function it schedules.
+#
 # Allowed to outlive, each for a stated reason. Anything else fails by default, so the
 # next background thread is caught without anyone having to list it first.
 THREADS_ALLOWED_TO_OUTLIVE = {
@@ -418,7 +431,12 @@ _threads_before: "set[threading.Thread]" = set()
 
 
 def thread_target(t: threading.Thread) -> str:
-    fn = getattr(t, "_target", None)
+    """What a thread runs: its target, or for a Timer the function it schedules. Read
+    it before a join: a finished thread no longer holds its target."""
+    if isinstance(t, threading.Timer):
+        fn = getattr(t, "function", None)
+    else:
+        fn = getattr(t, "_target", None)
     if fn is None:
         return f"{type(t).__module__}.{type(t).__qualname__}"
     return f"{getattr(fn, '__module__', '?')}.{getattr(fn, '__qualname__', repr(fn))}"
@@ -436,6 +454,22 @@ def join_for_cleanup(threads: "list[threading.Thread]",
     deadline = time.monotonic() + seconds
     for t in threads:
         t.join(max(0.0, deadline - time.monotonic()))
+
+
+def cancelled_timer(t: threading.Thread) -> bool:
+    """A threading.Timer whose finished event is set: it can never start its function."""
+    finished = getattr(t, "finished", None)
+    return isinstance(t, threading.Timer) and finished is not None and finished.is_set()
+
+
+def fails_after_join(alive: "list[threading.Thread]") -> "list[threading.Thread]":
+    """Of the threads threads_outliving reported, the ones that fail the test. Each is
+    joined first, so a failure cannot run into the next test. Every one fails, however
+    soon it ends, except a Timer cancelled when reported that has ended by the end of its
+    join (#635)."""
+    cancelled = [t for t in alive if cancelled_timer(t)]
+    join_for_cleanup(cancelled + [t for t in alive if t not in cancelled])
+    return [t for t in alive if t not in cancelled or t.is_alive()]
 
 
 def pytest_runtest_setup(item):
@@ -473,14 +507,14 @@ def pytest_runtest_teardown(item, nextitem):
             "redirected tracked-DB copy and never closed them. `with sqlite3.connect(...)"
             " as c:` commits but does NOT close; use contextlib.closing or get_connection.")
     alive = threads_outliving(_threads_before)
-    if alive:
-        named = [(t.name, thread_target(t)) for t in alive]
-        join_for_cleanup(alive)
+    named = {t: (t.name, thread_target(t)) for t in alive}
+    failing = fails_after_join(alive)
+    if failing:
         raise AssertionError(
-            f"{item.nodeid} left {len(alive)} thread(s) running past its teardown: "
-            f"{named}. A thread that outlives its test reads globals later tests repoint "
-            "(db.DB_PATH) and acts on their databases (#429). Join it before the test "
-            "ends, or keep the test from starting it.")
+            f"{item.nodeid} left {len(failing)} thread(s) running past its teardown: "
+            f"{[named[t] for t in failing]}. A thread that outlives its test reads "
+            "globals later tests repoint (db.DB_PATH) and acts on their databases "
+            "(#429). Join it before the test ends, or keep the test from starting it.")
 
 
 def remove_tree_reporting(path: Path) -> "list[str]":
