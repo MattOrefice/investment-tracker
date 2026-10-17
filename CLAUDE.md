@@ -193,7 +193,7 @@
 ## Quarterly close-out
 After the quarter's last close, in this order, in the mode whose book you are
 closing (personal from `.env`; demo with `TRACKER_MODE=demo`). Every step names
-the code that supports it; the two with none are listed at the end.
+the code that supports it.
 - First, the NYSE holiday table in `src/demo_refresh.py` must reach the end of next
   year: `python -c "from src.demo_refresh import holiday_table_refusal as r;
   print(r())"` prints `None`. The demo's close-out tools (advance, check, lock,
