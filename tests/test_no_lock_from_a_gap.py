@@ -170,7 +170,7 @@ def test_the_close_out_runs_the_check_before_the_lock():
     flat = " ".join(section.split())
     check, lock = "python tools/check_price_histories.py", "python tools/lock_demo_quarters.py"
     assert flat.count(check) >= 2, "after the advance, and again before the lock"
-    assert flat.rindex(check) < flat.index(lock) < flat.index("Not yet supported")
+    assert flat.rindex(check) < flat.index(lock) < flat.index("Every earlier lock's FIGURES")
     step = flat[flat.rindex("Demo only, to commit the quarter's lock"):]
     assert check in step and step.index(check) < step.index(lock)
     assert "LockCoverageError" in flat and "gap" in flat

@@ -69,3 +69,9 @@ private/
 **/private/
 **/account_map.json
 **/personal_profile.json
+
+# The personal book's locked-figures golden (#418) lives in data/private/, ignored as a
+# whole: it holds the personal book's figures and is never committed. **/private/ above
+# already matches it; this names the directory, so narrowing that rule cannot publish it.
+# tests/test_locked_figures_golden.py asserts git check-ignore covers the file.
+data/private/

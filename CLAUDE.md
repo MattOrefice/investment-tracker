@@ -265,9 +265,12 @@ the code that supports it; the two with none are listed at the end.
 - Pending inputs, whenever one comes to cover a locked quarter (French's
   files, a duration entered late, a CAPE reading made after its month ended).
   Generating the report locks it (`cache.complete_quarter_inputs`) without
-  moving anything already locked, and in personal mode that is the whole step.
-  In demo mode it reaches only a container's runtime cache, which a re-seed
-  rebuilds from whatever files are committed then, so complete the committed
+  moving anything already locked. In personal mode the step also re-runs
+  `python tools/update_locked_figures_golden.py` after the report, which accepts the
+  completed lock into the personal golden because its records changed (#418; see
+  "Locked figures" below). In demo mode it reaches only a container's runtime
+  cache, which a re-seed rebuilds from whatever files are committed then, so
+  complete the committed
   lock too: `python tools/complete_demo_lock_inputs.py 2026Q3 ff5_us
   ff5_developed_exus umd` (the quarter id, then each input to complete, by its
   `inputs_pending` name), and commit `data/demo.db` with the files. It runs the
@@ -305,8 +308,10 @@ the code that supports it; the two with none are listed at the end.
   tools/update_locked_figures_golden.py` adds the new lock to the golden, and
   `tests/test_locked_figures_golden.py` fails until it is there.
 - Every earlier lock's FIGURES are held to a committed golden since #525 (see
-  "Locked figures" below). Not yet supported (#397), so not a step: a committed
-  harness that diffs every earlier locked report's full TEXT byte for byte.
+  "Locked figures" below), and that golden is the check on earlier locks (decided by
+  the owner on October 17, 2026, #397). No harness diffs every earlier locked report's
+  full TEXT byte for byte: it would flag the wording changes the rules allow, since a
+  locked report's wording is free to change and only its figures are held.
 
 ## Locked figures
 - `tests/fixtures/locked_figures_golden.json` holds every figure each committed
@@ -355,7 +360,22 @@ the code that supports it; the two with none are listed at the end.
   sentence moves the golden with no figure moving: regenerate with `--wording
   "<what was reworded>"` and say so in the PR. The writer lets it through only
   when no table cell, no tile and no label's class moved.
-- The personal book is not in it: it holds no committed lock.
+- THE PERSONAL BOOK HAS A GOLDEN OF ITS OWN (#418, decided by the owner on October 17,
+  2026): `data/private/locked_figures_golden.json`, every figure data/tracker.db's locks
+  print, read as the committed books' are. It is NEVER COMMITTED: data/private/ is
+  gitignored as a whole, `tests/test_locked_figures_golden.py` asserts `git check-ignore`
+  covers the file, and no personal figure goes in a PR, an issue, a test or a fixture.
+  When tracker.db exists the writer renders a scratch copy of it, offline, and writes
+  that file under the same rule, refusals included, and
+  `test_every_figure_the_personal_books_locks_print_is_its_goldens` renders it again and
+  compares. Where tracker.db is absent, as in CI, the writer leaves the file alone and the
+  test skips; with tracker.db present and no file, the test fails. Completing a personal
+  lock's pending inputs (generating the quarter's report once French or a late input
+  covers it: "Pending inputs" under "Quarterly close-out") prints figures where sections
+  were pending, so the test fails until the writer is re-run, and the writer accepts them
+  because the lock's records changed. Generate the report first: a writer run before it
+  should refuse, because its scratch render completes inputs tracker.db's own lock still
+  waits on (derived from the render path, not yet seen).
 
 ## History baseline (post-2026-06-08 reorg)
 - History was reorganized twice on 2026-06-08, both as

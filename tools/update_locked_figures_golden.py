@@ -31,8 +31,14 @@ golden with no figure moving. Run with --wording and say what was reworded: the 
 then accepts a lock whose RUNNING-TEXT numbers, figures in words or quarter labels
 moved, and still refuses if any table cell, tile or label's class did.
 
-It renders scratch copies of the two books, offline, and never opens a committed book
-for writing. How a figure is told from wording is in tests/locked_figures.py.
+THE PERSONAL BOOK (#418, decided by the owner on October 17, 2026). When data/tracker.db
+exists, its locks are rendered too and written, under the same rule, to
+data/private/locked_figures_golden.json, which is gitignored and never committed. Both
+files are checked before either is written, so a refusal in one writes neither. Where
+tracker.db is absent (CI, a fresh clone) the personal golden is left as it is.
+
+It renders scratch copies of the books, offline, and never opens a book for writing.
+How a figure is told from wording is in tests/locked_figures.py.
 
     python tools/update_locked_figures_golden.py
     python tools/update_locked_figures_golden.py --wording "the CI sentence names its level"
@@ -52,6 +58,12 @@ ABOUT = ("Every figure each committed quarter lock's report prints (#525): the s
          "tools/update_locked_figures_golden.py; read by tests/test_locked_figures_golden.py. "
          "A figure here moves only with a change in its lock's own records (CLAUDE.md, "
          "'Locked figures').")
+PERSONAL_ABOUT = ("Every figure each quarter lock in the personal book (data/tracker.db) "
+                  "prints, read as tests/fixtures/locked_figures_golden.json reads the "
+                  "committed books' (#418). NEVER COMMITTED: data/private/ is gitignored. "
+                  "Written only by tools/update_locked_figures_golden.py; read by "
+                  "tests/test_locked_figures_golden.py. A figure here moves only with a "
+                  "change in its lock's own records (CLAUDE.md, 'Locked figures').")
 
 
 def _only_text(moved: "list[str]") -> bool:
@@ -115,10 +127,35 @@ def updated(golden: dict, rendered: dict, wording: "str | None" = None
     return new, report
 
 
-def write(locks: dict, path: "Path | None" = None) -> None:
+def write(locks: dict, path: "Path | None" = None, about: str = ABOUT) -> None:
     from tests import locked_figures as lf
-    text = json.dumps({"about": ABOUT, "locks": locks}, indent=1, ensure_ascii=False) + "\n"
+    text = json.dumps({"about": about, "locks": locks}, indent=1, ensure_ascii=False) + "\n"
     (path or lf.GOLDEN).write_bytes(text.encode("utf-8"))
+
+
+def _shown(path: Path) -> str:
+    try:
+        return path.relative_to(ROOT).as_posix()
+    except ValueError:
+        return str(path)
+
+
+def _finish(path: Path, about: str, golden: dict, new: dict, report: "list[str]") -> None:
+    """Write one golden if anything in it changed, and say what did."""
+    from tests import locked_figures as lf
+    if not report and new == golden:
+        print(f"{_shown(path)}: every figure is as recorded. Nothing was written.")
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    write(new, path, about)
+    for line in report:
+        print(line)
+    total = sum(lf.count_figures(e) for locks in new.values() for e in locks.values())
+    labels = sum(lf.count_labels(e) for locks in new.values() for e in locks.values())
+    in_words = sum(lf.count_in_words(e) for locks in new.values() for e in locks.values())
+    quarters = sum(lf.count_quarters(e) for locks in new.values() for e in locks.values())
+    print(f"{_shown(path)}: {sum(len(v) for v in new.values())} locks, {total} figures, "
+          f"{labels} labels, {in_words} figures in words, {quarters} quarter labels.")
 
 
 def main(argv: "list[str] | None" = None) -> int:
@@ -131,19 +168,17 @@ def main(argv: "list[str] | None" = None) -> int:
     golden = lf.load_golden() if lf.GOLDEN.exists() else {}
     with tempfile.TemporaryDirectory() as scratch:
         rendered = lf.render_all(Path(scratch))
+        personal = lf.render_personal(Path(scratch))
     new, report = updated(golden, rendered, wording=args.wording)
-    if not report and new == golden:
-        print(f"{lf.GOLDEN.name}: every figure is as recorded. Nothing was written.")
-        return 0
-    write(new)
-    for line in report:
-        print(line)
-    total = sum(lf.count_figures(e) for locks in new.values() for e in locks.values())
-    labels = sum(lf.count_labels(e) for locks in new.values() for e in locks.values())
-    in_words = sum(lf.count_in_words(e) for locks in new.values() for e in locks.values())
-    quarters = sum(lf.count_quarters(e) for locks in new.values() for e in locks.values())
-    print(f"{lf.GOLDEN.name}: {sum(len(v) for v in new.values())} locks, {total} figures, "
-          f"{labels} labels, {in_words} figures in words, {quarters} quarter labels.")
+    if personal is not None:
+        mine = lf.load_golden(lf.PERSONAL_GOLDEN) if lf.PERSONAL_GOLDEN.exists() else {}
+        new_mine, report_mine = updated(mine, personal, wording=args.wording)
+    _finish(lf.GOLDEN, ABOUT, golden, new, report)
+    if personal is None:
+        print(f"{_shown(lf.PERSONAL_BOOK)} is absent: the personal golden was not rendered "
+              "and is left as it is.")
+    else:
+        _finish(lf.PERSONAL_GOLDEN, PERSONAL_ABOUT, mine, new_mine, report_mine)
     return 0
 
 
