@@ -5,6 +5,13 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # A MANUAL RUN FOR A MERGE WHOSE PUSH RUN NEVER FIRED (decided by the owner, October
+  # 16, 2026). Main's push run for d164dbd (#631) never fired on October 16, 2026. If
+  # main's push run for a merge never fires, dispatch this workflow on main
+  # (`gh workflow run ci.yml --ref main`) and use that run by full SHA. A dispatched run
+  # uses the workflow file at its ref, so this trigger works only from the commit that
+  # adds it on.
+  workflow_dispatch:
 
 jobs:
   test:
