@@ -31,7 +31,9 @@ def test_the_quarterly_close_out_names_the_code_behind_each_step():
                    "refresh_market_data.py --files ff_us ff_developed_exus",
                    "complete_quarter_inputs", "inputs_pending", "-m live_data",
                    "holiday_table_refusal", "NYSE_UNSCHEDULED_CLOSURES",
-                   "Not yet supported (#397)"):
+                   # #397's full-text harness, settled by the owner: not built.
+                   "the check on earlier locks (decided by the owner on October 17, "
+                   "2026, #397)"):
         assert needle in s.replace("\n  ", " "), needle
     # The named files and functions exist.
     for path in re.findall(r"tests/test_\w+\.py|tools/\w+\.py", s):
