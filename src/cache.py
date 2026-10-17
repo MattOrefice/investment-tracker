@@ -936,6 +936,65 @@ def _interior_gaps(frame: pd.DataFrame) -> "list[str]":
     return [f"{', '.join(dates)} for {', '.join(tickers)}" for tickers, dates in groups.items()]
 
 
+def _held_without_price(frame: pd.DataFrame, start: date, end: date) -> "list[str]":
+    """One clause per set of holdings that were held on a session in [start, end] with
+    no close in ``frame`` on or before it, naming the dates. Empty when the lock may
+    proceed.
+
+    THE RULE (#639, decided by the owner on October 17, 2026): no lock is taken while a
+    holding has no price on a date it was held in the quarter. The value series every
+    locked return reads counts such a holding as nothing on those days, and the lock
+    would freeze that. ``frame`` is the lock's adj_close frame. A session is a date on
+    which some ticker in it holds a close, as _interior_gaps reads the frame, so a
+    market holiday is never one. The holdings are the portfolio account's, every lot,
+    with SPAXX read as BIL, its price; SPAXX is not checked when the lock does not
+    cover BIL. A book with no trade ledger holds nothing."""
+    from src.holdings import NO_TRADE_LEDGER, PortfolioAccountUnresolved, get_portfolio_account
+    with get_connection() as conn:
+        tables = {r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' "
+            "AND name IN ('trades', 'accounts')")}
+    if tables != {"trades", "accounts"}:
+        return []
+    try:
+        account_id = get_portfolio_account()["account_id"]
+    except PortfolioAccountUnresolved as exc:
+        if exc.reason == NO_TRADE_LEDGER:
+            return []
+        raise
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT trade_date, ticker, action, shares FROM trades "
+            "WHERE account_id = ? AND trade_date <= ? ORDER BY trade_date, trade_id",
+            (account_id, end.isoformat())).fetchall()
+    if not rows:
+        return []
+    frame = frame.copy()
+    frame.index = [pd.Timestamp(d).date() for d in frame.index]
+    frame = frame.sort_index()
+    sessions = [d for d in frame.index if start <= d <= end]
+    missing: "dict[str, list[str]]" = {}
+    held: "dict[str, list[tuple[date, float]]]" = {}
+    for r in rows:
+        signed = r["shares"] if r["action"].lower() == "buy" else -r["shares"]
+        held.setdefault(r["ticker"], []).append((pd.Timestamp(r["trade_date"]).date(), signed))
+    for ticker, dated in held.items():
+        price = "BIL" if ticker == "SPAXX" else ticker
+        if ticker == "SPAXX" and price not in frame.columns:
+            continue
+        name = "SPAXX (BIL)" if ticker == "SPAXX" else ticker
+        first = frame[price].first_valid_index() if price in frame.columns else None
+        for day in sessions:
+            if first is not None and day >= first:
+                break
+            if sum(s for d, s in dated if d <= day) > 1e-9:
+                missing.setdefault(day.isoformat(), []).append(name)
+    groups: "dict[tuple, list[str]]" = {}
+    for day in sorted(missing):
+        groups.setdefault(tuple(sorted(missing[day])), []).append(day)
+    return [f"{', '.join(dates)} for {', '.join(names)}" for names, dates in groups.items()]
+
+
 def quarter_lock_gaps(quarter_id: str) -> "list[str]":
     """The gaps a lock of ``quarter_id`` would be refused for now, as _interior_gaps
     writes them (dates, then the tickers that lack a close on them), or [] when it
@@ -999,6 +1058,15 @@ def capture_quarter_snapshot(quarter_id: str) -> tuple:
     between its own first and last, on which another ticker holds one, refuses the
     same way (_interior_gaps): the lock would freeze the gap.
 
+    NO HOLDING UNPRICED ON A DAY IT WAS HELD, OR NO LOCK (#639, decided by the owner on
+    October 17, 2026). The leading edge: a holding of the portfolio account with no
+    close on or before a session in the quarter on which it was held refuses the same
+    way (_held_without_price), naming the holding and the dates. A ticker the portfolio
+    does not hold may start late (a late listing), and a market holiday is never a
+    gap. A failed leading fetch is not read as one: the provider answers a window before
+    a fund's listing with HTTP 400, which records as a failure, so the record cannot
+    tell a late listing from a failed fetch (#644).
+
     THE LOCK FETCHES WHAT THE BOOK LACKS (#594, decided by the owner on October 15,
     2026). Every ticker is read through prices.get_prices, which fetches and stores
     as any read does. A ticker with no stored closes is fetched whole, whatever
@@ -1014,6 +1082,8 @@ def capture_quarter_snapshot(quarter_id: str) -> tuple:
     A ticker for which the provider returns nothing stays what #204 made it, a
     disclosed gap read live and named on the cover. That is a different fact from a
     short or gapped history: refusing on it would make every personal lock impossible.
+    A holding the portfolio held in the quarter is the exception: with no price at all
+    it has none on the dates it was held, and refuses as above.
 
     Raises ValueError if the quarter has not yet ended.
     """
@@ -1071,6 +1141,13 @@ def capture_quarter_snapshot(quarter_id: str) -> tuple:
             f"Cannot lock {quarter_id}: the price data has a gap inside a ticker's "
             f"history, so a lock now would freeze the gap. Nothing was locked. No close "
             f"on " + "; ".join(holes) + "."
+        )
+    unpriced = _held_without_price(adj_df, date(end.year, end.month - 2, 1), end)
+    if unpriced:
+        raise LockCoverageError(
+            f"Cannot lock {quarter_id}: a holding has no price on a date it was held in "
+            f"the quarter, so a lock now would freeze it unpriced. Nothing was locked. "
+            f"No close on " + "; ".join(unpriced) + "."
         )
     raw_df = pd.DataFrame(raw)
     if not raw_df.empty:
