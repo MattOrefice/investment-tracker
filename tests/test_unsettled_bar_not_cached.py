@@ -252,7 +252,10 @@ def test_trailing_gap_is_fetched_once_per_process(db, monkeypatch):
 
 
 def test_memo_does_not_cache_failures(db, monkeypatch):
-    """A transient 429 must not pin an empty result for the life of the process."""
+    """A transient 429 must not pin an empty result for the life of the process. The
+    trailing memo keeps successes only; a failure is remembered for the demo's retry,
+    30 minutes, and then asked again (#637)."""
+    import datetime as _dt
     c = sqlite3.connect(db)
     c.execute("INSERT INTO prices VALUES ('TEST','2026-07-24',100.0,100.0)")
     c.commit(); c.close()
@@ -262,19 +265,26 @@ def test_memo_does_not_cache_failures(db, monkeypatch):
     def _flaky(ticker, start, end=None):
         calls.append(ticker)
         if len(calls) == 1:
-            raise ValueError("Yahoo Finance rate-limited (HTTP 429)")
+            raise prices.YahooResponseError("Yahoo Finance rate-limited (HTTP 429)",
+                                            "rate-limited the request (HTTP 429)")
         import pandas as pd
-        import datetime as _dt
         return pd.DataFrame({"close": [111.11], "adj_close": [111.11]},
                             index=[_dt.date(2026, 7, 27)])
 
     monkeypatch.setattr(prices, "fetch_prices", _flaky)
+    t0 = _dt.datetime(2026, 7, 27, 18, 0, tzinfo=_dt.timezone.utc)
+    monkeypatch.setattr(prices, "_now", lambda: t0)
 
     first = prices.get_prices("TEST", "2026-07-24", "2026-07-27")
-    assert [str(d) for d in first.index] == ["2026-07-24"]  # swallowed, cache-only
+    assert [str(d) for d in first.index] == ["2026-07-24"]  # recorded, cache-only
 
+    within = prices.get_prices("TEST", "2026-07-24", "2026-07-27")
+    assert [str(d) for d in within.index] == ["2026-07-24"] and len(calls) == 1
+
+    monkeypatch.setattr(prices, "_now", lambda: t0 + _dt.timedelta(minutes=31))
     second = prices.get_prices("TEST", "2026-07-24", "2026-07-27")
     assert "2026-07-27" in [str(d) for d in second.index], (
-        "the retry must be allowed — a memoized failure would outlive the outage"
+        "the retry must be allowed after the half hour — a failure remembered for "
+        "good would outlive the outage"
     )
     assert len(calls) == 2

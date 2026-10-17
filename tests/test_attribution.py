@@ -535,7 +535,7 @@ def _no_live_fetch(monkeypatch):
     Scoped to the reconciliation tests by explicit request (NOT autouse), so the rest
     of the suite still fetches normally."""
     def _blocked(*args, **kwargs):
-        raise RuntimeError("live price fetch disabled inside reconciliation test (hermetic)")
+        raise OSError("live price fetch disabled inside reconciliation test (hermetic)")
     monkeypatch.setattr("src.prices.fetch_prices", _blocked)
     return None
 
@@ -1290,7 +1290,7 @@ def _demo_copy_with_deletions(tmp_path, monkeypatch, *delete_statements):
     monkeypatch.setattr(db, "_migrated_paths", set(), raising=False)
 
     def _blocked(*a, **k):
-        raise RuntimeError("live price fetch disabled (hermetic coverage-gap fixture)")
+        raise OSError("live price fetch disabled (hermetic coverage-gap fixture)")
     monkeypatch.setattr(prices, "fetch_prices", _blocked)
     return work
 
@@ -1431,7 +1431,7 @@ def test_brinson_fachler_period_excludes_non_portfolio_account(tmp_path, monkeyp
     monkeypatch.setattr(db, "DB_PATH", work)
     monkeypatch.setattr(db, "_migrated_paths", set(), raising=False)
     monkeypatch.setattr(prices, "fetch_prices",
-                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no live fetch")))
+                        lambda *a, **k: (_ for _ in ()).throw(OSError("no live fetch")))
 
     S, E = "2026-03-31", "2026-06-30"
     bf1 = brinson_fachler_period(S, E, account_id=1)      # the portfolio account

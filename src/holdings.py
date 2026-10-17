@@ -15,7 +15,8 @@ import pandas as pd
 
 from src.coverage import PriceCoverage, TickerStatus, coverage_from_statuses
 from src.db import get_connection
-from src.prices import get_prices, classify_miss, _to_iso, total_return_series
+from src.prices import (get_prices, classify_miss, _to_iso, total_return_series,
+                        gap_fetch_failure_for)
 
 
 # Distinguishes "argument omitted" from an explicit None meaning "this caller has
@@ -116,7 +117,10 @@ def _price_and_status(
         served = max(_to_iso(d) for d in frame.index)
     except Exception:                                            # noqa: BLE001
         served = None
-    return frame, TickerStatus(ticker, True, served_through=served)
+    # Served, and not ok, when the gap fetch for this window failed (#637).
+    failed = gap_fetch_failure_for(fetch, start, end)
+    return frame, TickerStatus(ticker, True, served_through=served,
+                               fetch_failure=failed.cause if failed else None)
 
 
 # Why the lookup below finds nothing on a book with no trade logged, in its own words.
