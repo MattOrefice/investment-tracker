@@ -355,7 +355,22 @@ the code that supports it; the two with none are listed at the end.
   sentence moves the golden with no figure moving: regenerate with `--wording
   "<what was reworded>"` and say so in the PR. The writer lets it through only
   when no table cell, no tile and no label's class moved.
-- The personal book is not in it: it holds no committed lock.
+- THE PERSONAL BOOK HAS A GOLDEN OF ITS OWN (#418, decided by the owner on October 17,
+  2026): `data/private/locked_figures_golden.json`, every figure data/tracker.db's locks
+  print, read as the committed books' are. It is NEVER COMMITTED: data/private/ is
+  gitignored as a whole, `tests/test_locked_figures_golden.py` asserts `git check-ignore`
+  covers the file, and no personal figure goes in a PR, an issue, a test or a fixture.
+  When tracker.db exists the writer renders a scratch copy of it, offline, and writes
+  that file under the same rule, refusals included, and
+  `test_every_figure_the_personal_books_locks_print_is_its_goldens` renders it again and
+  compares. Where tracker.db is absent, as in CI, the writer leaves the file alone and the
+  test skips; with tracker.db present and no file, the test fails. Completing a personal
+  lock's pending inputs (generating the quarter's report once French or a late input
+  covers it: "Pending inputs" under "Quarterly close-out") prints figures where sections
+  were pending, so the test fails until the writer is re-run, and the writer accepts them
+  because the lock's records changed. Generate the report first: a writer run before it
+  should refuse, because its scratch render completes inputs tracker.db's own lock still
+  waits on (derived from the render path, not yet seen).
 
 ## History baseline (post-2026-06-08 reorg)
 - History was reorganized twice on 2026-06-08, both as

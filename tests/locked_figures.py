@@ -7,7 +7,8 @@ until now nothing compared the result with what the quarter was reported as. Thi
 module renders each committed lock's report and reads every figure off it;
 tests/test_locked_figures_golden.py compares that with the committed golden
 (tests/fixtures/locked_figures_golden.json), and tools/update_locked_figures_golden.py
-rewrites the golden.
+rewrites the golden. The personal book's locks are read the same way, against a golden
+that is never committed (data/private/locked_figures_golden.json, #418).
 
 WHAT IS COMPARED: the six sections built inside the lock (reports builds them under
 snapshot_price_context) and the Performance page's locked tiles. Macro Context and
@@ -71,6 +72,13 @@ BOOKS = {"demo.db": ROOT / "data" / "demo.db",
          "frozen_book.db": ROOT / "tests" / "fixtures" / "frozen_book.db"}
 GOLDEN = ROOT / "tests" / "fixtures" / "locked_figures_golden.json"
 TEMPLATE = ROOT / "templates" / "quarterly_report.html"
+# The personal book's locks are read the same way and held to a golden of their own
+# (#418, decided by the owner on October 17, 2026). Neither file is committed:
+# data/tracker.db and data/private/ are gitignored, so in CI the book is absent and its
+# check skips. No personal figure goes in a test or a fixture.
+PERSONAL = "tracker.db"
+PERSONAL_BOOK = ROOT / "data" / "tracker.db"
+PERSONAL_GOLDEN = ROOT / "data" / "private" / "locked_figures_golden.json"
 
 # The report's sections, by the heading each prints. LOCKED are built inside the lock
 # (tests/test_cover_names_what_the_lock_holds.py ties the builders to the lock).
@@ -411,9 +419,10 @@ def _day_after_last_close(book: Path) -> date:
 
 def render_book(name: str, scratch_dir: Path, *, book: "Path | None" = None,
                 marked: bool = True, html_out: "dict | None" = None) -> dict:
-    """Render every lock of the named committed book and read its figures.
+    """Render every lock of the named book and read its figures: a committed book, or
+    PERSONAL, which renders as the personal app renders it (is_demo=False).
 
-    Runs on a scratch copy (never the committed file), offline, charts and the PDF step
+    Runs on a scratch copy (never the book itself), offline, charts and the PDF step
     left out, with today pinned to the day after the book's last close. Returns
     {quarter_id: {"state", "sections", "tiles", "cover"}}: the first three are what the
     golden keeps (KEPT); the cover's text is for checks that read its sentences.
@@ -427,7 +436,10 @@ def render_book(name: str, scratch_dir: Path, *, book: "Path | None" = None,
 
     from tests.conftest import pin_today, unpin_leftovers
 
-    source = Path(book) if book is not None else BOOKS[name]
+    if book is not None:
+        source = Path(book)
+    else:
+        source = PERSONAL_BOOK if name == PERSONAL else BOOKS[name]
     copy = Path(scratch_dir) / f"locked_figures_{name}"
     shutil.copyfile(source, copy)
     os.chmod(copy, 0o644)
@@ -462,7 +474,8 @@ def render_book(name: str, scratch_dir: Path, *, book: "Path | None" = None,
                 end = date.fromisoformat(end_iso)
                 start = _quarter_start(end)
                 html = reports.generate_quarterly_report_bytes(
-                    start.isoformat(), end.isoformat(), is_demo=True).decode("utf-8")
+                    start.isoformat(), end.isoformat(),
+                    is_demo=name != PERSONAL).decode("utf-8")
                 if html_out is not None:
                     html_out[quarter] = html
                 if not marked:
@@ -491,6 +504,14 @@ KEPT = ("state", "sections", "tiles")
 
 def render_all(scratch_dir: Path) -> dict:
     return {name: render_book(name, scratch_dir) for name in BOOKS}
+
+
+def render_personal(scratch_dir: Path) -> "dict | None":
+    """{PERSONAL: the personal book's locks, rendered as render_all renders the committed
+    books'}, or None when data/tracker.db is absent (CI, a fresh clone)."""
+    if not PERSONAL_BOOK.exists():
+        return None
+    return {PERSONAL: render_book(PERSONAL, scratch_dir)}
 
 
 def golden_entry(rendered_lock: dict) -> dict:
@@ -538,8 +559,9 @@ def holds_in_words(entry: dict) -> bool:
     return all("in_words" in s for s in entry["sections"].values())
 
 
-def load_golden() -> dict:
-    return json.loads(GOLDEN.read_text(encoding="utf-8"))["locks"]
+def load_golden(path: "Path | None" = None) -> dict:
+    """The committed golden's locks, or those of the golden at ``path``."""
+    return json.loads((path or GOLDEN).read_text(encoding="utf-8"))["locks"]
 
 
 def _moved(was: "list[str]", now: "list[str]") -> "tuple[list[str], list[str]]":

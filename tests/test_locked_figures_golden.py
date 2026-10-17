@@ -27,7 +27,10 @@ Pinned here:
   * a quarter's label ("Q2 2026") is read whole (#553): every committed entry holds
     each section's, and a summary that names the wrong quarter fails on its label alone;
   * the proof: a significance cut-off moved from 10% to 20% fails the comparison and
-    the tool refuses it; the same change carried with a record in each lock passes.
+    the tool refuses it; the same change carried with a record in each lock passes;
+  * the personal book (#418): its locks against data/private/locked_figures_golden.json,
+    which git ignores, on the same rule. The check skips where data/tracker.db is
+    absent, as in CI, and fails where the book is present and the file is not.
 """
 from __future__ import annotations
 
@@ -38,6 +41,7 @@ import os
 import re
 import shutil
 import sqlite3
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -954,3 +958,117 @@ def test_the_committed_golden_is_what_the_writer_writes(rendered, tmp_path):
     out = tmp_path / "golden.json"
     tool.write(new, out)
     assert out.read_bytes() == lf.GOLDEN.read_bytes().replace(b"\r\n", b"\n")
+
+
+# ── the personal book (#418) ─────────────────────────────────────────────────
+
+def test_every_figure_the_personal_books_locks_print_is_its_goldens(tmp_path):
+    """The personal book's locks, rendered from a scratch copy of data/tracker.db,
+    offline, against data/private/locked_figures_golden.json, on the committed books'
+    rule (decided by the owner on October 17, 2026). Neither file is committed, so this
+    skips in CI. With the book present and no file it fails: it would pass holding
+    nothing."""
+    if not lf.PERSONAL_BOOK.exists():
+        pytest.skip("data/tracker.db is absent (CI, a fresh clone): the personal golden "
+                    "is checked only where the book is")
+    assert lf.PERSONAL_GOLDEN.exists(), (
+        "data/tracker.db is present and there is no personal golden at "
+        "data/private/locked_figures_golden.json: write it with python "
+        "tools/update_locked_figures_golden.py")
+    golden = lf.load_golden(lf.PERSONAL_GOLDEN)
+    assert sorted(golden) == [lf.PERSONAL]
+    golden = golden[lf.PERSONAL]
+    rendered = lf.render_personal(tmp_path)[lf.PERSONAL]
+    assert sorted(golden) == sorted(rendered), (
+        "the personal golden's locks are not the book's. A lock taken since is added "
+        "with tools/update_locked_figures_golden.py")
+    states = {q: lf.lock_state(payload) for q, (_end, payload)
+              in lf.locks_in(lf.PERSONAL_BOOK).items()}
+    failed = []
+    for quarter in sorted(golden):
+        if golden[quarter]["state"] != states[quarter]:
+            failed.append(f"{quarter}: its records changed since the golden was written. "
+                          "Re-run tools/update_locked_figures_golden.py")
+        moved = lf.differences(golden[quarter], rendered[quarter])
+        if moved:
+            failed.append(f"{quarter}: {len(moved)} line(s) of locked figures differ. "
+                          "Golden -> rendered:\n    " + "\n    ".join(moved))
+    assert not failed, ("the personal book's locked figures differ from its golden. A "
+                        "locked figure moves only with a change in its lock's own records "
+                        "(CLAUDE.md, 'Locked figures').\n  " + "\n  ".join(failed))
+
+
+def test_the_personal_golden_is_never_committed():
+    """data/private/ is ignored as a whole, so the personal golden is one `git add -A`
+    from nowhere, and nothing under it is tracked."""
+    def ignored(path: str) -> bool:
+        return subprocess.run(["git", "check-ignore", "-q", path], cwd=ROOT).returncode == 0
+    path = lf.PERSONAL_GOLDEN.relative_to(ROOT).as_posix()
+    assert path == "data/private/locked_figures_golden.json"
+    assert ignored(path)
+    assert ignored("data/private/any_other_file.json")
+    tracked = subprocess.run(["git", "ls-files", "data/private"], cwd=ROOT,
+                             capture_output=True, text=True, check=True).stdout
+    assert tracked == ""
+
+
+def _stand_in(rendered, tmp_path, monkeypatch):
+    """The frozen book standing in for the personal book, so the personal check and the
+    writer's personal half run in CI, where data/tracker.db is absent: its renders as
+    the personal render, its locks as the personal book's, and a personal golden under
+    tmp_path. No personal figure is read."""
+    render = json.loads(json.dumps(rendered["frozen_book.db"]))
+    monkeypatch.setattr(lf, "PERSONAL_BOOK", lf.BOOKS["frozen_book.db"])
+    monkeypatch.setattr(lf, "PERSONAL_GOLDEN", tmp_path / "private" / "golden.json")
+    monkeypatch.setattr(lf, "render_personal", lambda scratch: {lf.PERSONAL: render})
+    return render
+
+
+def test_the_personal_check_compares_every_lock_and_fails_with_no_golden(
+        rendered, tmp_path, monkeypatch):
+    check = test_every_figure_the_personal_books_locks_print_is_its_goldens
+    render = _stand_in(rendered, tmp_path, monkeypatch)
+    with pytest.raises(AssertionError, match="there is no personal golden"):
+        check(tmp_path)
+    lf.PERSONAL_GOLDEN.parent.mkdir()
+    _tool().write({lf.PERSONAL: {q: lf.golden_entry(e) for q, e in render.items()}},
+                  lf.PERSONAL_GOLDEN)
+    check(tmp_path)
+    render["2026Q2"]["tiles"]["alpha_bl_str"] += "0"
+    with pytest.raises(AssertionError, match=r"2026Q2: 1 line\(s\) of locked figures differ"):
+        check(tmp_path)
+    del render["2026Q2"]
+    with pytest.raises(AssertionError, match="locks are not the book's"):
+        check(tmp_path)
+    monkeypatch.setattr(lf, "PERSONAL_BOOK", tmp_path / "tracker.db")
+    with pytest.raises(pytest.skip.Exception):
+        check(tmp_path)
+
+
+def test_the_writer_holds_the_personal_book_to_the_same_rule(rendered, tmp_path, monkeypatch):
+    """With a personal book present, the writer writes its locks to their own file, and
+    refuses, writing neither file, when a lock's figures moved while its records did
+    not. Absent, the personal golden is left as it is."""
+    tool = _tool()
+    committed = tmp_path / "committed.json"
+    committed.write_bytes(lf.GOLDEN.read_bytes())
+    monkeypatch.setattr(lf, "GOLDEN", committed)
+    monkeypatch.setattr(lf, "render_all", lambda scratch: rendered)
+    render = _stand_in(rendered, tmp_path, monkeypatch)
+    expected = {q: lf.golden_entry(e) for q, e in render.items()}
+    assert tool.main([]) == 0
+    assert lf.load_golden(lf.PERSONAL_GOLDEN) == {lf.PERSONAL: expected}
+    written, before = lf.PERSONAL_GOLDEN.read_bytes(), committed.read_bytes()
+    assert tool.main([]) == 0 and lf.PERSONAL_GOLDEN.read_bytes() == written
+    render["2026Q2"]["tiles"]["alpha_bl_str"] += "0"
+    with pytest.raises(SystemExit, match=r"(?s)figures moved in 1 lock.*tracker\.db 2026Q2"):
+        tool.main([])
+    assert lf.PERSONAL_GOLDEN.read_bytes() == written and committed.read_bytes() == before
+    render["2026Q2"]["state"]["records"]["input_corrections"] = {"stand-in": "a record"}
+    assert tool.main([]) == 0
+    assert lf.load_golden(lf.PERSONAL_GOLDEN)[lf.PERSONAL]["2026Q2"]["tiles"] == (
+        render["2026Q2"]["tiles"])
+    written = lf.PERSONAL_GOLDEN.read_bytes()
+    monkeypatch.setattr(lf, "render_personal", lambda scratch: None)
+    assert tool.main([]) == 0 and lf.PERSONAL_GOLDEN.read_bytes() == written
+    assert committed.read_bytes() == before
