@@ -22,8 +22,10 @@ one local:
   PDF's merged frames is not a substrate.
 
 WHY THE PRODUCERS ARE TWO-LAYER, which is the load-bearing design decision here:
-``get_prices`` raises on every failure path, so from a caller's ``except`` clause a
-blocked network and an empty cache arrive as the same ``ValueError``. Only the price
+``get_prices`` raises when a window holds no cached row and its fetch fails, so from a
+caller's ``except`` clause a blocked network and an empty cache arrive as the same
+``ValueError``. (Where cached rows exist, a failed gap fetch is recorded with its
+cause instead and reaches the status as ``fetch_failure``: #637.) Only the price
 layer can consult the cache before the fetch and therefore tell ``no_cached_rows``
 from ``fetch_failed``. A one-layer implementation that classified misses from
 ``holdings.py``'s ``except`` would report every miss as ``fetch_failed``; the reason
@@ -97,15 +99,29 @@ class Substitution:
 
 
 @dataclass(frozen=True)
+class FetchFailure:
+    """A resolved ticker served from the store because the fetch that would have
+    extended it failed, and why (#637). Its price is stale, not missing, so it is not
+    Unresolved: its holding still counts at the last stored close."""
+
+    ticker: str
+    cause: str
+
+
+@dataclass(frozen=True)
 class TickerStatus:
     """One ticker's outcome, as the price layer saw it. Aggregated into a
-    PriceCoverage by whichever producer asked."""
+    PriceCoverage by whichever producer asked.
+
+    ``fetch_failure`` is the cause when the price was served but a gap fetch for its
+    window failed (prices.gap_fetch_failure_for): served, and not ok (#637)."""
 
     ticker: str
     resolved: bool
     reason: str | None = None
     served_through: str | None = None
     error: BaseException | None = None
+    fetch_failure: str | None = None
 
 
 @dataclass(frozen=True)
@@ -142,6 +158,8 @@ class PriceCoverage:
 
     dropped_bars: tuple[DroppedBar, ...] = ()
     substitutions: tuple[Substitution, ...] = ()
+    # Resolved tickers whose update failed (#637): served at the last stored close.
+    fetch_failures: tuple[FetchFailure, ...] = ()
 
     def __post_init__(self) -> None:
         accounted = set(self.resolved) | {u.ticker for u in self.unresolved}
@@ -358,4 +376,6 @@ def coverage_from_statuses(
         unresolved=unresolved,
         as_of_requested=as_of,
         frontier_served=min(served) if served else None,
+        fetch_failures=tuple(FetchFailure(s.ticker, s.fetch_failure)
+                             for s in statuses if s.resolved and s.fetch_failure),
     )

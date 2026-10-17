@@ -333,6 +333,18 @@ def _no_live_marks_carried_between_tests(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_gap_fetch_failures_carried_between_tests(monkeypatch):
+    """Each test starts with no failed gap fetch on record (#637).
+
+    src.prices keeps that record per process, as the banner and the half-hour retry
+    need. In a test process one test's blocked fetch would skip a later test's fetch of
+    the same window and reach its banner, so the reset is autouse, as the live marks'
+    is above."""
+    import src.prices as prices
+    monkeypatch.setattr(prices, "_GAP_FAILURES", {})
+
+
+@pytest.fixture(autouse=True)
 def _tracked_data_tripwire(request):
     """Per-test: stat-based, so it can name the culprit for ~1% of runtime.
 

@@ -443,7 +443,40 @@ def as_of_live_line(
         line += (f". The daily price fetch failed {_when(refresh.attempted_at)}; "
                  f"serving {instead} until it retries after "
                  f"{_when(refresh.next_attempt_at)}")
+    elif refresh is None:
+        line += _gap_failure_clause(ref)
     return line + "." + _live_mark_sentence(ref)
+
+
+def _gap_failure_clause(today: date) -> str:
+    """The banner's clause for a failed gap fetch (#637), in the demo's wording (#374)
+    with the cause: ". The price update failed <when> for 3 tickers (a network error:
+    ConnectionError); serving the stored prices until it retries after <when>", or "".
+
+    A failed gap fetch must never read as a quiet old date, wherever the gap fetch runs
+    (decided by the owner on October 17, 2026). get_prices records each failure with its
+    cause and does not ask again for RETRY_AFTER (prices.gap_fetch_failures). Only the
+    tickers the current value is priced from count, as for the live mark: Asset
+    Evaluation's BTC-USD is not the book's. If the holdings cannot be read, every
+    failure counts. The demo's own refresh, once it has run, says this in its sentence
+    above, so this clause is for a process where it has not."""
+    from src.prices import gap_fetch_failures
+    failures = gap_fetch_failures()
+    if not failures:
+        return ""
+    from src.holdings import valuation_tickers
+    try:
+        held = valuation_tickers(today.isoformat())
+    except Exception:
+        held = {f.ticker for f in failures}
+    failures = [f for f in failures if f.ticker in held]
+    if not failures:
+        return ""
+    n = len({f.ticker for f in failures})
+    causes = "; ".join(sorted({f.cause for f in failures}))
+    return (f". The price update failed {_when(min(f.attempted_at for f in failures))} "
+            f"for {n} ticker{'' if n == 1 else 's'} ({causes}); serving the stored prices "
+            f"until it retries after {_when(min(f.retry_after for f in failures))}")
 
 
 def _live_mark_sentence(today: date) -> str:

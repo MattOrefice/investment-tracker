@@ -5,11 +5,12 @@ are applied to every request, avoiding the 429 rate-limit that yfinance's
 internal timezone-fetch triggers.
 """
 import re
+import sqlite3
 import threading
 import time
 from contextvars import ContextVar
 from datetime import date, datetime, timedelta, timezone
-from typing import Callable, Iterable, Optional
+from typing import Callable, Iterable, NamedTuple, Optional
 from urllib.parse import quote
 
 import numpy as np
@@ -33,6 +34,17 @@ _SESSION.headers.update(
 )
 
 _YF_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
+
+
+class YahooResponseError(ValueError):
+    """Yahoo Finance answered, and the answer holds no usable prices: a rate limit, an
+    HTTP error, no result, no timestamps, no usable rows. A ValueError, as these were
+    before they had a class, so a caller that catches ValueError still catches them.
+    ``reason`` says what went wrong in words that follow "Yahoo Finance" (#637)."""
+
+    def __init__(self, message: str, reason: str):
+        super().__init__(message)
+        self.reason = reason
 
 # A FORMAT check, deliberately not a symbol registry: letters, digits, and the
 # punctuation Yahoo actually uses — '.' (BRK.B), '-' (BTC-USD), '=' (EURUSD=X),
@@ -196,30 +208,34 @@ def fetch_prices(
 
     resp = _SESSION.get(url, params=params, timeout=15)
     if resp.status_code == 429:
-        raise ValueError(
+        raise YahooResponseError(
             f"Yahoo Finance rate-limited (HTTP 429) for '{ticker}'. "
-            "Try again in a few seconds."
+            "Try again in a few seconds.",
+            "rate-limited the request (HTTP 429)",
         )
     if resp.status_code != 200:
-        raise ValueError(
-            f"Yahoo Finance returned HTTP {resp.status_code} for '{ticker}'."
+        raise YahooResponseError(
+            f"Yahoo Finance returned HTTP {resp.status_code} for '{ticker}'.",
+            f"returned HTTP {resp.status_code}",
         )
 
     data = resp.json()
     result = (data.get("chart") or {}).get("result")
     if not result:
         error_msg = (data.get("chart") or {}).get("error") or "unknown error"
-        raise ValueError(
+        raise YahooResponseError(
             f"No price data returned for '{ticker}' ({start_date} to {end}). "
-            f"Yahoo Finance error: {error_msg}"
+            f"Yahoo Finance error: {error_msg}",
+            "returned no price data",
         )
 
     result = result[0]
     timestamps = result.get("timestamp", [])
     if not timestamps:
-        raise ValueError(
+        raise YahooResponseError(
             f"No price data returned for '{ticker}' ({start_date} to {end}). "
-            "Ticker may be delisted or not recognised."
+            "Ticker may be delisted or not recognised.",
+            "returned no price data",
         )
 
     closes    = result["indicators"]["quote"][0].get("close", [])
@@ -238,13 +254,15 @@ def fetch_prices(
                      "adj_close": float(ac) if ac is not None else None})
 
     if not rows:
-        raise ValueError(f"No usable price rows after cleaning for '{ticker}'.")
+        raise YahooResponseError(f"No usable price rows after cleaning for '{ticker}'.",
+                                 "returned no usable price rows")
 
     df = pd.DataFrame(rows).set_index("price_date")
     df = df[df["close"] > 0]
 
     if df.empty:
-        raise ValueError(f"No usable price rows after cleaning for '{ticker}'.")
+        raise YahooResponseError(f"No usable price rows after cleaning for '{ticker}'.",
+                                 "returned no usable price rows")
 
     # Extract dividend events from the API response
     events = result.get("events") or {}
@@ -418,6 +436,96 @@ def _fetch_trailing_memoized(ticker: str, start: str, end: str) -> pd.DataFrame:
     return df
 
 
+# A FAILED GAP FETCH NEVER READS AS A QUIET OLD DATE (#637, decided by the owner on
+# October 17, 2026): the rule #368 set for the demo, wherever the gap fetch runs, and the
+# page stays up. get_prices's two gap fetches catch only the fetch's own failures
+# (gap_fetch_cause): the network, Yahoo's answer, a read-only store. A code error
+# raises. Each caught failure is recorded here with its cause, per ticker and window,
+# and that window is not fetched again for demo_refresh.RETRY_AFTER, the demo's retry:
+# a down network costs one attempt per ticker per half hour, not one per render. A
+# later success clears it. The ticker's coverage status (holdings._price_and_status)
+# and the banner (asof.as_of_live_line) read the record.
+class GapFetchFailure(NamedTuple):
+    ticker: str
+    start: str
+    end: str
+    cause: str
+    attempted_at: datetime                 # UTC
+    retry_after: datetime                  # UTC: this window is not fetched before this
+
+
+_GAP_FAILURES: "dict[tuple[str, str, str], GapFetchFailure]" = {}
+_GAP_FAILURES_LOCK = threading.Lock()
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _read_only_store(exc: BaseException) -> bool:
+    code = getattr(exc, "sqlite_errorcode", None)
+    if code is not None:
+        return code & 0xFF == sqlite3.SQLITE_READONLY
+    return "readonly database" in str(exc)
+
+
+def gap_fetch_cause(exc: BaseException) -> "str | None":
+    """Why a gap fetch failed, in words that follow "the price update failed", when
+    ``exc`` is one of the fetch's own failures: the network (an OSError, which every
+    requests exception is), Yahoo's answer (YahooResponseError) or a read-only store.
+    None for anything else: a code error (KeyError, TypeError and the like) is not a
+    fetch failure, and get_prices raises it."""
+    if isinstance(exc, YahooResponseError):
+        return f"Yahoo Finance {exc.reason}"
+    if isinstance(exc, sqlite3.OperationalError) and _read_only_store(exc):
+        return "the price store is read-only"
+    if isinstance(exc, OSError):
+        return f"a network error: {type(exc).__name__}"
+    return None
+
+
+def _gap_fetch(ticker: str, start: str, end: str, fetch: Callable) -> "pd.DataFrame | None":
+    """One of get_prices's gap fetches: the rows fetched, or None when the fetch failed
+    now or failed for this window within RETRY_AFTER, in which case nothing is asked."""
+    from src.demo_refresh import RETRY_AFTER
+    key, now = (ticker, start, end), _now()
+    with _GAP_FAILURES_LOCK:
+        failed = _GAP_FAILURES.get(key)
+    if failed is not None and now < failed.retry_after:
+        return None
+    try:
+        frame = fetch(ticker, start, end)
+    except Exception as exc:                                     # noqa: BLE001
+        cause = gap_fetch_cause(exc)
+        if cause is None:
+            raise
+        with _GAP_FAILURES_LOCK:
+            _GAP_FAILURES[key] = GapFetchFailure(ticker, start, end, cause, now,
+                                                 now + RETRY_AFTER)
+        return None
+    with _GAP_FAILURES_LOCK:
+        for k in [k for k in _GAP_FAILURES
+                  if k[0] == ticker and start <= k[1] and k[2] <= end]:
+            del _GAP_FAILURES[k]
+    return frame
+
+
+def gap_fetch_failures() -> "list[GapFetchFailure]":
+    """Every gap fetch whose last attempt failed, in this process, oldest first."""
+    with _GAP_FAILURES_LOCK:
+        return sorted(_GAP_FAILURES.values(), key=lambda f: f.attempted_at)
+
+
+def gap_fetch_failure_for(ticker: str, start: str, end: "str | None" = None
+                          ) -> "GapFetchFailure | None":
+    """The latest failed gap fetch for ``ticker`` inside [start, end]: what a
+    get_prices call for that window last failed to fetch, or None."""
+    end = end or date.today().isoformat()
+    found = [f for f in gap_fetch_failures()
+             if f.ticker == ticker and start <= f.start and f.end <= end]
+    return found[-1] if found else None
+
+
 def dividend_adjusted(ticker: str, frame: pd.DataFrame, *,
                       through: Optional[str] = None) -> pd.Series:
     """Total-return prices for ``frame`` (indexed by date, with a ``close`` column),
@@ -579,24 +687,20 @@ def get_prices(
     cached_start = _to_iso(cached.index.min())
     cached_end   = _to_iso(cached.index.max())
 
-    # Fetch any missing leading data
+    # Fetch any missing leading data. A failure is recorded, not raised (#637).
     if cached_start > start_date and _GAP_FETCH:
         pre_end = _to_iso(cached.index.min() - timedelta(days=1))
-        try:
-            pre = fetch_prices(ticker, start_date, pre_end)
+        pre = _gap_fetch(ticker, start_date, pre_end, fetch_prices)
+        if pre is not None:
             cached = pd.concat([pre, cached]).sort_index()
-        except Exception:
-            pass
 
-    # Fetch any missing trailing data
+    # Fetch any missing trailing data. A failure is recorded, not raised (#637).
     if cached_end < end and _GAP_FETCH:
         post_start = _to_iso(cached.index.max() + timedelta(days=1))
-        try:
-            post = _fetch_trailing_memoized(ticker, post_start, end)
+        post = _gap_fetch(ticker, post_start, end, _fetch_trailing_memoized)
+        if post is not None:
             _note_live_mark(ticker, post)
             cached = pd.concat([cached, post]).sort_index()
-        except Exception:
-            pass
 
     # Dedup index: trailing/leading fetches can return dates that overlap the
     # cached range when the Yahoo Finance API's UTC-midnight period boundary
@@ -668,9 +772,13 @@ def classify_miss(
     """Why a price lookup produced nothing usable, as a coverage reason code.
 
     THIS IS THE WHOLE REASON COVERAGE IS BUILT IN TWO LAYERS. ``get_prices``
-    raises on every failure path, so from a caller's ``except`` clause a blocked
-    network and an empty cache arrive as the same ValueError. Only the price layer
-    can consult its own cache first and tell them apart. A caller that classified
+    raises when the window holds no cached row and its fetch fails, so from a
+    caller's ``except`` clause a blocked network and an empty cache arrive as the
+    same ValueError. Only the price layer can consult its own cache first and tell
+    them apart. Where cached rows exist, a gap fetch's own failure (the network,
+    Yahoo's answer, a read-only store) is not raised: it is recorded with its cause
+    (``gap_fetch_failure_for``) and the cached rows are served (#637). A code error
+    raises on either path. A caller that classified
     misses from its own except clause would report every one of them as
     ``fetch_failed``, and the reason code is not decoration — it decides whether a
     gap is a legitimate degradation (a delisted holding) or a defect (#188).
@@ -681,9 +789,9 @@ def classify_miss(
     """
     end = end_date or date.today().isoformat()
     if _cached_row_count(ticker, start_date, end) > 0:
-        # Rows exist for the window, so the gap fetches inside get_prices already
-        # swallowed their own failures; an error reaching the caller past that is
-        # a genuine fetch failure rather than a cold cache.
+        # Rows exist for the window, so a gap fetch's own failure was recorded rather
+        # than raised (gap_fetch_failure_for). An error that reached the caller anyway
+        # came from somewhere else, and is still not a cold cache.
         return "fetch_failed" if error is not None else "empty_window"
     return "no_cached_rows"
 
