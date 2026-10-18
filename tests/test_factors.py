@@ -313,7 +313,11 @@ def test_run_sleeve_regressions_returns_expected_structure():
 
 
 def test_run_sleeve_regressions_returns_none_on_insufficient_data():
-    """When fewer than 30 observations are aligned, both sleeve results must be None."""
+    """When fewer than 30 observations are aligned, neither sleeve is computed.
+
+    MIGRATED at #651 (decided by the owner on October 18, 2026): this asserted None for
+    both. A regression with fewer than 30 aligned dates now returns that reason with
+    its count, which Factor Profile and the PDF print in place of the loadings."""
     short_dates = pd.bdate_range("2025-05-01", periods=5)
     short_ret = pd.Series(np.zeros(5), index=short_dates)
     short_ff  = pd.DataFrame({
@@ -325,8 +329,10 @@ def test_run_sleeve_regressions_returns_none_on_insufficient_data():
          patch("src.factors.load_factors", return_value=short_ff):
         results = run_sleeve_regressions("2025-05-01", "2025-05-10")
 
-    assert results["us"] is None
-    assert results["developed_exus"] is None
+    for key in ("us", "developed_exus"):
+        assert results[key]["not_computed"] == (
+            "it has 5 aligned trading days and needs at least 30"), results[key]
+        assert "betas" not in results[key]
 
 
 # ── SAA weights embedded in sleeve config ─────────────────────────────────────
@@ -805,7 +811,10 @@ def test_regress_fi_sleeve_returns_expected_structure():
 
 
 def test_regress_fi_sleeve_returns_none_on_insufficient_data():
-    """Fewer than 30 aligned observations → None."""
+    """Fewer than 30 aligned observations: not computed.
+
+    MIGRATED at #651 (decided by the owner on October 18, 2026): this asserted None. The
+    result now says why, with the count of aligned dates."""
     short_dates = pd.date_range("2025-05-01", periods=5, freq="D")
     short_px = pd.DataFrame({
         "adj_close": np.ones(5), "close": np.ones(5),
@@ -820,7 +829,9 @@ def test_regress_fi_sleeve_returns_none_on_insufficient_data():
          patch("src.factors.load_factors", return_value=short_ff):
         result = regress_fi_sleeve("2025-05-01", "2025-05-07")
 
-    assert result is None
+    assert result == {"sleeve_label": "FI Sleeve — TERM / CREDIT",
+                      "tickers": ["VGIT", "SCHP"], "region": "us",
+                      "not_computed": "it has 4 aligned trading days and needs at least 30"}
 
 
 def test_em_disclosure_is_non_empty_string():

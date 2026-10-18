@@ -1133,6 +1133,12 @@ def _build_factor_section(end_date: str) -> Optional[dict]:
         _fi_failure = not_computed_sentence(
             "The fixed-income sleeve's factor regression", exc,
             "this section carries no fixed-income note")
+    if fi_result is not None and fi_result.get("not_computed"):
+        # Not computed, and why (#651): the reason, where the fixed-income note goes.
+        _fi_failure = not_computed_sentence(
+            "The fixed-income sleeve's factor regression", None,
+            "this section carries no fixed-income note", reason=fi_result["not_computed"])
+        fi_result = None
 
     def _fmt_date_local(iso: str) -> str:
         d = date.fromisoformat(iso)
