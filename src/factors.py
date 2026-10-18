@@ -42,7 +42,7 @@ from statsmodels.tools import add_constant
 
 from src.benchmarks import get_custom_blended_series
 from src.holdings import get_holdings_on_date, get_portfolio_account_id, get_portfolio_value_series
-from src.prices import get_prices, total_return_series
+from src.prices import gap_fetch_cause, get_prices, total_return_series
 from src.prose_helpers import label, significance_label, significance_level
 
 _ROOT = Path(__file__).resolve().parent.parent
@@ -855,6 +855,13 @@ def _get_sleeve_return_series(
       is NaN, not 0% (#639): a missing stretch filled with 0% pulled the betas toward
       zero. The regression's dropna then keeps the dates every leg covers, and its
       sample window, printed from those dates, says where it starts.
+      A leg whose price read fails has no return on any date, by the same path, and
+      keeps its weight: no leg is dropped and no weight renormalized, so the sleeve
+      has no date every leg covers and its regression is not computed (#647, decided
+      by the owner on October 17, 2026). Only the read's own failure is caught (the
+      network, Yahoo's answer, a read-only store: prices.gap_fetch_cause); a code
+      error raises. Each such leg and its cause are returned in ``attrs["unread"]``,
+      {ticker: cause}, for the regression to say why.
 
     Non-trading days (weekends, US holidays) carry forward Friday's price;
     inner-joining against the factor index in the regression step drops them.
@@ -895,17 +902,47 @@ def _get_sleeve_return_series(
         effective_weights = {t: v / total for t, v in sleeve_values.items()}
 
     weighted_ret = pd.Series(0.0, index=date_range)
+    unread: dict[str, str] = {}
     for ticker, w in effective_weights.items():
         try:
             p = get_prices(ticker, inception, end_date)
-            p.index = pd.to_datetime(p.index)
-            series = total_return_series(p)
-            daily_ret = series.reindex(date_range).ffill().pct_change()
-            weighted_ret = weighted_ret + w * daily_ret
-        except Exception:
+        except Exception as exc:                                 # noqa: BLE001
+            cause = gap_fetch_cause(exc)
+            if cause is None:
+                raise
+            unread[ticker] = cause
+            weighted_ret = weighted_ret + w * pd.Series(np.nan, index=date_range)
             continue
+        p.index = pd.to_datetime(p.index)
+        series = total_return_series(p)
+        daily_ret = series.reindex(date_range).ffill().pct_change()
+        weighted_ret = weighted_ret + w * daily_ret
 
-    return weighted_ret.iloc[1:]  # drop inception day: no prior close, so no return
+    out = weighted_ret.iloc[1:]  # drop inception day: no prior close, so no return
+    out.attrs["unread"] = unread
+    return out
+
+
+def _unread_reason(unread: "dict[str, str]") -> str:
+    """Each leg whose price read failed, with its cause, in words for the reader's
+    not_computed_sentence (reports, #248): "the price read failed for VOO: Yahoo
+    Finance returned HTTP 503"."""
+    return "; ".join(f"the price read failed for {t}: {cause}" for t, cause in unread.items())
+
+
+def _not_computed(sleeve_label: str, tickers: list[str], region: str,
+                  unread: "dict[str, str]") -> dict:
+    """A sleeve regression that is not computed because a leg's prices could not be
+    read (#647): the sleeve's label and tickers, and ``not_computed``, the reason, which
+    each surface prints in place of the loadings."""
+    return {"sleeve_label": sleeve_label, "tickers": tickers, "region": region,
+            "not_computed": _unread_reason(unread)}
+
+
+def computed_result(res: Optional[dict]) -> Optional[dict]:
+    """``res`` when it holds a regression's figures, else None: None for insufficient
+    data, and for a regression not computed because a leg could not be read (#647)."""
+    return None if res is None or res.get("not_computed") else res
 
 
 # ── Regression engine ──────────────────────────────────────────────────────────
@@ -969,9 +1006,12 @@ def run_sleeve_regression(
     which naturally drops weekends, US holidays, and the factor publication lag
     window at the right edge of the sample.
 
-    Returns None if fewer than 30 aligned observations are available.
+    Returns None if fewer than 30 aligned observations are available, and a
+    not-computed result naming each leg and its cause when a leg's prices could not be
+    read (_not_computed, #647).
     """
     daily_ret = _get_sleeve_return_series(tickers, inception, end_date, weights=weights)
+    unread = daily_ret.attrs.get("unread")
     daily_ret.index = pd.to_datetime(daily_ret.index)
 
     ff = load_factors(region)
@@ -992,7 +1032,7 @@ def run_sleeve_regression(
     merged = daily_ret.to_frame(name="R_sleeve").join(ff, how="inner").dropna()
 
     if len(merged) < 30:
-        return None
+        return _not_computed(sleeve_label, tickers, region, unread) if unread else None
 
     R_excess = merged["R_sleeve"] - merged["RF"]
     result = _ols_ff5(R_excess, merged)
@@ -1083,8 +1123,10 @@ def run_sleeve_regressions_mom(inception: str, end_date: str) -> dict:
     Uses the same sleeve definitions as run_sleeve_regressions but extends the factor set
     with the Ken French daily UMD/Mom factor.
 
-    Returns dict with keys 'us' and 'developed_exus'; each value is a result dict or None.
-    Returns all-None values if the UMD factor data cannot be loaded.
+    Returns dict with keys 'us' and 'developed_exus'; each value is a result dict or None,
+    or a not-computed result when a leg's prices could not be read, as
+    run_sleeve_regression (#647). Returns all-None values if the UMD factor data cannot
+    be loaded.
     """
     try:
         umd = load_umd_factor()
@@ -1099,6 +1141,7 @@ def run_sleeve_regressions_mom(inception: str, end_date: str) -> dict:
                 spec["tickers"], inception, end_date,
                 weights=target_weights(spec["funds"]) if "funds" in spec else None,
             )
+            unread = daily_ret.attrs.get("unread")
             daily_ret.index = pd.to_datetime(daily_ret.index)
 
             ff = load_factors(spec["region"])
@@ -1118,7 +1161,8 @@ def run_sleeve_regressions_mom(inception: str, end_date: str) -> dict:
             )
 
             if len(merged) < 30:
-                results[key] = None
+                results[key] = (_not_computed(_sleeve_label(spec), spec["tickers"],
+                                              spec["region"], unread) if unread else None)
                 continue
 
             R_excess = merged["R_sleeve"] - merged["RF"]
@@ -1480,8 +1524,8 @@ def build_factor_prose(
     fails on one typed back.
     """
     lines: list[str] = []
-    us  = results.get("us")
-    dev = results.get("developed_exus")
+    us  = computed_result(results.get("us"))
+    dev = computed_result(results.get("developed_exus"))
 
     if us:
         b_hml = us["betas"]["HML"]
@@ -1747,8 +1791,8 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
     It is read from UMD_REFRESH_EVIDENCE, which carries the refresh's date and the
     commit that measured it (#526); the scan lists no exception.
     tests/test_factor_prose_types_no_figures.py reads this function's literals."""
-    us  = results.get("us")
-    dev = results.get("developed_exus")
+    us  = computed_result(results.get("us"))
+    dev = computed_result(results.get("developed_exus"))
 
     T_us  = us["T"]  if us  else "N/A"
     L_us  = us["nw_lags"]  if us  else "N/A"

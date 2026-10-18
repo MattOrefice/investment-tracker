@@ -33,6 +33,7 @@ from src.factors import (
     sig_marker,
 )
 from src.holdings import committed_price_frontier, get_inception_date, get_portfolio_account_id
+from src.reports import not_computed_sentence
 
 if IS_DEMO:
     st.info(get_demo_banner_text())
@@ -218,6 +219,15 @@ with col:
         st.subheader(res["sleeve_label"])
         st.caption(f"Tickers: {', '.join(res['tickers'])}")
 
+        if res.get("not_computed"):
+            # A leg's prices could not be read (#647): why, in place of the loadings.
+            st.info(not_computed_sentence(
+                f"The {res['sleeve_label']} factor regression", None,
+                "no loadings or fit statistics are shown for it",
+                reason=res["not_computed"], where="this page"))
+            st.divider()
+            continue
+
         if key == "developed_exus":
             _render_factor_table(res, _FACTORS, label="FF5: Developed ex-US")
             _render_fit_metrics(res)
@@ -237,11 +247,18 @@ with col:
             res_mom = results_mom.get(key)
             if res_mom is not None:
                 with st.expander("Carhart Momentum Supplement (FF5 + UMD)", expanded=False):
-                    _render_factor_table(res_mom, _FACTORS + ["Mom"], label="FF5 + Momentum")
-                    # Read by the significance label's cut-offs (#551), and nothing
-                    # more: no fund, no cause (#584).
-                    st.caption(momentum_caption(res_mom["betas"]["Mom"],
-                                                res_mom["t_stats"]["Mom"]))
+                    if res_mom.get("not_computed"):
+                        st.info(not_computed_sentence(
+                            "The momentum supplement's regression", None,
+                            "no loadings are shown for it",
+                            reason=res_mom["not_computed"], where="this page"))
+                    else:
+                        _render_factor_table(res_mom, _FACTORS + ["Mom"],
+                                             label="FF5 + Momentum")
+                        # Read by the significance label's cut-offs (#551), and nothing
+                        # more: no fund, no cause (#584).
+                        st.caption(momentum_caption(res_mom["betas"]["Mom"],
+                                                    res_mom["t_stats"]["Mom"]))
 
         st.divider()
 
