@@ -436,12 +436,13 @@ def as_of_live_line(
     if (refresh is not None and refresh.status == "fetched" and not gap
             and refresh.served_through and served >= date.fromisoformat(refresh.served_through)):
         return (f"Prices through {format_long_date(served)} ({basis}, fetched "
-                f"{_when(refresh.attempted_at)}).")
+                f"{_when(refresh.attempted_at)})." + _unread_dividend_sentence(ref))
 
     if lag <= 0 and not gap:
         # A page whose coverage record saw the open session's bar lands here, so this
         # is the state that most needs the unsettled-price sentence (#160, item 4i).
-        return f"Live data as of {format_long_date(ref)}." + _live_mark_sentence(ref)
+        return (f"Live data as of {format_long_date(ref)}." + _unread_dividend_sentence(ref)
+                + _live_mark_sentence(ref))
 
     missing = _sessions_missing(served, ref)
     line = f"Prices through {format_long_date(served)} ({basis})"
@@ -459,7 +460,42 @@ def as_of_live_line(
                  f"{_when(refresh.next_attempt_at)}")
     elif refresh is None:
         line += _gap_failure_clause(ref)
-    return line + "." + _live_mark_sentence(ref)
+    return line + "." + _unread_dividend_sentence(ref) + _live_mark_sentence(ref)
+
+
+def _unread_dividend_sentence(today: date) -> str:
+    """The banner's sentence for a dividend a price update sent and could not read
+    (#642): " A dividend in the price update could not be read, so it is not stored and
+    total return across it is understated: VTV, dated 2026-07-01 (it has no amount).",
+    or "".
+
+    Decided by the owner on October 18, 2026: such a dividend is recorded with the
+    ticker, its date as sent and why (prices.unread_dividends), and shown where the
+    ticker's price status shows. Every state of the banner carries it, whether or not
+    the demo's refresh has run: the refresh fetches through the same parse. Only the
+    tickers the current value is priced from count, as for a failed update; if the
+    holdings cannot be read, every record counts."""
+    from src.prices import unread_dividends
+    unread = unread_dividends()
+    if not unread:
+        return ""
+    from src.holdings import valuation_tickers
+    try:
+        held = valuation_tickers(today.isoformat())
+    except Exception:
+        held = {u.ticker for u in unread}
+    unread = [u for u in unread if u.ticker in held]
+    if not unread:
+        return ""
+    if len(unread) == 1:
+        lead = "A dividend in the price update could not be read, so it is not stored"
+        across = "it"
+    else:
+        lead = (f"{len(unread)} dividends in the price update could not be read, so they "
+                "are not stored")
+        across = "them"
+    return (f" {lead} and total return across {across} is understated: "
+            + "; ".join(u.words() for u in unread) + ".")
 
 
 def _gap_failure_clause(today: date) -> str:

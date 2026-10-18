@@ -346,13 +346,17 @@ def _no_gap_fetch_failures_carried_between_tests():
     weight moved 0.1 and a page rendered no metrics, in one -n 4 run).
 
     The windows the provider answered hold no data are cleared the same way (#644): a
-    remembered answer would skip a later test's fetch of the same window."""
+    remembered answer would skip a later test's fetch of the same window. So are the
+    dividends an answer sent that could not be read (#642): one would reach a later
+    test's banner and refuse its lock."""
     import src.prices as prices
     prices._GAP_FAILURES.clear()
     prices._reset_no_data_memo()
+    prices._reset_unread_dividends()
     yield
     prices._GAP_FAILURES.clear()
     prices._reset_no_data_memo()
+    prices._reset_unread_dividends()
 
 
 @pytest.fixture(autouse=True)

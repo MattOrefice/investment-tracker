@@ -1027,6 +1027,18 @@ def _leading_fetch_failures(tickers, start: str, end: str) -> "list[str]":
     return [f"{', '.join(sorted(set(ts)))} ({cause})" for cause, ts in sorted(by_cause.items())]
 
 
+def _unread_dividends(tickers, start: str, end: str) -> "list[str]":
+    """One clause per dividend in [start, end] that a price update sent for a ticker
+    the lock reads and could not read (prices.unread_dividends_for), with its date and
+    why. Empty when the lock may proceed.
+
+    THE RULE (#642, decided by the owner on October 18, 2026): a lock refuses a quarter
+    whose window holds such a record for a ticker it reads. The dividend is not stored,
+    so every total-return level before it would be locked unscaled."""
+    return [u.words() for t in sorted(set(tickers))
+            for u in _prices_module.unread_dividends_for(t, start, end)]
+
+
 def quarter_lock_refusals(quarter_id: str) -> LockGaps:
     """quarter_lock_gaps, by the rule each gap breaks: the cap needs only whether there
     is one, and the page's note words each rule as the capture's refusal does."""
@@ -1075,10 +1087,10 @@ def quarter_lock_gaps(quarter_id: str) -> "list[str]":
     capture would build from the cache: the same tickers, the same first day, the same
     rules, applied by the same checks (_interior_gaps, and _held_without_price over the
     same quarter, #648). DB only: never a fetch, and never a write, so the table is not
-    created. The capture's fourth rule, a failed fetch of a ticker's earlier history
-    (_leading_fetch_failures, #639), reads this process's record of the capture's own
-    fetches, not the store, and is not read here: whether the cap reads it is not
-    decided."""
+    created. The capture's fourth and fifth rules, a failed fetch of a ticker's earlier
+    history (_leading_fetch_failures, #639) and an unread dividend (_unread_dividends,
+    #642), read this process's records of its fetches, not the store, and are not read
+    here: whether the cap reads them is not decided."""
     gaps = quarter_lock_refusals(quarter_id)
     return gaps.interior + gaps.unpriced
 
@@ -1123,6 +1135,12 @@ def capture_quarter_snapshot(quarter_id: str) -> tuple:
     a fund's listing is an answer, not a failure. With the gap fetch off, as the demo's
     committed locks are taken (tools/lock_demo_quarters.py), nothing is fetched and
     nothing recorded: the stored history is the whole record.
+
+    NO UNREAD DIVIDEND, OR NO LOCK (#642, decided by the owner on October 18, 2026). A
+    dividend a price update sent for a ticker the lock reads, dated in the window it
+    reads, that could not be read (prices.unread_dividends) refuses the same way
+    (_unread_dividends), naming the ticker, the date and why: it is not stored, and the
+    lock would freeze total return without it.
 
     THE LOCK FETCHES WHAT THE BOOK LACKS (#594, decided by the owner on October 15,
     2026). Every ticker is read through prices.get_prices, which fetches and stores
@@ -1212,6 +1230,13 @@ def capture_quarter_snapshot(quarter_id: str) -> tuple:
             f"Cannot lock {quarter_id}: the price update for the earlier history of a "
             f"ticker the lock reads failed, so a lock now would freeze that history short. "
             f"Nothing was locked. Failed: " + "; ".join(short_history) + "."
+        )
+    unread = _unread_dividends(tickers, inception_str, end_str)
+    if unread:
+        raise LockCoverageError(
+            f"Cannot lock {quarter_id}: a price update sent a dividend for a ticker the "
+            f"lock reads that could not be read, so a lock now would freeze total return "
+            f"without it. Nothing was locked. Unread: " + "; ".join(unread) + "."
         )
     raw_df = pd.DataFrame(raw)
     if not raw_df.empty:
