@@ -13,7 +13,8 @@ from typing import NamedTuple, Optional
 
 import pandas as pd
 
-from src.coverage import PriceCoverage, TickerStatus, coverage_from_statuses
+from src.coverage import (PriceCoverage, TickerStatus, UnpricedHolding,
+                          coverage_from_statuses, unpriced_reason)
 from src.db import get_connection
 from src.prices import (get_prices, classify_miss, _to_iso, total_return_series,
                         gap_fetch_failure_for)
@@ -50,6 +51,24 @@ class ValueSeries(NamedTuple):
 
     series: pd.Series
     coverage: PriceCoverage
+
+
+class UnpricedHoldingError(Exception):
+    """The portfolio's value series was asked for over a window in which a held
+    position has no price on a date it was held (#639, #643, decided by the owner on
+    October 17, 2026).
+
+    Fail closed. The series used to count such a holding as $0 on those dates, so every
+    return over the window was a return on a different book, and the day its price
+    arrived booked the whole position as a gain. ``unpriced`` holds each holding and its
+    dates (coverage.UnpricedHolding), and ``reason`` says them in words, for the
+    reader's not_computed_sentence (reports, #248). Not a ValueError, so no handler
+    written for a bad input reads it as one."""
+
+    def __init__(self, unpriced: "tuple[UnpricedHolding, ...]"):
+        self.unpriced = tuple(unpriced)
+        self.reason = unpriced_reason(self.unpriced)
+        super().__init__(self.reason)
 
 
 _LOOK_BACK_DAYS = 7
@@ -420,11 +439,17 @@ def get_portfolio_value_series(
 ) -> pd.Series:
     """Daily total portfolio market value — see _portfolio_value_series_impl.
 
-    Unchanged for existing callers. Use portfolio_value_series_with_coverage where
-    the gap has to be disclosed; both share one valuation loop.
+    RAISES UnpricedHoldingError, naming the holdings and dates, when a held position
+    has no price on a date it was held in the window (#639, #643): every reader computes
+    a return from this series, and none can be computed over a book missing a holding.
+    portfolio_value_series_with_coverage returns the series and the record instead, for
+    the page that withholds its figures itself; both share one valuation loop.
     """
-    series, _statuses = _portfolio_value_series_impl(
+    series, statuses = _portfolio_value_series_impl(
         start_date, end_date, account_id=account_id)
+    unpriced = tuple(s.unpriced_held for s in statuses if s.unpriced_held)
+    if unpriced:
+        raise UnpricedHoldingError(unpriced)
     return series
 
 
@@ -437,9 +462,11 @@ def portfolio_value_series_with_coverage(
     """get_portfolio_value_series, plus the coverage record for its prices.
 
     This series drives every TWR figure and every risk metric on the Performance
-    page, and it is where an unpriceable holding is hardest to see: its price
-    column is all-NaN, and .sum(axis=1) defaults to skipna=True, so the holding
-    contributes exactly zero dollars to every day without a NaN ever surfacing.
+    page, and it is where an unpriceable holding was hardest to see: .sum(axis=1)
+    skipped its all-NaN column, so it counted as zero dollars on every day. The series
+    is NaN on a date a held position has no price now, and the record's
+    ``unpriced_held`` names the holding and dates (#639, #643); the page withholds what
+    it computes from the series when the record says so.
     """
     series, statuses = _portfolio_value_series_impl(
         start_date, end_date, account_id=account_id)
@@ -459,6 +486,8 @@ def _portfolio_value_series_impl(
     Uses adj_close for ETF prices (total-return basis).
     SPAXX is valued at $1/share.
     Weekends / holidays are forward-filled from the previous trading day.
+    A date on which a held position has no price is NaN, never a sum counting it as
+    $0, and the holding's status records the dates (``unpriced_held``, #639, #643).
 
     DRIP lots (lot_source='drip') are EXCLUDED from the share count used here.
     adj_close already embeds dividend reinvestment into the existing shares, so
@@ -569,7 +598,28 @@ def _portfolio_value_series_impl(
     # the SQL query above: adj_close already embeds dividend reinvestment, so
     # adding the DRIP shares would double-count income. See the docstring.
 
+    # A window asked from a weekend or a holiday has days before its first session with
+    # no close on or before them in the window. Nothing traded on them, so they carry
+    # that session's close rather than reading as unpriced: a market holiday is never
+    # a gap (#639).
+    first_session = pd.Timestamp(_first_session_on_or_after(start_date))
+    lead = date_range[date_range < first_session]
+    if len(lead) and first_session in prices_matrix.index:
+        prices_matrix.loc[lead] = prices_matrix.loc[lead].fillna(
+            prices_matrix.loc[first_session])
+
+    # A held position with no price is never $0 (#639, #643): such a day is not a sum,
+    # and the holding's status records the dates for the readers that must say so.
+    unpriced = (holdings_matrix[common] > 1e-9) & prices_matrix[common].isna()
     value = (holdings_matrix[common] * prices_matrix[common]).sum(axis=1)
+    value[unpriced.any(axis=1)] = float("nan")
+    from src.demo_refresh import is_session
+    for i, ticker in enumerate(tickers):
+        if ticker in unpriced.columns and unpriced[ticker].any():
+            days = unpriced.index[unpriced[ticker]]
+            statuses[i] = replace(statuses[i], unpriced_held=UnpricedHolding(
+                ticker, days[0].date().isoformat(), days[-1].date().isoformat(),
+                sum(is_session(d.date()) for d in days)))
     return value, statuses
 
 

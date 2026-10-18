@@ -334,11 +334,14 @@ def test_current_market_value_reports_the_same_gap(tmp_path, monkeypatch):
 
 def test_value_series_reports_the_gap_that_skipna_hides(tmp_path, monkeypatch):
     """The hardest gap to see: an unpriceable holding becomes an all-NaN price
-    column, and .sum(axis=1) defaults to skipna=True, so it contributes exactly
-    zero dollars to every day with no NaN surfacing. The coverage record is the
-    only signal that the series is short two holdings."""
+    column, and .sum(axis=1) defaults to skipna=True, so it used to contribute exactly
+    zero dollars to every day with no NaN surfacing. Since #643 (decided by the owner on
+    October 17, 2026) a held position with no price is never $0: every day the two are
+    held is NaN, the record names them, and the reader with no record raises."""
     _skip_without_personal_inputs()
-    from src.holdings import get_portfolio_account_id, portfolio_value_series_with_coverage
+    from src.holdings import (UnpricedHoldingError, get_portfolio_account_id,
+                              get_portfolio_value_series,
+                              portfolio_value_series_with_coverage)
     db = _scratch(tmp_path, KILL)
     _block_network(monkeypatch)
     _point_at(monkeypatch, db)
@@ -348,9 +351,12 @@ def test_value_series_reports_the_gap_that_skipna_hides(tmp_path, monkeypatch):
 
     assert cov.unresolved_tickers() == frozenset(KILL)
     assert cov.is_complete is False
-    assert not series.empty and float(series.iloc[-1]) > 0, (
-        "the series still has values — every one of them understated, with no NaN"
-    )
+    assert not series.empty and series.isna().all(), (
+        "a day on which VOO and VEA are held and unpriced is not a sum of the rest")
+    assert sorted(u.ticker for u in cov.unpriced_held) == sorted(KILL)
+    with pytest.raises(UnpricedHoldingError) as err:
+        get_portfolio_value_series("2026-06-09", AS_OF, account_id=get_portfolio_account_id())
+    assert sorted(u.ticker for u in err.value.unpriced) == sorted(KILL)
 
 
 def test_the_two_conditions_differ(tmp_path, monkeypatch):

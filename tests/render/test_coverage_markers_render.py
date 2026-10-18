@@ -46,6 +46,9 @@ pytestmark = pytest.mark.usefixtures("frozen_clock_module")
 # Derive it from the scratch DB instead, by a GROUP BY rather than by asking the
 # producer, so the marker is checked against the data and not against itself.
 KILL = ("VOO", "VEA")
+# The "leading" condition (#639, #643): VOO, held from inception, has no close before
+# this date, so it is priced today and unpriced on the days it was held before it.
+LEAD = ("VOO", "2025-09-03")
 
 # Every coverage marker, on every page, carries this phrase. One shared token is
 # what makes the absence assertion possible: "no marker rendered" has to be
@@ -66,7 +69,8 @@ def _skip_without_personal_inputs():
 
 
 def _render(page: str, mode: str, tmp_path, monkeypatch):
-    """Render one page against a scratch DB, network blocked. mode: control|partial."""
+    """Render one page against a scratch DB, network blocked. mode: control|partial|
+    leading."""
     import requests
 
     import src.db
@@ -79,6 +83,11 @@ def _render(page: str, mode: str, tmp_path, monkeypatch):
         conn = sqlite3.connect(db)
         conn.execute(
             f"DELETE FROM prices WHERE ticker IN ({','.join('?' * len(KILL))})", KILL)
+        conn.commit()
+        conn.close()
+    elif mode == "leading":
+        conn = sqlite3.connect(db)
+        conn.execute("DELETE FROM prices WHERE ticker = ? AND price_date < ?", LEAD)
         conn.commit()
         conn.close()
 
@@ -305,3 +314,174 @@ def test_page2_three_producers_report_the_same_unresolved_set(tmp_path, monkeypa
         series.unresolved_tickers() == frozenset(KILL), (
         f"producers disagree — sleeves={sleeves.unresolved_tickers()} "
         f"market_value={mv.unresolved_tickers()} series={series.unresolved_tickers()}")
+
+
+# ── #643: every figure page 2 computes from the value series, withheld ────────
+#
+# Decided by the owner on October 17, 2026. With a holding unresolved, or one with no
+# price on dates it was held (#639), the Performance page withholds every figure
+# computed from the portfolio's value series: the summary line, the since-inception
+# tiles, the Period Returns table's portfolio column, VaR and CVaR (and the rest of the
+# portfolio and relative risk rows), the Stage 2 and Total tiles, the cumulative chart,
+# the Brinson-Fachler reconciliation and the daily-vs-Modified-Dietz comparison.
+# Benchmark figures still show. The series reader with no record raises a named error,
+# and each surface that reads it prints not_computed_sentence with its reason.
+
+def _series_figures(at) -> dict:
+    """Every figure page 2 computes from the value series, and the benchmark figures
+    beside them, read off the rendered elements."""
+    import json
+    pairs = [(str(m.label), str(m.value)) for m in at.metric]
+    text = _all_text(at)
+    table = getattr(at.dataframe[0].value, "data", at.dataframe[0].value)
+    charts = [json.loads(c.proto.spec) for c in at.get("plotly_chart")]
+    return {
+        "pairs": pairs,
+        "summary": next(t for t in text if "cumulative TWR" in t),
+        "table": table,
+        "lines": [tr.get("name") for tr in charts[0].get("data", [])],
+        "bf": next(t for t in text if t.startswith("**BF decomposition:**")),
+        "text": text,
+    }
+
+
+def _assert_series_withheld(at) -> None:
+    f = _series_figures(at)
+    vals: dict = {}
+    for lbl, v in f["pairs"]:
+        vals.setdefault(lbl, []).append(v)
+    for lbl in ("vs. S&P 500 (since inception)", "vs. Custom Blended (since inception)",
+                "Stage 2: Implementation", "Track. Err", "Info Ratio", "Beta",
+                "Active Ret (ann.)"):
+        assert vals[lbl] == [SUPPRESSED_TILE], (lbl, vals[lbl])
+    assert [v for lbl, v in f["pairs"] if lbl.startswith("YTD return")] == [SUPPRESSED_TILE]
+    assert [v for lbl, v in f["pairs"] if lbl.startswith("Total: Portfolio vs.")] == [
+        SUPPRESSED_TILE]
+    assert vals["Stage 1: SAA Design"] != [SUPPRESSED_TILE], "Stage 1 is two benchmarks"
+    # The portfolio row of each risk metric, then the benchmark row.
+    for lbl in ("Std Dev (ann.)", "Sharpe", "Sortino", "Max DD", "VaR (95%)", "CVaR (95%)"):
+        assert vals[lbl][0] == SUPPRESSED_TILE, (lbl, vals[lbl])
+    for lbl in ("Std Dev (ann.)", "Max DD", "VaR (95%)", "CVaR (95%)"):
+        assert vals[lbl][1] != SUPPRESSED_TILE, f"the benchmark's {lbl} was withheld too"
+    for words in ("cumulative TWR", "vs blended", "vs S&P 500"):
+        assert f"**{SUPPRESSED_TILE}** {words}" in f["summary"], f["summary"]
+    table = f["table"]
+    for col in ("Portfolio", "vs S&P 500", "vs Blended"):
+        assert set(table[col]) == {SUPPRESSED_TILE}, (col, list(table[col]))
+    for col in ("S&P 500", "Custom Blended"):
+        assert all(str(v).endswith("%") for v in table[col]), (col, list(table[col]))
+    assert "Portfolio" not in f["lines"]
+    assert {"S&P 500 (SPY)", "Custom Blended"} <= set(f["lines"])
+    assert f["bf"].endswith("vs. Stage 2: withheld"), f["bf"]
+    assert ("Reconciliation is withheld with Stage 2 and the total, which are computed "
+            "from the portfolio's value.") in f["text"]
+    for line in (f"**Daily-linked TWR (SI):** {SUPPRESSED_TILE}",
+                 f"**Modified Dietz (SI):**   {SUPPRESSED_TILE}",
+                 f"**Method spread:** {SUPPRESSED_TILE}"):
+        assert line in f["text"], line
+
+
+def test_partial_page2_withholds_every_figure_computed_from_the_value_series(
+        tmp_path, monkeypatch):
+    _skip_without_personal_inputs()
+    at, _db = _render("2_Performance.py", "partial", tmp_path, monkeypatch)
+    _assert_series_withheld(at)
+    warning = next(str(w.value) for w in at.warning if "cannot be computed" in str(w.value))
+    assert "counted as zero" not in warning, "this page withholds; it counts nothing as zero"
+    assert "Value, returns and portfolio risk metrics are withheld" in warning
+
+
+def test_a_leading_gap_is_withheld_the_same_way(tmp_path, monkeypatch):
+    """VOO priced today and unpriced on the days it was held before September 3, 2025:
+    the same figures are withheld, the marker names the holding and the dates, and the
+    current value, which counts every holding at today's price, still shows."""
+    _skip_without_personal_inputs()
+    at, _db = _render("2_Performance.py", "leading", tmp_path, monkeypatch)
+    _assert_series_withheld(at)
+    err = _unpriced_error()
+    (u,) = err.unpriced
+    assert (u.ticker, u.first, u.last) == ("VOO", "2025-05-01", "2025-09-02")
+    warning = next(str(w.value) for w in at.warning if "cannot be computed" in str(w.value))
+    assert (f"VOO has no committed price on {u.sessions} sessions it was held "
+            f"(2025-05-01 to 2025-09-02). Returns and portfolio risk metrics are withheld"
+            ) in warning
+    value = [str(m.value) for m in at.metric if "value" in str(m.label)]
+    assert value and value[0].startswith("$"), value
+
+
+def test_control_page2_still_renders_its_series_figures(tmp_path, monkeypatch):
+    """Non-vacuity for the two tests above: withholding always would pass them."""
+    _skip_without_personal_inputs()
+    at, _db = _render("2_Performance.py", "control", tmp_path, monkeypatch)
+    f = _series_figures(at)
+    assert f"**{SUPPRESSED_TILE}** cumulative TWR" not in f["summary"]
+    assert all(str(v).endswith("%") for v in f["table"]["Portfolio"])
+    assert "Portfolio" in f["lines"]
+    assert "vs. Stage 2: withheld" not in f["bf"]
+    assert dict(f["pairs"])["Stage 2: Implementation"] != SUPPRESSED_TILE
+
+
+def _unpriced_error():
+    """The named error the value series raises on the rendered scratch book."""
+    from datetime import date
+    from src.holdings import (UnpricedHoldingError, get_inception_date,
+                              get_portfolio_account_id, get_portfolio_value_series)
+    acct = get_portfolio_account_id()
+    with pytest.raises(UnpricedHoldingError) as err:
+        get_portfolio_value_series(get_inception_date(account_id=acct),
+                                   date.today().isoformat(), account_id=acct)
+    return err.value
+
+
+def test_the_named_error_reaches_the_risk_pages_sentence(tmp_path, monkeypatch):
+    _skip_without_personal_inputs()
+    from src.reports import not_computed_sentence
+    at, _db = _render("7_Risk.py", "leading", tmp_path, monkeypatch)
+    err = _unpriced_error()
+    want = not_computed_sentence(
+        "The portfolio factor decomposition", err,
+        "no factor betas, fit statistics or scenario stress results are shown",
+        reason=err.reason, where="this page")
+    assert want in [str(i.value) for i in at.info]
+    assert "could not be computed for this page (VOO has no price on" in want
+
+
+def test_the_named_error_reaches_the_benchmark_attribution_pages_sentence(
+        tmp_path, monkeypatch):
+    _skip_without_personal_inputs()
+    from src.reports import not_computed_sentence
+    at, _db = _render("6_Benchmark_Attribution.py", "leading", tmp_path, monkeypatch)
+    err = _unpriced_error()
+    want = not_computed_sentence(
+        "The benchmark attribution regression", err,
+        "no alpha, loadings or fit statistics are shown",
+        reason=err.reason, where="this page")
+    assert want in [str(i.value) for i in at.info]
+    assert not [m for m in at.metric if str(m.label) == "R²"], "no fit statistics"
+
+
+def test_the_named_error_reaches_the_pdfs_sentences(tmp_path, monkeypatch):
+    """A custom-range report, which reads live: the executive summary, the performance
+    section and the benchmark attribution section each print the sentence in place of
+    their figures."""
+    _skip_without_personal_inputs()
+    import markupsafe
+    from src import reports
+    from src.reports import not_computed_sentence
+    _render("2_Performance.py", "leading", tmp_path, monkeypatch)
+    monkeypatch.setattr(reports, "_render_chart_to_png", lambda *a, **k: None)
+    monkeypatch.setattr(reports, "_render_pdf", lambda html: html.encode("utf-8"))
+    err = _unpriced_error()
+    start, end = "2026-05-15", "2026-07-15"
+    html = reports.generate_quarterly_report_bytes(start, end, is_demo=True).decode("utf-8")
+    period = reports._format_period_label(start, end)
+    for subject, consequence in (
+            (f"The portfolio's return in {period}",
+             "this summary states no portfolio return and no comparison with a benchmark"),
+            ("The portfolio's period returns and cumulative return",
+             "no period return table or cumulative return chart is shown"),
+            ("The benchmark attribution regression",
+             "no alpha, loadings or fit statistics are shown")):
+        want = not_computed_sentence(subject, err, consequence, reason=err.reason)
+        assert str(markupsafe.escape(want)) in html, subject
+    assert "Period Returns (Daily-Linked TWR)" not in html

@@ -9,7 +9,7 @@ import streamlit as st
 
 st.set_page_config(page_title="Performance & Attribution", layout="wide")
 
-from src.coverage import unresolved_marker
+from src.coverage import unpriced_held_marker, unresolved_marker
 from src.asof import (
     as_of_banner_with_inception,
     today_et,
@@ -400,7 +400,10 @@ with col:
         st.stop()
 
     with st.spinner("Loading benchmark data…"):
-        start_val = float(pv.iloc[0])
+        # The benchmarks are drawn at the portfolio's starting value. With no value on
+        # that day (a holding unpriced on it, #643) they are drawn from 1.0: their
+        # returns are ratios either way, and still show.
+        start_val = float(pv.iloc[0]) if pd.notna(pv.iloc[0]) else 1.0
         sp, bl, _sp_gaps, _bl_gaps = _load_benchmarks(start_val, _C)
         sp = sp[sp.index <= _C_ts]   # anchor benchmark series on the settled frontier (C)
         bl = bl[bl.index <= _C_ts]
@@ -440,13 +443,22 @@ with col:
         "coverage disagreement between the market-value and value-series "
         f"producers: {_mv_cov.unresolved_tickers()} vs {_pv_cov.unresolved_tickers()}"
     )
-    _COV_GAP = unresolved_marker(_mv_cov)
+    # This page's marker says what this page does (#643): it withholds, so it does not
+    # say the holdings counted as zero.
+    _COV_GAP = unresolved_marker(_mv_cov, consequence=None)
+    # Every figure computed from the value series is withheld when a holding is
+    # unresolved, or has no price on dates it was held (#643, #639): the series is not a
+    # sum on those dates. A held-but-unpriced stretch leaves the current value alone.
+    _SERIES_GAP = " ".join(
+        m for m in (_COV_GAP, unpriced_held_marker(_pv_cov)) if m) or None
     # Module-level, because the risk section renders in a separate block far
     # below and must gate on the same fact rather than re-deriving it.
     globals()["_PAGE_COVERAGE_GAP"] = _COV_GAP
+    globals()["_PAGE_SERIES_GAP"] = _SERIES_GAP
 
     def _tile(value: str) -> str:
-        """A portfolio-derived figure, or the suppression marker.
+        """A figure that counts every holding at its current price, or the suppression
+        marker: the current value, and the quarter's locked tiles.
 
         A return computed over a book missing holdings is not a degraded
         measurement of this portfolio — it is an accurate measurement of a
@@ -457,20 +469,28 @@ with col:
         """
         return "—" if _COV_GAP else value
 
-    if _COV_GAP:
+    def _series(value: str) -> str:
+        """A figure computed from the portfolio's value series, or the suppression
+        marker (#643). Benchmark figures are not routed through this either."""
+        return "—" if _SERIES_GAP else value
+
+    if _SERIES_GAP:
+        _withheld = "Value, returns" if _COV_GAP else "Returns"
         st.warning(
-            f"⚠ **This page cannot be computed in full.** {_COV_GAP} Value, "
-            "returns and portfolio risk metrics are withheld rather than shown "
+            f"⚠ **This page cannot be computed in full.** {_SERIES_GAP} {_withheld} "
+            "and portfolio risk metrics are withheld rather than shown "
             "against a partial book; benchmark figures are unaffected."
         )
 
     # ── Summary banner ────────────────────────────────────────────────────
+    _sum_value = _tile(f"${current_mv:,.0f}")
+    _sum_twr   = _series(f"{port_si*100:.1f}%")
     st.markdown(
-        f"**${current_mv:,.0f}** current value &nbsp;·&nbsp; "
+        f"**{_sum_value}** current value &nbsp;·&nbsp; "
         f"**{si_days}**-day inception period &nbsp;·&nbsp; "
-        f"**{port_si*100:.1f}%** cumulative TWR &nbsp;·&nbsp; "
-        f"**{_bps(alpha_bl)}** vs blended &nbsp;·&nbsp; "
-        f"**{_bps(alpha_sp)}** vs S&P 500",
+        f"**{_sum_twr}** cumulative TWR &nbsp;·&nbsp; "
+        f"**{_series(_bps(alpha_bl))}** vs blended &nbsp;·&nbsp; "
+        f"**{_series(_bps(alpha_sp))}** vs S&P 500",
         unsafe_allow_html=False,
     )
 
@@ -534,11 +554,11 @@ with col:
     # since-inception return as a delta, with a green arrow that read as a comparison;
     # that figure leads the summary line above. The benchmark returns are captions.
     m1.metric(f"{_PORTFOLIO_ACCT['display_name']} value", _tile(f"${current_mv:,.0f}"))
-    m2.metric("vs. S&P 500 (since inception)",    _bps(alpha_sp))
+    m2.metric("vs. S&P 500 (since inception)",    _series(_bps(alpha_sp)))
     m2.caption(f"S&P 500: {_pct(sp500_si)} SI")
-    m3.metric("vs. Custom Blended (since inception)", _bps(alpha_bl))
+    m3.metric("vs. Custom Blended (since inception)", _series(_bps(alpha_bl)))
     m3.caption(f"Blended: {_pct(blended_si)} SI")
-    m4.metric(f"YTD return ({TODAY[:4]})",    _tile(_pct(ytd_return)))
+    m4.metric(f"YTD return ({TODAY[:4]})",    _series(_pct(ytd_return)))
 
     st.caption(
         f"The gap to the S&P 500 reflects intentional diversification: "
@@ -568,8 +588,8 @@ with col:
         # return for the lump-sum case"). A value ratio keeps that identity only while
         # nothing is deposited: on the owner's book it read 107.6% beside a 3.2% TWR,
         # the new money counted as return (#349).
-        _abs_ret_pct = port_si * 100
-        _twr_pct     = port_si * 100
+        _abs_ret_pct = _series(f"{port_si * 100:.1f}%")
+        _twr_pct     = _series(f"{port_si * 100:.1f}%")
         _rec_box = st.expander("Reconciliation: cost basis to current value", expanded=False)
         _rec_box.caption(
             f"Reconciliation: **\\${_cost_basis:,.2f} cost basis** (lots still held, including "
@@ -580,7 +600,7 @@ with col:
             f"BIL's total return (the ledger records SPAXX at its \\$1.00 NAV) = "
             f"**\\${current_mv:,.2f} current value** (every share held, including DRIP, at "
             f"the latest close). "
-            f"Returns, absolute ({_abs_ret_pct:.1f}%) and cumulative TWR ({_twr_pct:.1f}%), "
+            f"Returns, absolute ({_abs_ret_pct}) and cumulative TWR ({_twr_pct}), "
             f"use the dividend-adjusted total-return series (adjusted close × actual non-DRIP "
             f"shares). That series counts dividend income once and is restated retroactively as "
             f"dividends accrue. It is a different basis from the market-value dollar above, "
@@ -685,11 +705,11 @@ with col:
         sr = _benchmark_period_return(sp, p)
         br = _benchmark_period_return(bl, p)
         display[RETURNS_ROW_LABEL[p]] = {
-            "Portfolio":       _pct(pr),
+            "Portfolio":       _series(_pct(pr)),
             "S&P 500":         _pct(sr),
             "Custom Blended":  _pct(br),
-            "vs S&P 500":      _bps(pr - sr),
-            "vs Blended":      _bps(pr - br),
+            "vs S&P 500":      _series(_bps(pr - sr)),
+            "vs Blended":      _series(_bps(pr - br)),
         }
 
     tbl_df = pd.DataFrame(display).T
@@ -777,11 +797,16 @@ with col:
 
     _rf_by_window = {w: _rf_for(w) for w in ("SI", "1Y", "YTD", "3M", "1M")}
 
+    # With the value series withheld (#643) the portfolio row is not shown, and the
+    # benchmark is measured on its own series in the portfolio's place, so its row and
+    # the windows' trading-day counts still show.
+    _pv_m, _cf_m = (_bl_for_metrics, None) if _SERIES_GAP else (pv, cf)
+
     def _metrics(window: str) -> dict:
         _r = _rf_by_window[window]
-        return compute_risk_metrics(pv, _bl_for_metrics,
+        return compute_risk_metrics(_pv_m, _bl_for_metrics,
                                     rf_annual=_r.annual if _r else float("nan"),
-                                    window=window, cashflows=cf)
+                                    window=window, cashflows=_cf_m)
 
     _m_si  = _metrics("SI")
     _m_1y  = _metrics("1Y")
@@ -820,16 +845,16 @@ with col:
             # The floor and this window's own count, from the function that applies
             # the floor (#502): the sentence used to name 20 trading days for a rule
             # that counted calendar rows.
-            _have = trading_days_in_window(pv, _bl_for_metrics,
+            _have = trading_days_in_window(_pv_m, _bl_for_metrics,
                                            window=_RISK_WINDOW_CODES[_window_label],
-                                           cashflows=cf)
+                                           cashflows=_cf_m)
             st.caption(
                 f"Insufficient data for the {_window_label} window: it needs at least "
                 f"{MIN_TRADING_DAYS} trading days; it has {_have}."
             )
         else:
-            # Row 1 — portfolio metrics
-            _gap = globals().get("_PAGE_COVERAGE_GAP")
+            # Row 1 — portfolio metrics, every one computed from the value series (#643)
+            _gap = globals().get("_PAGE_SERIES_GAP")
             _rt = (lambda v: "—") if _gap else (lambda v: v)
             st.caption("Portfolio")
             _c1, _c2, _c3, _c4, _c5, _c6 = st.columns(6)
@@ -837,8 +862,8 @@ with col:
             _c2.metric("Sharpe",         _rt(_fmt_ratio(_m["sharpe"])))
             _c3.metric("Sortino",        _rt(_fmt_ratio(_m["sortino"])))
             _c4.metric("Max DD",         _rt(_fmt_pct(_m["max_drawdown_pct"])))
-            _c5.metric("VaR (95%)",      _fmt_pct(_m["var_95_pct"]))
-            _c6.metric("CVaR (95%)",     _fmt_pct(_m["cvar_95_pct"]))
+            _c5.metric("VaR (95%)",      _rt(_fmt_pct(_m["var_95_pct"])))
+            _c6.metric("CVaR (95%)",     _rt(_fmt_pct(_m["cvar_95_pct"])))
 
             # Row 2 — benchmark metrics (same window and trading-day filter)
             st.caption(_bm_row_label)
@@ -865,10 +890,10 @@ with col:
             # Row 3 — benchmark-relative metrics
             st.caption(f"vs {_risk_bm_label}")
             _r1, _r2, _r3, _r4 = st.columns(4)
-            _r1.metric("Track. Err",      _fmt_pct(_m["tracking_error_pct"]))
-            _r2.metric("Info Ratio",       _fmt_ratio(_m["information_ratio"]))
-            _r3.metric("Beta",             _fmt_ratio(_m["beta"]))
-            _r4.metric("Active Ret (ann.)", _fmt_pct(_m["active_return_pct"]))
+            _r1.metric("Track. Err",      _rt(_fmt_pct(_m["tracking_error_pct"])))
+            _r2.metric("Info Ratio",       _rt(_fmt_ratio(_m["information_ratio"])))
+            _r3.metric("Beta",             _rt(_fmt_ratio(_m["beta"])))
+            _r4.metric("Active Ret (ann.)", _rt(_fmt_pct(_m["active_return_pct"])))
 
         st.expander("How these metrics are computed", expanded=False).caption(
             "Std Dev: annualized return volatility (trading days only, ddof=1). "
@@ -893,8 +918,8 @@ with col:
         # not the window has figures (#512). They read `n_days or 21` and `or 63`: a
         # window below the floor has no n_days, so the sentence printed 21 or 63
         # trading days for a window that held, say, three.
-        _n_1m = trading_days_in_window(pv, _bl_for_metrics, window="1M", cashflows=cf)
-        _n_3m = trading_days_in_window(pv, _bl_for_metrics, window="3M", cashflows=cf)
+        _n_1m = trading_days_in_window(_pv_m, _bl_for_metrics, window="1M", cashflows=_cf_m)
+        _n_3m = trading_days_in_window(_pv_m, _bl_for_metrics, window="3M", cashflows=_cf_m)
 
         _disc_parts = []
         _overlap = one_year_overlap_note(si_days)
@@ -924,12 +949,18 @@ with col:
 
     fig = go.Figure()
 
-    fig.add_trace(go.Scatter(
-        x=pv_norm.index, y=(pv_norm - 1) * 100,
-        name="Portfolio",
-        line=dict(color=_PALETTE["portfolio"], width=2.5),
-        hovertemplate="<b>Portfolio</b><br>%{x|%B %-d, %Y}<br>Return: %{y:.2f}%<extra></extra>",
-    ))
+    # The portfolio's line is computed from the value series: withheld with it (#643).
+    # The benchmarks' lines still show.
+    if _SERIES_GAP:
+        st.caption("The portfolio's cumulative return is withheld, as the warning above "
+                   "says; the benchmarks' are shown.")
+    else:
+        fig.add_trace(go.Scatter(
+            x=pv_norm.index, y=(pv_norm - 1) * 100,
+            name="Portfolio",
+            line=dict(color=_PALETTE["portfolio"], width=2.5),
+            hovertemplate="<b>Portfolio</b><br>%{x|%B %-d, %Y}<br>Return: %{y:.2f}%<extra></extra>",
+        ))
     fig.add_trace(go.Scatter(
         x=sp_norm.index, y=(sp_norm - 1) * 100,
         name="S&P 500 (SPY)",
@@ -1127,14 +1158,19 @@ with col:
         # The selected naive benchmark, which Stage 1 is measured against: this read
         # "60/40" whichever was selected (#406 item 10).
         _tc1.caption(f"SAA blend vs. {_naive_short}")
-        _tc2.metric("Stage 2: Implementation", _bps(_ts["stage2"]))
+        # Stage 2 and the total are the portfolio's return over the window: withheld
+        # with the value series (#643). Stage 1 is two benchmarks and still shows.
+        _tc2.metric("Stage 2: Implementation", _series(_bps(_ts["stage2"])))
         _tc2.caption("Portfolio vs. SAA blend")
-        _tc3.metric(f"Total: Portfolio vs. {_naive_short}", _bps(_ts["total"]))
+        _tc3.metric(f"Total: Portfolio vs. {_naive_short}", _series(_bps(_ts["total"])))
         _tc3.caption("Stage 1 + Stage 2")
 
         # Stage1+Stage2=Total by construction (price-series throughout); residual is floating-point only
         _resid_bps = _ts["algebra_residual"] * 10_000
-        if math.isnan(_resid_bps):
+        if _SERIES_GAP:
+            st.caption("Reconciliation is withheld with Stage 2 and the total, which are "
+                       "computed from the portfolio's value.")
+        elif math.isnan(_resid_bps):
             # naive_return was NaN (baseline unpriceable this window) — the
             # compact equation below can't render meaningfully with a missing
             # term, so an explicit unavailable note replaces it rather than
@@ -1347,10 +1383,14 @@ with col:
         # rebalancing is stated separately below, not read as a gap (#383).
         _bf_s2_gap_bps = (total_active / 100 - (_r_p_ps - _r_b_bf)) * 10_000
         _bf_window_cf = cf[(cf.index > pd.Timestamp(_bf_start)) & (cf.index <= pd.Timestamp(_bf_end))]
-        _s2_check, _s2_disclosure = stage2_reconciliation(
-            _bf_s2_gap_bps, _bf_start,
-            {d.date().isoformat(): float(a) for d, a in _bf_window_cf.items()},
-        )
+        if _SERIES_GAP:
+            # The check compares with Stage 2, the portfolio's return: withheld (#643).
+            _s2_check, _s2_disclosure = "vs. Stage 2: withheld", None
+        else:
+            _s2_check, _s2_disclosure = stage2_reconciliation(
+                _bf_s2_gap_bps, _bf_start,
+                {d.date().isoformat(): float(a) for d, a in _bf_window_cf.items()},
+            )
         st.caption(
             f"**BF decomposition:**  "
             f"Strategic active (ex-cash): {ex_cash_active:+.2f}%  &nbsp;·&nbsp;  "
@@ -1516,9 +1556,12 @@ with col:
             "withdrawals with end-of-day flow timing (Modified Dietz weighting "
             "for the Dietz method)."
         )
-        st.markdown(f"**Daily-linked TWR (SI):** {_pct(daily_si)}")
-        st.markdown(f"**Modified Dietz (SI):**   {_pct(dietz_si)}")
-        if spread_bps < 5:
+        st.markdown(f"**Daily-linked TWR (SI):** {_series(_pct(daily_si))}")
+        st.markdown(f"**Modified Dietz (SI):**   {_series(_pct(dietz_si))}")
+        if _SERIES_GAP:
+            # Both are computed from the value series: withheld with it (#643).
+            _spread_note = None
+        elif spread_bps < 5:
             _spread_note = (
                 "negligible (mid-period flows are small relative to the portfolio)"
                 if _has_mid_flows else "negligible (no mid-period external flows)"
@@ -1530,7 +1573,10 @@ with col:
                 if _has_mid_flows else ("⚠ unexpectedly large with no recorded flows, "
                                         "which points to the cash-flow data")
             )
-        st.markdown(f"**Method spread:** {spread_bps:.2f} bps: {_spread_note}")
+        if _spread_note is None:
+            st.markdown("**Method spread:** —")
+        else:
+            st.markdown(f"**Method spread:** {spread_bps:.2f} bps: {_spread_note}")
         st.markdown("---")
 
         if not bf_df.empty:

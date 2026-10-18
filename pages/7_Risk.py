@@ -17,7 +17,9 @@ st.set_page_config(page_title="Risk", layout="wide")
 from src.asof import as_of_banner
 from src.config import get_demo_banner_text, IS_DEMO
 from src.factors import SIG_LEGEND, fmt_p, sig_marker
-from src.holdings import get_current_market_value, get_inception_date, get_portfolio_account, get_portfolio_account_id
+from src.holdings import (UnpricedHoldingError, get_current_market_value, get_inception_date,
+                          get_portfolio_account, get_portfolio_account_id)
+from src.reports import not_computed_sentence
 from src.risk import (
     CREDIT_PROXY_DISCLOSURE,
     FACTORS,
@@ -110,8 +112,13 @@ with col:
     def _get_decomposition(inception_date: str, end: str) -> dict:
         return run_portfolio_factor_regression(inception_date, end)
 
+    _unpriced = None
     try:
         result = _get_decomposition(inception, end_date)
+    except UnpricedHoldingError as exc:
+        # A holding with no price on a date it was held: nothing is computed from the
+        # portfolio's value, and the sentence says why (#639, #643).
+        result, _unpriced = None, exc
     except Exception:  # pragma: no cover - defensive
         logging.exception("Factor decomposition failed")
         st.error("Factor decomposition unavailable. Please try again later.")
@@ -240,6 +247,16 @@ with col:
         with st.expander("Risk-contribution methodology & disclosure", expanded=False):
             for note in risk_contribution_methodology_notes():
                 st.markdown(f"- {note}")
+
+    if _unpriced is not None:
+        st.info(not_computed_sentence(
+            "The portfolio factor decomposition", _unpriced,
+            "no factor betas, fit statistics or scenario stress results are shown",
+            reason=_unpriced.reason, where="this page"))
+        # Risk contribution runs on PRICES, not the value series: its own status (#318).
+        _render_risk_contribution_section()
+        render_footer()
+        st.stop()
 
     # ── Insufficient-history empty state (the #38-analog) ─────────────────────
     # Phase 2 (scenarios) is GATED on Phase 1: with no betas there is nothing to
