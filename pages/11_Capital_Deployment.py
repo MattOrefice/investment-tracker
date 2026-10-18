@@ -20,6 +20,7 @@ from src.rebalance import (
     suggest_buys,
     suggest_contributions,
     unfunded_target_sleeves,
+    unfunded_warning,
     SUM_INVARIANT_TOLERANCE,
 )
 from src.trade_writer import build_thesis_lookup, write_trades_batch
@@ -354,9 +355,9 @@ _dep_acct = next((a for a in _dep_accounts if a["name"] == _dep_acct_name), None
 # calling the function, and name what to buy — the invariant stays armed exactly
 # as-is; we simply stop handing it an impossible input. Mirrors the sleeve_df.empty
 # guard above. Sleeve names and carrier tickers are both derived from the DB, so
-# neither can go stale.
+# neither can go stale. What the warning says reads the coverage record (#662): a
+# held holding with no price is named as unpriced, never as "no holdings yet".
 _unfunded = unfunded_target_sleeves(saa_targets, ticker_to_sleeve, prices)
-_unfunded_tickers = [t for s in _unfunded for t in carrier_by_sleeve.get(s, [])]
 
 if contrib_cash > 0 and not _unfunded and not _gap_note:
     orig_suggestions = suggest_contributions(
@@ -542,14 +543,8 @@ if contrib_cash > 0 and not _unfunded and not _gap_note:
             "document rationale in the Trade Log."
         )
 elif contrib_cash > 0:
-    _verb = "have" if len(_unfunded) != 1 else "has"
-    _obj  = "them" if len(_unfunded) != 1 else "it"
-    st.warning(
-        f"**{', '.join(_unfunded)}** {_verb} an SAA target but no holdings yet, so "
-        f"new cash cannot be allocated to {_obj}. Deploying now would leave part of "
-        f"the contribution unplaced. Buy **{', '.join(_unfunded_tickers)}** (one share "
-        "each is enough), re-import, then deploy. The rest of this page works normally."
-    )
+    st.warning(unfunded_warning(_unfunded, ticker_to_sleeve, carrier_by_sleeve, _coverage,
+                                weights_gap=unresolved_in_weights(_coverage)))
 else:
     st.info("Enter a cash amount above to see contribution suggestions.")
 
