@@ -137,7 +137,9 @@ def _price_and_status(
     except Exception:                                            # noqa: BLE001
         served = None
     # Served, and not ok, when the gap fetch for this window failed (#637), or when an
-    # update sent a dividend in the window that could not be read (#642).
+    # update sent a dividend in the window that could not be read (#642): that update
+    # is not stored, so the frame stops where the store does (#658), and the status
+    # names the event.
     failed = gap_fetch_failure_for(fetch, start, end)
     unread = "; ".join(u.words() for u in unread_dividends_for(fetch, start, end))
     return frame, TickerStatus(ticker, True, served_through=served,

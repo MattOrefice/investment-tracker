@@ -1033,8 +1033,11 @@ def _unread_dividends(tickers, start: str, end: str) -> "list[str]":
     why. Empty when the lock may proceed.
 
     THE RULE (#642, decided by the owner on October 18, 2026): a lock refuses a quarter
-    whose window holds such a record for a ticker it reads. The dividend is not stored,
-    so every total-return level before it would be locked unscaled."""
+    whose window holds such a record for a ticker it reads. Since #658 the answer that
+    held it is not stored at all, so its closes are missing from the store and the end,
+    interior and leading rules see that first; this is the capture's last guard, for
+    what those miss: a ticker with no stored closes, whose whole fetch raised and would
+    be locked as a disclosed gap (#204)."""
     return [u.words() for t in sorted(set(tickers))
             for u in _prices_module.unread_dividends_for(t, start, end)]
 
@@ -1087,10 +1090,16 @@ def quarter_lock_gaps(quarter_id: str) -> "list[str]":
     capture would build from the cache: the same tickers, the same first day, the same
     rules, applied by the same checks (_interior_gaps, and _held_without_price over the
     same quarter, #648). DB only: never a fetch, and never a write, so the table is not
-    created. The capture's fourth and fifth rules, a failed fetch of a ticker's earlier
-    history (_leading_fetch_failures, #639) and an unread dividend (_unread_dividends,
-    #642), read this process's records of its fetches, not the store, and are not read
-    here: whether the cap reads them is not decided."""
+    created.
+
+    THE CAP STAYS ON STORED STATE (decided by the owner on October 18, 2026, #658). The
+    capture's fourth and fifth rules, a failed fetch of a ticker's earlier history
+    (_leading_fetch_failures, #639) and an unread dividend (_unread_dividends, #642),
+    read this process's records of its fetches, not the store, and are not read here:
+    they remain the capture's last guard, and its refusal names the cause. An answer
+    holding a dividend that cannot be read is not stored (#658), so the closes it
+    carried are missing from the store, and the end and interior rules the cap reads
+    see them."""
     gaps = quarter_lock_refusals(quarter_id)
     return gaps.interior + gaps.unpriced
 
@@ -1140,7 +1149,9 @@ def capture_quarter_snapshot(quarter_id: str) -> tuple:
     dividend a price update sent for a ticker the lock reads, dated in the window it
     reads, that could not be read (prices.unread_dividends) refuses the same way
     (_unread_dividends), naming the ticker, the date and why: it is not stored, and the
-    lock would freeze total return without it.
+    lock would freeze total return without it. Since #658 the answer holding it is not
+    stored either, so the closes it carried are missing and the rules above refuse on
+    them first; this rule is the last guard.
 
     THE LOCK FETCHES WHAT THE BOOK LACKS (#594, decided by the owner on October 15,
     2026). Every ticker is read through prices.get_prices, which fetches and stores
