@@ -123,6 +123,38 @@ def _price_and_status(
                                fetch_failure=failed.cause if failed else None)
 
 
+def _first_session_on_or_after(day: str) -> str:
+    """The first NYSE session on or after ``day``, by demo_refresh.is_session."""
+    from src.demo_refresh import is_session
+    d = date.fromisoformat(day)
+    while not is_session(d):
+        d += timedelta(days=1)
+    return d.isoformat()
+
+
+def _bil_for_spaxx(start: str, end: str) -> "tuple[pd.DataFrame, TickerStatus]":
+    """BIL's frame for SPAXX's growth from ``start``, and SPAXX's status (#639).
+
+    SPAXX's income is modeled at BIL's total return measured from ``start``. A BIL
+    series starting later would measure it from a later base and understate it with
+    nothing saying so. So BIL must hold the close of the first session on or after
+    ``start``. When it does not, the frame comes back empty and SPAXX unresolved:
+    ``fetch_failed`` when the fetch for the missing stretch failed
+    (prices.gap_fetch_failure_for), ``no_cached_rows`` when the stretch is not stored
+    and was not fetched. Each caller then values SPAXX as it already values an
+    unresolved SPAXX."""
+    frame, st = _price_and_status("SPAXX", start, end, price_ticker="BIL")
+    if not st.resolved or frame.empty:
+        return frame, st
+    first = min(_to_iso(d) for d in frame.index)
+    if first <= _first_session_on_or_after(start):
+        return frame, st
+    before = (date.fromisoformat(first) - timedelta(days=1)).isoformat()
+    failed = gap_fetch_failure_for("BIL", start, before)
+    return frame.iloc[0:0], TickerStatus(
+        "SPAXX", False, reason="fetch_failed" if failed else "no_cached_rows")
+
+
 # Why the lookup below finds nothing on a book with no trade logged, in its own words.
 NO_TRADE_LEDGER = "no active self-directed taxable account carries a trade ledger"
 
@@ -493,7 +525,7 @@ def _portfolio_value_series_impl(
     statuses: "list[TickerStatus]" = []
     for ticker in tickers:
         if ticker == "SPAXX":
-            p, st = _price_and_status(ticker, start_date, end, price_ticker="BIL")
+            p, st = _bil_for_spaxx(start_date, end)
             statuses.append(st)
             try:
                 p.index = pd.to_datetime(p.index)
@@ -657,7 +689,7 @@ def _sleeve_weights_impl(date_str: str) -> "tuple[pd.DataFrame, list[TickerStatu
             # being valued; that this is a PROXY instrument is a substitution, and
             # reporting it belongs to the PR that populates that field.
             inception = "2025-05-01"
-            p, st = _price_and_status(ticker, inception, date_str, price_ticker="BIL")
+            p, st = _bil_for_spaxx(inception, date_str)
             statuses.append(st)
             try:
                 if not p.empty:
@@ -794,8 +826,9 @@ def valuation_tickers(date_str: Optional[str] = None) -> "set[str]":
 def _spaxx_price(d: str) -> "tuple[float, TickerStatus]":
     """SPAXX's value per share for the current market value: BIL's total return,
     normalized to $1.00 at inception. SPAXX holds its $1.00 NAV and pays its income
-    as new shares, which the ledger does not record, so this models that income."""
-    p, st = _price_and_status("SPAXX", "2025-05-01", d, price_ticker="BIL")
+    as new shares, which the ledger does not record, so this models that income.
+    $1.00 when BIL does not cover the start, with SPAXX unresolved (_bil_for_spaxx)."""
+    p, st = _bil_for_spaxx("2025-05-01", d)
     try:
         if not p.empty:
             bil = total_return_series(p)

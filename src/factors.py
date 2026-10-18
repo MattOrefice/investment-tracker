@@ -851,6 +851,10 @@ def _get_sleeve_return_series(
       they are used directly and no database access is required.
       When ``weights`` is None, inception market values are computed from
       get_holdings_on_date — this fallback requires trades to exist in the DB.
+      A date on which a leg has no return (before its first close in the window)
+      is NaN, not 0% (#639): a missing stretch filled with 0% pulled the betas toward
+      zero. The regression's dropna then keeps the dates every leg covers, and its
+      sample window, printed from those dates, says where it starts.
 
     Non-trading days (weekends, US holidays) carry forward Friday's price;
     inner-joining against the factor index in the regression step drops them.
@@ -896,12 +900,12 @@ def _get_sleeve_return_series(
             p = get_prices(ticker, inception, end_date)
             p.index = pd.to_datetime(p.index)
             series = total_return_series(p)
-            daily_ret = series.reindex(date_range).ffill().pct_change().fillna(0.0)
+            daily_ret = series.reindex(date_range).ffill().pct_change()
             weighted_ret = weighted_ret + w * daily_ret
         except Exception:
             continue
 
-    return weighted_ret.iloc[1:]  # drop inception day (pct_change → 0.0 sentinel)
+    return weighted_ret.iloc[1:]  # drop inception day: no prior close, so no return
 
 
 # ── Regression engine ──────────────────────────────────────────────────────────
@@ -1218,6 +1222,10 @@ def regress_fi_sleeve(inception: str, end_date: str) -> Optional[dict]:
     CREDIT = HYG daily return − IEF daily return  (credit spread premium proxy)
     RF     = Ken French US daily risk-free rate
 
+    A date on which either fund has no return (before its first close in the window)
+    is NaN, not 0% (#639), so the regression uses the dates both funds cover and its
+    sample window, printed from them, says where it starts.
+
     Returns None if fewer than 30 aligned observations are available.
     """
     date_range = pd.date_range(start=inception, end=end_date, freq="D")
@@ -1228,7 +1236,7 @@ def regress_fi_sleeve(inception: str, end_date: str) -> Optional[dict]:
         p = get_prices(ticker, inception, end_date)
         p.index = pd.to_datetime(p.index)
         series = total_return_series(p)
-        fi_ret = fi_ret + w * series.reindex(date_range).ffill().pct_change().fillna(0.0)
+        fi_ret = fi_ret + w * series.reindex(date_range).ffill().pct_change()
     fi_ret = fi_ret.iloc[1:]
     fi_ret.index = pd.to_datetime(fi_ret.index)
 
