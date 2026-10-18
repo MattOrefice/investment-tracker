@@ -383,10 +383,12 @@ with col:
                     )
                 except LockCoverageError as _lock_refused:
                     # A REFUSAL, not a failure: the prices do not reach the quarter's
-                    # end yet, have a gap inside a ticker's history (#491), or leave a
+                    # end yet, have a gap inside a ticker's history (#491), leave a
                     # holding with no price on a date it was held in the quarter (#639),
-                    # and the message names which tickers and dates (#368, #653).
-                    # "Try again later" would hide the one fact that says when.
+                    # or lack a ticker's earlier history because its fetch failed (#639),
+                    # and the message names which tickers and dates, or the fetch's
+                    # cause (#368, #653). "Try again later" would hide the one fact
+                    # that says when.
                     st.error(str(_lock_refused))
                 except Exception:
                     logging.exception("Quarterly report generation failed")

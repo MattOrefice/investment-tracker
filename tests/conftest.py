@@ -790,7 +790,44 @@ def point_at_frozen_book(mp: "pytest.MonkeyPatch", tmp_dir: Path) -> Path:
     mp.setattr(src.db, "DB_PATH", copy)
     mp.setattr(src.db, "_migrated_paths", set())
     src.prices._reset_trailing_memo()
+    lock_with_the_gap_fetch_off(mp)
     return copy
+
+
+class _LockReadsWithTheGapFetchOff:
+    """src.prices as the lock code (src.cache) reads it under lock_with_the_gap_fetch_off:
+    get_prices runs with the gap fetch off; everything else is src.prices's own."""
+
+    def __init__(self, prices):
+        self._prices = prices
+
+    def __getattr__(self, name):
+        return getattr(self._prices, name)
+
+    def get_prices(self, *args, **kwargs):
+        saved = self._prices._GAP_FETCH
+        self._prices.set_gap_fetch(False)
+        try:
+            return self._prices.get_prices(*args, **kwargs)
+        finally:
+            self._prices.set_gap_fetch(saved)
+
+
+def lock_with_the_gap_fetch_off(mp: "pytest.MonkeyPatch") -> None:
+    """For the rest of this test, a fresh quarter lock is taken with the gap fetch off,
+    as tools/lock_demo_quarters.py takes the committed book's (#639, decided by the
+    owner on October 18, 2026). The frozen book's stored history is its whole record:
+    its histories start in 2024, a lock reads from 2020, and offline every fetch of the
+    earlier stretch would fail and, by the lock's rule, refuse it. Stubbing an earlier
+    history instead would change the book's locks.
+
+    Only the lock code's reads change: src.cache reads prices through its
+    ``_prices_module``, which this replaces, so a test that imported the capture before
+    pointing at the book is covered too. Reads outside the lock keep the gap fetch as it
+    was, so the failure record's own tests still see it."""
+    import src.cache
+    import src.prices
+    mp.setattr(src.cache, "_prices_module", _LockReadsWithTheGapFetchOff(src.prices))
 
 
 def metadata_dated_inside_q2(mp: "pytest.MonkeyPatch", tmp_dir: Path) -> Path:
