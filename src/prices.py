@@ -56,6 +56,18 @@ class YahooNoData(YahooResponseError):
     records it. A YahooResponseError still, so every other caller reads it as before."""
 
 
+class YahooUnreadDividend(YahooResponseError):
+    """Yahoo Finance's answer held a dividend event fetch_prices cannot read, so none of
+    the answer was stored, neither its closes nor its dividends (#658, decided by the
+    owner on October 18, 2026). ``unread`` holds each such event (UnreadDividend). A
+    YahooResponseError, so get_prices' gap fetch records it as a failed fetch, with
+    ``reason`` naming the events, and every other caller reads it as a failed fetch."""
+
+    def __init__(self, message: str, reason: str, unread: "list[UnreadDividend]"):
+        super().__init__(message, reason)
+        self.unread = unread
+
+
 # How Yahoo Finance's 400 describes a window that holds no data.
 _NO_DATA_DESCRIPTION = "Data doesn't exist for startDate"
 
@@ -151,20 +163,26 @@ def _date_to_unix(date_str: str) -> int:
 
 
 # A DIVIDEND THE PROVIDER SENT THAT CANNOT BE READ IS RECORDED, NOT DROPPED (#642,
-# decided by the owner on October 18, 2026). fetch_prices stores the closes it received
-# either way. An event whose date or amount it cannot read is recorded here with the
-# ticker, the date as sent and why:
+# decided by the owner on October 18, 2026). An event whose date or amount fetch_prices
+# cannot read is recorded here with the ticker, the date as sent and why:
 #   * a date that is not a timestamp, or one out of the platform's range (on Windows
 #     datetime.fromtimestamp raises OSError for it, which a gap fetch used to record as
-#     "a network error" and store none of the answer's closes);
+#     "a network error");
 #   * an amount missing, not a number, or not above zero;
 #   * an event that is not a record at all.
-# The dividend is not stored, so every total-return level before it goes unscaled
-# (dividend_adjusted), and get_prices never asks for a stored window again: the record
-# is the only trace. The ticker's price status (holdings._price_and_status) and the
-# banner (asof.as_of_live_line) show it, and a quarter lock whose window holds one for
-# a ticker it reads refuses (cache._unread_dividends). A later answer that reads the
-# same event clears it. Per process, as the gap fetch's record is (#637).
+# AND THE ANSWER HOLDING IT IS NOT STORED AT ALL (#658, decided by the owner on October
+# 18, 2026, reversing #642's "the closes are still stored"): neither its closes nor its
+# dividends. fetch_prices records the events and raises YahooUnreadDividend. Stored, the
+# closes made the window look fetched, get_prices never asked for it again, and the
+# dividend was missing for good while this record died with the process. Not stored,
+# the window stays a gap, so every process asks for it again, meets the event and
+# records it again, until an answer reads cleanly; that answer is stored whole and
+# clears the records its window holds. This is how a failed leading fetch survives a
+# restart (#639). The ticker's prices stop where the store stops, and its price status
+# (holdings._price_and_status) and the banner (asof.as_of_live_line) say why, naming
+# the event. The lock's end and interior rules, and so the reportable-quarter cap, see
+# the missing closes in the store; a lock whose window holds a record for a ticker it
+# reads still refuses on it (cache._unread_dividends), the capture's last guard.
 class UnreadDividend(NamedTuple):
     ticker: str
     raw_date: str              # the event's date as the provider sent it
@@ -178,13 +196,21 @@ class UnreadDividend(NamedTuple):
         as sent when it could not be read."""
         return f"{self.ticker}, dated {self.ex_date or self.raw_date} ({self.why})"
 
+    def holds(self, start: str, end: str) -> bool:
+        """Whether [start, end] holds the event: by its date, or, when the date could
+        not be read, by the window asked for, which holds it."""
+        if self.ex_date:
+            return start <= self.ex_date <= end
+        return self.start <= end and start <= self.end
+
 
 _UNREAD_DIVIDENDS: "dict[tuple[str, str], UnreadDividend]" = {}
 _UNREAD_LOCK = threading.Lock()
 
 
 def _reset_unread_dividends() -> None:
-    """Forget the unread dividends (tests; a re-seed drops the closes they came with)."""
+    """Forget the unread dividends (tests; a re-seed, after which their windows are
+    asked for again, as after a restart)."""
     with _UNREAD_LOCK:
         _UNREAD_DIVIDENDS.clear()
 
@@ -219,13 +245,32 @@ def _read_dividend(ts_key, event) -> "tuple[str | None, float | None, str | None
     return ex, amount, None
 
 
-def _note_dividends(ticker: str, read: "list[str]", unread: "list[UnreadDividend]") -> None:
-    """Record the events an answer could not read, and clear any it now reads."""
+def _note_dividends(ticker: str, start: str, end: str, read: "list[str]",
+                    unread: "list[UnreadDividend]") -> None:
+    """Record the events an answer for [start, end] could not read, and clear any it
+    now reads. An answer with none, which is stored whole, also clears every record of
+    the ticker its window holds (#658): the window is stored now, so the record no
+    longer says why the store stops."""
     with _UNREAD_LOCK:
         for raw in read:
             _UNREAD_DIVIDENDS.pop((ticker, raw), None)
+        if not unread:
+            for key in [k for k, u in _UNREAD_DIVIDENDS.items() if u.ticker == ticker
+                        and (start <= u.ex_date <= end if u.ex_date
+                             else start <= u.start and u.end <= end)]:
+                del _UNREAD_DIVIDENDS[key]
         for u in unread:
             _UNREAD_DIVIDENDS[(u.ticker, u.raw_date)] = u
+
+
+def _unread_reason(unread: "list[UnreadDividend]") -> str:
+    """What the answer held, in words that follow "Yahoo Finance": "sent a dividend
+    dated 2026-07-01 that could not be read: its amount is not a number"."""
+    if len(unread) == 1:
+        u = unread[0]
+        return f"sent a dividend dated {u.ex_date or u.raw_date} that could not be read: {u.why}"
+    return (f"sent {len(unread)} dividends that could not be read: "
+            + "; ".join(f"dated {u.ex_date or u.raw_date}, {u.why}" for u in unread))
 
 
 def unread_dividends() -> "list[UnreadDividend]":
@@ -240,8 +285,7 @@ def unread_dividends_for(ticker: str, start: str, end: "str | None" = None
     """The unread dividends of ``ticker`` in [start, end]: by their date, or, when the
     date could not be read, by the window asked for, which holds the event."""
     end = end or date.today().isoformat()
-    return [u for u in unread_dividends() if u.ticker == ticker
-            and (start <= u.ex_date <= end if u.ex_date else u.start <= end and start <= u.end)]
+    return [u for u in unread_dividends() if u.ticker == ticker and u.holds(start, end)]
 
 
 # One store at a time in this process (#580). The demo's refresh fetches on four
@@ -278,6 +322,11 @@ def fetch_prices(
     holds none, so NO STORED ROW CHANGES whatever else the response carries. Without it
     every settled bar in the response replaces the stored one, as before. The dates
     stored are returned in ``attrs["stored"]``.
+
+    AN ANSWER HOLDING A DIVIDEND IT CANNOT READ IS NOT STORED AT ALL (#658, decided by
+    the owner on October 18, 2026): neither its closes nor its dividends. The events are
+    recorded (unread_dividends) and YahooUnreadDividend is raised, so the window stays
+    a gap and is asked for again until an answer reads cleanly.
 
     Raises ValueError for malformed, delisted, or unrecognised tickers.
     """
@@ -395,6 +444,12 @@ def fetch_prices(
             read.append(str(ts_key))
         else:
             unread.append(UnreadDividend(ticker, str(ts_key), ex_date, why, start_date, end))
+    if unread:
+        _note_dividends(ticker, start_date, end, read, unread)
+        reason = _unread_reason(unread)
+        raise YahooUnreadDividend(
+            f"Nothing stored for '{ticker}' ({start_date} to {end}): Yahoo Finance {reason}.",
+            reason, unread)
 
     # The bar still forming in an open session is RETURNED but never CACHED — see
     # unsettled_bar_date(). Callers get the live mark (get_prices concatenates this
@@ -460,7 +515,7 @@ def fetch_prices(
                     (ticker, ex_date, amount, ticker, ex_date),
                 )
 
-    _note_dividends(ticker, read, unread)
+    _note_dividends(ticker, start_date, end, read, [])
     if wanted is not None:
         df.attrs["stored"] = stored
     _count_fetch()
@@ -565,7 +620,9 @@ def _fetch_trailing_memoized(ticker: str, start: str, end: str) -> pd.DataFrame:
 # and that window is not fetched again for demo_refresh.RETRY_AFTER, the demo's retry:
 # a down network costs one attempt per ticker per half hour, not one per render. A
 # later success clears it. The ticker's coverage status (holdings._price_and_status)
-# and the banner (asof.as_of_live_line) read the record.
+# and the banner (asof.as_of_live_line) read the record. An answer holding a dividend
+# that cannot be read is one of these since #658: none of it is stored
+# (YahooUnreadDividend), and the cause names the event.
 class GapFetchFailure(NamedTuple):
     ticker: str
     start: str
@@ -1037,6 +1094,14 @@ def _last_stored_close(ticker: str) -> "str | None":
         row = conn.execute("SELECT MAX(price_date) FROM prices WHERE ticker = ?",
                            (ticker,)).fetchone()
     return row[0] if row and row[0] else None
+
+
+def stored_span(ticker: str) -> "tuple[str, str] | None":
+    """The ticker's first and newest stored close dates, or None when none is stored."""
+    with get_connection() as conn:
+        row = conn.execute("SELECT MIN(price_date), MAX(price_date) FROM prices "
+                           "WHERE ticker = ?", (ticker,)).fetchone()
+    return (row[0], row[1]) if row and row[0] else None
 
 
 def bulk_refresh(tickers: list, start_date: str) -> None:

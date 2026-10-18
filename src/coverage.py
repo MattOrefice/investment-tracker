@@ -141,8 +141,10 @@ class TickerStatus:
     ``unpriced_held`` is set by the value series when the holding had no price on dates
     it was held in the window (#639, #643).
     ``unread_dividends`` names each dividend in the window that a price update sent and
-    could not read (prices.unread_dividends_for), so it is not stored and total return
-    across it is understated: "VTV, dated 2026-07-01 (it has no amount)" (#642)."""
+    could not read (prices.unread_dividends_for): "VTV, dated 2026-07-01 (it has no
+    amount)" (#642). The update holding it is not stored at all (#658), so it says why
+    the ticker's prices stop at ``served_through``. Through get_prices' gap fetch the
+    same update is a failed fetch too, and ``fetch_failure`` names the event."""
 
     ticker: str
     resolved: bool

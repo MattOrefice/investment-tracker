@@ -463,19 +463,35 @@ def as_of_live_line(
     return line + "." + _unread_dividend_sentence(ref) + _live_mark_sentence(ref)
 
 
+def _where_prices_stop(u, span: "tuple[str, str] | None") -> str:
+    """Where ``u.ticker``'s stored prices stop because the update holding ``u`` was not
+    stored: "VTV's prices stop at July 20, 2026" for an update after its last close,
+    "begin at" for one before its first, "lacks its closes from ... to ..." between."""
+    if span is None:
+        return f"{u.ticker} has no stored prices"
+    first, last = span
+    if u.end >= last:
+        return f"{u.ticker}'s prices stop at {format_long_date(last)}"
+    if u.end < first:
+        return f"{u.ticker}'s prices begin at {format_long_date(first)}"
+    return (f"{u.ticker} lacks its closes from {format_long_date(u.start)} to "
+            f"{format_long_date(u.end)}")
+
+
 def _unread_dividend_sentence(today: date) -> str:
-    """The banner's sentence for a dividend a price update sent and could not read
-    (#642): " A dividend in the price update could not be read, so it is not stored and
-    total return across it is understated: VTV, dated 2026-07-01 (it has no amount).",
-    or "".
+    """The banner's sentence for a dividend a price update sent and could not read,
+    or "": " A price update held a dividend that could not be read, so none of it is
+    stored and VTV's prices stop at July 20, 2026: VTV, dated 2026-07-22 (it has no
+    amount)."
 
     Decided by the owner on October 18, 2026: such a dividend is recorded with the
-    ticker, its date as sent and why (prices.unread_dividends), and shown where the
-    ticker's price status shows. Every state of the banner carries it, whether or not
-    the demo's refresh has run: the refresh fetches through the same parse. Only the
-    tickers the current value is priced from count, as for a failed update; if the
+    ticker, its date as sent and why (prices.unread_dividends, #642), and the answer
+    holding it is not stored at all (#658), so the banner says why the ticker's prices
+    stop where they do, naming the event. Every state of the banner carries it, whether
+    or not the demo's refresh has run: the refresh fetches through the same parse. Only
+    the tickers the current value is priced from count, as for a failed update; if the
     holdings cannot be read, every record counts."""
-    from src.prices import unread_dividends
+    from src.prices import stored_span, unread_dividends
     unread = unread_dividends()
     if not unread:
         return ""
@@ -487,15 +503,20 @@ def _unread_dividend_sentence(today: date) -> str:
     unread = [u for u in unread if u.ticker in held]
     if not unread:
         return ""
-    if len(unread) == 1:
-        lead = "A dividend in the price update could not be read, so it is not stored"
-        across = "it"
+    where: "list[str]" = []
+    for u in unread:
+        w = _where_prices_stop(u, stored_span(u.ticker))
+        if w not in where:
+            where.append(w)
+    updates = len({(u.ticker, u.start, u.end) for u in unread})
+    events = "a dividend" if len(unread) == 1 else f"{len(unread)} dividends"
+    if updates == 1:
+        lead = f"A price update held {events} that could not be read, so none of it is stored"
     else:
-        lead = (f"{len(unread)} dividends in the price update could not be read, so they "
-                "are not stored")
-        across = "them"
-    return (f" {lead} and total return across {across} is understated: "
-            + "; ".join(u.words() for u in unread) + ".")
+        lead = (f"{updates} price updates held {events} that could not be read, so none of "
+                "them is stored")
+    stops = where[0] if len(where) == 1 else ", ".join(where[:-1]) + " and " + where[-1]
+    return f" {lead} and {stops}: " + "; ".join(u.words() for u in unread) + "."
 
 
 def _gap_failure_clause(today: date) -> str:

@@ -1,12 +1,13 @@
 """Three price-layer reads no longer turn a failure into an answer (#642).
 
 Decided by the owner on October 18, 2026:
-  * fetch_prices' dividend parse: the closes are still stored, but an event it cannot
-    read (an amount missing, not a number, or not above zero; a date that is not a
-    timestamp or is out of range) is recorded with the ticker, its date as sent and
-    why, and shown where the ticker's price status shows. An out-of-range date is one
-    of these, never "a network error". A lock refuses a quarter whose window holds such
-    a record for a ticker it reads.
+  * fetch_prices' dividend parse: an event it cannot read (an amount missing, not a
+    number, or not above zero; a date that is not a timestamp or is out of range) is
+    recorded with the ticker, its date as sent and why, and shown where the ticker's
+    price status shows. An out-of-range date is one of these, never "a network error".
+    A lock refuses a quarter whose window holds such a record for a ticker it reads.
+    #642 stored the answer's closes all the same; #658 reversed that the same day, and
+    the answer is not stored at all (tests/test_unread_answer_not_stored_658.py).
   * _cached_row_count returns 0 only for a missing prices table; any other error raises.
   * get_dividends' cache read never writes: a missing table reads as no dividends, and
     any other error raises, so a capture fails rather than locking an empty history.
@@ -94,49 +95,57 @@ UNREADABLE = [
 
 
 @pytest.mark.parametrize("raw, event, ex_date, why", UNREADABLE)
-def test_an_unreadable_dividend_is_recorded_and_the_closes_are_stored(book, monkeypatch,
-                                                                      raw, event, ex_date, why):
-    """The event is recorded with the ticker, its date as sent and why. The answer's
-    closes and its readable dividend are stored as before."""
-    from src.prices import fetch_prices
+def test_an_unreadable_dividend_is_recorded_and_nothing_is_stored(book, monkeypatch,
+                                                                  raw, event, ex_date, why):
+    """The event is recorded with the ticker, its date as sent and why. None of the
+    answer is stored since #658: not its closes, not its readable dividend."""
+    from src.prices import YahooUnreadDividend, fetch_prices
     readable = str(_ts("2026-07-23"))
     _yahoo(monkeypatch, _chart(*WINDOW, {raw: event, readable: {"amount": 0.4}}))
-    frame = fetch_prices("VOO", *WINDOW)
-    assert [str(d) for d in frame.index] == ["2026-07-21", "2026-07-22", "2026-07-23",
-                                             "2026-07-24"]
+    with pytest.raises(YahooUnreadDividend) as err:
+        fetch_prices("VOO", *WINDOW)
+    assert str(err.value) == (
+        f"Nothing stored for 'VOO' ({WINDOW[0]} to {WINDOW[1]}): Yahoo Finance sent a "
+        f"dividend dated {ex_date or raw} that could not be read: {why}.")
     assert _rows(book, "SELECT price_date FROM prices WHERE ticker = 'VOO' AND price_date "
-                       ">= ? ORDER BY price_date", WINDOW[0]) == [(str(d),) for d in frame.index]
-    assert _rows(book, "SELECT ex_date, amount FROM dividends WHERE ticker = 'VOO' AND "
-                       "ex_date >= ?", WINDOW[0]) == [("2026-07-23", 0.4)]
+                       ">= ?", WINDOW[0]) == []
+    assert _rows(book, "SELECT ex_date FROM dividends WHERE ticker = 'VOO' AND ex_date >= ?",
+                 WINDOW[0]) == []
     assert _unread() == [("VOO", raw, ex_date, why, *WINDOW)]
 
 
 def test_an_out_of_range_date_in_a_gap_fetch_is_not_a_network_error(book, monkeypatch):
     """On Windows datetime.fromtimestamp raises OSError for it, which the gap fetch
-    recorded as "a network error" and stored none of the answer's closes."""
+    recorded as "a network error". The gap fetch's record names the event instead, and
+    the gap stays one (#658)."""
     from src.prices import gap_fetch_failures, get_prices
     _yahoo(monkeypatch, _chart(*WINDOW, {str(10 ** 20): {"amount": 0.5}}))
     frame = get_prices("VOO", "2026-07-01", WINDOW[1])
-    assert str(max(frame.index)) == WINDOW[1], "the gap's closes are served and stored"
-    assert gap_fetch_failures() == []
+    assert str(max(frame.index)) == "2026-07-20", "the store's last close"
+    assert [(f.ticker, f.start, f.end, f.cause) for f in gap_fetch_failures()] == [
+        ("VOO", *WINDOW, f"Yahoo Finance sent a dividend dated {10 ** 20} that could not "
+                         "be read: its date is out of range")]
     assert _unread() == [("VOO", str(10 ** 20), None, "its date is out of range", *WINDOW)]
 
 
 def test_the_ticker_status_and_the_banner_show_it(book, monkeypatch):
     from src.asof import as_of_live_line
     from src.holdings import _price_and_status
-    from src.prices import fetch_prices
+    from src.prices import YahooUnreadDividend, fetch_prices, set_gap_fetch
     _yahoo(monkeypatch, _chart(*WINDOW, {JUL22: {}}))
-    fetch_prices("VOO", *WINDOW)
+    with pytest.raises(YahooUnreadDividend):
+        fetch_prices("VOO", *WINDOW)
+    set_gap_fetch(False)                       # as in the demo once its refresh runs
     words = "VOO, dated 2026-07-22 (it has no amount)"
     _frame, st = _price_and_status("VOO", "2026-07-01", WINDOW[1])
     assert st.resolved and st.unread_dividends == words
+    assert st.served_through == "2026-07-20"
     _frame, st = _price_and_status("VOO", "2026-07-01", "2026-07-21")
     assert st.unread_dividends is None, "a window that does not hold it"
-    banner = as_of_live_line(dt.date(2026, 7, 27), frontier=dt.date(2026, 7, 24))
+    banner = as_of_live_line(dt.date(2026, 7, 27), frontier=dt.date(2026, 7, 20))
     assert banner.endswith(
-        " A dividend in the price update could not be read, so it is not stored and total "
-        f"return across it is understated: {words}."), banner
+        " A price update held a dividend that could not be read, so none of it is stored "
+        f"and VOO's prices stop at July 20, 2026: {words}."), banner
 
 
 def test_without_one_the_banner_says_nothing_of_dividends(book, monkeypatch):
@@ -149,9 +158,10 @@ def test_without_one_the_banner_says_nothing_of_dividends(book, monkeypatch):
 
 
 def test_a_later_answer_that_reads_it_clears_it(book, monkeypatch):
-    from src.prices import fetch_prices
+    from src.prices import YahooUnreadDividend, fetch_prices
     _yahoo(monkeypatch, _chart(*WINDOW, {JUL22: {"amount": "abc"}}))
-    fetch_prices("VOO", *WINDOW)
+    with pytest.raises(YahooUnreadDividend):
+        fetch_prices("VOO", *WINDOW)
     assert _unread()
     _yahoo(monkeypatch, _chart(*WINDOW, {JUL22: {"amount": 0.5}}))
     fetch_prices("VOO", *WINDOW)
@@ -184,10 +194,13 @@ def _locked(path) -> list:
 
 
 def test_a_lock_refuses_a_quarter_whose_window_holds_one(unlocked_q2, monkeypatch):
+    """The window's closes are already stored, so no stored rule sees anything: the
+    record is the capture's last guard (#658)."""
     from src.cache import LockCoverageError, capture_quarter_snapshot
-    from src.prices import fetch_prices
+    from src.prices import YahooUnreadDividend, fetch_prices
     _yahoo(monkeypatch, _chart("2026-06-15", "2026-06-17", {str(_ts("2026-06-16")): {}}))
-    fetch_prices("VOO", "2026-06-15", "2026-06-17")
+    with pytest.raises(YahooUnreadDividend):
+        fetch_prices("VOO", "2026-06-15", "2026-06-17")
     with pytest.raises(LockCoverageError) as err:
         capture_quarter_snapshot("2026Q2")
     assert str(err.value) == (
@@ -204,9 +217,10 @@ def test_a_lock_refuses_a_quarter_whose_window_holds_one(unlocked_q2, monkeypatc
 def test_a_record_outside_the_locks_reads_does_not_refuse_it(unlocked_q2, monkeypatch,
                                                              ticker, start, end, day):
     from src.cache import capture_quarter_snapshot
-    from src.prices import fetch_prices
+    from src.prices import YahooUnreadDividend, fetch_prices
     _yahoo(monkeypatch, _chart(start, end, {str(_ts(day)): {}}))
-    fetch_prices(ticker, start, end)
+    with pytest.raises(YahooUnreadDividend):
+        fetch_prices(ticker, start, end)
     assert _unread()
     capture_quarter_snapshot("2026Q2")
     assert "2026Q2" in _locked(unlocked_q2)
