@@ -139,7 +139,10 @@ class TickerStatus:
     ``fetch_failure`` is the cause when the price was served but a gap fetch for its
     window failed (prices.gap_fetch_failure_for): served, and not ok (#637).
     ``unpriced_held`` is set by the value series when the holding had no price on dates
-    it was held in the window (#639, #643)."""
+    it was held in the window (#639, #643).
+    ``unread_dividends`` names each dividend in the window that a price update sent and
+    could not read (prices.unread_dividends_for), so it is not stored and total return
+    across it is understated: "VTV, dated 2026-07-01 (it has no amount)" (#642)."""
 
     ticker: str
     resolved: bool
@@ -148,6 +151,7 @@ class TickerStatus:
     error: BaseException | None = None
     fetch_failure: str | None = None
     unpriced_held: UnpricedHolding | None = None
+    unread_dividends: str | None = None
 
 
 @dataclass(frozen=True)

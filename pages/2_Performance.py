@@ -385,10 +385,11 @@ with col:
                     # A REFUSAL, not a failure: the prices do not reach the quarter's
                     # end yet, have a gap inside a ticker's history (#491), leave a
                     # holding with no price on a date it was held in the quarter (#639),
-                    # or lack a ticker's earlier history because its fetch failed (#639),
-                    # and the message names which tickers and dates, or the fetch's
-                    # cause (#368, #653). "Try again later" would hide the one fact
-                    # that says when.
+                    # lack a ticker's earlier history because its fetch failed (#639),
+                    # or lack a dividend an update sent and could not read (#642), and
+                    # the message names which tickers and dates, or the fetch's cause
+                    # (#368, #653). "Try again later" would hide the one fact that says
+                    # when.
                     st.error(str(_lock_refused))
                 except Exception:
                     logging.exception("Quarterly report generation failed")

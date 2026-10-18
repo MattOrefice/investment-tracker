@@ -17,7 +17,7 @@ from src.coverage import (PriceCoverage, TickerStatus, UnpricedHolding,
                           coverage_from_statuses, unpriced_reason)
 from src.db import get_connection
 from src.prices import (get_prices, classify_miss, _to_iso, total_return_series,
-                        gap_fetch_failure_for)
+                        gap_fetch_failure_for, unread_dividends_for)
 
 
 # Distinguishes "argument omitted" from an explicit None meaning "this caller has
@@ -136,10 +136,13 @@ def _price_and_status(
         served = max(_to_iso(d) for d in frame.index)
     except Exception:                                            # noqa: BLE001
         served = None
-    # Served, and not ok, when the gap fetch for this window failed (#637).
+    # Served, and not ok, when the gap fetch for this window failed (#637), or when an
+    # update sent a dividend in the window that could not be read (#642).
     failed = gap_fetch_failure_for(fetch, start, end)
+    unread = "; ".join(u.words() for u in unread_dividends_for(fetch, start, end))
     return frame, TickerStatus(ticker, True, served_through=served,
-                               fetch_failure=failed.cause if failed else None)
+                               fetch_failure=failed.cause if failed else None,
+                               unread_dividends=unread or None)
 
 
 def _first_session_on_or_after(day: str) -> str:

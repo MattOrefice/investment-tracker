@@ -4,6 +4,7 @@ Uses the v8/chart API directly (not yfinance) so browser User-Agent headers
 are applied to every request, avoiding the 429 rate-limit that yfinance's
 internal timezone-fetch triggers.
 """
+import math
 import re
 import sqlite3
 import threading
@@ -149,6 +150,100 @@ def _date_to_unix(date_str: str) -> int:
     return int(dt.timestamp())
 
 
+# A DIVIDEND THE PROVIDER SENT THAT CANNOT BE READ IS RECORDED, NOT DROPPED (#642,
+# decided by the owner on October 18, 2026). fetch_prices stores the closes it received
+# either way. An event whose date or amount it cannot read is recorded here with the
+# ticker, the date as sent and why:
+#   * a date that is not a timestamp, or one out of the platform's range (on Windows
+#     datetime.fromtimestamp raises OSError for it, which a gap fetch used to record as
+#     "a network error" and store none of the answer's closes);
+#   * an amount missing, not a number, or not above zero;
+#   * an event that is not a record at all.
+# The dividend is not stored, so every total-return level before it goes unscaled
+# (dividend_adjusted), and get_prices never asks for a stored window again: the record
+# is the only trace. The ticker's price status (holdings._price_and_status) and the
+# banner (asof.as_of_live_line) show it, and a quarter lock whose window holds one for
+# a ticker it reads refuses (cache._unread_dividends). A later answer that reads the
+# same event clears it. Per process, as the gap fetch's record is (#637).
+class UnreadDividend(NamedTuple):
+    ticker: str
+    raw_date: str              # the event's date as the provider sent it
+    ex_date: "str | None"      # ISO, when the date could be read
+    why: str
+    start: str                 # the window asked for, which holds the event
+    end: str
+
+    def words(self) -> str:
+        """"VTV, dated 2026-07-01 (its amount is not a number)": the date as read, or
+        as sent when it could not be read."""
+        return f"{self.ticker}, dated {self.ex_date or self.raw_date} ({self.why})"
+
+
+_UNREAD_DIVIDENDS: "dict[tuple[str, str], UnreadDividend]" = {}
+_UNREAD_LOCK = threading.Lock()
+
+
+def _reset_unread_dividends() -> None:
+    """Forget the unread dividends (tests; a re-seed drops the closes they came with)."""
+    with _UNREAD_LOCK:
+        _UNREAD_DIVIDENDS.clear()
+
+
+after_reseed(_reset_unread_dividends)
+
+
+def _read_dividend(ts_key, event) -> "tuple[str | None, float | None, str | None]":
+    """(ex-date, amount, None) for a dividend event fetch_prices can read, else
+    (ex-date or None, None, why it cannot be read)."""
+    try:
+        ts = int(ts_key)
+    except (TypeError, ValueError):
+        return None, None, "its date is not a timestamp"
+    try:
+        ex = _to_iso(datetime.fromtimestamp(ts, tz=timezone.utc).date())
+    except (OverflowError, OSError, ValueError):
+        return None, None, "its date is out of range"
+    if not isinstance(event, dict):
+        return ex, None, "it is not a dividend record"
+    raw = event.get("amount")
+    if raw is None:
+        return ex, None, "it has no amount"
+    try:
+        amount = float(raw)
+    except (TypeError, ValueError):
+        return ex, None, "its amount is not a number"
+    if not math.isfinite(amount):
+        return ex, None, "its amount is not a number"
+    if amount <= 0:
+        return ex, None, f"its amount is {amount:g}, not above zero"
+    return ex, amount, None
+
+
+def _note_dividends(ticker: str, read: "list[str]", unread: "list[UnreadDividend]") -> None:
+    """Record the events an answer could not read, and clear any it now reads."""
+    with _UNREAD_LOCK:
+        for raw in read:
+            _UNREAD_DIVIDENDS.pop((ticker, raw), None)
+        for u in unread:
+            _UNREAD_DIVIDENDS[(u.ticker, u.raw_date)] = u
+
+
+def unread_dividends() -> "list[UnreadDividend]":
+    """Every dividend event the provider sent in this process that could not be read."""
+    with _UNREAD_LOCK:
+        return sorted(_UNREAD_DIVIDENDS.values(),
+                      key=lambda u: (u.ticker, u.ex_date or u.start, u.raw_date))
+
+
+def unread_dividends_for(ticker: str, start: str, end: "str | None" = None
+                         ) -> "list[UnreadDividend]":
+    """The unread dividends of ``ticker`` in [start, end]: by their date, or, when the
+    date could not be read, by the window asked for, which holds the event."""
+    end = end or date.today().isoformat()
+    return [u for u in unread_dividends() if u.ticker == ticker
+            and (start <= u.ex_date <= end if u.ex_date else u.start <= end and start <= u.end)]
+
+
 # One store at a time in this process (#580). The demo's refresh fetches on four
 # threads (src.demo_refresh._WORKERS), and each fetch stored through its own connection
 # to the runtime cache, so two stores at once meant one waited on the other's write
@@ -291,14 +386,15 @@ def fetch_prices(
     # Extract dividend events from the API response
     events = result.get("events") or {}
     div_rows: list[tuple] = []
+    read: "list[str]" = []
+    unread: "list[UnreadDividend]" = []
     for ts_key, div_data in (events.get("dividends") or {}).items():
-        try:
-            ex_dt = datetime.fromtimestamp(int(ts_key), tz=timezone.utc).date()
-            amt   = float(div_data.get("amount", 0.0))
-            if amt > 0:
-                div_rows.append((_to_iso(ex_dt), amt))
-        except (ValueError, TypeError, KeyError):
-            pass
+        ex_date, amount, why = _read_dividend(ts_key, div_data)
+        if why is None:
+            div_rows.append((ex_date, amount))
+            read.append(str(ts_key))
+        else:
+            unread.append(UnreadDividend(ticker, str(ts_key), ex_date, why, start_date, end))
 
     # The bar still forming in an open session is RETURNED but never CACHED — see
     # unsettled_bar_date(). Callers get the live mark (get_prices concatenates this
@@ -364,6 +460,7 @@ def fetch_prices(
                     (ticker, ex_date, amount, ticker, ex_date),
                 )
 
+    _note_dividends(ticker, read, unread)
     if wanted is not None:
         df.attrs["stored"] = stored
     _count_fetch()
@@ -818,6 +915,11 @@ def total_return_series(frame: pd.DataFrame) -> pd.Series:
     return adj
 
 
+def _no_such_table(exc: BaseException, table: str) -> bool:
+    """Whether ``exc`` is sqlite's error for a missing ``table``."""
+    return isinstance(exc, sqlite3.OperationalError) and str(exc) == f"no such table: {table}"
+
+
 def _cached_row_count(ticker: str, start_date: str, end: str) -> int:
     """How many settled rows the cache already holds for this window.
 
@@ -825,6 +927,10 @@ def _cached_row_count(ticker: str, start_date: str, end: str) -> int:
     freshly created file): "no cached rows" is the honest answer to the question
     asked, not a swallowed error — it is also exactly what the caller would
     conclude from an empty table.
+
+    ANY OTHER ERROR RAISES (#642, decided by the owner on October 18, 2026). It used to
+    return 0 for every error, so a store that could not be read (locked, unopenable,
+    malformed) and may hold rows was reported as a cold one, ``no_cached_rows``.
     """
     try:
         with get_connection() as conn:
@@ -833,8 +939,10 @@ def _cached_row_count(ticker: str, start_date: str, end: str) -> int:
                 "AND price_date <= ?",
                 (ticker, start_date, end),
             ).fetchone()[0])
-    except Exception:                                            # noqa: BLE001
-        return 0
+    except sqlite3.OperationalError as exc:
+        if _no_such_table(exc, "prices"):
+            return 0
+        raise
 
 
 def classify_miss(
@@ -882,6 +990,12 @@ def get_dividends(ticker: str, start_date: str, end_date: str) -> pd.Series:
     to load them, and fetch_prices stores every close it receives, so a start later than
     the day after the ticker's last stored close left the closes in between unfetched: a
     gap inside the history (shown on a copy of the frozen book on #494).
+
+    IT NEVER WRITES, AND ONLY A MISSING TABLE READS AS NONE (#642, decided by the owner
+    on October 18, 2026). A book with no dividends table has recorded no dividends. Any
+    other error raises: it used to read as "no dividend stored", so a quarter lock taken
+    while the store was locked held an empty dividend history for good. The read also
+    created the table, a write that failed on a read-only store.
     """
     end = end_date or date.today().isoformat()
 
@@ -897,19 +1011,16 @@ def get_dividends(ticker: str, start_date: str, end_date: str) -> pd.Series:
     def _query_cache() -> list:
         with get_connection() as conn:
             try:
-                conn.execute(
-                    """CREATE TABLE IF NOT EXISTS dividends (
-                        ticker TEXT NOT NULL, ex_date TEXT NOT NULL, amount REAL NOT NULL,
-                        PRIMARY KEY (ticker, ex_date))"""
-                )
                 return conn.execute(
                     """SELECT ex_date, amount FROM dividends
                        WHERE ticker = ? AND ex_date >= ? AND ex_date <= ?
                        ORDER BY ex_date""",
                     (ticker, start_date, end),
                 ).fetchall()
-            except Exception:
-                return []
+            except sqlite3.OperationalError as exc:
+                if _no_such_table(exc, "dividends"):
+                    return []
+                raise
 
     rows = _query_cache()
     if not rows:
