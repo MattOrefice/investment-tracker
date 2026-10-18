@@ -350,6 +350,9 @@
   <h3 style="margin-top: 14px; margin-bottom: 2px;">{{ sleeve.label }}</h3>
   <p class="muted" style="margin: 0 0 6px;">Tickers: {{ sleeve.tickers | join(", ") }}</p>
 
+  {% if sleeve.not_computed %}
+  <div class="empty-banner">{{ sleeve.not_computed }}</div>
+  {% else %}
   <table class="data-table">
     <thead>
       <tr>
@@ -401,6 +404,7 @@
     </tr>
   </table>
   <p class="muted" style="margin-top: 4px; margin-bottom: 14px;">Sample window: {{ sleeve.sample_window }}</p>
+  {% endif %}
   {% endfor %}
 
   <div style="margin: 8px 0 12px; padding: 8px 12px; background: #FFF8E1; border-left: 3px solid #C8A200; font-size: 0.84em;">

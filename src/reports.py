@@ -520,7 +520,7 @@ def _cape_regime(pct_int: int) -> str:
     return _CAPE_REGIME_WORDS[_cape_regime_class(pct_int)]
 
 
-def not_computed_sentence(subject: str, exc: BaseException, consequence: str, *,
+def not_computed_sentence(subject: str, exc: "BaseException | None", consequence: str, *,
                           reason: "str | None" = None, where: str = "this report") -> str:
     """ONE disclosure pattern for a figure the report could not compute (#248).
 
@@ -531,7 +531,9 @@ def not_computed_sentence(subject: str, exc: BaseException, consequence: str, *,
     say" when the truth is "the computation failed".
 
     ``reason`` replaces the type where the exception carries one written for a reader:
-    holdings.UnpricedHoldingError names the holdings and dates (#639, #643). ``where``
+    holdings.UnpricedHoldingError names the holdings and dates (#639, #643). A result
+    that carries its own reason and no exception passes ``exc`` as None: a sleeve
+    regression not computed because a leg's prices could not be read (#647). ``where``
     is "this page" on a page that prints it."""
     return (f"{subject} could not be computed for {where} "
             f"({reason or type(exc).__name__}), so {consequence}.")
@@ -1139,6 +1141,16 @@ def _build_factor_section(end_date: str) -> Optional[dict]:
     def _format_sleeve(res: Optional[dict]) -> Optional[dict]:
         if res is None:
             return None
+        if res.get("not_computed"):
+            # A leg's prices could not be read (#647): the sentence, in place of the table.
+            return {
+                "label":        res["sleeve_label"],
+                "tickers":      res["tickers"],
+                "not_computed": not_computed_sentence(
+                    f"The {res['sleeve_label']} factor regression", None,
+                    "no loadings or fit statistics are shown for it",
+                    reason=res["not_computed"]),
+            }
         rows = []
         for factor in ["Mkt-RF", "SMB", "HML", "RMW", "CMA"]:
             p = res["p_values"][factor]
