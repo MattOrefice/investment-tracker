@@ -46,6 +46,18 @@ class YahooResponseError(ValueError):
         super().__init__(message)
         self.reason = reason
 
+
+class YahooNoData(YahooResponseError):
+    """Yahoo Finance's HTTP 400 that says no data exists for the window asked ("Data
+    doesn't exist for startDate = ..."), as for a window before a fund's listing. An
+    ANSWER that no close exists there, not a failure (#644, decided by the owner on
+    October 17, 2026): get_prices' gap fetch remembers it like a success and never
+    records it. A YahooResponseError still, so every other caller reads it as before."""
+
+
+# How Yahoo Finance's 400 describes a window that holds no data.
+_NO_DATA_DESCRIPTION = "Data doesn't exist for startDate"
+
 # A FORMAT check, deliberately not a symbol registry: letters, digits, and the
 # punctuation Yahoo actually uses — '.' (BRK.B), '-' (BTC-USD), '=' (EURUSD=X),
 # and a leading '^' (^GSPC). Case-insensitive so a lowercase caller behaves
@@ -213,6 +225,18 @@ def fetch_prices(
             "Try again in a few seconds.",
             "rate-limited the request (HTTP 429)",
         )
+    if resp.status_code == 400:
+        try:
+            description = str(((resp.json().get("chart") or {}).get("error") or {})
+                              .get("description") or "")
+        except ValueError:                                       # not JSON
+            description = ""
+        if description.startswith(_NO_DATA_DESCRIPTION):
+            raise YahooNoData(
+                f"Yahoo Finance has no data for '{ticker}' ({start_date} to {end}): "
+                f"{description}",
+                "answered that no price data exists for the window",
+            )
     if resp.status_code != 200:
         raise YahooResponseError(
             f"Yahoo Finance returned HTTP {resp.status_code} for '{ticker}'.",
@@ -484,17 +508,71 @@ def gap_fetch_cause(exc: BaseException) -> "str | None":
     return None
 
 
+# YAHOO'S "NO DATA HERE" ANSWERS ARE ANSWERS, NOT FAILURES (#644, decided by the owner on
+# October 17, 2026; the holiday table they rest on extended back on October 18, #644):
+#   * a window with no NYSE session (demo_refresh.is_session) holds no close, so it is
+#     never fetched and never recorded. A series that trades every day
+#     (price_gaps.DAILY) has a session every day;
+#   * the provider's HTTP 400 "Data doesn't exist for startDate = ..." (YahooNoData), as
+#     for a window before a fund's listing, means no close exists there. It is
+#     remembered for the process like a success (_NO_DATA), clears the window's
+#     failures as a success does, and is never recorded or shown;
+#   * an empty answer for a window that has a session is still a failure.
+_NO_DATA: "set[tuple[str, str, str]]" = set()
+
+
+def _reset_no_data_memo() -> None:
+    """Forget the windows the provider said hold no data (tests; a re-seed)."""
+    with _GAP_FAILURES_LOCK:
+        _NO_DATA.clear()
+
+
+after_reseed(_reset_no_data_memo)
+
+
+def _has_session(ticker: str, start: str, end: str) -> bool:
+    """Whether [start, end] holds a session of ``ticker``'s market: an NYSE session by
+    the holiday table, or any day for a series that trades every day."""
+    from src.demo_refresh import is_session
+    from src.price_gaps import DAILY
+    if ticker in DAILY:
+        return True
+    day, last = date.fromisoformat(start), date.fromisoformat(end)
+    while day <= last:
+        if is_session(day):
+            return True
+        day += timedelta(days=1)
+    return False
+
+
+def _clear_failures(ticker: str, start: str, end: str) -> None:
+    with _GAP_FAILURES_LOCK:
+        for k in [k for k in _GAP_FAILURES
+                  if k[0] == ticker and start <= k[1] and k[2] <= end]:
+            del _GAP_FAILURES[k]
+
+
 def _gap_fetch(ticker: str, start: str, end: str, fetch: Callable) -> "pd.DataFrame | None":
-    """One of get_prices's gap fetches: the rows fetched, or None when the fetch failed
-    now or failed for this window within RETRY_AFTER, in which case nothing is asked."""
+    """One of get_prices's gap fetches: the rows fetched, or None when nothing was
+    added: the window holds no session or the provider said it holds no data (#644),
+    or the fetch failed now or failed for this window within RETRY_AFTER (#637), in
+    which case nothing is asked."""
     from src.demo_refresh import RETRY_AFTER
     key, now = (ticker, start, end), _now()
+    if not _has_session(ticker, start, end):
+        return None
     with _GAP_FAILURES_LOCK:
+        answered = key in _NO_DATA
         failed = _GAP_FAILURES.get(key)
-    if failed is not None and now < failed.retry_after:
+    if answered or (failed is not None and now < failed.retry_after):
         return None
     try:
         frame = fetch(ticker, start, end)
+    except YahooNoData:
+        with _GAP_FAILURES_LOCK:
+            _NO_DATA.add(key)
+        _clear_failures(ticker, start, end)
+        return None
     except Exception as exc:                                     # noqa: BLE001
         cause = gap_fetch_cause(exc)
         if cause is None:
@@ -503,10 +581,7 @@ def _gap_fetch(ticker: str, start: str, end: str, fetch: Callable) -> "pd.DataFr
             _GAP_FAILURES[key] = GapFetchFailure(ticker, start, end, cause, now,
                                                  now + RETRY_AFTER)
         return None
-    with _GAP_FAILURES_LOCK:
-        for k in [k for k in _GAP_FAILURES
-                  if k[0] == ticker and start <= k[1] and k[2] <= end]:
-            del _GAP_FAILURES[k]
+    _clear_failures(ticker, start, end)
     return frame
 
 

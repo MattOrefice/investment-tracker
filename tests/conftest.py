@@ -343,11 +343,16 @@ def _no_gap_fetch_failures_carried_between_tests():
     swapped for the test's duration: a module-scoped fixture renders outside any one
     test, and a failure it recorded into the swapped-out record outlived its module.
     The next module's render then skipped fetches the record said had failed (an SAA
-    weight moved 0.1 and a page rendered no metrics, in one -n 4 run)."""
+    weight moved 0.1 and a page rendered no metrics, in one -n 4 run).
+
+    The windows the provider answered hold no data are cleared the same way (#644): a
+    remembered answer would skip a later test's fetch of the same window."""
     import src.prices as prices
     prices._GAP_FAILURES.clear()
+    prices._reset_no_data_memo()
     yield
     prices._GAP_FAILURES.clear()
+    prices._reset_no_data_memo()
 
 
 @pytest.fixture(autouse=True)

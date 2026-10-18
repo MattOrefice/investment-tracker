@@ -9,6 +9,10 @@ Since #466 (decided by the owner on September 28, 2026) the table holds 2025 as 
 January 9, 2025 included: the national day of mourning, a closure no calendar
 scheduled, entered by hand from NYSE's notice. The close-out refuses to run when the
 table does not reach the end of next year, by the same rule as the first test.
+
+Since #644 (decided by the owner on October 18, 2026) it reaches back to 1990, the
+earliest start any get_prices caller passes, each year from NYSE's own published
+calendars, and the committed books' SPY closes agree with it on every day they hold.
 """
 import importlib.util
 import sqlite3
@@ -39,16 +43,89 @@ def test_the_refusal_needs_the_table_through_the_end_of_next_year():
     assert f"through December 31, {last + 1}" in refusal, refusal
 
 
+UNSCHEDULED = {
+    date(1994, 4, 27),                                       # President Nixon's funeral
+    date(2001, 9, 11), date(2001, 9, 12), date(2001, 9, 13), date(2001, 9, 14),
+    date(2004, 6, 11),                                       # President Reagan
+    date(2007, 1, 2),                                        # President Ford
+    date(2012, 10, 29), date(2012, 10, 30),                  # Hurricane Sandy
+    date(2018, 12, 5),                                       # President George H. W. Bush
+    date(2025, 1, 9),                                        # President Carter
+}
+
+
 def test_the_table_covers_its_stated_years_and_only_weekdays():
+    """MIGRATED at #644 (decided by the owner on October 18, 2026): the span read (2025,
+    2028) and the one unscheduled closure January 9, 2025. The scheduled count per year
+    runs from 7 (1994: no New Year's closure, and no Martin Luther King Jr. Day before
+    1998) to 10."""
     first, last = refresh.NYSE_HOLIDAY_YEARS
-    assert (first, last) == (2025, 2028)
+    assert (first, last) == (1990, 2028)
     years = {d.year for d in refresh.NYSE_HOLIDAYS}
     assert years == set(range(first, last + 1))
     assert all(d.weekday() < 5 for d in refresh.NYSE_HOLIDAYS), "a weekend is no session anyway"
     scheduled = refresh.NYSE_HOLIDAYS - refresh.NYSE_UNSCHEDULED_CLOSURES
-    assert all(8 <= sum(d.year == y for d in scheduled) <= 10 for y in years)
-    assert refresh.NYSE_UNSCHEDULED_CLOSURES == {date(2025, 1, 9)}
+    counts = {y: sum(d.year == y for d in scheduled) for y in years}
+    assert all(7 <= n <= 10 for n in counts.values()), counts
+    assert [y for y, n in counts.items() if n == 7] == [1994]
+    assert refresh.NYSE_UNSCHEDULED_CLOSURES == UNSCHEDULED
     assert not refresh.NYSE_UNSCHEDULED_CLOSURES & refresh._SCHEDULED_CLOSURES
+
+
+def test_every_year_and_every_unscheduled_closure_cites_nyses_own_document():
+    first, last = refresh.NYSE_HOLIDAY_YEARS
+    assert set(refresh.NYSE_CALENDAR_SOURCES) == set(range(first, last + 1))
+    for year, docs in refresh.NYSE_CALENDAR_SOURCES.items():
+        assert docs, year
+        for key in docs:
+            words, _url = refresh.NYSE_DOCUMENTS[key]
+            assert words.startswith(("NYSE", "nyse.com")), (year, key, words)
+    assert set(refresh.NYSE_UNSCHEDULED_NOTICES) == UNSCHEDULED
+    for day, (why, doc, url) in refresh.NYSE_UNSCHEDULED_NOTICES.items():
+        assert why and doc, day
+    archived = [u for _w, u in refresh.NYSE_DOCUMENTS.values() if u]
+    assert all(u.startswith("https://web.archive.org/web/") for u in archived), archived
+
+
+def test_the_table_reaches_every_start_a_price_read_passes():
+    """Asset Evaluation's SAMPLE_START and the lock's read start fall inside it, each an
+    NYSE holiday the table now knows, and so does the Correlations page's pair history,
+    the earliest start any get_prices caller passes."""
+    import re
+    from src.asset_evaluation import SAMPLE_START
+    from src.cache import _INPUT_START
+    first = date(refresh.NYSE_HOLIDAY_YEARS[0], 1, 1)
+    capture = (ROOT / "src" / "cache.py").read_text(encoding="utf-8")
+    lock_start = re.search(r'inception_str = "(\d{4}-\d{2}-\d{2})"', capture).group(1)
+    pages = (ROOT / "pages" / "9_Correlations.py").read_text(encoding="utf-8")
+    pair_start = re.search(r'_PAIR_HISTORY_START = "(\d{4}-\d{2}-\d{2})"', pages).group(1)
+    for start in (SAMPLE_START, _INPUT_START, lock_start, pair_start):
+        assert date.fromisoformat(start) >= first, start
+    assert (SAMPLE_START, _INPUT_START, lock_start, pair_start) == (
+        "2018-01-01", "2020-01-01", "2020-01-01", "1990-01-01")
+    for start in (SAMPLE_START, _INPUT_START, pair_start):
+        assert not refresh.is_session(date.fromisoformat(start)), start
+
+
+@pytest.mark.parametrize("book", ["data/demo.db", "tests/fixtures/frozen_book.db"])
+def test_the_committed_books_spy_closes_agree_with_every_year_of_the_table(book):
+    """SPY, the session reference, holds a close on every weekday the table calls a
+    session and on none it calls a closure, on every day of every year it holds: demo.db
+    from SPY's first close, January 29, 1993, and the frozen book from 2024."""
+    conn = sqlite3.connect(f"file:{ROOT / book}?mode=ro", uri=True)
+    try:
+        closes = {date.fromisoformat(d) for (d,) in conn.execute(
+            "SELECT price_date FROM prices WHERE ticker = 'SPY'")}
+    finally:
+        conn.close()
+    first, last = min(closes), min(max(closes), date(refresh.NYSE_HOLIDAY_YEARS[1], 12, 31))
+    wrong, day = [], first
+    while day <= last:
+        if refresh.is_session(day) != (day in closes):
+            wrong.append(day)
+        day += timedelta(days=1)
+    assert wrong == []
+    assert first <= (date(1993, 1, 29) if "demo" in book else date(2024, 1, 2))
 
 
 @pytest.mark.parametrize("book", ["data/demo.db", "tests/fixtures/frozen_book.db"])

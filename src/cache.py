@@ -1089,9 +1089,12 @@ def capture_quarter_snapshot(quarter_id: str) -> tuple:
     close on or before a session in the quarter on which it was held refuses the same
     way (_held_without_price), naming the holding and the dates. A ticker the portfolio
     does not hold may start late (a late listing), and a market holiday is never a
-    gap. A failed leading fetch is not read as one: the provider answers a window before
-    a fund's listing with HTTP 400, which records as a failure, so the record cannot
-    tell a late listing from a failed fetch (#644).
+    gap. A failed leading fetch is not read as one yet. Since #644 the record holds only
+    failures: a window with no NYSE session is never fetched, and the provider's "Data
+    doesn't exist" for a window before a fund's listing is an answer, not a failure.
+    Reading it would refuse every lock taken offline from a book whose histories start
+    after this read's 2020-01-01, as the frozen test book's do, so that waits on the
+    owner's decision (#644).
 
     THE LOCK FETCHES WHAT THE BOOK LACKS (#594, decided by the owner on October 15,
     2026). Every ticker is read through prices.get_prices, which fetches and stores

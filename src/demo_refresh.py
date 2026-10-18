@@ -83,32 +83,251 @@ def state() -> Optional[RefreshState]:
     return _STATE
 
 
-# NYSE full-day closures. The scheduled ones for 2025 as NYSE Group's 2025-2027 holiday
-# calendar listed them (announced November 11, 2024), and for 2026 to 2028 as
-# nyse.com/markets/hours-calendars listed them on 2026-09-26 (observed dates where a
-# holiday falls on a weekend; no New Year's closure in 2028, when January 1 is a
-# Saturday). Static, so no calendar dependency. Early closes are sessions. Outside
-# these years every weekday counts as a session, the rule before this table, so the
-# close-out refuses to run (holiday_table_refusal), and tests/test_market_holidays.py
-# fails, once the table does not reach the end of next year: extend it from the same
-# page before then (#466).
-NYSE_HOLIDAY_YEARS = (2025, 2028)
-_SCHEDULED_CLOSURES = frozenset(date.fromisoformat(d) for d in (
-    "2025-01-01", "2025-01-20", "2025-02-17", "2025-04-18", "2025-05-26",
-    "2025-06-19", "2025-07-04", "2025-09-01", "2025-11-27", "2025-12-25",
-    "2026-01-01", "2026-01-19", "2026-02-16", "2026-04-03", "2026-05-25",
-    "2026-06-19", "2026-07-03", "2026-09-07", "2026-11-26", "2026-12-25",
-    "2027-01-01", "2027-01-18", "2027-02-15", "2027-03-26", "2027-05-31",
-    "2027-06-18", "2027-07-05", "2027-09-06", "2027-11-25", "2027-12-24",
-    "2028-01-17", "2028-02-21", "2028-04-14", "2028-05-29", "2028-06-19",
-    "2028-07-04", "2028-09-04", "2028-11-23", "2028-12-25",
-))
-# Closures no calendar schedules, each entered by hand from NYSE's notice. Nothing
-# falls back when an expected session never trades: a lock waits on the close of its
-# quarter's last session until the closure is entered here (#466). January 9, 2025:
-# the national day of mourning for President Carter (NYSE Group's notice of December
-# 30, 2024).
-NYSE_UNSCHEDULED_CLOSURES = frozenset({date(2025, 1, 9)})
+# NYSE full-day closures, 1990 to 2028. Early closes are sessions. Static, so no
+# calendar dependency. Outside these years every weekday counts as a session, the rule
+# before this table, so the close-out refuses to run (holiday_table_refusal), and
+# tests/test_market_holidays.py fails, once the table does not reach the end of next
+# year: extend it from nyse.com/markets/hours-calendars before then (#466).
+#
+# IT REACHES BACK TO THE EARLIEST START ANY get_prices CALLER PASSES (decided by the
+# owner on October 18, 2026, #644): 1990-01-01, the Correlations page's pair history.
+# Asset Evaluation reads from 2018-01-01 and a quarter lock from 2020-01-01, both NYSE
+# holidays, and prices._gap_fetch never fetches a window with no session: the table is
+# what says a window has none. Each year is entered from NYSE's own published calendars
+# (NYSE_CALENDAR_SOURCES, citing NYSE_DOCUMENTS), and every year from 1993, SPY's first
+# close, was checked day by day against SPY's stored closes in data/demo.db and the
+# personal book before it went in. tests/test_market_holidays.py holds the committed
+# books to it.
+NYSE_HOLIDAY_YEARS = (1990, 2028)
+
+# NYSE's own documents: (what and when, the URL, as the Internet Archive captured it
+# where the page has gone). A document that lists several years counts for each.
+NYSE_DOCUMENTS = {
+    'holidays_1885_1995': (
+        'NYSE, "List of Holidays, 1885-1995" (page dated 1996), captured 1996-11-12',
+        'https://web.archive.org/web/19961112180744/http://www.nyse.com/public/about/hist/holday85.html'),
+    'history_1885_1998': (
+        'NYSE, "History of New York Stock Exchange Holidays, 1885-date" (hday1997.pdf, made 1998-07-10), captured 1998-12-05',
+        'https://web.archive.org/web/19981205121746/http://www.nyse.com/public/market/2c/2c5/hday1997.pdf'),
+    'holidays_1997': (
+        'NYSE, "1997 Holidays", captured 1997-02-22',
+        'https://web.archive.org/web/19970222214416/http://www.nyse.com/public/about/hol97.html'),
+    'special_1999': (
+        'NYSE, "NYSE Holidays and Special Closings", captured 1999-03-02',
+        'https://web.archive.org/web/19990302075821/http://www.nyse.com/public/market/2c/2c5/2c5fm.htm'),
+    'schedule_1999': (
+        'NYSE, "NYSE Hours and Holiday Schedule" (1999-2001), captured 1999-11-28',
+        'https://web.archive.org/web/19991128072223/http://www.nyse.com/about/holidayclosings.html'),
+    'schedule_2000': (
+        'NYSE, "NYSE Hours and Holiday Schedule" (2000-2004), captured 2000-06-17',
+        'https://web.archive.org/web/20000617131814/http://www.nyse.com/about/holidayclosings.html'),
+    'schedule_2001': (
+        'NYSE, "NYSE Hours and Holiday Schedule" (2001-2004), captured 2001-08-15',
+        'https://web.archive.org/web/20010815160228/http://www.nyse.com/about/holidayclosings.html'),
+    'schedule_2002': (
+        'NYSE, "NYSE Hours and Holiday Schedule" (2002-2004), captured 2002-12-14',
+        'https://web.archive.org/web/20021214020233/http://www.nyse.com/about/holidayclosings.html'),
+    'holidays_2003': (
+        'NYSE, "Holiday Schedule" (2003-2004), captured 2003-04-25',
+        'https://web.archive.org/web/20030425015823/http://www.nyse.com/about/1022963613686.html'),
+    'holidays_2004': (
+        'NYSE, "Holidays & Hours" (2004-2006), captured 2004-04-07',
+        'https://web.archive.org/web/20040407093818/http://www.nyse.com/about/1022963613686.html'),
+    'holidays_2005': (
+        'NYSE, "Holidays & Hours" (2005-2006), captured 2005-10-23',
+        'https://web.archive.org/web/20051023004214/http://www.nyse.com/about/1022963613686.html'),
+    'tradeday_2004': (
+        'NYSE, "2004 Holiday Schedule" (tradeday.pdf, modified 2004-12-22), captured 2005-01-28',
+        'https://web.archive.org/web/20050128203904/http://www.nyse.com/pdfs/tradeday.pdf'),
+    'tradeday_2006': (
+        'NYSE, "2006 Holiday Schedule" (tradeday_06.pdf, made 2006-01-06), captured 2006-01-12',
+        'https://web.archive.org/web/20060112043538/http://www.nyse.com/pdfs/tradeday_06.pdf'),
+    'special_closings_2006': (
+        'NYSE, "NYSE Special Closings, 1885-date" (closings.pdf, revised through June 2006), captured 2006-07-12',
+        'https://web.archive.org/web/20060712172136/http://www.nyse.com/pdfs/closings.pdf'),
+    'hours_2007a': (
+        'NYSE, "Holidays and Hours" (2007), captured 2007-04-30',
+        'https://web.archive.org/web/20070430231733/http://www.nyse.com/about/newsevents/1176373643795.html'),
+    'hours_2007b': (
+        'NYSE, "Holidays and Hours" (2007-2009), captured 2007-12-22',
+        'https://web.archive.org/web/20071222074629/http://www.nyse.com/about/newsevents/1176373643795.html'),
+    'hours_2010': (
+        'NYSE, "Holidays and Hours" (2009-2011), captured 2010-02-08',
+        'https://web.archive.org/web/20100208104805/http://www.nyse.com/about/newsevents/1176373643795.html'),
+    'hours_2011': (
+        'NYSE, "Holidays and Hours" (2011-2013), captured 2011-06-28',
+        'https://web.archive.org/web/20110628080544/http://www.nyse.com/about/newsevents/1176373643795.html'),
+    'nyx_2012': (
+        'NYSE Euronext, "Holidays, Hours and Early Closures" (2012-2014), captured 2012-11-15',
+        'https://web.archive.org/web/20121115214448/http://usequities.nyx.com/markets/holidays-and-hours/nyse'),
+    'nyx_2014': (
+        'NYSE Euronext, "Holidays, Hours and Early Closures" (2013-2014), captured 2014-01-05',
+        'https://web.archive.org/web/20140105140301/http://usequities.nyx.com/markets/holidays-and-hours/nyse'),
+    'calendars_2014': (
+        'NYSE, "Holidays and Trading Hours" (2014-2015), captured 2014-11-24',
+        'https://web.archive.org/web/20141124052340/https://www.nyse.com/markets/hours-calendars'),
+    'calendars_2015': (
+        'NYSE, "Holidays and Trading Hours" (2015-2016), captured 2015-03-30',
+        'https://web.archive.org/web/20150330183404/https://www.nyse.com/markets/hours-calendars'),
+    'calendars_2017': (
+        'NYSE, "Holidays and Trading Hours" (2016-2017), captured 2017-01-02',
+        'https://web.archive.org/web/20170102054744/https://www.nyse.com/markets/hours-calendars'),
+    'calendars_2018': (
+        'NYSE, "Holidays and Trading Hours" (2017-2019), captured 2018-01-01',
+        'https://web.archive.org/web/20180101202300/https://www.nyse.com/markets/hours-calendars'),
+    'calendars_2019': (
+        'NYSE, "Holidays and Trading Hours" (2019-2021), captured 2019-01-07',
+        'https://web.archive.org/web/20190107231452/https://www.nyse.com/markets/hours-calendars'),
+    'calendars_2020': (
+        'NYSE, "Holidays and Trading Hours" (2020-2022), captured 2020-01-22',
+        'https://web.archive.org/web/20200122050320/https://www.nyse.com/markets/hours-calendars'),
+    'calendars_2021': (
+        'NYSE, "Holidays and Trading Hours" (2021-2023), captured 2021-01-11',
+        'https://web.archive.org/web/20210111130129/https://www.nyse.com/markets/hours-calendars'),
+    'calendars_2022': (
+        'NYSE, "Holidays and Trading Hours" (2022-2024, Juneteenth included), captured 2022-01-05',
+        'https://web.archive.org/web/20220105021504/https://www.nyse.com/markets/hours-calendars'),
+    'calendars_2023': (
+        'NYSE, "Holidays and Trading Hours" (2023-2025), captured 2023-01-14',
+        'https://web.archive.org/web/20230114155111/https://www.nyse.com/markets/hours-calendars'),
+    'calendars_2024': (
+        'NYSE, "Holidays and Trading Hours" (2024-2026), captured 2024-01-11',
+        'https://web.archive.org/web/20240111002222/https://www.nyse.com/markets/hours-calendars'),
+    'calendar_2025_2027': (
+        "NYSE Group's 2025-2027 holiday calendar, announced 2024-11-11",
+        None),
+    'calendars_2026': (
+        'nyse.com/markets/hours-calendars (2026-2028), as it read on 2026-09-26',
+        None),
+}
+
+# Each year's documents (#644). 2022 cites only the 2022 capture: the two before it were
+# made before Juneteenth was added and lack 2022-06-20.
+NYSE_CALENDAR_SOURCES = {
+    **{y: ("holidays_1885_1995", "history_1885_1998") for y in range(1990, 1996)},
+    1996: ("history_1885_1998",),
+    1997: ("holidays_1997", "history_1885_1998"),
+    1998: ("history_1885_1998",),
+    1999: ("special_1999", "schedule_1999"),
+    2000: ("schedule_1999", "schedule_2000"),
+    2001: ("schedule_2001",),
+    2002: ("schedule_2002",),
+    2003: ("schedule_2002", "holidays_2003"),
+    2004: ("holidays_2004", "tradeday_2004"),
+    2005: ("holidays_2004", "holidays_2005"),
+    2006: ("holidays_2005", "tradeday_2006"),
+    2007: ("hours_2007a", "hours_2007b"),
+    2008: ("hours_2007b",),
+    2009: ("hours_2007b", "hours_2010"),
+    2010: ("hours_2010",),
+    2011: ("hours_2010", "hours_2011"),
+    2012: ("hours_2011", "nyx_2012"),
+    2013: ("hours_2011", "nyx_2012", "nyx_2014"),
+    2014: ("nyx_2012", "nyx_2014", "calendars_2014"),
+    2015: ("calendars_2014", "calendars_2015"),
+    2016: ("calendars_2015", "calendars_2017"),
+    2017: ("calendars_2017", "calendars_2018"),
+    2018: ("calendars_2018",),
+    2019: ("calendars_2018", "calendars_2019"),
+    2020: ("calendars_2019", "calendars_2020"),
+    2021: ("calendars_2019", "calendars_2020", "calendars_2021"),
+    2022: ("calendars_2022",),
+    2023: ("calendars_2022", "calendars_2023"),
+    2024: ("calendars_2022", "calendars_2023", "calendars_2024"),
+    2025: ("calendars_2023", "calendars_2024", "calendar_2025_2027"),
+    2026: ("calendars_2024", "calendar_2025_2027", "calendars_2026"),
+    2027: ("calendar_2025_2027", "calendars_2026"),
+    2028: ("calendars_2026",),
+}
+
+# The scheduled closures by year, month-day (observed dates where a holiday falls on a
+# weekend). No New Year's closure in 1994, 2000, 2005, 2011, 2022 or 2028, when January 1
+# is a Saturday and the Friday before was a session; Martin Luther King Jr. Day from
+# 1998; Juneteenth from 2022.
+_SCHEDULED_BY_YEAR = {
+    1990: "01-01 02-19 04-13 05-28 07-04 09-03 11-22 12-25",
+    1991: "01-01 02-18 03-29 05-27 07-04 09-02 11-28 12-25",
+    1992: "01-01 02-17 04-17 05-25 07-03 09-07 11-26 12-25",
+    1993: "01-01 02-15 04-09 05-31 07-05 09-06 11-25 12-24",
+    1994: "02-21 04-01 05-30 07-04 09-05 11-24 12-26",
+    1995: "01-02 02-20 04-14 05-29 07-04 09-04 11-23 12-25",
+    1996: "01-01 02-19 04-05 05-27 07-04 09-02 11-28 12-25",
+    1997: "01-01 02-17 03-28 05-26 07-04 09-01 11-27 12-25",
+    1998: "01-01 01-19 02-16 04-10 05-25 07-03 09-07 11-26 12-25",
+    1999: "01-01 01-18 02-15 04-02 05-31 07-05 09-06 11-25 12-24",
+    2000: "01-17 02-21 04-21 05-29 07-04 09-04 11-23 12-25",
+    2001: "01-01 01-15 02-19 04-13 05-28 07-04 09-03 11-22 12-25",
+    2002: "01-01 01-21 02-18 03-29 05-27 07-04 09-02 11-28 12-25",
+    2003: "01-01 01-20 02-17 04-18 05-26 07-04 09-01 11-27 12-25",
+    2004: "01-01 01-19 02-16 04-09 05-31 07-05 09-06 11-25 12-24",
+    2005: "01-17 02-21 03-25 05-30 07-04 09-05 11-24 12-26",
+    2006: "01-02 01-16 02-20 04-14 05-29 07-04 09-04 11-23 12-25",
+    2007: "01-01 01-15 02-19 04-06 05-28 07-04 09-03 11-22 12-25",
+    2008: "01-01 01-21 02-18 03-21 05-26 07-04 09-01 11-27 12-25",
+    2009: "01-01 01-19 02-16 04-10 05-25 07-03 09-07 11-26 12-25",
+    2010: "01-01 01-18 02-15 04-02 05-31 07-05 09-06 11-25 12-24",
+    2011: "01-17 02-21 04-22 05-30 07-04 09-05 11-24 12-26",
+    2012: "01-02 01-16 02-20 04-06 05-28 07-04 09-03 11-22 12-25",
+    2013: "01-01 01-21 02-18 03-29 05-27 07-04 09-02 11-28 12-25",
+    2014: "01-01 01-20 02-17 04-18 05-26 07-04 09-01 11-27 12-25",
+    2015: "01-01 01-19 02-16 04-03 05-25 07-03 09-07 11-26 12-25",
+    2016: "01-01 01-18 02-15 03-25 05-30 07-04 09-05 11-24 12-26",
+    2017: "01-02 01-16 02-20 04-14 05-29 07-04 09-04 11-23 12-25",
+    2018: "01-01 01-15 02-19 03-30 05-28 07-04 09-03 11-22 12-25",
+    2019: "01-01 01-21 02-18 04-19 05-27 07-04 09-02 11-28 12-25",
+    2020: "01-01 01-20 02-17 04-10 05-25 07-03 09-07 11-26 12-25",
+    2021: "01-01 01-18 02-15 04-02 05-31 07-05 09-06 11-25 12-24",
+    2022: "01-17 02-21 04-15 05-30 06-20 07-04 09-05 11-24 12-26",
+    2023: "01-02 01-16 02-20 04-07 05-29 06-19 07-04 09-04 11-23 12-25",
+    2024: "01-01 01-15 02-19 03-29 05-27 06-19 07-04 09-02 11-28 12-25",
+    2025: "01-01 01-20 02-17 04-18 05-26 06-19 07-04 09-01 11-27 12-25",
+    2026: "01-01 01-19 02-16 04-03 05-25 06-19 07-03 09-07 11-26 12-25",
+    2027: "01-01 01-18 02-15 03-26 05-31 06-18 07-05 09-06 11-25 12-24",
+    2028: "01-17 02-21 04-14 05-29 06-19 07-04 09-04 11-23 12-25",
+}
+_SCHEDULED_CLOSURES = frozenset(date.fromisoformat(f"{y}-{md}")
+                                for y, mds in _SCHEDULED_BY_YEAR.items() for md in mds.split())
+
+# Closures no calendar schedules, each entered by hand from NYSE's notice or record:
+# (why, the document, its URL). Nothing falls back when an expected session never
+# trades: a lock waits on the close of its quarter's last session until the closure is
+# entered here (#466).
+NYSE_UNSCHEDULED_NOTICES = {
+    date(1994, 4, 27): ("President Nixon's funeral",
+        'NYSE, "NYSE Special Closings - Funerals of U.S. Presidents" (presidents_closings.pdf, 2004-06-07); and special_closings_2006',
+        'https://web.archive.org/web/20040609214215/http://www.nyse.com/pdfs/presidents_closings.pdf'),
+    date(2001, 9, 11): ('closed following the September 11 attack',
+        "NYSE's home-page notices of 2001-09-12 and 2001-09-14; and special_closings_2006",
+        'https://web.archive.org/web/20010913000417/http://www.nyse.com/'),
+    date(2001, 9, 12): ('closed following the September 11 attack',
+        'as 2001-09-11',
+        None),
+    date(2001, 9, 13): ('closed following the September 11 attack',
+        'as 2001-09-11',
+        None),
+    date(2001, 9, 14): ('closed following the September 11 attack',
+        'as 2001-09-11, and the notice that trading resumes on 2001-09-17',
+        'https://web.archive.org/web/20010914220538/http://www.nyse.com/'),
+    date(2004, 6, 11): ("President Reagan's national day of mourning",
+        'NYSE, "NYSE to Close on Friday, June 11 to Observe National Day of Mourning for President Ronald Reagan", 2004-06-07',
+        'https://web.archive.org/web/20040609090925/http://www.nyse.com/press/1086606031441.html'),
+    date(2007, 1, 2): ("President Ford's national day of mourning",
+        'NYSE Group, "NYSE Group, Inc. Markets to Close on Tuesday, Jan. 2, 2007", 2006-12-29',
+        'https://web.archive.org/web/20080122222428/http://www.nyse.com/press/1167219778099.html'),
+    date(2012, 10, 29): ('Hurricane Sandy',
+        'NYSE Euronext, "NYSE Euronext Statement on Closure of U.S. Markets on Tuesday, Oct. 30, 2012", 2012-10-29, which follows Monday\'s closure',
+        'https://web.archive.org/web/20121030024626/http://www.nyx.com/sandy'),
+    date(2012, 10, 30): ('Hurricane Sandy',
+        'as 2012-10-29',
+        None),
+    date(2018, 12, 5): ("President George H. W. Bush's national day of mourning",
+        'ICE, "New York Stock Exchange to Honor President George H. W. Bush", 2018-12-01',
+        'https://web.archive.org/web/20250108195503/https://ir.theice.com/press/news-details/2018/New-York-Stock-Exchange-to-Honor-President-George-H-W-Bush/default.aspx'),
+    date(2025, 1, 9): ("President Carter's national day of mourning",
+        "NYSE Group's notice of December 30, 2024",
+        None),
+}
+NYSE_UNSCHEDULED_CLOSURES = frozenset(NYSE_UNSCHEDULED_NOTICES)
 NYSE_HOLIDAYS = _SCHEDULED_CLOSURES | NYSE_UNSCHEDULED_CLOSURES
 
 
