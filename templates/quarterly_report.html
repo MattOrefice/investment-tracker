@@ -147,7 +147,7 @@
 <section>
   <h2>Performance</h2>
 
-  {% if has_trades and perf %}
+  {% if has_trades and perf and not perf.not_computed %}
   <h3>Period Returns (Daily-Linked TWR)</h3>
   <table class="data-table">
     <thead>
@@ -181,6 +181,8 @@
   <div class="chart-placeholder">Cumulative return chart not available</div>
   {% endif %}
 
+  {% elif has_trades and perf %}
+  <div class="empty-banner">{{ perf.not_computed }}</div>
   {% else %}
   <div class="empty-banner">No performance data available. Return tracking begins with the first logged trade.</div>
   {% endif %}
@@ -433,7 +435,7 @@
   <h2>Benchmark Attribution</h2>
   <h3>Portfolio vs Custom Blended SAA: R<sub>p</sub> &minus; RF ~ (R<sub>b</sub> &minus; RF) + HML + SMB + RMW</h3>
 
-  {% if has_trades and bench_attr %}
+  {% if has_trades and bench_attr and not bench_attr.not_computed %}
 
   <table class="data-table">
     <thead>
@@ -498,6 +500,8 @@
     Full regression methodology in the Methodology &amp; Data Sources section.
   </p>
 
+  {% elif has_trades and bench_attr %}
+  <div class="empty-banner">{{ bench_attr.not_computed }}</div>
   {% elif bench_pending %}
   <div class="empty-banner">{{ bench_pending }}</div>
   {% else %}

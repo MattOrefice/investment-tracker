@@ -67,6 +67,7 @@ from src.holdings import (
     get_portfolio_account_id,
     get_portfolio_value_series,
     get_sleeve_weights_on_date,
+    UnpricedHoldingError,
 )
 from src.macro import FREDStillFetching, get_series, percentile
 from src.positioning import get_effective_duration
@@ -519,16 +520,21 @@ def _cape_regime(pct_int: int) -> str:
     return _CAPE_REGIME_WORDS[_cape_regime_class(pct_int)]
 
 
-def not_computed_sentence(subject: str, exc: BaseException, consequence: str) -> str:
+def not_computed_sentence(subject: str, exc: BaseException, consequence: str, *,
+                          reason: "str | None" = None, where: str = "this report") -> str:
     """ONE disclosure pattern for a figure the report could not compute (#248).
 
     States what could not be computed, why (the exception's type, following the
     Coverage-checks precedent: the message is diagnostic detail for the log), and what
     was done instead. It never instructs the reader. It is appended exactly where the
     missing sentence would have gone, so silence can no longer read as "nothing to
-    say" when the truth is "the computation failed"."""
-    return (f"{subject} could not be computed for this report "
-            f"({type(exc).__name__}), so {consequence}.")
+    say" when the truth is "the computation failed".
+
+    ``reason`` replaces the type where the exception carries one written for a reader:
+    holdings.UnpricedHoldingError names the holdings and dates (#639, #643). ``where``
+    is "this page" on a page that prints it."""
+    return (f"{subject} could not be computed for {where} "
+            f"({reason or type(exc).__name__}), so {consequence}.")
 
 
 def _cape_reading_sentence(cape_val: float, cape_pct: float) -> str:
@@ -582,19 +588,28 @@ def _build_executive_summary(start_date: str, end_date: str) -> dict:
     acct = get_portfolio_account_id()   # scope every trade-derived read to the portfolio account
     inception = get_inception_date(account_id=acct)
 
-    pv_since_inception = get_portfolio_value_series(inception, end_date, account_id=acct)
+    # A holding with no price on a date it was held: the return is not computed, and
+    # the sentence saying why stands where it would have been (#639, #643).
+    _unpriced: Optional[UnpricedHoldingError] = None
+    try:
+        pv_since_inception = get_portfolio_value_series(inception, end_date, account_id=acct)
+    except UnpricedHoldingError as exc:
+        _unpriced = exc
     # Displayed dollar value = true current MV (all shares incl DRIP × raw close).
     # The total-return series (pv, adj_close × non-DRIP) is used only for the TWR
     # below — the dollar figure must not come from the return series, which omits
     # the real DRIP shares' market worth.
     current_val = get_current_market_value(end_date)
 
-    pv = pv_since_inception[pv_since_inception.index >= pd.Timestamp(start_date)]
-    # Real external flows (contributions/withdrawals), aligned to the period
-    # slice — flows before the slice drop out; one on its first date is the
-    # starting NAV. End-of-day netting inside twr_daily_linked.
-    cf = get_external_cashflow_series(inception, end_date, account_id=acct).reindex(pv.index).fillna(0.0)
-    portfolio_twr = twr_daily_linked(pv, cf) if len(pv) >= 2 else 0.0
+    if _unpriced is None:
+        pv = pv_since_inception[pv_since_inception.index >= pd.Timestamp(start_date)]
+        # Real external flows (contributions/withdrawals), aligned to the period
+        # slice — flows before the slice drop out; one on its first date is the
+        # starting NAV. End-of-day netting inside twr_daily_linked.
+        cf = get_external_cashflow_series(inception, end_date, account_id=acct).reindex(pv.index).fillna(0.0)
+        portfolio_twr = twr_daily_linked(pv, cf) if len(pv) >= 2 else 0.0
+    else:
+        portfolio_twr = float("nan")
 
     sp_full   = get_sp500_series(inception, end_date)
     # Captured immediately off .attrs, before any further slicing — pandas
@@ -689,10 +704,16 @@ def _build_executive_summary(start_date: str, end_date: str) -> dict:
         else "the custom blended benchmark comparison unavailable this period (benchmark data gap)"
     )
 
-    narrative = [
-        f"Portfolio returned {portfolio_twr*100:.2f}% in {period_label}, "
-        f"{sp_phrase} and {bl_phrase}.",
-    ]
+    if _unpriced is not None:
+        narrative = [not_computed_sentence(
+            f"The portfolio's return in {period_label}", _unpriced,
+            "this summary states no portfolio return and no comparison with a benchmark",
+            reason=_unpriced.reason)]
+    else:
+        narrative = [
+            f"Portfolio returned {portfolio_twr*100:.2f}% in {period_label}, "
+            f"{sp_phrase} and {bl_phrase}.",
+        ]
     if sp_gaps or bl_gaps:
         narrative.append(benchmark_gap_notice(sp_gaps + bl_gaps))
     if top_contributor and top_contributor[1] >= 5:
@@ -735,7 +756,7 @@ def _build_executive_summary(start_date: str, end_date: str) -> dict:
 
     return {
         "period_label":         period_label,
-        "portfolio_return_pct": f"{portfolio_twr*100:.2f}%",
+        "portfolio_return_pct": _fmt_pct(portfolio_twr),
         "sp500_return_pct":     _fmt_pct(sp_return),
         "blended_return_pct":   _fmt_pct(bl_return),
         # Neutralized to 0.0 for the NaN case so the template's sign-based CSS
@@ -861,7 +882,15 @@ def _build_cumulative_chart(
 
 def _build_performance_section(start_date: str, end_date: str) -> dict:
     inception = get_inception_date(account_id=get_portfolio_account_id())
-    pv = get_portfolio_value_series(inception, end_date, account_id=get_portfolio_account_id())
+    try:
+        pv = get_portfolio_value_series(inception, end_date, account_id=get_portfolio_account_id())
+    except UnpricedHoldingError as exc:
+        # In place of the table and the chart (#639, #643).
+        return {"period_rows": [], "chart_b64": None, "benchmark_gaps": [],
+                "not_computed": not_computed_sentence(
+                    "The portfolio's period returns and cumulative return", exc,
+                    "no period return table or cumulative return chart is shown",
+                    reason=exc.reason)}
     if pv.empty or float(pv.max()) == 0.0:
         return {"period_rows": [], "chart_b64": None, "benchmark_gaps": []}
 
@@ -1161,7 +1190,9 @@ def _build_factor_section(end_date: str) -> Optional[dict]:
 def _build_benchmark_section(start_date: str, end_date: str) -> Optional[dict]:
     """
     Run the benchmark-relative attribution regression from inception through end_date
-    and format results for the template.  Returns None if insufficient data or on failure.
+    and format results for the template.  Returns None if insufficient data or on failure,
+    and {"not_computed": <sentence>} when a holding has no price on a date it was held
+    (holdings.UnpricedHoldingError, #643), which the template prints in place of the table.
 
     start_date is the report-period start (e.g. Dec-31 for Q1) and is used only
     for the Brinson-Fachler cross-reference window — the regression itself always covers the
@@ -1172,6 +1203,11 @@ def _build_benchmark_section(start_date: str, end_date: str) -> Optional[dict]:
     inception = get_inception_date(account_id=get_portfolio_account_id())
     try:
         result = run_benchmark_attribution_regression(inception, end_date)
+    except UnpricedHoldingError as exc:
+        # In place of the table and the fit (#639, #643).
+        return {"not_computed": not_computed_sentence(
+            "The benchmark attribution regression", exc,
+            "no alpha, loadings or fit statistics are shown", reason=exc.reason)}
     except Exception:
         logging.exception("Benchmark attribution regression failed — section omitted from PDF")
         return None

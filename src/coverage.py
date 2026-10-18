@@ -109,12 +109,37 @@ class FetchFailure:
 
 
 @dataclass(frozen=True)
+class UnpricedHolding:
+    """A holding with no price on dates it was held, in the window a value series was
+    asked for (#639, #643): the first and last such date, and how many of them were
+    sessions. The value series is not a sum on those dates, never a $0 for it."""
+
+    ticker: str
+    first: str
+    last: str
+    sessions: int
+
+
+def unpriced_reason(unpriced: "tuple[UnpricedHolding, ...] | list[UnpricedHolding]") -> str:
+    """The holdings and dates, in words: "VOO has no price on 30 sessions it was held,
+    2026-04-01 to 2026-05-14"."""
+    parts = []
+    for u in unpriced:
+        days = u.first if u.first == u.last else f"{u.first} to {u.last}"
+        count = f"{u.sessions} session{'' if u.sessions == 1 else 's'}"
+        parts.append(f"{u.ticker} has no price on {count} it was held, {days}")
+    return "; ".join(parts)
+
+
+@dataclass(frozen=True)
 class TickerStatus:
     """One ticker's outcome, as the price layer saw it. Aggregated into a
     PriceCoverage by whichever producer asked.
 
     ``fetch_failure`` is the cause when the price was served but a gap fetch for its
-    window failed (prices.gap_fetch_failure_for): served, and not ok (#637)."""
+    window failed (prices.gap_fetch_failure_for): served, and not ok (#637).
+    ``unpriced_held`` is set by the value series when the holding had no price on dates
+    it was held in the window (#639, #643)."""
 
     ticker: str
     resolved: bool
@@ -122,6 +147,7 @@ class TickerStatus:
     served_through: str | None = None
     error: BaseException | None = None
     fetch_failure: str | None = None
+    unpriced_held: UnpricedHolding | None = None
 
 
 @dataclass(frozen=True)
@@ -160,6 +186,9 @@ class PriceCoverage:
     substitutions: tuple[Substitution, ...] = ()
     # Resolved tickers whose update failed (#637): served at the last stored close.
     fetch_failures: tuple[FetchFailure, ...] = ()
+    # Holdings with no price on dates they were held, from the value series alone
+    # (#639, #643). An unresolved holding held in the window is here too.
+    unpriced_held: tuple[UnpricedHolding, ...] = ()
 
     def __post_init__(self) -> None:
         accounted = set(self.resolved) | {u.ticker for u in self.unresolved}
@@ -209,8 +238,15 @@ class PriceCoverage:
         return frozenset(u.ticker for u in self.unresolved)
 
 
-def unresolved_marker(cov: PriceCoverage) -> "str | None":
+def unresolved_marker(cov: PriceCoverage, *,
+                      consequence: "str | None" = "so their market value counted as zero",
+                      ) -> "str | None":
     """The shared body of a coverage marker, or None when there is nothing to say.
+
+    ``consequence`` says what the page did with those holdings, so each page's marker
+    says what that page does (#643): the sleeve weights count them as zero, the default.
+    None leaves it to the page, which says it in its own sentence: the Performance page
+    withholds every figure computed from the portfolio's value instead.
 
     Returns None — not an empty string — when no holding is unresolved. A caller
     must branch on it rather than render it unconditionally: an empty marker is
@@ -240,9 +276,25 @@ def unresolved_marker(cov: PriceCoverage) -> "str | None":
     served = (f" Prices served through {cov.frontier_served}."
               if cov.frontier_served else
               " No committed price date is available for any holding.")
+    then = f", {consequence}" if consequence else ""
     return (f"{len(cov.unresolved)} of {len(cov.requested)} holdings have "
-            f"no committed price ({names}), so their market value counted as "
-            f"zero.{served}")
+            f"no committed price ({names}){then}.{served}")
+
+
+def unpriced_held_marker(cov: PriceCoverage) -> "str | None":
+    """The marker for holdings that have prices but none on some dates they were held
+    (#639, #643), or None. Holdings already unresolved are left to unresolved_marker.
+    Carries the signature phrase "no committed price"."""
+    gone = cov.unresolved_tickers()
+    held = [u for u in cov.unpriced_held if u.ticker not in gone]
+    if not held:
+        return None
+    parts = []
+    for u in held:
+        days = u.first if u.first == u.last else f"{u.first} to {u.last}"
+        count = f"{u.sessions} session{'' if u.sessions == 1 else 's'}"
+        parts.append(f"{u.ticker} has no committed price on {count} it was held ({days})")
+    return "; ".join(parts) + "."
 
 
 # The three conditions that produce an empty sleeve frame. They are NOT
@@ -378,4 +430,5 @@ def coverage_from_statuses(
         frontier_served=min(served) if served else None,
         fetch_failures=tuple(FetchFailure(s.ticker, s.fetch_failure)
                              for s in statuses if s.resolved and s.fetch_failure),
+        unpriced_held=tuple(s.unpriced_held for s in statuses if s.unpriced_held),
     )

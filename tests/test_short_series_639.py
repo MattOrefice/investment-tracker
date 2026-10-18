@@ -102,14 +102,25 @@ def test_every_spaxx_valuation_marks_it_unresolved(book):
 
 def test_the_value_series_values_it_as_an_unresolved_spaxx(book):
     """A short BIL is valued exactly as a missing one already is, so no base is
-    taken from the date BIL happens to start."""
+    taken from the date BIL happens to start. Since #643 that is no value at all on the
+    days SPAXX is held, and the reader with no record raises, naming the same dates."""
     from src import holdings
     acct = holdings.get_portfolio_account_id()
+
+    def _read():
+        series, _cov = holdings.portfolio_value_series_with_coverage(
+            "2025-05-01", DAY, account_id=acct)
+        with pytest.raises(holdings.UnpricedHoldingError) as err:
+            holdings.get_portfolio_value_series("2025-05-01", DAY, account_id=acct)
+        return series, err.value.unpriced
+
     _cut(book, "BIL", "2025-05-12")
-    short = holdings.get_portfolio_value_series("2025-05-01", DAY, account_id=acct)
+    short, short_unpriced = _read()
     _cut(book, "BIL", "2099-01-01")
-    missing = holdings.get_portfolio_value_series("2025-05-01", DAY, account_id=acct)
+    missing, missing_unpriced = _read()
     pd.testing.assert_series_equal(short, missing)
+    assert short_unpriced == missing_unpriced
+    assert [u.ticker for u in short_unpriced] == ["SPAXX"]
 
 
 # ── the multi-fund factor regressions ──────────────────────────────────────────

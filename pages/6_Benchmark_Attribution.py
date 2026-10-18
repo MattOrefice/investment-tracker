@@ -11,8 +11,9 @@ from src.asof import as_of_banner, data_vintage, format_long_date
 from src.attribution import benchmark_gap_notice, brinson_fachler_period, price_gap_notice
 from src.benchmarks import blended_rule_note
 from src.config import get_demo_banner_text, IS_DEMO
-from src.holdings import (committed_price_frontier, get_inception_date,
-                          get_portfolio_account, get_portfolio_account_id)
+from src.holdings import (UnpricedHoldingError, committed_price_frontier,
+                          get_inception_date, get_portfolio_account,
+                          get_portfolio_account_id)
 from src.factors import (
     alpha_ci_str,
     build_benchmark_methodology,
@@ -23,7 +24,7 @@ from src.factors import (
     fmt_p,
     sig_marker,
 )
-from src.reports import build_bf_cross_reference
+from src.reports import build_bf_cross_reference, not_computed_sentence
 from src.ui_helpers import (demo_portfolio_phrase, render_footer, render_page_header,
                             require_portfolio_account)
 render_page_header()
@@ -75,6 +76,13 @@ with col:
 
     try:
         result = _get_benchmark_result(inception, end_date)
+    except UnpricedHoldingError as exc:
+        # A holding with no price on a date it was held (#639, #643).
+        st.info(not_computed_sentence(
+            "The benchmark attribution regression", exc,
+            "no alpha, loadings or fit statistics are shown",
+            reason=exc.reason, where="this page"))
+        st.stop()
     except Exception:
         logging.exception("Benchmark attribution regression failed")
         st.error("Benchmark attribution regression unavailable. Please try again later.")
