@@ -12,7 +12,7 @@ from src.config import get_demo_banner_text, IS_DEMO
 from src.db import get_connection
 from src.endowment_benchmarks import CATEGORIES, entities
 from src.holdings import blend_split, get_portfolio_account, sleeve_weights_with_coverage
-from src.coverage import unresolved_marker
+from src.coverage import cash_at_nav, unresolved_in_weights, unresolved_marker
 from src.macro import percentile as macro_percentile
 from src.prose_helpers import blend_split_sentence, cape_valuation_sentence
 from src.rebalance import compute_drift, interpret_rebalance_status
@@ -296,10 +296,15 @@ with col:
     _band_line = ""
     _cash_note = ""
     _gap_note = None
+    _cash_nav = None
     _weights = None
     try:
         _sw, _sw_cov = sleeve_weights_with_coverage(date.today().isoformat())
-        _gap_note = unresolved_marker(_sw_cov)
+        # Only an unresolved holding the ex-cash weights include distorts them (#660).
+        # SPAXX is cash, outside their denominator: alone, it leaves the weights and the
+        # band status exact, and only the operational cash is at its NAV (_cash_nav).
+        _gap_note = unresolved_marker(_sw_cov) if unresolved_in_weights(_sw_cov) else None
+        _cash_nav = cash_at_nav(_sw_cov)
         # Rewrite the banner now that coverage is known. Until this point it has
         # the frontier only, which is honest but says nothing about completeness.
         _asof_slot.caption(as_of_banner(coverage=_sw_cov))
@@ -319,6 +324,8 @@ with col:
                     f"float, untargeted and outside the ex-cash SAA; the {_n_strategic} strategic "
                     "sleeves above are shares of invested value."
                 )
+                if _cash_nav:
+                    _cash_note += f" The operational cash is {_cash_nav}."
     except Exception:
         _band_line = ""
 

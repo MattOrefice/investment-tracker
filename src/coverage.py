@@ -265,6 +265,30 @@ def spaxx_at_nav(reason: str) -> str:
             f"because {_SPAXX_WHY.get(reason, _SPAXX_WHY_ELSE)}")
 
 
+def unresolved_in_weights(cov: PriceCoverage) -> "list[str]":
+    """The unresolved holdings the sleeve weights include: every one but SPAXX.
+
+    The sleeve weights are measured ex-cash (holdings._sleeve_weights_impl, Phase 38a),
+    and SPAXX is the Cash / SPAXX sleeve, outside their denominator. An unresolved SPAXX
+    moves no weight, drift or band status, so with SPAXX the only unresolved holding the
+    weights are exact, and the SAA page's band status and Capital Deployment's
+    suggestions stand (#660, decided by the owner on October 18, 2026). Only a holding
+    named here makes the weights "measured against a smaller book"."""
+    return sorted(cov.unresolved_tickers() - {"SPAXX"})
+
+
+def cash_at_nav(cov: PriceCoverage) -> "str | None":
+    """What the cash figures (operational cash, the funding float) are when SPAXX is
+    unresolved, and why: "at SPAXX's $1.00 NAV, without the income BIL would model,
+    because BIL's stored prices do not reach back to the book's inception" (#660), or
+    None when SPAXX is resolved or not held."""
+    spaxx = next((u for u in cov.unresolved if u.ticker == "SPAXX"), None)
+    if spaxx is None:
+        return None
+    return ("at SPAXX's $1.00 NAV, without the income BIL would model, because "
+            f"{_SPAXX_WHY.get(spaxx.reason, _SPAXX_WHY_ELSE)}")
+
+
 def unresolved_marker(cov: PriceCoverage, *,
                       consequence: "str | None" = COUNTED_AS_ZERO,
                       ) -> "str | None":

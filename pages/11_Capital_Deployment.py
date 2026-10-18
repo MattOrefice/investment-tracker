@@ -10,7 +10,8 @@ from src.asof import as_of_banner, format_long_date, today_et
 from src.config import get_demo_banner_text, IS_DEMO, is_write_enabled
 from src.db import get_connection
 from src.holdings import sleeve_weights_with_coverage, get_holdings_on_date, get_portfolio_account, get_portfolio_account_id
-from src.coverage import unresolved_marker, empty_book_note, empty_book_state, EMPTY_UNPRICED
+from src.coverage import (unresolved_marker, empty_book_note, empty_book_state, EMPTY_UNPRICED,
+                          cash_at_nav, unresolved_in_weights)
 from src.prices import get_prices
 from src.rebalance import (
     compute_drift,
@@ -178,13 +179,17 @@ with st.expander("How to read this page", expanded=False):
 today = date.today().isoformat()
 data = _load_data(today)
 sleeve_df = data["sleeve_df"]
-# Defined here, immediately after the load, because BOTH suggestion paths
-# below (contribution sizing at ~:314 and band-breach buys at ~:607) gate on
-# it, and they run before the band verdict does.
-_gap_note = data.get("gap_note")
 # The record itself, not just its rendered marker: the sizing functions need to
 # tell "not held" from "held but unpriced", which the price dict alone cannot.
 _coverage = data["coverage"]
+# Defined here, immediately after the load, because BOTH suggestion paths
+# below (contribution sizing at ~:314 and band-breach buys at ~:607) gate on
+# it, and they run before the band verdict does. Only an unresolved holding the
+# ex-cash weights include sets it (#660): SPAXX is the funding float, outside their
+# denominator, so alone it leaves the bands and the suggestions standing, and only
+# the float is at its NAV (_cash_nav).
+_gap_note = data.get("gap_note") if unresolved_in_weights(_coverage) else None
+_cash_nav = cash_at_nav(_coverage)
 _asof_slot.caption(as_of_banner(coverage=_coverage))
 
 if sleeve_df.empty:
@@ -629,6 +634,9 @@ else:
     # Per-sleeve tax-aware corrective action for each out-of-band sleeve.
     for _sleeve, _row in drift_df[~drift_df["In Band"]].iterrows():
         st.caption(f"**{_sleeve}** · {rebalance_action_text(_row)}")
+if _cash_nav:
+    st.caption(f"The SPAXX balance, the funding float (${spaxx_value:,.2f}), is {_cash_nav}. "
+               "The sleeve weights and bands exclude cash.")
 
 # ── Band-breach buy suggestions ───────────────────────────────────────────────
 
@@ -640,7 +648,8 @@ rebal_cash = st.number_input(
     key="rebal_cash",
     help=(
         f"Cash for band-breach correction only. "
-        f"Current SPAXX balance: ${spaxx_value:,.2f}. "
+        f"Current SPAXX balance: ${spaxx_value:,.2f}"
+        f"{f', {_cash_nav}' if _cash_nav else ''}. "
         "Routine contributions go in the section above."
     ),
 )
