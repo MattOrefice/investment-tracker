@@ -499,11 +499,51 @@ def fails_after_join(alive: "list[threading.Thread]") -> "list[threading.Thread]
     return [t for t in alive if t not in cancelled or t.is_alive()]
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# NO TEST LEAVES THE GAP-FETCH SWITCH CHANGED (#663)
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# src.prices._GAP_FETCH says whether a read may fetch a gap the store does not cover. It
+# is a module global: the demo's refresh turns it off for the rest of the process
+# (demo_refresh.refresh_if_due), and a test that sets it outlives itself unless it puts
+# it back. One test set it with set_gap_fetch(False) and never did, and every later test
+# on its worker read with the gap fetch off: 8 tests that expect a gap fetch to be asked
+# for, or recorded, failed whenever xdist put them after it and passed otherwise (#663).
+#
+# So it is checked around every test, as the threads are (decided by the owner on October
+# 18, 2026): read before setup, compared after the test's own teardown, once its
+# monkeypatch is undone. A test that leaves it changed fails, naming itself, and the
+# switch is put back first, so the failure cannot run into the next test. Set it with
+# monkeypatch.setattr(prices, "_GAP_FETCH", ...), which restores it.
+_GAP_FETCH_DEFAULT = True          # src.prices' own, for a test that first imports it
+_gap_fetch_before: bool = _GAP_FETCH_DEFAULT
+
+
+def gap_fetch_switch() -> bool:
+    """src.prices._GAP_FETCH now, or its default when src.prices is not imported yet."""
+    prices = sys.modules.get("src.prices")
+    return _GAP_FETCH_DEFAULT if prices is None else prices._GAP_FETCH
+
+
+def gap_fetch_switch_left_changed(nodeid: str, before: bool) -> "str | None":
+    """None when the switch is as the test found it. Otherwise it is put back to
+    ``before``, and the failure is returned, naming the test."""
+    after = gap_fetch_switch()
+    if after == before:
+        return None
+    sys.modules["src.prices"]._GAP_FETCH = before
+    return (f"{nodeid} left the gap-fetch switch (src.prices._GAP_FETCH) {after} past its "
+            f"teardown; it found it {before}. Every later test in the process would read "
+            f"with it {after} (#663). Set it with monkeypatch.setattr(prices, "
+            f"'_GAP_FETCH', ...), which puts it back. It has been put back to {before}.")
+
+
 def pytest_runtest_setup(item):
-    global _allow_real_db, _phase, _current_test, _threads_before
+    global _allow_real_db, _phase, _current_test, _threads_before, _gap_fetch_before
     _allow_real_db = item.get_closest_marker(_REAL_DB_MARKER) is not None
     _phase, _current_test = "setup", item.nodeid
     _threads_before = set(threading.enumerate())
+    _gap_fetch_before = gap_fetch_switch()
 
 
 @pytest.hookimpl(hookwrapper=True)
@@ -523,6 +563,8 @@ def pytest_runtest_teardown(item, nextitem):
     yield
     _allow_real_db = False
     _phase = "between"
+    # Put back first, whatever fails below, so no failure carries it into the next test.
+    switch = gap_fetch_switch_left_changed(item.nodeid, _gap_fetch_before)
     # A connection this test's BODY opened must be closed by the end of its own
     # teardown. Setup-phase opens are exempt here (a module- or session-scoped
     # fixture can legitimately hold one across tests); those are checked at
@@ -542,6 +584,8 @@ def pytest_runtest_teardown(item, nextitem):
             f"{[named[t] for t in failing]}. A thread that outlives its test reads "
             "globals later tests repoint (db.DB_PATH) and acts on their databases "
             "(#429). Join it before the test ends, or keep the test from starting it.")
+    if switch:
+        raise AssertionError(switch)
 
 
 def remove_tree_reporting(path: Path) -> "list[str]":
