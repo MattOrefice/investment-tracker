@@ -129,13 +129,16 @@ def test_an_out_of_range_date_in_a_gap_fetch_is_not_a_network_error(book, monkey
 
 
 def test_the_ticker_status_and_the_banner_show_it(book, monkeypatch):
+    import src.prices as prices
     from src.asof import as_of_live_line
     from src.holdings import _price_and_status
-    from src.prices import YahooUnreadDividend, fetch_prices, set_gap_fetch
+    from src.prices import YahooUnreadDividend, fetch_prices
     _yahoo(monkeypatch, _chart(*WINDOW, {JUL22: {}}))
     with pytest.raises(YahooUnreadDividend):
         fetch_prices("VOO", *WINDOW)
-    set_gap_fetch(False)                       # as in the demo once its refresh runs
+    # As in the demo once its refresh runs. Through monkeypatch, which puts it back: a
+    # switch left off turned off every later test's gap fetch on its worker (#663).
+    monkeypatch.setattr(prices, "_GAP_FETCH", False)
     words = "VOO, dated 2026-07-22 (it has no amount)"
     _frame, st = _price_and_status("VOO", "2026-07-01", WINDOW[1])
     assert st.resolved and st.unread_dividends == words
