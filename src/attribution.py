@@ -232,14 +232,17 @@ def _last_on_or_before(series: "Optional[pd.Series]", day: str,
     return float(w.iloc[-1]) if len(w) else None
 
 
-def _first_on_or_after(series: "Optional[pd.Series]", day: str,
-                       window_days: int = 5) -> Optional[float]:
-    """The first price on or after ``day`` within ``window_days``: _first_adj_price's
-    window, read from an already-fetched series instead of a new read."""
+def _on_first_session(series: "Optional[pd.Series]", day: str) -> Optional[float]:
+    """The price on the first NYSE session on or after ``day``, or None when the series
+    has none that day: #645's rule for SPAXX's base (holdings._bil_for_spaxx), applied
+    to attribution's BIL (#646, decided by the owner on October 18, 2026). It took the
+    first price within five days, so a BIL history starting one to five days after
+    inception became a later base with no gap recorded."""
+    from src.holdings import _first_session_on_or_after
     if series is None:
         return None
-    d = date.fromisoformat(day)
-    w = series[(series.index >= d) & (series.index <= d + timedelta(days=window_days))]
+    d = date.fromisoformat(_first_session_on_or_after(day))
+    w = series[series.index == d]
     return float(w.iloc[0]) if len(w) else None
 
 
@@ -468,12 +471,13 @@ def brinson_fachler_period(
     }
 
     # BIL prices anchored at portfolio inception so SPAXX weight reflects
-    # the full historical appreciation of cash since launch.
+    # the full historical appreciation of cash since launch: the close of the first
+    # session on or after inception, or a gap (#646).
     # All three BIL levels from ONE read (#304), so they share one dividend set.
     # Backward-fill at start/end aligns with get_portfolio_value_series()'s ffill():
     # both return the prior trading-day close for non-trading start dates.
     _bil = _adj_prices_one_read("BIL", min(portfolio_inception, start_date), end)
-    bil_inception    = _first_on_or_after(_bil, portfolio_inception)
+    bil_inception    = _on_first_session(_bil, portfolio_inception)
     bil_period_start = _last_on_or_before(_bil, start_date)
     bil_period_end   = _last_on_or_before(_bil, end)
     for _bil_date, _bil_price in (
