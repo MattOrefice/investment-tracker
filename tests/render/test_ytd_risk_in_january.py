@@ -166,4 +166,9 @@ def test_the_page_counts_from_the_series_and_flows_it_measures():
 
     for counted in calls["trading_days_in_window"]:
         assert inputs(counted) == inputs(calls["compute_risk_metrics"][0])
-    assert inputs(calls["compute_risk_metrics"][0]) == (["pv", "_bl_for_metrics"], "cf")
+    assert inputs(calls["compute_risk_metrics"][0]) == (["_pv_m", "_bl_for_metrics"], "_cf_m")
+    # Which are the series and the flows, unless the value series is withheld (#643):
+    # then the benchmark stands in, so its own row and the counts still show.
+    bound = [ast.unparse(n.value) for n in ast.walk(ast.parse(page.read_text(encoding="utf-8")))
+             if isinstance(n, ast.Assign) and ast.unparse(n.targets[0]) == "(_pv_m, _cf_m)"]
+    assert bound == ["(_bl_for_metrics, None) if _SERIES_GAP else (pv, cf)"]

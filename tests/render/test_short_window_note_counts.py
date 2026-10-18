@@ -119,9 +119,11 @@ def test_the_page_types_no_count_into_the_sentence():
     tree = ast.parse(page.read_text(encoding="utf-8"))
     assigned = {t.id: ast.unparse(n.value) for n in ast.walk(tree) if isinstance(n, ast.Assign)
                 for t in n.targets if isinstance(t, ast.Name) and t.id in ("_n_1m", "_n_3m")}
+    # _pv_m and _cf_m are pv and cf, or the benchmark in the portfolio's place when the
+    # value series is withheld (#643); test_ytd_risk_in_january pins that binding.
     assert assigned == {
-        "_n_1m": "trading_days_in_window(pv, _bl_for_metrics, window='1M', cashflows=cf)",
-        "_n_3m": "trading_days_in_window(pv, _bl_for_metrics, window='3M', cashflows=cf)"}
+        "_n_1m": "trading_days_in_window(_pv_m, _bl_for_metrics, window='1M', cashflows=_cf_m)",
+        "_n_3m": "trading_days_in_window(_pv_m, _bl_for_metrics, window='3M', cashflows=_cf_m)"}
     sentence = [ast.unparse(n) for n in ast.walk(tree) if isinstance(n, ast.JoinedStr)
                 and "trading days respectively" in ast.unparse(n)]
     assert len(sentence) == 1 and "{_n_1m} and {_n_3m}" in sentence[0], sentence
