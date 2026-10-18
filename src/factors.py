@@ -862,18 +862,35 @@ def _get_sleeve_return_series(
       network, the provider's answer, a read-only store: prices.gap_fetch_cause); a code
       error raises. Each such leg and its cause are returned in ``attrs["unread"]``,
       {ticker: cause}, for the regression to say why.
+      A single-ticker sleeve's read is caught the same way (#651).
+      The inception-weights fallback follows the same rule (#651): a held leg whose
+      inception price read fails, or that has no close on the inception date, cannot
+      be weighted, and is neither dropped nor the other weights renormalized. The
+      sleeve then has no return on any date, and ``attrs["unvalued"]``,
+      {ticker: inception date}, names each leg with no close there.
 
     Non-trading days (weekends, US holidays) carry forward Friday's price;
     inner-joining against the factor index in the regression step drops them.
     """
     date_range = pd.date_range(start=inception, end=end_date, freq="D")
+    unread: dict[str, str] = {}
+
+    def _none_covered(unvalued: "dict[str, str] | None" = None) -> pd.Series:
+        out = pd.Series(np.nan, index=date_range).iloc[1:]
+        out.attrs["unread"] = unread
+        out.attrs["unvalued"] = unvalued or {}
+        return out
 
     if len(tickers) == 1:
         ticker = tickers[0]
-        p = get_prices(ticker, inception, end_date)
+        p = _read_prices(ticker, inception, end_date, unread)
+        if p is None:
+            return _none_covered()
         p.index = pd.to_datetime(p.index)
         series = total_return_series(p)
-        return series.reindex(date_range).ffill().pct_change().iloc[1:]
+        out = series.reindex(date_range).ffill().pct_change().iloc[1:]
+        out.attrs["unread"] = unread
+        return out
 
     # Multi-ticker: use provided weights or compute from inception market values
     if weights is not None:
@@ -881,19 +898,22 @@ def _get_sleeve_return_series(
     else:
         holdings = get_holdings_on_date(inception, account_id=get_portfolio_account_id())
         sleeve_values: dict[str, float] = {}
+        unvalued: dict[str, str] = {}
         for ticker in tickers:
             if ticker not in holdings.index:
                 continue
             shares = float(holdings.loc[ticker, "net_shares"])
-            try:
-                p_inc = get_prices(ticker, inception, inception)
-                p_inc.index = pd.to_datetime(p_inc.index)
-                px = total_return_series(p_inc)
-                price = float(px.dropna().iloc[-1]) if not px.dropna().empty else 0.0
-                if price > 0:
-                    sleeve_values[ticker] = shares * price
-            except Exception:
+            p_inc = _read_prices(ticker, inception, inception, unread)
+            if p_inc is None:
                 continue
+            p_inc.index = pd.to_datetime(p_inc.index)
+            px = total_return_series(p_inc).dropna()
+            if px.empty or not float(px.iloc[-1]) > 0:
+                unvalued[ticker] = inception
+                continue
+            sleeve_values[ticker] = shares * float(px.iloc[-1])
+        if unread or unvalued:
+            return _none_covered(unvalued)
         if not sleeve_values:
             raise ValueError(
                 f"Could not compute inception market values for tickers: {tickers}"
@@ -902,15 +922,9 @@ def _get_sleeve_return_series(
         effective_weights = {t: v / total for t, v in sleeve_values.items()}
 
     weighted_ret = pd.Series(0.0, index=date_range)
-    unread: dict[str, str] = {}
     for ticker, w in effective_weights.items():
-        try:
-            p = get_prices(ticker, inception, end_date)
-        except Exception as exc:                                 # noqa: BLE001
-            cause = gap_fetch_cause(exc)
-            if cause is None:
-                raise
-            unread[ticker] = cause
+        p = _read_prices(ticker, inception, end_date, unread)
+        if p is None:
             weighted_ret = weighted_ret + w * pd.Series(np.nan, index=date_range)
             continue
         p.index = pd.to_datetime(p.index)
@@ -923,6 +937,31 @@ def _get_sleeve_return_series(
     return out
 
 
+def read_cause(exc: BaseException) -> "str | None":
+    """Why a read failed, when ``exc`` is the read's own failure: the network, the
+    provider's answer, a read-only store (prices.gap_fetch_cause, #647). None for
+    anything else, which raises (#651). A committed data file that is missing
+    (FileNotFoundError, as load_factors and load_umd_factor raise) is not a failed
+    fetch, and is not worded as a network error: a regression's except raises it."""
+    if isinstance(exc, FileNotFoundError):
+        return None
+    return gap_fetch_cause(exc)
+
+
+def _read_prices(ticker: str, start: str, end: str,
+                 unread: "dict[str, str]") -> "pd.DataFrame | None":
+    """get_prices, or None with the cause recorded in ``unread`` when the read's own
+    failure stops it (read_cause); a code error raises (#647, #651)."""
+    try:
+        return get_prices(ticker, start, end)
+    except Exception as exc:                                     # noqa: BLE001
+        cause = read_cause(exc)
+        if cause is None:
+            raise
+        unread[ticker] = cause
+        return None
+
+
 def _unread_reason(unread: "dict[str, str]") -> str:
     """Each leg whose price read failed, with its cause, in words for the reader's
     not_computed_sentence (reports, #248): "the price read failed for VOO: a network
@@ -930,18 +969,33 @@ def _unread_reason(unread: "dict[str, str]") -> str:
     return "; ".join(f"the price read failed for {t}: {cause}" for t, cause in unread.items())
 
 
-def _not_computed(sleeve_label: str, tickers: list[str], region: str,
-                  unread: "dict[str, str]") -> dict:
-    """A sleeve regression that is not computed because a leg's prices could not be
-    read (#647): the sleeve's label and tickers, and ``not_computed``, the reason, which
-    each surface prints in place of the loadings."""
+def _missing_legs_reason(attrs: dict) -> "str | None":
+    """Why a sleeve's return series has no date every leg covers, from what
+    _get_sleeve_return_series recorded, or None when every leg was read and weighted."""
+    parts = []
+    if attrs.get("unread"):
+        parts.append(_unread_reason(attrs["unread"]))
+    parts += [f"{t} has no close on {day}, the day its weight is read"
+              for t, day in (attrs.get("unvalued") or {}).items()]
+    return "; ".join(parts) or None
+
+
+def _short_sample_reason(n: int) -> str:
+    """A regression with fewer than 30 aligned dates, with its count (#651)."""
+    return f"it has {n} aligned trading day{'' if n == 1 else 's'} and needs at least 30"
+
+
+def _not_computed(sleeve_label: str, tickers: list[str], region: str, reason: str) -> dict:
+    """A sleeve regression that is not computed, and why (#647, #651): the sleeve's
+    label and tickers, and ``not_computed``, the reason, which each surface prints in
+    place of the loadings."""
     return {"sleeve_label": sleeve_label, "tickers": tickers, "region": region,
-            "not_computed": _unread_reason(unread)}
+            "not_computed": reason}
 
 
 def computed_result(res: Optional[dict]) -> Optional[dict]:
-    """``res`` when it holds a regression's figures, else None: None for insufficient
-    data, and for a regression not computed because a leg could not be read (#647)."""
+    """``res`` when it holds a regression's figures, else None: None for no result,
+    and for a regression that is not computed and says why (#647, #651)."""
     return None if res is None or res.get("not_computed") else res
 
 
@@ -1006,12 +1060,12 @@ def run_sleeve_regression(
     which naturally drops weekends, US holidays, and the factor publication lag
     window at the right edge of the sample.
 
-    Returns None if fewer than 30 aligned observations are available, and a
-    not-computed result naming each leg and its cause when a leg's prices could not be
-    read (_not_computed, #647).
+    With fewer than 30 aligned observations it returns a not-computed result that says
+    why (_not_computed): each leg whose prices could not be read or weighted, and its
+    cause (#647), or else the count of aligned dates (#651). Never None.
     """
     daily_ret = _get_sleeve_return_series(tickers, inception, end_date, weights=weights)
-    unread = daily_ret.attrs.get("unread")
+    missing = _missing_legs_reason(daily_ret.attrs)
     daily_ret.index = pd.to_datetime(daily_ret.index)
 
     ff = load_factors(region)
@@ -1032,7 +1086,8 @@ def run_sleeve_regression(
     merged = daily_ret.to_frame(name="R_sleeve").join(ff, how="inner").dropna()
 
     if len(merged) < 30:
-        return _not_computed(sleeve_label, tickers, region, unread) if unread else None
+        return _not_computed(sleeve_label, tickers, region,
+                             missing or _short_sample_reason(len(merged)))
 
     R_excess = merged["R_sleeve"] - merged["RF"]
     result = _ols_ff5(R_excess, merged)
@@ -1058,8 +1113,10 @@ def run_sleeve_regressions(inception: str, end_date: str) -> dict:
     insufficient for stable inference.  See em_disclosure() for the qualitative
     note included in the PDF and Streamlit output.
 
-    Returns a dict with keys 'us' and 'developed_exus'; each value is either
-    a regression result dict or None if data is insufficient.
+    Returns a dict with keys 'us' and 'developed_exus'; each value is either a
+    regression result dict or a not-computed result that says why (#647, #651). The
+    except catches only a read's own failure (read_cause), which the result names; a
+    code error raises (#651).
     """
     results: dict[str, Optional[dict]] = {}
     for key, spec in _SLEEVES.items():
@@ -1072,9 +1129,34 @@ def run_sleeve_regressions(inception: str, end_date: str) -> dict:
                 end_date=end_date,
                 weights=target_weights(spec["funds"]) if "funds" in spec else None,
             )
-        except Exception:
-            results[key] = None
+        except Exception as exc:                                 # noqa: BLE001
+            results[key] = read_failed(_sleeve_label(spec), spec["tickers"],
+                                        spec["region"], exc)
     return results
+
+
+def read_failed(sleeve_label: str, tickers: list[str], region: str,
+                 exc: BaseException) -> dict:
+    """The not-computed result for a regression a read's own failure stopped
+    (read_cause), or ``exc`` raised again: the excepts around the sleeve regressions
+    catch nothing else (#651). Called only from an except clause."""
+    cause = read_cause(exc)
+    if cause is None:
+        raise exc
+    return _not_computed(sleeve_label, tickers, region, f"a price read failed: {cause}")
+
+
+def sleeves_read_failed(exc: BaseException) -> dict:
+    """read_failed for both equity sleeves, as run_sleeve_regressions keys them: the
+    Factor Profile page's momentum wrapper (#651)."""
+    return {key: read_failed(_sleeve_label(spec), spec["tickers"], spec["region"], exc)
+            for key, spec in _SLEEVES.items()}
+
+
+def fi_read_failed(exc: BaseException) -> dict:
+    """read_failed for the FI sleeve's TERM/CREDIT regression: the Factor Profile
+    page's FI wrapper (#651)."""
+    return read_failed("FI Sleeve — TERM / CREDIT", list(_FI_FUNDS), "us", exc)
 
 
 # ── Carhart FF5+MOM (momentum supplement) ─────────────────────────────────────
@@ -1123,16 +1205,21 @@ def run_sleeve_regressions_mom(inception: str, end_date: str) -> dict:
     Uses the same sleeve definitions as run_sleeve_regressions but extends the factor set
     with the Ken French daily UMD/Mom factor.
 
-    Returns dict with keys 'us' and 'developed_exus'; each value is a result dict or None,
-    or a not-computed result when a leg's prices could not be read, as
-    run_sleeve_regression (#647). Returns all-None values if the UMD factor data cannot
-    be loaded.
+    Returns dict with keys 'us' and 'developed_exus'; each value is a result dict or a
+    not-computed result that says why, as run_sleeve_regression (#647, #651). When the
+    momentum factor file cannot be read, both are not computed, and the reason names
+    the error. The excepts catch only those reads' own failures; a code error raises
+    (#651).
     """
     try:
         umd = load_umd_factor()
-        umd.index = pd.to_datetime(umd.index)
-    except Exception:
-        return {"us": None, "developed_exus": None}
+    except OSError as exc:
+        # The read's own failure: the momentum factor file cannot be opened.
+        reason = f"the momentum factor data could not be read ({type(exc).__name__})"
+        return {key: _not_computed(_sleeve_label(spec), spec["tickers"], spec["region"],
+                                   reason)
+                for key, spec in _SLEEVES.items()}
+    umd.index = pd.to_datetime(umd.index)
 
     results: dict[str, Optional[dict]] = {}
     for key, spec in _SLEEVES.items():
@@ -1141,7 +1228,7 @@ def run_sleeve_regressions_mom(inception: str, end_date: str) -> dict:
                 spec["tickers"], inception, end_date,
                 weights=target_weights(spec["funds"]) if "funds" in spec else None,
             )
-            unread = daily_ret.attrs.get("unread")
+            missing = _missing_legs_reason(daily_ret.attrs)
             daily_ret.index = pd.to_datetime(daily_ret.index)
 
             ff = load_factors(spec["region"])
@@ -1161,8 +1248,9 @@ def run_sleeve_regressions_mom(inception: str, end_date: str) -> dict:
             )
 
             if len(merged) < 30:
-                results[key] = (_not_computed(_sleeve_label(spec), spec["tickers"],
-                                              spec["region"], unread) if unread else None)
+                results[key] = _not_computed(_sleeve_label(spec), spec["tickers"],
+                                             spec["region"],
+                                             missing or _short_sample_reason(len(merged)))
                 continue
 
             R_excess = merged["R_sleeve"] - merged["RF"]
@@ -1173,8 +1261,9 @@ def run_sleeve_regressions_mom(inception: str, end_date: str) -> dict:
             result["sample_start"]  = merged.index[0].date().isoformat()
             result["sample_end"]    = merged.index[-1].date().isoformat()
             results[key] = result
-        except Exception:
-            results[key] = None
+        except Exception as exc:                                 # noqa: BLE001
+            results[key] = read_failed(_sleeve_label(spec), spec["tickers"],
+                                        spec["region"], exc)
 
     return results
 
@@ -1202,13 +1291,16 @@ def run_intl_tilt_regressions(inception: str, end_date: str) -> dict:
     rationale (why the controls are Canada-matched and NOT the SAA benchmarks).
 
     Returns an ordered dict keyed by fund ticker; each value carries the fund and
-    control result dicts (either may be None on insufficient data) plus the
-    metadata the page needs to render and caption the pair.
+    control result dicts (either may be a not-computed result that says why, #651)
+    plus the metadata the page needs to render and caption the pair. The excepts
+    catch only a read's own failure; a code error raises (#651). A book whose sleeves
+    cannot be read (a store with no policy tables) has no tilt sleeves to regress.
     """
+    import sqlite3
     try:
         from src.sleeve_config import international_sleeves
         book_sleeves = set(international_sleeves())
-    except Exception:
+    except sqlite3.Error:
         return {}
 
     # Untilted book: a single developed-international sleeve. Nothing to add.
@@ -1219,26 +1311,29 @@ def run_intl_tilt_regressions(inception: str, end_date: str) -> dict:
     for spec in _INTL_TILT_SLEEVES:
         if spec["sleeve"] not in book_sleeves:
             continue
+        fund_label = f"{spec['sleeve']} — {spec['fund']}"
         try:
             fund_res = run_sleeve_regression(
-                sleeve_label=f"{spec['sleeve']} — {spec['fund']}",
+                sleeve_label=fund_label,
                 tickers=[spec["fund"]],
                 region="developed_exus",
                 inception=inception,
                 end_date=end_date,
             )
-        except Exception:
-            fund_res = None
+        except Exception as exc:                                 # noqa: BLE001
+            fund_res = read_failed(fund_label, [spec["fund"]], "developed_exus", exc)
+        control_label = f"{spec['sleeve']} control — {spec['control']}"
         try:
             control_res = run_sleeve_regression(
-                sleeve_label=f"{spec['sleeve']} control — {spec['control']}",
+                sleeve_label=control_label,
                 tickers=[spec["control"]],
                 region="developed_exus",
                 inception=inception,
                 end_date=end_date,
             )
-        except Exception:
-            control_res = None
+        except Exception as exc:                                 # noqa: BLE001
+            control_res = read_failed(control_label, [spec["control"]],
+                                       "developed_exus", exc)
 
         out[spec["fund"]] = {
             "sleeve":         spec["sleeve"],
@@ -1270,14 +1365,23 @@ def regress_fi_sleeve(inception: str, end_date: str) -> Optional[dict]:
     is NaN, not 0% (#639), so the regression uses the dates both funds cover and its
     sample window, printed from them, says where it starts.
 
-    Returns None if fewer than 30 aligned observations are available.
+    A fund or factor proxy whose price read fails (the read's own failure,
+    read_cause) has no return on any date, as #647 reads a sleeve's leg, so no date is
+    covered. With fewer than 30 aligned observations it returns a not-computed result
+    that says why: each such read and its cause, or else the count of aligned dates
+    (#651). Never None.
     """
     date_range = pd.date_range(start=inception, end=end_date, freq="D")
+    weights = fi_weights()
+    unread: dict[str, str] = {}
 
     # FI sleeve return (VGIT + SCHP at their sleeves' SAA targets)
     fi_ret = pd.Series(0.0, index=date_range)
-    for ticker, w in fi_weights().items():
-        p = get_prices(ticker, inception, end_date)
+    for ticker, w in weights.items():
+        p = _read_prices(ticker, inception, end_date, unread)
+        if p is None:
+            fi_ret = fi_ret + w * pd.Series(np.nan, index=date_range)
+            continue
         p.index = pd.to_datetime(p.index)
         series = total_return_series(p)
         fi_ret = fi_ret + w * series.reindex(date_range).ffill().pct_change()
@@ -1289,9 +1393,19 @@ def regress_fi_sleeve(inception: str, end_date: str) -> Optional[dict]:
         if ticker == "HYG":
             # Inside a quarter lock, the HYG series the lock captured (#382).
             held = hyg_credit_series_locked()
-            s = held if held is not None else hyg_credit_series(inception, end_date)
-            return s.reindex(date_range).ffill().pct_change().iloc[1:]
-        p = get_prices(ticker, inception, end_date)
+            if held is None:
+                try:
+                    held = hyg_credit_series(inception, end_date)
+                except Exception as exc:                         # noqa: BLE001
+                    cause = read_cause(exc)
+                    if cause is None:
+                        raise
+                    unread[ticker] = cause
+                    return pd.Series(np.nan, index=date_range).iloc[1:]
+            return held.reindex(date_range).ffill().pct_change().iloc[1:]
+        p = _read_prices(ticker, inception, end_date, unread)
+        if p is None:
+            return pd.Series(np.nan, index=date_range).iloc[1:]
         p.index = pd.to_datetime(p.index)
         return total_return_series(p).reindex(date_range).ffill().pct_change().iloc[1:]
 
@@ -1316,7 +1430,9 @@ def regress_fi_sleeve(inception: str, end_date: str) -> Optional[dict]:
     )
 
     if len(merged) < 30:
-        return None
+        return _not_computed("FI Sleeve — TERM / CREDIT", list(_FI_FUNDS), "us",
+                             (_unread_reason(unread) if unread
+                              else _short_sample_reason(len(merged))))
 
     T = len(merged)
     L = _nw_lags(T)
@@ -1592,6 +1708,7 @@ def build_factor_prose(
             f"unexplained because of the universe mismatch, not risk-adjusted excess return."
         )
 
+    fi_result = computed_result(fi_result)
     if fi_result:
         b_term   = fi_result["betas"]["TERM"]
         t_term   = fi_result["t_stats"]["TERM"]
@@ -1899,6 +2016,7 @@ def build_factor_methodology_notes(results: dict, fi_result: Optional[dict] = No
     if _stale_note:
         notes.insert(0, _stale_note)
 
+    fi_result = computed_result(fi_result)
     if fi_result:
         T_fi  = fi_result["T"]
         L_fi  = fi_result["nw_lags"]

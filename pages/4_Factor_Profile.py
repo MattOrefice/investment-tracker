@@ -16,6 +16,9 @@ require_portfolio_account("Factor Profile")
 from src.factors import (
     em_disclosure,
     alpha_ci_str,
+    fi_read_failed,
+    read_cause,
+    sleeves_read_failed,
     build_factor_methodology_notes,
     build_factor_prose,
     build_intl_tilt_disclosure,
@@ -105,25 +108,32 @@ with col:
     def _get_factor_results(inception_date: str, end: str) -> dict:
         return run_sleeve_regressions(inception_date, end)
 
+    # Each wrapper catches only a read's own failure, and says it as the regression's
+    # reason; a code error raises (#651).
     @st.cache_data(ttl=3600)
     def _get_fi_result(inception_date: str, end: str):
         try:
             return regress_fi_sleeve(inception_date, end)
-        except Exception:
-            return None
+        except Exception as exc:                                 # noqa: BLE001
+            return fi_read_failed(exc)
 
     @st.cache_data(ttl=3600)
     def _get_mom_results(inception_date: str, end: str) -> dict:
         try:
             return run_sleeve_regressions_mom(inception_date, end)
-        except Exception:
-            return {"us": None, "developed_exus": None}
+        except Exception as exc:                                 # noqa: BLE001
+            return sleeves_read_failed(exc)
 
     @st.cache_data(ttl=3600)
     def _get_tilt_results(inception_date: str, end: str) -> dict:
         try:
             return run_intl_tilt_regressions(inception_date, end)
-        except Exception:
+        except Exception as exc:                                 # noqa: BLE001
+            if read_cause(exc) is None:
+                raise
+            # Each fund's and control's read failure comes back from the regressions as
+            # a result that says why. One that reaches here stopped them before any
+            # tilt regression was named, so there is none to say it of.
             return {}
 
     try:
@@ -220,7 +230,7 @@ with col:
         st.caption(f"Tickers: {', '.join(res['tickers'])}")
 
         if res.get("not_computed"):
-            # A leg's prices could not be read (#647): why, in place of the loadings.
+            # Not computed (#647, #651): why, in place of the loadings.
             st.info(not_computed_sentence(
                 f"The {res['sleeve_label']} factor regression", None,
                 "no loadings or fit statistics are shown for it",
@@ -235,11 +245,18 @@ with col:
             res_mom = results_mom.get(key)
             if res_mom is not None:
                 with st.expander("Carhart Momentum Supplement (FF5 + UMD)", expanded=False):
-                    _render_factor_table(res_mom, _FACTORS + ["Mom"], label="FF5 + Momentum")
-                    # Read by the significance label's cut-offs (#551), and nothing
-                    # more: no fund, no cause (#584).
-                    st.caption(momentum_caption(res_mom["betas"]["Mom"],
-                                                res_mom["t_stats"]["Mom"]))
+                    if res_mom.get("not_computed"):
+                        st.info(not_computed_sentence(
+                            "The momentum supplement's regression", None,
+                            "no loadings are shown for it",
+                            reason=res_mom["not_computed"], where="this page"))
+                    else:
+                        _render_factor_table(res_mom, _FACTORS + ["Mom"],
+                                             label="FF5 + Momentum")
+                        # Read by the significance label's cut-offs (#551), and nothing
+                        # more: no fund, no cause (#584).
+                        st.caption(momentum_caption(res_mom["betas"]["Mom"],
+                                                    res_mom["t_stats"]["Mom"]))
         else:
             _render_factor_table(res, _FACTORS)
             _render_fit_metrics(res)
@@ -290,12 +307,24 @@ with col:
                 f"<span style='font-weight:normal'>({_entry['fund_name']})</span>",
                 unsafe_allow_html=True,
             )
-            _render_factor_table(
-                _fr, _FACTORS, label=f"FF5: {_entry['fund']} (fund)"
-            )
-            _render_fit_metrics(_fr)
+            # A fund's or control's regression that is not computed says why (#651).
+            if _fr.get("not_computed"):
+                st.info(not_computed_sentence(
+                    f"The {_entry['fund']} fund's factor regression", None,
+                    "no loadings are shown for it",
+                    reason=_fr["not_computed"], where="this page"))
+            else:
+                _render_factor_table(
+                    _fr, _FACTORS, label=f"FF5: {_entry['fund']} (fund)"
+                )
+                _render_fit_metrics(_fr)
 
-            if _cr is not None:
+            if _cr.get("not_computed"):
+                st.info(not_computed_sentence(
+                    f"The {_entry['control']} control's factor regression", None,
+                    "no loadings are shown for it",
+                    reason=_cr["not_computed"], where="this page"))
+            else:
                 _render_factor_table(
                     _cr, _FACTORS,
                     label=(
@@ -304,20 +333,17 @@ with col:
                     ),
                 )
                 _render_fit_metrics(_cr)
-                _gap = _fr["alpha_annual_bps"] - _cr["alpha_annual_bps"]
-                st.caption(
-                    f"**Fund-minus-control residual: {_gap:+.0f} bps/yr** "
-                    f"({_entry['fund']} {_fr['alpha_annual_bps']:+.0f} − "
-                    f"{_entry['control']} {_cr['alpha_annual_bps']:+.0f}). Both residuals "
-                    "carry wide confidence intervals at this sample length. The control's "
-                    "own non-zero residual shows what construction against the academic "
-                    "factors costs a passive, Canada-matched fund."
-                )
-            else:
-                st.caption(
-                    f"Control {_entry['control']} regression unavailable "
-                    "(insufficient aligned observations)."
-                )
+                if not _fr.get("not_computed"):
+                    _gap = _fr["alpha_annual_bps"] - _cr["alpha_annual_bps"]
+                    st.caption(
+                        f"**Fund-minus-control residual: {_gap:+.0f} bps/yr** "
+                        f"({_entry['fund']} {_fr['alpha_annual_bps']:+.0f} − "
+                        f"{_entry['control']} {_cr['alpha_annual_bps']:+.0f}). Both "
+                        "residuals carry wide confidence intervals at this sample length. "
+                        "The control's own non-zero residual shows what construction "
+                        "against the academic factors costs a passive, Canada-matched "
+                        "fund."
+                    )
 
             for _para in build_intl_tilt_disclosure(_entry):
                 st.write(_para)
@@ -329,12 +355,13 @@ with col:
         "FI sleeve uses TERM and CREDIT factors; "
         "Carhart momentum supplement not applicable to a duration-driven sleeve."
     )
-    if fi_result is None:
-        st.warning(
-            "FI factor data is temporarily unavailable: the regression needs IEF, BIL, and HYG "
-            "daily prices plus the Ken French US risk-free rate. The panel populates once the "
-            "price series are cached."
-        )
+    if fi_result.get("not_computed"):
+        # Not computed, and why (#651), in place of the warning that named every input
+        # whatever had happened.
+        st.info(not_computed_sentence(
+            "The fixed-income sleeve's factor regression", None,
+            "no TERM or CREDIT loadings are shown",
+            reason=fi_result["not_computed"], where="this page"))
         if st.button("Retry", key="retry_fi"):
             _get_fi_result.clear()
             st.rerun()
