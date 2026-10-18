@@ -859,7 +859,7 @@ def _get_sleeve_return_series(
       keeps its weight: no leg is dropped and no weight renormalized, so the sleeve
       has no date every leg covers and its regression is not computed (#647, decided
       by the owner on October 17, 2026). Only the read's own failure is caught (the
-      network, Yahoo's answer, a read-only store: prices.gap_fetch_cause); a code
+      network, the provider's answer, a read-only store: prices.gap_fetch_cause); a code
       error raises. Each such leg and its cause are returned in ``attrs["unread"]``,
       {ticker: cause}, for the regression to say why.
 
@@ -925,8 +925,8 @@ def _get_sleeve_return_series(
 
 def _unread_reason(unread: "dict[str, str]") -> str:
     """Each leg whose price read failed, with its cause, in words for the reader's
-    not_computed_sentence (reports, #248): "the price read failed for VOO: Yahoo
-    Finance returned HTTP 503"."""
+    not_computed_sentence (reports, #248): "the price read failed for VOO: a network
+    error: ConnectionError"."""
     return "; ".join(f"the price read failed for {t}: {cause}" for t, cause in unread.items())
 
 
