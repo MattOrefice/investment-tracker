@@ -242,8 +242,29 @@ class PriceCoverage:
         return frozenset(u.ticker for u in self.unresolved)
 
 
+# What the sleeve weights do with a holding they cannot price (#643).
+COUNTED_AS_ZERO = "so their market value counted as zero"
+
+# Why an unresolved SPAXX was not priced from BIL, by the reason on its status
+# (holdings._bil_for_spaxx, #645). Its income is modeled at BIL's total return from the
+# book's inception (#646).
+_SPAXX_WHY = {
+    "fetch_failed": "the fetch of BIL's prices back to the book's inception failed",
+    "no_cached_rows": "BIL's stored prices do not reach back to the book's inception",
+}
+_SPAXX_WHY_ELSE = "BIL has no price from the book's inception"
+
+
+def spaxx_at_nav(reason: str) -> str:
+    """What the sleeve weights and the current market value do with an unresolved SPAXX,
+    and why: "SPAXX is valued at its $1.00 NAV, without the income BIL would model,
+    because BIL's stored prices do not reach back to the book's inception" (#646)."""
+    return ("SPAXX is valued at its $1.00 NAV, without the income BIL would model, "
+            f"because {_SPAXX_WHY.get(reason, _SPAXX_WHY_ELSE)}")
+
+
 def unresolved_marker(cov: PriceCoverage, *,
-                      consequence: "str | None" = "so their market value counted as zero",
+                      consequence: "str | None" = COUNTED_AS_ZERO,
                       ) -> "str | None":
     """The shared body of a coverage marker, or None when there is nothing to say.
 
@@ -251,6 +272,12 @@ def unresolved_marker(cov: PriceCoverage, *,
     says what that page does (#643): the sleeve weights count them as zero, the default.
     None leaves it to the page, which says it in its own sentence: the Performance page
     withholds every figure computed from the portfolio's value instead.
+
+    AN UNRESOLVED SPAXX IS NOT COUNTED AS ZERO (#646, decided by the owner on October 18,
+    2026). Where it is valued, the sleeve weights and the current market value, it is
+    valued at its $1.00 NAV, so under the default the marker says exactly that, without
+    the income BIL would model, and why (spaxx_at_nav). The other holdings it names
+    still count as zero.
 
     Returns None — not an empty string — when no holding is unresolved. A caller
     must branch on it rather than render it unconditionally: an empty marker is
@@ -281,6 +308,16 @@ def unresolved_marker(cov: PriceCoverage, *,
               if cov.frontier_served else
               " No committed price date is available for any holding.")
     then = f", {consequence}" if consequence else ""
+    spaxx = next((u for u in cov.unresolved if u.ticker == "SPAXX"), None)
+    if spaxx is not None and consequence == COUNTED_AS_ZERO:
+        others = sorted(cov.unresolved_tickers() - {"SPAXX"})
+        zero = ""
+        if len(others) == 1:
+            zero = f"{others[0]}'s market value counted as zero, and "
+        elif others:
+            zero = (f"the market value of {', '.join(others[:-1])} and {others[-1]} "
+                    "counted as zero, and ")
+        then = f": {zero}{spaxx_at_nav(spaxx.reason)}"
     return (f"{len(cov.unresolved)} of {len(cov.requested)} holdings have "
             f"no committed price ({names}){then}.{served}")
 

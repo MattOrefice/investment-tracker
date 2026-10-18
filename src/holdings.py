@@ -157,10 +157,10 @@ def _first_session_on_or_after(day: str) -> str:
 def _bil_for_spaxx(start: str, end: str) -> "tuple[pd.DataFrame, TickerStatus]":
     """BIL's frame for SPAXX's growth from ``start``, and SPAXX's status (#639).
 
-    SPAXX's income is modeled at BIL's total return measured from ``start``. A BIL
-    series starting later would measure it from a later base and understate it with
-    nothing saying so. So BIL must hold the close of the first session on or after
-    ``start``. When it does not, the frame comes back empty and SPAXX unresolved:
+    SPAXX's income is modeled at BIL's total return measured from ``start``, the
+    inception of the book being valued at every site (#646). A BIL series starting
+    later would measure it from a later base and understate it with nothing saying
+    so. So BIL must hold the close of the first session on or after ``start``. When it does not, the frame comes back empty and SPAXX unresolved:
     ``fetch_failed`` when the fetch for the missing stretch failed
     (prices.gap_fetch_failure_for), ``no_cached_rows`` when the stretch is not stored
     and was not fetched. Each caller then values SPAXX as it already values an
@@ -551,13 +551,14 @@ def _portfolio_value_series_impl(
     # Build price matrix (adj_close, forward-filled for non-trading days).
     # SPAXX NAV is always $1, but it accrues T-bill yield.  We proxy its total
     # return through BIL (SPDR Bloomberg 1-3 Month T-Bill ETF), whose adj_close
-    # already reflects reinvested T-bill yield.  BIL is normalized to start at
-    # $1.00 so that shares × price still equals dollars of SPAXX held.
+    # already reflects reinvested T-bill yield.  BIL is normalized to $1.00 at the
+    # book's inception, as at every site that values SPAXX (#646), so that
+    # shares × price still equals dollars of SPAXX held.
     price_cols: dict = {}
     statuses: "list[TickerStatus]" = []
     for ticker in tickers:
         if ticker == "SPAXX":
-            p, st = _bil_for_spaxx(start_date, end)
+            p, st = _bil_for_spaxx(get_inception_date(account_id=account_id), end)
             statuses.append(st)
             try:
                 p.index = pd.to_datetime(p.index)
@@ -719,7 +720,8 @@ def _sleeve_weights_impl(date_str: str) -> "tuple[pd.DataFrame, list[TickerStatu
         total_value, cash_mv, invested_value, cash_weight_of_total.
     """
     # Wrapper: resolves the portfolio account and passes it through.
-    holdings = get_holdings_on_date(date_str, account_id=get_portfolio_account_id())
+    account_id = get_portfolio_account_id()
+    holdings = get_holdings_on_date(date_str, account_id=account_id)
     statuses: "list[TickerStatus]" = []
     if holdings.empty:
         return pd.DataFrame(), statuses
@@ -738,11 +740,11 @@ def _sleeve_weights_impl(date_str: str) -> "tuple[pd.DataFrame, list[TickerStatu
         shares = float(row["net_shares"])
 
         if ticker == "SPAXX":
-            # Priced off BIL. The status is recorded under SPAXX, the holding
-            # being valued; that this is a PROXY instrument is a substitution, and
-            # reporting it belongs to the PR that populates that field.
-            inception = "2025-05-01"
-            p, st = _bil_for_spaxx(inception, date_str)
+            # Priced off BIL, its growth measured from the book's inception (#646).
+            # The status is recorded under SPAXX, the holding being valued; that
+            # this is a PROXY instrument is a substitution, and reporting it belongs
+            # to the PR that populates that field.
+            p, st = _bil_for_spaxx(get_inception_date(account_id=account_id), date_str)
             statuses.append(st)
             try:
                 if not p.empty:
@@ -878,10 +880,17 @@ def valuation_tickers(date_str: Optional[str] = None) -> "set[str]":
 
 def _spaxx_price(d: str) -> "tuple[float, TickerStatus]":
     """SPAXX's value per share for the current market value: BIL's total return,
-    normalized to $1.00 at inception. SPAXX holds its $1.00 NAV and pays its income
-    as new shares, which the ledger does not record, so this models that income.
-    $1.00 when BIL does not cover the start, with SPAXX unresolved (_bil_for_spaxx)."""
-    p, st = _bil_for_spaxx("2025-05-01", d)
+    normalized to $1.00 at the book's inception. SPAXX holds its $1.00 NAV and pays its
+    income as new shares, which the ledger does not record, so this models that income.
+    $1.00 when BIL does not cover the start, with SPAXX unresolved (_bil_for_spaxx).
+
+    FROM THE INCEPTION OF THE BOOK BEING VALUED (#646, decided by the owner on October
+    18, 2026), as the sleeve weights and the value series measure it. This and the
+    sleeve weights measured from the literal 2025-05-01 while the value series measured
+    from inception, so a book whose inception is later, with BIL stored from between
+    the two, had SPAXX unresolved here and resolved there, and the Performance page's
+    assertion that the two records agree failed."""
+    p, st = _bil_for_spaxx(get_inception_date(account_id=get_portfolio_account_id()), d)
     try:
         if not p.empty:
             bil = total_return_series(p)
