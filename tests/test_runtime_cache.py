@@ -23,6 +23,7 @@ import pytest
 
 import src.db as db
 import src.prices as prices
+from tests.conftest import lock_with_the_gap_fetch_off
 
 _ROOT = Path(__file__).resolve().parent.parent
 _DEMO = _ROOT / "data" / "demo.db"
@@ -83,7 +84,8 @@ def _overlay(tmp_path, monkeypatch, source):
 @pytest.fixture
 def overlaid(tmp_path, monkeypatch):
     """A copy of the frozen snapshot standing in for the committed file, with the
-    runtime cache on."""
+    runtime cache on. A lock is taken from it as from any frozen book (#639)."""
+    lock_with_the_gap_fetch_off(monkeypatch)
     return _overlay(tmp_path, monkeypatch, _SNAPSHOT)
 
 

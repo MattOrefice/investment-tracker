@@ -1008,6 +1008,25 @@ class LockGaps(NamedTuple):
     unpriced: "list[str]"     # a holding unpriced on a day it was held (_held_without_price)
 
 
+def _leading_fetch_failures(tickers, start: str, end: str) -> "list[str]":
+    """One clause per cause, naming the tickers, for each ticker the lock reads whose
+    leading gap fetch for a read from ``start`` failed and is recorded
+    (prices.gap_fetch_failures): its stored history begins later than ``start``, and
+    the earlier closes could not be fetched. Empty when the lock may proceed.
+
+    THE RULE (#639's second half, decided by the owner on October 17 and October 18,
+    2026): a recorded leading-fetch failure for a ticker the lock reads is a gap. The
+    record holds no answer that no close exists there: a window with no NYSE session is
+    never fetched, and the provider's "Data doesn't exist" (a window before a fund's
+    listing) is an answer, not a failure (prices._gap_fetch, #644)."""
+    wanted = set(tickers)
+    by_cause: "dict[str, list[str]]" = {}
+    for f in _prices_module.gap_fetch_failures():
+        if f.ticker in wanted and f.start == start and f.end <= end:
+            by_cause.setdefault(f.cause, []).append(f.ticker)
+    return [f"{', '.join(sorted(set(ts)))} ({cause})" for cause, ts in sorted(by_cause.items())]
+
+
 def quarter_lock_refusals(quarter_id: str) -> LockGaps:
     """quarter_lock_gaps, by the rule each gap breaks: the cap needs only whether there
     is one, and the page's note words each rule as the capture's refusal does."""
@@ -1056,7 +1075,10 @@ def quarter_lock_gaps(quarter_id: str) -> "list[str]":
     capture would build from the cache: the same tickers, the same first day, the same
     rules, applied by the same checks (_interior_gaps, and _held_without_price over the
     same quarter, #648). DB only: never a fetch, and never a write, so the table is not
-    created."""
+    created. The capture's fourth rule, a failed fetch of a ticker's earlier history
+    (_leading_fetch_failures, #639), reads this process's record of the capture's own
+    fetches, not the store, and is not read here: whether the cap reads it is not
+    decided."""
     gaps = quarter_lock_refusals(quarter_id)
     return gaps.interior + gaps.unpriced
 
@@ -1089,12 +1111,18 @@ def capture_quarter_snapshot(quarter_id: str) -> tuple:
     close on or before a session in the quarter on which it was held refuses the same
     way (_held_without_price), naming the holding and the dates. A ticker the portfolio
     does not hold may start late (a late listing), and a market holiday is never a
-    gap. A failed leading fetch is not read as one yet. Since #644 the record holds only
-    failures: a window with no NYSE session is never fetched, and the provider's "Data
-    doesn't exist" for a window before a fund's listing is an answer, not a failure.
-    Reading it would refuse every lock taken offline from a book whose histories start
-    after this read's 2020-01-01, as the frozen test book's do, so that waits on the
-    owner's decision (#644).
+    gap.
+
+    NO FAILED FETCH OF A TICKER'S EARLIER HISTORY, OR NO LOCK (#639's second half,
+    decided by the owner on October 17 and October 18, 2026). A ticker the lock reads
+    whose stored history starts after this read's 2020-01-01, and whose fetch of the
+    earlier stretch failed and is recorded (prices.gap_fetch_failures), refuses the same
+    way (_leading_fetch_failures), naming the ticker and the cause: the lock would freeze
+    that history short. The record holds only failures since #644: a window with no NYSE
+    session is never fetched, and the provider's "Data doesn't exist" for a window before
+    a fund's listing is an answer, not a failure. With the gap fetch off, as the demo's
+    committed locks are taken (tools/lock_demo_quarters.py), nothing is fetched and
+    nothing recorded: the stored history is the whole record.
 
     THE LOCK FETCHES WHAT THE BOOK LACKS (#594, decided by the owner on October 15,
     2026). Every ticker is read through prices.get_prices, which fetches and stores
@@ -1177,6 +1205,13 @@ def capture_quarter_snapshot(quarter_id: str) -> tuple:
             f"Cannot lock {quarter_id}: a holding has no price on a date it was held in "
             f"the quarter, so a lock now would freeze it unpriced. Nothing was locked. "
             f"No close on " + "; ".join(unpriced) + "."
+        )
+    short_history = _leading_fetch_failures(tickers, inception_str, end_str)
+    if short_history:
+        raise LockCoverageError(
+            f"Cannot lock {quarter_id}: the price update for the earlier history of a "
+            f"ticker the lock reads failed, so a lock now would freeze that history short. "
+            f"Nothing was locked. Failed: " + "; ".join(short_history) + "."
         )
     raw_df = pd.DataFrame(raw)
     if not raw_df.empty:
