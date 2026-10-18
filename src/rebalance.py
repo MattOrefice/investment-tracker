@@ -529,6 +529,85 @@ def unfunded_target_sleeves(
     return sorted(s for s, tgt in saa_targets.items() if tgt > 0 and s not in priced)
 
 
+def _it(n: int, one: str, many: str) -> str:
+    return one if n == 1 else many
+
+
+def unfunded_warning(
+    unfunded: list[str],
+    ticker_to_sleeve: dict[str, str],
+    carrier_by_sleeve: dict[str, list[str]],
+    coverage: PriceCoverage,
+    *,
+    weights_gap: "list[str] | tuple[str, ...]" = (),
+) -> str:
+    """Why Capital Deployment suggests no contribution, from the coverage record (#662,
+    decided by the owner on October 18, 2026).
+
+    ``unfunded`` is unfunded_target_sleeves' answer: targeted sleeves with nothing
+    priced. ``coverage.requested`` is exactly the HELD set (sleeve_weights_with_coverage
+    asks per held ticker), so the record tells the two kinds apart, as
+    _placeable_by_sleeve does:
+
+      * a sleeve holding something with no price: its holdings are named as having no
+        committed price, as the page's gap warning names them, never as "no holdings
+        yet";
+      * a sleeve holding nothing: "no holdings yet", and the SAA carriers to buy
+        (securities.is_in_saa). It never prints a placeholder for a ticker: a sleeve
+        with no carrier flagged is said to have none.
+
+    ``weights_gap`` is the unresolved holdings the sleeve weights include
+    (coverage.unresolved_in_weights). They withhold the suggestions too, so any not
+    already named are named, even when no sleeve is unfunded."""
+    held: dict[str, list[str]] = {}
+    for t in coverage.requested:
+        if ticker_to_sleeve.get(t) in unfunded:
+            held.setdefault(ticker_to_sleeve[t], []).append(t)
+    unpriced = [s for s in unfunded if s in held]
+    not_held = [s for s in unfunded if s not in held]
+    parts = []
+
+    named = sorted(t for s in unpriced for t in held[s])
+    if unpriced:
+        n = len(unpriced)
+        parts.append(
+            f"**{', '.join(unpriced)}** {_it(n, 'has', 'have')} holdings with no committed "
+            f"price ({', '.join(named)}), so new cash cannot be sized for "
+            f"{_it(n, 'it', 'them')}.")
+    rest = [t for t in weights_gap if t not in named]
+    if rest:
+        parts.append(
+            f"No contribution is suggested while the sleeve weights miss "
+            f"{_it(len(rest), 'a holding', 'holdings')} with no committed price "
+            f"({', '.join(rest)}).")
+
+    if not_held:
+        n = len(not_held)
+        text = (f"**{', '.join(not_held)}** {_it(n, 'has', 'have')} an SAA target but no "
+                f"holdings yet, so new cash cannot be allocated to {_it(n, 'it', 'them')}. "
+                "Deploying now would leave part of the contribution unplaced.")
+        flagged = [s for s in not_held if carrier_by_sleeve.get(s)]
+        unflagged = [s for s in not_held if not carrier_by_sleeve.get(s)]
+        tickers = ", ".join(t for s in flagged for t in carrier_by_sleeve[s])
+        if not unflagged:
+            text += (f" Buy **{tickers}** (one share each is enough), re-import, then "
+                     "deploy.")
+        elif not flagged:
+            text += (f" No SAA carrier is flagged for {_it(n, 'it', 'them')}, so no ticker "
+                     f"is named: buy one share of a holding for {_it(n, 'it', 'each')}, "
+                     "re-import, then deploy.")
+        else:
+            text += (f" Buy **{tickers}** for {', '.join(flagged)} (one share each is "
+                     f"enough); no SAA carrier is flagged for {', '.join(unflagged)}, so "
+                     f"no ticker is named for {_it(len(unflagged), 'it', 'them')}. "
+                     "Re-import, then deploy.")
+        parts.append(text)
+
+    if not unpriced and not rest:
+        parts.append("The rest of this page works normally.")
+    return " ".join(parts)
+
+
 # ── Band-status surfacing (Phase 33) — tax-aware, buy-only philosophy ──────────
 #
 # These read compute_drift() output and produce status prose. They deliberately
