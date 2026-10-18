@@ -995,22 +995,27 @@ def _held_without_price(frame: pd.DataFrame, start: date, end: date) -> "list[st
     return [f"{', '.join(dates)} for {', '.join(names)}" for names, dates in groups.items()]
 
 
-def quarter_lock_gaps(quarter_id: str) -> "list[str]":
-    """The gaps a lock of ``quarter_id`` would be refused for now, as _interior_gaps
-    writes them (dates, then the tickers that lack a close on them), or [] when it
-    would not be: the quarter is already locked, and a persisted lock is served as
-    written, or the stored prices of the tickers the lock covers hold no gap from the
-    lock's first day through the quarter's last.
+def _quarter_first_day(end: date) -> date:
+    """The first day of the quarter whose last day is ``end``."""
+    return date(end.year, end.month - 2, 1)
 
-    The reportable-quarter cap reads it (asof.most_recent_reportable_quarter), so a
-    page names a quarter only once its lock can be taken, and until then shows the
-    quarter before with the missing closes named (#491). The frame is the one the
-    capture would build from the cache: the same tickers, the same first day, the same
-    rule. DB only: never a fetch, and never a write, so the table is not created."""
+
+class LockGaps(NamedTuple):
+    """What a lock of a quarter would be refused for now, by rule, each clause as the
+    capture's refusal writes it: dates, then what lacks a close on them."""
+
+    interior: "list[str]"     # a close missing inside a ticker's history (_interior_gaps)
+    unpriced: "list[str]"     # a holding unpriced on a day it was held (_held_without_price)
+
+
+def quarter_lock_refusals(quarter_id: str) -> LockGaps:
+    """quarter_lock_gaps, by the rule each gap breaks: the cap needs only whether there
+    is one, and the page's note words each rule as the capture's refusal does."""
     import sqlite3
+    none = LockGaps([], [])
     end = _parse_quarter_end(quarter_id)
     if end is None:
-        return []
+        return none
     with get_connection() as conn:
         try:
             locked = conn.execute("SELECT 1 FROM quarter_snapshots WHERE quarter_id = ?",
@@ -1018,10 +1023,10 @@ def quarter_lock_gaps(quarter_id: str) -> "list[str]":
         except sqlite3.OperationalError:          # no locks table yet: nothing is locked
             locked = None
     if locked:
-        return []
+        return none
     tickers, _gaps = _get_all_snapshot_tickers()
     if not tickers:
-        return []
+        return none
     marks = ",".join("?" * len(tickers))
     with get_connection() as conn:
         rows = conn.execute(
@@ -1029,10 +1034,31 @@ def quarter_lock_gaps(quarter_id: str) -> "list[str]":
             "AND price_date >= ? AND price_date <= ?",
             (*tickers, _INPUT_START, end.isoformat())).fetchall()
     if not rows:
-        return []
+        return none
     held = pd.DataFrame([(r[0], r[1]) for r in rows], columns=["ticker", "day"])
     held["close"] = 1.0
-    return _interior_gaps(held.pivot(index="day", columns="ticker", values="close"))
+    frame = held.pivot(index="day", columns="ticker", values="close")
+    return LockGaps(_interior_gaps(frame),
+                    _held_without_price(frame, _quarter_first_day(end), end))
+
+
+def quarter_lock_gaps(quarter_id: str) -> "list[str]":
+    """The gaps a lock of ``quarter_id`` would be refused for now, each as the capture's
+    refusal writes it (dates, then the tickers that lack a close on them), or [] when it
+    would not be: the quarter is already locked, and a persisted lock is served as
+    written, or the stored prices of the tickers the lock covers hold no gap from the
+    lock's first day through the quarter's last, and no holding of the portfolio was
+    held on a session in the quarter with no close on or before it.
+
+    The reportable-quarter cap reads it (asof.most_recent_reportable_quarter), so a
+    page names a quarter only once its lock can be taken, and until then shows the
+    quarter before with the missing closes named (#491). The frame is the one the
+    capture would build from the cache: the same tickers, the same first day, the same
+    rules, applied by the same checks (_interior_gaps, and _held_without_price over the
+    same quarter, #648). DB only: never a fetch, and never a write, so the table is not
+    created."""
+    gaps = quarter_lock_refusals(quarter_id)
+    return gaps.interior + gaps.unpriced
 
 
 def capture_quarter_snapshot(quarter_id: str) -> tuple:
@@ -1142,7 +1168,7 @@ def capture_quarter_snapshot(quarter_id: str) -> tuple:
             f"history, so a lock now would freeze the gap. Nothing was locked. No close "
             f"on " + "; ".join(holes) + "."
         )
-    unpriced = _held_without_price(adj_df, date(end.year, end.month - 2, 1), end)
+    unpriced = _held_without_price(adj_df, _quarter_first_day(end), end)
     if unpriced:
         raise LockCoverageError(
             f"Cannot lock {quarter_id}: a holding has no price on a date it was held in "
