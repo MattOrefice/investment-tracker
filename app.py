@@ -347,6 +347,9 @@ _page_groups = {
         st.Page("pages/6_Benchmark_Attribution.py", title="Benchmark Attribution"),
         st.Page("pages/4_Factor_Profile.py", title="Factor Profile"),
         st.Page("pages/7_Risk.py", title="Risk"),
+        # Hypothetical: the book's policy applied to history, in both modes on that
+        # mode's book (#667). Not part of the quarterly report.
+        st.Page("pages/16_Policy_Backtest.py", title="Policy Backtest (hypothetical)"),
     ],
     "Markets & Macro": [
         st.Page("pages/3_Macro.py", title="Macro"),

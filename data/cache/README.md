@@ -25,7 +25,9 @@ per month from February 2006 to the last complete month, one column per series. 
 cell is a monthly total return, empty before the series begins. The series are every
 policy fund, every proxy, the benchmark legs no fund or proxy supplies (AGG, for the
 app's 60/40), and DGS3MO, the 3-month bill series `src/risk_free.py` averages.
-`src/policy_backtest.py` reads it, never fetches. Its only writer is
+`src/policy_backtest.py` reads it, never fetches, and the Policy Backtest page
+(`pages/16_Policy_Backtest.py`, hypothetical, in neither the quarterly PDF nor any lock)
+shows what it computes. Its only writer is
 `tools/refresh_backtest_history.py`. The writer takes each
 series' returns from one fetch of its whole history, so a split can never put two scales
 in one series, and it refuses a series with a gap. `data/backtest/series.json` is
