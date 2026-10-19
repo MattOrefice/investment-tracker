@@ -27,10 +27,16 @@ import src.prices as prices
 ROOT = Path(__file__).resolve().parent.parent.parent
 DEMO_DB = ROOT / "data" / "demo.db"
 
-# Pages the demo routes (app.py hides 13-15 in demo mode).
+# Every page file and the router. Decided by the owner on October 19, 2026 (#673): the
+# scan reads every file in pages/, not a numbered range. The range (12 and below, since
+# app.py hides 13-15 in demo mode) also dropped page 16, which the demo serves.
 DEMO_PAGES = ["app.py"] + sorted(
-    str(p.relative_to(ROOT)).replace("\\", "/") for p in (ROOT / "pages").glob("*.py")
-    if int(p.name.split("_")[0]) <= 12)
+    str(p.relative_to(ROOT)).replace("\\", "/") for p in (ROOT / "pages").glob("*.py"))
+
+# Pages exempt from the banner by name, each with the owner's reason (#673).
+BANNER_EXEMPT = {
+    "pages/16_Policy_Backtest.py": "it reads no portfolio ledger",
+}
 
 # A page reads portfolio data if it imports a module that reads the ledger or the
 # holdings, or queries the trades table.
@@ -58,13 +64,32 @@ def test_the_demo_account_is_labelled_as_the_paper_trade_portfolio():
 
 
 def test_every_page_that_reads_portfolio_data_carries_the_demo_banner():
-    readers = [p for p in DEMO_PAGES
-               if _PORTFOLIO_SOURCE.search((ROOT / p).read_text(encoding="utf-8"))]
+    readers = [p for p in DEMO_PAGES if p not in BANNER_EXEMPT
+               and _PORTFOLIO_SOURCE.search((ROOT / p).read_text(encoding="utf-8"))]
     assert {"pages/1_SAA.py", "pages/11_Capital_Deployment.py",
             "pages/12_Tax_Lots.py"} <= set(readers), "the scan must see the three it missed"
     missing = [p for p in readers
                if "st.info(get_demo_banner_text())" not in (ROOT / p).read_text(encoding="utf-8")]
     assert not missing, f"pages showing portfolio data with no demo banner: {missing}"
+
+
+def test_the_scan_reads_every_page_file():
+    """#673: no page escapes the scan by its number, page 16 among them."""
+    on_disk = {p.relative_to(ROOT).as_posix() for p in (ROOT / "pages").glob("*.py")}
+    assert set(DEMO_PAGES) == on_disk | {"app.py"}
+    assert "pages/16_Policy_Backtest.py" in DEMO_PAGES
+
+
+@pytest.mark.parametrize("page", list(BANNER_EXEMPT))
+def test_an_exempt_page_is_one_the_scan_reads_and_its_reason_still_holds(page):
+    """An exemption names a page that exists and is scanned, and its reason, "it reads no
+    portfolio ledger", is held by the scan's own definition: the page imports none of
+    the modules that read the ledger or the holdings and queries no trades. A page that
+    starts reading the ledger fails here, and its exemption needs a new decision."""
+    assert page in DEMO_PAGES
+    assert BANNER_EXEMPT[page] == "it reads no portfolio ledger"
+    match = _PORTFOLIO_SOURCE.search((ROOT / page).read_text(encoding="utf-8"))
+    assert match is None, f"{page} reads portfolio data now ({match.group(0)!r})"
 
 
 @pytest.fixture
