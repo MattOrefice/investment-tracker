@@ -16,6 +16,7 @@ from src.tax_lots import (
     get_lot_inventory,
     get_sleeve_rollup,
     lot_count_label,
+    not_valued_note,
     summary_metrics,
     taxable_accounts,
     unledgered_taxable_notice,
@@ -139,6 +140,10 @@ if lots.empty:
     )
     render_footer()
     st.stop()
+
+_not_valued = not_valued_note(lots)
+if _not_valued:
+    st.warning(_not_valued)
 
 _DRIP_TOGGLE_HELP = (
     "DRIP reinvestments are mechanical reinvestments of distributions, not "

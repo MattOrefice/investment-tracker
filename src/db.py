@@ -315,14 +315,14 @@ class _ClosingConnection(sqlite3.Connection):
 
 
 # ── The demo app's runtime cache (#368 item 2) ──────────────────────────────────
-# The four tables the demo app writes while it runs: fetched closes and dividends,
-# FRED series, and quarter locks. Each maps to (key columns, {column: type}).
+# The five tables the demo app writes while it runs: fetched closes and dividends,
+# FRED series, quarter locks, and the split events a fetch records. Each maps to (key columns, {column: type}).
 #
 # With the cache in use (use_runtime_cache), demo.db is opened READ-ONLY and a
-# separate cache file is attached. The cache holds a COPY of these four tables,
+# separate cache file is attached. The cache holds a COPY of these five tables,
 # seeded from demo.db once per demo.db (keyed on its sha256, so a new deploy
 # re-seeds, in a running process too: #480), plus everything the run writes. On each
-# connection the four names are
+# connection the five names are
 # TEMP views of the cache's tables, and a write to one lands in the cache through an
 # INSTEAD OF trigger (INSERT OR REPLACE, so the newest write wins a shared key).
 # Nothing else is redirected: any other write fails on the read-only file rather
@@ -347,6 +347,12 @@ _RUNTIME_TABLES = {
     "quarter_snapshots": (("quarter_id",),
                           {"quarter_id": "TEXT", "snapshot_date": "TEXT", "captured_at": "TEXT",
                            "snapshot_data": "BLOB"}),
+    # The split events a fetch records, and whether each was applied to the stored
+    # history (src.prices._apply_split). demo.db holds no such table until a close-out
+    # writes one; the seed then starts the cache with none.
+    "splits":            (("ticker", "ex_date"),
+                          {"ticker": "TEXT", "ex_date": "TEXT", "ratio": "REAL",
+                           "state": "TEXT", "applied_on": "TEXT"}),
 }
 
 # (committed demo.db, cache file) once use_runtime_cache() has run; None otherwise.
@@ -397,11 +403,11 @@ def _stamp(path: Path) -> "tuple[int, int]":
 
 
 def _seed_runtime_cache(committed: Path, cache: Path, ident: "str | None" = None) -> bool:
-    """Copy the four runtime tables from demo.db into the cache, unless the cache was
+    """Copy the five runtime tables from demo.db into the cache, unless the cache was
     already seeded from this exact demo.db (``ident``, its SHA-256). demo.db is read
     through a read-only URI. Returns whether it seeded.
 
-    ONE TRANSACTION (#480). A running process re-seeds too, so the four tables are
+    ONE TRANSACTION (#480). A running process re-seeds too, so the five tables are
     replaced together: another connection reads the seed before or the new one, never
     a table dropped and not yet refilled, and a seed that fails leaves the one before
     in place. The statements used to commit one by one, which nothing could observe

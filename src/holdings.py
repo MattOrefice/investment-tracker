@@ -13,8 +13,8 @@ from typing import NamedTuple, Optional
 
 import pandas as pd
 
-from src.coverage import (PriceCoverage, TickerStatus, UnpricedHolding,
-                          coverage_from_statuses, unpriced_reason)
+from src.coverage import (SPLIT_UNADJUSTED, PriceCoverage, TickerStatus, UnpricedHolding,
+                          coverage_from_statuses, split_detail, unpriced_reason)
 from src.db import get_connection
 from src.prices import (get_prices, classify_miss, _to_iso, total_return_series,
                         gap_fetch_failure_for, unread_dividends_for)
@@ -99,12 +99,35 @@ def look_back_start(price_ticker: str, date_str: str) -> str:
             - timedelta(days=_LOOK_BACK_DAYS)).isoformat()
 
 
+def split_crossing(ticker: str, account_id: int) -> "tuple[str, float] | None":
+    """(ex-date, ratio) of the first split the book has recorded for ``ticker`` that went
+    ex after the account's first trade in it, or None.
+
+    Such a position's share counts are on the old scale while every stored close is on
+    the new one, so it is not valued (decided by the owner on October 18, 2026: handling
+    the share counts is a later decision). A split that predates every trade in the
+    position changes nothing, since no share count crosses it: SCHP's 2024 split and the
+    demo's and the personal book's SCHP trades, all after it. A trade on the ex-date
+    itself is at the new scale."""
+    from src.prices import recorded_splits
+    splits = recorded_splits(ticker)
+    if not splits:
+        return None
+    with get_connection() as conn:
+        first = conn.execute("SELECT MIN(trade_date) FROM trades WHERE ticker = ? AND "
+                             "account_id = ?", (ticker, account_id)).fetchone()[0]
+    if first is None:
+        return None
+    return next(((ex, ratio) for ex, ratio in splits if ex > first), None)
+
+
 def _price_and_status(
     ticker: str,
     start: str,
     end: str,
     *,
     price_ticker: Optional[str] = None,
+    account_id: Optional[int] = None,
 ) -> "tuple[pd.DataFrame, TickerStatus]":
     """One holding's price frame and what happened getting it.
 
@@ -117,7 +140,23 @@ def _price_and_status(
     ``price_ticker`` covers SPAXX, valued off BIL. The status is recorded under the
     HOLDING's ticker; that the instrument differs is a substitution, and reporting
     it belongs to the PR that populates that field.
+
+    ``account_id`` names the account holding the position. With it, a position whose
+    ticker split after the account's first trade in it is unresolved, its reason
+    ``split_unadjusted`` and its detail the split (split_crossing), and nothing is
+    priced. Not inside a quarter lock: a lock serves the closes it holds, on the scale
+    its share counts were valued at, and nothing locked moves.
     """
+    from src import prices as _prices
+    if account_id is not None and _prices._PRICE_LOCK.get() is None:
+        crossing = split_crossing(ticker, account_id)
+        if crossing is not None:
+            return (
+                pd.DataFrame({"close": pd.Series(dtype=float),
+                              "adj_close": pd.Series(dtype=float)}),
+                TickerStatus(ticker, False, reason=SPLIT_UNADJUSTED,
+                             detail=split_detail(*crossing)),
+            )
     fetch = price_ticker or ticker
     try:
         frame = get_prices(fetch, start, end)
@@ -572,7 +611,7 @@ def _portfolio_value_series_impl(
             except Exception:
                 price_cols[ticker] = pd.Series(1.0, index=date_range)
         else:
-            p, st = _price_and_status(ticker, start_date, end)
+            p, st = _price_and_status(ticker, start_date, end, account_id=account_id)
             if not st.resolved:
                 # Branch on the STATUS, not on an exception: _price_and_status
                 # reports a miss instead of raising, and letting an empty frame
@@ -625,7 +664,7 @@ def _portfolio_value_series_impl(
             days = unpriced.index[unpriced[ticker]]
             statuses[i] = replace(statuses[i], unpriced_held=UnpricedHolding(
                 ticker, days[0].date().isoformat(), days[-1].date().isoformat(),
-                sum(is_session(d.date()) for d in days)))
+                sum(is_session(d.date()) for d in days), why=statuses[i].detail))
     return value, statuses
 
 
@@ -760,7 +799,8 @@ def _sleeve_weights_impl(date_str: str) -> "tuple[pd.DataFrame, list[TickerStatu
             except Exception:
                 price = 1.0
         else:
-            p, st = _price_and_status(ticker, look_back_start(ticker, date_str), date_str)
+            p, st = _price_and_status(ticker, look_back_start(ticker, date_str), date_str,
+                                      account_id=account_id)
             try:
                 price = float(p["close"].iloc[-1]) if not p.empty else 0.0
             except Exception:
@@ -848,7 +888,8 @@ def _current_market_value_impl(
     """The valuation loop behind both entry points above."""
     d = date_str or date.today().isoformat()
     # Wrapper: resolves the portfolio account and passes it through.
-    holdings = get_holdings_on_date(d, account_id=get_portfolio_account_id())  # all shares, incl DRIP lots
+    account_id = get_portfolio_account_id()
+    holdings = get_holdings_on_date(d, account_id=account_id)  # all shares, incl DRIP lots
     statuses: "list[TickerStatus]" = []
     if holdings.empty:
         return 0.0, statuses
@@ -860,7 +901,8 @@ def _current_market_value_impl(
             price, st = _spaxx_price(d)
             statuses.append(st)
         else:
-            p, st = _price_and_status(ticker, look_back_start(ticker, d), d)
+            p, st = _price_and_status(ticker, look_back_start(ticker, d), d,
+                                      account_id=account_id)
             try:
                 price = float(p["close"].iloc[-1]) if not p.empty else 0.0
             except Exception:
@@ -1044,7 +1086,7 @@ def blend_split(sleeve: str, date_str: Optional[str] = None) -> "list[BlendLeg] 
     value = {}
     for t in held:
         n = float(shares["net_shares"].get(t, 0.0)) if not shares.empty else 0.0
-        frame, _st = _price_and_status(t, look_back_start(t, d), d)
+        frame, _st = _price_and_status(t, look_back_start(t, d), d, account_id=acct)
         value[t] = n * float(frame["close"].iloc[-1]) if n and not frame.empty else 0.0
     if not all(bought.get(t) for t in held) or not all(value.values()):
         return None
