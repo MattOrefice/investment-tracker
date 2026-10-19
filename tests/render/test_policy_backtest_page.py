@@ -290,11 +290,13 @@ def test_the_rebalance_log_is_run_s(page):
 
 def test_the_proxy_table_reads_the_policy_series_json_and_the_history_file(page):
     """Each row: the sleeve's target and band, its fund, the series used, and the fund's
-    tracking against its proxy over the months the history file holds both, computed
-    here from the file."""
+    tracking against its proxy, computed here from the file: over the months the history
+    file holds both, and for a splice from its splice month (decided by the owner on
+    October 19, 2026)."""
     bt, spec = page.bt, page.spec
     history = pb.load_history()
     table = _table(page.at, "Sleeve")
+    assert "Measured over" in table.columns
     rows = []
     for s in bt.sleeves:
         for fund, share in s.mix:
@@ -305,7 +307,11 @@ def test_the_proxy_table_reads_the_policy_series_json_and_the_history_file(page)
             if proxy:
                 row.append(f"{proxy} {_month(bt.returns.index[0])} to "
                            f"{_month(entry['proxy_until'])}, then {fund}")
-                both = history[[fund, proxy]].dropna()
+                months = history
+                if entry["reason"] == "index change":
+                    splice = (pd.Period(entry["proxy_until"], "M") + 1).strftime("%Y-%m")
+                    months = history.loc[history.index >= splice]
+                both = months[[fund, proxy]].dropna()
                 f, p = both[fund], both[proxy]
                 ann = lambda r: (1 + r).prod() ** (12 / len(r)) - 1    # noqa: E731
                 row += [f"{_month(both.index[0])} to {_month(both.index[-1])}",
@@ -317,6 +323,28 @@ def test_the_proxy_table_reads_the_policy_series_json_and_the_history_file(page)
     assert [[i, *v] for i, v in zip(table.index, table.values.tolist())] == rows
     assert any(r[6] == "—" for r in rows) and any(r[6] != "—" for r in rows), (
         "premise: the policy holds funds with and without a proxy")
+
+
+def test_a_splice_is_measured_from_its_splice_month_and_the_caption_names_each_window(page):
+    """Decided by the owner on October 19, 2026: SPHQ's statistics run from July 2010 and
+    IDHQ's from March 2012, when each began following a quality index, to the last
+    month, so they measure the stand-in against the strategy the sleeve holds. A proxy
+    standing in before a launch keeps every month both series exist."""
+    bt, spec = page.bt, page.spec
+    history = pb.load_history()
+    last = history.index[-1]
+    assert (bt.tracking["SPHQ"].first, bt.tracking["SPHQ"].last) == ("2010-07", last)
+    assert (bt.tracking["IDHQ"].first, bt.tracking["IDHQ"].last) == ("2012-03", last)
+    for fund, t in bt.tracking.items():
+        if spec["funds"][fund]["reason"] == "inception":
+            assert t.first == history[[fund, t.proxy]].dropna().index[0], fund
+    caption = next(c.value for c in page.at.caption
+                   if c.value.startswith("Hypothetical backtest inputs."))
+    assert caption.endswith(
+        "A splice is measured from the month its fund began following a quality index, "
+        f"against the strategy the sleeve holds: SPHQ July 2010 to {_month(last)} and IDHQ "
+        f"March 2012 to {_month(last)}."), caption
+    assert "stood in for the fund" not in caption
 
 
 def test_every_fund_proxy_and_splice_is_cited_with_its_source_s_date(page):
