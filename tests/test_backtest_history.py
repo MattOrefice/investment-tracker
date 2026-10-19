@@ -1,7 +1,8 @@
 """The policy backtest's committed history (#667, PR 1 of 3).
 
 data/backtest/monthly_returns.csv holds a monthly total return for every policy fund,
-every proxy and the 3-month bill series, from February 2006 to the last complete month.
+every proxy, the benchmark legs no fund or proxy supplies (AGG, for the app's 60/40, added
+with PR 2) and the 3-month bill series, from February 2006 to the last complete month.
 tools/refresh_backtest_history.py is its only writer; data/backtest/series.json, hand-kept,
 names each fund's proxy, the last month it stands in, and the issuers' citations.
 
@@ -28,6 +29,7 @@ SPEC = ROOT / "data" / "backtest" / "series.json"
 FUNDS = ["VOO", "SPHQ", "VTV", "AVUV", "VEA", "IDHQ", "AVIV", "AVDV", "IEMG", "VGIT",
          "SCHP", "VNQ", "PDBC"]
 PROXIES = ["SPY", "DFSVX", "VTMGX", "EFA", "EFV", "DISVX", "EEM", "VFITX", "TIP", "DBC"]
+BENCHMARKS = ["AGG"]
 BILL = "DGS3MO"
 # fund -> (proxy, the last month it stands in, why), as decided on October 18, 2026.
 SPLICES = {
@@ -78,8 +80,14 @@ def test_the_file_spans_february_2006_to_a_complete_month(history):
     assert "2026-09" <= months[-1] < date.today().strftime("%Y-%m")
 
 
-def test_the_columns_are_every_fund_every_proxy_and_the_bill(history):
-    assert list(history.columns) == FUNDS + PROXIES + [BILL]
+def test_the_columns_are_every_fund_every_proxy_the_benchmark_legs_and_the_bill(history):
+    assert list(history.columns) == FUNDS + PROXIES + BENCHMARKS + [BILL]
+
+
+def test_the_benchmark_legs_cover_every_month_of_the_backtest(history):
+    """AGG, the 60/40's bond leg, from March 2006 on: SPY, its other leg, is a proxy."""
+    for leg in BENCHMARKS:
+        assert history.loc["2006-03":, leg].notna().all(), leg
 
 
 def test_every_cell_is_a_return_and_none_is_missing_inside_a_series(history):
@@ -107,6 +115,7 @@ def test_series_json_names_the_decided_proxies_and_splice_months(spec):
     assert named == SPLICES
     assert [f for f, v in spec["funds"].items() if v["proxy"] is None] == ["VTV", "VNQ"]
     assert list(spec["funds"]) == FUNDS and list(spec["proxies"]) == PROXIES
+    assert list(spec["benchmarks"]) == BENCHMARKS
     assert spec["bill"]["series"] == BILL
     assert spec["first_month"] == "2006-02" and spec["backtest_from"] == "2006-03"
 
@@ -139,7 +148,8 @@ def test_the_two_index_change_splices_fall_where_each_began_a_quality_index(spec
 def test_every_fund_proxy_and_splice_carries_its_citation(spec):
     """Each series names its issuer's date as printed, the source and the source's own
     date (#667); each splice at an index change names the filing that dates it."""
-    for name, entry in [*spec["funds"].items(), *spec["proxies"].items()]:
+    for name, entry in [*spec["funds"].items(), *spec["proxies"].items(),
+                        *spec["benchmarks"].items()]:
         assert entry["inception"], name
         assert entry["source"].startswith("https://"), name
         assert entry["source_date"], name
