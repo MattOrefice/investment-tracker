@@ -233,8 +233,9 @@ def get_lot_inventory(as_of: Optional[str] = None, *, account_ids: "list[int]") 
         trade_id, ticker, sleeve, trade_date, days_held, shares,
         cost_basis_per_share, cost_basis_total, current_price, market_value,
         unrealized_gl, unrealized_gl_pct, tax_status, days_to_lt, lot_source,
-        account_id
-    Returns empty DataFrame if no trades exist.
+        account_id, not_valued
+    Returns empty DataFrame if no trades exist. ``not_valued`` is None, or why the lot
+    is not valued (its price, market value and gain are then empty).
 
     ``account_ids`` is required (#362, the #139 contract): the Tax Lots page passes
     every taxable account (taxable_accounts). Reading every account mixed IRA lots in
@@ -331,15 +332,46 @@ def get_lot_inventory(as_of: Optional[str] = None, *, account_ids: "list[int]") 
         axis=1,
     )
 
+    # A position whose ticker split after the account's first trade in it is not valued:
+    # its share counts are on the old scale, every stored close on the new one
+    # (holdings.split_crossing). Its lots keep their shares and cost basis and carry the
+    # reason in ``not_valued``; price, market value and gain are left empty.
+    from src.coverage import split_detail
+    from src.holdings import split_crossing
+    lots["not_valued"] = None
+    for (acct, ticker), idx in lots.groupby(["account_id", "ticker"]).groups.items():
+        crossing = split_crossing(ticker, int(acct))
+        if crossing is not None:
+            lots.loc[idx, ["current_price", "market_value", "unrealized_gl",
+                           "unrealized_gl_pct"]] = float("nan")
+            lots.loc[idx, "not_valued"] = split_detail(*crossing)
+
     return lots[
         [
             "trade_id", "ticker", "sleeve", "trade_date", "days_held",
             "shares", "cost_basis_per_share", "cost_basis_total",
             "current_price", "market_value", "unrealized_gl",
             "unrealized_gl_pct", "tax_status", "days_to_lt", "lot_source",
-            "account_id",
+            "account_id", "not_valued",
         ]
     ].reset_index(drop=True)
+
+
+def not_valued_note(lots: pd.DataFrame) -> "str | None":
+    """What the Tax Lots page says about lots it does not value, or None: "VTV's 3 lots
+    are not valued, because its share counts don't reflect its 2-for-1 split of
+    2026-07-22. They are left out of every total on this page." """
+    if lots.empty or "not_valued" not in lots.columns:
+        return None
+    out = lots[lots["not_valued"].notna()]
+    if out.empty:
+        return None
+    parts = []
+    for (ticker, why), group in out.groupby(["ticker", "not_valued"], sort=True):
+        n = len(group)
+        parts.append(f"{ticker}'s {n} lot{'' if n == 1 else 's'} "
+                     f"{'is' if n == 1 else 'are'} not valued, because {why}.")
+    return " ".join(parts) + " They are left out of every total on this page."
 
 
 def open_lot_cost_basis(*, account_id: int, as_of: Optional[str] = None) -> float:
@@ -377,7 +409,11 @@ def get_sleeve_rollup(lots: pd.DataFrame) -> pd.DataFrame:
     Returns DataFrame with columns:
         Sleeve, Lot Count, Cost Basis, Market Value, Unrealized G/L,
         Unrealized G/L %, ST Gain, LT Gain, Unrealized Loss
+
+    Lots that are not valued are left out, as summary_metrics leaves them out.
     """
+    if "not_valued" in lots.columns:
+        lots = lots[lots["not_valued"].isna()]
     if lots.empty:
         return pd.DataFrame()
 
@@ -441,6 +477,10 @@ def summary_metrics(lots: pd.DataFrame) -> dict:
         "unrealized_st_net":  0.0,
         "unrealized_lt_net":  0.0,
     }
+    # A lot that is not valued has no market value, so it stays out of every total,
+    # cost basis included, or the gain would count its cost against nothing.
+    if "not_valued" in lots.columns:
+        lots = lots[lots["not_valued"].isna()]
     if lots.empty:
         return _zero
 

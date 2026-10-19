@@ -54,7 +54,22 @@ UNRESOLVED_REASONS: frozenset[str] = frozenset({
     "empty_window",     # the call succeeded and returned nothing for this window
     "not_in_snapshot",  # a locked quarter snapshot does not carry this ticker
     "delisted",         # the provider says the symbol no longer trades
+    "split_unadjusted", # a split went ex after the position's first trade (holdings)
 })
+
+# The reason a holding is not valued although it has prices: its ticker split after the
+# position's first trade, so the ledger's share counts are on the old scale while every
+# stored close is on the new one (decided by the owner on October 18, 2026). A split
+# that predates every trade in the position changes nothing: no share count crosses it.
+# Handling the share counts is a later decision; until then the position is not valued.
+SPLIT_UNADJUSTED = "split_unadjusted"
+
+
+def split_detail(ex_date: str, ratio: float) -> str:
+    """Why a position is not valued, in words: "its share counts don't reflect its
+    4-for-1 split of 2026-11-05"."""
+    kind = f"{ratio:g}-for-1" if ratio >= 1 else f"1-for-{1 / ratio:g}"
+    return f"its share counts don't reflect its {kind} split of {ex_date}"
 
 
 class CoverageInvariantError(ValueError):
@@ -65,10 +80,12 @@ class CoverageInvariantError(ValueError):
 
 @dataclass(frozen=True)
 class Unresolved:
-    """A requested ticker that produced no usable price, and why."""
+    """A requested ticker that produced no usable price, and why. ``detail`` says it in
+    words where the code alone does not (split_unadjusted: split_detail)."""
 
     ticker: str
     reason: str
+    detail: str | None = None
 
 
 @dataclass(frozen=True)
@@ -112,22 +129,30 @@ class FetchFailure:
 class UnpricedHolding:
     """A holding with no price on dates it was held, in the window a value series was
     asked for (#639, #643): the first and last such date, and how many of them were
-    sessions. The value series is not a sum on those dates, never a $0 for it."""
+    sessions. The value series is not a sum on those dates, never a $0 for it. ``why``
+    is set when the holding has prices and is not valued anyway (split_detail)."""
 
     ticker: str
     first: str
     last: str
     sessions: int
+    why: str | None = None
 
 
 def unpriced_reason(unpriced: "tuple[UnpricedHolding, ...] | list[UnpricedHolding]") -> str:
     """The holdings and dates, in words: "VOO has no price on 30 sessions it was held,
-    2026-04-01 to 2026-05-14"."""
+    2026-04-01 to 2026-05-14", or, for a holding not valued for a reason of its own,
+    "VTV is not valued on 30 sessions it was held, ..., because its share counts don't
+    reflect its 2-for-1 split of 2026-07-22"."""
     parts = []
     for u in unpriced:
         days = u.first if u.first == u.last else f"{u.first} to {u.last}"
         count = f"{u.sessions} session{'' if u.sessions == 1 else 's'}"
-        parts.append(f"{u.ticker} has no price on {count} it was held, {days}")
+        if u.why:
+            parts.append(f"{u.ticker} is not valued on {count} it was held, {days}, "
+                         f"because {u.why}")
+        else:
+            parts.append(f"{u.ticker} has no price on {count} it was held, {days}")
     return "; ".join(parts)
 
 
@@ -154,6 +179,7 @@ class TickerStatus:
     fetch_failure: str | None = None
     unpriced_held: UnpricedHolding | None = None
     unread_dividends: str | None = None
+    detail: str | None = None
 
 
 @dataclass(frozen=True)
@@ -329,14 +355,24 @@ def unresolved_marker(cov: PriceCoverage, *,
     """
     if not cov.unresolved:
         return None
-    names = ", ".join(sorted(cov.unresolved_tickers()))
+    # A holding not valued because it split after its first trade HAS a committed price,
+    # so it is not among those the signature sentence names: it gets its own, with the
+    # reason (split_detail).
+    split = [u for u in cov.unresolved if u.reason == SPLIT_UNADJUSTED]
+    missing = [u for u in cov.unresolved if u.reason != SPLIT_UNADJUSTED]
+    zeroed = ", so its market value counted as zero" if consequence == COUNTED_AS_ZERO else ""
+    not_valued = " ".join(f"{u.ticker} is not valued, because {u.detail}{zeroed}."
+                          for u in split)
+    if not missing:
+        return not_valued
+    names = ", ".join(sorted({u.ticker for u in missing}))
     served = (f" Prices served through {cov.frontier_served}."
               if cov.frontier_served else
               " No committed price date is available for any holding.")
     then = f", {consequence}" if consequence else ""
-    spaxx = next((u for u in cov.unresolved if u.ticker == "SPAXX"), None)
+    spaxx = next((u for u in missing if u.ticker == "SPAXX"), None)
     if spaxx is not None and consequence == COUNTED_AS_ZERO:
-        others = sorted(cov.unresolved_tickers() - {"SPAXX"})
+        others = sorted({u.ticker for u in missing} - {"SPAXX"})
         zero = ""
         if len(others) == 1:
             zero = f"{others[0]}'s market value counted as zero, and "
@@ -344,8 +380,9 @@ def unresolved_marker(cov: PriceCoverage, *,
             zero = (f"the market value of {', '.join(others[:-1])} and {others[-1]} "
                     "counted as zero, and ")
         then = f": {zero}{spaxx_at_nav(spaxx.reason)}"
-    return (f"{len(cov.unresolved)} of {len(cov.requested)} holdings have "
-            f"no committed price ({names}){then}.{served}")
+    return (f"{len(missing)} of {len(cov.requested)} holdings have "
+            f"no committed price ({names}){then}.{served}"
+            + (f" {not_valued}" if not_valued else ""))
 
 
 def unpriced_held_marker(cov: PriceCoverage) -> "str | None":
@@ -484,7 +521,7 @@ def coverage_from_statuses(
     requested = tuple(dict.fromkeys(s.ticker for s in statuses))
     resolved = tuple(s.ticker for s in statuses if s.resolved)
     unresolved = tuple(
-        Unresolved(s.ticker, s.reason or "fetch_failed")
+        Unresolved(s.ticker, s.reason or "fetch_failed", s.detail)
         for s in statuses if not s.resolved
     )
     served = [s.served_through for s in statuses

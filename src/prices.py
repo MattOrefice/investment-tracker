@@ -298,6 +298,129 @@ def unread_dividends_for(ticker: str, start: str, end: "str | None" = None
 _STORE_LOCK = threading.Lock()
 
 
+# ── Splits ────────────────────────────────────────────────────────────────────
+# The provider's close is split-adjusted, so an answer fetched after a split's ex-date
+# gives every date on the new scale, while the closes and dividends the book stored
+# before the ex-date are on the old one. Nothing read the split events until now, and
+# the first fetch after a split stored new-scale rows beside old-scale ones: a 4-for-1
+# read as a 75% fall (decided by the owner on October 18, 2026, before QUAL's 4-for-1 and
+# EFV's 2-for-1 of November 5, 2026). #304's migration had healed every earlier split as
+# a side effect, by re-fetching each ticker's full range.
+#
+# Each split event an answer carries is stored (ticker, ex-date, ratio). Before the
+# answer's rows are stored, the book's history before the ex-date is checked: when the
+# stored close for the last session before it is about ``ratio`` times the provider's
+# split-adjusted close for that day, every stored close and dividend before the ex-date
+# is divided by the ratio, once, in the store's own transaction, and the split is
+# recorded as applied so it never runs twice. A history already on the new scale is
+# left alone. A quarter lock holds its own snapshot, so nothing locked moves.
+SPLITS_DDL = ("CREATE TABLE IF NOT EXISTS splits (ticker TEXT NOT NULL, ex_date TEXT NOT "
+              "NULL, ratio REAL NOT NULL, state TEXT, applied_on TEXT, "
+              "PRIMARY KEY (ticker, ex_date))")
+RESCALED = "rescaled"                  # the history before the ex-date was divided
+ALREADY_NEW = "already new scale"      # it was on the new scale already: left alone
+NOTHING_BEFORE = "nothing stored before"
+# A split recorded with no state is not yet checked: the provider's close for the day
+# before could not be read, or matched neither scale. The next answer carrying the
+# event checks it again.
+_SCALE_TOLERANCE = 0.01
+
+
+def _read_split(ts_key, event) -> "tuple[str, float] | str":
+    """(ex-date, ratio) for a split event, the ratio being new shares per old share
+    (4.0 for a 4-for-1, 0.5 for a 1-for-2), else why it cannot be read."""
+    try:
+        ex = _to_iso(datetime.fromtimestamp(int(ts_key), tz=timezone.utc).date())
+    except (TypeError, ValueError, OverflowError, OSError):
+        return "its date is not a timestamp"
+    try:
+        num, den = float(event["numerator"]), float(event["denominator"])
+    except (KeyError, TypeError, ValueError):
+        return "its ratio is not two numbers"
+    if not (math.isfinite(num) and math.isfinite(den) and num > 0 and den > 0) or num == den:
+        return f"its ratio {event.get('numerator')}:{event.get('denominator')} is not a split"
+    return ex, num / den
+
+
+def _ensure_splits_table(conn) -> None:
+    """Create the splits table on a book's first split. On the demo's overlay ``splits``
+    is a view of the runtime cache (src.db._RUNTIME_TABLES) and the committed demo.db is
+    read-only, so nothing is created there."""
+    if conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'splits' UNION ALL "
+                    "SELECT 1 FROM sqlite_temp_master WHERE name = 'splits'").fetchone() is None:
+        conn.execute(SPLITS_DDL)
+
+
+def _provider_close_on(ticker: str, day: str) -> "float | None":
+    """The provider's split-adjusted close for ``day``, from a request for that day
+    alone; None when it cannot be read. Nothing is stored."""
+    url = _YF_CHART_URL.format(ticker=quote(ticker.strip(), safe="^="))
+    params = {"interval": "1d", "period1": _date_to_unix(day),
+              "period2": _date_to_unix(_to_iso(date.fromisoformat(day) + timedelta(days=1))),
+              "events": "div,splits"}
+    try:
+        resp = _SESSION.get(url, params=params, timeout=15)
+        if resp.status_code != 200:
+            return None
+        result = resp.json()["chart"]["result"][0]
+        closes = result["indicators"]["quote"][0].get("close") or []
+        for ts, c in zip(result.get("timestamp") or [], closes):
+            if c is not None and _to_iso(datetime.fromtimestamp(ts, tz=timezone.utc).date()) == day:
+                return float(c)
+    except Exception:                                            # noqa: BLE001
+        return None
+    return None
+
+
+def _apply_split(conn, ticker: str, ex_date: str, ratio: float,
+                 answered: "dict[str, float]") -> "str | None":
+    """Record ``ticker``'s split of ``ex_date`` and put the book's history before it on
+    the new scale, once. Returns the state this call recorded, None when the split was
+    settled already. ``answered`` holds the provider's closes by ISO date: the answer's
+    own, and the day before the ex-date when the answer does not hold it, asked for
+    before the store's transaction began (fetch_prices)."""
+    row = conn.execute("SELECT state FROM splits WHERE ticker = ? AND ex_date = ?",
+                       (ticker, ex_date)).fetchone()
+    if row is not None and row[0] is not None:
+        return None
+    prev = conn.execute("SELECT price_date, close FROM prices WHERE ticker = ? AND "
+                        "price_date < ? ORDER BY price_date DESC LIMIT 1",
+                        (ticker, ex_date)).fetchone()
+    state, applied_on = None, None
+    if prev is None:
+        state = NOTHING_BEFORE
+    else:
+        day, stored = prev[0], float(prev[1])
+        provider = answered.get(day)
+        if provider and abs(stored / (ratio * provider) - 1) <= _SCALE_TOLERANCE:
+            conn.execute("INSERT OR REPLACE INTO prices (ticker, price_date, close, adj_close) "
+                         "SELECT ticker, price_date, close / ?, adj_close / ? FROM prices "
+                         "WHERE ticker = ? AND price_date < ?", (ratio, ratio, ticker, ex_date))
+            conn.execute("INSERT OR REPLACE INTO dividends (ticker, ex_date, amount) "
+                         "SELECT ticker, ex_date, amount / ? FROM dividends "
+                         "WHERE ticker = ? AND ex_date < ?", (ratio, ticker, ex_date))
+            state, applied_on = RESCALED, _to_iso(date.today())
+        elif provider and abs(stored / provider - 1) <= _SCALE_TOLERANCE:
+            state = ALREADY_NEW
+    conn.execute("INSERT OR REPLACE INTO splits (ticker, ex_date, ratio, state, applied_on) "
+                 "VALUES (?, ?, ?, ?, ?)", (ticker, ex_date, ratio, state, applied_on))
+    return state
+
+
+def recorded_splits(ticker: str) -> "list[tuple[str, float]]":
+    """(ex-date, ratio) of every split the book has recorded for ``ticker``, oldest
+    first; [] when it has recorded none (a book with no splits table yet included)."""
+    try:
+        with get_connection() as conn:
+            return [(r[0], float(r[1])) for r in conn.execute(
+                "SELECT ex_date, ratio FROM splits WHERE ticker = ? ORDER BY ex_date",
+                (ticker,))]
+    except sqlite3.OperationalError as exc:
+        if _no_such_table(exc, "splits"):
+            return []
+        raise
+
+
 def fetch_prices(
     ticker: str,
     start_date: str,
@@ -451,6 +574,19 @@ def fetch_prices(
             f"Nothing stored for '{ticker}' ({start_date} to {end}): Yahoo Finance {reason}.",
             reason, unread)
 
+    # Split events: each is applied to the stored history before this answer's rows are
+    # stored (see _apply_split). One the code cannot read stores nothing, as an
+    # unreadable dividend does (#658): its rows may be on a scale the book cannot place.
+    splits: "list[tuple[str, float]]" = []
+    for ts_key, event in (events.get("splits") or {}).items():
+        read_split = _read_split(ts_key, event)
+        if isinstance(read_split, str):
+            raise YahooResponseError(
+                f"Nothing stored for '{ticker}' ({start_date} to {end}): Yahoo Finance "
+                f"sent a split that could not be read: {read_split}.",
+                f"sent a split that could not be read: {read_split}")
+        splits.append(read_split)
+
     # The bar still forming in an open session is RETURNED but never CACHED — see
     # unsettled_bar_date(). Callers get the live mark (get_prices concatenates this
     # frame into its result), while the cache holds settled closes only. Skipping
@@ -467,6 +603,20 @@ def fetch_prices(
                           if isinstance(rmt, (int, float)) and rmt > 0 else None),
         }
 
+    # The provider's close for the last stored session before each split's ex-date,
+    # which _apply_split compares with the stored one: the answer's own, or asked for
+    # here, so no request runs inside the store's transaction.
+    answered = {_to_iso(dt): float(row["close"]) for dt, row in df.iterrows()}
+    for ex_date, _ratio in splits:
+        with get_connection() as conn:
+            row = conn.execute("SELECT MAX(price_date) FROM prices WHERE ticker = ? AND "
+                               "price_date < ?", (ticker, ex_date)).fetchone()
+        day = row[0] if row else None
+        if day and day not in answered:
+            close = _provider_close_on(ticker, day)
+            if close is not None:
+                answered[day] = close
+
     wanted = None if only_missing is None else set(only_missing)
     stored: "list[str]" = []
     with _STORE_LOCK, get_connection() as conn:
@@ -476,6 +626,14 @@ def fetch_prices(
                 ticker TEXT NOT NULL, ex_date TEXT NOT NULL, amount REAL NOT NULL,
                 PRIMARY KEY (ticker, ex_date))"""
         )
+        # Newest first: with two splits unapplied, the day before the later one carries
+        # only the later ratio, and once it is applied the earlier one reads the same.
+        rescaled: "list[str]" = []
+        if splits:
+            _ensure_splits_table(conn)
+            for ex_date, ratio in sorted(splits, reverse=True):
+                if _apply_split(conn, ticker, ex_date, ratio, answered) == RESCALED:
+                    rescaled.append(ex_date)
         for dt, row in df.iterrows():
             if skip_date is not None and dt >= skip_date:
                 continue
@@ -518,6 +676,10 @@ def fetch_prices(
     _note_dividends(ticker, start_date, end, read, [])
     if wanted is not None:
         df.attrs["stored"] = stored
+    if rescaled:
+        # The stored history before these ex-dates moved to the new scale: a caller
+        # holding rows it read before this fetch must read them again (get_prices).
+        df.attrs["rescaled"] = rescaled
     _count_fetch()
     return df
 
@@ -917,6 +1079,7 @@ def get_prices(
     cached_end   = _to_iso(cached.index.max())
 
     # Fetch any missing leading data. A failure is recorded, not raised (#637).
+    pre = post = None
     if cached_start > start_date and _GAP_FETCH:
         pre_end = _to_iso(cached.index.min() - timedelta(days=1))
         pre = _gap_fetch(ticker, start_date, pre_end, fetch_prices)
@@ -930,6 +1093,21 @@ def get_prices(
         if post is not None:
             _note_live_mark(ticker, post)
             cached = pd.concat([cached, post]).sort_index()
+
+    # A gap fetch that carried a split put the stored rows read above on the new scale
+    # (_apply_split): serve them as they are stored now, with whatever the fetch returned
+    # and did not store (an open session's bar).
+    if any(f is not None and f.attrs.get("rescaled") for f in (pre, post)):
+        with get_connection() as conn:
+            rows = conn.execute(
+                "SELECT price_date, close FROM prices WHERE ticker = ? AND price_date >= ? "
+                "AND price_date <= ? ORDER BY price_date", (ticker, start_date, end)).fetchall()
+        stored = pd.DataFrame([(r["price_date"], r["close"]) for r in rows],
+                              columns=["price_date", "close"])
+        stored.index = pd.to_datetime(stored["price_date"]).dt.date
+        stored = stored.drop(columns=["price_date"])
+        live = pd.concat([f[["close"]] for f in (pre, post) if f is not None])
+        cached = pd.concat([stored, live[~live.index.isin(stored.index)]]).sort_index()
 
     # Dedup index: trailing/leading fetches can return dates that overlap the
     # cached range when the Yahoo Finance API's UTC-midnight period boundary

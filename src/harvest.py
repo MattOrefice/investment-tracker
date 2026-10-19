@@ -176,7 +176,8 @@ def compute_harvest_candidates(
         gl     = float(lot["unrealized_gl"])
         gl_pct = float(lot["unrealized_gl_pct"])
 
-        if gl >= 0:
+        # A lot that is not valued has no gain or loss to harvest (get_lot_inventory).
+        if gl != gl or gl >= 0:
             continue
         if abs(gl) < action_threshold:
             continue

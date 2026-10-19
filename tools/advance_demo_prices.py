@@ -18,7 +18,11 @@ How it writes (the #283 data-path shape):
     table against the book as it was. A failed assertion puts the book back.
 
 The checks:
-  * no price or dividend row the book already holds differs in the copy;
+  * no price or dividend row the book already holds differs in the copy, except a row a
+    split explains: the fetch recorded the split as applied to the copy's history
+    (src.prices._apply_split), the row is dated before its ex-date, and it is the book's
+    row divided by the ratio. Those rows are written too, with the split records, so
+    the book's history before a split moves to the new scale once, as the fetch did;
   * every new price row is after its ticker's last stored close and on or before the
     target, with a positive close (adj_close NULL: the book stores raw closes, #304);
   * every exchange-traded ticker gains exactly the NYSE sessions in its span, and a
@@ -26,8 +30,9 @@ The checks:
     forward;
   * so every ticker ends on the target, which tools/check_price_histories.py confirms;
   * every new dividend's ex-date is after its ticker's last stored close;
-  * afterwards only `prices` and `dividends` differ from the book as it was, by exactly
-    the delta's row counts, and every row it held is still there unchanged.
+  * afterwards only `prices` and `dividends` differ from the book as it was (and
+    `splits`, when the fetch recorded one), by exactly the delta's row counts, and every
+    row it held is still there unchanged but for the rows a split explains.
 
 Idempotent: a book already at the target is left as it is. Targets data/demo.db
 explicitly (never get_db_path). main() only, so bootstrap never runs it.
@@ -106,17 +111,62 @@ def _fetch_into(work: Path, ends: "dict[str, str]", through: str) -> "list[tuple
     return failed
 
 
+def _splits(path: Path) -> "list[tuple]":
+    """Every split a book has recorded, as (ticker, ex_date, ratio, state, applied_on);
+    [] when it has no splits table."""
+    con = _ro(path)
+    try:
+        if con.execute("SELECT 1 FROM sqlite_master WHERE name = 'splits'").fetchone() is None:
+            return []
+        return con.execute("SELECT ticker, ex_date, ratio, state, applied_on FROM splits "
+                           "ORDER BY ticker, ex_date").fetchall()
+    finally:
+        con.close()
+
+
+def _split_factor(rescaled: "dict[str, list[tuple[str, float]]]", ticker: str,
+                  day: str) -> float:
+    """What the splits applied to ``ticker`` divided a row dated ``day`` by: the product
+    of the ratios of those that went ex after it (1.0 for none)."""
+    factor = 1.0
+    for ex_date, ratio in rescaled.get(ticker, []):
+        if day < ex_date:
+            factor *= ratio
+    return factor
+
+
+def _explained(old, new, factor: float) -> bool:
+    if factor == 1.0 or old is None or new is None:
+        return False
+    return abs(new - old / factor) <= 1e-9 * abs(old / factor)
+
+
 def _delta(book: Path, work: Path, through: str):
-    """(new price rows, new dividend rows, existing rows the copy changed)."""
+    """(new price rows, new dividend rows, existing rows the copy changed that no split
+    explains)."""
+    new_prices, new_divs, changed, _by_split = _delta_and_splits(book, work, through)
+    return new_prices, new_divs, changed
+
+
+def _delta_and_splits(book: Path, work: Path, through: str):
+    """_delta, and the existing rows a split explains, as (table, ticker, key, new value,
+    new adj_close)."""
+    from src.prices import RESCALED
+    rescaled: "dict[str, list[tuple[str, float]]]" = {}
+    for ticker, ex_date, ratio, state, _on in _splits(work):
+        if state == RESCALED:
+            rescaled.setdefault(ticker, []).append((ex_date, float(ratio)))
     con = _ro(work)
     try:
         con.execute("ATTACH DATABASE ? AS book", (f"file:{Path(book).resolve().as_posix()}?mode=ro",))
-        changed = con.execute(
-            "SELECT 'prices', b.ticker, b.price_date FROM book.prices b LEFT JOIN main.prices w "
+        moved = con.execute(
+            "SELECT 'prices', b.ticker, b.price_date, b.close, w.close, b.adj_close, w.adj_close "
+            "FROM book.prices b LEFT JOIN main.prices w "
             "ON w.ticker = b.ticker AND w.price_date = b.price_date "
             "WHERE w.ticker IS NULL OR w.close IS NOT b.close OR w.adj_close IS NOT b.adj_close "
             "UNION ALL "
-            "SELECT 'dividends', b.ticker, b.ex_date FROM book.dividends b LEFT JOIN "
+            "SELECT 'dividends', b.ticker, b.ex_date, b.amount, w.amount, NULL, NULL "
+            "FROM book.dividends b LEFT JOIN "
             "main.dividends w ON w.ticker = b.ticker AND w.ex_date = b.ex_date "
             "WHERE w.ticker IS NULL OR w.amount IS NOT b.amount").fetchall()
         new_prices = con.execute(
@@ -129,7 +179,15 @@ def _delta(book: Path, work: Path, through: str):
             "WHERE b.ticker IS NULL AND w.ex_date <= ? ORDER BY 1, 2", (through,)).fetchall()
     finally:
         con.close()
-    return new_prices, new_divs, changed
+    changed, by_split = [], []
+    for table, ticker, key, old, new, old_adj, new_adj in moved:
+        factor = _split_factor(rescaled, ticker, key)
+        if _explained(old, new, factor) and (
+                (old_adj is None and new_adj is None) or _explained(old_adj, new_adj, factor)):
+            by_split.append((table, ticker, key, new, new_adj))
+        else:
+            changed.append((table, ticker, key))
+    return new_prices, new_divs, changed, by_split
 
 
 def _check(ends: "dict[str, str]", through: str, new_prices, new_divs, changed) -> None:
@@ -199,12 +257,27 @@ def advance(through: date, today: "date | None" = None) -> dict:
         if failed:
             raise AdvanceError("the fetch failed for " + "; ".join(f"{t} ({why})" for t, why in failed)
                                + ". Nothing was written.")
-        new_prices, new_divs, changed = _delta(DEMO_DB, work, target)
+        new_prices, new_divs, changed, by_split = _delta_and_splits(DEMO_DB, work, target)
         _check(ends, target, new_prices, new_divs, changed)
+        held = _splits(DEMO_DB)
+        splits = [row for row in _splits(work) if row not in held]
 
         con = sqlite3.connect(DEMO_DB)
         try:
             with con:
+                if splits:
+                    from src.prices import SPLITS_DDL
+                    con.execute(SPLITS_DDL)
+                    con.executemany("INSERT OR REPLACE INTO splits (ticker, ex_date, ratio, "
+                                    "state, applied_on) VALUES (?, ?, ?, ?, ?)", splits)
+                con.executemany("UPDATE prices SET close = ?, adj_close = ? WHERE ticker = ? "
+                                "AND price_date = ?",
+                                [(new, adj, t, k) for table, t, k, new, adj in by_split
+                                 if table == "prices"])
+                con.executemany("UPDATE dividends SET amount = ? WHERE ticker = ? AND "
+                                "ex_date = ?",
+                                [(new, t, k) for table, t, k, new, _adj in by_split
+                                 if table == "dividends"])
                 con.executemany("INSERT INTO prices (ticker, price_date, close, adj_close) "
                                 "VALUES (?, ?, ?, NULL)", new_prices)
                 con.executemany("INSERT INTO dividends (ticker, ex_date, amount) "
@@ -217,11 +290,12 @@ def advance(through: date, today: "date | None" = None) -> dict:
         ends_after = history_ends(DEMO_DB)
         _, _, lost = _delta(image, DEMO_DB, target)
         wrong = []
-        if set(after) != set(before):
+        added = set(after) - set(before)
+        if set(before) - set(after) or added - ({"splits"} if splits else set()):
             wrong.append(f"the table list changed: {sorted(set(after) ^ set(before))}")
         moved = sorted(t for t in before if after.get(t) != before[t])
-        if set(moved) - {"prices", "dividends"}:
-            wrong.append(f"tables other than prices and dividends changed: {moved}")
+        if set(moved) - {"prices", "dividends", "splits"}:
+            wrong.append(f"tables other than prices, dividends and splits changed: {moved}")
         if after["prices"][0] != before["prices"][0] + len(new_prices):
             wrong.append(f"prices rows {before['prices'][0]} -> {after['prices'][0]}, "
                          f"expected +{len(new_prices)}")

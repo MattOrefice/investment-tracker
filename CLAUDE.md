@@ -535,3 +535,26 @@ the code that supports it.
   changes stay additive and inert". If 13/14/15 ever need executing CI
   coverage, build a personal-mode fixture DB. This is also why the page
   import guard is static/AST-based rather than execute-every-page.
+- SPLITS (decided by the owner on October 18, 2026). The provider's close is
+  split-adjusted, so the first fetch after an ex-date answers on the new scale while
+  the book's rows before it are on the old one. `fetch_prices` stores each split event
+  an answer carries (`splits`, a runtime table on the demo's overlay). Before storing
+  the answer, when the stored close for the last session before the ex-date is about
+  ratio x the provider's close for that day, it divides every stored close and dividend
+  before the ex-date by the ratio, once, in the store's transaction, and records it as
+  applied (`src.prices._apply_split`). A history already on the new scale is left
+  alone. Locks hold their own snapshots, so nothing locked moves.
+  `tools/advance_demo_prices.py` accepts a changed row only when a split recorded as
+  applied explains it.
+  A position whose ticker split after the position's first trade is unresolved
+  (`split_unadjusted`) and is not valued. Its share counts are on the old scale, and
+  handling them is a later decision. A split before every trade in the position
+  changes nothing.
+  RECOVERY FOR A SPLIT THAT WAS EVER MISSED (a history holding two scales, which reads
+  as a one-day move of about 1 - 1/ratio at the ex-date): re-fetch that ticker's full
+  range through the price layer, as #304's migration re-fetched every ticker's.
+  `fetch_prices(ticker, <its first stored date>)` in the mode whose book it is. The
+  answer carries the split, so the old-scale history is rescaled first, and then every
+  stored row is replaced by the provider's. #304's own tool is not the way: it refuses
+  on the old-scale dividends. For data/demo.db the re-fetch is a committed change in
+  the #283 data-path shape, asserted per table.
