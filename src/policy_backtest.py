@@ -25,7 +25,7 @@ Nothing here fetches, writes, or enters a quarter lock: the history is a committ
 read as it stands, and the policy is the book's own.
 
 The page (pages/16_Policy_Backtest.py, PR 3) reads every figure it shows from run(): the
-statistics, the rebalances, each proxy's tracking over its overlap with the fund, and
+statistics, the rebalances, each proxy's tracking against the fund it stands in for, and
 the paths its charts draw (wealth, drawdowns, rolling_annual).
 """
 from __future__ import annotations
@@ -127,7 +127,8 @@ class Statistics:
 
 @dataclass(frozen=True)
 class Tracking:
-    """A fund beside its proxy over the months the history holds both: the first and last
+    """A fund beside its proxy over the months the history holds both, from the splice
+    month for a fund spliced at an index change (tracking_from): the first and last
     of them and how many, the fund's annualized return minus the proxy's, the tracking
     error (the sample standard deviation of the monthly difference x sqrt(12)), and the
     correlation of the two. A statistic the overlap cannot give is None: every one with
@@ -169,6 +170,10 @@ def load_spec(path: Path = SPEC) -> dict:
 
 def _previous(month: str) -> str:
     return (pd.Period(month, "M") - 1).strftime("%Y-%m")
+
+
+def _next(month: str) -> str:
+    return (pd.Period(month, "M") + 1).strftime("%Y-%m")
 
 
 def backtest_months(history: pd.DataFrame, spec: dict) -> "list[str]":
@@ -347,10 +352,22 @@ def statistics(returns: pd.Series, bill: pd.Series) -> Statistics:
     )
 
 
-def tracking(fund: str, proxy: str, history: pd.DataFrame) -> Tracking:
-    """``fund`` beside ``proxy`` over every month the history holds a return for both:
-    #667's measure, which the owner chose for the page (#667, October 18, 2026)."""
-    both = history[[fund, proxy]].dropna()
+def tracking_from(fund: str, spec: dict) -> Optional[str]:
+    """The first month ``fund``'s tracking is measured from. For a fund spliced at an
+    index change, the splice month: the first it followed the quality index the sleeve
+    holds, so the stand-in is measured against that strategy (decided by the owner on
+    October 19, 2026, refining #667's measure). For a proxy that stands in before the
+    fund's launch, None: every month both series exist."""
+    entry = spec["funds"][fund]
+    return _next(entry["proxy_until"]) if entry.get("reason") == "index change" else None
+
+
+def tracking(fund: str, proxy: str, history: pd.DataFrame,
+             since: Optional[str] = None) -> Tracking:
+    """``fund`` beside ``proxy`` over every month the history holds a return for both,
+    from ``since`` when given (tracking_from says which)."""
+    months = history if since is None else history.loc[history.index >= since]
+    both = months[[fund, proxy]].dropna()
     n = len(both)
     first, last = (both.index[0], both.index[-1]) if n else (None, None)
     if n < 2:
@@ -392,7 +409,8 @@ def run(history: Optional[pd.DataFrame] = None, spec: Optional[dict] = None,
     return Backtest(simulation, returns, bill,
                     {name: statistics(returns[name], bill) for name in returns.columns},
                     sleeves,
-                    {f: tracking(f, p, history) for f, p in proxied.items()})
+                    {f: tracking(f, p, history, tracking_from(f, spec))
+                     for f, p in proxied.items()})
 
 
 # ── What the page says, read from run() and series.json ──────────────────────

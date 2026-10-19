@@ -244,6 +244,27 @@ def test_tracking_against_a_hand_computation():
     assert t.correlation == pytest.approx(history["F"].corr(history["P"]))
 
 
+def test_a_splice_is_tracked_from_its_splice_month():
+    """Decided by the owner on October 19, 2026: a fund spliced at an index change is
+    measured from the month after its proxy's last, the first it followed the index the
+    sleeve holds; a proxy before a launch keeps every month both exist. Here the fund and
+    proxy both hold March to June. Spliced after April, only May and June count:
+    differences 1% and -1%, so the tracking error is sqrt(2)% x sqrt(12)."""
+    history = pd.DataFrame({"F": [0.05, -0.04, 0.02, 0.0], "P": [0.0, 0.0, 0.01, 0.01]},
+                           index=_months("2006-03", 4))
+    spec = {"funds": {"F": {"proxy": "P", "proxy_until": "2006-04", "reason": "index change"},
+                      "G": {"proxy": "P", "proxy_until": "2006-04", "reason": "inception"},
+                      "H": {"proxy": None}}}
+    assert pb.tracking_from("F", spec) == "2006-05"
+    assert pb.tracking_from("G", spec) is None and pb.tracking_from("H", spec) is None
+    t = pb.tracking("F", "P", history, pb.tracking_from("F", spec))
+    assert (t.first, t.last, t.months) == ("2006-05", "2006-06", 2)
+    assert t.error == pytest.approx(math.sqrt(2) * 0.01 * math.sqrt(12))
+    assert t.difference == pytest.approx((1.02 * 1.0) ** 6 - (1.01 * 1.01) ** 6)
+    whole = pb.tracking("F", "P", history)
+    assert (whole.first, whole.months) == ("2006-03", 4)
+
+
 def test_tracking_with_too_little_overlap_or_a_series_that_never_moves():
     one = pd.DataFrame({"F": [None, 0.01], "P": [0.02, 0.01]}, index=_months("2006-03", 2))
     assert pb.tracking("F", "P", one) == pb.Tracking("F", "P", "2006-04", "2006-04", 1,

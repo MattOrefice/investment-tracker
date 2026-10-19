@@ -128,8 +128,9 @@ with col:
             "Maximum drawdown is the deepest fall of month-end value from an earlier "
             "month-end high. Recovered is the first month-end at or above that high again.",
             "Tracking statistics are over the months the history holds both the fund and "
-            "its proxy. Tracking difference is the fund's annualized return less the "
-            "proxy's; tracking error is the sample standard deviation of the monthly "
+            "its proxy; for a fund spliced at an index change, from the month it began "
+            "following a quality index. Tracking difference is the fund's annualized return "
+            "less the proxy's; tracking error is the sample standard deviation of the monthly "
             "difference × √12; correlation is of the two monthly series.",
         ]
         for note in notes:
@@ -229,21 +230,23 @@ with col:
 
     # ── Sleeves, funds and proxies ───────────────────────────────────────────
     st.subheader("Sleeves, funds and proxies (hypothetical)")
-    sleeve_rows, overlapping = [], []
+    sleeve_rows, splices = [], []
     for s in bt.sleeves:
         for fund, share in s.mix:
             t = bt.tracking.get(fund)
-            stood = pb.stand_in(fund, bt, spec)
-            if t is not None and stood is not None and t.first is not None \
-                    and t.first <= stood[1]:
-                overlapping.append(fund)
+            since = pb.tracking_from(fund, spec)
+            if t is not None and since is not None:
+                splices.append(
+                    f"{fund} {pb.month_name(t.first)} to {pb.month_name(t.last)}" if t.first
+                    else f"{fund} from {pb.month_name(since)}, where the history holds no "
+                         "month of both")
             sleeve_rows.append({
                 "Sleeve": s.name,
                 "Target": f"{s.target * 100:.1f}%",
                 "Band": f"±{s.band * 100:.1f} pp",
                 "Fund": fund if len(s.mix) == 1 else f"{fund} ({share * 100:.0f}% of the sleeve)",
                 "Series used": pb.series_used(fund, bt, spec),
-                "Overlap": (f"{pb.month_name(t.first)} to {pb.month_name(t.last)}"
+                "Measured over": (f"{pb.month_name(t.first)} to {pb.month_name(t.last)}"
                             if t is not None and t.first else "—"),
                 "Months": str(t.months) if t is not None else "—",
                 "Tracking difference": (_pct(t.difference, signed=True)
@@ -258,8 +261,9 @@ with col:
         "Hypothetical backtest inputs. Tracking statistics compare each fund with its "
         "proxy over the months the history file holds both; a dash marks a fund with no "
         "proxy, or a statistic the overlap cannot give."
-        + (f" For {_list(overlapping)}, that overlap includes months in which the "
-           "proxy stood in for the fund." if overlapping else "")
+        + (" A splice is measured from the month its fund began following a quality "
+           f"index, against the strategy the sleeve holds: {_list(splices)}."
+           if splices else "")
     )
     st.markdown("**Sources**, as each issuer printed them, with the source's date:")
     for line in pb.source_lines(bt, spec):
