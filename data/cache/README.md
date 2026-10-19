@@ -20,6 +20,17 @@ after that month's last NYSE session. `ff_factors_global.csv` was deleted: Ken F
 daily Global 5-factor publication in June 2019, before this portfolio's
 inception, so nothing could ever load it.
 
+`data/backtest/monthly_returns.csv` is the policy backtest's history (#667): one row
+per month from February 2006 to the last complete month, one column per series. Each
+cell is a monthly total return, empty before the series begins. The series are every
+policy fund, every proxy, and DGS3MO, the 3-month bill series `src/risk_free.py`
+averages. Its only writer is `tools/refresh_backtest_history.py`. The writer takes each
+series' returns from one fetch of its whole history, so a split can never put two scales
+in one series, and it refuses a series with a gap. `data/backtest/series.json` is
+hand-kept beside it. It names each fund's proxy, the last month the proxy stands in and
+why (the fund's inception, or SPHQ's and IDHQ's change to a quality index), with the
+issuers' citations. Nothing in either file reaches data/demo.db or data/tracker.db.
+
 `prices_hyg.parquet` was retired in #386. It held HYG's history for the
 fixed-income regression's CREDIT proxy, ended 2026-05-05, and nothing refreshed
 it, so Q2 2026's regression read a proxy held flat for the quarter's last 56 days.

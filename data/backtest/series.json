@@ -1,0 +1,88 @@
+{
+  "_about": "The policy backtest's series (#667): each policy fund, the proxy that stands in for it before its own record is used, and the 3-month bill series. Hand-kept: the citations are the issuers' (#667, read 2026-10-18). tools/refresh_backtest_history.py reads this file and writes monthly_returns.csv, which nothing else writes.",
+  "first_month": "2006-02",
+  "backtest_from": "2006-03",
+  "reference": "SPY",
+  "funds": {
+    "VOO": {
+      "inception": "2010-09-07", "source": "https://fund-docs.vanguard.com/F0968.pdf", "source_date": "June 30, 2026",
+      "proxy": "SPY", "proxy_until": "2010-09", "reason": "inception"
+    },
+    "SPHQ": {
+      "inception": "12/6/2005", "source": "https://www.invesco.com/us/en/solutions/invesco-etfs/smart-beta-investing.html", "source_date": "no date shown, read 2026-10-18",
+      "proxy": "SPY", "proxy_until": "2010-06", "reason": "index change",
+      "change": {
+        "cited": "the Value Line Timeliness Select Index until June 30, 2010, then the S&P 500 High Quality Rankings Index; the S&P 500 Quality Index from March 21, 2016",
+        "source": "https://www.sec.gov/Archives/edgar/data/1209466/000119312516510326/d316595d497k.htm",
+        "source_date": "summary prospectus, March 21, 2016"
+      }
+    },
+    "VTV": {
+      "inception": "2004-01-26", "source": "https://fund-docs.vanguard.com/F0966.pdf", "source_date": "June 30, 2026",
+      "proxy": null
+    },
+    "AVUV": {
+      "inception": "9/24/2019", "source": "https://res.avantisinvestors.com/docs/avantis-us-small-cap-value-avuv-etf-fact-sheet.pdf", "source_date": "9/30/2026",
+      "proxy": "DFSVX", "proxy_until": "2019-09", "reason": "inception"
+    },
+    "VEA": {
+      "inception": "2007-07-20", "source": "https://fund-docs.vanguard.com/F0936.pdf", "source_date": "June 30, 2026",
+      "proxy": "VTMGX", "proxy_until": "2007-07", "reason": "inception"
+    },
+    "IDHQ": {
+      "inception": "6/13/2007", "source": "https://www.invesco.com/us/en/solutions/invesco-etfs/smart-beta-investing.html", "source_date": "no date shown, read 2026-10-18",
+      "proxy": "EFA", "proxy_until": "2012-02", "reason": "index change",
+      "change": {
+        "cited": "the QSG Developed International Opportunities Index until March 1, 2012, then the S&P International Developed High Quality Ranking Index; the S&P Quality Developed ex-U.S. LargeMidCap Index from March 18, 2016",
+        "source": "https://www.sec.gov/Archives/edgar/data/1378872/000110465911071727/a11-29272_12497.htm",
+        "source_date": "supplement, December 30, 2011"
+      }
+    },
+    "AVIV": {
+      "inception": "9/28/2021", "source": "https://res.avantisinvestors.com/docs/avantis-international-large-cap-value-aviv-etf-fact-sheet.pdf", "source_date": "9/30/2026",
+      "proxy": "EFV", "proxy_until": "2021-09", "reason": "inception"
+    },
+    "AVDV": {
+      "inception": "9/24/2019", "source": "https://res.avantisinvestors.com/docs/avantis-international-small-cap-value-avdv-etf-fact-sheet.pdf", "source_date": "9/30/2026",
+      "proxy": "DISVX", "proxy_until": "2019-09", "reason": "inception"
+    },
+    "IEMG": {
+      "inception": "Oct 18, 2012", "source": "https://www.ishares.com/us/products/244050/ishares-core-msci-emerging-markets-etf", "source_date": "Oct 16, 2026",
+      "proxy": "EEM", "proxy_until": "2012-10", "reason": "inception"
+    },
+    "VGIT": {
+      "inception": "2009-11-19", "source": "https://fund-docs.vanguard.com/F3143.pdf", "source_date": "June 30, 2026",
+      "proxy": "VFITX", "proxy_until": "2009-11", "reason": "inception"
+    },
+    "SCHP": {
+      "inception": "08/05/10", "source": "https://schwab.bynder.com/m/67d6c037de177d9b", "source_date": "June 30, 2026",
+      "proxy": "TIP", "proxy_until": "2010-08", "reason": "inception"
+    },
+    "VNQ": {
+      "inception": "2004-09-23", "source": "https://fund-docs.vanguard.com/F0986.pdf", "source_date": "June 30, 2026",
+      "proxy": null
+    },
+    "PDBC": {
+      "inception": "11/7/2014", "source": "https://www.sec.gov/Archives/edgar/data/1595386/000119312526079092/d67468d497k.htm", "source_date": "summary prospectus, February 27, 2026",
+      "proxy": "DBC", "proxy_until": "2014-11", "reason": "inception"
+    }
+  },
+  "proxies": {
+    "SPY": {"inception": "Jan 22 1993", "source": "https://www.ssga.com/us/en/intermediary/etfs/spdr-sp-500-etf-trust-spy", "source_date": "Oct 18 2026"},
+    "DFSVX": {"inception": "Mar. 02, 1993", "source": "https://www.dimensional.com/chmedia/85358/source/download/us-small-cap-value-portfolio-i.pdf", "source_date": "June 30, 2026"},
+    "VTMGX": {"inception": "08/17/99", "source": "https://workplace.vanguard.com/iippdf/pdfs/FS127.pdf", "source_date": "September 30, 2026"},
+    "EFA": {"inception": "Aug 14, 2001", "source": "https://www.ishares.com/us/products/239623/ishares-msci-eafe-etf", "source_date": "Oct 16, 2026"},
+    "EFV": {"inception": "Aug 01, 2005", "source": "https://www.ishares.com/us/products/239628/ishares-msci-eafe-value-etf", "source_date": "Oct 16, 2026"},
+    "DISVX": {"inception": "December 30, 1994 (commencement of operations)", "source": "https://www.sec.gov/Archives/edgar/data/355437/0000950116-96-000031.txt", "source_date": "annual report, year ended November 30, 1995"},
+    "EEM": {"inception": "Apr 07, 2003", "source": "https://www.ishares.com/us/products/239637/ishares-msci-emerging-markets-etf", "source_date": "Oct 16, 2026"},
+    "VFITX": {"inception": "10/28/91", "source": "https://workplace.vanguard.com/iippdf/pdfs/FS35.pdf", "source_date": "September 30, 2026"},
+    "TIP": {"inception": "Dec 04, 2003", "source": "https://www.ishares.com/us/products/239467/ishares-tips-bond-etf", "source_date": "Oct 16, 2026"},
+    "DBC": {"inception": "February 3, 2006 (commenced trading)", "source": "https://www.sec.gov/Archives/edgar/data/1328237/000119312526083563/dbc-20251231.htm", "source_date": "Form 10-K, fiscal year 2025, filed March 2, 2026"}
+  },
+  "bill": {
+    "series": "DGS3MO",
+    "name": "Market Yield on U.S. Treasury Securities at 3-Month Constant Maturity, Quoted on an Investment Basis",
+    "source": "https://fred.stlouisfed.org/series/DGS3MO",
+    "month": "(1 + the month's average daily yield) ** (1/12) - 1: the average src/risk_free.py takes over a window, compounded as Asset Evaluation compounds its daily rate"
+  }
+}
