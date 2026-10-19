@@ -52,6 +52,11 @@ REFRESH_COMMAND = "python tools/refresh_backtest_history.py"
 GROWTH_OF = 10_000
 ROLLING_MONTHS = 60
 
+# Why a series has no volatility, and so no Sharpe ratio (#672): the page prints these
+# beside the dash it shows in their place.
+FEWER_THAN_TWO_MONTHS = "fewer than two monthly returns"
+NO_VOLATILITY = "no volatility: every monthly return is the same"
+
 REAL_ASSETS = "Real Assets"
 # The sleeve's two funds and the shares it is reset to, as the owner decided: its
 # benchmark's 60% REIT and 40% commodity legs, held through VNQ and PDBC.
@@ -114,15 +119,19 @@ class Drawdown:
 class Statistics:
     """What the page shows for one series. ``calendar_years`` holds every year the
     months reach, and ``partial_years`` those with fewer than twelve of them (the first
-    and the current); ``windows`` the years in WINDOWS."""
+    and the current); ``windows`` the years in WINDOWS. With fewer than two monthly
+    returns, or none that differ, there is no volatility: ``annual_volatility`` and
+    ``sharpe`` are None and ``no_volatility`` says why (decided by the owner on October
+    19, 2026, #672)."""
 
     annual_return: float
-    annual_volatility: float
-    sharpe: float
+    annual_volatility: Optional[float]
+    sharpe: Optional[float]
     drawdown: Drawdown
     calendar_years: "dict[int, float]"
     partial_years: "tuple[int, ...]"
     windows: "dict[int, float]"
+    no_volatility: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -324,9 +333,19 @@ def statistics(returns: pd.Series, bill: pd.Series) -> Statistics:
     * maximum drawdown: on month-end wealth, which starts at 1.0 at the end of the month
       before the first return;
     * calendar years: each year's months compounded, the years with fewer than twelve
-      named as partial."""
+      named as partial.
+
+    Volatility and the Sharpe ratio need at least two monthly returns that differ. With
+    fewer than two months the sample standard deviation is undefined, and with every
+    return the same it is zero: both are None then, with the reason (#672)."""
     annual = annualized(returns)
-    vol = float(returns.std(ddof=1) * math.sqrt(12))
+    if len(returns) < 2:
+        no_volatility: Optional[str] = FEWER_THAN_TWO_MONTHS
+    elif returns.nunique() < 2:
+        no_volatility = NO_VOLATILITY
+    else:
+        no_volatility = None
+    vol = None if no_volatility else float(returns.std(ddof=1) * math.sqrt(12))
     bill_annual = annualized(bill.reindex(returns.index))
     path = wealth(returns)
     fall = drawdowns(returns)
@@ -344,11 +363,12 @@ def statistics(returns: pd.Series, bill: pd.Series) -> Statistics:
     return Statistics(
         annual_return=annual,
         annual_volatility=vol,
-        sharpe=(annual - bill_annual) / vol,
+        sharpe=None if vol is None else (annual - bill_annual) / vol,
         drawdown=Drawdown(float(fall.min()), peak, trough, recovered),
         calendar_years=years,
         partial_years=tuple(y for y, c in counts.items() if c < 12),
         windows={y: years[y] for y in WINDOWS if y in years},
+        no_volatility=no_volatility,
     )
 
 

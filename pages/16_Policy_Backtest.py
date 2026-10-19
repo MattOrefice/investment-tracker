@@ -40,6 +40,11 @@ def _pct(x: float, signed: bool = False) -> str:
     return f"{x * 100:+.2f}%" if signed else f"{x * 100:.2f}%"
 
 
+def _months(n: int) -> str:
+    """'1 month', '247 months'."""
+    return f"{n} month" if n == 1 else f"{n} months"
+
+
 def _month_end(months) -> pd.DatetimeIndex:
     """'YYYY-MM' labels as each month's last day, for a chart's x axis."""
     return pd.PeriodIndex(list(months), freq="M").to_timestamp(how="end").normalize()
@@ -145,8 +150,11 @@ with col:
         rows.append({
             "Series": _SERIES_LABEL[name],
             "Annualized return": _pct(stats.annual_return),
-            "Annualized volatility": _pct(stats.annual_volatility),
-            "Sharpe ratio": f"{stats.sharpe:.2f}",
+            # With no volatility (#672): a dash and the engine's reason, in both cells.
+            "Annualized volatility": (f"— ({stats.no_volatility})" if stats.no_volatility
+                                      else _pct(stats.annual_volatility)),
+            "Sharpe ratio": (f"— ({stats.no_volatility})" if stats.no_volatility
+                             else f"{stats.sharpe:.2f}"),
             "Maximum drawdown": _pct(dd.depth),
             "Peak": pb.month_name(dd.peak) if fell else "No fall",
             "Trough": pb.month_name(dd.trough) if fell else "No fall",
@@ -155,7 +163,7 @@ with col:
         })
     st.dataframe(pd.DataFrame(rows).set_index("Series"), width="stretch")
     st.caption(
-        f"Hypothetical. {WINDOW}, {len(bt.returns)} months. The Sharpe ratio is measured "
+        f"Hypothetical. {WINDOW}, {_months(len(bt.returns))}. The Sharpe ratio is measured "
         f"against {spec['bill']['name']} (FRED {spec['bill']['series']}). Peak, trough and "
         "recovered are month-ends."
     )
@@ -191,7 +199,7 @@ with col:
         )
     else:
         st.caption(f"Hypothetical. No rolling {window_label} return is shown: the history "
-                   f"holds {len(bt.returns)} months, fewer than {pb.ROLLING_MONTHS}.")
+                   f"holds {_months(len(bt.returns))}, fewer than {pb.ROLLING_MONTHS}.")
 
     # ── Calendar years ───────────────────────────────────────────────────────
     def _year_rows(years) -> pd.DataFrame:

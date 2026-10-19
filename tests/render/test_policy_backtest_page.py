@@ -76,13 +76,17 @@ def _locks(book: Path) -> str:
     return f"{len(rows)}:" + hashlib.sha256(repr(rows).encode()).hexdigest()
 
 
-def _render(mp, tmp_dir: Path, which: str) -> Rendered:
+def _render(mp, tmp_dir: Path, which: str, history: "pd.DataFrame | None" = None) -> Rendered:
+    """The page on a copy of ``which`` book, offline; with ``history`` served in place of
+    the committed monthly file when given."""
     import streamlit as st
     from streamlit.testing.v1 import AppTest
 
     import src.db
     from tests.conftest import _pin_mode, block_network, point_at_frozen_book
 
+    if history is not None:
+        mp.setattr(pb, "load_history", lambda path=pb.HISTORY: history)
     if which == "frozen":
         _pin_mode(mp, "demo")
         book = point_at_frozen_book(mp, tmp_dir)
@@ -399,6 +403,51 @@ def test_the_page_names_the_month_the_data_runs_through_and_its_refresh(page):
     captions = [c.value for c in page.at.caption]
     assert any(f"which runs through {last};" in c and f"`{pb.REFRESH_COMMAND}`" in c
                for c in captions), captions[-1]
+
+
+# ── No volatility (#672) ─────────────────────────────────────────────────────
+
+SERIES_ROWS = {"Policy": pb.POLICY, "S&P 500 (SPY)": pb.SP500,
+               "60/40 (60% SPY / 40% AGG)": pb.SIXTY_FORTY}
+
+
+@pytest.mark.parametrize("case", ["one month", "SPY never moves"])
+def test_with_no_volatility_the_summary_prints_a_dash_and_the_reason(case, tmp_path):
+    """Decided by the owner on October 19, 2026 (#672): with fewer than two monthly
+    returns, or none that differ, the volatility and the Sharpe ratio each print "—"
+    with the engine's reason; every other figure is run()'s as before. The demo book,
+    offline, served a history cut to its first backtest month, or with SPY's return a
+    constant 1% a month."""
+    history = pb.load_history()
+    if case == "one month":
+        history = history.loc[:"2006-03"]
+        expect = {label: pb.FEWER_THAN_TWO_MONTHS for label in SERIES_ROWS}
+    else:
+        history = history.copy()
+        history["SPY"] = 0.01
+        expect = {"S&P 500 (SPY)": pb.NO_VOLATILITY}
+    with pytest.MonkeyPatch.context() as mp:
+        shown = _render(mp, tmp_path, "demo", history=history)
+    assert not shown.at.exception, shown.at.exception
+    bt = shown.bt
+    table = _table(shown.at, "Series")
+    for label, name in SERIES_ROWS.items():
+        st, row = bt.statistics[name], table.loc[label]
+        assert row["Annualized return"] == _pct(st.annual_return)
+        assert row["Maximum drawdown"] == _pct(st.drawdown.depth)
+        if label in expect:
+            assert st.no_volatility == expect[label]
+            assert row["Annualized volatility"] == row["Sharpe ratio"] == f"— ({expect[label]})"
+        else:
+            assert st.no_volatility is None
+            assert row["Annualized volatility"] == _pct(st.annual_volatility)
+            assert row["Sharpe ratio"] == f"{st.sharpe:.2f}"
+    if case == "one month":
+        assert list(bt.returns.index) == ["2006-03"]
+        captions = [c.value for c in shown.at.caption]
+        assert any(c.startswith("Hypothetical. March 2006 to March 2006, 1 month.")
+                   for c in captions), captions
+        assert any("the history holds 1 month, fewer than 60." in c for c in captions)
 
 
 # ── The personal book, on a scratch copy ─────────────────────────────────────
