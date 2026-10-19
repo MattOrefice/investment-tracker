@@ -51,6 +51,8 @@ OTHER_PAGES = {
     "pages/13_Household_View.py": "No Fidelity positions file found",
     "pages/14_Asset_Location.py": "No Fidelity positions file found",
     "pages/15_Liquidity.py": "No Fidelity positions file found",
+    # Needs no trade: the bootstrapped book's seeded policy runs, under its disclosure.
+    "pages/16_Policy_Backtest.py": "Hypothetical, back-tested results.",
 }
 
 
@@ -150,7 +152,7 @@ def loads(tmp_path_factory):
 def test_the_premise_the_book_holds_no_trade_and_every_page_is_covered(loads):
     assert loads["trades"] == 0
     pages = _registered_pages()
-    assert len(pages) == 15
+    assert len(pages) == 16
     assert set(pages) == set(LEDGER_PAGES) | set(OTHER_PAGES), (
         "a page app.py registers is in neither list, so nothing below reads it")
 

@@ -211,3 +211,135 @@ def test_the_demo_backtest_runs_from_march_2006_beside_both_benchmarks(use_demo_
     for name, st in bt.statistics.items():
         assert set(st.windows) == {2008, 2020, 2022}, name
         assert st.partial_years[0] == 2006, name
+
+
+# ── What the page draws and says (PR 3) ───────────────────────────────────────
+
+def test_the_chart_paths_against_a_hand_computation():
+    """Returns +10%, -20%, +25% from March 2006. Wealth starts at 1.0 at the end of
+    February: 1.1, 0.88, 1.1. The drawdown is 0, -20% (0.88 / 1.1 - 1), and 0 again at a
+    level equal to the high. Over two months the rolling annualized return is
+    (1.1 x 0.8) ** 6 - 1 for April and (0.8 x 1.25) ** 6 - 1 = 0 for May."""
+    r = pd.Series([0.10, -0.20, 0.25], index=_months("2006-03", 3))
+    assert list(pb.wealth(r).index) == ["2006-02", "2006-03", "2006-04", "2006-05"]
+    assert list(pb.wealth(r)) == pytest.approx([1.0, 1.1, 0.88, 1.1])
+    assert list(pb.drawdowns(r)) == pytest.approx([0.0, 0.0, -0.2, 0.0])
+    rolling = pb.rolling_annual(r, months=2)
+    assert list(rolling.index) == ["2006-04", "2006-05"]
+    assert list(rolling) == pytest.approx([0.88 ** 6 - 1, 0.0], abs=1e-12)
+    assert pb.drawdowns(r).min() == pb.statistics(r, r * 0).drawdown.depth
+
+
+def test_tracking_against_a_hand_computation():
+    """Fund 2%, 0%, 1%; proxy 1%, 1%, 0%, both from April, and the proxy alone in March.
+    Three months overlap. Difference: (1.02 x 1.01) ** 4 - (1.01 x 1.01) ** 4.
+    The monthly differences are 1%, -1%, 1%: mean 1/3%, sample variance
+    ((2/3)^2 + (4/3)^2 + (2/3)^2) / 2 = 4/3 (in %^2), so TE = sqrt(4/3)% x sqrt(12) = 4%."""
+    history = pd.DataFrame({"F": [None, 0.02, 0.0, 0.01], "P": [0.03, 0.01, 0.01, 0.0]},
+                           index=_months("2006-03", 4))
+    t = pb.tracking("F", "P", history)
+    assert (t.first, t.last, t.months) == ("2006-04", "2006-06", 3)
+    assert t.difference == pytest.approx((1.02 * 1.01) ** 4 - (1.01 * 1.01) ** 4)
+    assert t.error == pytest.approx(0.04)
+    assert t.correlation == pytest.approx(history["F"].corr(history["P"]))
+
+
+def test_tracking_with_too_little_overlap_or_a_series_that_never_moves():
+    one = pd.DataFrame({"F": [None, 0.01], "P": [0.02, 0.01]}, index=_months("2006-03", 2))
+    assert pb.tracking("F", "P", one) == pb.Tracking("F", "P", "2006-04", "2006-04", 1,
+                                                     None, None, None)
+    none = pd.DataFrame({"F": [None, None], "P": [0.02, 0.01]}, index=_months("2006-03", 2))
+    assert pb.tracking("F", "P", none) == pb.Tracking("F", "P", None, None, 0, None, None, None)
+    flat = pd.DataFrame({"F": [0.01, 0.01, 0.01], "P": [0.0, 0.02, 0.01]},
+                        index=_months("2006-03", 3))
+    t = pb.tracking("F", "P", flat)
+    assert t.months == 3 and t.error is not None and t.correlation is None
+
+
+def _small_backtest(proxies: dict, months: int = 3) -> "tuple[pb.Backtest, dict]":
+    """A two-sleeve policy, X and Y, over ``months`` months from March 2006, with
+    {fund: (proxy, last month, reason)} standing in."""
+    funds = ["X", "Y"]
+    index = _months("2006-02", months + 1)
+    rng = np.random.default_rng(11)
+    history = pd.DataFrame(rng.normal(0.005, 0.03, size=(len(index), 7)),
+                           columns=[*funds, "PX", "PY", "SPY", "AGG", "BILL"],
+                           index=pd.Index(index, name="month"))
+    spec = {"backtest_from": "2006-03", "bill": {"series": "BILL"},
+            "funds": {f: {"proxy": None} for f in funds}}
+    for fund, (proxy, until, reason) in proxies.items():
+        spec["funds"][fund] = {"proxy": proxy, "proxy_until": until, "reason": reason}
+    sleeves = (pb.Sleeve("A", 0.6, 0.05, (("X", 1.0),)), pb.Sleeve("B", 0.4, 0.05, (("Y", 1.0),)))
+    return pb.run(history, spec, sleeves), spec
+
+
+def test_the_disclosure_names_only_the_stand_ins_the_policy_uses():
+    bt, spec = _small_backtest({})
+    text = pb.disclosure(bt, spec, demo=True)
+    assert text == (
+        "**Hypothetical, back-tested results.** They apply this book's current SAA targets "
+        "and tolerance bands to monthly returns from March 2006 through May 2006. They are "
+        "not the paper portfolio's record, and no account earned them. Returns are after "
+        "fund expenses and before trading costs and taxes. The policy was set with "
+        "knowledge of this period.")
+    assert "They are not this portfolio's record" in pb.disclosure(bt, spec, demo=False)
+
+
+def test_the_disclosure_with_one_launch_proxy_and_one_index_change():
+    bt, spec = _small_backtest({"X": ("PX", "2006-03", "inception"),
+                                "Y": ("PY", "2006-04", "index change")})
+    text = pb.disclosure(bt, spec, demo=True)
+    assert ("Funds are represented by named proxies before their launch: X by PX through "
+            "March 2006. Y is represented by its broad market before it followed a quality "
+            "index: Y by PY through April 2006.") in text
+
+
+def test_a_proxy_ending_before_the_backtest_is_not_named():
+    bt, spec = _small_backtest({"X": ("PX", "2006-02", "inception")})
+    assert "PX" not in pb.disclosure(bt, spec, demo=True)
+    assert pb.series_used("X", bt, spec) == "X throughout"
+    bt, spec = _small_backtest({"X": ("PX", "2006-04", "inception")})
+    assert pb.series_used("X", bt, spec) == "PX March 2006 to April 2006, then X"
+
+
+def test_the_rebalance_sentence_covers_none_one_and_several():
+    import dataclasses
+    bt, _spec = _small_backtest({})
+
+    def said(n):
+        sim = dataclasses.replace(bt.simulation, rebalances=tuple(
+            pb.Rebalance("2006-04", ("A",)) for _ in range(n)))
+        return pb.rebalance_sentence(dataclasses.replace(bt, simulation=sim))
+
+    assert said(0) == ("No month-end check from March 2006 to May 2006 found a sleeve "
+                       "outside its band, so the policy never rebalanced.")
+    assert said(1) == ("One month-end check from March 2006 to May 2006 found a sleeve "
+                       "outside its band; at it, every sleeve went back to its target.")
+    assert said(3).startswith("3 month-end checks from March 2006 to May 2006")
+
+
+def test_a_year_label_names_a_partial_years_months():
+    bt, _spec = _small_backtest({}, months=11)            # March 2006 to January 2007
+    assert pb.year_label(2006, bt) == "2006, partial (March to December)"
+    assert pb.year_label(2007, bt) == "2007, partial (January)"
+    bt, _spec = _small_backtest({}, months=22)            # to December 2007
+    assert pb.year_label(2007, bt) == "2007"
+
+
+def test_each_index_change_the_disclosure_calls_a_quality_index_is_one():
+    """The disclosure says the funds spliced at an index change followed quality indexes
+    from their splice month. series.json's citation is what says so."""
+    spec = pb.load_spec()
+    assert {f.get("reason") for f in spec["funds"].values() if f.get("proxy")} <= {
+        "inception", "index change"}
+    changes = {k: f for k, f in spec["funds"].items() if f.get("reason") == "index change"}
+    assert changes, "premise: series.json splices a fund at an index change"
+    for fund, entry in changes.items():
+        followed = entry["change"]["cited"].split(", then ", 1)[1].split(";")[0]
+        assert "Quality" in followed, (fund, followed)
+
+
+def test_the_refresh_command_is_the_writers_usage_line():
+    tool = pb.ROOT / "tools" / "refresh_backtest_history.py"
+    usage = tool.read_text(encoding="utf-8").split("Usage:", 1)[1].strip().splitlines()[0]
+    assert usage.strip() == pb.REFRESH_COMMAND
