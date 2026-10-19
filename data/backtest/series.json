@@ -1,5 +1,5 @@
 {
-  "_about": "The policy backtest's series (#667): each policy fund, the proxy that stands in for it before its own record is used, and the 3-month bill series. Hand-kept: the citations are the issuers' (#667, read 2026-10-18). tools/refresh_backtest_history.py reads this file and writes monthly_returns.csv, which nothing else writes.",
+  "_about": "The policy backtest's series (#667): each policy fund, the proxy that stands in for it before its own record is used, the benchmark legs the backtest is set beside that no fund or proxy supplies, and the 3-month bill series. Hand-kept: the citations are the issuers' (#667, read 2026-10-18). tools/refresh_backtest_history.py reads this file and writes monthly_returns.csv, which nothing else writes.",
   "first_month": "2006-02",
   "backtest_from": "2006-03",
   "reference": "SPY",
@@ -78,6 +78,9 @@
     "VFITX": {"inception": "10/28/91", "source": "https://workplace.vanguard.com/iippdf/pdfs/FS35.pdf", "source_date": "September 30, 2026"},
     "TIP": {"inception": "Dec 04, 2003", "source": "https://www.ishares.com/us/products/239467/ishares-tips-bond-etf", "source_date": "Oct 16, 2026"},
     "DBC": {"inception": "February 3, 2006 (commenced trading)", "source": "https://www.sec.gov/Archives/edgar/data/1328237/000119312526083563/dbc-20251231.htm", "source_date": "Form 10-K, fiscal year 2025, filed March 2, 2026"}
+  },
+  "benchmarks": {
+    "AGG": {"inception": "Sep 22, 2003", "source": "https://www.ishares.com/us/products/239458/ishares-core-total-us-bond-market-etf", "source_date": "Oct 16, 2026", "for": "the app's 60/40, 60% SPY and 40% AGG (src/benchmarks.py NAIVE_60_40); SPY is already a column"}
   },
   "bill": {
     "series": "DGS3MO",

@@ -2,8 +2,9 @@
 data/backtest/monthly_returns.csv.
 
 One row per month from data/backtest/series.json's ``first_month`` through the last
-complete month, one column per series: every policy fund, every proxy, and the 3-month
-bill series src/risk_free.py averages (FRED's DGS3MO). Each cell is that month's total
+complete month, one column per series: every policy fund, every proxy, every benchmark
+leg no fund or proxy supplies (AGG, for the app's 60/40), and the 3-month bill series
+src/risk_free.py averages (FRED's DGS3MO). Each cell is that month's total
 return as a decimal, empty before a series begins. series.json names each fund's proxy,
 the last month it stands in, why, and the issuers' citations; it is hand-kept.
 
@@ -22,7 +23,8 @@ REFUSES, AND WRITES NOTHING, when:
     for (or, for the bill, a month with no observation);
   * a fund's proxy does not cover every month from ``backtest_from`` through its
     ``proxy_until``, or the fund does not cover every month after it. A fund that
-    replaces its proxy at inception must begin exactly the month after.
+    replaces its proxy at inception must begin exactly the month after;
+  * a benchmark leg does not cover every month from ``backtest_from``.
 
 Nothing at runtime writes these files (tests/test_market_data_immutability.py). Run it
 with the network up and FRED_API_KEY set; review the diff and commit it.
@@ -60,8 +62,9 @@ def load_spec(path: Path = SPEC) -> dict:
 
 def series_names(spec: dict) -> "list[str]":
     """The file's columns after ``month``: the funds in series.json's order, then the
-    proxies in theirs, then the bill."""
-    return [*spec["funds"], *spec["proxies"], spec["bill"]["series"]]
+    proxies, then the benchmark legs, then the bill."""
+    return [*spec["funds"], *spec["proxies"], *spec.get("benchmarks", {}),
+            spec["bill"]["series"]]
 
 
 def fetch_history(ticker: str) -> pd.Series:
@@ -158,6 +161,10 @@ def _check_splices(spec: dict, frame: pd.DataFrame) -> None:
         gap = lacks(fund, own_from, months[-1])
         if gap:
             raise Refused(f"{fund}: no return for {', '.join(gap)}")
+    for leg in spec.get("benchmarks", {}):
+        gap = lacks(leg, start, months[-1])
+        if gap:
+            raise Refused(f"{leg}: the benchmark leg has no return for {', '.join(gap)}")
 
 
 def build(spec: dict, last_month: str, *,
@@ -171,15 +178,15 @@ def build(spec: dict, last_month: str, *,
     if last_month < spec["backtest_from"]:
         raise Refused(f"the last complete month {last_month} is before the backtest's "
                       f"first, {spec['backtest_from']}")
-    histories = {t: fetch(t) for t in dict.fromkeys(
-        [spec["reference"], *spec["funds"], *spec["proxies"]])}
+    priced = [*spec["funds"], *spec["proxies"], *spec.get("benchmarks", {})]
+    histories = {t: fetch(t) for t in dict.fromkeys([spec["reference"], *priced])}
     sessions = last_sessions(histories[spec["reference"]])
     if last_month not in sessions.index:
         raise Refused(f"{spec['reference']} has no session in {last_month}")
     months = [m for m in sessions.index if first <= m <= last_month]
 
     columns = {}
-    for t in [*spec["funds"], *spec["proxies"]]:
+    for t in priced:
         columns[t] = monthly_returns(t, histories[t], sessions, first, last_month)
     bill = spec["bill"]["series"]
     start = (pd.Period(first, "M").start_time - timedelta(days=7)).date().isoformat()
