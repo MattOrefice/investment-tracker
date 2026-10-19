@@ -163,10 +163,45 @@ def test_each_statistic_against_a_hand_computation():
                                                2009: 0.03})
     assert st.partial_years == (2007, 2009)
     assert st.windows == pytest.approx({2008: 0.0350139114131065})
+    assert st.no_volatility is None
     # The volatility, by hand: mean, then the squares about it over n - 1.
     mean = sum(R) / 15
     assert st.annual_volatility == pytest.approx(
         math.sqrt(sum((r - mean) ** 2 for r in R) / 14) * math.sqrt(12), rel=1e-12)
+
+
+def test_with_fewer_than_two_monthly_returns_there_is_no_volatility_or_sharpe():
+    """#672, decided by the owner on October 19, 2026: one month's sample standard
+    deviation is undefined, so the engine returns no volatility-based figure and says
+    why. The figures that do not need a volatility stand."""
+    st = pb.statistics(pd.Series([0.02], index=["2006-03"]),
+                       pd.Series([0.001], index=["2006-03"]))
+    assert (st.annual_volatility, st.sharpe) == (None, None)
+    assert st.no_volatility == pb.FEWER_THAN_TWO_MONTHS == "fewer than two monthly returns"
+    assert st.annual_return == pytest.approx(1.02 ** 12 - 1)
+    assert st.drawdown.depth == 0 and st.drawdown.recovered is None
+    assert st.calendar_years == pytest.approx({2006: 0.02}) and st.partial_years == (2006,)
+
+
+def test_with_every_monthly_return_the_same_there_is_no_volatility_or_sharpe():
+    """#672: the volatility is zero, and the Sharpe ratio divided by it."""
+    r = pd.Series([0.01] * 3, index=_months("2006-03", 3))
+    st = pb.statistics(r, r * 0)
+    assert (st.annual_volatility, st.sharpe) == (None, None)
+    assert st.no_volatility == pb.NO_VOLATILITY == (
+        "no volatility: every monthly return is the same")
+    assert st.annual_return == pytest.approx(1.01 ** 12 - 1)
+
+
+def test_a_benchmark_that_never_moves_no_longer_stops_the_backtest(use_demo_db):
+    """#672's case: SPY a constant 1% a month raised ZeroDivisionError in statistics()."""
+    history = pb.load_history().copy()
+    history["SPY"] = 0.01
+    bt = pb.run(history=history)
+    assert bt.statistics[pb.SP500].no_volatility == pb.NO_VOLATILITY
+    for name in (pb.POLICY, pb.SIXTY_FORTY):
+        assert bt.statistics[name].no_volatility is None
+        assert bt.statistics[name].sharpe is not None
 
 
 def test_a_drawdown_not_yet_recovered_has_no_recovery_month():
