@@ -52,7 +52,7 @@ OTHER_PAGES = {
     "pages/14_Asset_Location.py": "No Fidelity positions file found",
     "pages/15_Liquidity.py": "No Fidelity positions file found",
     # Needs no trade: the bootstrapped book's seeded policy runs, under its disclosure.
-    "pages/16_Policy_Backtest.py": "Hypothetical, back-tested results.",
+    "pages/16_Policy_Backtest.py": "Hypothetical, back-tested results:",
 }
 
 
