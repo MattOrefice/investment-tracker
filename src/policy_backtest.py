@@ -27,6 +27,13 @@ read as it stands, and the policy is the book's own.
 The page (pages/16_Policy_Backtest.py, PR 3) reads every figure it shows from run(): the
 statistics, the rebalances, each proxy's tracking against the fund it stands in for, and
 the paths its charts draw (wealth, drawdowns, rolling_annual).
+
+The page's rebuild for readability (decided by the owner on October 22, 2026) reads more
+from run(), and nothing it already returned changes: each series' ending value, best and
+worst month, share of positive months and the months its deepest drawdown took; its
+deepest fall reaching into each year in WINDOWS; the policy against each comparison;
+the rolling windows summed up; each rebalance's turnover; each sleeve on its own; and
+the six paragraphs the page prints, each read from those results.
 """
 from __future__ import annotations
 
@@ -68,6 +75,17 @@ POLICY = "Policy"
 SP500 = "S&P 500 (SPY)"
 SIXTY_FORTY = "60/40"
 
+# Up- and down-capture as Morningstar defines them (decided by the owner on October 22,
+# 2026), cited on the page with the source's date. Its definitions: the up capture ratio
+# is "a measure of a manager's performance in markets with returns at or above 0%
+# relative to the market (benchmark)", the down capture ratio over the periods "in which
+# the market return is less than 0" (page 29 and page 7).
+CAPTURE_SOURCE = {
+    "name": "Morningstar, Custom Calculation Data Points",
+    "url": "https://morningstardirect.morningstar.com/clientcomm/customcalculations.pdf",
+    "date": "October 2016",
+}
+
 
 class PolicyBacktestError(ValueError):
     """The backtest cannot be run as asked, and nothing was computed."""
@@ -86,21 +104,34 @@ class Sleeve:
 
 @dataclass(frozen=True)
 class Rebalance:
-    """A month-end check that found a sleeve outside its band: the month, and every
-    sleeve outside, in the policy's order."""
+    """A month-end check that found a sleeve outside its band: the month, every sleeve
+    outside, in the policy's order, and the turnover: half the sum of the absolute
+    differences between each sleeve's weight just before the reset and its target."""
 
     month: str
     triggers: "tuple[str, ...]"
+    turnover: float
 
 
 @dataclass(frozen=True)
 class Simulation:
-    """The policy's monthly returns, its rebalances, and each holding's share of the
-    portfolio at the start of every month (column "sleeve/fund")."""
+    """The policy's monthly returns, its rebalances, each holding's share of the
+    portfolio at the start of every month (column "sleeve/fund"), and each sleeve's
+    monthly return as the backtest held it (column: the sleeve)."""
 
     returns: pd.Series
     rebalances: "tuple[Rebalance, ...]"
     start_weights: pd.DataFrame
+    sleeve_returns: pd.DataFrame = field(default_factory=pd.DataFrame)
+
+
+@dataclass(frozen=True)
+class Point:
+    """A figure and the month it belongs to: a month's return, or a rolling window's
+    annualized return with the month the window ends."""
+
+    month: str
+    value: float
 
 
 @dataclass(frozen=True)
@@ -116,13 +147,36 @@ class Drawdown:
 
 
 @dataclass(frozen=True)
+class Episode:
+    """One fall of month-end wealth below an earlier high: its depth (negative), the
+    month of the high, the lowest month before wealth stood at the high again, the
+    months from the high to the low, and the first month at or above the high again
+    (None while it has not)."""
+
+    depth: float
+    peak: str
+    trough: str
+    months_to_trough: int
+    recovered: Optional[str]
+
+
+@dataclass(frozen=True)
 class Statistics:
     """What the page shows for one series. ``calendar_years`` holds every year the
     months reach, and ``partial_years`` those with fewer than twelve of them (the first
     and the current); ``windows`` the years in WINDOWS. With fewer than two monthly
     returns, or none that differ, there is no volatility: ``annual_volatility`` and
     ``sharpe`` are None and ``no_volatility`` says why (decided by the owner on October
-    19, 2026, #672)."""
+    19, 2026, #672).
+
+    ``ending_value`` is what GROWTH_OF became; ``best_month`` and ``worst_month`` the
+    series' highest and lowest monthly returns (the first, on a tie);
+    ``positive_share`` the share of months above 0%. ``months_to_trough`` and
+    ``months_to_recovery`` count the deepest drawdown's months from peak to trough and
+    from trough to recovery: None with no fall, and the second while it has not
+    recovered. ``episodes`` holds, for each year in WINDOWS the months reach, the
+    deepest fall whose months from peak to trough include a month of that year, or
+    None when no fall's do (stress_episodes)."""
 
     annual_return: float
     annual_volatility: Optional[float]
@@ -131,6 +185,82 @@ class Statistics:
     calendar_years: "dict[int, float]"
     partial_years: "tuple[int, ...]"
     windows: "dict[int, float]"
+    ending_value: float
+    best_month: Point
+    worst_month: Point
+    positive_share: float
+    months_to_trough: Optional[int]
+    months_to_recovery: Optional[int]
+    episodes: "dict[int, Optional[Episode]]"
+    no_volatility: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class Comparison:
+    """The policy beside one comparison over the backtest's months.
+
+    * ``active_return``: the policy's annualized return less the comparison's;
+    * ``beta``: the covariance of the two monthly series over the comparison's variance;
+    * ``correlation``: of the two monthly series;
+    * ``tracking_error``: the sample standard deviation of the monthly difference x
+      sqrt(12);
+    * up- and down-capture, as Morningstar defines them (CAPTURE_SOURCE): up markets are
+      the months the comparison returned at or above 0%, down markets those it returned
+      below 0%. Each capture is the policy's annualized
+      compound return over those months divided by the comparison's own, and both
+      returns are kept beside it (``up_policy``, ``up_comparison``; ``down_...``).
+
+    A figure the months cannot give is None: beta, correlation and tracking error with
+    fewer than two months, beta and correlation when the comparison never moves, the
+    correlation when the policy never moves, and a capture with no month of its kind
+    or a comparison return of 0% over them."""
+
+    months: int
+    active_return: float
+    beta: Optional[float]
+    correlation: Optional[float]
+    tracking_error: Optional[float]
+    up_months: int
+    up_policy: Optional[float]
+    up_comparison: Optional[float]
+    up_capture: Optional[float]
+    down_months: int
+    down_policy: Optional[float]
+    down_comparison: Optional[float]
+    down_capture: Optional[float]
+
+
+@dataclass(frozen=True)
+class RollingSummary:
+    """The rolling windows of ``months`` months, summed up: how many there are and the
+    months the first and last end; for each comparison, the windows in which the
+    policy's annualized return was below the comparison's, as a count and a share; and
+    for each series its best and worst window and the latest. With no window every
+    share and point is None."""
+
+    months: int
+    windows: int
+    first: Optional[str]
+    last: Optional[str]
+    below: "dict[str, int]"
+    share_below: "dict[str, Optional[float]]"
+    best: "dict[str, Optional[Point]]"
+    worst: "dict[str, Optional[Point]]"
+    latest: "dict[str, Optional[Point]]"
+
+
+@dataclass(frozen=True)
+class SleeveStatistics:
+    """One sleeve's monthly returns as the backtest held it, on their own: annualized
+    return, volatility (None with the reason, as statistics() gives it), the deepest
+    drawdown, and the correlation with the S&P 500 (SPY) over the backtest's months
+    (None when either never moves, or with fewer than two months)."""
+
+    sleeve: str
+    annual_return: float
+    annual_volatility: Optional[float]
+    drawdown: Drawdown
+    correlation: Optional[float]
     no_volatility: Optional[str] = None
 
 
@@ -158,7 +288,9 @@ class Backtest:
     """The whole result: the policy's simulation, the three monthly return series side
     by side (POLICY, SP500, SIXTY_FORTY), the bill's monthly returns, each series'
     statistics, the sleeves the policy was run with, and each of their funds' tracking
-    against its proxy (funds with no proxy are absent)."""
+    against its proxy (funds with no proxy are absent). Then the policy against each
+    comparison (keyed SP500 and SIXTY_FORTY), the rolling windows summed up, and each
+    sleeve's statistics in the policy's order."""
 
     simulation: Simulation
     returns: pd.DataFrame
@@ -166,6 +298,9 @@ class Backtest:
     statistics: "dict[str, Statistics]"
     sleeves: "tuple[Sleeve, ...]"
     tracking: "dict[str, Tracking]" = field(default_factory=dict)
+    comparisons: "dict[str, Comparison]" = field(default_factory=dict)
+    rolling: "Optional[RollingSummary]" = None
+    sleeve_statistics: "dict[str, SleeveStatistics]" = field(default_factory=dict)
 
 
 def load_history(path: Path = HISTORY) -> pd.DataFrame:
@@ -254,7 +389,9 @@ def simulate(returns: pd.DataFrame, sleeves: "tuple[Sleeve, ...] | list[Sleeve]"
     Each month every holding earns its fund's return for that month and nothing later.
     Then the month-end check: compute_drift's verdict on each sleeve's share of the
     portfolio. When any sleeve is outside its band, every holding is reset to its
-    sleeve's target times its share of the sleeve."""
+    sleeve's target times its share of the sleeve, and the rebalance records its
+    turnover from the weights just before the reset. Each sleeve's monthly return is
+    its holdings' value at the month's end over their value at its start."""
     from src.rebalance import compute_drift
     targets = {s.name: s.target for s in sleeves}
     bands = {s.name: s.band for s in sleeves}
@@ -262,22 +399,32 @@ def simulate(returns: pd.DataFrame, sleeves: "tuple[Sleeve, ...] | list[Sleeve]"
     def reset(total: float) -> "dict[tuple[str, str], float]":
         return {(s.name, f): total * s.target * w for s in sleeves for f, w in s.mix}
 
+    def by_sleeve(held: "dict[tuple[str, str], float]") -> "dict[str, float]":
+        return {s.name: sum(held[(s.name, f)] for f, _w in s.mix) for s in sleeves}
+
     values = reset(1.0)
-    monthly, starts, rebalances = [], [], []
+    monthly, starts, rebalances, sleeve_monthly = [], [], [], []
     for month in returns.index:
         before = sum(values.values())
+        sleeves_before = by_sleeve(values)
         starts.append({f"{s}/{f}": v / before for (s, f), v in values.items()})
         values = {(s, f): v * (1 + float(returns.at[month, f])) for (s, f), v in values.items()}
         after = sum(values.values())
         monthly.append(after / before - 1)
-        weights = {s.name: sum(values[(s.name, f)] for f, _w in s.mix) / after for s in sleeves}
+        sleeves_after = by_sleeve(values)
+        sleeve_monthly.append({n: sleeves_after[n] / sleeves_before[n] - 1
+                               for n in sleeves_after})
+        weights = {n: v / after for n, v in sleeves_after.items()}
         drift = compute_drift(weights, targets, bands)
         outside = tuple(s.name for s in sleeves if not bool(drift.at[s.name, "In Band"]))
         if outside:
-            rebalances.append(Rebalance(month, outside))
+            turnover = sum(abs(weights[s.name] - s.target) for s in sleeves) / 2
+            rebalances.append(Rebalance(month, outside, turnover))
             values = reset(after)
     return Simulation(pd.Series(monthly, index=returns.index, name=POLICY),
-                      tuple(rebalances), pd.DataFrame(starts, index=returns.index))
+                      tuple(rebalances), pd.DataFrame(starts, index=returns.index),
+                      pd.DataFrame(sleeve_monthly, index=returns.index,
+                                   columns=[s.name for s in sleeves]))
 
 
 def quarterly_mix(returns: pd.DataFrame, mix: "tuple[tuple[str, float], ...]") -> pd.Series:
@@ -323,6 +470,54 @@ def rolling_annual(returns: pd.Series, months: int = ROLLING_MONTHS) -> pd.Serie
     return (growth ** (12 / months) - 1).dropna()
 
 
+def months_between(first: str, last: str) -> int:
+    """How many months ``last`` falls after ``first``: '2008-02' to '2008-04' is 2."""
+    return (pd.Period(last, "M") - pd.Period(first, "M")).n
+
+
+def episodes(returns: pd.Series) -> "list[Episode]":
+    """Every fall of month-end wealth below an earlier high, in order. A fall runs from
+    the high (the first month-end of an unbroken run at it) through the months below it;
+    its trough is the lowest of them (the first, on a tie) and its recovery the first
+    month back at or above the high, or None when the months end below it. On wealth
+    that never touches an earlier high exactly, the deepest is statistics()'s drawdown."""
+    w = wealth(returns)
+    fall = (w / w.cummax() - 1).to_numpy()
+    months = list(w.index)
+    out, i = [], 0
+    while i < len(months):
+        if fall[i] >= 0:
+            i += 1
+            continue
+        start = i
+        while i < len(months) and fall[i] < 0:
+            i += 1
+        peak = start - 1
+        while peak > 0 and w.iloc[peak - 1] == w.iloc[peak]:
+            peak -= 1
+        low = start + int(fall[start:i].argmin())
+        out.append(Episode(float(fall[low]), months[peak], months[low],
+                           months_between(months[peak], months[low]),
+                           months[i] if i < len(months) else None))
+    return out
+
+
+def stress_episodes(returns: pd.Series) -> "dict[int, Optional[Episode]]":
+    """For each year in WINDOWS the months reach, the deepest fall (episodes()) whose
+    months from peak to trough, both included, include a month of that year; the
+    earliest on a tie, and None when no fall's do. Nothing is typed: each year's fall is
+    found in the series."""
+    reached = {int(m[:4]) for m in returns.index}
+    falls = episodes(returns)
+    out: "dict[int, Optional[Episode]]" = {}
+    for year in WINDOWS:
+        if year not in reached:
+            continue
+        within = [e for e in falls if int(e.peak[:4]) <= year <= int(e.trough[:4])]
+        out[year] = min(within, key=lambda e: e.depth) if within else None
+    return out
+
+
 def statistics(returns: pd.Series, bill: pd.Series) -> Statistics:
     """The page's statistics for one monthly series.
 
@@ -333,7 +528,11 @@ def statistics(returns: pd.Series, bill: pd.Series) -> Statistics:
     * maximum drawdown: on month-end wealth, which starts at 1.0 at the end of the month
       before the first return;
     * calendar years: each year's months compounded, the years with fewer than twelve
-      named as partial.
+      named as partial;
+    * ending value: GROWTH_OF times the last month-end's wealth, the growth chart's last
+      point; best and worst month; the share of months above 0%; the months the deepest
+      drawdown took from peak to trough and from trough to recovery;
+    * the stress episodes: stress_episodes().
 
     Volatility and the Sharpe ratio need at least two monthly returns that differ. With
     fewer than two months the sample standard deviation is undefined, and with every
@@ -353,13 +552,15 @@ def statistics(returns: pd.Series, bill: pd.Series) -> Statistics:
     peak = path.loc[:trough].idxmax()
     back = path.loc[trough:]
     back = back[back >= path[peak]]
-    recovered = back.index[0] if len(back) and float(fall.min()) < 0 else None
+    fell = float(fall.min()) < 0
+    recovered = back.index[0] if len(back) and fell else None
     years: "dict[int, float]" = {}
     counts: "dict[int, int]" = {}
     for month, r in returns.items():
         y = int(month[:4])
         years[y] = (1 + years.get(y, 0.0)) * (1 + float(r)) - 1
         counts[y] = counts.get(y, 0) + 1
+    best, worst = returns.idxmax(), returns.idxmin()
     return Statistics(
         annual_return=annual,
         annual_volatility=vol,
@@ -368,8 +569,78 @@ def statistics(returns: pd.Series, bill: pd.Series) -> Statistics:
         calendar_years=years,
         partial_years=tuple(y for y, c in counts.items() if c < 12),
         windows={y: years[y] for y in WINDOWS if y in years},
+        ending_value=float(path.iloc[-1] * GROWTH_OF),
+        best_month=Point(best, float(returns[best])),
+        worst_month=Point(worst, float(returns[worst])),
+        positive_share=float((returns > 0).mean()),
+        months_to_trough=months_between(peak, trough) if fell else None,
+        months_to_recovery=months_between(trough, recovered) if recovered else None,
+        episodes=stress_episodes(returns),
         no_volatility=no_volatility,
     )
+
+
+def compare(policy: pd.Series, other: pd.Series) -> Comparison:
+    """The policy beside one comparison, month for month (Comparison says how each
+    figure is computed)."""
+    n = len(policy)
+
+    def capture(months: pd.Series) -> "tuple[Optional[float], Optional[float], Optional[float]]":
+        if not months.any():
+            return None, None, None
+        mine, theirs = annualized(policy[months]), annualized(other[months])
+        return mine, theirs, (mine / theirs if theirs != 0 else None)
+
+    up, down = other >= 0, other < 0
+    up_policy, up_comparison, up_capture = capture(up)
+    down_policy, down_comparison, down_capture = capture(down)
+    other_moves = n >= 2 and other.nunique() > 1
+    return Comparison(
+        months=n,
+        active_return=annualized(policy) - annualized(other),
+        beta=float(policy.cov(other) / other.var()) if other_moves else None,
+        correlation=(float(policy.corr(other)) if other_moves and policy.nunique() > 1
+                     else None),
+        tracking_error=float((policy - other).std(ddof=1) * math.sqrt(12)) if n >= 2 else None,
+        up_months=int(up.sum()), up_policy=up_policy, up_comparison=up_comparison,
+        up_capture=up_capture,
+        down_months=int(down.sum()), down_policy=down_policy,
+        down_comparison=down_comparison, down_capture=down_capture,
+    )
+
+
+def rolling_summary(returns: pd.DataFrame, months: int = ROLLING_MONTHS) -> RollingSummary:
+    """``returns``' rolling windows of ``months`` months (rolling_annual), summed up.
+    The policy is the column POLICY; every other column is a comparison. A window
+    counts as below a comparison only when the policy's return is strictly below it."""
+    paths = {name: rolling_annual(returns[name], months) for name in returns.columns}
+    policy = paths[POLICY]
+    k = len(policy)
+    others = [name for name in returns.columns if name != POLICY]
+    below = {name: int((policy < paths[name]).sum()) for name in others}
+
+    def point(path: pd.Series, month: Optional[str]) -> Optional[Point]:
+        return None if month is None else Point(month, float(path[month]))
+
+    return RollingSummary(
+        months=months, windows=k,
+        first=policy.index[0] if k else None, last=policy.index[-1] if k else None,
+        below=below,
+        share_below={name: (below[name] / k if k else None) for name in others},
+        best={n: point(p, p.idxmax() if k else None) for n, p in paths.items()},
+        worst={n: point(p, p.idxmin() if k else None) for n, p in paths.items()},
+        latest={n: point(p, p.index[-1] if k else None) for n, p in paths.items()},
+    )
+
+
+def sleeve_statistics(sleeve: str, returns: pd.Series, spy: pd.Series,
+                      bill: pd.Series) -> SleeveStatistics:
+    """One sleeve's monthly returns on their own, by statistics()' definitions, and
+    their correlation with ``spy`` over the same months."""
+    st = statistics(returns, bill)
+    moves = len(returns) >= 2 and returns.nunique() > 1 and spy.nunique() > 1
+    return SleeveStatistics(sleeve, st.annual_return, st.annual_volatility, st.drawdown,
+                            float(returns.corr(spy)) if moves else None, st.no_volatility)
 
 
 def tracking_from(fund: str, spec: dict) -> Optional[str]:
@@ -430,7 +701,14 @@ def run(history: Optional[pd.DataFrame] = None, spec: Optional[dict] = None,
                     {name: statistics(returns[name], bill) for name in returns.columns},
                     sleeves,
                     {f: tracking(f, p, history, tracking_from(f, spec))
-                     for f, p in proxied.items()})
+                     for f, p in proxied.items()},
+                    comparisons={name: compare(returns[POLICY], returns[name])
+                                 for name in (SP500, SIXTY_FORTY)},
+                    rolling=rolling_summary(returns),
+                    sleeve_statistics={
+                        s.name: sleeve_statistics(s.name, simulation.sleeve_returns[s.name],
+                                                  returns[SP500], bill)
+                        for s in sleeves})
 
 
 # ── What the page says, read from run() and series.json ──────────────────────
@@ -561,3 +839,263 @@ def rebalance_sentence(bt: Backtest) -> str:
     checks = "One month-end check" if k == 1 else f"{k} month-end checks"
     return (f"{checks} from {first} to {last} found a sleeve outside its band; at "
             f"{'it' if k == 1 else 'each'}, every sleeve went back to its target.")
+
+
+# ── The page's paragraphs ─────────────────────────────────────────────────────
+# Each returns text the page prints, read from a Backtest alone. Every comparison of the
+# policy with the S&P 500 or the 60/40 states both figures and the months they cover,
+# and no sentence calls either better or worse. Each covers what a short or flat history
+# leaves missing: no volatility, no rolling window, no full year, no rebalance, no fall.
+
+def pct(x: float, signed: bool = False) -> str:
+    """0.0846 as '8.46%', or signed '+8.46%': the page's tables print the same."""
+    return f"{x * 100:+.2f}%" if signed else f"{x * 100:.2f}%"
+
+
+def money(x: float) -> str:
+    """53170.83 as '$53,171'."""
+    return f"${x:,.0f}"
+
+
+def count(n: int, noun: str) -> str:
+    """'1 month', '247 months'."""
+    return f"{n} {noun}" if n == 1 else f"{n} {noun}s"
+
+
+def rolling_label(months: int = ROLLING_MONTHS) -> str:
+    """'5-year' for 60 months, '18-month' for a span that is not whole years."""
+    return f"{months // 12}-year" if months % 12 == 0 else f"{months}-month"
+
+
+def series_name(name: str) -> str:
+    """How a sentence names a series: 'the policy', 'the S&P 500 (SPY)', 'the 60/40'."""
+    return "the policy" if name == POLICY else f"the {name}"
+
+
+def _window(bt: Backtest) -> str:
+    """'from March 2006 to September 2026'."""
+    return f"from {month_name(bt.returns.index[0])} to {month_name(bt.returns.index[-1])}"
+
+
+def _same(name: str) -> str:
+    """Why a series has no dispersion, for a figure that needs one."""
+    return f"every monthly return of {series_name(name)} is the same"
+
+
+def _cap(text: str) -> str:
+    """'from March 2006' as 'From March 2006'."""
+    return text[0].upper() + text[1:]
+
+
+def summary_read(bt: Backtest) -> str:
+    """Each series' annualized return, volatility and Sharpe ratio over the backtest's
+    months; then, against each comparison over the same months, the policy's active
+    return with both annualized returns, its beta, correlation and tracking error, and
+    its up- and down-capture with both annualized returns behind each."""
+    n = len(bt.returns)
+    window = _window(bt)
+
+    def series(name: str, verb: str) -> str:
+        st = bt.statistics[name]
+        out = f"{series_name(name)}{verb} {pct(st.annual_return)} a year"
+        if st.no_volatility:
+            return out + f", with no volatility or Sharpe ratio ({st.no_volatility})"
+        return (out + f", with {pct(st.annual_volatility)} volatility and a Sharpe ratio "
+                f"of {st.sharpe:.2f}")
+
+    names = list(bt.returns.columns)
+    rest = [series(x, "") for x in names[1:]]
+    out = [f"{_cap(window)} ({count(n, 'month')}), {series(names[0], ' returned')}"
+           + "".join(f"; {'and ' if i == len(rest) - 1 else ''}{x}"
+                     for i, x in enumerate(rest)) + "."]
+    policy = bt.statistics[POLICY].annual_return
+    for name, c in bt.comparisons.items():
+        them = series_name(name)
+        if n < 2:
+            why = {"beta": FEWER_THAN_TWO_MONTHS, "correlation": FEWER_THAN_TWO_MONTHS}
+        elif bt.returns[name].nunique() < 2:
+            why = {"beta": _same(name), "correlation": _same(name)}
+        else:
+            why = {"beta": "", "correlation": _same(POLICY)}
+        joint = [f"beta {c.beta:.2f}" if c.beta is not None else f"no beta ({why['beta']})",
+                 f"correlation {c.correlation:.2f}" if c.correlation is not None
+                 else f"no correlation ({why['correlation']})",
+                 f"tracking error {pct(c.tracking_error)}" if c.tracking_error is not None
+                 else f"no tracking error ({FEWER_THAN_TWO_MONTHS})"]
+        out.append(f"Against {them} {window}, the policy's active return was "
+                   f"{pct(c.active_return, signed=True)} a year, from {pct(policy)} for the "
+                   f"policy and {pct(bt.statistics[name].annual_return)} for {them}.")
+        out.append(f"Over the same months, against {them}: {', '.join(joint)}.")
+        for side, months, mine, theirs, ratio in (
+                ("up", c.up_months, c.up_policy, c.up_comparison, c.up_capture),
+                ("down", c.down_months, c.down_policy, c.down_comparison, c.down_capture)):
+            when = "returned at or above 0%" if side == "up" else "returned below 0%"
+            article = "an" if side == "up" else "a"
+            if months == 0:
+                out.append(f"{_cap(them)} {when} in no month {window}, so there is no "
+                           f"{side}-capture against it.")
+                continue
+            read = (f"{article} {side}-capture of {pct(ratio)}" if ratio is not None else
+                    f"no {side}-capture, since {them} returned 0% over them")
+            out.append(f"In the {count(months, 'month')} {window} that {them} {when}, the "
+                       f"annualized returns were {pct(mine)} for the policy and "
+                       f"{pct(theirs)} for {them}: {read}.")
+    return " ".join(out)
+
+
+def growth_read(bt: Backtest) -> str:
+    """What GROWTH_OF became in each series by the last month, and the months the
+    growth chart's bands shade: the policy's stress episodes, peak to trough."""
+    start = month_name(wealth(bt.returns[POLICY]).index[0])
+    values = [f"{money(bt.statistics[x].ending_value)} in {series_name(x)}"
+              for x in bt.returns.columns]
+    out = [f"{money(GROWTH_OF)} placed at the end of {start} was worth {_list(values)} "
+           f"at the end of {month_name(bt.returns.index[-1])}."]
+    years = bt.statistics[POLICY].episodes
+    shaded = [f"{y}, {month_name(e.peak)} to {month_name(e.trough)}"
+              for y, e in years.items() if e is not None]
+    if shaded:
+        out.append("Each shaded band runs from the policy's month-end high to its low in "
+                   f"its deepest fall reaching into the year it names: {'; '.join(shaded)}.")
+    unshaded = [str(y) for y, e in years.items() if e is None]
+    if unshaded:
+        out.append(f"No fall of the policy reaches into {_list(unshaded)}, so no band is "
+                   f"shaded for {'it' if len(unshaded) == 1 else 'them'}.")
+    return " ".join(out)
+
+
+def _fall(depth: float, peak: str, trough: str, recovered: Optional[str],
+          to_trough: int, last: str) -> str:
+    """'-49.04%, from its October 2007 high to its February 2009 low (16 months), back
+    at that high in April 2011 (26 months later)'."""
+    out = (f"{pct(depth)}, from its {month_name(peak)} high to its {month_name(trough)} "
+           f"low ({count(to_trough, 'month')})")
+    if recovered is None:
+        return out + f", not back at that high by {month_name(last)}"
+    return (out + f", back at that high in {month_name(recovered)} "
+            f"({count(months_between(trough, recovered), 'month')} later)")
+
+
+def drawdown_read(bt: Backtest) -> str:
+    """Each series' deepest drawdown over the backtest's months, with its months peak to
+    trough and back; then the policy's deepest fall reaching into each year in
+    WINDOWS."""
+    last = bt.returns.index[-1]
+    window = _window(bt)
+    out = []
+    for name in bt.returns.columns:
+        st = bt.statistics[name]
+        dd = st.drawdown
+        if dd.depth >= 0:
+            out.append(f"{_cap(series_name(name))} closed no month below an earlier "
+                       f"month-end high {window}.")
+            continue
+        out.append(f"The deepest drawdown of {series_name(name)} {window} was "
+                   f"{_fall(dd.depth, dd.peak, dd.trough, dd.recovered, st.months_to_trough, last)}.")
+    years = bt.statistics[POLICY].episodes
+    if years:
+        parts = [f"{y}, none: no fall of the policy reaches into it" if e is None else
+                 f"{y}, {_fall(e.depth, e.peak, e.trough, e.recovered, e.months_to_trough, last)}"
+                 for y, e in years.items()]
+        out.append("The policy's deepest fall reaching into each of "
+                   f"{_list([str(y) for y in years])}: {'; '.join(parts)}.")
+    return " ".join(out)
+
+
+def rolling_read(bt: Backtest) -> str:
+    """The rolling windows summed up: in how many the policy's annualized return was
+    below each comparison's and in how many it was not, the policy's best and worst
+    window, and the latest window's return for each series. With no window, why."""
+    r = bt.rolling
+    label = rolling_label(r.months)
+    if r.windows == 0:
+        return (f"No rolling {label} return is shown: the history holds "
+                f"{count(len(bt.returns), 'month')} {_window(bt)}, fewer than {r.months}.")
+    span = (f"ending {month_name(r.first)} to {month_name(r.last)}" if r.windows > 1
+            else f"ending {month_name(r.first)}")
+    out = []
+    for name, below in r.below.items():
+        out.append(f"In {below} ({pct(r.share_below[name])}) of the "
+                   f"{count(r.windows, f'rolling {label} window')} {span}, the policy's "
+                   "annualized return was below "
+                   f"that of {series_name(name)}, and in the other {r.windows - below} it "
+                   "was at or above it.")
+    best, worst = r.best[POLICY], r.worst[POLICY]
+    out.append(f"Of those windows, the policy's best ended in {month_name(best.month)}, at "
+               f"{pct(best.value)} a year, and its worst in {month_name(worst.month)}, at "
+               f"{pct(worst.value)} a year.")
+    latest = [f"{pct(p.value)} for {series_name(name)}" for name, p in r.latest.items()]
+    out.append(f"In the latest, ending {month_name(r.last)}, the annualized returns were "
+               f"{_list(latest)}.")
+    return " ".join(out)
+
+
+def calendar_read(bt: Backtest) -> str:
+    """Over the full calendar years: in how many the policy's return was below each
+    comparison's and in how many it was not, and the policy's best and worst full year;
+    with one full year, the three returns. Partial years are named and not counted."""
+    st = bt.statistics[POLICY]
+    full = [y for y in st.calendar_years if y not in st.partial_years]
+    out = []
+    if not full:
+        out.append(f"The backtest holds no full calendar year {_window(bt)}, so none is "
+                   "counted.")
+    elif len(full) == 1:
+        y = full[0]
+        returns = [f"{pct(bt.statistics[x].calendar_years[y], signed=True)} for "
+                   f"{series_name(x)}" for x in bt.returns.columns]
+        out.append(f"In {y}, the only full calendar year, the returns were {_list(returns)}.")
+    else:
+        span = f"the {len(full)} full calendar years from {full[0]} to {full[-1]}"
+        for name in bt.comparisons:
+            theirs = bt.statistics[name].calendar_years
+            below = sum(st.calendar_years[y] < theirs[y] for y in full)
+            out.append(f"In {below} of {span}, the policy's return was below that of "
+                       f"{series_name(name)}, and in the other {len(full) - below} it was "
+                       "at or above it.")
+        best = max(full, key=lambda y: st.calendar_years[y])
+        worst = min(full, key=lambda y: st.calendar_years[y])
+        out.append(f"The policy's best of those years was {best}, at "
+                   f"{pct(st.calendar_years[best], signed=True)}, and its worst {worst}, at "
+                   f"{pct(st.calendar_years[worst], signed=True)}.")
+    partial = [f"{y} ({year_span(y, bt)})" for y in st.partial_years]
+    if partial:
+        out.append(f"{_list(partial)} "
+                   f"{'is a partial year' if len(partial) == 1 else 'are partial years'}, "
+                   "not counted here.")
+    return " ".join(out)
+
+
+def rebalance_read(bt: Backtest) -> str:
+    """How many checks rebalanced (rebalance_sentence), the average months between
+    them, the sleeves outside their bands most often, and the largest turnover."""
+    done = bt.simulation.rebalances
+    k = len(done)
+    out = [rebalance_sentence(bt)]
+    if k == 1:
+        r = done[0]
+        one = len(r.triggers) == 1
+        out.append(f"It came in {month_name(r.month)}, when {_list(list(r.triggers))} "
+                   f"{'was' if one else 'were'} outside {'its band' if one else 'their bands'}"
+                   f", with a turnover of {pct(r.turnover)} of the portfolio.")
+    elif k > 1:
+        apart = months_between(done[0].month, done[-1].month) / (k - 1)
+        out.append(f"They came on average {apart:.1f} months apart, from the first in "
+                   f"{month_name(done[0].month)} to the last in {month_name(done[-1].month)}.")
+        times = {s.name: sum(s.name in r.triggers for r in done) for s in bt.sleeves}
+        most = max(times.values())
+        often = [name for name, t in times.items() if t == most]
+        if len(often) == 1:
+            out.append(f"{often[0]} was outside its band at {most} of the {k} checks, the "
+                       "most of any sleeve.")
+        elif most == 1:
+            out.append(f"{_list(often)} were each outside their bands at one of the {k} "
+                       "checks, and no sleeve at two.")
+        else:
+            out.append(f"{_list(often)} were each outside their bands at {most} of the {k} "
+                       "checks, the most of any sleeve.")
+        top = max(done, key=lambda r: r.turnover)
+        out.append(f"The largest turnover of the {k}, half the sum of each sleeve's distance "
+                   f"from its target, was {pct(top.turnover)} of the portfolio, at the "
+                   f"{month_name(top.month)} check.")
+    return " ".join(out)
