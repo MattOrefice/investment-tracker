@@ -114,6 +114,22 @@ jobs:
         # the page reads it. Lockstep with tests/test_pii_guards.py.
         run: python scripts/scan_committed_dbs_pii.py
 
+      - name: Guard — every tracked data file read-only before the suite
+        # THE OUT-OF-PROCESS GUARD EVERY LOCAL RUN HAS (decided by the owner on October
+        # 22, 2026). The in-process traps in tests/conftest.py enumerate the surfaces a
+        # write can take, and enumeration has failed before: #271, and the parquet path
+        # in #678, where pandas 3.1.0's to_parquet slipped past the trap and wrote
+        # data/shiller_cape.csv on this runner, failing every test that read it after.
+        # A read-only file refuses a write whatever surface it comes through, so the
+        # runner gets the guard every local run has (CLAUDE.md, "Guards"). The runner's
+        # user is not root, so the bits hold. The step prints how many files it made
+        # read-only, and fails if any tracked file is still writable.
+        run: |
+          git ls-files -z data | xargs -0 chmod a-w
+          writable=$(git ls-files -z data | xargs -0 sh -c 'for f; do test -w "$f" && echo "$f"; done' _ || true)
+          echo "read-only: $(git ls-files data | wc -l) tracked data files"
+          test -z "$writable" || { echo "still writable: $writable"; exit 1; }
+
       - name: Run fast tests (slow/network tests excluded)
         # Exclusions live in pytest.ini addopts (not slow and not live_data). Do NOT add a CLI -m here — it overrides addopts and silently re-includes the live_data tests (live external API calls on every push).
         run: python -m pytest --tb=long -q -n 4

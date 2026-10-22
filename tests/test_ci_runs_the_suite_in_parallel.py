@@ -63,6 +63,16 @@ def test_ci_installs_the_ci_requirements_and_runs_the_suite_on_four_workers():
     assert args.count("-n") == 1 and args[args.index("-n") + 1] == "4", args
 
 
+def test_ci_makes_every_tracked_data_file_read_only_before_the_suite():
+    """The runner gets the out-of-process guard every local run has (decided by the
+    owner on October 22, 2026): the in-process traps enumerate surfaces, and
+    enumeration has failed before (#271, the parquet path in #678)."""
+    text = CI.read_text(encoding="utf-8")
+    guard = text.index("git ls-files -z data | xargs -0 chmod a-w")
+    suite = text.index("run: python -m pytest")
+    assert guard < suite
+
+
 def test_the_installed_xdist_is_the_pinned_one():
     try:
         installed = version("pytest-xdist")
