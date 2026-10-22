@@ -41,16 +41,20 @@ def test_two_sleeves_through_a_breach_and_a_full_rebalance():
     March: X +10%, Y 0%. A = 0.66, B = 0.40, total 1.06: A is 62.26%, inside its band.
     April: X +20%, Y -10%. A = 0.792, B = 0.36, total 1.152: A is 68.75%, 8.75 points
     over, B 8.75 under. Both are outside: every sleeve goes back to target, A = 0.6912,
-    B = 0.4608.
-    May: X 0%, Y +10%. From 60/40 the portfolio returns 0.4 x 10% = 4%."""
+    B = 0.4608. The turnover is half of 8.75 + 8.75 points: 8.75%.
+    May: X 0%, Y +10%. From 60/40 the portfolio returns 0.4 x 10% = 4%.
+    Each sleeve holds one fund, so each sleeve's return is its fund's."""
     returns = pd.DataFrame({"X": [0.10, 0.20, 0.0], "Y": [0.0, -0.10, 0.10]},
                            index=_months("2006-03", 3))
     sim = pb.simulate(returns, TWO)
     assert list(sim.returns) == pytest.approx([0.06, 1.152 / 1.06 - 1, 0.04], abs=1e-15)
-    assert sim.rebalances == (pb.Rebalance("2006-04", ("A", "B")),)
+    assert sim.rebalances == (pb.Rebalance("2006-04", ("A", "B"), pytest.approx(0.0875)),)
     assert dict(sim.start_weights.loc["2006-04"]) == pytest.approx(
         {"A/X": 0.66 / 1.06, "B/Y": 0.40 / 1.06})
     assert dict(sim.start_weights.loc["2006-05"]) == pytest.approx({"A/X": 0.6, "B/Y": 0.4})
+    for sleeve, fund in (("A", "X"), ("B", "Y")):
+        assert list(sim.sleeve_returns[sleeve]) == pytest.approx(list(returns[fund]))
+    assert list(sim.sleeve_returns.columns) == ["A", "B"]
 
 
 def test_a_drift_exactly_at_the_band_stays_inside():
@@ -66,7 +70,8 @@ def test_the_real_assets_mix_resets_only_when_the_portfolio_rebalances():
     March: VNQ +10%: Real Assets is 10.54%, inside, so no rebalance, and VNQ's share of
     the sleeve drifts to 0.066 / 0.106. April: equity -20%: Real Assets is 12.83% and
     equity 87.17%, both outside, so the portfolio rebalances and the sleeve is split
-    60/40 again in May."""
+    60/40 again in May. The turnover is half of 2.83 + 2.83 points: 0.106 / 0.826 - 0.1.
+    The sleeve earns 0.6 x 10% = 6% in March, as the backtest holds it."""
     sleeves = (pb.Sleeve("Equity", 0.9, 0.02, (("E", 1.0),)),
                pb.Sleeve(pb.REAL_ASSETS, 0.1, 0.02, pb.REAL_ASSETS_MIX))
     returns = pd.DataFrame({"E": [0.0, -0.20, 0.0], "VNQ": [0.10, 0.0, 0.0],
@@ -79,8 +84,11 @@ def test_the_real_assets_mix_resets_only_when_the_portfolio_rebalances():
 
     assert vnq_share("2006-03") == pytest.approx(0.6)
     assert vnq_share("2006-04") == pytest.approx(0.066 / 0.106)
-    assert sim.rebalances == (pb.Rebalance("2006-04", ("Equity", pb.REAL_ASSETS)),)
+    assert sim.rebalances == (pb.Rebalance("2006-04", ("Equity", pb.REAL_ASSETS),
+                                            pytest.approx(0.106 / 0.826 - 0.1)),)
     assert vnq_share("2006-05") == pytest.approx(0.6)
+    assert list(sim.sleeve_returns[pb.REAL_ASSETS]) == pytest.approx([0.06, 0.0, 0.0])
+    assert list(sim.sleeve_returns["Equity"]) == pytest.approx([0.0, -0.20, 0.0])
 
 
 def test_no_month_reads_a_later_months_return():
@@ -364,7 +372,7 @@ def test_the_rebalance_sentence_covers_none_one_and_several():
 
     def said(n):
         sim = dataclasses.replace(bt.simulation, rebalances=tuple(
-            pb.Rebalance("2006-04", ("A",)) for _ in range(n)))
+            pb.Rebalance("2006-04", ("A",), 0.01) for _ in range(n)))
         return pb.rebalance_sentence(dataclasses.replace(bt, simulation=sim))
 
     assert said(0) == ("No month-end check from March 2006 to May 2006 found a sleeve "
