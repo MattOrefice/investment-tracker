@@ -1,18 +1,26 @@
 # Pinned exactly: the mobile stylesheet targets data-testid internals, so an
 # unpinned Cloud rebuild onto a newer Streamlit could silently break styling.
 streamlit==1.57.0
-# Ranges, not pins: pandas 2.2.3 and 3.0.x (3.0.3 AND 3.0.5) were verified
-# bit-identical on the 12-sleeve Brinson-Fachler reconciliation — full-coverage AND
-# with the benchmark-coverage-gap renormalization branch deliberately forced into a
-# state that changes the numbers — so there is no version-sensitive operation to pin
-# against. The earlier "pandas 3 breaks BF" pin was a misattribution of a demo.db
-# price-cache-leak symptom (see the CHANGELOG 2026-07-23 correction). The gap-branch
-# value is now golden-pinned by
+# pandas pinned exactly at 3.0.6, the version main's last green CI run installed (run
+# 39264037079, October 19, 2026; decided by the owner on October 22, 2026, #678).
+# pandas 3.1.0 reached CI on October 22, the day it was released, and turned every run
+# red. Its to_parquet no longer goes through builtins.open, so the write-surface test's
+# trap missed the write and it landed in a tracked file; and a series that never moves
+# now has a NaN skewness. The earlier note that pandas was safe to float was about
+# numerics, and it still holds: this break was a write path. Moving to 3.1 is #678's,
+# in its own PR, with the whole suite on it.
+pandas==3.0.6
+# A range, not a pin, as pandas was until #678: pandas 2.2.3 and 3.0.x (3.0.3 AND
+# 3.0.5) were verified bit-identical on the 12-sleeve Brinson-Fachler reconciliation —
+# full-coverage AND with the benchmark-coverage-gap renormalization branch deliberately
+# forced into a state that changes the numbers — so there is no version-sensitive
+# numeric operation to pin against. The earlier "pandas 3 breaks BF" pin was a
+# misattribution of a demo.db price-cache-leak symptom (see the CHANGELOG 2026-07-23
+# correction). The gap-branch value is now golden-pinned by
 # tests/test_attribution.py::test_benchmark_gap_renormalization_is_numeric_stack_invariant,
 # so a real numeric-stack regression fails loudly instead of being re-pinned blind.
 # (.python-version stays 3.11: equivalence was proven there; 3.0.x ships cp314 wheels,
 # so this relieves the 3.14 tension, but a 3.14 move is a separate, verified step.)
-pandas>=2.2.0
 numpy>=2.1.0
 yfinance>=0.2.50
 # Pinned exactly: 6.7.0 is the version every local run behind the audit used, so CI and
