@@ -735,38 +735,39 @@ def stand_in(fund: str, bt: Backtest, spec: dict) -> "Optional[tuple[str, str]]"
     return None
 
 
-def _stood_in(pairs: "list[tuple[str, str, str]]") -> str:
-    return _list([f"{fund} by {proxy} through {month_name(until)}"
-                  for fund, proxy, until in pairs])
-
-
 def disclosure(bt: Backtest, spec: dict, demo: bool) -> str:
-    """The page's first words: what these results are and are not. ``demo`` names the
-    record they are not: the paper portfolio's in the demo, this portfolio's in the
-    personal book."""
+    """The page's first words, in four short sentences (decided by the owner on October
+    22, 2026): what these results are, over which months; whose record they are not
+    (the paper portfolio's in the demo, this portfolio's in the personal book); the
+    stand-ins, named in the sleeve table rather than here; and what the returns
+    include, with the policy set knowing the period. The stand-in sentence names only
+    the kinds the policy uses, and is left out when it uses none."""
     first, last = month_name(bt.returns.index[0]), month_name(bt.returns.index[-1])
     record = "the paper portfolio's" if demo else "this portfolio's"
-    parts = ["**Hypothetical, back-tested results.**",
-             f"They apply this book's current SAA targets and tolerance bands to monthly "
-             f"returns from {first} through {last}.",
+    parts = [f"**Hypothetical, back-tested results:** this book's current SAA targets and "
+             f"tolerance bands applied to monthly returns from {first} to {last}.",
              f"They are not {record} record, and no account earned them."]
-    launch, index = [], []
+    launch, index = False, []
     for fund in held_funds(bt):
-        s = stand_in(fund, bt, spec)
-        if s is not None:
-            (launch if spec["funds"][fund]["reason"] == "inception" else index).append(
-                (fund, *s))
-    if launch:
-        parts.append(f"Funds are represented by named proxies before their launch: "
-                     f"{_stood_in(launch)}.")
-    if len(index) == 1:
-        parts.append(f"{index[0][0]} is represented by its broad market before it followed "
-                     f"a quality index: {_stood_in(index)}.")
+        if stand_in(fund, bt, spec) is not None:
+            if spec["funds"][fund]["reason"] == "inception":
+                launch = True
+            else:
+                index.append(fund)
+    one = len(index) == 1
+    broad = (f"{'its broad market' if one else 'their broad markets'} before "
+             f"{'it followed a quality index' if one else 'they followed quality indexes'}")
+    named = "each named in the sleeve table below"
+    if launch and index:
+        parts.append("Funds are represented by named proxies before their launch, and "
+                     f"{_list(index)} by {broad}, {named}.")
+    elif launch:
+        parts.append(f"Funds are represented by named proxies before their launch, {named}.")
     elif index:
-        parts.append(f"{_list([f for f, _p, _u in index])} are represented by their broad "
-                     f"markets before they followed quality indexes: {_stood_in(index)}.")
-    parts += ["Returns are after fund expenses and before trading costs and taxes.",
-              "The policy was set with knowledge of this period."]
+        parts.append(f"{_list(index)} {'is' if one else 'are'} represented by {broad}, "
+                     f"{named}.")
+    parts.append("Returns are after fund expenses and before trading costs and taxes, and "
+                 "the policy was set with knowledge of this period.")
     return " ".join(parts)
 
 

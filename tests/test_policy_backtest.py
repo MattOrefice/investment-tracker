@@ -338,24 +338,42 @@ def _small_backtest(proxies: dict, months: int = 3) -> "tuple[pb.Backtest, dict]
 
 
 def test_the_disclosure_names_only_the_stand_ins_the_policy_uses():
+    """Four short sentences (decided by the owner on October 22, 2026); with no stand-in,
+    three."""
     bt, spec = _small_backtest({})
     text = pb.disclosure(bt, spec, demo=True)
     assert text == (
-        "**Hypothetical, back-tested results.** They apply this book's current SAA targets "
-        "and tolerance bands to monthly returns from March 2006 through May 2006. They are "
+        "**Hypothetical, back-tested results:** this book's current SAA targets and "
+        "tolerance bands applied to monthly returns from March 2006 to May 2006. They are "
         "not the paper portfolio's record, and no account earned them. Returns are after "
-        "fund expenses and before trading costs and taxes. The policy was set with "
+        "fund expenses and before trading costs and taxes, and the policy was set with "
         "knowledge of this period.")
     assert "They are not this portfolio's record" in pb.disclosure(bt, spec, demo=False)
 
 
-def test_the_disclosure_with_one_launch_proxy_and_one_index_change():
-    bt, spec = _small_backtest({"X": ("PX", "2006-03", "inception"),
-                                "Y": ("PY", "2006-04", "index change")})
-    text = pb.disclosure(bt, spec, demo=True)
-    assert ("Funds are represented by named proxies before their launch: X by PX through "
-            "March 2006. Y is represented by its broad market before it followed a quality "
-            "index: Y by PY through April 2006.") in text
+def test_the_disclosure_names_each_kind_of_stand_in_and_leaves_the_list_to_the_table():
+    """The proxies themselves are named in the sleeve table, not in the banner."""
+    def said(proxies):
+        bt, spec = _small_backtest(proxies)
+        return pb.disclosure(bt, spec, demo=True).split(" no account earned them. ")[1]
+
+    tail = ("Returns are after fund expenses and before trading costs and taxes, and the "
+            "policy was set with knowledge of this period.")
+    assert said({"X": ("PX", "2006-03", "inception"), "Y": ("PY", "2006-04", "index change")}) == (
+        "Funds are represented by named proxies before their launch, and Y by its broad "
+        "market before it followed a quality index, each named in the sleeve table below. "
+        + tail)
+    assert said({"X": ("PX", "2006-03", "inception")}) == (
+        "Funds are represented by named proxies before their launch, each named in the "
+        "sleeve table below. " + tail)
+    assert said({"Y": ("PY", "2006-04", "index change")}) == (
+        "Y is represented by its broad market before it followed a quality index, each "
+        "named in the sleeve table below. " + tail)
+    assert said({"X": ("PX", "2006-04", "index change"),
+                 "Y": ("PY", "2006-04", "index change")}) == (
+        "X and Y are represented by their broad markets before they followed quality "
+        "indexes, each named in the sleeve table below. " + tail)
+    assert "PX" not in said({"X": ("PX", "2006-03", "inception")})
 
 
 def test_a_proxy_ending_before_the_backtest_is_not_named():
