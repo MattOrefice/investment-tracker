@@ -831,26 +831,41 @@ def year_label(year: int, bt: Backtest) -> str:
 
 
 def rebalance_sentence(bt: Backtest) -> str:
-    """How many month-end checks found a sleeve outside its band, zero included."""
-    first, last = month_name(bt.returns.index[0]), month_name(bt.returns.index[-1])
+    """How many month-end checks found a sleeve outside its band, zero included, after
+    the backtest's months."""
+    window = _cap(_window(bt))
     k = len(bt.simulation.rebalances)
     if k == 0:
-        return (f"No month-end check from {first} to {last} found a sleeve outside its "
-                "band, so the policy never rebalanced.")
-    checks = "One month-end check" if k == 1 else f"{k} month-end checks"
-    return (f"{checks} from {first} to {last} found a sleeve outside its band; at "
+        return (f"{window}, no month-end check found a sleeve outside its band, so the "
+                "policy never rebalanced.")
+    checks = "one month-end check" if k == 1 else f"{k} month-end checks"
+    return (f"{window}, {checks} found a sleeve outside its band; at "
             f"{'it' if k == 1 else 'each'}, every sleeve went back to its target.")
 
 
 # ── The page's paragraphs ─────────────────────────────────────────────────────
-# Each returns text the page prints, read from a Backtest alone. Every comparison of the
-# policy with the S&P 500 or the 60/40 states both figures and the months they cover,
-# and no sentence calls either better or worse. Each covers what a short or flat history
-# leaves missing: no volatility, no rolling window, no full year, no rebalance, no fall.
+# Each returns text the page prints, read from a Backtest alone (decided by the owner on
+# October 22, 2026). Each names its window once, at its start; later sentences say "over
+# the same months" or nothing. Prose prints returns to one decimal, and ratios and
+# shares of windows as whole percents; the tables keep two decimals. Every comparison of
+# the policy with the S&P 500 or the 60/40 states both figures, and no sentence calls
+# either better or worse. Each covers what a short or flat history leaves missing: no
+# volatility, no rolling window, no full year, no rebalance, no fall.
 
-def pct(x: float, signed: bool = False) -> str:
-    """0.0846 as '8.46%', or signed '+8.46%': the page's tables print the same."""
-    return f"{x * 100:+.2f}%" if signed else f"{x * 100:.2f}%"
+def pct(x: float, signed: bool = False, places: int = 2) -> str:
+    """0.0846 as '8.46%', or signed '+8.46%', as the page's tables print it; the
+    paragraphs ask for one place (a return) or none (a ratio or a share of windows)."""
+    return f"{x * 100:{'+' if signed else ''}.{places}f}%"
+
+
+def _ret(x: float, signed: bool = False) -> str:
+    """A return as the paragraphs print it: '8.5%'."""
+    return pct(x, signed, places=1)
+
+
+def _whole(x: float) -> str:
+    """A ratio or a share of windows as the paragraphs print it: '84%'."""
+    return pct(x, places=0)
 
 
 def money(x: float) -> str:
@@ -888,25 +903,37 @@ def _cap(text: str) -> str:
     return text[0].upper() + text[1:]
 
 
+def _capture(side: str, months: int, ratio: Optional[float], them: str, first: bool) -> str:
+    """'an up-capture of 84% over the 166 months the S&P 500 (SPY) returned at or above
+    0%', or why there is none."""
+    when = "at or above 0%" if side == "up" else "below 0%"
+    if months == 0:
+        return f"no {side}-capture, since {them} returned {when} in no month"
+    if ratio is None:
+        return (f"no {side}-capture, since {them} returned 0% a year over the "
+                f"{count(months, 'month')} it returned {when}")
+    return (f"{'an' if side == 'up' else 'a'} {side}-capture of {_whole(ratio)} over the "
+            f"{count(months, 'month')} {them if first else 'it'} returned {when}")
+
+
 def summary_read(bt: Backtest) -> str:
     """Each series' annualized return, volatility and Sharpe ratio over the backtest's
-    months; then, against each comparison over the same months, the policy's active
-    return with both annualized returns, its beta, correlation and tracking error, and
-    its up- and down-capture with both annualized returns behind each."""
+    months; then, against each comparison, the policy's active return with both
+    annualized returns, its beta, correlation and tracking error, and its up- and
+    down-capture with the months each covers."""
     n = len(bt.returns)
-    window = _window(bt)
 
     def series(name: str, verb: str) -> str:
         st = bt.statistics[name]
-        out = f"{series_name(name)}{verb} {pct(st.annual_return)} a year"
+        out = f"{series_name(name)}{verb} {_ret(st.annual_return)} a year"
         if st.no_volatility:
             return out + f", with no volatility or Sharpe ratio ({st.no_volatility})"
-        return (out + f", with {pct(st.annual_volatility)} volatility and a Sharpe ratio "
+        return (out + f", with {_ret(st.annual_volatility)} volatility and a Sharpe ratio "
                 f"of {st.sharpe:.2f}")
 
     names = list(bt.returns.columns)
     rest = [series(x, "") for x in names[1:]]
-    out = [f"{_cap(window)} ({count(n, 'month')}), {series(names[0], ' returned')}"
+    out = [f"{_cap(_window(bt))} ({count(n, 'month')}), {series(names[0], ' returned')}"
            + "".join(f"; {'and ' if i == len(rest) - 1 else ''}{x}"
                      for i, x in enumerate(rest)) + "."]
     policy = bt.statistics[POLICY].annual_return
@@ -921,37 +948,24 @@ def summary_read(bt: Backtest) -> str:
         joint = [f"beta {c.beta:.2f}" if c.beta is not None else f"no beta ({why['beta']})",
                  f"correlation {c.correlation:.2f}" if c.correlation is not None
                  else f"no correlation ({why['correlation']})",
-                 f"tracking error {pct(c.tracking_error)}" if c.tracking_error is not None
+                 f"tracking error {_ret(c.tracking_error)}" if c.tracking_error is not None
                  else f"no tracking error ({FEWER_THAN_TWO_MONTHS})"]
-        out.append(f"Against {them} {window}, the policy's active return was "
-                   f"{pct(c.active_return, signed=True)} a year, from {pct(policy)} for the "
-                   f"policy and {pct(bt.statistics[name].annual_return)} for {them}.")
-        out.append(f"Over the same months, against {them}: {', '.join(joint)}.")
-        for side, months, mine, theirs, ratio in (
-                ("up", c.up_months, c.up_policy, c.up_comparison, c.up_capture),
-                ("down", c.down_months, c.down_policy, c.down_comparison, c.down_capture)):
-            when = "returned at or above 0%" if side == "up" else "returned below 0%"
-            article = "an" if side == "up" else "a"
-            if months == 0:
-                out.append(f"{_cap(them)} {when} in no month {window}, so there is no "
-                           f"{side}-capture against it.")
-                continue
-            read = (f"{article} {side}-capture of {pct(ratio)}" if ratio is not None else
-                    f"no {side}-capture, since {them} returned 0% over them")
-            out.append(f"In the {count(months, 'month')} {window} that {them} {when}, the "
-                       f"annualized returns were {pct(mine)} for the policy and "
-                       f"{pct(theirs)} for {them}: {read}.")
+        out.append(f"Against {them}, the policy's active return was "
+                   f"{_ret(c.active_return, signed=True)} a year ({_ret(policy)} against "
+                   f"{_ret(bt.statistics[name].annual_return)}), with {_list(joint)}.")
+        out.append(f"The policy had {_capture('up', c.up_months, c.up_capture, them, True)}, "
+                   f"and {_capture('down', c.down_months, c.down_capture, them, False)}.")
     return " ".join(out)
 
 
 def growth_read(bt: Backtest) -> str:
-    """What GROWTH_OF became in each series by the last month, and the months the
-    growth chart's bands shade: the policy's stress episodes, peak to trough."""
+    """What GROWTH_OF became in each series, and the months the growth chart's bands
+    shade: the policy's stress episodes, peak to trough."""
     start = month_name(wealth(bt.returns[POLICY]).index[0])
     values = [f"{money(bt.statistics[x].ending_value)} in {series_name(x)}"
               for x in bt.returns.columns]
-    out = [f"{money(GROWTH_OF)} placed at the end of {start} was worth {_list(values)} "
-           f"at the end of {month_name(bt.returns.index[-1])}."]
+    out = [f"From the end of {start} to the end of {month_name(bt.returns.index[-1])}, "
+           f"{money(GROWTH_OF)} became {_list(values)}."]
     years = bt.statistics[POLICY].episodes
     shaded = [f"{y}, {month_name(e.peak)} to {month_name(e.trough)}"
               for y, e in years.items() if e is not None]
@@ -965,100 +979,96 @@ def growth_read(bt: Backtest) -> str:
     return " ".join(out)
 
 
-def _fall(depth: float, peak: str, trough: str, recovered: Optional[str],
-          to_trough: int, last: str) -> str:
-    """'-49.04%, from its October 2007 high to its February 2009 low (16 months), back
-    at that high in April 2011 (26 months later)'."""
-    out = (f"{pct(depth)}, from its {month_name(peak)} high to its {month_name(trough)} "
-           f"low ({count(to_trough, 'month')})")
-    if recovered is None:
-        return out + f", not back at that high by {month_name(last)}"
-    return (out + f", back at that high in {month_name(recovered)} "
-            f"({count(months_between(trough, recovered), 'month')} later)")
-
-
 def drawdown_read(bt: Backtest) -> str:
-    """Each series' deepest drawdown over the backtest's months, with its months peak to
-    trough and back; then the policy's deepest fall reaching into each year in
-    WINDOWS."""
-    last = bt.returns.index[-1]
-    window = _window(bt)
-    out = []
-    for name in bt.returns.columns:
-        st = bt.statistics[name]
-        dd = st.drawdown
-        if dd.depth >= 0:
-            out.append(f"{_cap(series_name(name))} closed no month below an earlier "
-                       f"month-end high {window}.")
-            continue
-        out.append(f"The deepest drawdown of {series_name(name)} {window} was "
-                   f"{_fall(dd.depth, dd.peak, dd.trough, dd.recovered, st.months_to_trough, last)}.")
+    """For each year in WINDOWS the months reach, the three series side by side in their
+    deepest fall reaching into it: each one's drawdown, signed as the page's tables print
+    it, and how many months after its low it was back at its high, or that it has not
+    been. The deepest drawdown is the table's above, and is not repeated. No figure
+    follows the verb "fell" (#536, #604: tests/test_a_fall_prints_as_a_magnitude.py)."""
     years = bt.statistics[POLICY].episodes
-    if years:
-        parts = [f"{y}, none: no fall of the policy reaches into it" if e is None else
-                 f"{y}, {_fall(e.depth, e.peak, e.trough, e.recovered, e.months_to_trough, last)}"
-                 for y, e in years.items()]
-        out.append("The policy's deepest fall reaching into each of "
-                   f"{_list([str(y) for y in years])}: {'; '.join(parts)}.")
+    window = _cap(_window(bt))
+    if not years:
+        return (f"{window}, the backtest's months reach none of "
+                f"{_list([str(y) for y in WINDOWS])}.")
+    out = []
+    for i, y in enumerate(years):
+        parts = []
+        for name in bt.returns.columns:
+            e = bt.statistics[name].episodes[y]
+            who = series_name(name)
+            if e is None:
+                parts.append(f"{who} had none")
+            elif e.recovered is None:
+                parts.append(f"{who} had a drawdown of {_ret(e.depth)} and had not recovered")
+            else:
+                back = count(months_between(e.trough, e.recovered), "month")
+                parts.append(f"{who} had a drawdown of {_ret(e.depth)} and recovered {back} "
+                             "after its low")
+        lead = f"{window}, in" if i == 0 else "In"
+        out.append(f"{lead} the deepest fall of each series reaching into {y}, "
+                   f"{_list(parts)}.")
     return " ".join(out)
 
 
 def rolling_read(bt: Backtest) -> str:
     """The rolling windows summed up: in how many the policy's annualized return was
-    below each comparison's and in how many it was not, the policy's best and worst
-    window, and the latest window's return for each series. With no window, why."""
+    below each comparison's and in how many it was at or above it, the policy's best and
+    worst window, and the latest window's return for each series. With no window, why."""
     r = bt.rolling
     label = rolling_label(r.months)
     if r.windows == 0:
-        return (f"No rolling {label} return is shown: the history holds "
-                f"{count(len(bt.returns), 'month')} {_window(bt)}, fewer than {r.months}.")
+        return (f"{_cap(_window(bt))}, the history holds {count(len(bt.returns), 'month')}, "
+                f"fewer than the {r.months} a rolling {label} return needs, so none is "
+                "shown.")
     span = (f"ending {month_name(r.first)} to {month_name(r.last)}" if r.windows > 1
             else f"ending {month_name(r.first)}")
     out = []
-    for name, below in r.below.items():
-        out.append(f"In {below} ({pct(r.share_below[name])}) of the "
-                   f"{count(r.windows, f'rolling {label} window')} {span}, the policy's "
-                   "annualized return was below "
-                   f"that of {series_name(name)}, and in the other {r.windows - below} it "
-                   "was at or above it.")
+    for i, (name, below) in enumerate(r.below.items()):
+        figures = (f"below that of {series_name(name)} in {below} "
+                   f"({_whole(r.share_below[name])}) and at or above it in "
+                   f"{r.windows - below}")
+        out.append(f"Of the {count(r.windows, f'rolling {label} window')} {span}, the "
+                   f"policy's annualized return was {figures}." if i == 0 else
+                   f"It was {figures}.")
     best, worst = r.best[POLICY], r.worst[POLICY]
     out.append(f"Of those windows, the policy's best ended in {month_name(best.month)}, at "
-               f"{pct(best.value)} a year, and its worst in {month_name(worst.month)}, at "
-               f"{pct(worst.value)} a year.")
-    latest = [f"{pct(p.value)} for {series_name(name)}" for name, p in r.latest.items()]
-    out.append(f"In the latest, ending {month_name(r.last)}, the annualized returns were "
-               f"{_list(latest)}.")
+               f"{_ret(best.value)} a year, and its worst in {month_name(worst.month)}, at "
+               f"{_ret(worst.value)} a year.")
+    latest = [f"{_ret(p.value)} for {series_name(name)}" for name, p in r.latest.items()]
+    out.append(f"In the latest window, the annualized returns were {_list(latest)}.")
     return " ".join(out)
 
 
 def calendar_read(bt: Backtest) -> str:
     """Over the full calendar years: in how many the policy's return was below each
-    comparison's and in how many it was not, and the policy's best and worst full year;
-    with one full year, the three returns. Partial years are named and not counted."""
+    comparison's and in how many it was at or above it, and the policy's best and worst
+    full year; with one full year, the three returns. Partial years are named and not
+    counted."""
     st = bt.statistics[POLICY]
     full = [y for y in st.calendar_years if y not in st.partial_years]
     out = []
     if not full:
-        out.append(f"The backtest holds no full calendar year {_window(bt)}, so none is "
-                   "counted.")
+        out.append(f"{_cap(_window(bt))}, the backtest holds no full calendar year, so "
+                   "none is counted.")
     elif len(full) == 1:
         y = full[0]
-        returns = [f"{pct(bt.statistics[x].calendar_years[y], signed=True)} for "
+        returns = [f"{_ret(bt.statistics[x].calendar_years[y], signed=True)} for "
                    f"{series_name(x)}" for x in bt.returns.columns]
         out.append(f"In {y}, the only full calendar year, the returns were {_list(returns)}.")
     else:
-        span = f"the {len(full)} full calendar years from {full[0]} to {full[-1]}"
-        for name in bt.comparisons:
+        for i, name in enumerate(bt.comparisons):
             theirs = bt.statistics[name].calendar_years
             below = sum(st.calendar_years[y] < theirs[y] for y in full)
-            out.append(f"In {below} of {span}, the policy's return was below that of "
-                       f"{series_name(name)}, and in the other {len(full) - below} it was "
-                       "at or above it.")
+            figures = (f"below that of {series_name(name)} in {below} and at or above it "
+                       f"in {len(full) - below}")
+            out.append(f"Of the {len(full)} full calendar years from {full[0]} to "
+                       f"{full[-1]}, the policy's return was {figures}." if i == 0 else
+                       f"It was {figures}.")
         best = max(full, key=lambda y: st.calendar_years[y])
         worst = min(full, key=lambda y: st.calendar_years[y])
         out.append(f"The policy's best of those years was {best}, at "
-                   f"{pct(st.calendar_years[best], signed=True)}, and its worst {worst}, at "
-                   f"{pct(st.calendar_years[worst], signed=True)}.")
+                   f"{_ret(st.calendar_years[best], signed=True)}, and its worst {worst}, at "
+                   f"{_ret(st.calendar_years[worst], signed=True)}.")
     partial = [f"{y} ({year_span(y, bt)})" for y in st.partial_years]
     if partial:
         out.append(f"{_list(partial)} "
@@ -1078,7 +1088,7 @@ def rebalance_read(bt: Backtest) -> str:
         one = len(r.triggers) == 1
         out.append(f"It came in {month_name(r.month)}, when {_list(list(r.triggers))} "
                    f"{'was' if one else 'were'} outside {'its band' if one else 'their bands'}"
-                   f", with a turnover of {pct(r.turnover)} of the portfolio.")
+                   f", with a turnover of {_ret(r.turnover)} of the portfolio.")
     elif k > 1:
         apart = months_between(done[0].month, done[-1].month) / (k - 1)
         out.append(f"They came on average {apart:.1f} months apart, from the first in "
@@ -1097,6 +1107,6 @@ def rebalance_read(bt: Backtest) -> str:
                        "checks, the most of any sleeve.")
         top = max(done, key=lambda r: r.turnover)
         out.append(f"The largest turnover of the {k}, half the sum of each sleeve's distance "
-                   f"from its target, was {pct(top.turnover)} of the portfolio, at the "
+                   f"from its target, was {_ret(top.turnover)} of the portfolio, at the "
                    f"{month_name(top.month)} check.")
     return " ".join(out)

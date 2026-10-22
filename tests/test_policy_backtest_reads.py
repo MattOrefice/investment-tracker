@@ -328,8 +328,10 @@ def _comparison(**figures) -> pb.Comparison:
 
 
 def test_the_summary_read():
+    """Returns to one decimal, ratios as whole percents; each capture with its months
+    (decided by the owner on October 22, 2026)."""
     stats = {pb.POLICY: _st(0.0846, 0.141, 0.4801), pb.SP500: _st(0.1107, 0.151, 0.6192),
-             pb.SIXTY_FORTY: _st(0.0812, 0.0965, 0.6634)}
+             pb.SIXTY_FORTY: _st(0.0812, 0.0961, 0.6634)}
     comparisons = {
         pb.SP500: _comparison(active_return=0.0846 - 0.1107, beta=0.8949, correlation=0.9585,
                               tracking_error=0.0432, up_months=166, up_policy=0.3975,
@@ -343,27 +345,18 @@ def test_the_summary_read():
                                     down_comparison=-0.2485, down_capture=1.4206),
     }
     assert pb.summary_read(_bt(stats, comparisons=comparisons)) == (
-        "From March 2006 to September 2026 (247 months), the policy returned 8.46% a year, "
-        "with 14.10% volatility and a Sharpe ratio of 0.48; the S&P 500 (SPY) 11.07% a "
-        "year, with 15.10% volatility and a Sharpe ratio of 0.62; and the 60/40 8.12% a "
-        "year, with 9.65% volatility and a Sharpe ratio of 0.66. "
-        "Against the S&P 500 (SPY) from March 2006 to September 2026, the policy's active "
-        "return was -2.61% a year, from 8.46% for the policy and 11.07% for the S&P 500 "
-        "(SPY). Over the same months, against the S&P 500 (SPY): beta 0.89, correlation "
-        "0.96, tracking error 4.32%. In the 166 months from March 2006 to September 2026 "
-        "that the S&P 500 (SPY) returned at or above 0%, the annualized returns were "
-        "39.75% for the policy and 47.42% for the S&P 500 (SPY): an up-capture of 83.83%. "
-        "In the 81 months from March 2006 to September 2026 that the S&P 500 (SPY) "
-        "returned below 0%, the annualized returns were -35.49% for the policy and -37.82% "
-        "for the S&P 500 (SPY): a down-capture of 93.84%. "
-        "Against the 60/40 from March 2006 to September 2026, the policy's active return "
-        "was +0.34% a year, from 8.46% for the policy and 8.12% for the 60/40. Over the "
-        "same months, against the 60/40: beta 1.39, correlation 0.95, tracking error 5.69%. "
-        "In the 165 months from March 2006 to September 2026 that the 60/40 returned at or "
-        "above 0%, the annualized returns were 40.19% for the policy and 29.53% for the "
-        "60/40: an up-capture of 136.10%. In the 82 months from March 2006 to September "
-        "2026 that the 60/40 returned below 0%, the annualized returns were -35.29% for "
-        "the policy and -24.85% for the 60/40: a down-capture of 142.06%.")
+        "From March 2006 to September 2026 (247 months), the policy returned 8.5% a year, "
+        "with 14.1% volatility and a Sharpe ratio of 0.48; the S&P 500 (SPY) 11.1% a year, "
+        "with 15.1% volatility and a Sharpe ratio of 0.62; and the 60/40 8.1% a year, with "
+        "9.6% volatility and a Sharpe ratio of 0.66. "
+        "Against the S&P 500 (SPY), the policy's active return was -2.6% a year (8.5% "
+        "against 11.1%), with beta 0.89, correlation 0.96, and tracking error 4.3%. The "
+        "policy had an up-capture of 84% over the 166 months the S&P 500 (SPY) returned at "
+        "or above 0%, and a down-capture of 94% over the 81 months it returned below 0%. "
+        "Against the 60/40, the policy's active return was +0.3% a year (8.5% against "
+        "8.1%), with beta 1.39, correlation 0.95, and tracking error 5.7%. The policy had an "
+        "up-capture of 136% over the 165 months the 60/40 returned at or above 0%, and a "
+        "down-capture of 142% over the 82 months it returned below 0%.")
 
 
 def test_the_summary_read_says_what_is_missing():
@@ -382,14 +375,17 @@ def test_the_summary_read_says_what_is_missing():
         pb.SIXTY_FORTY: _comparison(up_comparison=0.0, up_capture=None),
     }
     text = pb.summary_read(_bt(stats, returns=returns, comparisons=comparisons))
-    assert ("the S&P 500 (SPY) 12.68% a year, with no volatility or Sharpe ratio (no "
+    assert ("the S&P 500 (SPY) 12.7% a year, with no volatility or Sharpe ratio (no "
             "volatility: every monthly return is the same);") in text
-    assert ("against the S&P 500 (SPY): no beta (every monthly return of the S&P 500 (SPY) "
-            "is the same), no correlation (every monthly return of the S&P 500 (SPY) is "
-            "the same), tracking error 4.00%.") in text
-    assert ("The S&P 500 (SPY) returned below 0% in no month from March 2006 to September "
-            "2026, so there is no down-capture against it.") in text
-    assert ("for the 60/40: no up-capture, since the 60/40 returned 0% over them.") in text
+    assert ("with no beta (every monthly return of the S&P 500 (SPY) is the same), no "
+            "correlation (every monthly return of the S&P 500 (SPY) is the same), and "
+            "tracking error 4.0%.") in text
+    assert ("The policy had an up-capture of 80% over the 247 months the S&P 500 (SPY) "
+            "returned at or above 0%, and no down-capture, since the S&P 500 (SPY) returned "
+            "below 0% in no month.") in text
+    assert ("The policy had no up-capture, since the 60/40 returned 0% a year over the 160 "
+            "months it returned at or above 0%, and a down-capture of 86% over the 87 months "
+            "it returned below 0%.") in text
 
 
 def test_the_summary_read_with_one_month(use_demo_db):
@@ -404,6 +400,39 @@ def test_the_summary_read_with_one_month(use_demo_db):
     assert text.startswith("From March 2006 to March 2006 (1 month), the policy returned ")
 
 
+def test_each_read_names_its_window_once_at_its_start(use_demo_db):
+    """Decided by the owner on October 22, 2026: later sentences say "over the same
+    months" or nothing."""
+    bt = pb.run()
+    first, last = pb.month_name(bt.returns.index[0]), pb.month_name(bt.returns.index[-1])
+    window = f"from {first} to {last}"
+    for read in (pb.summary_read, pb.drawdown_read, pb.rebalance_read):
+        text = read(bt)
+        assert text.startswith(f"From {first} to {last}"), read.__name__
+        assert text.lower().count(window.lower()) == 1, read.__name__
+    growth = pb.growth_read(bt)
+    assert growth.startswith(f"From the end of February 2006 to the end of {last}, ")
+    assert growth.count(last) == 1
+    r = bt.rolling
+    rolling = pb.rolling_read(bt)
+    span = f"ending {pb.month_name(r.first)} to {pb.month_name(r.last)}"
+    assert rolling.startswith(f"Of the {r.windows} rolling 5-year windows {span}, ")
+    assert rolling.count(span) == 1
+    assert pb.calendar_read(bt).startswith("Of the 19 full calendar years from 2007 to 2025, ")
+
+
+def test_the_prose_rounds_returns_to_one_decimal_and_ratios_to_whole_percents(use_demo_db):
+    """No paragraph prints a two-decimal percent: the tables keep those."""
+    bt = pb.run()
+    for read in (pb.summary_read, pb.growth_read, pb.drawdown_read, pb.rolling_read,
+                 pb.calendar_read, pb.rebalance_read):
+        assert re.findall(r"\d\.\d\d%", read(bt)) == [], read.__name__
+    summary = pb.summary_read(bt)
+    c = bt.comparisons[pb.SP500]
+    assert f"an up-capture of {round(c.up_capture * 100)}% over the {c.up_months} months" in summary
+    assert f"({round(bt.rolling.share_below[pb.SP500] * 100)}%)" in pb.rolling_read(bt)
+
+
 def test_the_growth_read():
     episodes = {2008: pb.Episode(-0.4904, "2007-10", "2009-02", 16, "2011-04"),
                 2020: pb.Episode(-0.2147, "2019-12", "2020-03", 3, "2020-11"),
@@ -411,49 +440,53 @@ def test_the_growth_read():
     stats = {pb.POLICY: _st(ending=53_170.83, episodes=episodes),
              pb.SP500: _st(ending=86_826.88), pb.SIXTY_FORTY: _st(ending=49_839.23)}
     assert pb.growth_read(_bt(stats)) == (
-        "$10,000 placed at the end of February 2006 was worth $53,171 in the policy, "
-        "$86,827 in the S&P 500 (SPY), and $49,839 in the 60/40 at the end of September "
-        "2026. Each shaded band runs from the policy's month-end high to its low in its "
-        "deepest fall reaching into the year it names: 2008, October 2007 to February "
-        "2009; 2020, December 2019 to March 2020. No fall of the policy reaches into 2022, "
-        "so no band is shaded for it.")
+        "From the end of February 2006 to the end of September 2026, $10,000 became $53,171 "
+        "in the policy, $86,827 in the S&P 500 (SPY), and $49,839 in the 60/40. Each shaded "
+        "band runs from the policy's month-end high to its low in its deepest fall reaching "
+        "into the year it names: 2008, October 2007 to February 2009; 2020, December 2019 to "
+        "March 2020. No fall of the policy reaches into 2022, so no band is shaded for it.")
     stats[pb.POLICY] = _st(ending=12_000.0)
     assert pb.growth_read(_bt(stats)) == (
-        "$10,000 placed at the end of February 2006 was worth $12,000 in the policy, "
-        "$86,827 in the S&P 500 (SPY), and $49,839 in the 60/40 at the end of September "
-        "2026.")
+        "From the end of February 2006 to the end of September 2026, $10,000 became $12,000 "
+        "in the policy, $86,827 in the S&P 500 (SPY), and $49,839 in the 60/40.")
 
 
 def test_the_drawdown_read():
-    episodes = {2008: pb.Episode(-0.4904, "2007-10", "2009-02", 16, "2011-04"),
-                2020: None,
-                2022: pb.Episode(-0.2118, "2021-12", "2022-09", 9, None)}
+    """Within each episode, the three series side by side: each one's drawdown, signed
+    as the tables print it, and how many months after its low it recovered, or that it
+    has not, or had none. The deepest drawdown is not restated."""
+    def ep(depth, peak, trough, months, recovered):
+        return pb.Episode(depth, peak, trough, months, recovered)
+
     stats = {
-        pb.POLICY: _st(drawdown=pb.Drawdown(-0.4904, "2007-10", "2009-02", "2011-04"),
-                       to_trough=16, to_recovery=26, episodes=episodes),
-        pb.SP500: _st(drawdown=pb.Drawdown(-0.5078, "2007-10", "2009-02", None),
-                      to_trough=16),
-        pb.SIXTY_FORTY: _st(),
+        pb.POLICY: _st(episodes={2008: ep(-0.4904, "2007-10", "2009-02", 16, "2011-04"),
+                                 2020: None,
+                                 2022: ep(-0.2118, "2021-12", "2022-09", 9, None)}),
+        pb.SP500: _st(episodes={2008: ep(-0.5078, "2007-10", "2009-02", 16, "2012-03"),
+                                2020: ep(-0.1946, "2019-12", "2020-03", 3, "2020-07"),
+                                2022: ep(-0.2393, "2021-12", "2022-09", 9, "2023-12")}),
+        pb.SIXTY_FORTY: _st(episodes={2008: ep(-0.3171, "2007-10", "2009-02", 16, "2010-12"),
+                                      2020: None,
+                                      2022: ep(-0.2008, "2021-12", "2022-09", 9, None)}),
     }
     assert pb.drawdown_read(_bt(stats)) == (
-        "The deepest drawdown of the policy from March 2006 to September 2026 was -49.04%, "
-        "from its October 2007 high to its February 2009 low (16 months), back at that "
-        "high in April 2011 (26 months later). The deepest drawdown of the S&P 500 (SPY) "
-        "from March 2006 to September 2026 was -50.78%, from its October 2007 high to its "
-        "February 2009 low (16 months), not back at that high by September 2026. The 60/40 "
-        "closed no month below an earlier month-end high from March 2006 to September "
-        "2026. The policy's deepest fall reaching into each of 2008, 2020, and 2022: 2008, "
-        "-49.04%, from its October 2007 high to its February 2009 low (16 months), back at "
-        "that high in April 2011 (26 months later); 2020, none: no fall of the policy "
-        "reaches into it; 2022, -21.18%, from its December 2021 high to its September 2022 "
-        "low (9 months), not back at that high by September 2026.")
+        "From March 2006 to September 2026, in the deepest fall of each series reaching "
+        "into 2008, the policy had a drawdown of -49.0% and recovered 26 months after its "
+        "low, the S&P 500 (SPY) had a drawdown of -50.8% and recovered 37 months after its "
+        "low, and the 60/40 had a drawdown of -31.7% and recovered 22 months after its low. "
+        "In the deepest fall of each series reaching into 2020, the policy had none, the "
+        "S&P 500 (SPY) had a drawdown of -19.5% and recovered 4 months after its low, and "
+        "the 60/40 had none. In the deepest fall of each series reaching into 2022, the "
+        "policy had a drawdown of -21.2% and had not recovered, the S&P 500 (SPY) had a "
+        "drawdown of -23.9% and recovered 15 months after its low, and the 60/40 had a "
+        "drawdown of -20.1% and had not recovered.")
 
 
-def test_the_drawdown_read_of_a_single_month():
+def test_the_drawdown_read_when_the_months_reach_no_episode_year():
     stats = {n: _st() for n in NAMES}
-    assert pb.drawdown_read(_bt(stats, months=["2006-03"])) == " ".join(
-        f"{who} closed no month below an earlier month-end high from March 2006 to March "
-        "2006." for who in ("The policy", "The S&P 500 (SPY)", "The 60/40"))
+    assert pb.drawdown_read(_bt(stats, months=["2006-03"])) == (
+        "From March 2006 to March 2006, the backtest's months reach none of 2008, 2020, and "
+        "2022.")
 
 
 def test_the_rolling_read():
@@ -466,24 +499,22 @@ def test_the_rolling_read():
         latest={pb.POLICY: pb.Point("2026-09", 0.1060), pb.SP500: pb.Point("2026-09", 0.1370),
                 pb.SIXTY_FORTY: pb.Point("2026-09", 0.0799)})
     assert pb.rolling_read(_bt({n: _st() for n in NAMES}, rolling=rolling)) == (
-        "In 164 (87.23%) of the 188 rolling 5-year windows ending February 2011 to "
-        "September 2026, the policy's annualized return was below that of the S&P 500 "
-        "(SPY), and in the other 24 it was at or above it. In 101 (53.72%) of the 188 "
-        "rolling 5-year windows ending February 2011 to September 2026, the policy's "
-        "annualized return was below that of the 60/40, and in the other 87 it was at or "
-        "above it. Of those windows, the policy's best ended in February 2014, at 20.40% a "
-        "year, and its worst in May 2012, at -0.39% a year. In the latest, ending "
-        "September 2026, the annualized returns were 10.60% for the policy, 13.70% for the "
-        "S&P 500 (SPY), and 7.99% for the 60/40.")
+        "Of the 188 rolling 5-year windows ending February 2011 to September 2026, the "
+        "policy's annualized return was below that of the S&P 500 (SPY) in 164 (87%) and at "
+        "or above it in 24. It was below that of the 60/40 in 101 (54%) and at or above it "
+        "in 87. Of those windows, the policy's best ended in February 2014, at 20.4% a year, "
+        "and its worst in May 2012, at -0.4% a year. In the latest window, the annualized "
+        "returns were 10.6% for the policy, 13.7% for the S&P 500 (SPY), and 8.0% for the "
+        "60/40.")
 
 
 def test_the_rolling_read_with_no_window_and_with_one():
     for n, expected in (
-            (30, "No rolling 5-year return is shown: the history holds 30 months from March "
-                 "2006 to August 2008, fewer than 60."),
-            (60, "In 0 (0.00%) of the 1 rolling 5-year window ending February 2011, the "
-                 "policy's annualized return was below that of the S&P 500 (SPY), and in "
-                 "the other 1 it was at or above it.")):
+            (30, "From March 2006 to August 2008, the history holds 30 months, fewer than "
+                 "the 60 a rolling 5-year return needs, so none is shown."),
+            (60, "Of the 1 rolling 5-year window ending February 2011, the policy's "
+                 "annualized return was below that of the S&P 500 (SPY) in 0 (0%) and at or "
+                 "above it in 1.")):
         months = _months("2006-03", n)
         returns = pd.DataFrame({name: [0.01] * n for name in NAMES}, index=months)
         bt = _bt({name: _st() for name in NAMES}, months=months, returns=returns,
@@ -510,12 +541,11 @@ def test_the_calendar_read():
         pb.SP500: {"2007-01": 0.06, "2008-01": -0.35},
         pb.SIXTY_FORTY: {"2007-01": 0.04, "2008-01": -0.20}})
     assert pb.calendar_read(bt) == (
-        "In 1 of the 2 full calendar years from 2007 to 2008, the policy's return was "
-        "below that of the S&P 500 (SPY), and in the other 1 it was at or above it. In 1 of "
-        "the 2 full calendar years from 2007 to 2008, the policy's return was below that "
-        "of the 60/40, and in the other 1 it was at or above it. The policy's best of those "
-        "years was 2007, at +5.00%, and its worst 2008, at -30.00%. 2006 (March to "
-        "December) and 2009 (January to June) are partial years, not counted here.")
+        "Of the 2 full calendar years from 2007 to 2008, the policy's return was below that "
+        "of the S&P 500 (SPY) in 1 and at or above it in 1. It was below that of the 60/40 "
+        "in 1 and at or above it in 1. The policy's best of those years was 2007, at +5.0%, "
+        "and its worst 2008, at -30.0%. 2006 (March to December) and 2009 (January to June) "
+        "are partial years, not counted here.")
 
 
 def test_the_calendar_read_with_one_full_year_and_with_none():
@@ -523,12 +553,12 @@ def test_the_calendar_read_with_one_full_year_and_with_none():
                                              pb.SP500: {"2007-01": 0.06},
                                              pb.SIXTY_FORTY: {"2007-01": 0.04}})
     assert pb.calendar_read(bt) == (
-        "In 2007, the only full calendar year, the returns were +5.00% for the policy, "
-        "+6.00% for the S&P 500 (SPY), and +4.00% for the 60/40. 2006 (March to December) "
-        "is a partial year, not counted here.")
+        "In 2007, the only full calendar year, the returns were +5.0% for the policy, +6.0% "
+        "for the S&P 500 (SPY), and +4.0% for the 60/40. 2006 (March to December) is a "
+        "partial year, not counted here.")
     bt = _calendar(_months("2006-03", 10), {n: {} for n in NAMES})
     assert pb.calendar_read(bt) == (
-        "The backtest holds no full calendar year from March 2006 to December 2006, so "
+        "From March 2006 to December 2006, the backtest holds no full calendar year, so "
         "none is counted. 2006 (March to December) is a partial year, not counted here.")
 
 
@@ -538,24 +568,24 @@ def test_the_rebalance_read():
     def read(*rebalances):
         return pb.rebalance_read(_bt(stats, rebalances=rebalances))
 
-    assert read() == ("No month-end check from March 2006 to September 2026 found a sleeve "
+    assert read() == ("From March 2006 to September 2026, no month-end check found a sleeve "
                       "outside its band, so the policy never rebalanced.")
     assert read(pb.Rebalance("2007-09", ("A",), 0.0369)) == (
-        "One month-end check from March 2006 to September 2026 found a sleeve outside its "
+        "From March 2006 to September 2026, one month-end check found a sleeve outside its "
         "band; at it, every sleeve went back to its target. It came in September 2007, "
-        "when A was outside its band, with a turnover of 3.69% of the portfolio.")
+        "when A was outside its band, with a turnover of 3.7% of the portfolio.")
     assert read(pb.Rebalance("2007-09", ("A", "B"), 0.0369)).endswith(
-        "when A and B were outside their bands, with a turnover of 3.69% of the portfolio.")
+        "when A and B were outside their bands, with a turnover of 3.7% of the portfolio.")
     # 2007-09 to 2013-06 is 69 months: 34.5 between three checks. A and B twice each.
     assert read(pb.Rebalance("2007-09", ("A",), 0.0369),
                 pb.Rebalance("2008-10", ("A", "B"), 0.0554),
                 pb.Rebalance("2013-06", ("B",), 0.0653)) == (
-        "3 month-end checks from March 2006 to September 2026 found a sleeve outside its "
+        "From March 2006 to September 2026, 3 month-end checks found a sleeve outside its "
         "band; at each, every sleeve went back to its target. They came on average 34.5 "
         "months apart, from the first in September 2007 to the last in June 2013. A and B "
         "were each outside their bands at 2 of the 3 checks, the most of any sleeve. The "
         "largest turnover of the 3, half the sum of each sleeve's distance from its "
-        "target, was 6.53% of the portfolio, at the June 2013 check.")
+        "target, was 6.5% of the portfolio, at the June 2013 check.")
     assert ("A was outside its band at 2 of the 2 checks, the most of any sleeve."
             in read(pb.Rebalance("2007-09", ("A",), 0.03), pb.Rebalance("2008-10", ("A",), 0.05)))
     assert ("A and B were each outside their bands at one of the 2 checks, and no sleeve at "

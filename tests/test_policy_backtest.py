@@ -393,11 +393,11 @@ def test_the_rebalance_sentence_covers_none_one_and_several():
             pb.Rebalance("2006-04", ("A",), 0.01) for _ in range(n)))
         return pb.rebalance_sentence(dataclasses.replace(bt, simulation=sim))
 
-    assert said(0) == ("No month-end check from March 2006 to May 2006 found a sleeve "
+    assert said(0) == ("From March 2006 to May 2006, no month-end check found a sleeve "
                        "outside its band, so the policy never rebalanced.")
-    assert said(1) == ("One month-end check from March 2006 to May 2006 found a sleeve "
+    assert said(1) == ("From March 2006 to May 2006, one month-end check found a sleeve "
                        "outside its band; at it, every sleeve went back to its target.")
-    assert said(3).startswith("3 month-end checks from March 2006 to May 2006")
+    assert said(3).startswith("From March 2006 to May 2006, 3 month-end checks found")
 
 
 def test_a_year_label_names_a_partial_years_months():

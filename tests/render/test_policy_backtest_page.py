@@ -410,7 +410,12 @@ def _figures(bt: pb.Backtest) -> "dict[str, set]":
                 ints.add(pb.months_between(e.peak, e.trough))
                 if e.recovered:
                     ints.add(pb.months_between(e.trough, e.recovered))
-    return {"pct": {_pct(x) for x in floats} | {_pct(x, signed=True) for x in floats},
+    # The paragraphs print returns to one decimal and ratios and shares of windows as
+    # whole percents (decided by the owner on October 22, 2026); a fall is printed by how
+    # far it went. "0%" is the capture boundary Morningstar's definition names.
+    shown = {f"{x * 100:{sign}.{places}f}%" for x in floats + [abs(x) for x in floats]
+             for sign in ("", "+") for places in (0, 1, 2)}
+    return {"pct": shown | {"0%"},
             "money": {f"${x:,.0f}" for x in floats} | {f"${pb.GROWTH_OF:,}"},
             "decimal": decimals, "int": {str(i) for i in ints}}
 
@@ -418,16 +423,16 @@ def _figures(bt: pb.Backtest) -> "dict[str, set]":
 def test_each_paragraph_is_the_engines_and_its_figures_are_run_s(page):
     """Each of the six reads is printed whole, with only its dollar signs escaped for
     markdown; every percentage, dollar amount, decimal and count in it is one of run()'s
-    figures, the counts derived here from run()'s series."""
+    figures as the paragraphs round it, the counts derived here from run()'s series."""
     printed = _paragraphs(page.at)
     allowed = _figures(page.bt)
     for read in READS:
         text = read(page.bt)
         assert text.replace("$", "\\$") in printed, read.__name__
         rest = text.replace("S&P 500", "").replace("60/40", "")
-        for token in re.findall(r"[+-]?\d+\.\d{2}%", rest):
+        for token in re.findall(r"[+-]?\d+(?:\.\d+)?%", rest):
             assert token in allowed["pct"], (read.__name__, token)
-        rest = re.sub(r"[+-]?\d+\.\d{2}%", "", rest)
+        rest = re.sub(r"[+-]?\d+(?:\.\d+)?%", "", rest)
         for token in re.findall(r"\$[\d,]+", rest):
             assert token in allowed["money"], (read.__name__, token)
         rest = re.sub(r"\$[\d,]+", "", rest)
@@ -819,8 +824,8 @@ def test_with_no_volatility_the_page_prints_a_dash_and_the_reason(case, tmp_path
         captions = [c.value for c in shown.at.caption]
         assert any(c.startswith("Each series' hypothetical figures, March 2006 to March "
                                 "2006, 1 month.") for c in captions), captions
-        assert ("No rolling 5-year return is shown: the history holds 1 month from March 2006 "
-                "to March 2006, fewer than 60.") in _paragraphs(shown.at)
+        assert ("From March 2006 to March 2006, the history holds 1 month, fewer than the 60 "
+                "a rolling 5-year return needs, so none is shown.") in _paragraphs(shown.at)
         assert not [c for c in _charts(shown.at)
                     if c["layout"]["title"]["text"].startswith("Rolling")]
 
