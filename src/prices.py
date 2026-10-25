@@ -1011,7 +1011,7 @@ def get_prices(
     end_date: Optional[str] = None,
 ) -> pd.DataFrame:
     """
-    Return cached prices, fetching only gaps from yfinance.
+    Return cached prices, fetching only gaps from Yahoo's v8/chart endpoint.
     Returns DataFrame indexed by datetime.date with columns: close, adj_close.
 
     adj_close is DERIVED here, on read, from close and the dividends table
