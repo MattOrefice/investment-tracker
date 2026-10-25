@@ -99,7 +99,7 @@ Three layers: (1) math identities that must hold by construction (BF effects sum
 ## Implementation
 
 - **Stack:** Python 3.11, Streamlit, pandas, NumPy, statsmodels, plotly, SQLite
-- **Data sources:** FRED API (macro), Ken French Data Library (factors), multpl.com (Shiller's CAPE; Yale's file is the fallback), yfinance (prices)
+- **Data sources:** FRED API (macro), Ken French Data Library (factors), multpl.com (Shiller's CAPE; Yale's file is the fallback), Yahoo Finance's v8/chart endpoint, called through `requests` (prices)
 - **Test coverage:** unit and integration tests covering return calculation, attribution math, factor regression plumbing, and dynamic-interpretation guards — see [Integrity Testing](#integrity-testing) above for the current pass/skip count
 - **Deployment:** Streamlit Community Cloud, redeploy on push to main
 

@@ -1,3 +1,12 @@
+# EVERY DIRECT DEPENDENCY IS PINNED EXACTLY (decided by the owner on October 22, 2026).
+# Ranges broke things twice: plotly 7.1.0 left the PDF printing "chart not available"
+# for every chart (#556), and pandas 3.1.0 turned CI red the day it was released
+# (#678). Transitive dependencies stay unpinned. A line with no note of its own is
+# pinned at the version main's last green push run installed (run 39812895641, October
+# 22, 2026). Moving one is its own PR, with the full suite and the personal golden on
+# the new version, as #678 does for pandas. tests/test_requirements_are_pinned.py checks
+# every line here and in requirements-ci.txt is name==version, and that it is the
+# version installed.
 # Pinned exactly: the mobile stylesheet targets data-testid internals, so an
 # unpinned Cloud rebuild onto a newer Streamlit could silently break styling.
 streamlit==1.57.0
@@ -10,8 +19,13 @@ streamlit==1.57.0
 # numerics, and it still holds: this break was a write path. Moving to 3.1 is #678's,
 # in its own PR, with the whole suite on it.
 pandas==3.0.6
-# A range, not a pin, as pandas was until #678: pandas 2.2.3 and 3.0.x (3.0.3 AND
-# 3.0.5) were verified bit-identical on the 12-sleeve Brinson-Fachler reconciliation —
+# numpy pinned exactly at 2.4.6, the version main's last green push run installed (run
+# 39812895641, October 22, 2026), with every other direct dependency (the owner's
+# decision, above). Under the range this replaced, the local harness kept numpy 2.2.6
+# while CI installed 2.4.6, so the two tested different stacks. The numerics history
+# below is not the reason for the pin, and it still holds: it was a range, as pandas
+# was until #678, because pandas 2.2.3 and 3.0.x (3.0.3 AND 3.0.5) were verified
+# bit-identical on the 12-sleeve Brinson-Fachler reconciliation —
 # full-coverage AND with the benchmark-coverage-gap renormalization branch deliberately
 # forced into a state that changes the numbers — so there is no version-sensitive
 # numeric operation to pin against. The earlier "pandas 3 breaks BF" pin was a
@@ -21,8 +35,7 @@ pandas==3.0.6
 # so a real numeric-stack regression fails loudly instead of being re-pinned blind.
 # (.python-version stays 3.11: equivalence was proven there; 3.0.x ships cp314 wheels,
 # so this relieves the 3.14 tension, but a 3.14 move is a separate, verified step.)
-numpy>=2.1.0
-yfinance>=0.2.50
+numpy==2.4.6
 # Pinned exactly: 6.7.0 is the version every local run behind the audit used, so CI and
 # Cloud match that evidence (#556). Under the range this replaced, CI installed 7.1.0
 # from September 23, 2026, which refused the kaleido then pinned (0.2.1), and the PDF
@@ -36,23 +49,30 @@ plotly==6.7.0
 # tests that would catch it are the live_data ones, excluded from the default
 # suite, so CI would stay green while the deployed page went wrong.
 fredapi==0.5.2
-html5lib>=1.1
-python-dotenv>=1.0.0
-python-dateutil>=2.9.0
-requests>=2.31.0
-openpyxl>=3.1.0
-jinja2>=3.1.0
+html5lib==1.1
+python-dotenv==1.2.4
+python-dateutil==3.0.0
+requests==2.34.2
+openpyxl==3.1.5
+jinja2==3.1.6
 # Pinned exactly at the version CI installed on October 16, 2026 (#299, decided by the
 # owner that day). With an open upper end, a release that makes harfbuzz-subset
 # required could reach Streamlit Cloud on the same push that turns CI red.
 weasyprint==70.0
-xhtml2pdf>=0.2.10; sys_platform == 'win32'
+# Windows only, so CI never installs it: pinned at 0.2.17, the version the local
+# harness had on October 25, 2026.
+xhtml2pdf==0.2.17; sys_platform == 'win32'
 # Pinned exactly (#567, decided by the owner on October 15, 2026). kaleido 1.x bundles no
 # browser: it drives an installed Chrome or Chromium, one launch per export. On Cloud
 # that is Debian's chromium package (packages.txt); in CI, the Chrome GitHub's runner
 # already has; on Windows, the installed Chrome. It does not download one.
 kaleido==1.5.0
-lxml>=4.9.0
-statsmodels>=0.14.0
-scipy>=1.14.0
-pytest>=8.3.0
+lxml==6.1.3
+# pandas.read_html (src/shiller.py, src/trailing_pe.py) falls back to BeautifulSoup
+# with html5lib when lxml fails. beautifulsoup4 came in through yfinance until
+# yfinance was removed: src/prices.py calls Yahoo's v8/chart endpoint through
+# requests, and nothing imports yfinance. 4.15.0 is what run 39812895641 installed.
+beautifulsoup4==4.15.0
+statsmodels==0.15.0
+scipy==1.17.1
+pytest==9.1.1
