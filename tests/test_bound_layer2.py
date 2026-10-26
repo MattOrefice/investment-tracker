@@ -377,8 +377,8 @@ def test_bound_prices_db_within_tolerance_of_a_fresh_fetch():
     Fails hard only if any ticker exceeds 2.0 pp (indicates materially stale cache).
 
     Tickers checked: core holdings and benchmarks. A ticker is passed over when either
-    side holds fewer than 5 rows or its read raises; the test skips only if src.prices
-    cannot be imported.
+    side holds fewer than 5 rows or any step for it raises; the test skips only if
+    src.prices cannot be imported.
     """
     tickers = ["SPY", "VOO", "VTV", "SPHQ", "AVUV", "VEA", "IEMG", "VNQ", "PDBC", "IEF"]
 
