@@ -76,3 +76,13 @@ beautifulsoup4==4.15.0
 statsmodels==0.15.0
 scipy==1.17.1
 pytest==9.1.1
+# Imported by tests, so pinned here beside pytest (decided by the owner on October 26,
+# 2026, #683): packaging by tests/test_requirements_are_pinned.py's marker check,
+# MarkupSafe by the tests that escape text as the report's templates do. Both came in
+# unpinned behind other packages until that file's import census named them. The
+# deployed app already installed both: streamlit, plotly and statsmodels require
+# packaging, and Jinja2 requires MarkupSafe (each package's own metadata), so these
+# lines fix their versions and add no package to it. Pinned at the versions main's last
+# green push run installed (run 40244377124, October 25, 2026).
+packaging==26.3
+markupsafe==3.0.4

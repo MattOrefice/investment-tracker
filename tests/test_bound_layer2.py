@@ -12,7 +12,7 @@ Subsections:
   2.3  Risk-adjusted metric coherence (synthetic, always run)
   2.4  Drift band sizing matches SAA rule (DB-backed, always run)
   2.5  Macro indicator plausibility (DB-backed, skips if cache empty)
-  2.1  Cache freshness vs. yfinance (network-bound, @pytest.mark.slow)
+  2.1  Cache freshness vs. a fresh Yahoo fetch (network-bound, @pytest.mark.slow)
 """
 from __future__ import annotations
 
@@ -363,20 +363,22 @@ def test_bound_macro_regime_pct_int_is_integer_in_range():
         )
 
 
-# ── 2.1  Cache freshness vs. yfinance (network-bound) ────────────────────────
+# ── 2.1  Cache freshness vs. a fresh Yahoo fetch (network-bound) ─────────────
 
 @pytest.mark.bound
 @pytest.mark.slow
-def test_bound_prices_db_within_tolerance_of_yfinance():
-    """Cached prices must match fresh yfinance pulls within 0.5 pp cumulative return.
+def test_bound_prices_db_within_tolerance_of_a_fresh_fetch():
+    """Cached prices must match a fresh fetch within 0.5 pp cumulative return.
 
-    Fetches last 30 trading days from yfinance for each tracked equity ticker.
-    Compares the 30-day cumulative return from cache vs. fresh data.
-    Warns (via assertion message) if any ticker exceeds 0.5 pp.
+    Fetches the last 45 calendar days for each ticker below through
+    src.prices.fetch_prices, which calls Yahoo's v8/chart endpoint through requests.
+    Compares that window's cumulative return from cache vs. fresh data.
+    Warns (UserWarning) if any ticker exceeds 0.5 pp.
     Fails hard only if any ticker exceeds 2.0 pp (indicates materially stale cache).
 
-    Tickers checked: core holdings and benchmarks.
-    Skips if yfinance is unavailable.
+    Tickers checked: core holdings and benchmarks. A ticker is passed over when either
+    side holds fewer than 5 rows or any step for it raises; the test skips only if
+    src.prices cannot be imported.
     """
     tickers = ["SPY", "VOO", "VTV", "SPHQ", "AVUV", "VEA", "IEMG", "VNQ", "PDBC", "IEF"]
 
@@ -426,7 +428,7 @@ def test_bound_prices_db_within_tolerance_of_yfinance():
         )
 
     assert not hard_violations, (
-        f"Cache materially stale (>2.0 pp from fresh yfinance) for:\n"
+        f"Cache materially stale (>2.0 pp from a fresh fetch) for:\n"
         + "\n".join(hard_violations)
         + "\nRun scripts/rebuild_prices_cache.py to refresh the price cache."
     )

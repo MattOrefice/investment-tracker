@@ -12,10 +12,11 @@ a plain value object with no pandas dependency: it travels beside a frame as an
 explicit return value, never on ``DataFrame.attrs``. Two reasons, one upstream and
 one local:
 
-* pandas documents ``attrs`` as *"experimental and may change without warning"*,
-  and requirements.txt admits an open range (``pandas>=2.2.0``), so no measurement
-  on any one version licenses the next. A disclosure substrate resting on that is
-  the silent-failure class relocated one layer up.
+* pandas documents ``attrs`` as *"experimental and may change without warning"*
+  (``DataFrame.attrs``' docstring in pandas 3.0.6, released September 17, 2026).
+  requirements.txt pins pandas at exactly that version, but a pin is moved in a PR of
+  its own (#678), and no measurement on one version licenses the next. A disclosure
+  substrate resting on that is the silent-failure class relocated one layer up.
 * ``attrs`` is dropped by ``merge`` and by ``concat`` when the inputs' attrs differ
   (pandas' own documented behaviour). A substrate that survives the three pages it
   was built for and vanishes the moment coverage reaches ``household.py`` or the
