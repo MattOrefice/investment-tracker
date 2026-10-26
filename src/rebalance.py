@@ -43,10 +43,11 @@ class BuySuggestions(NamedTuple):
     """suggest_buys' rows, plus the report a caller needs to EXPLAIN them.
 
     A NamedTuple rather than ``DataFrame.attrs``, matching holdings.SleeveWeights
-    and holdings.ValueSeries. src/coverage.py:10-22 sets out why: pandas documents
-    ``attrs`` as experimental, requirements.txt admits an open pandas range, and
-    ``attrs`` is dropped by merge/concat. PR #261 put this report on ``attrs``
-    anyway; this moves it onto the channel the rest of the codebase already uses.
+    and holdings.ValueSeries. src/coverage.py's module docstring sets out why: pandas
+    documents ``attrs`` as experimental, no measurement on one pinned version licenses
+    the next, and ``attrs`` is dropped by merge/concat. PR #261 put this report on
+    ``attrs`` anyway; this moves it onto the channel the rest of the codebase already
+    uses.
 
       ``total_shortfall``           dollars needed to close every breach
       ``shortfalls_fully_filled``   True in the fill-completely branch, where any

@@ -5,3 +5,11 @@
 # Pinned exactly: CI runs the suite on four workers with it (-n 4). 3.8.0 is the
 # version #544's trial ran, serially and in parallel, on GitHub's runner.
 pytest-xdist==3.8.0
+# Imported by tests and by nothing the app runs, so pinned here rather than in
+# requirements.txt (#683). Both came in unpinned behind other packages until
+# tests/test_requirements_are_pinned.py's import census named them. Pinned at the
+# versions main's last green push run installed (run 40244377124, October 25, 2026):
+# packaging for the pin test's marker check, markupsafe for the tests that escape
+# the text they look for as the report's templates do.
+packaging==26.3
+markupsafe==3.0.4
