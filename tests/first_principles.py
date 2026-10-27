@@ -14,8 +14,10 @@ the calculation under test:
   * the valuation conventions _portfolio_value_series_impl documents: non-DRIP shares
     at the total-return close on or before the day; SPAXX at BIL's total-return close,
     scaled to $1 on BIL's first close on or after inception;
-  * the ledger's flow convention: a buy brings shares x price + fees into the book, a
-    sell takes shares x price - fees out, DRIP lots are neither.
+  * the ledger's flow convention, in the book's total-return units (#687): a buy brings
+    shares x price x f + fees into the book, a sell takes shares x price x f - fees out,
+    f being the ticker's level over its close on the trade date, from the same prices
+    (SPAXX's close is its $1 NAV, so its f is its level); DRIP lots are neither.
 
 Must run with src.db pointed at the book under test (the frozen-book fixtures do it).
 """
@@ -73,12 +75,15 @@ class Book:
                 f"SELECT MAX(price_date) FROM prices WHERE ticker IN ({q}) "
                 "AND price_date >= ? AND price_date <= ?",
                 (*price_tickers, self.inception, yesterday)).fetchone()[0]
-        self._px = {}
+        self._px, self._close = {}, {}
         for t in price_tickers:
             p = get_prices(t, self.inception, self.anchor)
             s = p["adj_close"].fillna(p["close"]).astype(float)
             s.index = [d.isoformat() for d in s.index]
             self._px[t] = s.sort_index()
+            c = p["close"].astype(float)
+            c.index = [d.isoformat() for d in c.index]
+            self._close[t] = c.sort_index()
         bil = self._px.get("BIL")
         self._bil0 = float(bil.iloc[0]) if bil is not None and len(bil) else None
 
@@ -94,9 +99,10 @@ class Book:
         """External flows on each date in (after, through]: a flow ON the window's
         first day is part of its starting value, not a mid-window flow."""
         out: dict = {}
-        for d, _t, action, shares, price, fees in self._trades:
+        for d, t, action, shares, price, fees in self._trades:
             if after < d <= through:
-                amt = shares * price + fees if action == "buy" else -(shares * price) + fees
+                dollars = shares * price * self._factor(t, d)
+                amt = dollars + fees if action == "buy" else -dollars + fees
                 out[d] = out.get(d, 0.0) + amt
         return {d: a for d, a in out.items() if a != 0.0}
 
@@ -108,6 +114,14 @@ class Book:
         s = self._px[ticker]
         s = s[s.index <= day]
         return float(s.iloc[-1]) if len(s) else 0.0
+
+    def _factor(self, ticker: str, day: str) -> float:
+        """The ticker's level over its close on or before ``day``: what a dollar paid for
+        it that day counts for in the book's total-return units (#687)."""
+        if ticker == "SPAXX":
+            return self._price(ticker, day)
+        c = self._close[ticker]
+        return self._price(ticker, day) / float(c[c.index <= day].iloc[-1])
 
     def value(self, day: str) -> float:
         return sum(sh * self._price(t, day) for t, sh in self.positions(day).items() if sh)

@@ -588,7 +588,8 @@ def _portfolio_value_series_impl(
     holdings_matrix = holdings_matrix.reindex(date_range)
 
     tickers = holdings_matrix.columns.tolist()
-    prices_matrix, statuses = _valuation_levels(tickers, start_date, end, account_id=account_id)
+    prices_matrix, _factors, statuses = _valuation_levels(
+        tickers, start_date, end, account_id=account_id)
 
     common = [t for t in tickers if t in prices_matrix.columns]
 
@@ -617,14 +618,24 @@ def _valuation_levels(
     end: str,
     *,
     account_id: int,
-) -> "tuple[pd.DataFrame, list[TickerStatus]]":
+) -> "tuple[pd.DataFrame, pd.DataFrame, list[TickerStatus]]":
     """The level the value series counts one share of each ticker at, on every day of
-    [start_date, end], and each ticker's status, in ``tickers``' order.
+    [start_date, end], each ticker's adjustment factor on those days, and each
+    ticker's status, in ``tickers``' order.
 
-    One reading for both sides of the TWR's step (#687): the value series multiplies
-    shares by it, and get_external_cashflow_series values each trade at it, so a flow
-    adds to V exactly what it is netted out at. A ticker with no price is an all-NaN
-    column, its status saying why.
+    The factor is the level over the ticker's close, both read from the one frame, so
+    it is what a dollar paid for the ticker that day counts for in the value series'
+    units. One reading for both sides of the TWR's step (#687): the value series
+    multiplies shares by the level, and get_external_cashflow_series takes each
+    trade's own dollars at the factor. SPAXX's close is its $1 NAV, so its factor is
+    its level. A ticker with no price is an all-NaN column in both, its status saying
+    why.
+
+    A frame serving no close, which only a legacy single-basis lock does (#193; no
+    committed lock is one), has a factor of 1: its flows stay the ledger's dollars, as
+    every flow was before #687, off by the dividend factor alone. The other way, NaN,
+    is worse: every reader fills the flow series' NaN with zero, so the whole trade
+    would count as that day's return.
     """
     date_range = pd.date_range(start=start_date, end=end, freq="D")
 
@@ -635,6 +646,7 @@ def _valuation_levels(
     # book's inception, as at every site that values SPAXX (#646), so that
     # shares × price still equals dollars of SPAXX held.
     price_cols: dict = {}
+    factor_cols: dict = {}
     statuses: "list[TickerStatus]" = []
     for ticker in tickers:
         if ticker == "SPAXX":
@@ -649,6 +661,7 @@ def _valuation_levels(
                 price_cols[ticker] = series.reindex(date_range).ffill()
             except Exception:
                 price_cols[ticker] = pd.Series(1.0, index=date_range)
+            factor_cols[ticker] = price_cols[ticker]
         else:
             p, st = _price_and_status(ticker, start_date, end, account_id=account_id)
             if not st.resolved:
@@ -658,23 +671,29 @@ def _valuation_levels(
                 # NaN column where the original built a float one. Same zero
                 # dollars either way, but this keeps the column byte-identical.
                 price_cols[ticker] = pd.Series(dtype=float, index=date_range)
+                factor_cols[ticker] = pd.Series(dtype=float, index=date_range)
                 statuses.append(st)
                 continue
             try:
                 p.index = pd.to_datetime(p.index)
                 series = total_return_series(p)
                 price_cols[ticker] = series.reindex(date_range).ffill()
+                factor = (series / p["close"] if "close" in p.columns
+                          else pd.Series(1.0, index=p.index))
+                factor_cols[ticker] = factor.reindex(date_range).ffill()
             except Exception:
                 # An all-NaN column contributes exactly zero dollars to every day
                 # of the series, because the value series' .sum(axis=1) defaults to
                 # skipna=True — no NaN escapes to warn anyone (#188). The status
                 # is the only record that this holding was not valued.
                 price_cols[ticker] = pd.Series(dtype=float, index=date_range)
+                factor_cols[ticker] = pd.Series(dtype=float, index=date_range)
                 st = replace(st, resolved=False, reason="empty_window",
                              served_through=None)
             statuses.append(st)
 
     prices_matrix = pd.DataFrame(price_cols, index=date_range)
+    factors_matrix = pd.DataFrame(factor_cols, index=date_range)
 
     # A window asked from a weekend or a holiday has days before its first session with
     # no close on or before them in the window. Nothing traded on them, so they carry
@@ -685,7 +704,9 @@ def _valuation_levels(
     if len(lead) and first_session in prices_matrix.index:
         prices_matrix.loc[lead] = prices_matrix.loc[lead].fillna(
             prices_matrix.loc[first_session])
-    return prices_matrix, statuses
+        factors_matrix.loc[lead] = factors_matrix.loc[lead].fillna(
+            factors_matrix.loc[first_session])
+    return prices_matrix, factors_matrix, statuses
 
 
 def get_external_cashflow_series(
@@ -701,25 +722,30 @@ def get_external_cashflow_series(
     functions (src/returns.py) and compute_risk_metrics (src/performance.py) net
     out so that deposited cash is not counted as market return.
 
-    IN THE VALUE SERIES' UNITS, NOT THE LEDGER'S DOLLARS (#687, decided by the owner
-    on October 27, 2026). The TWR's step is r_t = (V_t − V_{t−1} − CF_t) / V_{t−1},
-    and get_portfolio_value_series counts a share at its total-return level, which
-    is back-adjusted for every stored dividend after the date. So each trade is
-    valued here at that same level on its trade date (_valuation_levels, over this
-    window): a flow takes off exactly what it adds to V_t, and earns nothing on its
-    own day, as end-of-day timing says. At the trade's raw price, as this was until
-    #687, a buy of a ticker that paid a later dividend took off more than it added,
-    and the step read low by (CF_t / V_{t−1}) × (1 − f), f the ticker's adjustment
-    factor on the date; a withdrawal read high by the same. The ledger's dollars,
-    shares × price, differ from this flow by that factor, so this is not the amount
-    deposited. Valuing the book at the raw close with dividends as income (#369)
-    would remove the mismatch at its root.
+    IN THE VALUE SERIES' UNITS, NOT THE LEDGER'S DOLLARS (#687, convention chosen by
+    the owner on October 27, 2026). The TWR's step is
+    r_t = (V_t − V_{t−1} − CF_t) / V_{t−1}, and get_portfolio_value_series counts a
+    share at its total-return level, which is back-adjusted for every stored dividend
+    after the date. So each trade's own dollars, shares × its price, are taken at the
+    ticker's adjustment factor f on the trade date, its level over its close
+    (_valuation_levels, over this window). At the raw dollars, as this was until #687,
+    a buy of a ticker that paid a later dividend took off more than it added, and the
+    step read low by (CF_t / V_{t−1}) × (1 − f); a withdrawal read high by the same.
+    The ledger's dollars differ from this flow by that factor, so this is not the
+    amount deposited. Valuing the book at the raw close with dividends as income
+    (#369) would remove the mismatch at its root.
+
+    The trade's price, not its close: a trade at the close takes off exactly what it
+    adds to V_t and earns nothing on its own day, as end-of-day timing says, while a
+    trade away from the close keeps shares × (price − close) × f in that day's
+    return, because the book paid the price. A buy above the close is that day's
+    loss, a sale above it that day's gain.
 
     Buys are cash entering the measured portfolio, sells cash leaving it; fees
-    always land as a performance cost, in dollars (a buy is shares × level + fees,
-    a sell −shares × level + fees). Same-date buy/sell pairs (internal rebalances,
-    e.g. sell VOO → buy SPAXX) are summed per date, so they are taken out at what
-    they changed V by and move no return on their day beyond their fees.
+    always land as a performance cost, in dollars, not converted (a buy is
+    shares × price × f + fees, a sell −shares × price × f + fees). Same-date buy/sell
+    pairs (internal rebalances, e.g. sell VOO → buy SPAXX) are summed per date, so
+    at the close they move no return on their day beyond their fees.
 
     A trade in a ticker with no level on its date makes that day's flow NaN, never
     a raw-price stand-in: the value series has no level for that holding there
@@ -738,7 +764,7 @@ def get_external_cashflow_series(
 
     with get_connection() as conn:
         rows = conn.execute(
-            """SELECT trade_date, ticker, action, shares, COALESCE(fees, 0) AS fees
+            """SELECT trade_date, ticker, action, shares, price, COALESCE(fees, 0) AS fees
                FROM trades
                WHERE trade_date >= ? AND trade_date <= ? AND account_id = ?
                  AND (lot_source IS NULL OR lot_source != 'drip')
@@ -749,13 +775,14 @@ def get_external_cashflow_series(
     flows = pd.Series(0.0, index=date_range)
     if not rows:
         return flows
-    levels, _statuses = _valuation_levels(
+    _levels, factors, _statuses = _valuation_levels(
         sorted({r["ticker"] for r in rows}), start_date, end, account_id=account_id)
     for r in rows:
         ts = pd.Timestamp(r["trade_date"])
         if ts in flows.index:
             signed = r["shares"] if r["action"].lower() == "buy" else -r["shares"]
-            flows[ts] += signed * float(levels.at[ts, r["ticker"]]) + float(r["fees"])
+            flows[ts] += (signed * r["price"] * float(factors.at[ts, r["ticker"]])
+                          + float(r["fees"]))
     return flows
 
 

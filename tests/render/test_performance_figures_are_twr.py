@@ -81,11 +81,29 @@ def test_the_deposit_would_move_every_figure(rendered):
         assert book.value_ratio(start, end) - book.twr(start, end) > 0.10, (start, end)
 
 
+def _locked_book(label: str) -> "fp.Book":
+    """The reference, reading its prices from the quarter's lock, as the tile does.
+
+    The tile is built inside the lock, whose total-return closes carry the dividends
+    through the quarter's last day and no later ones. The live prices carry every
+    stored dividend, and the book's value sums those levels across tickers, so its
+    quarter TWR moves with the anchor (#369): on the frozen book about 0.005 pp, with
+    or without the deposit, which the tolerance below cannot also hold beside the
+    tile's rounding. The prices are an input shared with the page, not the
+    calculation under test."""
+    from src.cache import get_quarter_snapshot, label_to_quarter_id, snapshot_price_context
+    snap = get_quarter_snapshot(label_to_quarter_id(label))[0]
+    assert snap is not None, f"{label} has no lock, but its tile reads one"
+    with snapshot_price_context(snap):
+        return fp.Book(account_id=1)
+
+
 def test_quarterly_tile_is_the_quarters_twr(rendered):
     at, book = rendered
     label, start, end, shown = _quarter(at, book)
     m = re.fullmatch(r"(-?\d+\.\d{2})%", str(shown))
     assert m, f"{label} tile is not a percentage: {shown!r}"
+    book = _locked_book(label)
     expected = book.twr(start, end) * 100
     assert abs(float(m.group(1)) - expected) <= 0.006, (
         f"{label} tile reads {shown}, but the book's TWR over {start}..{end} is "
