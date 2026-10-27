@@ -153,8 +153,9 @@ def compute_risk_metrics(
                     fixed rate the page used before, kept for callers that pass none.
         window:     "SI" = full inception history; "1Y" / "3M" / "1M" = trailing
                     calendar-day windows; "YTD" = year-to-date from Jan 1.
-        cashflows:  Optional daily net external-flow series (signed dollars,
-                    DatetimeIndex; see src/holdings.get_external_cashflow_series).
+        cashflows:  Optional daily net external-flow series (signed, in the value
+                    series' units, DatetimeIndex; see
+                    src/holdings.get_external_cashflow_series).
                     When given, the daily return on each flow day is computed as
                     r_t = (V_t - V_{t-1} - CF_t) / V_{t-1} — end-of-day flow
                     timing, matching src/returns.twr_daily_linked — so a

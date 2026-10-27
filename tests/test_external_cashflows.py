@@ -70,14 +70,30 @@ def test_builder_demo_flows_are_inception_seed_only(use_demo_db):
     """demo.db's only external flow is the ~$1k inception seed on 2025-05-01.
     The 49 DRIP reinvestment rows are internal income (already embedded in
     adj_close) and must be excluded — any nonzero mid-history value here means
-    the DRIP filter broke and income would be double-counted as a flow."""
-    from src.holdings import get_external_cashflow_series
+    the DRIP filter broke and income would be double-counted as a flow.
+
+    The seed is taken in the value series' units (#687): each trade's dollars at
+    its ticker's factor that day, its level over its close. The seed's trades are
+    at the close, to the cent the later legs were typed to, so the seed is the
+    book's starting value to the cent, not the ledger's ~$1,000 (the levels are
+    back-adjusted for every later dividend)."""
+    from src.db import get_connection
+    from src.holdings import get_external_cashflow_series, get_portfolio_value_series
 
     inception = "2025-05-01"
     cf = get_external_cashflow_series(inception, date.today().isoformat(), account_id=1)
     if float(cf.abs().sum()) == 0.0:
         pytest.skip("trades table empty — skipped in empty-DB mode")
-    assert float(cf.loc[pd.Timestamp(inception)]) == pytest.approx(1000.0, abs=1.0)
+    pv = get_portfolio_value_series(inception, date.today().isoformat(), account_id=1)
+    seed = float(cf.loc[pd.Timestamp(inception)])
+    assert seed == pytest.approx(float(pv.loc[pd.Timestamp(inception)]), abs=0.01)
+    with get_connection() as conn:
+        ledger, = conn.execute(
+            "SELECT SUM(CASE WHEN LOWER(action) = 'buy' THEN shares * price "
+            "ELSE -shares * price END + COALESCE(fees, 0)) FROM trades "
+            "WHERE trade_date = ? AND account_id = 1 "
+            "AND (lot_source IS NULL OR lot_source != 'drip')", (inception,)).fetchone()
+    assert abs(seed - ledger) > 1.0, (seed, ledger)
     # Post-inception flow must be ZERO to the DOLLAR, not to the bit. demo.db now
     # holds a genuinely cash-neutral same-date rebalance (Phase 39 VEA trim funding
     # the three tilt buys). Its net flow sums the signed shares*price legs, and

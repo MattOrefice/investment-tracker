@@ -19,10 +19,12 @@ rebalance instead: VEA is trimmed and the proceeds buy the three tilt sleeves.
 CASH-NEUTRAL BY CONSTRUCTION
 ---------------------------
 The three buys are sized to their DB targets; the VEA sell is sized to exactly
-fund them (proceeds == sum of buys, to the cent). All four trades carry the SAME
-date, and get_external_cashflow_series sums flows per date — its docstring calls
-out same-date buy/sell pairs as netting toward zero — so this registers no
-external flow and the "inception seed only" invariant survives.
+fund them (proceeds == sum of buys, to the cent). All four trades carry the
+seed's date, and get_external_cashflow_series sums flows per date, so the
+rebalance lands in the seed's day, which every TWR reads as the starting value:
+it registers no external flow and the "inception seed only" invariant survives.
+(Since #687 that series takes each leg's dollars at its ticker's factor, so the
+legs no longer net to the cent there; the seed's day holds them either way.)
 
 VEA lands slightly under its 7.08% target rather than exactly on it, because it
 entered the rebalance at ~20.05% rather than the full 20.41% international

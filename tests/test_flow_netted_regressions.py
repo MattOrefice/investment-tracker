@@ -118,11 +118,13 @@ def staged(committed, tmp_path_factory):
 
 
 def test_the_staged_contribution_is_one_a_value_ratio_reads_as_a_gain(committed, staged):
-    """The premise: the flow series holds the staged buy, the committed book holds no
-    flow after its first day, and pct_change reads the staged day as about +98%."""
+    """The premise: the flow series holds the staged buy, at what it adds to the value
+    series that day (#687), the committed book holds no flow after its first day, and
+    pct_change reads the staged day as about +98%."""
     _, before = committed
-    value, after = staged
-    assert after["cf"][FLOW_DAY] == pytest.approx(value, rel=1e-12)
+    _, after = staged
+    added = after["pv"][FLOW_DAY] - before["pv"][FLOW_DAY]
+    assert after["cf"][FLOW_DAY] == pytest.approx(added, rel=1e-12)
     assert (before["cf"].iloc[1:] == 0.0).all()
     assert after["pv"].pct_change()[FLOW_DAY] > 0.9
     assert abs(before["pv"].pct_change()[FLOW_DAY]) < 0.05
