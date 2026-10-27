@@ -13,12 +13,16 @@ Pinned here:
     and has held since SCHP's Q3 figure was entered and the lock completed in the
     committed book the same day (tools/complete_demo_lock_inputs.py). Nothing else in
     the payload moved: with the durations put back among the inputs it waits on, it is
-    the lock as taken, byte for byte;
-  * what it still waits on, with the date each ended when it locked: French's three
-    files (August 31);
+    the lock as taken, byte for byte (tests/test_complete_demo_lock_inputs.py);
+  * French's three files, which it waited on when it was taken (each ended August 31)
+    and has held since French published September and the lock completed in the
+    committed book on October 27, 2026, by the same tool. It waits on nothing now. With
+    the three put back among the inputs it waits on, it is main's lock at 1855bb4, byte
+    for byte;
   * TIP's two ex-dates in the quarter (#490);
-  * its cover names each input it waits on and carries no restatement line, its factor
-    and benchmark sections read as pending, and its duration line renders;
+  * its cover names every input it holds, waits on nothing and carries no restatement
+    line, its factor and benchmark sections render from the factors it holds, and its
+    duration line renders;
   * the five earlier locks are as #491's restatement left them, and the frozen book,
     whose prices end July 20, holds no Q3 lock.
 """
@@ -33,20 +37,26 @@ from pathlib import Path
 
 import pytest
 
-from tests.conftest import FROZEN_BOOK, before_the_gap_record, before_the_policy_was_held
+from tests.conftest import (
+    FROZEN_BOOK,
+    Q3_2026_FRENCH_AS_TAKEN,
+    before_the_gap_record,
+    before_the_policy_was_held,
+    q3_2026_before_french_was_completed,
+)
 
 ROOT = Path(__file__).resolve().parent.parent
 DEMO = ROOT / "data" / "demo.db"
 Q3 = "2026Q3"
-COVER = ("This quarter's lock holds prices, dividends, CAPE, the HYG credit proxy, the "
-         "fund durations and the SAA policy, and is waiting on the Fama-French factors and "
-         "the momentum factor. "
+COVER = ("This quarter's lock holds prices, dividends, CAPE, the Fama-French factors, the "
+         "momentum factor, the HYG credit proxy, the fund durations and the SAA policy. "
          "Macro Context and Asset Evaluation are not locked: they are computed each time the "
          "report is generated.")
-PENDING = {"ff5_us": "2026-08-31", "ff5_developed_exus": "2026-08-31", "umd": "2026-08-31"}
-# What the cover calls each input the lock waits on.
+# What the cover calls each of French's inputs, which the lock waited on until October 27.
 COVER_WORDS = {"ff5_us": "the Fama-French factors", "ff5_developed_exus": "the Fama-French factors",
                "umd": "the momentum factor"}
+# SHA-256 of the lock's stored payload on main at 1855bb4, before French was completed.
+BEFORE_FRENCH = "38f4cd12028fd08c561578055aa1ad11d245a52f3fe5803a2648a3704a204e9d"
 # The fund durations the lock holds, as (years, measure, as-of): data/etf_metadata.json as
 # it stood on October 13, 2026, every figure dated inside the quarter.
 DURATIONS = {
@@ -65,6 +75,9 @@ HELD = {
     "cape": "3466fb99aced02d9e8676f764b676718009c584cc17fc3c3f999f228a3a2b24d",
     "hyg": "3cc7da9cacc3eac8925f1c9a4d566715cb86b8038b7506bb3d6d47de2173254a",
     "etf_metadata": "d3bcefa3ce390398e83a8a187c890c82a729f17771c92d66448ca38f8792bb6a",
+    "ff5_us": "0f5f718cba19013ba90442bb28b622ae4d6191d4a19ed7c32aebcea9112c2a03",
+    "ff5_developed_exus": "9dcc29c9574b12a838c7f8578b0a14ae52d93ace34f8aee530bef4186ac6c875",
+    "umd": "730855791f820a438f6fa509e342cb32862c86f6844da6d3ba395ff8105753aa",
 }
 # Each earlier lock's stored payload as its SHA-256, as #491's restatement left them: the
 # first four are unchanged since 10313a9, and Q2 2026 is the restated one.
@@ -129,9 +142,11 @@ def test_the_lock_holds_prices_through_the_quarters_last_session_with_no_gap(pay
 
 
 def test_what_the_lock_holds_is_pinned(payload):
-    assert sorted(payload["inputs"]) == ["cape", "dividends", "etf_metadata", "hyg"]
+    assert sorted(payload["inputs"]) == ["cape", "dividends", "etf_metadata", "ff5_developed_exus",
+                                         "ff5_us", "hyg", "umd"]
     assert payload["inputs_through"] == {"hyg": "2026-09-30", "cape": "2026-09-01",
-                                         "etf_metadata": "2026-08-31"}
+                                         "etf_metadata": "2026-08-31", "ff5_us": "2026-09-30",
+                                         "ff5_developed_exus": "2026-09-30", "umd": "2026-09-30"}
     parts = {"adj_close": payload["adj_close"], "close": payload["close"], **payload["inputs"]}
     assert {k: _digest(json.dumps(v)) for k, v in parts.items()} == HELD
 
@@ -157,8 +172,25 @@ def test_tip_has_two_ex_dates_in_the_quarter(payload):
     assert (len(held), sum(len(v) for v in in_q3.values())) == (26, 27)
 
 
-def test_it_waits_on_frenchs_files(payload):
-    assert payload["inputs_pending"] == PENDING
+def test_it_waits_on_nothing_and_holds_frenchs_files_through_the_quarter(payload):
+    """French published September, and the three files it waited on were completed in
+    the committed book on October 27, 2026: each held through September 30, as the
+    files stood that day."""
+    assert payload["inputs_pending"] == {}
+    for name in Q3_2026_FRENCH_AS_TAKEN:
+        held = payload["inputs"][name]
+        assert held["index"][-1][:10] == "2026-09-30" == payload["inputs_through"][name], name
+
+
+def test_with_french_put_back_it_is_mains_lock_before_the_completion():
+    """Nothing else in the payload moved: the three put back among the inputs it waits
+    on, with the date each ended when it locked, give main's lock at 1855bb4, byte for
+    byte, SAA policy and all."""
+    text = _locks(DEMO)[Q3][2]
+    before = q3_2026_before_french_was_completed(text)
+    assert before != text, "premise: the lock holds French's files"
+    assert _digest(before) == BEFORE_FRENCH
+    assert json.loads(before)["inputs_pending"] == Q3_2026_FRENCH_AS_TAKEN
 
 
 def test_it_holds_every_fund_duration_dated_inside_the_quarter(payload):
@@ -176,13 +208,14 @@ def test_it_holds_every_fund_duration_dated_inside_the_quarter(payload):
     assert payload["inputs_through"]["etf_metadata"] == min(d for _y, _m, d in DURATIONS.values())
 
 
-def test_its_cover_names_each_input_it_waits_on_and_claims_no_restatement(snap):
+def test_its_cover_names_every_input_it_holds_and_claims_no_restatement(snap):
     from src import cache
     note = cache.lock_holds_note(snap)
     assert note == COVER
-    assert snap.inputs_pending == PENDING
-    for name in PENDING:
-        assert COVER_WORDS[name] in note.split("is waiting on")[1].split(".")[0], name
+    assert snap.inputs_pending == {}
+    assert "waiting on" not in note
+    for name in Q3_2026_FRENCH_AS_TAKEN:
+        assert COVER_WORDS[name] in note.split("lock holds")[1].split(".")[0], name
     assert cache.restatement_note(Q3, snap) is None
     assert cache.inputs_restatement_note(Q3, snap) is None
     for line in (cache.undated_durations_note, cache.input_corrections_note,
@@ -191,13 +224,26 @@ def test_its_cover_names_each_input_it_waits_on_and_claims_no_restatement(snap):
         assert line(snap) is None, line.__name__
 
 
-def test_its_factor_and_benchmark_sections_read_as_pending(snap):
-    from src.reports import _pending_note
-    french = ("Pending: this section locks when the factor data covers the quarter. The "
-              "Fama-French factor data on file ends August 31, 2026; the quarter ended "
-              "September 30, 2026.")
-    assert _pending_note(snap, "factor") == french
-    assert _pending_note(snap, "benchmark") == french
+def test_its_factor_and_benchmark_sections_render_from_the_factors_it_holds(snap, monkeypatch):
+    """No longer pending: until October 27, 2026 both read "The Fama-French factor data
+    on file ends August 31, 2026". Each regression now runs through September 30 on
+    French's files as the lock holds them, whatever the files say afterwards. Its
+    figures are held by the locked-figures golden."""
+    from src import cache, factors, reports
+    assert reports._pending_note(snap, "factor") is None
+    assert reports._pending_note(snap, "benchmark") is None
+    # The files are not read inside the lock: files that would raise prove it.
+    for region in factors._FACTOR_CONFIG:
+        monkeypatch.setitem(factors._FACTOR_CONFIG[region], "cache", Path("no-such-file.csv"))
+    monkeypatch.setattr(factors, "_UMD_CACHE", Path("no-such-file.csv"))
+    with cache.snapshot_price_context(snap):
+        factor = reports._build_factor_section("2026-09-30")
+        bench = reports._build_benchmark_section("2026-06-30", "2026-09-30")
+    window = "May 2, 2025 to September 30, 2026"
+    assert [s["label"] for s in factor["sleeves"]] == ["US Equity Sleeve",
+                                                       "International Core Sleeve"]
+    assert all(s["sample_window"] == window and s["rows"] for s in factor["sleeves"])
+    assert bench["sample_window"] == window and bench["rows"]
 
 
 def test_its_duration_line_renders_from_the_durations_it_holds(snap, monkeypatch):

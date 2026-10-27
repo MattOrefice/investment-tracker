@@ -39,6 +39,7 @@ from tests.conftest import (
     before_the_policy_was_held,
     pin_today,
     point_at_frozen_book,
+    q3_2026_before_french_was_completed,
     record_the_policy,
     unpin_leftovers,
 )
@@ -117,7 +118,8 @@ def test_nothing_else_in_any_lock_changed(book):
     """Per lock: the stored text is main's, every byte, with the record appended as its
     last key. A lock taken since is main's text exactly. Each lock was later given the
     SAA policy (#525), which is undone first (tests/test_locks_hold_the_policy.py pins
-    the undoing)."""
+    the undoing), and Q3 2026 French's three files, completed after that, undone before
+    it (tests/test_q3_2026_lock.py pins that undoing)."""
     rows = _rows(book)
     for q in QUARTERS:
         assert json.dumps(json.loads(rows[q][2])) == rows[q][2], (book.name, q, "round-trips")
@@ -125,7 +127,8 @@ def test_nothing_else_in_any_lock_changed(book):
         assert text.endswith(APPENDED), (book.name, q)
         assert _sha(text[:-len(APPENDED)] + "}") == PAYLOAD_BEFORE[q], (book.name, q)
     for q in sorted(set(rows) - set(QUARTERS)):
-        assert _sha(before_the_policy_was_held(rows[q][2])) == PAYLOAD_BEFORE[q], (book.name, q)
+        text = before_the_policy_was_held(q3_2026_before_french_was_completed(rows[q][2]))
+        assert _sha(text) == PAYLOAD_BEFORE[q], (book.name, q)
     assert set(rows) - set(QUARTERS) == ({"2026Q3"} if book == DEMO else set())
 
 

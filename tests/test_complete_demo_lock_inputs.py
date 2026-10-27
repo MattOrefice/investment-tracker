@@ -6,10 +6,12 @@ committed then. The tool writes the same completion into data/demo.db, guarded. 
 here on copies of the book whose Q3 2026 lock is put back as it was taken, waiting on
 French's three files and on the fund durations, with the files as they stood when the
 durations were completed: the durations the lock now holds, and French's ending where
-the lock recorded them. (A later completion is a further step: it adds its inputs to
-COMPLETED and stages the files as they stood for it.)
+the lock recorded them. French's three were completed in a later step, with the files
+as they stood for it: the frames the lock now holds. (A later completion is a further
+step: it adds its inputs to STEPS and stages the files as they stood for it.)
 
-  * a run writes the committed lock, byte for byte, and changes nothing else in the book;
+  * the runs, each with the files as they stood for it, write the committed lock, byte
+    for byte, and change nothing else in the book;
   * it is the report path's own completion;
   * it refuses, and writes nothing, when a named input still does not cover the quarter,
     when an input would complete without being named, when anything else in the payload
@@ -29,14 +31,19 @@ from pathlib import Path
 
 import pytest
 
+from tests.conftest import q3_2026_before_french_was_completed
+
 ROOT = Path(__file__).resolve().parent.parent
 DEMO = ROOT / "data" / "demo.db"
 Q3 = "2026Q3"
 # What Q3's lock waited on when it was taken on October 13, 2026, in the payload's order,
-# and the inputs completed in the committed book since.
+# and the inputs completed in the committed book since, one step each, in the order they
+# were made: the fund durations on October 13, and French's three files on October 27,
+# once French published September. The SAA policy was recorded between them (#525).
 PENDING_AS_TAKEN = {"ff5_us": "2026-08-31", "ff5_developed_exus": "2026-08-31",
                     "umd": "2026-08-31", "etf_metadata": "2026-06-30"}
-COMPLETED = ("etf_metadata",)
+STEPS = (("etf_metadata",), ("ff5_us", "ff5_developed_exus", "umd"))
+COMPLETED = tuple(name for step in STEPS for name in step)
 # SHA-256 of the lock's stored payload as taken (main at 838b612).
 AS_TAKEN = "12ed469fbfb5cf1fb9a3a6048523288e01a7cb39c6ccad0dcc6b3250b35d8b0b"
 
@@ -84,19 +91,33 @@ def as_taken(text: str) -> str:
 
 @pytest.fixture(scope="module")
 def committed() -> str:
-    """The committed lock as the completion left it. The SAA policy recorded in it
-    afterwards (#525) is undone first; test_a_run_writes_the_committed_lock_and_nothing_
-    else records it again and arrives at the committed bytes."""
+    """The committed lock as the completions left it, less the SAA policy recorded
+    between them (#525); test_a_run_writes_the_committed_lock_and_nothing_else records
+    it again at its step and arrives at the committed bytes."""
     from tests.conftest import before_the_policy_was_held
     return before_the_policy_was_held(_locks(DEMO)[Q3][2])
+
+
+def serve_french_as_completed(monkeypatch, committed: str) -> None:
+    """French's three files as they stood when the lock completed them (October 27,
+    2026): the frames the committed lock holds. The committed files move on, since
+    French rebuilds its whole history each month; what the lock recorded does not."""
+    from src import factors
+    from src.cache import _dec
+    held = json.loads(committed)["inputs"]
+    monkeypatch.setattr(factors, "load_factors", lambda region: _dec(
+        held["ff5_us" if region == "us" else "ff5_developed_exus"]))
+    monkeypatch.setattr(factors, "load_umd_factor", lambda: _dec(held["umd"]))
 
 
 @pytest.fixture
 def staged(tmp_path, monkeypatch, committed):
     """(tool, book): a copy of the book whose Q3 lock is as it was taken, with the
     durations the committed lock holds served as the ETF metadata file, and French's
-    files ending where the lock recorded them. The committed files move on, with each
-    quarter's figures and each refresh; what the lock recorded does not."""
+    files ending where the lock recorded them when it was taken: the files as they stood
+    for the first step (serve_french_as_completed serves the second's). The committed
+    files move on, with each quarter's figures and each refresh; what the lock recorded
+    does not."""
     import pandas as pd
     from src import etf_metadata, factors
     book = tmp_path / "demo.db"
@@ -131,13 +152,19 @@ def test_the_committed_lock_is_the_lock_as_taken_with_the_completed_inputs_moved
         assert name in blob["inputs"] and name in blob["inputs_through"], name
 
 
-def test_a_run_writes_the_committed_lock_and_nothing_else(staged, committed, capsys):
+def test_a_run_writes_the_committed_lock_and_nothing_else(staged, committed, capsys,
+                                                          monkeypatch):
+    """Each step as it was made, on the lock as taken: the durations, the SAA policy
+    recorded the next day (#525), then French's three files. The book arrives at the
+    committed locks, byte for byte, and nothing else in it changes."""
+    from tests.conftest import record_the_policy
     tool, book = staged
     before, locks = _fingerprint(book), _locks(book)
-    assert tool.main(Q3, list(COMPLETED), book=book) == 0
-    assert "now holds " + ", ".join(COMPLETED) in capsys.readouterr().out
+    assert tool.main(Q3, list(STEPS[0]), book=book) == 0
+    assert "now holds " + ", ".join(STEPS[0]) in capsys.readouterr().out
     after = _locks(book)
-    assert after[Q3] == locks[Q3][:2] + (committed,), "its date and capture time stay"
+    assert after[Q3] == locks[Q3][:2] + (q3_2026_before_french_was_completed(committed),), (
+        "its date and capture time stay")
     assert {q: v for q, v in after.items() if q != Q3} == {
         q: v for q, v in locks.items() if q != Q3}
     now = _fingerprint(book)
@@ -146,23 +173,46 @@ def test_a_run_writes_the_committed_lock_and_nothing_else(staged, committed, cap
 
     # A second run finds nothing to do and writes nothing.
     image = _sha(book)
-    assert tool.main(Q3, list(COMPLETED), book=book) == 0
+    assert tool.main(Q3, list(STEPS[0]), book=book) == 0
     assert "Nothing was written" in capsys.readouterr().out
     assert _sha(book) == image
 
-    # The committed lock is that completion followed by the SAA policy (#525).
-    from tests.conftest import record_the_policy
+    # The SAA policy (#525), then French's three files as they stood for them.
     record_the_policy(book)
-    assert _locks(book)[Q3] == _locks(DEMO)[Q3]
+    serve_french_as_completed(monkeypatch, committed)
+    locks = _locks(book)
+    assert tool.main(Q3, list(STEPS[1]), book=book) == 0
+    assert ("now holds " + ", ".join(STEPS[1]) + "; it waits on nothing."
+            in capsys.readouterr().out)
+    after = _locks(book)
+    assert after[Q3][:2] == locks[Q3][:2], "its date and capture time stay"
+    assert {q: v for q, v in after.items() if q != Q3} == {
+        q: v for q, v in locks.items() if q != Q3}
+    assert after == _locks(DEMO)
+    assert _fingerprint(book) == _fingerprint(DEMO)
 
 
-def test_it_is_the_report_paths_own_completion(staged, committed):
+def test_it_is_the_report_paths_own_completion(staged, committed, monkeypatch):
     """The committed lock is what cache.complete_quarter_inputs writes on the same book
-    and files, so a container's runtime completion and the committed one agree."""
+    and files at each step, so a container's runtime completion and the committed one
+    agree."""
     tool, book = staged
     image = _sha(book)
-    assert tool.by_the_report_path(book, Q3) == committed
+    assert tool.by_the_report_path(book, Q3) == q3_2026_before_french_was_completed(committed)
     assert _sha(book) == image, "computed on a scratch copy: the book itself is only read"
+
+    # French's step, on the lock as the durations and the SAA policy left it.
+    held = _locks(DEMO)[Q3][2]
+    con = sqlite3.connect(book)
+    with con:
+        assert con.execute("UPDATE quarter_snapshots SET snapshot_data = ? WHERE "
+                           "quarter_id = ?",
+                           (q3_2026_before_french_was_completed(held), Q3)).rowcount == 1
+    con.close()
+    serve_french_as_completed(monkeypatch, committed)
+    image = _sha(book)
+    assert tool.by_the_report_path(book, Q3) == held
+    assert _sha(book) == image
 
 
 def _refused(tool, book, names) -> str:

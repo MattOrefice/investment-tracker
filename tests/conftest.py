@@ -948,6 +948,34 @@ def before_the_gap_record(text: str) -> str:
     return text
 
 
+# What the Q3 2026 lock waited on from French when it was taken (October 13, 2026), with
+# the date each file ended then, in the order it waited on them. French published
+# September, and the three were completed in data/demo.db on October 27, 2026.
+Q3_2026_FRENCH_AS_TAKEN = {"ff5_us": "2026-08-31", "ff5_developed_exus": "2026-08-31",
+                           "umd": "2026-08-31"}
+
+
+def q3_2026_before_french_was_completed(text: str) -> str:
+    """The Q3 2026 lock's stored payload as it stood before French's three files were
+    completed in it (tools/complete_demo_lock_inputs.py, October 27, 2026): each taken
+    back out of the inputs it holds and returned to those it waits on, with the date its
+    file ended when the lock was taken. Any other lock is returned as it is: only Q3
+    2026's holds them through September 30, 2026. tests/test_q3_2026_lock.py pins that
+    this is main's lock at 1855bb4, byte for byte, so a test that pins what the lock held
+    before the completion undoes it with this first. The completion touched only keys
+    inside the payload, so it and before_the_policy_was_held undo in either order."""
+    import json
+    blob = json.loads(text)
+    through = blob.get("inputs_through") or {}
+    if not all(through.get(n) == "2026-09-30" for n in Q3_2026_FRENCH_AS_TAKEN):
+        return text
+    for name, ended in Q3_2026_FRENCH_AS_TAKEN.items():
+        del blob["inputs"][name]
+        del blob["inputs_through"][name]
+        blob["inputs_pending"][name] = ended
+    return json.dumps(blob)
+
+
 _Q2_BEFORE_491: "dict[str, str]" = {}
 
 
