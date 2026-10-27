@@ -100,8 +100,9 @@ def committed() -> str:
 
 def serve_french_as_completed(monkeypatch, committed: str) -> None:
     """French's three files as they stood when the lock completed them (October 27,
-    2026): the frames the committed lock holds. The committed files move on, since
-    French rebuilds its whole history each month; what the lock recorded does not."""
+    2026): the frames the committed lock holds. The committed files move on with each
+    refresh, which can revise earlier rows as well as add new ones (the one that
+    completed this lock did); what the lock recorded does not."""
     from src import factors
     from src.cache import _dec
     held = json.loads(committed)["inputs"]
