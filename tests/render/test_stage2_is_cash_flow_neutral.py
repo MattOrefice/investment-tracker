@@ -86,9 +86,15 @@ def test_the_deposit_would_move_a_value_ratio(book_with_deposit):
     anchor = last_settled_price_date(inc)
     start, end = period_bounds("3M", anchor, inc)
     assert start < DEPOSIT_DATE <= end, (start, end)
+    from src.prices import get_prices, total_return_series
+
     pv = get_portfolio_value_series(inc, anchor, account_id=1)
     cf = get_external_cashflow_series(inc, anchor, account_id=1).reindex(pv.index).fillna(0.0)
-    assert cf[pd.Timestamp(DEPOSIT_DATE)] == pytest.approx(DEPOSIT_DOLLARS)
+    # The deposit is taken at the level the value series counts its shares at (#687).
+    frame = get_prices(DEPOSIT_TICKER, DEPOSIT_DATE, DEPOSIT_DATE)
+    level = float(total_return_series(frame).iloc[0])
+    shares = DEPOSIT_DOLLARS / float(frame["close"].iloc[0])
+    assert cf[pd.Timestamp(DEPOSIT_DATE)] == pytest.approx(shares * level, rel=1e-12)
     ratio = period_return("daily", pv, pd.Series(0.0, index=pv.index), "3M")
     twr = period_return("daily", pv, cf, "3M")
     assert ratio - twr > 0.10, (ratio, twr)

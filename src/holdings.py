@@ -588,6 +588,45 @@ def _portfolio_value_series_impl(
     holdings_matrix = holdings_matrix.reindex(date_range)
 
     tickers = holdings_matrix.columns.tolist()
+    prices_matrix, statuses = _valuation_levels(tickers, start_date, end, account_id=account_id)
+
+    common = [t for t in tickers if t in prices_matrix.columns]
+
+    # DRIP reinvestment shares (lot_source='drip') are deliberately EXCLUDED by
+    # the SQL query above: adj_close already embeds dividend reinvestment, so
+    # adding the DRIP shares would double-count income. See the docstring.
+
+    # A held position with no price is never $0 (#639, #643): such a day is not a sum,
+    # and the holding's status records the dates for the readers that must say so.
+    unpriced = (holdings_matrix[common] > 1e-9) & prices_matrix[common].isna()
+    value = (holdings_matrix[common] * prices_matrix[common]).sum(axis=1)
+    value[unpriced.any(axis=1)] = float("nan")
+    from src.demo_refresh import is_session
+    for i, ticker in enumerate(tickers):
+        if ticker in unpriced.columns and unpriced[ticker].any():
+            days = unpriced.index[unpriced[ticker]]
+            statuses[i] = replace(statuses[i], unpriced_held=UnpricedHolding(
+                ticker, days[0].date().isoformat(), days[-1].date().isoformat(),
+                sum(is_session(d.date()) for d in days), why=statuses[i].detail))
+    return value, statuses
+
+
+def _valuation_levels(
+    tickers: "list[str]",
+    start_date: str,
+    end: str,
+    *,
+    account_id: int,
+) -> "tuple[pd.DataFrame, list[TickerStatus]]":
+    """The level the value series counts one share of each ticker at, on every day of
+    [start_date, end], and each ticker's status, in ``tickers``' order.
+
+    One reading for both sides of the TWR's step (#687): the value series multiplies
+    shares by it, and get_external_cashflow_series values each trade at it, so a flow
+    adds to V exactly what it is netted out at. A ticker with no price is an all-NaN
+    column, its status saying why.
+    """
+    date_range = pd.date_range(start=start_date, end=end, freq="D")
 
     # Build price matrix (adj_close, forward-filled for non-trading days).
     # SPAXX NAV is always $1, but it accrues T-bill yield.  We proxy its total
@@ -615,7 +654,7 @@ def _portfolio_value_series_impl(
             if not st.resolved:
                 # Branch on the STATUS, not on an exception: _price_and_status
                 # reports a miss instead of raising, and letting an empty frame
-                # flow through the arithmetic below would build an object-dtype
+                # flow through the value series' arithmetic would build an object-dtype
                 # NaN column where the original built a float one. Same zero
                 # dollars either way, but this keeps the column byte-identical.
                 price_cols[ticker] = pd.Series(dtype=float, index=date_range)
@@ -627,7 +666,7 @@ def _portfolio_value_series_impl(
                 price_cols[ticker] = series.reindex(date_range).ffill()
             except Exception:
                 # An all-NaN column contributes exactly zero dollars to every day
-                # of the series, because .sum(axis=1) below defaults to
+                # of the series, because the value series' .sum(axis=1) defaults to
                 # skipna=True — no NaN escapes to warn anyone (#188). The status
                 # is the only record that this holding was not valued.
                 price_cols[ticker] = pd.Series(dtype=float, index=date_range)
@@ -636,12 +675,6 @@ def _portfolio_value_series_impl(
             statuses.append(st)
 
     prices_matrix = pd.DataFrame(price_cols, index=date_range)
-
-    common = [t for t in tickers if t in prices_matrix.columns]
-
-    # DRIP reinvestment shares (lot_source='drip') are deliberately EXCLUDED by
-    # the SQL query above: adj_close already embeds dividend reinvestment, so
-    # adding the DRIP shares would double-count income. See the docstring.
 
     # A window asked from a weekend or a holiday has days before its first session with
     # no close on or before them in the window. Nothing traded on them, so they carry
@@ -652,20 +685,7 @@ def _portfolio_value_series_impl(
     if len(lead) and first_session in prices_matrix.index:
         prices_matrix.loc[lead] = prices_matrix.loc[lead].fillna(
             prices_matrix.loc[first_session])
-
-    # A held position with no price is never $0 (#639, #643): such a day is not a sum,
-    # and the holding's status records the dates for the readers that must say so.
-    unpriced = (holdings_matrix[common] > 1e-9) & prices_matrix[common].isna()
-    value = (holdings_matrix[common] * prices_matrix[common]).sum(axis=1)
-    value[unpriced.any(axis=1)] = float("nan")
-    from src.demo_refresh import is_session
-    for i, ticker in enumerate(tickers):
-        if ticker in unpriced.columns and unpriced[ticker].any():
-            days = unpriced.index[unpriced[ticker]]
-            statuses[i] = replace(statuses[i], unpriced_held=UnpricedHolding(
-                ticker, days[0].date().isoformat(), days[-1].date().isoformat(),
-                sum(is_session(d.date()) for d in days), why=statuses[i].detail))
-    return value, statuses
+    return prices_matrix, statuses
 
 
 def get_external_cashflow_series(
@@ -675,19 +695,35 @@ def get_external_cashflow_series(
     account_id: int,
 ) -> pd.Series:
     """
-    Return the daily net EXTERNAL cash flow into the portfolio (signed dollars:
-    contributions positive, withdrawals negative) over [start_date, end_date],
-    zero on days with no flow. This is the flow series the TWR functions
-    (src/returns.py) and compute_risk_metrics (src/performance.py) net out so
-    that deposited cash is not counted as market return.
+    Return the daily net EXTERNAL flow into the portfolio (signed: contributions
+    positive, withdrawals negative) over [start_date, end_date], zero on days with
+    no flow, in the value series' own units. This is the flow series the TWR
+    functions (src/returns.py) and compute_risk_metrics (src/performance.py) net
+    out so that deposited cash is not counted as market return.
 
-    The trades ledger stores no dollar amount, so each flow is reconstructed as
-    shares × price per trade_date (write_trades_batch asserts the per-deploy sum
-    matches the logged contribution). Buys are cash entering the measured
-    portfolio, sells cash leaving it; fees always land as a performance cost
-    (a buy costs shares × price + fees, a sell yields shares × price − fees).
-    Same-date buy/sell pairs (internal rebalances, e.g. sell VOO → buy SPAXX)
-    net toward zero because flows are summed per date.
+    IN THE VALUE SERIES' UNITS, NOT THE LEDGER'S DOLLARS (#687, decided by the owner
+    on October 27, 2026). The TWR's step is r_t = (V_t − V_{t−1} − CF_t) / V_{t−1},
+    and get_portfolio_value_series counts a share at its total-return level, which
+    is back-adjusted for every stored dividend after the date. So each trade is
+    valued here at that same level on its trade date (_valuation_levels, over this
+    window): a flow takes off exactly what it adds to V_t, and earns nothing on its
+    own day, as end-of-day timing says. At the trade's raw price, as this was until
+    #687, a buy of a ticker that paid a later dividend took off more than it added,
+    and the step read low by (CF_t / V_{t−1}) × (1 − f), f the ticker's adjustment
+    factor on the date; a withdrawal read high by the same. The ledger's dollars,
+    shares × price, differ from this flow by that factor, so this is not the amount
+    deposited. Valuing the book at the raw close with dividends as income (#369)
+    would remove the mismatch at its root.
+
+    Buys are cash entering the measured portfolio, sells cash leaving it; fees
+    always land as a performance cost, in dollars (a buy is shares × level + fees,
+    a sell −shares × level + fees). Same-date buy/sell pairs (internal rebalances,
+    e.g. sell VOO → buy SPAXX) are summed per date, so they are taken out at what
+    they changed V by and move no return on their day beyond their fees.
+
+    A trade in a ticker with no level on its date makes that day's flow NaN, never
+    a raw-price stand-in: the value series has no level for that holding there
+    either, and is NaN on the days it holds it (#639, #643).
 
     DRIP lots (lot_source='drip') are EXCLUDED, mirroring
     get_portfolio_value_series: reinvested distributions are internal income
@@ -702,22 +738,24 @@ def get_external_cashflow_series(
 
     with get_connection() as conn:
         rows = conn.execute(
-            """SELECT trade_date,
-                      SUM(CASE WHEN LOWER(action) = 'buy'
-                               THEN shares * price ELSE -shares * price END
-                          + COALESCE(fees, 0)) AS flow
+            """SELECT trade_date, ticker, action, shares, COALESCE(fees, 0) AS fees
                FROM trades
                WHERE trade_date >= ? AND trade_date <= ? AND account_id = ?
                  AND (lot_source IS NULL OR lot_source != 'drip')
-               GROUP BY trade_date""",
+               ORDER BY trade_date, trade_id""",
             (start_date, end, account_id),
         ).fetchall()
 
     flows = pd.Series(0.0, index=date_range)
+    if not rows:
+        return flows
+    levels, _statuses = _valuation_levels(
+        sorted({r["ticker"] for r in rows}), start_date, end, account_id=account_id)
     for r in rows:
         ts = pd.Timestamp(r["trade_date"])
         if ts in flows.index:
-            flows[ts] = float(r["flow"])
+            signed = r["shares"] if r["action"].lower() == "buy" else -r["shares"]
+            flows[ts] += signed * float(levels.at[ts, r["ticker"]]) + float(r["fees"])
     return flows
 
 
