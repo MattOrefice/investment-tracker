@@ -205,13 +205,17 @@ def test_nothing_claims_every_input_is_locked(q2_cover):
 
 def test_a_lock_taken_now_carries_the_sentence_and_names_what_it_waits_on(tmp_path, monkeypatch):
     """Q3 on October 5: a quarter that closed after the inputs rule got no cover sentence
-    at all. It now says what its lock holds and what it is still waiting on."""
+    at all. It now says what its lock holds and what it is still waiting on. French's
+    files are served as they stood that day, ending August 31: the committed ones cover
+    September since October 27, 2026."""
     from src import reports
     from src.cache import (capture_quarter_snapshot, inputs_restatement_note,
                            lock_holds_note)
     from tests.test_cape_read_dates import _extend_prices_through
+    from tests.test_quarter_lock_inputs import _factor_files_through
     monkeypatch.setattr(reports, "_render_chart_to_png", lambda *a, **k: None)
     monkeypatch.setattr(reports, "_render_pdf", lambda html: html.encode("utf-8"))
+    _factor_files_through(tmp_path, monkeypatch, "2026-08-31")
     pin_today(monkeypatch, date(2026, 10, 5))
     try:
         frozen = point_at_frozen_book(monkeypatch, tmp_path)

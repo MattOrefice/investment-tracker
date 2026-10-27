@@ -19,8 +19,9 @@ loadings. Now:
 Pinned here:
   * each committed lock holds the book's own policy, recorded October 14, 2026, after it
     locked; nothing else in any lock changed, and nothing else in either book;
-  * the tool makes the committed books from main's, changes nothing on a second run,
-    and refuses a book that is not as it expects, leaving it as it was;
+  * the tool makes the committed books from main's (less Q3 2026's French files,
+    completed after it on October 27, 2026), changes nothing on a second run, and
+    refuses a book that is not as it expects, leaving it as it was;
   * each committed cover says when the policy was recorded; a lock taken now holds the
     policy as it stands and needs no such sentence;
   * inside a lock every reader serves the held policy, and outside it the book's;
@@ -49,6 +50,7 @@ from tests.conftest import (
     before_the_policy_was_held,
     pin_today,
     point_at_frozen_book,
+    q3_2026_before_french_was_completed,
     unpin_leftovers,
 )
 
@@ -154,19 +156,25 @@ def test_every_committed_lock_holds_the_books_own_policy_recorded_after_it(book)
 def test_nothing_else_in_any_lock_changed(book):
     """Per lock: the stored text less the policy is main's, every byte, and the text
     round-trips. The policy sits where a lock keeps its inputs, so no record moved and
-    the locked-figures golden's view of each lock is as it was."""
+    the locked-figures golden's view of each lock is as it was. Q3 2026's French files,
+    completed after the policy (October 27, 2026), are undone first
+    (tests/test_q3_2026_lock.py pins that undoing)."""
     for q, (_d, _cap, text) in _rows(book).items():
         assert json.dumps(json.loads(text)) == text, (book.name, q, "it round-trips")
-        assert _sha(before_the_policy_was_held(text)) == PAYLOAD_BEFORE[q], (book.name, q)
+        made = q3_2026_before_french_was_completed(text)
+        assert _sha(before_the_policy_was_held(made)) == PAYLOAD_BEFORE[q], (book.name, q)
         assert lf.lock_state(text) == lf.lock_state(before_the_policy_was_held(text))
 
 
 def test_the_undoing_is_the_tools_own_inverse():
+    """The tool gave each lock the policy as its last input. Q3 2026's French files were
+    completed after it (October 27, 2026), so that lock is taken as the tool left it."""
     tool = _tool()
     for q, (_d, _cap, text) in _rows(DEMO).items():
         assert tool.without_policy(text) == before_the_policy_was_held(text), q
-        assert tool.with_policy(before_the_policy_was_held(text),
-                                json.loads(text)["inputs"]["policy"]) == text, q
+        made = q3_2026_before_french_was_completed(text)
+        assert tool.with_policy(before_the_policy_was_held(made),
+                                json.loads(text)["inputs"]["policy"]) == made, q
         assert tool.with_policy(text, {"held_on": RECORDED_ON}) is None, (
             q, "a lock that holds a policy is left alone")
 
@@ -178,23 +186,42 @@ def test_the_two_books_hold_the_same_five_locks():
 
 # ── the tool ─────────────────────────────────────────────────────────────────
 
+def _before_french(src: Path, dst: Path) -> Path:
+    """``src`` with Q3 2026's French files taken back out of its lock: the committed book
+    as the tool left it, before they were completed (October 27, 2026)."""
+    _copy(src, dst)
+    con = sqlite3.connect(dst)
+    try:
+        with con:
+            for q, text in con.execute("SELECT quarter_id, snapshot_data FROM "
+                                       "quarter_snapshots").fetchall():
+                made = q3_2026_before_french_was_completed(text)
+                if made != text:
+                    assert con.execute("UPDATE quarter_snapshots SET snapshot_data = ? "
+                                       "WHERE quarter_id = ?", (made, q)).rowcount == 1
+    finally:
+        con.close()
+    return dst
+
+
 @pytest.mark.parametrize("committed", BOOKS, ids=lambda p: p.name)
 def test_the_tool_makes_the_committed_book_and_twice_changes_nothing(
         committed, tmp_path, capsys):
     tool = _tool()
-    before = _without_the_policy(committed, tmp_path / "before.db")
+    made = _before_french(committed, tmp_path / "made.db")
+    before = _without_the_policy(made, tmp_path / "before.db")
     for q, (_d, _cap, text) in _rows(before).items():
         assert _sha(text) == PAYLOAD_BEFORE[q], (q, "premise: main's lock")
-    n = len(_rows(committed))
-    assert tool.main(before, quarters=sorted(_rows(committed))) == 0
+    n = len(_rows(made))
+    assert tool.main(before, quarters=sorted(_rows(made))) == 0
     assert f"{n} lock(s) given the SAA policy as it stood on {RECORDED_ON}" in (
         capsys.readouterr().out)
-    assert _rows(before) == _rows(committed)
+    assert _rows(before) == _rows(made)
     # Every table, not only the locks: the data path is the locks alone.
-    assert _fingerprint(before) == _fingerprint(committed)
-    assert tool.main(before, quarters=sorted(_rows(committed))) == 0
+    assert _fingerprint(before) == _fingerprint(made)
+    assert tool.main(before, quarters=sorted(_rows(made))) == 0
     assert "0 lock(s) given the SAA policy" in capsys.readouterr().out
-    assert _rows(before) == _rows(committed)
+    assert _rows(before) == _rows(made)
 
 
 def test_on_main_the_tool_changes_only_the_locks(tmp_path):

@@ -114,16 +114,20 @@ def test_the_two_books_shared_locks_print_the_same_figures():
         assert entry == GOLDEN["demo.db"][quarter], quarter
 
 
-def test_no_entry_is_empty_and_the_pending_quarter_holds_fewer():
+def test_no_entry_is_empty_and_no_committed_lock_waits():
     counts = {(b, q): lf.count_figures(GOLDEN[b][q]) for b, q in CASES}
     assert min(counts.values()) > 200, counts
-    assert sum(counts.values()) == 3804, "the count the golden was written with"
-    # Q3 2026 waits on French's September, so its factor and benchmark sections print a
-    # pending line and no table.
-    q3 = GOLDEN["demo.db"]["2026Q3"]
-    assert q3["state"]["waiting_on"] == ["ff5_developed_exus", "ff5_us", "umd"]
-    assert q3["sections"]["Factor Profile"]["tables"] == []
-    assert counts[("demo.db", "2026Q3")] < counts[("demo.db", "2026Q2")]
+    assert sum(counts.values()) == 3939, "the count the golden was written with"
+    # No committed lock waits on an input, so every factor and benchmark section prints
+    # its tables. Q3 2026 waited on French's September until October 27, 2026, and its
+    # two sections printed a pending line and no table (228 figures then, 363 since). The
+    # writer's acceptance of that completion is pinned below, and a section rendering
+    # pending in tests/test_quarter_lock_inputs.py, on a lock staged before French.
+    for book, quarter in CASES:
+        entry = GOLDEN[book][quarter]
+        assert entry["state"]["waiting_on"] == [], (book, quarter)
+        for section in ("Factor Profile", "Benchmark Attribution"):
+            assert entry["sections"][section]["tables"], (book, quarter, section)
 
 
 def test_the_tiles_are_the_keys_the_performance_page_prints():
@@ -343,7 +347,7 @@ def test_every_committed_entry_holds_its_labels():
                 family, cls = found.split("=")
                 assert cls in LABEL_CLASSES[family], (book, quarter, found)
                 stated.add(found)
-    assert sum(lf.count_labels(GOLDEN[b][q]) for b, q in CASES) == 264, (
+    assert sum(lf.count_labels(GOLDEN[b][q]) for b, q in CASES) == 285, (
         "the count the golden was written with")
     # What the committed locks state. A label no lock states (a reading that would
     # contradict a tilt, a duration above the benchmark) is held from the first lock
@@ -661,7 +665,7 @@ def test_every_committed_entry_holds_its_figures_in_words():
         assert len(said) == 1, (book, quarter, said)
         ordinals.update(said)
     assert ordinals == {"97th", "98th", "99th"}
-    assert sum(lf.count_in_words(GOLDEN[b][q]) for b, q in CASES) == 168, (
+    assert sum(lf.count_in_words(GOLDEN[b][q]) for b, q in CASES) == 177, (
         "the count the golden was written with")
 
 
@@ -770,7 +774,7 @@ def test_every_committed_entry_holds_its_quarter_labels():
         assert own in entry["sections"]["Executive Summary"]["quarters"]
         for s in entry["sections"].values():
             assert s["quarters"] == sorted(s["quarters"])
-    assert sum(lf.count_quarters(GOLDEN[b][q]) for b, q in CASES) == 41, (
+    assert sum(lf.count_quarters(GOLDEN[b][q]) for b, q in CASES) == 42, (
         "the count the golden was written with")
 
 
@@ -911,13 +915,21 @@ def test_the_writer_accepts_a_new_lock_and_a_completed_input_and_refuses_a_missi
     # A quarter locked since is added.
     earlier = {q: e for q, e in GOLDEN[book].items() if q != "2026Q3"}
     new, report = tool.updated({book: earlier}, {book: render})
-    assert report == ["demo.db 2026Q3: new lock, 228 figures"] and "2026Q3" in new[book]
+    assert report == ["demo.db 2026Q3: new lock, 363 figures"] and "2026Q3" in new[book]
     # A pending input completed: the lock's records changed, so new figures are accepted.
-    done = json.loads(json.dumps(render))
-    done["2026Q3"]["state"]["waiting_on"] = []
-    done["2026Q3"]["sections"]["Factor Profile"]["text"].append("0.97")
-    new, report = tool.updated({book: GOLDEN[book]}, {book: done})
+    # The golden as it stood while Q3 2026 waited on French, less one figure: the
+    # completion itself (October 27, 2026), which the committed golden holds.
+    waiting = json.loads(json.dumps(GOLDEN[book]))
+    waiting["2026Q3"]["state"]["waiting_on"] = ["ff5_developed_exus", "ff5_us", "umd"]
+    waiting["2026Q3"]["sections"]["Factor Profile"]["text"].pop()
+    new, report = tool.updated({book: waiting}, {book: render})
     assert report == ["demo.db 2026Q3: 1 line(s) of figures moved, with its records"]
+    assert new == {book: GOLDEN[book]}
+    # The same figure moved with the records as they were is refused.
+    waiting["2026Q3"]["state"]["waiting_on"] = []
+    with pytest.raises(SystemExit, match="figures moved in 1 lock.s. whose own records did "
+                                         "not change"):
+        tool.updated({book: waiting}, {book: render})
     # A lock the golden holds is gone from the book.
     with pytest.raises(SystemExit, match=r"no longer holds the lock\(s\) \['2026Q3'\]"):
         tool.updated({book: GOLDEN[book]}, {book: {q: e for q, e in render.items()
