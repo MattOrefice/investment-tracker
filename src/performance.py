@@ -4,6 +4,8 @@ import math
 import numpy as np
 import pandas as pd
 
+from src.returns import flow_netted_daily_returns
+
 
 def _window_cutoff(window: str, anchor_end: "pd.Timestamp") -> "pd.Timestamp | None":
     """Return the start-of-window cutoff for the given window, or None for SI.
@@ -100,24 +102,10 @@ def _trading_day_returns(
     pv  = pv.loc[idx].copy()
     bl  = bl.loc[idx].copy()
 
-    port_ret  = pv.pct_change().dropna()
+    # External flows netted out of the flow days' returns, as the TWR nets them (#686).
+    # A flow on the window's first date is the starting NAV.
+    port_ret  = flow_netted_daily_returns(pv, cashflows).dropna()
     bench_ret = bl.pct_change().dropna()
-
-    # Net external flows out of the flow days' returns (end-of-day timing, same
-    # convention as twr_daily_linked). Only days with a nonzero flow are touched:
-    # every other day keeps its exact pct_change value, so a window with no
-    # flows produces bit-identical metrics to the cashflows=None path. A flow on
-    # the window's first date is excluded (it is the starting NAV — pct_change's
-    # first row is NaN and already dropped). Days with V_{t-1} == 0 are left to
-    # the pre-existing pct_change behavior rather than divided by zero here.
-    if cashflows is not None:
-        cf = cashflows.reindex(port_ret.index).fillna(0.0)
-        v_prev = pv.shift(1)
-        flow_days = cf.index[(cf != 0.0) & (v_prev.reindex(cf.index) != 0.0)]
-        if len(flow_days):
-            port_ret.loc[flow_days] = (
-                pv.loc[flow_days] - v_prev.loc[flow_days] - cf.loc[flow_days]
-            ) / v_prev.loc[flow_days]
 
     idx2      = port_ret.index.intersection(bench_ret.index)
     port_ret  = port_ret.loc[idx2]
@@ -170,7 +158,8 @@ def compute_risk_metrics(
                     When given, the daily return on each flow day is computed as
                     r_t = (V_t - V_{t-1} - CF_t) / V_{t-1} — end-of-day flow
                     timing, matching src/returns.twr_daily_linked — so a
-                    contribution is not counted as market return. All other days
+                    contribution is not counted as market return
+                    (src.returns.flow_netted_daily_returns). All other days
                     (and the None case) keep the plain pct_change computation,
                     so flowless windows are numerically unchanged.
 
