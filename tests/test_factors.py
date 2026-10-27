@@ -422,6 +422,11 @@ def test_developed_sleeve_prose_contains_korea_disclosure():
 
 # ── Benchmark attribution regression ─────────────────────────────────────────
 
+# The regression nets the book's external flows out of R_p (#686); these tests mock the
+# data layer, so they give it a book with none.
+_NO_FLOWS = pd.Series(dtype=float)
+
+
 def test_run_benchmark_attribution_regression_returns_expected_structure(no_ambient_db):
     """
     With mocked portfolio/benchmark series and FF factors,
@@ -445,6 +450,7 @@ def test_run_benchmark_attribution_regression_returns_expected_structure(no_ambi
     with patch("src.factors.get_portfolio_value_series", return_value=pv_series), \
          patch("src.factors.get_custom_blended_series", return_value=bl_series), \
          patch("src.factors.get_portfolio_account_id", return_value=1), \
+         patch("src.factors.get_external_cashflow_series", return_value=_NO_FLOWS), \
          patch("src.factors.load_factors", return_value=mock_ff):
         result = run_benchmark_attribution_regression("2025-05-01", "2025-09-30")
 
@@ -485,6 +491,7 @@ def test_benchmark_regression_recovers_synthetic_bench_beta(no_ambient_db):
     with patch("src.factors.get_portfolio_value_series", return_value=pv_series), \
          patch("src.factors.get_custom_blended_series", return_value=bl_series), \
          patch("src.factors.get_portfolio_account_id", return_value=1), \
+         patch("src.factors.get_external_cashflow_series", return_value=_NO_FLOWS), \
          patch("src.factors.load_factors", return_value=mock_ff):
         result = run_benchmark_attribution_regression("2025-01-01", "2025-10-31")
 
@@ -512,6 +519,7 @@ def test_benchmark_regression_returns_none_on_insufficient_data(no_ambient_db):
     with patch("src.factors.get_portfolio_value_series", return_value=short_pv), \
          patch("src.factors.get_custom_blended_series", return_value=short_bl), \
          patch("src.factors.get_portfolio_account_id", return_value=1), \
+         patch("src.factors.get_external_cashflow_series", return_value=_NO_FLOWS), \
          patch("src.factors.load_factors", return_value=short_ff):
         result = run_benchmark_attribution_regression("2025-05-01", "2025-05-10")
 
@@ -541,6 +549,7 @@ def test_benchmark_regression_returns_none_on_total_blended_gap(no_ambient_db):
     with patch("src.factors.get_portfolio_value_series", return_value=pv_series), \
          patch("src.factors.get_custom_blended_series", return_value=nan_bl), \
          patch("src.factors.get_portfolio_account_id", return_value=1), \
+         patch("src.factors.get_external_cashflow_series", return_value=_NO_FLOWS), \
          patch("src.factors.load_factors", return_value=mock_ff):
         result = run_benchmark_attribution_regression("2025-05-01", "2025-09-30")
 

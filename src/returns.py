@@ -130,6 +130,35 @@ def twr_index(values: pd.Series, cashflows: pd.Series) -> pd.Series:
     return (1.0 + r).cumprod()
 
 
+def flow_netted_daily_returns(values: pd.Series, cashflows: "pd.Series | None") -> pd.Series:
+    """Each observation's return with that day's external flow taken out, one value per
+    observation, the first NaN (#686).
+
+    For each day t: r_t = (V_t - V_{t-1} - CF_t) / V_{t-1}, twr_daily_linked's step, so a
+    contribution is not counted as return. The Performance page's risk windows, the
+    benchmark attribution regression and the Risk page's factor regression take the
+    portfolio's daily return from here. The two regressions used to take the value
+    series' pct_change, which read a deposit as that day's return.
+
+    Only days with a nonzero flow are touched: every other day keeps its exact
+    pct_change value, so a series with no flows, or ``cashflows=None``, gives
+    bit-identical returns. A flow on the first date is the starting NAV (pct_change's
+    first row is NaN). A day whose prior value is zero keeps pct_change's value rather
+    than dividing by zero.
+    """
+    returns = values.pct_change()
+    if cashflows is None:
+        return returns
+    cf = cashflows.reindex(returns.index).fillna(0.0)
+    v_prev = values.shift(1)
+    flow_days = returns.index[returns.notna() & (cf != 0.0) & (v_prev != 0.0)]
+    if len(flow_days):
+        returns.loc[flow_days] = (
+            values.loc[flow_days] - v_prev.loc[flow_days] - cf.loc[flow_days]
+        ) / v_prev.loc[flow_days]
+    return returns
+
+
 def twr_modified_dietz(values: pd.Series, cashflows: pd.Series) -> float:
     """
     Modified Dietz approximation to TWR.

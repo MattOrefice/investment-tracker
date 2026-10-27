@@ -22,7 +22,13 @@ Single source of truth
 The portfolio return series is the SAME settled-frontier-anchored series the
 Performance page displays: ``get_portfolio_value_series`` clipped to
 ``last_settled_price_date`` (so a partial intraday today-bar is never the
-right-edge anchor). The risk-free rate is Ken French's US daily RF — the same
+right-edge anchor). R_p is that series' flow-netted daily return: each day's
+external flow (``get_external_cashflow_series``, the series the Performance page
+passes) is taken out of that day's return, r_t = (V_t − V_{t−1} − CF_t) / V_{t−1},
+as the Performance page's TWR and risk windows take it
+(``src.returns.flow_netted_daily_returns``, #686). It used to be the value series'
+pct_change, which read a contribution as that day's return. The risk-free rate is
+Ken French's US daily RF — the same
 RF every other regression in this app uses. No parallel return series, no
 re-fetched risk-free.
 
@@ -58,6 +64,7 @@ from statsmodels.tools import add_constant
 from src.asof import format_long_date
 from src.factors import _nw_lags, load_factors
 from src.holdings import (
+    get_external_cashflow_series,
     get_inception_date,
     get_portfolio_account_id,
     get_portfolio_value_series,
@@ -65,6 +72,7 @@ from src.holdings import (
 )
 from src.prices import get_prices, total_return_series
 from src.etf_metadata import META_PATH
+from src.returns import flow_netted_daily_returns
 
 # ── Model configuration ────────────────────────────────────────────────────────
 
@@ -185,6 +193,7 @@ def run_portfolio_factor_regression(
     end_date: Optional[str] = None,
     *,
     pv: Optional[pd.Series] = None,
+    cashflows: Optional[pd.Series] = None,
     ff_df: Optional[pd.DataFrame] = None,
     ief_prices: Optional[pd.Series] = None,
     hyg_prices: Optional[pd.Series] = None,
@@ -204,28 +213,35 @@ def run_portfolio_factor_regression(
           [30, 60) small-sample band.
 
     Inputs are injectable for deterministic tests (no live fetch): ``pv`` a daily
-    portfolio value Series, ``ff_df`` the Ken French US factor frame (columns
+    portfolio value Series, ``cashflows`` its daily external flows (None with an
+    injected ``pv`` means no flows), ``ff_df`` the Ken French US factor frame (columns
     Mkt-RF, SMB, HML, RF), ``ief_prices`` / ``hyg_prices`` proxy price levels.
     In production all are None and the function reuses the same settled-frontier
-    portfolio series, Ken French factors/RF, and IEF/HYG price path as the rest
-    of the app.
+    portfolio series and its external flows, Ken French factors/RF, and IEF/HYG price
+    path as the rest of the app.
+
+    R_p is the flow-netted daily return (src.returns.flow_netted_daily_returns): a
+    day's external flow is taken out of that day's return, so a contribution is not
+    read as return (#686).
     """
     inception = inception or get_inception_date(account_id=get_portfolio_account_id())
     end_date  = end_date or date.today().isoformat()
 
     # ── Portfolio return: the settled-frontier-anchored Performance series ──────
     if pv is None:
-        pv = get_portfolio_value_series(inception, end_date, account_id=get_portfolio_account_id())
+        account_id = get_portfolio_account_id()
+        pv = get_portfolio_value_series(inception, end_date, account_id=account_id)
         # Clip the partial intraday today-bar exactly as the Performance page
         # does — the displayed series anchors on the last SETTLED trading day.
         c = last_settled_price_date(inception, end_date)
         pv = pv[pv.index <= pd.Timestamp(c)]
+        cashflows = get_external_cashflow_series(inception, end_date, account_id=account_id)
 
     if pv.empty or float(pv.max()) == 0.0:
         return {"status": "insufficient_history", "n": 0, "min_obs": MIN_OBS_FOR_REGRESSION}
 
     date_range = pd.date_range(start=pv.index.min(), end=pv.index.max(), freq="D")
-    R_p = pv.reindex(date_range).ffill().pct_change()
+    R_p = flow_netted_daily_returns(pv.reindex(date_range).ffill(), cashflows)
 
     # ── Factors: Ken French US (Mkt-RF/SMB/HML + RF) and the IEF/HYG proxies ────
     if ff_df is None:

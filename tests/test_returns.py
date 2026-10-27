@@ -7,7 +7,14 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from src.returns import twr_daily_linked, twr_index, twr_modified_dietz, annualize, period_return
+from src.returns import (
+    annualize,
+    flow_netted_daily_returns,
+    period_return,
+    twr_daily_linked,
+    twr_index,
+    twr_modified_dietz,
+)
 
 
 def _series(values, cfs, start="2025-01-01"):
@@ -168,3 +175,40 @@ def test_twr_index_is_twr_daily_linked_kept_as_a_series():
     assert idx.iloc[-1] == pytest.approx(1.10 * 1.0 * 0.95, abs=1e-12)
     # A value ratio would call the 150 deposit a gain.
     assert v.iloc[-1] / v.iloc[1] - 1 == pytest.approx(1.47, abs=1e-12)
+
+# ── flow_netted_daily_returns: the one daily return the risk windows and both
+# ── regressions take (#686) ──────────────────────────────────────────────────
+
+def test_flow_netted_returns_take_the_twrs_step_on_a_flow_day():
+    """A deposit is netted out of its day's return by twr_daily_linked's step, so the
+    returns chain to the TWR; pct_change would read the deposit as a gain."""
+    v, cf = _series([0.0, 100.0, 110.0, 260.0, 247.0], [100.0, 0.0, 0.0, 150.0, 0.0])
+    r = flow_netted_daily_returns(v, cf)
+    assert list(r.index) == list(v.index)
+    assert r.iloc[3] == pytest.approx((260.0 - 110.0 - 150.0) / 110.0, abs=1e-15)
+    assert v.pct_change().iloc[3] == pytest.approx(150.0 / 110.0, abs=1e-12)
+    steps = twr_index(v, cf) / twr_index(v, cf).shift(1) - 1
+    assert r.iloc[2:].tolist() == pytest.approx(steps.iloc[2:].tolist(), abs=1e-15)
+    assert (1 + r.iloc[2:]).prod() - 1 == pytest.approx(twr_daily_linked(v, cf), abs=1e-12)
+
+
+def test_flow_netted_returns_leave_every_day_without_a_flow_as_pct_change():
+    """Bit-identical, not approximately equal: a series with no flow, or no flow series,
+    gives pct_change exactly, and on a flow day's neighbours nothing moves."""
+    v, cf = _series([100.0, 101.3, 99.7, 260.0, 247.0], [0.0, 0.0, 0.0, 150.0, 0.0])
+    assert flow_netted_daily_returns(v, None).equals(v.pct_change())
+    assert flow_netted_daily_returns(v, cf * 0.0).equals(v.pct_change())
+    r = flow_netted_daily_returns(v, cf)
+    others = [0, 1, 2, 4]
+    assert r.iloc[others].equals(v.pct_change().iloc[others])
+    assert r.iloc[3] != v.pct_change().iloc[3]
+
+
+def test_flow_netted_returns_take_a_first_day_flow_as_the_starting_nav():
+    """A flow on the first date is the starting NAV, as in the TWR; a day after a zero
+    value keeps pct_change's reading rather than dividing by zero."""
+    v, cf = _series([100.0, 100.0, 0.0, 50.0], [100.0, 0.0, 0.0, 50.0])
+    r = flow_netted_daily_returns(v, cf)
+    assert pd.isna(r.iloc[0])
+    assert r.iloc[1] == 0.0
+    assert r.iloc[3] == v.pct_change().iloc[3]

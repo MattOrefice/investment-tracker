@@ -41,9 +41,15 @@ from statsmodels.regression.linear_model import OLS
 from statsmodels.tools import add_constant
 
 from src.benchmarks import get_custom_blended_series
-from src.holdings import get_holdings_on_date, get_portfolio_account_id, get_portfolio_value_series
+from src.holdings import (
+    get_external_cashflow_series,
+    get_holdings_on_date,
+    get_portfolio_account_id,
+    get_portfolio_value_series,
+)
 from src.prices import gap_fetch_cause, get_prices, total_return_series
 from src.prose_helpers import label, significance_label, significance_level
+from src.returns import flow_netted_daily_returns
 
 _ROOT = Path(__file__).resolve().parent.parent
 
@@ -2105,7 +2111,12 @@ def run_benchmark_attribution_regression(
 
     Model: (R_p − RF) ~ (R_b − RF) + HML + SMB + RMW
 
-      R_p: daily portfolio total return from get_portfolio_value_series
+      R_p: the portfolio's flow-netted daily return: each day's change in
+           get_portfolio_value_series with that day's external flow
+           (get_external_cashflow_series, the series the Performance page passes) taken
+           out, r_t = (V_t - V_{t-1} - CF_t) / V_{t-1}, the TWR's daily step
+           (src.returns.flow_netted_daily_returns, #686). It used to be the value
+           series' pct_change, which read a contribution as that day's return.
       R_b: daily custom blended SAA benchmark return from get_custom_blended_series:
            the one series, rebalanced to target weights each calendar quarter (#383)
       RF:  Ken French US daily risk-free rate
@@ -2118,11 +2129,13 @@ def run_benchmark_attribution_regression(
     """
     date_range = pd.date_range(start=inception, end=end_date, freq="D")
 
-    pv = get_portfolio_value_series(inception, end_date, account_id=get_portfolio_account_id())
+    account_id = get_portfolio_account_id()
+    pv = get_portfolio_value_series(inception, end_date, account_id=account_id)
     if pv.empty or float(pv.max()) == 0.0:
         return None
     pv = pv.reindex(date_range).ffill()
-    R_p = pv.pct_change()
+    cf = get_external_cashflow_series(inception, end_date, account_id=account_id)
+    R_p = flow_netted_daily_returns(pv, cf)
 
     bl = get_custom_blended_series(inception, end_date)
     bl = bl.reindex(date_range).ffill()
