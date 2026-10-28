@@ -448,6 +448,15 @@ def align_to_equity_days(
 
 # ── Univariate statistics ─────────────────────────────────────────────────────
 
+def never_moves(returns: pd.Series) -> bool:
+    """True when a series of two or more returns holds one value only, so it has no
+    spread. Skewness and excess kurtosis each divide by a power of that spread, so for
+    such a series neither has a value (decided by the owner on October 22, 2026, #678).
+    Exact equality: a series whose returns differ only in their last bits still moves."""
+    r = returns.dropna()
+    return len(r) >= 2 and r.max() == r.min()
+
+
 def compute_univariate_stats(
     returns: pd.Series,
     rf_annual: float = RF_ANNUAL,
@@ -455,6 +464,10 @@ def compute_univariate_stats(
     """
     Annualized return, vol, Sharpe, max drawdown, skewness, and excess kurtosis.
     Annualization: geometric mean scaled to 252 trading days.
+
+    Skewness and kurtosis are NaN, undefined, for a series that never moves
+    (never_moves). Decided here rather than left to pandas: its skew() and kurt() give
+    such a series 0.0 under 3.0.6 and NaN under 3.1.0 (#678).
     """
     n = len(returns)
     if n < 2:
@@ -465,13 +478,15 @@ def compute_univariate_stats(
     cum      = (1 + returns).cumprod()
     roll_max = cum.cummax()
     max_dd   = float((cum / roll_max - 1).min())
+    undefined = never_moves(returns)
     return {
         "ann_return":   ann_ret,
         "ann_vol":      ann_vol,
         "sharpe":       sharpe,
         "max_drawdown": max_dd,
-        "skewness":     float(returns.skew()),
-        "kurtosis":     float(returns.kurtosis()),   # excess kurtosis (normal = 0)
+        "skewness":     float("nan") if undefined else float(returns.skew()),
+        # excess kurtosis (normal = 0)
+        "kurtosis":     float("nan") if undefined else float(returns.kurtosis()),
     }
 
 
@@ -591,6 +606,10 @@ def price_gap_note(candidate: str = "BTC-USD", screened: str = "", *,
             f"{it_is} stored.")
 
 
+# Where build_univariate_table lists the rows whose skewness and kurtosis are undefined.
+MOMENTS_UNDEFINED = "moments_undefined"
+
+
 def build_univariate_table(
     start_date: str = SAMPLE_START,
     end_date: Optional[str] = None,
@@ -624,7 +643,26 @@ def build_univariate_table(
     rows = {}
     for name, rets in assets.items():
         rows[name] = compute_univariate_stats(rets, rf_annual)
-    return pd.DataFrame(rows).T
+    table = pd.DataFrame(rows).T
+    # The rows whose skewness and kurtosis are undefined, which moments_note names. Kept
+    # beside the table because a NaN alone cannot say why it is one.
+    table.attrs[MOMENTS_UNDEFINED] = [name for name, rets in assets.items()
+                                      if never_moves(rets)]
+    return table
+
+
+def moments_note(table: pd.DataFrame) -> "str | None":
+    """The line under the univariate table, on the page and in the PDF, that says why a
+    row's skewness and kurtosis print as "—": its returns never move (never_moves).
+    None when no row's are undefined, an empty table included (#678)."""
+    names = list(table.attrs.get(MOMENTS_UNDEFINED, ()))
+    if not names:
+        return None
+    listed = names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+    whose = "its" if len(names) == 1 else "each one's"
+    return (f"Skewness and kurtosis are shown as — for {listed}: every daily return in "
+            f"{whose} sample is the same, and for a series that never moves both are "
+            "undefined.")
 
 
 # ── Correlation analysis ──────────────────────────────────────────────────────
