@@ -75,7 +75,7 @@
   with that series stubbed.
 - Every direct dependency is pinned exactly (decided by the owner on October 22,
   2026), and moving one is its own PR, with the full suite and the personal golden
-  on the new version, as #678 does for pandas.
+  on the new version, as #678 did for pandas.
 - A local run that fails only with Windows' "paging file is too small" or a
   MemoryError, in a test the change doesn't touch, is re-run once, alone, on the
   same tip. A pass is reported with both runs and the run carries on; a second
