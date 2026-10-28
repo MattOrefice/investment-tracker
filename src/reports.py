@@ -9,6 +9,7 @@ import base64
 import io
 import json
 import logging
+import threading
 from contextlib import nullcontext
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -333,16 +334,35 @@ def _render_pdf(html_content: str) -> bytes:
 
 # ── Chart helpers ─────────────────────────────────────────────────────────────
 
+# How long a chart export may take before its chart prints the placeholder (decided by
+# the owner on October 28, 2026, #698): 60 s for the first export a process makes, 25 s
+# for every later one. On GitHub's runner each of three CI runs' slowest export, 9.03 to
+# 12.17 s, was the first its worker process made.
+FIRST_EXPORT_WAIT_SECONDS = 60
+EXPORT_WAIT_SECONDS = 25
+_first_export_made = False
+_first_export_lock = threading.Lock()
+
+
+def _export_wait_seconds() -> int:
+    """60 s for the first export this process makes, 25 s for every later one, whatever
+    became of the first (#698)."""
+    global _first_export_made
+    with _first_export_lock:
+        first, _first_export_made = not _first_export_made, True
+    return FIRST_EXPORT_WAIT_SECONDS if first else EXPORT_WAIT_SECONDS
+
+
 def _render_chart_to_png(fig: go.Figure, width: int = 700, height: int = 310) -> Optional[bytes]:
     """
-    Render Plotly figure to PNG bytes via kaleido with a 25-second timeout.
+    Render Plotly figure to PNG bytes via kaleido, waiting up to 60 s for the first
+    export a process makes and 25 s for every later one (_export_wait_seconds, #698).
     Uses a daemon thread so a hanging export does not block PDF generation: the chart
     renders as a placeholder instead. The guard was written for kaleido 0.2.1, which
     hung on the owner's Windows machine. It stays with kaleido 1.5.0 (#567), which
     launches an installed Chrome or Chromium for each export: one that cannot be found
     or does not answer costs a placeholder, not the report.
     """
-    import threading
     result: list = [None]
 
     def _render() -> None:
@@ -351,9 +371,10 @@ def _render_chart_to_png(fig: go.Figure, width: int = 700, height: int = 310) ->
         except Exception:
             logging.exception("kaleido chart render failed (width=%d, height=%d)", width, height)
 
+    wait = _export_wait_seconds()
     t = threading.Thread(target=_render, daemon=True)
     t.start()
-    t.join(timeout=25)
+    t.join(timeout=wait)
     return result[0]
 
 
