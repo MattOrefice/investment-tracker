@@ -59,6 +59,8 @@ _BASE = {
     "rf_note": None,
     "gap_note": None,
     "dd_2022_note": None,
+    # Added by #678 (why a row's skewness and kurtosis are "—"), caught the same way.
+    "moments_note": None,
 }
 
 

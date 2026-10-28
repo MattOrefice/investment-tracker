@@ -144,8 +144,11 @@ def test_raw_weights_match_db_targets_and_scale(use_demo_db):
 def test_compute_univariate_stats_basic():
     """compute_univariate_stats with a constant positive series produces sensible output.
 
-    Constant positive returns → ann_return > 0, sharpe > 0, max_drawdown == 0,
-    skewness and kurtosis are computable (may be zero or near-zero for constant series).
+    Constant positive returns → ann_return > 0, sharpe > 0, max_drawdown == 0, and
+    skewness and kurtosis undefined, NaN: a series that never moves has no spread for
+    either to divide by (decided by the owner on October 22, 2026, #678). This asserted
+    both finite until pandas 3.1.0 turned its 0.0 for them into NaN; the engine now
+    decides it, so it reads the same on both versions.
     """
     # Constant positive daily return — no drawdown, positive Sharpe
     n = 252 * 3  # 3 years
@@ -162,8 +165,82 @@ def test_compute_univariate_stats_basic():
     assert stats["max_drawdown"] == 0.0, "max_drawdown should be 0 for monotonically increasing equity curve"
     assert "skewness" in stats,          "skewness key must be present"
     assert "kurtosis" in stats,          "kurtosis key must be present"
-    assert np.isfinite(stats["skewness"]), "skewness must be finite"
-    assert np.isfinite(stats["kurtosis"]), "kurtosis must be finite"
+    assert np.isnan(stats["skewness"]), "a series that never moves has no skewness"
+    assert np.isnan(stats["kurtosis"]), "a series that never moves has no kurtosis"
+
+
+@pytest.mark.parametrize("value", [0.0005, 0.0, -0.01])
+def test_a_series_that_never_moves_has_no_skewness_or_kurtosis(value):
+    """Every return the same, a price that never moves (0.0) included: both undefined,
+    whatever pandas' skew() says of the series (0.0 under 3.0.6, NaN under 3.1.0)."""
+    rets = pd.Series([value] * 756, index=pd.bdate_range("2020-01-02", periods=756))
+    assert ae.never_moves(rets)
+    stats = compute_univariate_stats(rets, rf_annual=RF_ANNUAL)
+    assert np.isnan(stats["skewness"]) and np.isnan(stats["kurtosis"]), stats
+
+
+@pytest.mark.parametrize("rets", [
+    pd.Series([0.01, 0.02] * 10),
+    # A price growing at a fixed rate: its returns differ only in their last bits, so
+    # it moves, and its moments are pandas' (noise, but defined).
+    pd.Series(100 * 1.0005 ** np.arange(757)).pct_change().dropna(),
+    _make_daily_returns(500),
+], ids=["two-values", "last-bits", "random"])
+def test_a_series_that_moves_keeps_its_skewness_and_kurtosis(rets):
+    """The control: the rule takes only a series with one value, and leaves every
+    other series' moments as pandas computes them."""
+    assert not ae.never_moves(rets)
+    stats = compute_univariate_stats(rets, rf_annual=RF_ANNUAL)
+    assert stats["skewness"] == float(rets.skew())
+    assert stats["kurtosis"] == float(rets.kurtosis())
+    assert np.isfinite(stats["skewness"]) and np.isfinite(stats["kurtosis"])
+
+
+def test_never_moves_needs_two_returns():
+    """One return, or none, is not a series that never moves: it is too short to say,
+    and compute_univariate_stats returns nothing for it."""
+    assert not ae.never_moves(pd.Series([0.01]))
+    assert not ae.never_moves(pd.Series(dtype=float))
+    assert not ae.never_moves(pd.Series([0.01, np.nan]))
+    assert ae.never_moves(pd.Series([0.01, np.nan, 0.01]))
+
+
+def _flat(*tickers):
+    """ae._price_series with each of ``tickers`` replaced by a price that never moves,
+    on a business-day index, and every other ticker a random walk."""
+    idx = pd.bdate_range("2018-01-02", periods=600)
+
+    def series(ticker, start, end):
+        if ticker in tickers:
+            return pd.Series(100.0, index=idx)
+        seed = sum(map(ord, ticker))
+        return 100 * (1 + _make_daily_returns(600, seed=seed)).cumprod().set_axis(idx)
+    return series
+
+
+def test_the_table_names_the_rows_whose_moments_are_undefined(monkeypatch):
+    monkeypatch.setattr(ae, "_price_series", _flat("GLD"))
+    monkeypatch.setattr(ae, "real_assets_basket", lambda: [("VNQ", 0.6), ("DBC", 0.4)])
+    table = ae.build_univariate_table(rf_annual=0.03)
+    assert table.attrs[ae.MOMENTS_UNDEFINED] == ["GLD"]
+    assert table.loc["GLD", ["skewness", "kurtosis"]].isna().all()
+    moved = table.drop(index="GLD")
+    assert np.isfinite(moved[["skewness", "kurtosis"]].to_numpy(dtype=float)).all()
+    assert ae.moments_note(table) == (
+        "Skewness and kurtosis are shown as — for GLD: every daily return in its sample "
+        "is the same, and for a series that never moves both are undefined.")
+
+
+def test_the_note_names_each_row_and_goes_when_none_is_undefined(monkeypatch):
+    monkeypatch.setattr(ae, "real_assets_basket", lambda: [("VNQ", 0.6), ("DBC", 0.4)])
+    monkeypatch.setattr(ae, "_price_series", _flat("AGG", "GLD"))
+    two = ae.moments_note(ae.build_univariate_table(rf_annual=0.03))
+    assert two.startswith("Skewness and kurtosis are shown as — for AGG and GLD: ")
+    assert "in each one's sample" in two
+    monkeypatch.setattr(ae, "_price_series", _flat())
+    assert ae.moments_note(ae.build_univariate_table(rf_annual=0.03)) is None
+    # An empty table, the page's and the PDF's state when it could not be built.
+    assert ae.moments_note(pd.DataFrame()) is None
 
 
 def test_compute_univariate_stats_empty_series():

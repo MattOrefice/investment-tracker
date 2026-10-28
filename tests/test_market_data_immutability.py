@@ -66,26 +66,46 @@ _WRITE_MODES = ("w", "a", "x", "+")
 
 @pytest.fixture
 def write_trap(monkeypatch):
-    """Record + refuse write-mode opens of tracked data files.
+    """Record + refuse write-mode opens of tracked data files (install_write_trap,
+    over every file ``git ls-files data`` lists but the databases)."""
+    tracked = _tracked_data_files()
+    assert tracked, "git ls-files returned no tracked data files — trap would be vacuous"
+    yield install_write_trap(monkeypatch, tracked)
 
-    FOUR SURFACES, NOT ONE. This wrapped only ``builtins.open`` until #271, and
+
+def install_write_trap(monkeypatch, tracked: "set[str]") -> "list[tuple[str, str]]":
+    """Record + refuse write-mode opens of ``tracked`` (absolute, case-normalised
+    paths) until ``monkeypatch`` undoes it; returns the list each attempt is recorded
+    in. write_trap passes the tracked data files. tests/test_write_surface_coverage.py
+    passes a scratch file, so a surface the trap misses writes that file and damages
+    nothing tracked (decided by the owner on October 22, 2026, #678).
+
+    FIVE SURFACES, NOT ONE. This wrapped only ``builtins.open`` until #271, and
     measurement showed three common idioms walked straight past it:
 
         io.open(path, "a")            -> io.open       MISSED
         Path(path).write_text(...)    -> io.open       MISSED
         os.replace(src, path)         -> os.replace    MISSED
-        open / to_csv / to_parquet    -> builtins.open caught
+        open / to_csv                 -> builtins.open caught
 
     ``builtins.open`` and ``io.open`` are the SAME function object but SEPARATE
     NAME BINDINGS, so patching one leaves the other untouched — and ``pathlib``
     reaches the latter. That made the most idiomatic file write in Python
     invisible here.
 
-    A prediction that was wrong in the useful direction, kept as a warning against
-    reasoning about this from plausibility: ``to_parquet`` was expected to be the
-    gap, on the theory that pyarrow opens files in C. It does not — it routes
-    through ``builtins.open`` and was always caught. The NATIVE path went through
-    the trap; the plain-Python idioms did not.
+    ``to_parquet`` has been predicted wrong twice, so it is measured, not reasoned
+    about. It was expected to be the gap at #271, on the theory that pyarrow opens
+    files in C, and with pandas 3.0.6 it is not: pandas' own
+    ``pandas.io.parquet._get_path_or_handle`` opens the destination through
+    ``builtins.open``. pandas 3.1.0 moved that open into C++: the same function now
+    opens it with ``pyarrow.OSFile(path, "wb")``, which never reaches
+    ``builtins.open``, and the write went past the trap into data/shiller_cape.csv
+    on CI (#678, measured by profiling the call on both versions). So the trap
+    guards ``_get_path_or_handle``, the function that opens a local destination on
+    both versions, and not ``pyarrow.OSFile``: a test importing pyarrow would make
+    it a direct dependency, and nothing pins it. The name is private, so
+    monkeypatch fails at setup when pandas removes it, and the trap goes stale
+    loudly.
 
     THIS LIST IS STILL AN ENUMERATION and will go stale the same way. It buys
     attribution — the culprit line, at the moment of the write, refused — not
@@ -93,8 +113,10 @@ def write_trap(monkeypatch):
     which watches bytes rather than call surfaces. Do not read this widening as
     having closed the class.
     """
-    tracked = _tracked_data_files()
-    assert tracked, "git ls-files returned no tracked data files — trap would be vacuous"
+    import inspect
+
+    import pandas.io.parquet
+
     attempts: list[tuple[str, str]] = []
     real_open = builtins.open
     real_io_open = io.open
@@ -127,11 +149,25 @@ def write_trap(monkeypatch):
             return real(src, dst, *args, **kwargs)
         return guarded
 
+    def _make_parquet(real, label):
+        signature = inspect.signature(real)
+
+        def guarded(*args, **kwargs):
+            call = signature.bind(*args, **kwargs)
+            call.apply_defaults()
+            resolved, mode = _resolve(call.arguments["path"]), call.arguments["mode"]
+            if resolved in tracked and any(m in str(mode) for m in _WRITE_MODES):
+                _hit(resolved, f"{label}({mode!r})")
+            return real(*args, **kwargs)
+        return guarded
+
     monkeypatch.setattr(builtins, "open", _make_open(real_open, "builtins.open"))
     monkeypatch.setattr(io, "open", _make_open(real_io_open, "io.open"))
     monkeypatch.setattr(os, "replace", _make_move(real_replace, "os.replace"))
     monkeypatch.setattr(os, "rename", _make_move(real_rename, "os.rename"))
-    yield attempts
+    monkeypatch.setattr(pandas.io.parquet, "_get_path_or_handle", _make_parquet(
+        pandas.io.parquet._get_path_or_handle, "pandas.io.parquet._get_path_or_handle"))
+    return attempts
 
 
 @pytest.fixture(scope="module")
