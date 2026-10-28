@@ -16,6 +16,7 @@ restore it after the test, so a test's DB is a property of the test, not of
 whatever the shell exported. TRACKER_MODE is the real knob; DB_PATH the env var
 is inert and is deliberately not used here.
 """
+import functools
 import os
 import sqlite3
 import sys
@@ -428,8 +429,9 @@ def pytest_configure(config):
 # test. Measured 2026-09-27 over the CI-style suite (2629 tests): 4 tests left a thread
 # alive at teardown, 3 of them the PDF's chart render below and 1 the warm.
 #
-# ONE EXCEPTION to the no-grace-period rule (decided by the owner on October 17, 2026,
-# #635): a threading.Timer already cancelled when it is reported, its finished event
+# TWO EXCEPTIONS to the no-grace-period rule. A chart export's own threads are the
+# second, below EXPORT_PACKAGES (#698). The first (decided by the owner on October 17,
+# 2026, #635): a threading.Timer already cancelled when it is reported, its finished event
 # set, is joined and fails only if it is still alive after the join. A cancelled Timer
 # can never start its function, so it is not the hazard this check exists for. What is
 # left of it is a wait that has already returned, and it ends at once on any machine.
@@ -443,16 +445,39 @@ def pytest_configure(config):
 #
 # Allowed to outlive, each for a stated reason. Anything else fails by default, so the
 # next background thread is caught without anyone having to list it first.
+ABANDONED_EXPORT = "src.reports._render_chart_to_png.<locals>._render"
 THREADS_ALLOWED_TO_OUTLIVE = {
-    # The PDF's chart render gives up on kaleido after 25 s and abandons the thread by
-    # design (a hung kaleido on Windows). It holds the figure and its own result list,
-    # nothing else: no database, no module state.
-    "src.reports._render_chart_to_png.<locals>._render":
-        "abandoned after its 25 s join when kaleido hangs; touches no shared state",
+    # The PDF's chart render waits for kaleido 60 s for the first export a process makes
+    # and 25 s for every later one (src.reports._export_wait_seconds, #698), then abandons
+    # the thread by design (a hung kaleido on Windows). It holds the figure and its own
+    # result list, nothing else: no database, no module state.
+    ABANDONED_EXPORT:
+        "abandoned when its join ends with kaleido still running; touches no shared state",
     # kaleido 0.2.1's stderr reader (kaleido.scopes.base.BaseScope._collect_standard_error)
-    # was allowed here too. kaleido 1.5.0 (#567) starts no thread that outlives an
-    # export: the four tests that render a chart left none, so it is not listed.
+    # was allowed here too. kaleido 1.5.0 (#567) runs each export on threads of its own,
+    # kaleido's, choreographer's and logistro's, and some can still be alive when the
+    # export has returned. They are not listed here: EXPORT_PACKAGES below says when they
+    # may outlive a test.
 }
+
+# A CHART EXPORT'S OWN THREADS (decided by the owner on October 28, 2026, #698). A thread
+# whose target lives in one of EXPORT_PACKAGES, read by thread_target when it is
+# reported, is an export's: kaleido's run thread, choreographer's thread pools or
+# logistro's pipe reader. Two rules let one outlive its test, and every other thread
+# fails as before:
+# - one reported is joined, and passes if it has ended by the end of its join, as a
+#   cancelled Timer does. An export that has returned can leave choreographer's close
+#   pool winding down;
+# - one alive beside an abandoned _render is not reported: it is that abandoned export,
+#   still running, and it may outlive its test only while the _render is alive with it.
+# Measured on GitHub's runner over three CI runs, while every export waited 25 s (#698):
+# 48 exports took 1.58 to 12.17 s, and none was abandoned. Each run's slowest, 9.03 to
+# 12.17 s, was the first export its worker process made. 7 of the 48 returned with one to
+# three of choreographer's close-pool threads alive, each ending 2 to 3 ms later. On
+# #697's CI run eight of an export's threads were alive at teardown, kaleido's run
+# thread among them, which is alive only mid-export: the export had outlived its 25 s
+# join, and its threads failed a test whose body passed.
+EXPORT_PACKAGES = ("kaleido", "choreographer", "logistro")
 _THREAD_JOIN_SECONDS = 5.0
 _threads_before: "set[threading.Thread]" = set()
 
@@ -469,11 +494,23 @@ def thread_target(t: threading.Thread) -> str:
     return f"{getattr(fn, '__module__', '?')}.{getattr(fn, '__qualname__', repr(fn))}"
 
 
-def threads_outliving(before: "set[threading.Thread]") -> "list[threading.Thread]":
-    """Threads alive now that were not in ``before`` and are not allowed to outlive."""
-    return [t for t in threading.enumerate()
-            if t not in before and t.is_alive()
-            and thread_target(t) not in THREADS_ALLOWED_TO_OUTLIVE]
+def in_an_export(t: threading.Thread) -> bool:
+    """A thread whose target lives in kaleido, choreographer or logistro (#698)."""
+    return thread_target(t).split(".", 1)[0] in EXPORT_PACKAGES
+
+
+def threads_outliving(before: "set[threading.Thread]",
+                      threads: "list[threading.Thread] | None" = None,
+                      ) -> "list[threading.Thread]":
+    """Threads alive now that were not in ``before`` and are not allowed to outlive. An
+    export's thread is not reported while an abandoned _render is alive with it (#698).
+    ``threads`` is every thread alive, threading.enumerate(), unless a test names them."""
+    alive = [t for t in (threading.enumerate() if threads is None else threads)
+             if t.is_alive()]
+    abandoned = any(thread_target(t) == ABANDONED_EXPORT for t in alive)
+    return [t for t in alive
+            if t not in before and thread_target(t) not in THREADS_ALLOWED_TO_OUTLIVE
+            and not (abandoned and in_an_export(t))]
 
 
 def join_for_cleanup(threads: "list[threading.Thread]",
@@ -489,14 +526,91 @@ def cancelled_timer(t: threading.Thread) -> bool:
     return isinstance(t, threading.Timer) and finished is not None and finished.is_set()
 
 
-def fails_after_join(alive: "list[threading.Thread]") -> "list[threading.Thread]":
+def fails_after_join(alive: "list[threading.Thread]",
+                     seconds: float = _THREAD_JOIN_SECONDS) -> "list[threading.Thread]":
     """Of the threads threads_outliving reported, the ones that fail the test. Each is
     joined first, so a failure cannot run into the next test. Every one fails, however
-    soon it ends, except a Timer cancelled when reported that has ended by the end of its
-    join (#635)."""
-    cancelled = [t for t in alive if cancelled_timer(t)]
-    join_for_cleanup(cancelled + [t for t in alive if t not in cancelled])
-    return [t for t in alive if t not in cancelled or t.is_alive()]
+    soon it ends, except two that pass once they have ended by the end of the join: a
+    Timer cancelled when reported (#635), and a chart export's own thread (#698). Both
+    are read before the join: a finished thread no longer holds its target."""
+    excused = [t for t in alive if cancelled_timer(t) or in_an_export(t)]
+    join_for_cleanup(excused + [t for t in alive if t not in excused], seconds)
+    return [t for t in alive if t not in excused or t.is_alive()]
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# EVERY REAL CHART EXPORT IS TIMED, AND THE RUN PRINTS THE TIMES (#698)
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# src.reports waits 60 s for the first chart export a process makes and 25 s for every
+# later one. How near an export comes to its wait shows only where it is printed, so
+# each call of src.reports._render_chart_to_png that reaches plotly's own pio.to_image is
+# timed, and the terminal summary prints every process's first export, its slowest, and
+# any export that returned no image. A test that stubs the render or pio.to_image makes
+# no export and is not timed. Under xdist each worker hands its times to the controller
+# in workeroutput.
+_chart_exports: "list[dict]" = []
+_chart_exports_by_worker: "dict[str, list[dict]]" = {}
+_chart_exports_timed = False
+
+
+def time_chart_exports() -> None:
+    """Wrap src.reports._render_chart_to_png, once, as soon as it is imported."""
+    global _chart_exports_timed
+    reports = sys.modules.get("src.reports")
+    if _chart_exports_timed or reports is None:
+        return
+    render = reports._render_chart_to_png
+
+    @functools.wraps(render)
+    def timed(*args, **kwargs):
+        if not getattr(reports.pio.to_image, "__module__", "").startswith("plotly."):
+            return render(*args, **kwargs)
+        first = not reports._first_export_made
+        start = time.monotonic()
+        png = render(*args, **kwargs)
+        _chart_exports.append({
+            "test": _current_test, "first": first, "seconds": time.monotonic() - start,
+            "wait": (reports.FIRST_EXPORT_WAIT_SECONDS if first
+                     else reports.EXPORT_WAIT_SECONDS),
+            "image": png is not None})
+        return png
+
+    reports._render_chart_to_png = timed
+    _chart_exports_timed = True
+
+
+def chart_export_lines(by_process: "dict[str, list[dict]]") -> "list[str]":
+    """The terminal summary's lines for the chart exports each process timed: none when
+    no process made one."""
+    exports = [(p, e) for p, es in sorted(by_process.items()) for e in es]
+    if not exports:
+        return []
+
+    def took(e: dict) -> str:
+        return f"{e['seconds']:.2f} s of its {e['wait']} s"
+
+    lines = []
+    for p, es in sorted(by_process.items()):
+        if es:
+            first = [e for e in es if e["first"]]
+            slowest = max(es, key=lambda e: e["seconds"])
+            lines.append(f"{p}: {len(es)} export(s); first "
+                         f"{took(first[0]) if first else 'none timed'}; "
+                         f"slowest {took(slowest)}")
+    p, e = max(exports, key=lambda pe: pe[1]["seconds"])
+    lines.append(f"slowest of all: {took(e)}, {p}'s {'first' if e['first'] else 'later'} "
+                 f"export, in {e['test']}")
+    lines += [f"returned no image: {p}, {took(e)}, in {e['test']}"
+              for p, e in exports if not e["image"]]
+    return lines
+
+
+@pytest.hookimpl(optionalhook=True)
+def pytest_testnodedown(node, error):
+    """xdist, on the controller: keep the chart export times a worker timed."""
+    out = getattr(node, "workeroutput", None) or {}
+    _chart_exports_by_worker[node.workerinput["workerid"]] = out.get("chart_exports", [])
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -544,6 +658,7 @@ def pytest_runtest_setup(item):
     _phase, _current_test = "setup", item.nodeid
     _threads_before = set(threading.enumerate())
     _gap_fetch_before = gap_fetch_switch()
+    time_chart_exports()
 
 
 @pytest.hookimpl(hookwrapper=True)
@@ -649,11 +764,21 @@ def pytest_sessionfinish(session, exitstatus):
     _session_leaks.extend(_take_leaks(lambda phase, test: True))
     if _session_leaks and session.exitstatus == 0:
         session.exitstatus = pytest.ExitCode.TESTS_FAILED
+    workeroutput = getattr(session.config, "workeroutput", None)
+    if workeroutput is not None:
+        workeroutput["chart_exports"] = _chart_exports
 
 
 def pytest_terminal_summary(terminalreporter, exitstatus, config):
     """Clean up HERE rather than only in pytest_unconfigure, because this is the
-    last point where a failure can still be printed where the reader looks."""
+    last point where a failure can still be printed where the reader looks. The chart
+    exports' times are printed first, by the controller only (#698)."""
+    if not hasattr(config, "workerinput"):
+        lines = chart_export_lines(_chart_exports_by_worker or {"this process": _chart_exports})
+        if lines:
+            terminalreporter.write_sep("-", "chart exports (#698)")
+            for line in lines:
+                terminalreporter.write_line(line)
     if _session_leaks:
         terminalreporter.write_sep("!", _LEAK_HEADLINE + " — at session end", red=True)
         for line in _session_leaks:
