@@ -114,9 +114,13 @@ def rolling_12m_etf_relative(
     The inputs are inner-aligned on their common dates first so both legs use
     the same calendar.
     """
+    # sort=True, stated (decided by the owner on October 27, 2026, #694): the window's
+    # pct_change needs the dates in order, and pandas 3.1.0 deprecates sorting two
+    # different DatetimeIndexes by default, so this no longer rides on that default.
     aligned = pd.concat(
         [small_or_value_prices.astype(float), large_or_growth_prices.astype(float)],
         axis=1,
+        sort=True,
     ).dropna()
     aligned.columns = ["leg1", "leg2"]
 

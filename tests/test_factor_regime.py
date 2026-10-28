@@ -101,6 +101,29 @@ def test_etf_relative_aligns_on_common_dates():
     assert out.index.is_monotonic_increasing
 
 
+def test_etf_relative_sorts_its_dates_and_says_so():
+    """The concat states sort=True (#694). Each leg lacks a date the other holds, so the
+    two indexes' union in concatenation order is out of date order. pandas 3.1.0 sorted
+    it by a default it deprecates, and warned. The result is in date order, matches the
+    same arithmetic on the common dates, and raises no deprecation."""
+    import warnings
+
+    idx = pd.date_range("2021-01-01", periods=20, freq="D")
+    small = pd.Series(np.linspace(100.0, 130.0, 20), index=idx).drop(idx[5])
+    large = pd.Series(np.linspace(100.0, 115.0, 20), index=idx).drop(idx[9])
+    union_in_order = small.index.append(large.index.difference(small.index))
+    assert not union_in_order.is_monotonic_increasing, "premise: the union needs sorting"
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        out = rolling_12m_etf_relative(small, large, window=12)
+
+    common = small.index.intersection(large.index)
+    expected = ((small[common].pct_change(12) - large[common].pct_change(12)) * 100.0).dropna()
+    assert out.index.is_monotonic_increasing
+    pd.testing.assert_series_equal(out, expected, check_names=False)
+
+
 # ── frame builders (injected synthetic fetch — pure, no network) ────────────────
 
 def _synthetic_ff() -> pd.DataFrame:
