@@ -174,11 +174,65 @@ class SnapshotFrames(NamedTuple):
     # benchmark series could not be fetched when prices were locked. The rewrite left
     # no record; this is the record, added afterwards (#478).
     gap_corrections: "dict | None" = None
+    # The valuation rule the lock's figures are on (#369): RAW_CLOSE_RULE or
+    # ADJUSTED_LEVELS_RULE, set by the quarter the lock covers (valuation_rule_for).
+    # None for a lock taken before the marker existed, which is on adjusted levels
+    # (lock_valuation_rule). Nothing reads it yet: the raw-close series is #369's PR 2.
+    valuation_rule: "str | None" = None
+    # A raw-close lock's ledger through its quarter's last day, every trades row with
+    # the LEDGER_COLUMNS, DRIP lots included, so a later lot rebuild cannot move the
+    # lock. None on an adjusted-levels lock, which reads the live ledger as before.
+    # Nothing reads it yet.
+    ledger: "pd.DataFrame | None" = None
 
 
 # Every lock captured from #368 on: prices AND dividends through the quarter's last
 # day. Stored in the lock's payload so a reader can tell which rule produced it.
 QUARTER_END_RULE = "quarter_end"
+
+# THE VALUATION RULE (#369, decided by the owner on October 27 and 28, 2026). Holdings are
+# to be valued at raw closes times every share held, with dividends as income, from the
+# Q4 2026 lock on; Q2 and Q3 2026 and every earlier quarter stay on dividend-adjusted
+# levels. The rule is set by the QUARTER a lock covers, not by when it is captured: a
+# lock for a quarter ending on or after RAW_CLOSE_RULE_FROM is on the raw-close rule, and
+# a lock for any earlier quarter is on adjusted levels whenever it is taken. So a book's
+# partial first quarter, reportable and not yet locked, stays on the rule of the quarters
+# after it. Every lock captured from here on records its rule. Each lock already holds
+# its tickers' dividends through its last day (#382, input_lock.DIVIDENDS); a raw-close
+# lock holds the ledger too.
+RAW_CLOSE_RULE = "raw_close"
+ADJUSTED_LEVELS_RULE = "adjusted_levels"
+RAW_CLOSE_RULE_FROM = date(2026, 12, 31)
+
+# The trades columns a raw-close lock holds: what the value series and the flow series
+# read from the ledger, and trade_id for their order.
+LEDGER_COLUMNS = ("trade_id", "account_id", "trade_date", "ticker", "action", "shares",
+                  "price", "fees", "lot_source")
+
+
+def valuation_rule_for(quarter_end: date) -> str:
+    """The valuation rule a lock for the quarter ending ``quarter_end`` is taken on."""
+    return RAW_CLOSE_RULE if quarter_end >= RAW_CLOSE_RULE_FROM else ADJUSTED_LEVELS_RULE
+
+
+def lock_valuation_rule(snap: "SnapshotFrames | None") -> str:
+    """The valuation rule a lock is on. A lock with no marker, as every lock taken before
+    the marker existed is, is on adjusted levels."""
+    return getattr(snap, "valuation_rule", None) or ADJUSTED_LEVELS_RULE
+
+
+def _capture_ledger(end: date) -> dict:
+    """The book's ledger through ``end``: every trades row, DRIP lots included, in the
+    order the value series reads them, as {"columns", "data"}."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            f"SELECT {', '.join(LEDGER_COLUMNS)} FROM trades WHERE trade_date <= ? "
+            "ORDER BY trade_date, trade_id", (end.isoformat(),)).fetchall()
+    return {"columns": list(LEDGER_COLUMNS), "data": [list(r) for r in rows]}
+
+
+def _ledger_frame(payload: dict) -> pd.DataFrame:
+    return pd.DataFrame(payload["data"], columns=payload["columns"])
 
 # The day the quarter-end rule took effect. A RECORD, not a data frontier: it
 # governs no lock and no read. It dates the restatement of quarters that closed
@@ -822,7 +876,10 @@ def get_quarter_snapshot(quarter_id: str) -> tuple:
                            benchmark_rule=blob.get("benchmark_rule"),
                            lot_rebuild=blob.get("lot_rebuild"),
                            price_corrections=blob.get("price_corrections"),
-                           gap_corrections=blob.get("gap_corrections")),
+                           gap_corrections=blob.get("gap_corrections"),
+                           valuation_rule=blob.get("valuation_rule"),
+                           ledger=(_ledger_frame(blob["ledger"]) if "ledger" in blob
+                                   else None)),
             row["captured_at"])
 
 
@@ -1254,13 +1311,18 @@ def capture_quarter_snapshot(quarter_id: str) -> tuple:
         raw_df.index = pd.to_datetime(raw_df.index).date
     # Every other input the locked sections read, through the same day (#382).
     in_enc, in_through, in_pending = _capture_inputs(end, sorted(adj))
+    # The valuation rule, by the quarter (#369), and a raw-close lock's ledger.
+    valuation_rule = valuation_rule_for(end)
+    ledger = _capture_ledger(end) if valuation_rule == RAW_CLOSE_RULE else None
     snap_df = SnapshotFrames(adj_close=adj_df,
                              close=raw_df if not raw_df.empty else None,
                              gaps=tuple((str(t), str(r)) for t, r in gaps),
                              rule=QUARTER_END_RULE, quarter_end=end_str,
                              inputs={k: _dec(v) for k, v in in_enc.items()},
                              inputs_pending=in_pending, inputs_rule=INPUTS_RULE,
-                             benchmark_rule=_blended_rule())
+                             benchmark_rule=_blended_rule(),
+                             valuation_rule=valuation_rule,
+                             ledger=_ledger_frame(ledger) if ledger else None)
 
     # Aware UTC, so the report can show the moment in New York time whatever machine
     # recorded it. Older rows are naive local time; reports reads both.
@@ -1277,6 +1339,9 @@ def capture_quarter_snapshot(quarter_id: str) -> tuple:
     payload["inputs_pending"] = in_pending
     payload["inputs_rule"] = INPUTS_RULE
     payload["benchmark_rule"] = _blended_rule()
+    payload["valuation_rule"] = valuation_rule
+    if ledger is not None:
+        payload["ledger"] = ledger
     blob = json.dumps(payload)  # write-guard-exempt: portfolio snapshot cache, not user-mutable data
 
     _ensure_table()
