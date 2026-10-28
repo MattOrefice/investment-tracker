@@ -55,8 +55,9 @@ _BASE = {
     "gap_note": None,
     # Added by #529 (the drawdown note's closing sentences), caught the same way.
     "dd_2022_note": None,
-    # Added by #678 (why a row's skewness and kurtosis are "—"), caught the same way.
-    "moments_note": None,
+    # Added by #678 (why a row's skewness and kurtosis are "—"), caught the same way;
+    # renamed by #690, which added the Sharpe ratio.
+    "never_moves_note": None,
 }
 
 

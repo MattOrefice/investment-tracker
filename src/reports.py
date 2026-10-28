@@ -1649,10 +1649,10 @@ def markdown_blocks(text: str) -> "list[dict]":
     return blocks
 
 
-def _moment_cell(value: float) -> str:
-    """A skewness or kurtosis cell of the univariate table: "—" where it is undefined,
-    as the page prints it, and moments_note says why (#678). It printed 0.00 under
-    pandas 3.0.6 and "nan" under 3.1.0."""
+def _ratio_cell(value: float) -> str:
+    """A Sharpe, skewness or kurtosis cell of the univariate table: "—" where it is
+    undefined, as the page prints it, and never_moves_note says why (#678, #690). A
+    skewness or kurtosis cell printed 0.00 under pandas 3.0.6 and "nan" under 3.1.0."""
     return "—" if pd.isna(value) else f"{value:.2f}"
 
 
@@ -1722,9 +1722,10 @@ def _build_asset_eval_section() -> dict:
         # named with its date as the page names it (#521). None when it lacks none,
         # and on the exits that show no figures.
         "gap_note":         None,
-        # Why a univariate row's skewness and kurtosis print as "—": its returns never
-        # move, so both are undefined (#678). None when every row has both.
-        "moments_note":     None,
+        # Why a univariate row's Sharpe ratio, skewness and kurtosis print as "—": its
+        # returns never move, so all three are undefined (#678, #690). None when every
+        # row has them.
+        "never_moves_note": None,
         "args_for":         [],
         "args_against":     [],
         # The marginal-Sharpe curve's highest allocation, for the "none found" banner,
@@ -1786,12 +1787,12 @@ def _build_asset_eval_section() -> dict:
                     "asset":        name,
                     "ann_return":   f"{row['ann_return']:.1%}",
                     "ann_vol":      f"{row['ann_vol']:.1%}",
-                    "sharpe":       f"{row['sharpe']:.2f}",
+                    "sharpe":       _ratio_cell(row["sharpe"]),
                     "max_drawdown": f"{row['max_drawdown']:.1%}",
-                    "skewness":     _moment_cell(row["skewness"]),
-                    "kurtosis":     _moment_cell(row["kurtosis"]),
+                    "skewness":     _ratio_cell(row["skewness"]),
+                    "kurtosis":     _ratio_cell(row["kurtosis"]),
                 })
-            result["moments_note"] = ae.moments_note(uni_tbl)
+            result["never_moves_note"] = ae.never_moves_note(uni_tbl)
     except Exception:
         result["unavailable"].append("univariate")
 

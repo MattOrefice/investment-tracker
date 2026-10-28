@@ -344,7 +344,7 @@ def test_the_count_the_page_prints_is_the_count_the_floor_is_held_to(window):
     pv, bl = _page_series("2026-12-15")
     flows = pd.Series(0.0, index=pv.index)
     flows.loc["2026-12-05"] = 250.0
-    assert pd.Timestamp("2026-12-05").dayofweek == 5, "premise: a Saturday"
+    assert pd.Timestamp("2026-12-05").day_of_week == 5, "premise: a Saturday"
     for cf in (None, flows):
         m = compute_risk_metrics(pv, bl, window=window, cashflows=cf)
         assert trading_days_in_window(pv, bl, window, cashflows=cf) == m["n_days"]

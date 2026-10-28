@@ -541,10 +541,11 @@ with col:
             display_tbl.style.format(fmt, na_rep="—"),
             use_container_width=True,
         )
-        # Why a row's skewness and kurtosis are "—" when its returns never move (#678).
-        _moments_note = ae.moments_note(uni_tbl)
-        if _moments_note:
-            st.caption(_moments_note)
+        # Why a row's Sharpe ratio, skewness and kurtosis are "—" when its returns never
+        # move (#678, #690).
+        _never_moves_note = ae.never_moves_note(uni_tbl)
+        if _never_moves_note:
+            st.caption(_never_moves_note)
 
     st.divider()
 

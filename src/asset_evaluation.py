@@ -450,9 +450,11 @@ def align_to_equity_days(
 
 def never_moves(returns: pd.Series) -> bool:
     """True when a series of two or more returns holds one value only, so it has no
-    spread. Skewness and excess kurtosis each divide by a power of that spread, so for
-    such a series neither has a value (decided by the owner on October 22, 2026, #678).
-    Exact equality: a series whose returns differ only in their last bits still moves."""
+    spread. Skewness and excess kurtosis each divide by a power of that spread, and the
+    Sharpe ratio by the volatility, so for such a series none of the three has a value
+    (decided by the owner on October 22, 2026, #678, and for the Sharpe ratio on October
+    27, 2026, #690). Exact equality: a series whose returns differ only in their last
+    bits still moves."""
     r = returns.dropna()
     return len(r) >= 2 and r.max() == r.min()
 
@@ -465,20 +467,25 @@ def compute_univariate_stats(
     Annualized return, vol, Sharpe, max drawdown, skewness, and excess kurtosis.
     Annualization: geometric mean scaled to 252 trading days.
 
-    Skewness and kurtosis are NaN, undefined, for a series that never moves
-    (never_moves). Decided here rather than left to pandas: its skew() and kurt() give
-    such a series 0.0 under 3.0.6 and NaN under 3.1.0 (#678).
+    The Sharpe ratio, skewness and kurtosis are NaN, undefined, for a series that never
+    moves (never_moves), so the three cannot disagree. Decided here rather than left to
+    pandas: its skew() and kurt() give such a series 0.0 under 3.0.6 and NaN under 3.1.0
+    (#678). The Sharpe ratio read 0.0 when the volatility came out exactly zero and, when
+    float noise left it above zero, a figure such as 6.05e16: 756 returns of 0.0005 have a
+    std of 1.08e-19 (#690).
     """
     n = len(returns)
     if n < 2:
         return {}
     ann_ret  = float((1 + returns).prod() ** (TRADING_DAYS / n) - 1)
     ann_vol  = float(returns.std() * np.sqrt(TRADING_DAYS))
-    sharpe   = (ann_ret - rf_annual) / ann_vol if ann_vol > 0 else 0.0
+    undefined = never_moves(returns)
+    # A volatility of exactly zero needs every return equal, which never_moves catches
+    # first, so the division below never meets a zero.
+    sharpe   = float("nan") if undefined else (ann_ret - rf_annual) / ann_vol
     cum      = (1 + returns).cumprod()
     roll_max = cum.cummax()
     max_dd   = float((cum / roll_max - 1).min())
-    undefined = never_moves(returns)
     return {
         "ann_return":   ann_ret,
         "ann_vol":      ann_vol,
@@ -606,8 +613,9 @@ def price_gap_note(candidate: str = "BTC-USD", screened: str = "", *,
             f"{it_is} stored.")
 
 
-# Where build_univariate_table lists the rows whose skewness and kurtosis are undefined.
-MOMENTS_UNDEFINED = "moments_undefined"
+# Where build_univariate_table lists the rows whose returns never move, so their Sharpe
+# ratio, skewness and kurtosis are undefined.
+ROWS_THAT_NEVER_MOVE = "rows_that_never_move"
 
 
 def build_univariate_table(
@@ -644,25 +652,27 @@ def build_univariate_table(
     for name, rets in assets.items():
         rows[name] = compute_univariate_stats(rets, rf_annual)
     table = pd.DataFrame(rows).T
-    # The rows whose skewness and kurtosis are undefined, which moments_note names. Kept
-    # beside the table because a NaN alone cannot say why it is one.
-    table.attrs[MOMENTS_UNDEFINED] = [name for name, rets in assets.items()
-                                      if never_moves(rets)]
+    # The rows whose Sharpe ratio, skewness and kurtosis are undefined, which
+    # never_moves_note names. Kept beside the table because a NaN alone cannot say why it
+    # is one.
+    table.attrs[ROWS_THAT_NEVER_MOVE] = [name for name, rets in assets.items()
+                                         if never_moves(rets)]
     return table
 
 
-def moments_note(table: pd.DataFrame) -> "str | None":
+def never_moves_note(table: pd.DataFrame) -> "str | None":
     """The line under the univariate table, on the page and in the PDF, that says why a
-    row's skewness and kurtosis print as "—": its returns never move (never_moves).
-    None when no row's are undefined, an empty table included (#678)."""
-    names = list(table.attrs.get(MOMENTS_UNDEFINED, ()))
+    row's Sharpe ratio, skewness and kurtosis print as "—": its returns never move
+    (never_moves). None when no row's are undefined, an empty table included (#678,
+    #690)."""
+    names = list(table.attrs.get(ROWS_THAT_NEVER_MOVE, ()))
     if not names:
         return None
     listed = names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
     whose = "its" if len(names) == 1 else "each one's"
-    return (f"Skewness and kurtosis are shown as — for {listed}: every daily return in "
-            f"{whose} sample is the same, and for a series that never moves both are "
-            "undefined.")
+    return (f"The Sharpe ratio, skewness and kurtosis are shown as — for {listed}: every "
+            f"daily return in {whose} sample is the same, and for a series that never "
+            "moves all three are undefined.")
 
 
 # ── Correlation analysis ──────────────────────────────────────────────────────

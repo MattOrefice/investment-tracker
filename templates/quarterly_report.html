@@ -627,8 +627,8 @@
       {% endfor %}
     </tbody>
   </table>
-  {# Why a row's skewness and kurtosis print as "—" (#678). #}
-  {% if asset_eval.moments_note %}<p class="muted">{{ asset_eval.moments_note }}</p>{% endif %}
+  {# Why a row's Sharpe ratio, skewness and kurtosis print as "—" (#678, #690). #}
+  {% if asset_eval.never_moves_note %}<p class="muted">{{ asset_eval.never_moves_note }}</p>{% endif %}
   {% endif %}
 
   <h3>Full-Sample Correlation vs SAA Sleeves</h3>
