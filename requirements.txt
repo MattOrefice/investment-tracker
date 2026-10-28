@@ -4,21 +4,26 @@
 # (#678). Transitive dependencies stay unpinned. A line with no note of its own is
 # pinned at the version main's last green push run installed (run 39812895641, October
 # 22, 2026). Moving one is its own PR, with the full suite and the personal golden on
-# the new version, as #678 does for pandas. tests/test_requirements_are_pinned.py checks
+# the new version, as #678 did for pandas. tests/test_requirements_are_pinned.py checks
 # every line here and in requirements-ci.txt is name==version, and that it is the
 # version installed.
 # Pinned exactly: the mobile stylesheet targets data-testid internals, so an
 # unpinned Cloud rebuild onto a newer Streamlit could silently break styling.
 streamlit==1.57.0
-# pandas pinned exactly at 3.0.6, the version main's last green CI run installed (run
-# 39264037079, October 19, 2026; decided by the owner on October 22, 2026, #678).
-# pandas 3.1.0 reached CI on October 22, the day it was released, and turned every run
-# red. Its to_parquet no longer goes through builtins.open, so the write-surface test's
-# trap missed the write and it landed in a tracked file; and a series that never moves
-# now has a NaN skewness. The earlier note that pandas was safe to float was about
-# numerics, and it still holds: this break was a write path. Moving to 3.1 is #678's,
-# in its own PR, with the whole suite on it.
-pandas==3.0.6
+# pandas pinned exactly at 3.1.0 (decided by the owner on October 22, 2026, #678). From
+# October 22 it was pinned at 3.0.6, the version main's last green CI run installed (run
+# 39264037079, October 19), because 3.1.0 reached CI the day it was released and turned
+# every run red. Two things broke on 3.1.0. Its to_parquet opens a local file with
+# pyarrow.OSFile, in C++, not through builtins.open, so the write-surface test's trap
+# missed the write and it landed in a tracked file. And a series that never moves got a
+# NaN skewness and kurtosis, where 3.0.6 gave 0.0. #678's prerequisites (#691) changed
+# both, and pass on both versions: the write-surface tests write only to a scratch file
+# the trap treats as tracked, and the trap guards pandas' parquet open; Asset Evaluation
+# decides that a series that never moves has no skewness or kurtosis, and prints "—"
+# with the reason. 3.1.0 is now what CI and the local harness run. The earlier note that
+# pandas was safe to float was about numerics, and it held on 3.1.0: no locked figure
+# moved, in either committed book or in the personal golden.
+pandas==3.1.0
 # numpy pinned exactly at 2.4.6, the version main's last green push run installed (run
 # 39812895641, October 22, 2026), with every other direct dependency (the owner's
 # decision, above). Under the range this replaced, the local harness kept numpy 2.2.6
