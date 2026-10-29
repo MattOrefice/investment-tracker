@@ -269,6 +269,6 @@ def test_the_stages_state_the_two_benchmarks_apart(book, window):
                             "calendar quarter; Brinson-Fachler holds one basket") for c in caps)
     assert not any("rebalancing adds" in c or "that rebalancing is" in c for c in caps)
     bf_line = next(c for c in caps if c.startswith("**BF decomposition:**"))
-    assert "vs. Stage 2 on adjusted levels: ✓" in bf_line, (
+    assert "vs. Stage 2: ✓" in bf_line, (
         "net of the difference, BF still reconciles")
     st.cache_data.clear()

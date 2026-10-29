@@ -57,7 +57,7 @@ from src.performance import (
     trading_days_in_window,
     window_bounds,
 )
-from src.cache import RAW_CLOSE_RULE_FROM, LockCoverageError, on_adjusted_levels
+from src.cache import RAW_CLOSE_RULE_FROM, LockCoverageError
 from src.reports import generate_quarterly_report_bytes
 from src.sleeve_config import international_sleeves
 from src.tax_lots import open_lot_cost_basis
@@ -116,19 +116,6 @@ def _load_portfolio(_v: int = _PORTFOLIO_CACHE_V):
     # round-trips through st.cache_data's pickling, and the record is pure
     # data so it survives intact.
     return pv, cf, cov
-
-
-@st.cache_data(ttl=3600, show_spinner=False)
-def _load_portfolio_on_adjusted_levels(_v: int = _PORTFOLIO_CACHE_V):
-    """The value and flow series on adjusted levels, Brinson-Fachler's own basis, for the
-    attribution check alone until #369's PR 3 (decided by the owner on October 28, 2026).
-    Every other figure on the page reads _load_portfolio."""
-    with on_adjusted_levels():
-        pv, _cov = portfolio_value_series_with_coverage(
-            INCEPTION, TODAY, account_id=_ACCT_ID)
-        cf = get_external_cashflow_series(
-            INCEPTION, TODAY, account_id=_ACCT_ID).reindex(pv.index).fillna(0.0)
-    return pv, cf
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -1132,8 +1119,9 @@ with col:
     # ── Stage 1 + Stage 2 tiles ─────────────────────────────────────────────────────
     if not bf_df.empty:
         # BF-internal returns: weighted sums over the decomposition's sleeve rows. They
-        # INCLUDE dividends, like every BF return: each sleeve is valued at adj_close,
-        # which get_prices derives on read from close and the stored dividends (#339).
+        # INCLUDE dividends, like every BF return: each sleeve is valued as the value
+        # series values the book, every share at its close and each dividend as income
+        # from its ex-date (#369).
         # _r_b_bf, the SAA blend, is Stage 1 and 2's benchmark side (_r_b_ps below).
         _r_p_bf  = float((bf_df["w_p"] * bf_df["r_p"]).sum())
         _r_b_bf  = float((bf_df["w_b"] * bf_df["r_b"]).sum())
@@ -1405,24 +1393,18 @@ with col:
         # one the gap is that limitation and is disclosed rather than warned (#349).
         # Against the basket BF itself holds (_r_b_bf): Stage 2's quarterly
         # rebalancing is stated separately below, not read as a gap (#383).
-        # Until #369's PR 3 the check reads Stage 2's portfolio return on ADJUSTED LEVELS,
-        # the basis Brinson-Fachler values each sleeve on, while the Stage 2 tile shows the
-        # raw-close TWR (decided by the owner on October 28, 2026). PR 3 retires this.
-        _pv_adj, _cf_adj = _load_portfolio_on_adjusted_levels()
-        _pv_adj = _pv_adj[_pv_adj.index <= _C_ts]
-        _cf_adj = _cf_adj[_cf_adj.index <= _C_ts]
-        _r_p_adj = period_return("daily", _pv_adj, _cf_adj, bf_period)
-        _bf_s2_gap_bps = (total_active / 100 - (_r_p_adj - _r_b_bf)) * 10_000
-        _bf_window_cf = _cf_adj[(_cf_adj.index > pd.Timestamp(_bf_start))
-                                & (_cf_adj.index <= pd.Timestamp(_bf_end))]
+        # Both sides on the raw-close rule (#369's PR 3, decided by the owner on October 28
+        # and 29, 2026): Brinson-Fachler values each sleeve as the value series values the
+        # book, so it is checked against the Stage 2 tile's own return.
+        _bf_s2_gap_bps = (total_active / 100 - (_r_p_ps - _r_b_bf)) * 10_000
+        _bf_window_cf = cf[(cf.index > pd.Timestamp(_bf_start)) & (cf.index <= pd.Timestamp(_bf_end))]
         if _SERIES_GAP:
             # The check compares with Stage 2, the portfolio's return: withheld (#643).
-            _s2_check, _s2_disclosure = "vs. Stage 2 on adjusted levels: withheld", None
+            _s2_check, _s2_disclosure = "vs. Stage 2: withheld", None
         else:
             _s2_check, _s2_disclosure = stage2_reconciliation(
                 _bf_s2_gap_bps, _bf_start,
                 {d.date().isoformat(): float(a) for d, a in _bf_window_cf.items()},
-                basis="adjusted levels",
             )
         st.caption(
             f"**BF decomposition:**  "
@@ -1435,12 +1417,6 @@ with col:
         )
         if _s2_disclosure:
             st.caption(_s2_disclosure)
-        st.caption(
-            "Brinson-Fachler values each sleeve on dividend-adjusted levels, so the check "
-            "above compares it with the book's time-weighted return on that basis. The "
-            "Stage 2 tile measures the portfolio's time-weighted return on the raw-close "
-            "basis: every share at its close, each dividend as income from its ex-date."
-        )
         if abs(_rebal * 10_000) >= 0.5:
             st.caption(
                 f"Stage 2 is measured against the SAA blend rebalanced each calendar "

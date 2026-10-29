@@ -94,7 +94,7 @@ def _value_and_flows(book: Path, adjusted: bool = True) -> "tuple[pd.Series, pd.
     """The value series and the flow series on ``book``, as the Performance page takes
     them (from inception), offline; on adjusted levels unless ``adjusted`` is False."""
     from contextlib import nullcontext
-    from src.cache import on_adjusted_levels
+    from tests.conftest import on_adjusted_levels
     with pytest.MonkeyPatch.context() as mp, (on_adjusted_levels() if adjusted
                                               else nullcontext()):
         pin_today(mp, date(2026, 10, 1))

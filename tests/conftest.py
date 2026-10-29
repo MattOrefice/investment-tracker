@@ -25,6 +25,7 @@ import tempfile
 import threading
 import time
 import warnings
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -1217,6 +1218,21 @@ def unpin_leftovers() -> "list[str]":
             setattr(mod, "today_et", _REAL_TODAY_ET)
             fixed.append(name)
     return fixed
+
+
+@contextmanager
+def on_adjusted_levels():
+    """Reads inside the block are on adjusted levels, as inside a lock with no marker,
+    and read the live ledger: the rule every lock taken before #369's marker is on, for
+    the tests that pin it without taking a lock. The product reads it only inside a lock
+    (cache.snapshot_price_context); #369's PR 3 retired the Performance page's interim
+    comparison on it."""
+    from src import cache
+    token = cache._VALUATION_LOCK.set((cache.ADJUSTED_LEVELS_RULE, None))
+    try:
+        yield
+    finally:
+        cache._VALUATION_LOCK.reset(token)
 
 
 def utc_machine(mp: "pytest.MonkeyPatch", instant: "_dt.datetime") -> None:

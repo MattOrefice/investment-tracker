@@ -80,7 +80,7 @@ def test_builder_demo_flows_are_inception_seed_only(use_demo_db):
     dividend). Under the raw-close rule, live reads (#369's PR 2), the seed is the
     ledger's dollars and still the book's starting value to the cent: every share counts
     at its close."""
-    from src.cache import on_adjusted_levels
+    from tests.conftest import on_adjusted_levels
     from src.db import get_connection
     from src.holdings import get_external_cashflow_series, get_portfolio_value_series
 

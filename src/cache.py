@@ -227,20 +227,6 @@ def lock_valuation_rule(snap: "SnapshotFrames | None") -> str:
 _VALUATION_LOCK: "ContextVar[Optional[tuple]]" = ContextVar("valuation_lock", default=None)
 
 
-@contextmanager
-def on_adjusted_levels():
-    """Reads inside the block are on adjusted levels, as inside a lock with no marker,
-    and read the live ledger. For the Performance page's attribution check alone, until
-    #369's PR 3 (decided by the owner on October 28, 2026): Brinson-Fachler values each
-    sleeve on adjusted levels, so the check compares it with the book's TWR on that basis
-    while the Stage 2 tile shows the raw-close TWR. PR 3 retires it."""
-    token = _VALUATION_LOCK.set((ADJUSTED_LEVELS_RULE, None))
-    try:
-        yield
-    finally:
-        _VALUATION_LOCK.reset(token)
-
-
 def valuation_in_force() -> "tuple[str, pd.DataFrame | None]":
     """(rule, ledger) for a read in this context (#369's PR 2, decided by the owner on
     October 27 and 28, 2026). Live reads are on the raw-close rule and read the live

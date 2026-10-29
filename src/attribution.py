@@ -192,10 +192,11 @@ def _last_adj_price(ticker: str, up_to_date: str, window_days: int = 5) -> Optio
 
 
 def _adj_prices_one_read(
-    ticker: str, lo: str, hi: str, window_days: int = 5,
+    ticker: str, lo: str, hi: str, window_days: int = 5, *, raw: bool = False,
 ) -> "Optional[pd.Series]":
     """Total-return prices for ``ticker`` over [lo − window_days, hi + window_days],
-    from ONE get_prices read (#304).
+    from ONE get_prices read (#304). ``raw``: the closes instead, the raw-close rule's
+    level for a fund (#369).
 
     A return is a ratio of two prices. Adjusting for dividends on read makes a
     price's level depend on every dividend stored after it, and a read can store a
@@ -216,7 +217,8 @@ def _adj_prices_one_read(
         return None
     if p.empty:
         return p["close"].astype(float)
-    adj = p["adj_close"].where(p["adj_close"] > 0, p["close"]).astype(float)
+    adj = (p["close"] if raw
+           else p["adj_close"].where(p["adj_close"] > 0, p["close"])).astype(float)
     adj.index = [d if isinstance(d, date) else pd.Timestamp(d).date() for d in adj.index]
     return adj.sort_index()
 
@@ -285,7 +287,6 @@ def benchmark_gap_notice(benchmark_gaps: list[tuple[str, str, str]]) -> str:
 
 def stage2_reconciliation(
     gap_bps: float, window_start: str, window_flows: "dict[str, float]",
-    basis: "str | None" = None,
 ) -> "tuple[str, Optional[str]]":
     """The Performance page's "vs. Stage 2" check, conditioned on the window (#349).
 
@@ -300,10 +301,8 @@ def stage2_reconciliation(
 
     ``window_flows``: ISO date -> signed external flow, for days strictly AFTER
     ``window_start`` (a flow on the first day is the starting value, as in the TWR).
-    ``basis``: the valuation basis Stage 2's return is taken on for the check, named in
-    its words, when it is not the Stage 2 tile's: "adjusted levels" until #369's PR 3,
-    since Brinson-Fachler values each sleeve on adjusted levels (decided by the owner on
-    October 28, 2026).
+    Both sides are on the raw-close rule (#369's PR 3), so the check compares Brinson-
+    Fachler with the Stage 2 tile's own return.
     Returns (the fragment for the BF summary line, the disclosure or None).
     """
     from src.asof import format_long_date
@@ -311,11 +310,10 @@ def stage2_reconciliation(
     # Displayed rounded, and "+ 0.0" turns a rounded -0.00 into 0.00: it read
     # "vs. Stage 2: ✓ -0.00 bps" (audit item 13). The 0.5 bp check reads the raw gap.
     shown = round(gap_bps, 2) + 0.0
-    label = f"Stage 2 on {basis}" if basis else "Stage 2"
     flows = {d: a for d, a in window_flows.items() if a}
     if not flows:
         ok = abs(gap_bps) < 0.5
-        return f"vs. {label}: {'✓' if ok else '⚠'} {shown:+.2f} bps", None
+        return f"vs. Stage 2: {'✓' if ok else '⚠'} {shown:+.2f} bps", None
 
     days = sorted(flows)
     if all(a > 0 for a in flows.values()):
@@ -327,13 +325,12 @@ def stage2_reconciliation(
     named = [format_long_date(d) for d in days]
     when = named[0] if len(named) == 1 else ", ".join(named[:-1]) + " and " + named[-1]
     plural = "s" if len(days) > 1 else ""
-    fragment = f"vs. {label}: {shown:+.2f} bps, not comparable (a {noun} in this window)"
+    fragment = f"vs. Stage 2: {shown:+.2f} bps, not comparable (a {noun} in this window)"
     disclosure = (
         f"**Attribution cannot see the {noun}{plural} of {when}.** Brinson-Fachler holds "
         f"the holdings at the start of the window ({format_long_date(window_start)}) "
         f"fixed for the whole window, so it cannot attribute what an intra-window "
-        f"{noun} {did}. Stage 2 is the book's time-weighted return"
-        f"{f', here on {basis}' if basis else ''}, which does include "
+        f"{noun} {did}. Stage 2 is the book's time-weighted return, which does include "
         f"them from the day they were {did}, so the two differ by {shown:+.2f} bps "
         f"here. That gap is this limitation, not an error: over a window with no "
         f"{noun}, they agree within 0.5 bps."
@@ -360,6 +357,20 @@ def brinson_fachler_period(
     IRA) into one "Portfolio" attribution while the Holdings/Performance sections
     stayed scoped, so a single PDF contradicted itself. Same contract as
     ``get_holdings_on_date``: raises on None rather than silently reading every account.
+
+    TWO VALUATION RULES (#369), the value series' (cache.valuation_in_force). Under the
+    RAW-CLOSE RULE, live reads, each sleeve is valued as the value series values the book
+    (holdings.raw_window_holdings, decided by the owner on October 28 and 29, 2026): every
+    share at its close, DRIP lots included; the income line where its rule puts it, income
+    a DRIP lot has yet to be paid from in its fund's sleeve and income taken in cash in
+    Cash / SPAXX; and SPAXX as the units its trades bought, at BIL's level. The holdings at
+    the start are held fixed, each DRIP lot after it scaled to the part of its dividend they
+    earned. A DRIP lot is a move inside its fund's sleeve. A sweep into SPAXX is a move
+    between sleeves, netted at sleeve level: the fund's sleeve is credited the dividend it
+    paid out, and Cash / SPAXX's return does not count it. So the sleeves sum to the value
+    series on both days, and over a window with no external flow the portfolio's return here
+    is its time-weighted return. Under ADJUSTED LEVELS, every lock taken before the marker,
+    non-DRIP shares at adj_close, as below.
 
     Price gaps: if a held ticker's price cannot be found within the lookback window
     (see _first_adj_price/_last_adj_price), that sleeve is EXCLUDED from this
@@ -399,13 +410,16 @@ def brinson_fachler_period(
     # Target weights (benchmark weights)
     benchmark_weights = {r["name"]: r["target_weight"] for r in policy.sleeves()}
 
+    from src.cache import RAW_CLOSE_RULE, valuation_in_force
+    raw = valuation_in_force()[0] == RAW_CLOSE_RULE
     with get_connection() as conn:
         # Holdings at start of period. DRIP lots (lot_source='drip') are EXCLUDED:
         # sleeves are valued at adj_close, which already embeds dividend
         # reinvestment, so counting DRIP-reinvested shares on top would
         # double-count income (matches get_portfolio_value_series; keeps the
-        # BF↔TWR reconciliation identity).
-        hold_rows = conn.execute(
+        # BF↔TWR reconciliation identity). Adjusted levels only: under the raw-close
+        # rule the holdings are raw_window_holdings', below.
+        hold_rows = [] if raw else conn.execute(
             """SELECT ticker,
                       SUM(CASE WHEN LOWER(action)='buy' THEN shares ELSE -shares END) AS net_shares
                FROM trades
@@ -428,14 +442,19 @@ def brinson_fachler_period(
             else start_date
         )
 
-    if not hold_rows:
+    if raw:
+        from src.holdings import raw_window_holdings
+        at_start, at_end, swept = raw_window_holdings(start_date, end, account_id=account_id)
+        holdings = at_start.shares
+    else:
+        holdings = {r["ticker"]: float(r["net_shares"]) for r in hold_rows}
+
+    if not holdings:
         empty = pd.DataFrame()
         empty.attrs["price_gaps"] = price_gaps
         empty.attrs["benchmark_gaps"] = benchmark_gaps
         empty.attrs["no_benchmark_sleeves"] = []
         return empty
-
-    holdings = {r["ticker"]: float(r["net_shares"]) for r in hold_rows}
 
     # ── Benchmark sleeve returns ──────────────────────────────────────────────
     # Fetched BEFORE the holdings loop (it depends only on the window bounds) so
@@ -509,21 +528,20 @@ def brinson_fachler_period(
     end_values: dict[str, float] = {}     # sleeve → market value at end
     gapped_sleeves: set[str] = set()      # sleeves excluded this period (price gap)
 
-    for ticker, shares in holdings.items():
-        sleeve = ticker_to_sleeve.get(ticker, "Unknown")
-        if ticker == "SPAXX":
-            # Normalize BIL to portfolio inception so sleeve weight correctly
-            # reflects historical BIL appreciation.  Period return is unchanged:
-            # p_end / p_start = (BIL_end / BIL_inception) / (BIL_start / BIL_inception)
-            #                 = BIL_end / BIL_start.
-            p_start = _safe_bil_ratio(bil_period_start, bil_inception)
-            p_end   = _safe_bil_ratio(bil_period_end, bil_inception)
-            start_values[sleeve] = start_values.get(sleeve, 0.0) + shares * p_start
-            end_values[sleeve]   = end_values.get(sleeve, 0.0)   + shares * p_end
-        else:
-            # Both ends from ONE read (#304): a ratio of two separate reads can
-            # straddle a dividend stored between them. Backward-fill matches pv ffill.
-            _px = _adj_prices_one_read(ticker, start_date, end)
+    if raw:
+        # The raw-close rule: each sleeve as the value series values it, on both days
+        # (see the docstring). A fund held on either day is priced on both, so a gap
+        # excludes its sleeve as above.
+        cash_level = (_safe_bil_ratio(bil_period_start, bil_inception),
+                      _safe_bil_ratio(bil_period_end, bil_inception))
+        for ticker in dict.fromkeys([*at_start.shares, *at_end.shares]):
+            sleeve = ticker_to_sleeve.get(ticker, "Unknown")
+            n = (at_start.shares.get(ticker, 0.0), at_end.shares.get(ticker, 0.0))
+            if ticker == "SPAXX":
+                start_values[sleeve] = start_values.get(sleeve, 0.0) + n[0] * cash_level[0]
+                end_values[sleeve]   = end_values.get(sleeve, 0.0)   + n[1] * cash_level[1]
+                continue
+            _px = _adj_prices_one_read(ticker, start_date, end, raw=True)
             p_start = _last_on_or_before(_px, start_date)
             p_end   = _last_on_or_before(_px, end)
             if p_start is None:
@@ -531,15 +549,57 @@ def brinson_fachler_period(
             if p_end is None:
                 price_gaps.append((ticker, end))
             if p_start is None or p_end is None:
-                # Data gap: exclude this sleeve from the period rather than
-                # fabricate a 0% (missing start) or -100% (missing end) return.
                 gapped_sleeves.add(sleeve)
                 continue
-            # Actual (non-DRIP) shares valued at adj_close on both ends → the sleeve
-            # total return p_end/p_start − 1, with dividend income already embedded
-            # in adj_close. No DRIP-share addition (that would double-count income).
-            start_values[sleeve] = start_values.get(sleeve, 0.0) + shares * p_start
-            end_values[sleeve]   = end_values.get(sleeve, 0.0)   + shares * p_end
+            start_values[sleeve] = start_values.get(sleeve, 0.0) + n[0] * p_start
+            end_values[sleeve]   = end_values.get(sleeve, 0.0)   + n[1] * p_end
+        # The income line: a DRIP lot's dividend in its fund's sleeve until the lot, and
+        # income taken in cash in Cash / SPAXX, as SPAXX units.
+        for held, values, level in ((at_start, start_values, cash_level[0]),
+                                    (at_end, end_values, cash_level[1])):
+            for fund, dollars in held.pending.items():
+                sleeve = ticker_to_sleeve.get(fund, "Unknown")
+                values[sleeve] = values.get(sleeve, 0.0) + dollars
+            if held.income_units:
+                values[_CASH_SLEEVE] = values.get(_CASH_SLEEVE, 0.0) + held.income_units * level
+        # A sweep into SPAXX, netted at sleeve level: the dividend counts in its fund's
+        # sleeve's return, and Cash / SPAXX's return starts from the units it bought.
+        for fund, dollars in swept.items():
+            sleeve = ticker_to_sleeve.get(fund, "Unknown")
+            end_values[sleeve] = end_values.get(sleeve, 0.0) + dollars
+            end_values[_CASH_SLEEVE] = end_values.get(_CASH_SLEEVE, 0.0) - dollars
+    else:
+        for ticker, shares in holdings.items():
+            sleeve = ticker_to_sleeve.get(ticker, "Unknown")
+            if ticker == "SPAXX":
+                # Normalize BIL to portfolio inception so sleeve weight correctly
+                # reflects historical BIL appreciation.  Period return is unchanged:
+                # p_end / p_start = (BIL_end / BIL_inception) / (BIL_start / BIL_inception)
+                #                 = BIL_end / BIL_start.
+                p_start = _safe_bil_ratio(bil_period_start, bil_inception)
+                p_end   = _safe_bil_ratio(bil_period_end, bil_inception)
+                start_values[sleeve] = start_values.get(sleeve, 0.0) + shares * p_start
+                end_values[sleeve]   = end_values.get(sleeve, 0.0)   + shares * p_end
+            else:
+                # Both ends from ONE read (#304): a ratio of two separate reads can
+                # straddle a dividend stored between them. Backward-fill matches pv ffill.
+                _px = _adj_prices_one_read(ticker, start_date, end)
+                p_start = _last_on_or_before(_px, start_date)
+                p_end   = _last_on_or_before(_px, end)
+                if p_start is None:
+                    price_gaps.append((ticker, start_date))
+                if p_end is None:
+                    price_gaps.append((ticker, end))
+                if p_start is None or p_end is None:
+                    # Data gap: exclude this sleeve from the period rather than
+                    # fabricate a 0% (missing start) or -100% (missing end) return.
+                    gapped_sleeves.add(sleeve)
+                    continue
+                # Actual (non-DRIP) shares valued at adj_close on both ends → the sleeve
+                # total return p_end/p_start − 1, with dividend income already embedded
+                # in adj_close. No DRIP-share addition (that would double-count income).
+                start_values[sleeve] = start_values.get(sleeve, 0.0) + shares * p_start
+                end_values[sleeve]   = end_values.get(sleeve, 0.0)   + shares * p_end
 
     # Purge gapped sleeves entirely (not partially) so neither the aggregate
     # totals nor the per-sleeve rows are built from an incomplete valuation.

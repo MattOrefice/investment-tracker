@@ -33,16 +33,19 @@ def test_a_window_with_no_flow_keeps_the_threshold_and_the_warning(gap, glyph):
     assert note is None
 
 
-def test_the_check_names_the_basis_it_reads_stage_2_on():
-    """Until #369's PR 3 the page takes Stage 2's return on adjusted levels, the basis
-    Brinson-Fachler values each sleeve on (decided by the owner on October 28, 2026), and
-    the check's words say so, on a flow-free window and in a deposit's disclosure."""
-    assert stage2_reconciliation(0.0, "2026-04-21", {}, basis="adjusted levels") == (
-        "vs. Stage 2 on adjusted levels: ✓ +0.00 bps", None)
-    frag, note = stage2_reconciliation(17.59, "2026-06-09", {"2026-07-01": 1008.29},
-                                       basis="adjusted levels")
-    assert frag.startswith("vs. Stage 2 on adjusted levels: +17.59 bps, not comparable"), frag
-    assert "Stage 2 is the book's time-weighted return, here on adjusted levels, which" in note
+def test_the_check_reads_stage_2_on_the_tiles_own_basis():
+    """Since #369's PR 3 Brinson-Fachler values each sleeve on the raw-close rule, the
+    Stage 2 tile's (decided by the owner on October 28 and 29, 2026), so the check compares
+    the two on one basis and its words name no other: it takes no basis, on a flow-free
+    window or in a deposit's disclosure. Until PR 3 it read "vs. Stage 2 on adjusted
+    levels"."""
+    import inspect
+    assert list(inspect.signature(stage2_reconciliation).parameters) == [
+        "gap_bps", "window_start", "window_flows"]
+    frag, note = stage2_reconciliation(17.59, "2026-06-09", {"2026-07-01": 1008.29})
+    assert frag.startswith("vs. Stage 2: +17.59 bps, not comparable"), frag
+    assert "Stage 2 is the book's time-weighted return, which does include" in note
+    assert "adjusted" not in frag + note
 
 
 def test_a_zero_flow_is_no_flow():
@@ -112,6 +115,8 @@ def _render(pytestconfig, tmp_path, deposit: bool):
                 [r for r in at.radio if r.key == "bf_period"][0].set_value(label).run()
                 caps = [str(c.value) for c in at.caption]
                 line = next(c for c in caps if c.startswith("**BF decomposition:**"))
+                assert not any("dividend-adjusted levels" in c for c in caps), (
+                    "#369's PR 3 retired the interim caption on the check's basis")
                 out[label] = (line.split("&nbsp;·&nbsp;")[-1].strip(),
                               [c for c in caps if c.startswith("**Attribution cannot see")])
     finally:
@@ -129,7 +134,7 @@ def test_the_page_discloses_on_a_deposit_window_and_checks_the_others(pytestconf
     assert "not comparable" in frag and len(notes) == 1 and "June 1, 2026" in notes[0], (frag, notes)
     # 1M starts 2026-06-20, after the deposit: no flow, so the check is live again.
     frag, notes = seen["1M"]
-    assert frag.startswith("vs. Stage 2 on adjusted levels: ✓"), frag
+    assert frag.startswith("vs. Stage 2: ✓"), frag
     assert notes == []
 
 
@@ -138,10 +143,10 @@ def test_the_clean_book_is_checked_in_every_window_it_renders(pytestconfig, tmp_
     (the BF bridge holds on a flow-free window). SI is the case that pins "strictly
     after the first day": its first day carries the $1k inception seed.
 
-    Against its own basis, Stage 2's return on adjusted levels, the check reads 0.00 bps
-    in every window (#369's PR 2): the raw-close TWR the Stage 2 tile shows is 0.06 to
-    5.63 bps away from Brinson-Fachler on this book."""
+    Brinson-Fachler and the Stage 2 tile are both on the raw-close rule (#369's PR 3), so
+    the check reads 0.00 bps in every window. Under #369's PR 2 the raw-close TWR was 0.06
+    to 5.63 bps away from Brinson-Fachler on adjusted levels, on this book."""
     seen = _render(pytestconfig, tmp_path, deposit=False)
     for label, (frag, notes) in seen.items():
-        assert frag == "vs. Stage 2 on adjusted levels: ✓ +0.00 bps", (label, frag)
+        assert frag == "vs. Stage 2: ✓ +0.00 bps", (label, frag)
         assert notes == [], (label, notes)

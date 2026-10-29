@@ -49,7 +49,7 @@ def _returns_each_path_takes(book: Path, adjusted: bool = False) -> dict:
     every read on adjusted levels, the rule of every lock taken before #369's marker;
     live reads are on the raw-close rule."""
     from contextlib import nullcontext
-    from src.cache import on_adjusted_levels
+    from tests.conftest import on_adjusted_levels
     with pytest.MonkeyPatch.context() as mp, (on_adjusted_levels() if adjusted
                                               else nullcontext()):
         pin_today(mp, date(2026, 10, 1))
