@@ -26,7 +26,8 @@ import pytest
 from src import cache, holdings
 from tests import first_principles as fp
 from tests.conftest import (FROZEN_BOOK, FROZEN_TODAY, block_network,
-                            lock_with_the_gap_fetch_off, pin_today, unpin_leftovers)
+                            lock_with_the_gap_fetch_off, on_adjusted_levels, pin_today,
+                            unpin_leftovers)
 
 ROOT = Path(__file__).resolve().parent.parent
 DEMO_DB = ROOT / "data" / "demo.db"
@@ -86,7 +87,7 @@ def _series_and_value(day: str) -> "tuple[pd.Series, float]":
 
 def test_live_reads_are_on_the_raw_close_rule_and_a_lock_reads_its_own_marker(tmp_path):
     assert cache.valuation_in_force() == (cache.RAW_CLOSE_RULE, None)
-    with cache.on_adjusted_levels():
+    with on_adjusted_levels():
         assert cache.valuation_in_force() == (cache.ADJUSTED_LEVELS_RULE, None)
     assert cache.valuation_in_force() == (cache.RAW_CLOSE_RULE, None)
     with pytest.MonkeyPatch.context() as mp:
@@ -290,19 +291,20 @@ def test_a_raw_close_lock_reads_the_ledger_it_holds(tmp_path):
     assert moved[3] != live[3]
 
 
-# ── the attribution check, on its own basis until PR 3 ───────────────────────
+# ── the attribution check, on one basis since PR 3 ───────────────────────────
 
 @pytest.mark.parametrize("name", ["frozen", "demo"])
-def test_the_attribution_check_reads_zero_on_its_own_basis(name, tmp_path):
+def test_the_attribution_check_reads_zero_against_the_raw_close_twr(name, tmp_path):
     """On every window of a committed book (none holds a flow after inception), ex-cash
-    Brinson-Fachler plus cash drag equals the book's TWR on adjusted levels, the basis it
-    values each sleeve on, to 0.00 bps: the comparison the page's check makes until PR 3.
-    The raw-close TWR, the Stage 2 tile's, is not that basis: at least one window is over
-    the check's 0.5 bps against it."""
+    Brinson-Fachler plus cash drag equals the book's raw-close TWR, the Stage 2 tile's, to
+    0.00 bps: both are on the raw-close rule since #369's PR 3 (decided by the owner on
+    October 28 and 29, 2026). On adjusted levels, the rule of every lock taken before the
+    marker, the two still agree with each other, and at least one window is over the check's
+    0.5 bps between the two rules, so the comparison can see a basis it does not share."""
     from src.attribution import brinson_fachler_period
     from src.returns import clamped_period_bounds, period_return
     source, today = BOOKS[name]
-    gaps, raw_gaps = {}, {}
+    gaps, adj_gaps, apart = {}, {}, {}
     with pytest.MonkeyPatch.context() as mp:
         _point(mp, tmp_path, source, today)
         try:
@@ -315,20 +317,26 @@ def test_the_attribution_check_reads_zero_on_its_own_basis(name, tmp_path):
                 cf = holdings.get_external_cashflow_series(inception, c, account_id=acct)
                 return pv, cf.reindex(pv.index).fillna(0.0)
 
-            with cache.on_adjusted_levels():
-                pv_adj, cf_adj = series()
-            pv_raw, cf_raw = series()
-            assert (cf_adj.iloc[1:] == 0.0).all(), "premise: no flow after inception"
-            for w in WINDOWS:
-                start, end, _clamped = clamped_period_bounds(w, c, inception)
+            def bridged(start, end):
                 bf = brinson_fachler_period(start, end, account_id=acct)
-                bridged = float((bf["w_p"] * bf["r_p"]).sum()) + float(bf.attrs.get("cash_drag", 0.0))
-                gaps[w] = (bridged - period_return("daily", pv_adj, cf_adj, w)) * 10_000
-                raw_gaps[w] = (bridged - period_return("daily", pv_raw, cf_raw, w)) * 10_000
+                return float((bf["w_p"] * bf["r_p"]).sum()) + float(bf.attrs.get("cash_drag", 0.0))
+
+            with on_adjusted_levels():
+                pv_adj, cf_adj = series()
+                bounds = {w: clamped_period_bounds(w, c, inception)[:2] for w in WINDOWS}
+                bf_adj = {w: bridged(*bounds[w]) for w in WINDOWS}
+            pv_raw, cf_raw = series()
+            assert (cf_raw.iloc[1:] == 0.0).all(), "premise: no flow after inception"
+            for w in WINDOWS:
+                bf_raw = bridged(*bounds[w])
+                gaps[w] = (bf_raw - period_return("daily", pv_raw, cf_raw, w)) * 10_000
+                adj_gaps[w] = (bf_adj[w] - period_return("daily", pv_adj, cf_adj, w)) * 10_000
+                apart[w] = (bf_raw - bf_adj[w]) * 10_000
         finally:
             unpin_leftovers()
     assert all(abs(g) < 0.005 for g in gaps.values()), gaps
-    assert any(abs(g) >= 0.5 for g in raw_gaps.values()), raw_gaps
+    assert all(abs(g) < 0.005 for g in adj_gaps.values()), adj_gaps
+    assert any(abs(g) >= 0.5 for g in apart.values()), apart
 
 
 # ── a dividend taken in cash, and who is entitled to one ─────────────────────

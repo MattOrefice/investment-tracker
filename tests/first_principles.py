@@ -26,7 +26,13 @@ October 27 and 28, 2026:
     until a DRIP lot is paid from it (the lot's shares x price + fees); any other
     dividend buys SPAXX units on its ex-date;
   * flows are the ledger's dollars: a buy brings shares x price + fees into the book, a
-    sell takes shares x price - fees out; DRIP lots are neither.
+    sell takes shares x price - fees out; DRIP lots are neither;
+  * by sleeve (#369's PR 3, decided by the owner on October 28 and 29, 2026), each ticker
+    in its asset class, read from the securities table: a dividend is income in its fund's
+    sleeve on its ex-date; one a DRIP lot reinvests stays there until the lot, and any other
+    moves to Cash / SPAXX at the end of its ex-date. A sleeve's return over a window with no
+    external flow credits the fund's sleeve with what it moved to Cash / SPAXX, and Cash /
+    SPAXX's return does not count it.
 
 ADJUSTED LEVELS, every lock taken before the marker. SHARED WITH THE PAGE, deliberately,
 because they are inputs and conventions rather than the calculation under test:
@@ -49,6 +55,7 @@ from datetime import date, timedelta
 import pandas as pd
 
 WINDOWS = ("1M", "3M", "YTD", "1Y", "SI")
+CASH_SLEEVE = "Cash / SPAXX"
 
 
 def plant_deposit(db_path, day: str, ticker: str, dollars: float, account_id: int = 1) -> float:
@@ -120,6 +127,10 @@ class Book:
                 "SELECT ex_date, amount FROM dividends WHERE ticker = 'BIL' AND ex_date <= ? "
                 "ORDER BY ex_date", (self.anchor,)).fetchall()]
         self._bil0 = next(d for d, _c in self._closes["BIL"] if d >= self.inception)
+        with get_connection() as conn:
+            self._sleeve = {t: s for t, s in conn.execute(
+                "SELECT s.ticker, ac.name FROM securities s JOIN asset_classes ac "
+                "ON s.asset_class_id = ac.asset_class_id").fetchall()}
 
     def _close_on(self, ticker: str, day: str) -> "tuple[str, float] | None":
         """The ticker's last stored close on or before ``day``, with its date."""
@@ -264,6 +275,56 @@ class Book:
                               if t == "SPAXX" and d <= day), 0.0)
         spaxx = trade_units * self._bil_level(day)
         return {"funds": funds, "spaxx": spaxx, "income": whole - funds - spaxx}
+
+    def sleeve_values(self, day: str) -> dict:
+        """The raw-close value on ``day`` by sleeve: each fund's shares at its close and its
+        income a DRIP lot has yet to be paid from, in the fund's sleeve; the SPAXX units its
+        trades bought in SPAXX's; and the units bought with income taken in cash in Cash /
+        SPAXX, whatever sleeve the securities table gives SPAXX. Units at BIL's level."""
+        assert self.raw, "the sleeves are the raw-close rule's"
+        out: dict = {}
+
+        def add(ticker: str, dollars: float) -> None:
+            sleeve = self._sleeve.get(ticker, "Unknown")
+            out[sleeve] = out.get(sleeve, 0.0) + dollars
+
+        for t, sh in self.positions(day).items():
+            if sh and t != "SPAXX":
+                found = self._close_on(t, day)
+                add(t, sh * found[1] if found else 0.0)
+        units = max(sum((1 if a == "buy" else -1) * n * px / self._bil_level(d)
+                        for d, t, a, n, px, _f in self._all if t == "SPAXX" and d <= day), 0.0)
+        add("SPAXX", units * self._bil_level(day))
+        income_units = 0.0
+        for ex, t, income in self._income():
+            if ex <= day:
+                if t in self._reinvested:
+                    add(t, income)
+                else:
+                    income_units += income / self._bil_level(ex)
+        for d, t, _action, shares, price, fees in self._lots:
+            if d <= day:
+                add(t, -(shares * price + fees))
+        out[CASH_SLEEVE] = out.get(CASH_SLEEVE, 0.0) + income_units * self._bil_level(day)
+        return out
+
+    def swept(self, after: str, through: str) -> dict:
+        """By fund, the income taken in cash that moved to SPAXX in (after, through]."""
+        out: dict = {}
+        for ex, t, income in self._income():
+            if t not in self._reinvested and after < ex <= through:
+                out[t] = out.get(t, 0.0) + income
+        return out
+
+    def sleeve_returns(self, start: str, end: str) -> dict:
+        """Each sleeve's return over a window with no external flow, each move to SPAXX
+        credited to the fund's sleeve and not counted in SPAXX's."""
+        v0, v1 = self.sleeve_values(start), self.sleeve_values(end)
+        for t, dollars in self.swept(start, end).items():
+            sleeve = self._sleeve.get(t, "Unknown")
+            v1[sleeve] = v1.get(sleeve, 0.0) + dollars
+            v1[CASH_SLEEVE] = v1.get(CASH_SLEEVE, 0.0) - dollars
+        return {s: v1.get(s, 0.0) / v - 1.0 for s, v in v0.items() if v > 0}
 
     # ── windows and returns ───────────────────────────────────────────────────
     def window(self, label: str) -> "tuple[str, str]":

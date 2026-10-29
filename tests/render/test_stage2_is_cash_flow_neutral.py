@@ -86,7 +86,7 @@ def test_the_deposit_would_move_a_value_ratio(book_with_deposit):
     anchor = last_settled_price_date(inc)
     start, end = period_bounds("3M", anchor, inc)
     assert start < DEPOSIT_DATE <= end, (start, end)
-    from src.cache import on_adjusted_levels
+    from tests.conftest import on_adjusted_levels
     from src.prices import get_prices, total_return_series
 
     # Under adjusted levels, the rule of every lock taken before #369's marker, the deposit

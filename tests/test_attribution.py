@@ -727,10 +727,10 @@ def test_identity_bf_sum_reconciles_to_stage2(deposit, pytestconfig, tmp_path):
         hold: BF values the start-of-window holdings, so it never sees what the
         deposit bought. That window is the page's disclosure case, not a failure.
 
-    TWO BASES UNTIL #369's PR 3 (decided by the owner on October 28, 2026). The tile is the
-    raw-close TWR, the page's, so the PAGE check reads the independent book on the
-    raw-close rule. Brinson-Fachler values each sleeve on adjusted levels, so the BRIDGE
-    reads it on adjusted levels, as the page's check does.
+    ONE BASIS (#369's PR 3, decided by the owner on October 28 and 29, 2026). The tile is
+    the raw-close TWR, and Brinson-Fachler values each sleeve on the raw-close rule too, so
+    both checks read the independent book on it. Under #369's PR 2 the bridge read the book
+    on adjusted levels, Brinson-Fachler's basis then.
 
     Run on the frozen book twice: as built (no flow after inception, so every window
     checks the bridge) and with one deposit planted mid-window (so a value ratio and
@@ -739,7 +739,7 @@ def test_identity_bf_sum_reconciles_to_stage2(deposit, pytestconfig, tmp_path):
     import streamlit as st
     from streamlit.testing.v1 import AppTest
     from src.attribution import brinson_fachler_period
-    from src.cache import ADJUSTED_LEVELS_RULE, RAW_CLOSE_RULE
+    from src.cache import RAW_CLOSE_RULE
     from tests import first_principles as fp
 
     conftest = _frozen_conftest(pytestconfig)
@@ -754,7 +754,6 @@ def test_identity_bf_sum_reconciles_to_stage2(deposit, pytestconfig, tmp_path):
             at = AppTest.from_file("pages/2_Performance.py", default_timeout=180).run()
             assert not at.exception, f"page raised: {at.exception}"
             book = fp.Book(account_id=1, rule=RAW_CLOSE_RULE)
-            book_adj = fp.Book(account_id=1, rule=ADJUSTED_LEVELS_RULE)
             for label in fp.WINDOWS:
                 [r for r in at.radio if r.key == "bf_period"][0].set_value(label).run()
                 assert not at.exception, f"page raised on {label}: {at.exception}"
@@ -770,7 +769,6 @@ def test_identity_bf_sum_reconciles_to_stage2(deposit, pytestconfig, tmp_path):
                     "saa": saa,
                     "held": held,
                     "twr": book.twr(start, end),
-                    "twr_adjusted": book_adj.twr(start, end),
                     "value_ratio": book.value_ratio(start, end),
                     "flows": book.flows(start, end),
                     "bridged": float((bf["w_p"] * bf["r_p"]).sum())
@@ -801,11 +799,10 @@ def test_identity_bf_sum_reconciles_to_stage2(deposit, pytestconfig, tmp_path):
             f"{s['value_ratio']:.4%}; #349)."
         )
         if not s["flows"]:
-            gap_bps = abs(s["bridged"] - s["twr_adjusted"]) * 10_000
+            gap_bps = abs(s["bridged"] - s["twr"]) * 10_000
             assert gap_bps < 0.5, (
                 f"Ex-cash BF return + cash drag ({s['bridged']*10000:.1f} bps) diverges "
-                f"from the book's independent TWR on adjusted levels "
-                f"({s['twr_adjusted']*10000:.1f} bps) by "
+                f"from the book's independent TWR ({s['twr']*10000:.1f} bps) by "
                 f"{gap_bps:.2f} bps for the {label} window, which holds no external flow. "
                 f"The cash-drag bridge in brinson_fachler_period() may have failed — "
                 f"check the cash_drag attr and the ex-cash weight normalization."
@@ -866,7 +863,6 @@ def test_bf_reconciles_when_wall_clock_past_price_frontier(days_past_frontier, _
     import datetime
     import pandas as pd
     from src.attribution import brinson_fachler_period
-    from src.cache import on_adjusted_levels
     from src.holdings import get_portfolio_value_series, last_real_price_date
     from src.returns import period_bounds
 
@@ -877,10 +873,8 @@ def test_bf_reconciles_when_wall_clock_past_price_frontier(days_past_frontier, _
     real_end = _captured_frontier()
     real_end_d = datetime.date.fromisoformat(real_end)
 
-    # Cached through the frontier only — no future-date fetch, so this stays offline. On
-    # adjusted levels, Brinson-Fachler's own basis until #369's PR 3, as the page's check.
-    with on_adjusted_levels():
-        pv_real = get_portfolio_value_series(INCEPTION, real_end, account_id=1)
+    # Cached through the frontier only — no future-date fetch, so this stays offline.
+    pv_real = get_portfolio_value_series(INCEPTION, real_end, account_id=1)
     if pv_real.dropna().empty:
         pytest.skip("Portfolio data empty — skipped in local/empty-DB mode")
 
@@ -912,8 +906,15 @@ def test_bf_reconciles_when_wall_clock_past_price_frontier(days_past_frontier, _
 
 
 def test_bf_per_sleeve_returns_are_total_return(pytestconfig, tmp_path):
-    """BF per-sleeve r_p IS the adj_close total return — dividends embedded once,
-    NOT double-counted by adding DRIP shares on top.
+    """BF per-sleeve r_p IS the total return — dividends counted once, NOT double-counted
+    by adding DRIP shares on top.
+
+    TWO RULES (#369). On adjusted levels, every lock taken before the marker, the rest of
+    this docstring holds as written. Under the raw-close rule, live reads since #369's PR 3,
+    the sleeve holds every share at its close, DRIP lots included, and each dividend as
+    income until its lot is paid from it, so the sleeve's r_p must equal that, computed from
+    the ledger, the closes and the dividends (tests/first_principles.py); a lot counted on
+    top of its dividend would overstate it by the sleeve's distribution yield.
 
     Income double-count fix (was Phase 10.2 pin, inverted): adj_close already
     embeds dividend reinvestment, so brinson_fachler_period() values the actual
@@ -941,6 +942,8 @@ def test_bf_per_sleeve_returns_are_total_return(pytestconfig, tmp_path):
     import datetime
     from src.attribution import brinson_fachler_period, _last_adj_price
     from src.db import get_connection
+    from tests import first_principles as fp
+    from tests.conftest import on_adjusted_levels
 
     INCEPTION = "2025-05-01"
     conftest = _frozen_conftest(pytestconfig)
@@ -949,7 +952,13 @@ def test_bf_per_sleeve_returns_are_total_return(pytestconfig, tmp_path):
             conftest.pin_today(mp)
             conftest.point_at_frozen_book(mp, tmp_path)
             TODAY = datetime.date.today().isoformat()
-            bf_df = brinson_fachler_period(INCEPTION, TODAY, account_id=1)
+            raw_df = brinson_fachler_period(INCEPTION, TODAY, account_id=1)
+            ref = fp.Book(account_id=1)
+            anchor = ref.anchor
+            want = ref.sleeve_returns(INCEPTION, anchor)
+            raw_end = brinson_fachler_period(INCEPTION, anchor, account_id=1)
+            with on_adjusted_levels():
+                bf_df = brinson_fachler_period(INCEPTION, TODAY, account_id=1)
             with get_connection() as conn:
                 drip_lots = conn.execute(
                     "SELECT COUNT(*) FROM trades WHERE ticker = 'VEA' AND lot_source = 'drip' "
@@ -998,6 +1007,13 @@ def test_bf_per_sleeve_returns_are_total_return(pytestconfig, tmp_path):
         f"already embeds dividends. Gap {gap_bps:.1f} bps suggests DRIP shares are "
         f"being double-counted on top of adj_close in brinson_fachler_period()."
     )
+
+    # The raw-close rule: every sleeve is the ledger's, its lots paid from its dividends.
+    assert raw_df["r_p"].tolist() == raw_end["r_p"].tolist(), "premise: the anchor is today's"
+    raw_intl = float(raw_end.loc[raw_end["sleeve"] == "International Core", "r_p"].iloc[0])
+    assert raw_intl == pytest.approx(want["International Core"], abs=1e-10)
+    for row in raw_end.itertuples():
+        assert row.r_p == pytest.approx(want[row.sleeve], abs=1e-10), row.sleeve
 
 
 def test_bf_ex_cash_weights_and_cash_drag_attr():

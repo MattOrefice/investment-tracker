@@ -597,24 +597,34 @@ def _portfolio_value_series_impl(
 
     if raw:
         book = _account_ledger(account_id, ledger)
-        trades_df = book[book["trade_date"] <= end].copy()
-        if trades_df.empty:
+        if book[book["trade_date"] <= end].empty:
             return pd.Series(0.0, index=date_range), []
-    else:
-        with get_connection() as conn:
-            trade_rows = conn.execute(
-                """SELECT trade_date, ticker, action, shares
-                   FROM trades
-                   WHERE trade_date <= ? AND account_id = ?
-                     AND (lot_source IS NULL OR lot_source != 'drip')
-                   ORDER BY trade_date, trade_id""",
-                (end, account_id),
-            ).fetchall()
+        held = _raw_held(book, end, account_id=account_id, start=start_date)
+        holdings_matrix = held.reindex(date_range)
+        # The income line: SPAXX units bought with dividend income, held as SPAXX, and
+        # income a DRIP lot has yet to be paid from, held at its amount.
+        line = _dividend_income(book, held, end, account_id=account_id)
+        units = line.units.reindex(date_range)
+        pending = line.pending.sum(axis=1).reindex(date_range)
+        if (units > 0).any():
+            spaxx = holdings_matrix["SPAXX"] if "SPAXX" in holdings_matrix else 0.0
+            holdings_matrix["SPAXX"] = spaxx + units
+        return _valued(holdings_matrix, pending, start_date, end, account_id=account_id,
+                       raw=True)
+    with get_connection() as conn:
+        trade_rows = conn.execute(
+            """SELECT trade_date, ticker, action, shares
+               FROM trades
+               WHERE trade_date <= ? AND account_id = ?
+                 AND (lot_source IS NULL OR lot_source != 'drip')
+               ORDER BY trade_date, trade_id""",
+            (end, account_id),
+        ).fetchall()
 
-        if not trade_rows:
-            return pd.Series(0.0, index=date_range), []
+    if not trade_rows:
+        return pd.Series(0.0, index=date_range), []
 
-        trades_df = pd.DataFrame([dict(r) for r in trade_rows])
+    trades_df = pd.DataFrame([dict(r) for r in trade_rows])
     trades_df["trade_date"] = pd.to_datetime(trades_df["trade_date"])
     trades_df["signed"] = trades_df.apply(
         lambda r: r["shares"] if r["action"].lower() == "buy" else -r["shares"],
@@ -628,16 +638,6 @@ def _portfolio_value_series_impl(
         end=end,
         freq="D",
     )
-    if raw and (trades_df["ticker"] == "SPAXX").any():
-        # Under the raw-close rule a SPAXX trade enters at its dollars, as units bought
-        # at SPAXX's level that day, so it earns BIL's total return from its own date.
-        level, _st = _spaxx_levels(account_id, end, full_range)
-        spaxx = trades_df["ticker"] == "SPAXX"
-        trades_df.loc[spaxx, "signed"] = [
-            _spaxx_units(float(n) * float(px), level.get(d))
-            for n, px, d in zip(trades_df.loc[spaxx, "signed"], trades_df.loc[spaxx, "price"],
-                                trades_df.loc[spaxx, "trade_date"])]
-
     daily_changes = (
         trades_df.groupby(["trade_date", "ticker"])["signed"]
         .sum()
@@ -648,22 +648,19 @@ def _portfolio_value_series_impl(
     # Cumulative holdings at each date
     held = daily_changes.cumsum().clip(lower=0)
 
-    # Slice to requested range (full_range ⊇ date_range since start ≤ start_date)
-    holdings_matrix = held.reindex(date_range)
-
-    pending = None
-    if raw:
-        # The income line: SPAXX units bought with dividend income, held as SPAXX, and
-        # income a DRIP lot has yet to be paid from, held at its amount.
-        units, pending = _dividend_income(book, held, end, account_id=account_id)
-        units, pending = units.reindex(date_range), pending.reindex(date_range)
-        if (units > 0).any():
-            spaxx = holdings_matrix["SPAXX"] if "SPAXX" in holdings_matrix else 0.0
-            holdings_matrix["SPAXX"] = spaxx + units
     # Under adjusted levels DRIP reinvestment shares (lot_source='drip') are
     # deliberately EXCLUDED by the SQL query above: adj_close already embeds dividend
     # reinvestment, so adding the DRIP shares would double-count income.
+    # Slice to requested range (full_range ⊇ date_range since start ≤ start_date)
+    return _valued(held.reindex(date_range), None, start_date, end, account_id=account_id,
+                   raw=False)
 
+
+def _valued(holdings_matrix: pd.DataFrame, pending: "pd.Series | None", start_date: str,
+            end: str, *, account_id: int, raw: bool) -> "tuple[pd.Series, list[TickerStatus]]":
+    """The value series from each day's holdings: each column's shares at its level that
+    day (_valuation_levels), plus ``pending``, the income a DRIP lot has yet to be paid
+    from under the raw-close rule. NaN on a day a held position has no price."""
     tickers = holdings_matrix.columns.tolist()
     prices_matrix, _factors, statuses = _valuation_levels(
         tickers, start_date, end, account_id=account_id, raw=raw)
@@ -685,6 +682,103 @@ def _portfolio_value_series_impl(
                 ticker, days[0].date().isoformat(), days[-1].date().isoformat(),
                 sum(is_session(d.date()) for d in days), why=statuses[i].detail))
     return value, statuses
+
+
+def _raw_held(book: pd.DataFrame, end: str, *, account_id: int,
+              start: "str | None" = None) -> pd.DataFrame:
+    """Every share ``book`` holds at the end of each day under the raw-close rule, by
+    ticker, from its first trade (or ``start``, when earlier) through ``end``: DRIP lots
+    included, and SPAXX as the units its trades bought. A SPAXX trade enters at its
+    dollars, as units bought at SPAXX's level that day (_spaxx_units), so it earns BIL's
+    total return from its own date."""
+    trades = book[book["trade_date"] <= end].copy()
+    trades["trade_date"] = pd.to_datetime(trades["trade_date"])
+    trades["signed"] = trades["shares"].where(trades["action"].str.lower() == "buy",
+                                              -trades["shares"]).astype(float)
+    first = trades["trade_date"].min()
+    days = pd.date_range(start=min(first, pd.Timestamp(start)) if start else first,
+                         end=end, freq="D")
+    spaxx = trades["ticker"] == "SPAXX"
+    if spaxx.any():
+        level, _st = _spaxx_levels(account_id, end, days)
+        trades.loc[spaxx, "signed"] = [
+            _spaxx_units(float(n) * float(px), level.get(d))
+            for n, px, d in zip(trades.loc[spaxx, "signed"], trades.loc[spaxx, "price"],
+                                trades.loc[spaxx, "trade_date"])]
+    return (trades.groupby(["trade_date", "ticker"])["signed"].sum()
+            .unstack(fill_value=0).reindex(days, fill_value=0).cumsum().clip(lower=0))
+
+
+class HeldOn(NamedTuple):
+    """What a book holds at the end of one day under the raw-close rule."""
+    shares: "dict[str, float]"    # every share held, DRIP lots included; SPAXX as the units
+                                  # its trades bought
+    pending: "dict[str, float]"   # by fund: income a DRIP lot has yet to be paid from
+    income_units: float           # the SPAXX units bought with income taken in cash
+
+
+def raw_window_holdings(start: str, end: str, *, account_id: int
+                        ) -> "tuple[HeldOn, HeldOn, dict[str, float]]":
+    """What Brinson-Fachler holds from ``start`` through ``end`` under the raw-close rule
+    (#369's PR 3, decided by the owner on October 28 and 29, 2026): (the holdings at the
+    end of ``start``, at the end of ``end``, and by fund the income swept into SPAXX in
+    between). It holds the start's holdings fixed (_start_held_book), and each dividend is
+    where _dividend_income puts it, so a DRIP lot is a move inside its fund's sleeve and a
+    sweep a move from the fund's sleeve to Cash / SPAXX, which the caller nets at sleeve
+    level. Inside a raw-close lock, from the ledger the lock holds."""
+    from src.cache import valuation_in_force
+    ledger_book = _account_ledger(account_id, valuation_in_force()[1])
+    reinvested = set(ledger_book.loc[ledger_book["lot_source"] == "drip", "ticker"])
+    book = _start_held_book(ledger_book, start, end)
+    held = _raw_held(book, end, account_id=account_id, start=start)
+    line = _dividend_income(book, held, end, account_id=account_id, reinvested=reinvested)
+
+    def on(day: str) -> HeldOn:
+        ts = pd.Timestamp(day)
+        return HeldOn({t: float(n) for t, n in held.loc[ts].items() if n > 0},
+                      {f: float(v) for f, v in line.pending.loc[ts].items()},
+                      float(line.units[ts]))
+
+    window = line.swept[(line.swept.index > pd.Timestamp(start))
+                        & (line.swept.index <= pd.Timestamp(end))]
+    swept = {f: float(v) for f, v in window.sum().items() if v}
+    return on(start), on(end), swept
+
+
+def _start_held_book(book: pd.DataFrame, start: str, end: str) -> pd.DataFrame:
+    """The book with the holdings at the end of ``start`` held fixed through ``end``: every
+    trade on or before ``start``, and each DRIP lot after it, scaled to the part of its
+    dividend those holdings earned. A lot is paid from its fund's latest dividend on or
+    before the lot's date, earned on the shares held the day before that ex-date, so over a
+    window with no trade in the fund the lot is kept whole, and over a window with no trade
+    but DRIP lots this is the ledger itself."""
+    kept = book[book["trade_date"] <= start]
+    lots = book[(book["lot_source"] == "drip") & (book["trade_date"] > start)
+                & (book["trade_date"] <= end)]
+    if lots.empty:
+        return kept
+
+    def shares_on(frame: pd.DataFrame, ticker: str, day: str) -> float:
+        rows = frame[(frame["ticker"] == ticker) & (frame["trade_date"] <= day)]
+        return float(rows["shares"].where(rows["action"].str.lower() == "buy",
+                                          -rows["shares"]).sum())
+
+    first = book["trade_date"].min()
+    ex_dates = {t: [d.isoformat() for d in get_dividends(t, first, end).index]
+                for t in lots["ticker"].unique()}
+    out = kept
+    for _i, lot in lots.iterrows():
+        paid_from = [ex for ex in ex_dates[lot["ticker"]] if ex <= lot["trade_date"]]
+        day = ((date.fromisoformat(paid_from[-1]) - timedelta(days=1)).isoformat()
+               if paid_from else lot["trade_date"])
+        earned = shares_on(book, lot["ticker"], day)
+        ratio = shares_on(out, lot["ticker"], day) / earned if earned > 0 else 1.0
+        row = lot.to_frame().T
+        if ratio != 1.0:
+            row["shares"] = float(lot["shares"]) * ratio
+            row["fees"] = float(lot["fees"]) * ratio
+        out = pd.concat([out, row], ignore_index=True)
+    return out.astype(kept.dtypes.to_dict())
 
 
 def _spaxx_levels(account_id: int, end: str, days: pd.DatetimeIndex
@@ -714,32 +808,44 @@ def _spaxx_units(dollars: float, level) -> float:
     return dollars / float(level) if level is not None and level > 0 else dollars
 
 
-def _dividend_income(book: pd.DataFrame, held: pd.DataFrame, end: str, *,
-                     account_id: int) -> "tuple[pd.Series, pd.Series]":
-    """The raw-close rule's income line (#369, decided by the owner on October 27 and
-    28, 2026), by day over ``held``'s index: (the SPAXX units bought with dividend
-    income, the income held at its amount until a DRIP lot is paid from it), each
-    cumulative.
+class _IncomeLine(NamedTuple):
+    units: pd.Series        # SPAXX units bought with dividend income, cumulative
+    pending: pd.DataFrame   # by fund: income a DRIP lot has yet to be paid from, cumulative
+    swept: pd.DataFrame     # by fund: the income swept into SPAXX on each ex-date, in dollars
 
-    Every dividend is income on its ex-date: the shares held at the previous day's end,
-    DRIP lots included, times the amount, from the stored dividends (get_dividends, which
-    inside a quarter lock serves the lock's own).
-    * A dividend on a fund the book reinvests, one its ledger holds DRIP lots for, is
-      held at its amount from its ex-date. Each DRIP lot is paid from it on the lot's
-      date: the lot's dollars, shares × price + fees, leave the line, an internal move
-      and not a flow. The whole ledger decides which funds those are, so a window's end
+
+def _dividend_income(book: pd.DataFrame, held: pd.DataFrame, end: str, *,
+                     account_id: int, reinvested: "set[str] | None" = None) -> _IncomeLine:
+    """The raw-close rule's income line (#369, decided by the owner on October 27, 28 and
+    29, 2026), by day over ``held``'s index.
+
+    Every dividend is income in its fund's sleeve on its ex-date: the shares held at the
+    previous day's end, DRIP lots included, times the amount, from the stored dividends
+    (get_dividends, which inside a quarter lock serves the lock's own).
+    * A dividend on a fund the book reinvests, one its ledger holds DRIP lots for, stays
+      in that sleeve, held at its amount, until its DRIP lot reinvests it there. Each
+      DRIP lot is paid from it on the lot's date: the lot's dollars, shares × price +
+      fees, leave the line, an internal move and not a flow. The whole ledger decides
+      which funds those are (``reinvested``, by default ``book``'s own), so a window's end
       cannot change how a day inside it is valued.
-    * Any other dividend, as in a book that takes its dividends in cash, goes into SPAXX
-      on its ex-date as units bought at SPAXX's level that day (_spaxx_units), so it
-      earns BIL's total return from then.
+    * Any other dividend, as in a book that takes its dividends in cash, moves to Cash /
+      SPAXX at the end of its ex-date, as units bought at SPAXX's level that day
+      (_spaxx_units), and earns BIL's total return from then. ``swept`` records each such
+      move, the dollars that leave the fund's sleeve for SPAXX's.
 
     book: the account's ledger (_account_ledger), every date. held: every share held each
-    day, DRIP lots included, from the book's first trade.
+    day, DRIP lots included, from the book's first trade (_raw_held).
     """
     days = held.index
-    units = pd.Series(0.0, index=days)
-    pending = pd.Series(0.0, index=days)
-    reinvested = set(book.loc[book["lot_source"] == "drip", "ticker"])
+
+    def zeros() -> pd.Series:
+        return pd.Series(0.0, index=days)
+
+    units = zeros()
+    pending: "dict[str, pd.Series]" = {}
+    swept: "dict[str, pd.Series]" = {}
+    if reinvested is None:
+        reinvested = set(book.loc[book["lot_source"] == "drip", "ticker"])
     level = None
     first = days[0].date().isoformat()
     for ticker in held.columns:
@@ -754,17 +860,20 @@ def _dividend_income(book: pd.DataFrame, held: pd.DataFrame, end: str, *,
             if income <= 0:
                 continue
             if ticker in reinvested:
-                pending[ex_ts] += income
+                pending.setdefault(ticker, zeros())[ex_ts] += income
                 continue
             if level is None:
                 level, _st = _spaxx_levels(account_id, end, days)
             units[ex_ts] += _spaxx_units(income, level.get(ex_ts))
+            swept.setdefault(ticker, zeros())[ex_ts] += income
     lots = book[(book["lot_source"] == "drip") & (book["trade_date"] <= end)]
     for lot in lots.itertuples(index=False):
         lot_ts = pd.Timestamp(lot.trade_date)
-        if lot_ts in pending.index:
-            pending[lot_ts] -= float(lot.shares) * float(lot.price) + float(lot.fees)
-    return units.cumsum(), pending.cumsum()
+        if lot_ts in days:
+            pending.setdefault(lot.ticker, zeros())[lot_ts] -= (
+                float(lot.shares) * float(lot.price) + float(lot.fees))
+    return _IncomeLine(units.cumsum(), pd.DataFrame(pending, index=days).cumsum(),
+                       pd.DataFrame(swept, index=days))
 
 
 def _valuation_levels(
@@ -996,12 +1105,17 @@ def _sleeve_weights_impl(date_str: str) -> "tuple[pd.DataFrame, list[TickerStatu
     invested_value = total_mv − cash_mv. Operational-cash figures are exposed
     on the DataFrame's ``.attrs`` for callers that display them:
         total_value, cash_mv, invested_value, cash_weight_of_total.
+
+    ONE SLEEVE VALUATION (#369, decided by the owner on October 28 and 29, 2026), the
+    current market value's (_positions_on), so total_value is the Performance page's
+    current value in every book (#701). Under the raw-close rule it holds the income line
+    where the rule puts it: income a DRIP lot has yet to be paid from in its fund's sleeve,
+    and income taken in cash in Cash / SPAXX, with SPAXX as the units its trades bought.
     """
     # Wrapper: resolves the portfolio account and passes it through.
     account_id = get_portfolio_account_id()
-    holdings = get_holdings_on_date(date_str, account_id=account_id)
-    statuses: "list[TickerStatus]" = []
-    if holdings.empty:
+    values, raw, statuses = _positions_on(date_str, account_id=account_id)
+    if not values:
         return pd.DataFrame(), statuses
 
     # The book's policy, or the lock's inside a quarter lock that holds one (#525).
@@ -1009,46 +1123,20 @@ def _sleeve_weights_impl(date_str: str) -> "tuple[pd.DataFrame, list[TickerStatu
     ticker_to_sleeve = policy.sleeve_of_ticker()
     target_weights = {r["name"]: r["target_weight"] for r in policy.sleeves()}
 
-    # Look back up to 5 trading days from the newest STORED price (#302); per ticker,
-    # because each ticker's cache can end on a different day.
-
     values_by_sleeve: dict[str, float] = {}
-    for ticker, row in holdings.iterrows():
+    for ticker, dollars in values:
         sleeve = ticker_to_sleeve.get(ticker, "Unknown")
-        shares = float(row["net_shares"])
-
-        if ticker == "SPAXX":
-            # Priced off BIL, its growth measured from the book's inception (#646).
-            # The status is recorded under SPAXX, the holding being valued; that
-            # this is a PROXY instrument is a substitution, and reporting it belongs
-            # to the PR that populates that field.
-            p, st = _bil_for_spaxx(get_inception_date(account_id=account_id), date_str)
-            statuses.append(st)
-            try:
-                if not p.empty:
-                    bil = total_return_series(p)
-                    p0_idx = bil.first_valid_index()
-                    if p0_idx is not None and float(bil[p0_idx]) > 0:
-                        bil = bil / float(bil[p0_idx])
-                    price = float(bil.ffill().iloc[-1])
-                else:
-                    price = 1.0
-            except Exception:
-                price = 1.0
-        else:
-            p, st = _price_and_status(ticker, look_back_start(ticker, date_str), date_str,
-                                      account_id=account_id)
-            try:
-                price = float(p["close"].iloc[-1]) if not p.empty else 0.0
-            except Exception:
-                # The frame arrived but the value would not extract. The price is
-                # fabricated either way, so the status must not claim resolved.
-                price = 0.0
-                st = replace(st, resolved=False, reason="empty_window",
-                             served_through=None)
-            statuses.append(st)
-
-        values_by_sleeve[sleeve] = values_by_sleeve.get(sleeve, 0.0) + shares * price
+        values_by_sleeve[sleeve] = values_by_sleeve.get(sleeve, 0.0) + dollars
+    if raw is not None:
+        # The income line where its rule puts it: income a DRIP lot has yet to be paid
+        # from in its fund's sleeve, and income taken in cash in Cash / SPAXX, whatever
+        # sleeve a book's policy gives the SPAXX ticker.
+        for fund, dollars in raw.pending.items():
+            sleeve = ticker_to_sleeve.get(fund, "Unknown")
+            values_by_sleeve[sleeve] = values_by_sleeve.get(sleeve, 0.0) + dollars
+        if raw.cash_income:
+            values_by_sleeve[_CASH_SLEEVE] = (values_by_sleeve.get(_CASH_SLEEVE, 0.0)
+                                              + raw.cash_income)
 
     total = sum(values_by_sleeve.values())
     if total == 0:
@@ -1123,17 +1211,36 @@ def _current_market_value_impl(
     """The valuation loop behind both entry points above."""
     d = date_str or date.today().isoformat()
     # Wrapper: resolves the portfolio account and passes it through.
-    account_id = get_portfolio_account_id()
+    values, raw, statuses = _positions_on(d, account_id=get_portfolio_account_id())
+    if not values:
+        return 0.0, statuses
+    total = 0.0
+    for _ticker, dollars in values:
+        total += dollars
+    if raw is not None:
+        total += raw.income
+    return round(total, 2), statuses
+
+
+def _positions_on(d: str, *, account_id: int
+                  ) -> "tuple[list[tuple[str, float]], _RawCloseOn | None, list[TickerStatus]]":
+    """The one valuation behind the current market value and the sleeve weights: each
+    holding on ``d``, DRIP lots included, as (ticker, dollars) in the ledger's order, at its
+    latest close (SPAXX at BIL's level, _spaxx_price); the raw-close rule's record of what
+    it adds (_raw_close_on), None under adjusted levels; and each holding's status. Under
+    the raw-close rule SPAXX holds the units its trades bought."""
     holdings = get_holdings_on_date(d, account_id=account_id)  # all shares, incl DRIP lots
     statuses: "list[TickerStatus]" = []
     if holdings.empty:
-        return 0.0, statuses
+        return [], None, statuses
 
     raw = _raw_close_on(d, account_id=account_id)
-    total = 0.0
+    values: "list[tuple[str, float]]" = []
     for ticker, row in holdings.iterrows():
         shares = float(row["net_shares"])
         if ticker == "SPAXX":
+            # Priced off BIL, its growth measured from the book's inception (#646).
+            # The status is recorded under SPAXX, the holding being valued.
             price, st = _spaxx_price(d)
             statuses.append(st)
             if raw is not None:
@@ -1144,53 +1251,50 @@ def _current_market_value_impl(
             try:
                 price = float(p["close"].iloc[-1]) if not p.empty else 0.0
             except Exception:
+                # The frame arrived but the value would not extract. The price is
+                # fabricated either way, so the status must not claim resolved.
                 price = 0.0
                 st = replace(st, resolved=False, reason="empty_window",
                              served_through=None)
             statuses.append(st)
-        total += shares * price
-    if raw is not None:
-        total += raw.income
-        if raw.status is not None and "SPAXX" not in holdings.index:
-            statuses.append(raw.status)
-    return round(total, 2), statuses
+        values.append((ticker, shares * price))
+    if raw is not None and raw.status is not None and "SPAXX" not in holdings.index:
+        statuses.append(raw.status)
+    return values, raw, statuses
 
 
 class _RawCloseOn(NamedTuple):
     spaxx_units: float              # SPAXX units its trades hold (_spaxx_units)
-    income: float                   # the income line's value (_dividend_income)
+    pending: "dict[str, float]"     # by fund: income a DRIP lot has yet to be paid from
+    cash_income: float              # the SPAXX units bought with dividend income, in dollars
+    income: float                   # the income line's value: pending + cash_income
     status: "TickerStatus | None"   # SPAXX's, when the income line holds SPAXX
 
 
 def _raw_close_on(d: str, *, account_id: int) -> "_RawCloseOn | None":
     """What the raw-close rule adds to the current value on ``d``, read as the value
-    series reads it: the SPAXX units the trades hold, and the income line's value, its
-    SPAXX part at SPAXX's level on ``d``. None under adjusted levels, which hold neither."""
+    series reads it: the SPAXX units the trades hold, and the income line, each fund's
+    part a DRIP lot has yet to be paid from and its SPAXX part at SPAXX's level on ``d``.
+    The whole ledger decides which funds reinvest (_dividend_income). None under adjusted
+    levels, which hold neither."""
     from src.cache import RAW_CLOSE_RULE, valuation_in_force
     rule, ledger = valuation_in_force()
     if rule != RAW_CLOSE_RULE:
         return None
-    book = _account_ledger(account_id, ledger)
-    book = book[book["trade_date"] <= d]
+    ledger_book = _account_ledger(account_id, ledger)
+    reinvested = set(ledger_book.loc[ledger_book["lot_source"] == "drip", "ticker"])
+    book = ledger_book[ledger_book["trade_date"] <= d]
     if book.empty:
-        return _RawCloseOn(0.0, 0.0, None)
-    signed = book["shares"].where(book["action"].str.lower() == "buy", -book["shares"])
-    days = pd.date_range(start=book["trade_date"].min(), end=d, freq="D")
-    held = (signed.groupby([pd.to_datetime(book["trade_date"]), book["ticker"]]).sum()
-            .unstack(fill_value=0).reindex(days, fill_value=0).cumsum().clip(lower=0))
-    spaxx_units = 0.0
-    spaxx = book[book["ticker"] == "SPAXX"]
-    if not spaxx.empty:
-        level, _st = _spaxx_levels(account_id, d, days)
-        bought = [_spaxx_units(float(n) * float(px), level.get(pd.Timestamp(t)))
-                  for n, px, t in zip(signed[spaxx.index], spaxx["price"], spaxx["trade_date"])]
-        spaxx_units = max(sum(bought), 0.0)
-    units, pending = _dividend_income(book, held, d, account_id=account_id)
-    income = float(pending.iloc[-1])
-    if float(units.iloc[-1]) <= 0:
-        return _RawCloseOn(spaxx_units, income, None)
+        return _RawCloseOn(0.0, {}, 0.0, 0.0, None)
+    held = _raw_held(book, d, account_id=account_id)
+    spaxx_units = float(held["SPAXX"].iloc[-1]) if "SPAXX" in held else 0.0
+    line = _dividend_income(book, held, d, account_id=account_id, reinvested=reinvested)
+    pending = {f: float(v) for f, v in line.pending.iloc[-1].items()}
+    if float(line.units.iloc[-1]) <= 0:
+        return _RawCloseOn(spaxx_units, pending, 0.0, sum(pending.values()), None)
     price, st = _spaxx_price(d)
-    return _RawCloseOn(spaxx_units, income + float(units.iloc[-1]) * price, st)
+    cash_income = float(line.units.iloc[-1]) * price
+    return _RawCloseOn(spaxx_units, pending, cash_income, sum(pending.values()) + cash_income, st)
 
 
 def dividend_income(date_str: Optional[str] = None) -> float:

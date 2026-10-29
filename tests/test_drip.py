@@ -352,7 +352,7 @@ def test_current_market_value_is_all_shares_raw_close_not_return_series(minimal_
     from on its date, and the line is back at zero.
     """
     import src.holdings as H
-    from src.cache import on_adjusted_levels
+    from tests.conftest import on_adjusted_levels
     from src.holdings import get_current_market_value, get_portfolio_value_series
     from src.db import get_connection
 
@@ -412,7 +412,7 @@ def test_drip_lots_do_not_inflate_value_series_twr():
     """
     import os
 
-    from src.cache import on_adjusted_levels
+    from tests.conftest import on_adjusted_levels
     from src.holdings import get_portfolio_value_series
     from src.returns import period_return
     from src.prices import get_prices
