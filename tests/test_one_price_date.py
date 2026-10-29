@@ -137,14 +137,16 @@ def test_capital_deployment_names_its_price_date(book):
 # ── the two market values ─────────────────────────────────────────────────────
 
 def test_the_two_market_values_differ_by_the_spaxx_income_alone(book):
-    from src.holdings import (current_market_value_with_coverage, get_portfolio_account_id,
-                              spaxx_modeled_income)
+    from src.holdings import (current_market_value_with_coverage, dividend_income,
+                              get_portfolio_account_id, spaxx_modeled_income)
     from src.tax_lots import get_lot_inventory, open_lot_cost_basis, summary_metrics, taxable_accounts
     perf_mv = current_market_value_with_coverage(TODAY)[0]
     lots = get_lot_inventory(TODAY, account_ids=[a["account_id"] for a in taxable_accounts()])
     m = summary_metrics(lots)
-    income = spaxx_modeled_income(TODAY)
-    assert income > 0, "the book holds SPAXX and BIL has earned since inception"
+    assert spaxx_modeled_income(TODAY) > 0, "the book holds SPAXX and BIL has earned since inception"
+    # The Performance page's value also holds the dividend income line (#369), which the
+    # Tax Lots page's lots do not.
+    income = spaxx_modeled_income(TODAY) + dividend_income(TODAY)
     assert perf_mv == pytest.approx(m["market_value_total"] + income, abs=0.01)
     cost = open_lot_cost_basis(account_id=get_portfolio_account_id(), as_of=TODAY)
     assert cost == pytest.approx(m["cost_basis_total"], abs=0.005)
@@ -165,8 +167,9 @@ def test_the_pages_state_the_reconciliation(book):
     lots = get_lot_inventory(TODAY, account_ids=[a["account_id"] for a in taxable_accounts()])
     assert unrealized == pytest.approx(summary_metrics(lots)["unrealized_gl_total"], abs=0.01), (
         "Performance's unrealized G/L is the Tax Lots page's")
+    assert "dividend income** (each dividend from its ex-date" in rec
     lots = _render("12_Tax_Lots.py")
-    assert any("SPAXX is valued at its \\$1.00 NAV" in c for c in lots)
+    assert any("SPAXX is valued here at its \\$1.00 NAV" in c for c in lots)
 
 
 def test_the_st_and_lt_tiles_are_net_and_sum_to_the_total(book):
@@ -204,3 +207,30 @@ def test_the_net_figures_include_the_losses():
     m = summary_metrics(lots)
     assert (m["unrealized_st_gain"], m["unrealized_st_net"]) == (10.0, 5.0)
     assert m["unrealized_st_net"] + m["unrealized_lt_net"] == m["unrealized_gl_total"] == 35.0
+
+
+def test_the_pages_state_a_dividend_no_lot_has_been_paid_from_yet(book):
+    """A dividend with no DRIP lot paid from it yet sits in the Performance page's current
+    value, held at its amount from its ex-date (#369). Both pages state it, and the
+    unrealized G/L is still the Tax Lots page's. The frozen book reinvests every dividend
+    it stores, so one is stored here, after the book's last lot."""
+    import re
+    from src.holdings import dividend_income
+    from src.tax_lots import get_lot_inventory, summary_metrics, taxable_accounts
+    con = sqlite3.connect(book)
+    with con:
+        assert con.execute("INSERT INTO dividends (ticker, ex_date, amount) "
+                           "VALUES ('VOO', '2026-07-15', 1.0)").rowcount == 1
+    con.close()
+    income = round(dividend_income(TODAY), 2)
+    assert income > 0
+    perf = _render("2_Performance.py")
+    rec = next(c for c in perf if c.startswith("Reconciliation: **\\$"))
+    assert f"**\\${income:,.2f} dividend income** (each dividend from its ex-date" in rec, rec
+    shown = re.search(r"\*\*([+−])\\\$([\d,]+\.\d\d) unrealized G/L\*\*", rec)
+    unrealized = float(shown.group(2).replace(",", "")) * (1 if shown.group(1) == "+" else -1)
+    lots = get_lot_inventory(TODAY, account_ids=[a["account_id"] for a in taxable_accounts()])
+    assert unrealized == pytest.approx(summary_metrics(lots)["unrealized_gl_total"], abs=0.01)
+    tax_lots = _render("12_Tax_Lots.py")
+    assert any(f"\\${income:,.2f} of dividend income, counted from each ex-date" in c
+               for c in tax_lots), tax_lots

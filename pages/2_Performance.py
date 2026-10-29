@@ -43,6 +43,7 @@ from src.holdings import (
     current_market_value_with_coverage,
     get_external_cashflow_series,
     get_inception_date,
+    dividend_income,
     portfolio_value_series_with_coverage,
     sleeve_weights_with_coverage,
     last_settled_price_date,
@@ -56,7 +57,7 @@ from src.performance import (
     trading_days_in_window,
     window_bounds,
 )
-from src.cache import LockCoverageError
+from src.cache import RAW_CLOSE_RULE_FROM, LockCoverageError, on_adjusted_levels
 from src.reports import generate_quarterly_report_bytes
 from src.sleeve_config import international_sleeves
 from src.tax_lots import open_lot_cost_basis
@@ -92,7 +93,8 @@ RETURNS_ROW_LABEL = {**PERIOD_LABEL,
 # that Streamlit's @st.cache_data (keyed on function args) invalidates the old
 # cached result automatically rather than serving the pre-fix stale value.
 # v4: cf is the real external-flow series, no longer hardcoded zeros.
-_PORTFOLIO_CACHE_V = 4
+# v5: the raw-close rule (#369): every share at its close, dividends as income.
+_PORTFOLIO_CACHE_V = 5
 
 _PALETTE = {
     "portfolio": "#2E4057",   # deep navy
@@ -114,6 +116,19 @@ def _load_portfolio(_v: int = _PORTFOLIO_CACHE_V):
     # round-trips through st.cache_data's pickling, and the record is pure
     # data so it survives intact.
     return pv, cf, cov
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _load_portfolio_on_adjusted_levels(_v: int = _PORTFOLIO_CACHE_V):
+    """The value and flow series on adjusted levels, Brinson-Fachler's own basis, for the
+    attribution check alone until #369's PR 3 (decided by the owner on October 28, 2026).
+    Every other figure on the page reads _load_portfolio."""
+    with on_adjusted_levels():
+        pv, _cov = portfolio_value_series_with_coverage(
+            INCEPTION, TODAY, account_id=_ACCT_ID)
+        cf = get_external_cashflow_series(
+            INCEPTION, TODAY, account_id=_ACCT_ID).reindex(pv.index).fillna(0.0)
+    return pv, cf
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -582,10 +597,13 @@ with col:
     _series_start  = float(pv.iloc[0])
     if _cost_basis > 0 and _series_start > 0:
         # Current value = cost basis + unrealized G/L on the lots + the SPAXX income
-        # the valuation models above its $1.00 NAV. The unrealized figure is therefore
-        # the Tax Lots page's, and the two pages' values differ by the SPAXX line alone.
+        # the valuation models above its $1.00 NAV + the dividend income line (#369).
+        # The unrealized figure is therefore the Tax Lots page's, and the two pages'
+        # values differ by the SPAXX and dividend income lines alone.
         _spaxx_income = spaxx_modeled_income(TODAY)
-        _unrealized  = current_mv - _cost_basis - _spaxx_income
+        _div_income  = round(dividend_income(TODAY), 2) + 0.0
+        _unrealized  = current_mv - _cost_basis - _spaxx_income - _div_income
+        _raw_from_q  = f"Q{(RAW_CLOSE_RULE_FROM.month - 1) // 3 + 1} {RAW_CLOSE_RULE_FROM.year}"
         # The absolute return is the since-inception TWR, not current_val / pv[0] − 1.
         # Phase 11 set its denominator to pv.iloc[0] so that it would equal the TWR by
         # construction (docs/phase_11_diagnostic.md §2.1; README: "TWR equals absolute
@@ -601,15 +619,17 @@ with col:
             f"page) + **{'+' if _unrealized >= 0 else '-'}\\${abs(_unrealized):,.2f} "
             f"unrealized G/L** on those lots (as on the Tax Lots page) + "
             f"**\\${_spaxx_income:,.2f} money-market income** on SPAXX, modeled at "
-            f"BIL's total return (the ledger records SPAXX at its \\$1.00 NAV) = "
+            f"BIL's total return (the ledger records SPAXX at its \\$1.00 NAV) + "
+            f"**\\${_div_income:,.2f} dividend income** (each dividend from its ex-date, "
+            f"held at its amount until the DRIP lot it pays for or, where no DRIP lot "
+            f"reinvests it, in SPAXX at BIL's total return) = "
             f"**\\${current_mv:,.2f} current value** (every share held, including DRIP, at "
-            f"the latest close). "
+            f"the latest close, with that income). "
             f"Returns, absolute ({_abs_ret_pct}) and cumulative TWR ({_twr_pct}), "
-            f"use the dividend-adjusted total-return series (adjusted close × actual non-DRIP "
-            f"shares). That series counts dividend income once and is restated retroactively as "
-            f"dividends accrue. It is a different basis from the market-value dollar above, "
-            f"which counts the real DRIP shares, so the two are not expected to tie out "
-            f"dollar-for-dollar. TWR is the GIPS-correct measure for benchmark comparison."
+            f"share one basis with the current value: the value series they are computed "
+            f"from counts every share at its close and each dividend as income from its "
+            f"ex-date, and its latest value is the current value. Quarters locked before "
+            f"{_raw_from_q} keep the adjusted-level figures they were locked with."
         )
     # ── End reconciliation note ────────────────────────────────────────────
 
@@ -1385,15 +1405,24 @@ with col:
         # one the gap is that limitation and is disclosed rather than warned (#349).
         # Against the basket BF itself holds (_r_b_bf): Stage 2's quarterly
         # rebalancing is stated separately below, not read as a gap (#383).
-        _bf_s2_gap_bps = (total_active / 100 - (_r_p_ps - _r_b_bf)) * 10_000
-        _bf_window_cf = cf[(cf.index > pd.Timestamp(_bf_start)) & (cf.index <= pd.Timestamp(_bf_end))]
+        # Until #369's PR 3 the check reads Stage 2's portfolio return on ADJUSTED LEVELS,
+        # the basis Brinson-Fachler values each sleeve on, while the Stage 2 tile shows the
+        # raw-close TWR (decided by the owner on October 28, 2026). PR 3 retires this.
+        _pv_adj, _cf_adj = _load_portfolio_on_adjusted_levels()
+        _pv_adj = _pv_adj[_pv_adj.index <= _C_ts]
+        _cf_adj = _cf_adj[_cf_adj.index <= _C_ts]
+        _r_p_adj = period_return("daily", _pv_adj, _cf_adj, bf_period)
+        _bf_s2_gap_bps = (total_active / 100 - (_r_p_adj - _r_b_bf)) * 10_000
+        _bf_window_cf = _cf_adj[(_cf_adj.index > pd.Timestamp(_bf_start))
+                                & (_cf_adj.index <= pd.Timestamp(_bf_end))]
         if _SERIES_GAP:
             # The check compares with Stage 2, the portfolio's return: withheld (#643).
-            _s2_check, _s2_disclosure = "vs. Stage 2: withheld", None
+            _s2_check, _s2_disclosure = "vs. Stage 2 on adjusted levels: withheld", None
         else:
             _s2_check, _s2_disclosure = stage2_reconciliation(
                 _bf_s2_gap_bps, _bf_start,
                 {d.date().isoformat(): float(a) for d, a in _bf_window_cf.items()},
+                basis="adjusted levels",
             )
         st.caption(
             f"**BF decomposition:**  "
@@ -1406,6 +1435,12 @@ with col:
         )
         if _s2_disclosure:
             st.caption(_s2_disclosure)
+        st.caption(
+            "Brinson-Fachler values each sleeve on dividend-adjusted levels, so the check "
+            "above compares it with the book's time-weighted return on that basis. The "
+            "Stage 2 tile measures the portfolio's time-weighted return on the raw-close "
+            "basis: every share at its close, each dividend as income from its ex-date."
+        )
         if abs(_rebal * 10_000) >= 0.5:
             st.caption(
                 f"Stage 2 is measured against the SAA blend rebalanced each calendar "

@@ -285,6 +285,7 @@ def benchmark_gap_notice(benchmark_gaps: list[tuple[str, str, str]]) -> str:
 
 def stage2_reconciliation(
     gap_bps: float, window_start: str, window_flows: "dict[str, float]",
+    basis: "str | None" = None,
 ) -> "tuple[str, Optional[str]]":
     """The Performance page's "vs. Stage 2" check, conditioned on the window (#349).
 
@@ -299,6 +300,10 @@ def stage2_reconciliation(
 
     ``window_flows``: ISO date -> signed external flow, for days strictly AFTER
     ``window_start`` (a flow on the first day is the starting value, as in the TWR).
+    ``basis``: the valuation basis Stage 2's return is taken on for the check, named in
+    its words, when it is not the Stage 2 tile's: "adjusted levels" until #369's PR 3,
+    since Brinson-Fachler values each sleeve on adjusted levels (decided by the owner on
+    October 28, 2026).
     Returns (the fragment for the BF summary line, the disclosure or None).
     """
     from src.asof import format_long_date
@@ -306,10 +311,11 @@ def stage2_reconciliation(
     # Displayed rounded, and "+ 0.0" turns a rounded -0.00 into 0.00: it read
     # "vs. Stage 2: ✓ -0.00 bps" (audit item 13). The 0.5 bp check reads the raw gap.
     shown = round(gap_bps, 2) + 0.0
+    label = f"Stage 2 on {basis}" if basis else "Stage 2"
     flows = {d: a for d, a in window_flows.items() if a}
     if not flows:
         ok = abs(gap_bps) < 0.5
-        return f"vs. Stage 2: {'✓' if ok else '⚠'} {shown:+.2f} bps", None
+        return f"vs. {label}: {'✓' if ok else '⚠'} {shown:+.2f} bps", None
 
     days = sorted(flows)
     if all(a > 0 for a in flows.values()):
@@ -321,12 +327,13 @@ def stage2_reconciliation(
     named = [format_long_date(d) for d in days]
     when = named[0] if len(named) == 1 else ", ".join(named[:-1]) + " and " + named[-1]
     plural = "s" if len(days) > 1 else ""
-    fragment = f"vs. Stage 2: {shown:+.2f} bps, not comparable (a {noun} in this window)"
+    fragment = f"vs. {label}: {shown:+.2f} bps, not comparable (a {noun} in this window)"
     disclosure = (
         f"**Attribution cannot see the {noun}{plural} of {when}.** Brinson-Fachler holds "
         f"the holdings at the start of the window ({format_long_date(window_start)}) "
         f"fixed for the whole window, so it cannot attribute what an intra-window "
-        f"{noun} {did}. Stage 2 is the book's time-weighted return, which does include "
+        f"{noun} {did}. Stage 2 is the book's time-weighted return"
+        f"{f', here on {basis}' if basis else ''}, which does include "
         f"them from the day they were {did}, so the two differ by {shown:+.2f} bps "
         f"here. That gap is this limitation, not an error: over a window with no "
         f"{noun}, they agree within 0.5 bps."

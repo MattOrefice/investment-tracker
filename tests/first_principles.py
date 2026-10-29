@@ -8,8 +8,28 @@ flows are read straight from the trades table, the book is valued only where it 
 be (a window's two ends and each flow date), and the time-weighted return chains the
 sub-periods BETWEEN FLOWS rather than day by day.
 
-SHARED WITH THE PAGE, deliberately, because they are inputs and conventions rather than
-the calculation under test:
+TWO VALUATION RULES (#369), as the page has. A Book takes the rule in force where it is
+built (src.cache.valuation_in_force: the raw-close rule for a live read, a lock's own marker
+inside it), or the one it is given.
+
+THE RAW-CLOSE RULE is built from the trades table, the stored closes and the stored
+dividends alone, read straight from the tables: it calls neither the price layer nor
+src.holdings. SHARED WITH THE PAGE, deliberately, are the conventions the owner decided on
+October 27 and 28, 2026:
+  * every share held, DRIP lots included, at its close on or before the day;
+  * SPAXX at BIL's total return, scaled to $1 on BIL's first close on or after inception,
+    BIL's total return being its close with each dividend reinvested at the close before
+    its ex-date (the provider's method); each SPAXX trade enters at its dollars, as units
+    bought at that day's level;
+  * each dividend is income on its ex-date, the shares held at the previous day's end x
+    the amount. A fund the ledger holds DRIP lots for holds that income at its amount
+    until a DRIP lot is paid from it (the lot's shares x price + fees); any other
+    dividend buys SPAXX units on its ex-date;
+  * flows are the ledger's dollars: a buy brings shares x price + fees into the book, a
+    sell takes shares x price - fees out; DRIP lots are neither.
+
+ADJUSTED LEVELS, every lock taken before the marker. SHARED WITH THE PAGE, deliberately,
+because they are inputs and conventions rather than the calculation under test:
   * prices, from the price layer (get_prices' total-return close, #339);
   * the valuation conventions _portfolio_value_series_impl documents: non-DRIP shares
     at the total-return close on or before the day; SPAXX at BIL's total-return close,
@@ -55,7 +75,83 @@ def plant_deposit(db_path, day: str, ticker: str, dollars: float, account_id: in
 class Book:
     """The portfolio account's book, read from the ledger, valued on demand."""
 
-    def __init__(self, account_id: int = 1):
+    def __init__(self, account_id: int = 1, rule: "str | None" = None):
+        from src.cache import RAW_CLOSE_RULE, valuation_in_force
+        self.rule = rule or valuation_in_force()[0]
+        self.raw = self.rule == RAW_CLOSE_RULE
+        if self.raw:
+            self._read_raw(account_id)
+        else:
+            self._read_adjusted(account_id)
+
+    def _read_raw(self, account_id: int) -> None:
+        """The ledger, the stored closes and the stored dividends, from the tables."""
+        from src.db import get_connection
+
+        with get_connection() as conn:
+            rows = [tuple(r) for r in conn.execute(
+                "SELECT trade_date, ticker, LOWER(action), shares, price, COALESCE(fees, 0), "
+                "COALESCE(lot_source, '') FROM trades WHERE account_id = ? "
+                "ORDER BY trade_date, trade_id", (account_id,)).fetchall()]
+        self._all = [r[:6] for r in rows]
+        self._trades = [r[:6] for r in rows if r[6] != "drip"]
+        self._lots = [r[:6] for r in rows if r[6] == "drip"]
+        self._reinvested = {r[1] for r in self._lots}
+        self.inception = min(r[0] for r in rows)
+        held = sorted({r[1] for r in rows})
+        funds = [t for t in held if t != "SPAXX"]
+        price_tickers = sorted({"BIL" if t == "SPAXX" else t for t in held})
+        yesterday = (date.today() - timedelta(days=1)).isoformat()
+        with get_connection() as conn:
+            q = ",".join("?" * len(price_tickers))
+            # The window anchor: the newest real price across the holdings, never today.
+            self.anchor = conn.execute(
+                f"SELECT MAX(price_date) FROM prices WHERE ticker IN ({q}) "
+                "AND price_date >= ? AND price_date <= ?",
+                (*price_tickers, self.inception, yesterday)).fetchone()[0]
+            self._closes = {t: [tuple(r) for r in conn.execute(
+                "SELECT price_date, close FROM prices WHERE ticker = ? AND price_date <= ? "
+                "ORDER BY price_date", (t, self.anchor)).fetchall()]
+                for t in sorted(set(funds) | {"BIL"})}
+            self._divs = {t: [tuple(r) for r in conn.execute(
+                "SELECT ex_date, amount FROM dividends WHERE ticker = ? AND ex_date <= ? "
+                "ORDER BY ex_date", (t, self.anchor)).fetchall()] for t in funds}
+            self._bil_divs = [tuple(r) for r in conn.execute(
+                "SELECT ex_date, amount FROM dividends WHERE ticker = 'BIL' AND ex_date <= ? "
+                "ORDER BY ex_date", (self.anchor,)).fetchall()]
+        self._bil0 = next(d for d, _c in self._closes["BIL"] if d >= self.inception)
+
+    def _close_on(self, ticker: str, day: str) -> "tuple[str, float] | None":
+        """The ticker's last stored close on or before ``day``, with its date."""
+        found = [(d, c) for d, c in self._closes[ticker] if d <= day]
+        return found[-1] if found else None
+
+    def _bil_level(self, day: str) -> float:
+        """SPAXX's level: BIL's total return from its first close on or after inception,
+        each dividend reinvested at the last close before its ex-date."""
+        d, close = self._close_on("BIL", day)
+        level = close / dict(self._closes["BIL"])[self._bil0]
+        for ex, amount in self._bil_divs:
+            if self._bil0 < ex <= d:
+                prev = self._close_on("BIL", (date.fromisoformat(ex) - timedelta(days=1)).isoformat())
+                level /= 1.0 - amount / prev[1]
+        return level
+
+    def _income(self) -> "list[tuple[str, str, float]]":
+        """(ex-date, ticker, income) for every dividend on a fund held the day before."""
+        if getattr(self, "_income_rows", None) is not None:
+            return self._income_rows
+        out = []
+        for t, divs in self._divs.items():
+            for ex, amount in divs:
+                before = (date.fromisoformat(ex) - timedelta(days=1)).isoformat()
+                shares = self._positions(self._all, before).get(t, 0.0)
+                if shares > 0:
+                    out.append((ex, t, shares * amount))
+        self._income_rows = out
+        return out
+
+    def _read_adjusted(self, account_id: int) -> None:
         from src.db import get_connection
         from src.prices import get_prices
 
@@ -88,12 +184,18 @@ class Book:
         self._bil0 = float(bil.iloc[0]) if bil is not None and len(bil) else None
 
     # ── ledger reads ──────────────────────────────────────────────────────────
-    def positions(self, day: str) -> dict:
+    @staticmethod
+    def _positions(trades, day: str) -> dict:
         pos: dict = {}
-        for d, t, action, shares, _price, _fees in self._trades:
+        for d, t, action, shares, _price, _fees in trades:
             if d <= day:
                 pos[t] = pos.get(t, 0.0) + (shares if action == "buy" else -shares)
         return {t: max(s, 0.0) for t, s in pos.items()}
+
+    def positions(self, day: str) -> dict:
+        """Shares held at the end of ``day``: under the raw-close rule every share, DRIP
+        lots included; under adjusted levels the non-DRIP shares."""
+        return self._positions(self._all if self.raw else self._trades, day)
 
     def flows(self, after: str, through: str) -> dict:
         """External flows on each date in (after, through]: a flow ON the window's
@@ -101,7 +203,7 @@ class Book:
         out: dict = {}
         for d, t, action, shares, price, fees in self._trades:
             if after < d <= through:
-                dollars = shares * price * self._factor(t, d)
+                dollars = shares * price * (1.0 if self.raw else self._factor(t, d))
                 amt = dollars + fees if action == "buy" else -dollars + fees
                 out[d] = out.get(d, 0.0) + amt
         return {d: a for d, a in out.items() if a != 0.0}
@@ -124,7 +226,44 @@ class Book:
         return self._price(ticker, day) / float(c[c.index <= day].iloc[-1])
 
     def value(self, day: str) -> float:
+        if self.raw:
+            return self._raw_value(day)
         return sum(sh * self._price(t, day) for t, sh in self.positions(day).items() if sh)
+
+    def _raw_value(self, day: str) -> float:
+        """Every share at its close, SPAXX's units at BIL's level, and the income line."""
+        total, units, pending = 0.0, 0.0, 0.0
+        for t, sh in self.positions(day).items():
+            if sh and t != "SPAXX":
+                found = self._close_on(t, day)
+                total += sh * found[1] if found else 0.0
+        for d, t, action, shares, price, _fees in self._all:
+            if t == "SPAXX" and d <= day:
+                units += (1 if action == "buy" else -1) * shares * price / self._bil_level(d)
+        units = max(units, 0.0)
+        for ex, t, income in self._income():
+            if ex <= day:
+                if t in self._reinvested:
+                    pending += income
+                else:
+                    units += income / self._bil_level(ex)
+        for d, _t, _action, shares, price, fees in self._lots:
+            if d <= day:
+                pending -= shares * price + fees
+        return total + units * self._bil_level(day) + pending
+
+    def current_value_parts(self, day: str) -> dict:
+        """The raw-close value's parts on ``day``: the funds at their closes, SPAXX, and
+        the income line (its SPAXX part at BIL's level)."""
+        assert self.raw, "the parts are the raw-close rule's"
+        whole = self._raw_value(day)
+        funds = sum(sh * self._close_on(t, day)[1] for t, sh in self.positions(day).items()
+                    if sh and t != "SPAXX" and self._close_on(t, day))
+        trade_units = max(sum((1 if a == "buy" else -1) * n * px / self._bil_level(d)
+                              for d, t, a, n, px, _f in self._all
+                              if t == "SPAXX" and d <= day), 0.0)
+        spaxx = trade_units * self._bil_level(day)
+        return {"funds": funds, "spaxx": spaxx, "income": whole - funds - spaxx}
 
     # ── windows and returns ───────────────────────────────────────────────────
     def window(self, label: str) -> "tuple[str, str]":

@@ -72,19 +72,25 @@ def test_builder_demo_flows_are_inception_seed_only(use_demo_db):
     adj_close) and must be excluded — any nonzero mid-history value here means
     the DRIP filter broke and income would be double-counted as a flow.
 
-    The seed is taken in the value series' units (#687): each trade's dollars at
-    its ticker's factor that day, its level over its close. The seed's trades are
-    at the close, to the cent the later legs were typed to, so the seed is the
-    book's starting value to the cent, not the ledger's ~$1,000 (the levels are
-    back-adjusted for every later dividend)."""
+    Under adjusted levels, the rule of every lock taken before #369's marker, the seed
+    is taken in the value series' units (#687): each trade's dollars at its ticker's
+    factor that day, its level over its close. The seed's trades are at the close, to
+    the cent the later legs were typed to, so the seed is the book's starting value to
+    the cent, not the ledger's ~$1,000 (the levels are back-adjusted for every later
+    dividend). Under the raw-close rule, live reads (#369's PR 2), the seed is the
+    ledger's dollars and still the book's starting value to the cent: every share counts
+    at its close."""
+    from src.cache import on_adjusted_levels
     from src.db import get_connection
     from src.holdings import get_external_cashflow_series, get_portfolio_value_series
 
     inception = "2025-05-01"
-    cf = get_external_cashflow_series(inception, date.today().isoformat(), account_id=1)
-    if float(cf.abs().sum()) == 0.0:
-        pytest.skip("trades table empty — skipped in empty-DB mode")
-    pv = get_portfolio_value_series(inception, date.today().isoformat(), account_id=1)
+    today = date.today().isoformat()
+    with on_adjusted_levels():
+        cf = get_external_cashflow_series(inception, today, account_id=1)
+        if float(cf.abs().sum()) == 0.0:
+            pytest.skip("trades table empty — skipped in empty-DB mode")
+        pv = get_portfolio_value_series(inception, today, account_id=1)
     seed = float(cf.loc[pd.Timestamp(inception)])
     assert seed == pytest.approx(float(pv.loc[pd.Timestamp(inception)]), abs=0.01)
     with get_connection() as conn:
@@ -94,6 +100,13 @@ def test_builder_demo_flows_are_inception_seed_only(use_demo_db):
             "WHERE trade_date = ? AND account_id = 1 "
             "AND (lot_source IS NULL OR lot_source != 'drip')", (inception,)).fetchone()
     assert abs(seed - ledger) > 1.0, (seed, ledger)
+
+    raw_cf = get_external_cashflow_series(inception, today, account_id=1)
+    raw_pv = get_portfolio_value_series(inception, today, account_id=1)
+    raw_seed = float(raw_cf.loc[pd.Timestamp(inception)])
+    assert raw_seed == pytest.approx(ledger, abs=1e-9), (raw_seed, ledger)
+    assert raw_seed == pytest.approx(float(raw_pv.loc[pd.Timestamp(inception)]), abs=0.01)
+    assert float(raw_cf.iloc[1:].abs().sum()) < 1e-9
     # Post-inception flow must be ZERO to the DOLLAR, not to the bit. demo.db now
     # holds a genuinely cash-neutral same-date rebalance (Phase 39 VEA trim funding
     # the three tilt buys). Its net flow sums the signed shares*price legs, and

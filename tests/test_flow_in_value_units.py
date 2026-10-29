@@ -21,6 +21,11 @@ scratch copy, offline, as #686 and #687 reproduced it: VOO on 2026-07-01. VOO we
 2026-09-28 ($1.823), so its factor on July 1 is below one. At the close the day's step on
 the staged book is the committed book's own step, −0.007267, whichever way the flow goes;
 1% above it, a buy loses the gap that day and a sale gains it.
+
+TWO RULES (#369's PR 2). That is the adjusted-levels rule, every lock taken before #369's
+marker, and the tests above the raw-close section pin it there, on adjusted levels. Live
+reads are on the raw-close rule: every share counts at its close, so the flow is the
+ledger's own dollars, and the raw-close section pins the same four facts without a factor.
 """
 from __future__ import annotations
 
@@ -85,10 +90,13 @@ def _plant(book: Path, action: str, shares: float, fees: float = 0.0,
     return close, price
 
 
-def _value_and_flows(book: Path) -> "tuple[pd.Series, pd.Series]":
+def _value_and_flows(book: Path, adjusted: bool = True) -> "tuple[pd.Series, pd.Series]":
     """The value series and the flow series on ``book``, as the Performance page takes
-    them (from inception), offline."""
-    with pytest.MonkeyPatch.context() as mp:
+    them (from inception), offline; on adjusted levels unless ``adjusted`` is False."""
+    from contextlib import nullcontext
+    from src.cache import on_adjusted_levels
+    with pytest.MonkeyPatch.context() as mp, (on_adjusted_levels() if adjusted
+                                              else nullcontext()):
         pin_today(mp, date(2026, 10, 1))
         block_network(mp)
         mp.setattr(db, "DB_PATH", book)
@@ -112,9 +120,10 @@ def _step(pv: pd.Series, cf: pd.Series) -> float:
     return float(index[FLOW_DAY] / index.shift(1)[FLOW_DAY] - 1)
 
 
-def _staged(book: Path, shares: float, close: float, price: float) -> dict:
+def _staged(book: Path, shares: float, close: float, price: float,
+            adjusted: bool = True) -> dict:
     return {"shares": shares, "close": close, "price": price,
-            **_returns_each_path_takes(book)}
+            **_returns_each_path_takes(book, adjusted=adjusted)}
 
 
 @pytest.fixture(scope="module")
@@ -306,3 +315,95 @@ def test_the_factor_is_the_level_over_the_close_from_one_frame(monkeypatch, serv
     assert list(levels["XYZ"]) == [99.0, 99.5, 99.5]
     want = [0.99, 0.995, 0.995] if serves_close else [1.0, 1.0, 1.0]
     assert list(factors["XYZ"]) == pytest.approx(want, rel=1e-15)
+
+
+# ── The raw-close rule (#369's PR 2, decided by the owner on October 27 and 28, 2026) ──
+# Live reads count every share at its close, so a flow is the ledger's own dollars: there
+# is nothing to convert, and the same four facts hold with no factor in them.
+
+@pytest.fixture(scope="module")
+def committed_raw(tmp_path_factory):
+    return _value_and_flows(_copy(tmp_path_factory, "flow_raw_committed"), adjusted=False)
+
+
+@pytest.fixture(scope="module")
+def bought_raw(contribution, tmp_path_factory):
+    book = _copy(tmp_path_factory, "flow_raw_bought")
+    close, price = _plant(book, "Buy", contribution)
+    return _staged(book, contribution, close, price, adjusted=False)
+
+
+@pytest.fixture(scope="module")
+def bought_above_raw(contribution, tmp_path_factory):
+    book = _copy(tmp_path_factory, "flow_raw_bought_above")
+    close, price = _plant(book, "Buy", contribution, over_close=ABOVE)
+    return _staged(book, contribution, close, price, adjusted=False)
+
+
+@pytest.fixture(scope="module")
+def sold_raw(voo_held, tmp_path_factory):
+    book = _copy(tmp_path_factory, "flow_raw_sold")
+    close, price = _plant(book, "Sell", voo_held / 2)
+    return _staged(book, voo_held / 2, close, price, adjusted=False)
+
+
+@pytest.fixture(scope="module")
+def bought_with_fee_raw(contribution, tmp_path_factory):
+    book = _copy(tmp_path_factory, "flow_raw_fee")
+    _plant(book, "Buy", contribution, FEE)
+    return _value_and_flows(book, adjusted=False)
+
+
+def test_the_two_rules_read_the_flow_day_differently(committed, committed_raw):
+    """PREMISE. The raw-close tests below are not the adjusted ones again: VOO's factor on
+    FLOW_DAY is below one, so the book's own step on that day differs between the rules."""
+    own_adj = float(committed[0].pct_change()[FLOW_DAY])
+    own_raw = float(committed_raw[0].pct_change()[FLOW_DAY])
+    assert abs(own_raw - own_adj) > 5e-6, (own_raw, own_adj)
+    assert (committed_raw[1].iloc[1:] == 0.0).all()
+
+
+def test_under_the_raw_close_rule_a_flow_is_the_ledgers_dollars(committed_raw, bought_raw):
+    """The flow is shares × price, and at the close that is exactly what the buy adds to V:
+    every share counts at its close."""
+    s = bought_raw
+    assert float(s["cf"][FLOW_DAY]) == pytest.approx(s["shares"] * s["price"], rel=1e-12)
+    added = float(s["pv"][FLOW_DAY] - committed_raw[0][FLOW_DAY])
+    assert added == pytest.approx(s["shares"] * s["close"], rel=1e-12)
+
+
+def test_under_the_raw_close_rule_a_buy_at_the_close_earns_nothing_on_its_own_day(
+        committed_raw, bought_raw):
+    own = float(committed_raw[0].pct_change()[FLOW_DAY])
+    differ = _every_path_reads(bought_raw, own)
+    assert not differ, f"the book's own step is {own:+.6f}; " + "; ".join(differ)
+
+
+def test_under_the_raw_close_rule_a_buy_above_the_close_keeps_its_gap(
+        committed_raw, bought_above_raw):
+    pv_c, _ = committed_raw
+    own = float(pv_c.pct_change()[FLOW_DAY])
+    s = bought_above_raw
+    expected = own - s["shares"] * (s["price"] - s["close"]) / float(pv_c.shift(1)[FLOW_DAY])
+    assert expected < own - 0.005
+    differ = _every_path_reads(s, expected)
+    assert not differ, (f"the book's own step {own:+.6f} less the gap is {expected:+.6f}; "
+                        + "; ".join(differ))
+
+
+def test_under_the_raw_close_rule_a_withdrawal_is_symmetric(committed_raw, sold_raw):
+    pv_c, _ = committed_raw
+    own = float(pv_c.pct_change()[FLOW_DAY])
+    differ = _every_path_reads(sold_raw, own)
+    assert not differ, f"the book's own step is {own:+.6f}; " + "; ".join(differ)
+    removed = float(sold_raw["pv"][FLOW_DAY] - pv_c[FLOW_DAY])
+    assert float(sold_raw["cf"][FLOW_DAY]) == pytest.approx(
+        -sold_raw["shares"] * sold_raw["price"], rel=1e-12)
+    assert float(sold_raw["cf"][FLOW_DAY]) == pytest.approx(removed, rel=1e-12)
+
+
+def test_under_the_raw_close_rule_a_fee_stays_a_cost(committed_raw, bought_with_fee_raw):
+    pv_c, _ = committed_raw
+    pv, cf = bought_with_fee_raw
+    own = float(pv_c.pct_change()[FLOW_DAY])
+    assert _step(pv, cf) == pytest.approx(own - FEE / float(pv_c.shift(1)[FLOW_DAY]), abs=1e-12)

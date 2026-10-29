@@ -7,6 +7,7 @@ regardless of retroactive adj_close adjustments from the upstream data provider.
 import io
 import json
 from contextlib import ExitStack, contextmanager
+from contextvars import ContextVar
 from datetime import date, datetime, timedelta, timezone
 from typing import NamedTuple, Optional
 
@@ -177,12 +178,12 @@ class SnapshotFrames(NamedTuple):
     # The valuation rule the lock's figures are on (#369): RAW_CLOSE_RULE or
     # ADJUSTED_LEVELS_RULE, set by the quarter the lock covers (valuation_rule_for).
     # None for a lock taken before the marker existed, which is on adjusted levels
-    # (lock_valuation_rule). Nothing reads it yet: the raw-close series is #369's PR 2.
+    # (lock_valuation_rule). The value series reads it inside the lock (valuation_in_force).
     valuation_rule: "str | None" = None
     # A raw-close lock's ledger through its quarter's last day, every trades row with
     # the LEDGER_COLUMNS, DRIP lots included, so a later lot rebuild cannot move the
     # lock. None on an adjusted-levels lock, which reads the live ledger as before.
-    # Nothing reads it yet.
+    # Inside the lock, holdings reads its trades from it (valuation_in_force).
     ledger: "pd.DataFrame | None" = None
 
 
@@ -219,6 +220,34 @@ def lock_valuation_rule(snap: "SnapshotFrames | None") -> str:
     """The valuation rule a lock is on. A lock with no marker, as every lock taken before
     the marker existed is, is on adjusted levels."""
     return getattr(snap, "valuation_rule", None) or ADJUSTED_LEVELS_RULE
+
+
+# The valuation rule and ledger of the quarter lock in force, or None outside one. Set
+# only by snapshot_price_context, the same mechanism as src.prices._PRICE_LOCK.
+_VALUATION_LOCK: "ContextVar[Optional[tuple]]" = ContextVar("valuation_lock", default=None)
+
+
+@contextmanager
+def on_adjusted_levels():
+    """Reads inside the block are on adjusted levels, as inside a lock with no marker,
+    and read the live ledger. For the Performance page's attribution check alone, until
+    #369's PR 3 (decided by the owner on October 28, 2026): Brinson-Fachler values each
+    sleeve on adjusted levels, so the check compares it with the book's TWR on that basis
+    while the Stage 2 tile shows the raw-close TWR. PR 3 retires it."""
+    token = _VALUATION_LOCK.set((ADJUSTED_LEVELS_RULE, None))
+    try:
+        yield
+    finally:
+        _VALUATION_LOCK.reset(token)
+
+
+def valuation_in_force() -> "tuple[str, pd.DataFrame | None]":
+    """(rule, ledger) for a read in this context (#369's PR 2, decided by the owner on
+    October 27 and 28, 2026). Live reads are on the raw-close rule and read the live
+    ledger (None). Inside a quarter lock, the lock's own marker, adjusted levels when it
+    has none, and the ledger it holds, None for an adjusted-levels lock."""
+    held = _VALUATION_LOCK.get()
+    return held if held is not None else (RAW_CLOSE_RULE, None)
 
 
 def _capture_ledger(end: date) -> dict:
@@ -1397,6 +1426,9 @@ def snapshot_price_context(snap_df: pd.DataFrame):
         return pd.DataFrame(data, index=filtered.index)
 
     token = _prices_module._PRICE_LOCK.set(_snapshot_reader)
+    # And the lock's valuation rule and ledger (#369): a lock with no marker is on
+    # adjusted levels, so every lock taken before the marker values as it always has.
+    v_token = _VALUATION_LOCK.set((lock_valuation_rule(frames), frames.ledger))
     try:
         # And every non-price input the lock holds (#382). A lock from before
         # inputs were locked holds none, and its sections read inputs as before.
@@ -1411,4 +1443,5 @@ def snapshot_price_context(snap_df: pd.DataFrame):
                 stack.enter_context(window_start_baskets())
             yield
     finally:
+        _VALUATION_LOCK.reset(v_token)
         _prices_module._PRICE_LOCK.reset(token)
