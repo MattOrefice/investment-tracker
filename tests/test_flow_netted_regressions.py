@@ -42,11 +42,16 @@ END = "2026-09-30"
 FLOW_DAY = pd.Timestamp("2026-07-01")
 
 
-def _returns_each_path_takes(book: Path) -> dict:
+def _returns_each_path_takes(book: Path, adjusted: bool = False) -> dict:
     """{name: daily portfolio return} for the three paths on ``book``, with the inputs
     each takes in production: the window function with the series and flows the
-    Performance page passes it (SI), and each regression's R_p as fitted."""
-    with pytest.MonkeyPatch.context() as mp:
+    Performance page passes it (SI), and each regression's R_p as fitted. ``adjusted``:
+    every read on adjusted levels, the rule of every lock taken before #369's marker;
+    live reads are on the raw-close rule."""
+    from contextlib import nullcontext
+    from src.cache import on_adjusted_levels
+    with pytest.MonkeyPatch.context() as mp, (on_adjusted_levels() if adjusted
+                                              else nullcontext()):
         pin_today(mp, date(2026, 10, 1))
         block_network(mp)
         mp.setattr(db, "DB_PATH", book)

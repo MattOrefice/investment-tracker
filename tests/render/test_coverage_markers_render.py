@@ -372,7 +372,7 @@ def _assert_series_withheld(at) -> None:
         assert all(str(v).endswith("%") for v in table[col]), (col, list(table[col]))
     assert "Portfolio" not in f["lines"]
     assert {"S&P 500 (SPY)", "Custom Blended"} <= set(f["lines"])
-    assert f["bf"].endswith("vs. Stage 2: withheld"), f["bf"]
+    assert f["bf"].endswith("vs. Stage 2 on adjusted levels: withheld"), f["bf"]
     assert ("Reconciliation is withheld with Stage 2 and the total, which are computed "
             "from the portfolio's value.") in f["text"]
     for line in (f"**Daily-linked TWR (SI):** {SUPPRESSED_TILE}",
@@ -417,7 +417,7 @@ def test_control_page2_still_renders_its_series_figures(tmp_path, monkeypatch):
     assert f"**{SUPPRESSED_TILE}** cumulative TWR" not in f["summary"]
     assert all(str(v).endswith("%") for v in f["table"]["Portfolio"])
     assert "Portfolio" in f["lines"]
-    assert "vs. Stage 2: withheld" not in f["bf"]
+    assert "vs. Stage 2 on adjusted levels: withheld" not in f["bf"]
     assert dict(f["pairs"])["Stage 2: Implementation"] != SUPPRESSED_TILE
 
 

@@ -727,6 +727,11 @@ def test_identity_bf_sum_reconciles_to_stage2(deposit, pytestconfig, tmp_path):
         hold: BF values the start-of-window holdings, so it never sees what the
         deposit bought. That window is the page's disclosure case, not a failure.
 
+    TWO BASES UNTIL #369's PR 3 (decided by the owner on October 28, 2026). The tile is the
+    raw-close TWR, the page's, so the PAGE check reads the independent book on the
+    raw-close rule. Brinson-Fachler values each sleeve on adjusted levels, so the BRIDGE
+    reads it on adjusted levels, as the page's check does.
+
     Run on the frozen book twice: as built (no flow after inception, so every window
     checks the bridge) and with one deposit planted mid-window (so a value ratio and
     the TWR differ by thousands of bps, and a page that confused them fails here).
@@ -734,6 +739,7 @@ def test_identity_bf_sum_reconciles_to_stage2(deposit, pytestconfig, tmp_path):
     import streamlit as st
     from streamlit.testing.v1 import AppTest
     from src.attribution import brinson_fachler_period
+    from src.cache import ADJUSTED_LEVELS_RULE, RAW_CLOSE_RULE
     from tests import first_principles as fp
 
     conftest = _frozen_conftest(pytestconfig)
@@ -747,7 +753,8 @@ def test_identity_bf_sum_reconciles_to_stage2(deposit, pytestconfig, tmp_path):
             st.cache_data.clear()
             at = AppTest.from_file("pages/2_Performance.py", default_timeout=180).run()
             assert not at.exception, f"page raised: {at.exception}"
-            book = fp.Book(account_id=1)
+            book = fp.Book(account_id=1, rule=RAW_CLOSE_RULE)
+            book_adj = fp.Book(account_id=1, rule=ADJUSTED_LEVELS_RULE)
             for label in fp.WINDOWS:
                 [r for r in at.radio if r.key == "bf_period"][0].set_value(label).run()
                 assert not at.exception, f"page raised on {label}: {at.exception}"
@@ -763,6 +770,7 @@ def test_identity_bf_sum_reconciles_to_stage2(deposit, pytestconfig, tmp_path):
                     "saa": saa,
                     "held": held,
                     "twr": book.twr(start, end),
+                    "twr_adjusted": book_adj.twr(start, end),
                     "value_ratio": book.value_ratio(start, end),
                     "flows": book.flows(start, end),
                     "bridged": float((bf["w_p"] * bf["r_p"]).sum())
@@ -793,10 +801,11 @@ def test_identity_bf_sum_reconciles_to_stage2(deposit, pytestconfig, tmp_path):
             f"{s['value_ratio']:.4%}; #349)."
         )
         if not s["flows"]:
-            gap_bps = abs(s["bridged"] - s["twr"]) * 10_000
+            gap_bps = abs(s["bridged"] - s["twr_adjusted"]) * 10_000
             assert gap_bps < 0.5, (
                 f"Ex-cash BF return + cash drag ({s['bridged']*10000:.1f} bps) diverges "
-                f"from the book's independent TWR ({s['twr']*10000:.1f} bps) by "
+                f"from the book's independent TWR on adjusted levels "
+                f"({s['twr_adjusted']*10000:.1f} bps) by "
                 f"{gap_bps:.2f} bps for the {label} window, which holds no external flow. "
                 f"The cash-drag bridge in brinson_fachler_period() may have failed — "
                 f"check the cash_drag attr and the ex-cash weight normalization."
@@ -857,6 +866,7 @@ def test_bf_reconciles_when_wall_clock_past_price_frontier(days_past_frontier, _
     import datetime
     import pandas as pd
     from src.attribution import brinson_fachler_period
+    from src.cache import on_adjusted_levels
     from src.holdings import get_portfolio_value_series, last_real_price_date
     from src.returns import period_bounds
 
@@ -867,8 +877,10 @@ def test_bf_reconciles_when_wall_clock_past_price_frontier(days_past_frontier, _
     real_end = _captured_frontier()
     real_end_d = datetime.date.fromisoformat(real_end)
 
-    # Cached through the frontier only — no future-date fetch, so this stays offline.
-    pv_real = get_portfolio_value_series(INCEPTION, real_end, account_id=1)
+    # Cached through the frontier only — no future-date fetch, so this stays offline. On
+    # adjusted levels, Brinson-Fachler's own basis until #369's PR 3, as the page's check.
+    with on_adjusted_levels():
+        pv_real = get_portfolio_value_series(INCEPTION, real_end, account_id=1)
     if pv_real.dropna().empty:
         pytest.skip("Portfolio data empty — skipped in local/empty-DB mode")
 

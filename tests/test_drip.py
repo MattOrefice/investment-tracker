@@ -337,13 +337,22 @@ def test_drip_excluded_from_value_series_but_kept_in_holdings(minimal_db, monkey
 
 def test_current_market_value_is_all_shares_raw_close_not_return_series(minimal_db, monkeypatch):
     """The DISPLAYED dollar value (get_current_market_value) = ALL shares incl DRIP
-    × RAW close (true account worth); the RETURN series (get_portfolio_value_series)
-    = NON-DRIP shares × adj_close. With raw close ≠ adj_close the two diverge: the
-    dollar figure counts the real DRIP shares' market worth, the return series does
-    not (their income is already embedded in adj_close). Confirms the dollar-value
-    fix does NOT alter the return series.
+    × RAW close (true account worth).
+
+    UNDER ADJUSTED LEVELS, the rule of every lock taken before #369's marker, the RETURN
+    series (get_portfolio_value_series) = NON-DRIP shares × adj_close. With raw close ≠
+    adj_close the two diverge: the dollar figure counts the real DRIP shares' market worth,
+    the return series does not (their income is already embedded in adj_close). Confirms
+    the dollar-value fix does NOT alter the return series there.
+
+    UNDER THE RAW-CLOSE RULE, live reads (#369's PR 2), the return series is every share,
+    DRIP lots included, at its close, plus the income line, and ends at the dollar value:
+    one basis. The book stores the dividend the DRIP lot reinvests (10 shares × $4.90 =
+    the lot's 0.5 × $98), so the income it adds on its ex-date is what the lot is paid
+    from on its date, and the line is back at zero.
     """
     import src.holdings as H
+    from src.cache import on_adjusted_levels
     from src.holdings import get_current_market_value, get_portfolio_value_series
     from src.db import get_connection
 
@@ -352,6 +361,9 @@ def test_current_market_value_is_all_shares_raw_close_not_return_series(minimal_
             "INSERT INTO trades (account_id, ticker, trade_date, action, shares, price, lot_source)"
             " VALUES (1, 'VOO', '2025-06-15', 'buy', 0.5, 98.0, 'drip')"
         )
+        conn.execute("CREATE TABLE IF NOT EXISTS dividends (ticker TEXT NOT NULL, ex_date TEXT "
+                     "NOT NULL, amount REAL NOT NULL, PRIMARY KEY (ticker, ex_date))")
+        conn.execute("INSERT INTO dividends VALUES ('VOO', '2025-06-12', 4.9)")
         conn.commit()
 
     # Raw close 100 ≠ adj_close 98 → the two bases are distinguishable.
@@ -365,12 +377,22 @@ def test_current_market_value_is_all_shares_raw_close_not_return_series(minimal_
     # get_prices is faked, so pin it at the module boundary as well.
     monkeypatch.setattr(H, "look_back_start", lambda t, d: d)
 
-    mv     = get_current_market_value("2025-07-01")
-    pv_end = float(get_portfolio_value_series("2025-05-01", "2025-07-01", account_id=1).iloc[-1])
+    with on_adjusted_levels():
+        mv     = get_current_market_value("2025-07-01")
+        pv_end = float(get_portfolio_value_series("2025-05-01", "2025-07-01",
+                                                  account_id=1).iloc[-1])
 
     assert mv == pytest.approx(1050.0)      # 10.5 shares (incl DRIP) × 100 RAW close
     assert pv_end == pytest.approx(980.0)   # 10 non-DRIP shares × 98 adj_close (return series)
     assert mv > pv_end                      # dollar value includes the DRIP shares' worth
+
+    raw_mv  = get_current_market_value("2025-07-01")
+    raw = get_portfolio_value_series("2025-05-01", "2025-07-01", account_id=1)
+    assert raw_mv == pytest.approx(1050.0)  # the same dollar value
+    assert float(raw.iloc[-1]) == pytest.approx(1050.0)  # 10.5 shares × 100 close: one basis
+    # Between the ex-date and the lot, the dividend is held at its amount.
+    assert float(raw[pd.Timestamp("2025-06-13")]) == pytest.approx(10 * 100.0 + 49.0)
+    assert get_current_market_value("2025-06-13") == pytest.approx(1049.0)
 
 
 # ── TWR reconciliation — integration ─────────────────────────────────────────
@@ -390,6 +412,7 @@ def test_drip_lots_do_not_inflate_value_series_twr():
     """
     import os
 
+    from src.cache import on_adjusted_levels
     from src.holdings import get_portfolio_value_series
     from src.returns import period_return
     from src.prices import get_prices
@@ -398,7 +421,10 @@ def test_drip_lots_do_not_inflate_value_series_twr():
     INCEPTION = "2025-05-01"
     TODAY     = date.today().isoformat()
 
-    prod = get_portfolio_value_series(INCEPTION, TODAY, account_id=1)   # DRIP-excluded (fixed)
+    # On adjusted levels, the rule this pins: the raw-close rule (#369) counts the DRIP
+    # lots at their close, with no adj_close for them to double-count.
+    with on_adjusted_levels():
+        prod = get_portfolio_value_series(INCEPTION, TODAY, account_id=1)   # DRIP-excluded
     if prod.dropna().empty:
         pytest.skip("Portfolio data empty — skipped in local/empty-DB mode")
 

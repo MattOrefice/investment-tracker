@@ -16,8 +16,8 @@ import pandas as pd
 from src.coverage import (SPLIT_UNADJUSTED, PriceCoverage, TickerStatus, UnpricedHolding,
                           coverage_from_statuses, split_detail, unpriced_reason)
 from src.db import get_connection
-from src.prices import (get_prices, classify_miss, _to_iso, total_return_series,
-                        gap_fetch_failure_for, unread_dividends_for)
+from src.prices import (get_prices, get_dividends, classify_miss, _to_iso,
+                        total_return_series, gap_fetch_failure_for, unread_dividends_for)
 
 
 # Distinguishes "argument omitted" from an explicit None meaning "this caller has
@@ -318,6 +318,19 @@ def get_holdings_on_date(date_str: str, *, account_id: int) -> pd.DataFrame:
     docstring. Pass get_portfolio_account_id() for the trade-derived portfolio.
     """
     account_id = _require_account_id(account_id)
+    # Inside a raw-close lock, from the ledger the lock holds (#369), so a later lot
+    # rebuild cannot move it.
+    from src.cache import valuation_in_force
+    ledger = valuation_in_force()[1]
+    if ledger is not None:
+        book = _account_ledger(account_id, ledger)
+        book = book[book["trade_date"] <= date_str]
+        if book.empty:
+            return pd.DataFrame(columns=["net_shares"])
+        signed = book["shares"].where(book["action"].str.lower() == "buy", -book["shares"])
+        df = signed.groupby(book["ticker"]).sum().rename("net_shares").to_frame()
+        df.index.name = "ticker"
+        return df[df["net_shares"] > 0].copy()
     with get_connection() as conn:
         rows = conn.execute(
             """SELECT ticker,
@@ -334,6 +347,31 @@ def get_holdings_on_date(date_str: str, *, account_id: int) -> pd.DataFrame:
 
     df = pd.DataFrame([dict(r) for r in rows]).set_index("ticker")
     return df[df["net_shares"] > 0].copy()
+
+
+_LEDGER_READ = ["trade_date", "ticker", "action", "shares", "price", "fees", "lot_source"]
+
+
+def _account_ledger(account_id: int, ledger: "pd.DataFrame | None") -> pd.DataFrame:
+    """Every trade of the account, DRIP lots included, in the order the value series
+    reads them, with the columns it reads (fees 0 where none was recorded): from the
+    quarter lock's ledger when the lock in force holds one (#369), from the trades table
+    otherwise."""
+    if ledger is not None:
+        rows = ledger[ledger["account_id"] == account_id].sort_values(
+            ["trade_date", "trade_id"])
+        frame = rows[_LEDGER_READ].reset_index(drop=True)
+    else:
+        with get_connection() as conn:
+            rows = conn.execute(
+                """SELECT trade_date, ticker, action, shares, price, fees, lot_source
+                   FROM trades WHERE account_id = ?
+                   ORDER BY trade_date, trade_id""",
+                (account_id,),
+            ).fetchall()
+        frame = pd.DataFrame([dict(r) for r in rows], columns=_LEDGER_READ)
+    frame["fees"] = frame["fees"].fillna(0.0).astype(float)
+    return frame
 
 
 def last_real_price_date(start_date: str, end_date: Optional[str] = None) -> str:
@@ -527,39 +565,56 @@ def _portfolio_value_series_impl(
     """
     Return daily total portfolio market value over [start_date, end_date], for
     ONE account (keyword-only ``account_id``, required — see the module docstring).
-    Uses adj_close for ETF prices (total-return basis).
-    SPAXX is valued at $1/share.
     Weekends / holidays are forward-filled from the previous trading day.
     A date on which a held position has no price is NaN, never a sum counting it as
     $0, and the holding's status records the dates (``unpriced_held``, #639, #643).
+    SPAXX is valued at BIL's total return from the book's inception (#646).
 
-    DRIP lots (lot_source='drip') are EXCLUDED from the share count used here.
-    adj_close already embeds dividend reinvestment into the existing shares, so
-    counting the DRIP-reinvested shares on top of it would double-count income
-    and overstate the total-return TWR (worst on the high-yielding FI sleeves).
-    Valuing the actual (non-DRIP) shares at adj_close gives the correct total
-    return. DRIP lots remain in the trades table for cost-basis / tax-lot
-    displays (see src/tax_lots.py); only this value series excludes them.
-    Personal mode holds no DRIP lots (pay-to-cash), so it is unaffected.
+    TWO VALUATION RULES (#369, decided by the owner on October 27 and 28, 2026), chosen
+    by cache.valuation_in_force: live reads are on the raw-close rule; inside a quarter
+    lock, the lock's own marker, and a lock with none is on adjusted levels.
+
+    THE RAW-CLOSE RULE. Every share held, DRIP lots included, at that day's close, plus
+    the income line (_dividend_income): each dividend is income on its ex-date, the
+    shares held at the previous day's end times the amount. A DRIP lot is paid from its
+    dividend's income, an internal move and not a flow; a dividend no DRIP lot
+    reinvests goes into SPAXX on its ex-date and earns BIL's total return from then.
+    Inside a raw-close lock the trades come from the ledger the lock holds. The series'
+    last value is the current market value (_current_market_value_impl): one basis.
+
+    ADJUSTED LEVELS, every lock taken before the marker. Non-DRIP shares at adj_close,
+    the total-return level. DRIP lots (lot_source='drip') are EXCLUDED from the share
+    count: adj_close already embeds dividend reinvestment into the existing shares, so
+    counting the DRIP-reinvested shares on top of it would double-count income and
+    overstate the total-return TWR (worst on the high-yielding FI sleeves).
     """
     account_id = _require_account_id(account_id)
     end = end_date or date.today().isoformat()
     date_range = pd.date_range(start=start_date, end=end, freq="D")
+    from src.cache import RAW_CLOSE_RULE, valuation_in_force
+    rule, ledger = valuation_in_force()
+    raw = rule == RAW_CLOSE_RULE
 
-    with get_connection() as conn:
-        trade_rows = conn.execute(
-            """SELECT trade_date, ticker, action, shares
-               FROM trades
-               WHERE trade_date <= ? AND account_id = ?
-                 AND (lot_source IS NULL OR lot_source != 'drip')
-               ORDER BY trade_date, trade_id""",
-            (end, account_id),
-        ).fetchall()
+    if raw:
+        book = _account_ledger(account_id, ledger)
+        trades_df = book[book["trade_date"] <= end].copy()
+        if trades_df.empty:
+            return pd.Series(0.0, index=date_range), []
+    else:
+        with get_connection() as conn:
+            trade_rows = conn.execute(
+                """SELECT trade_date, ticker, action, shares
+                   FROM trades
+                   WHERE trade_date <= ? AND account_id = ?
+                     AND (lot_source IS NULL OR lot_source != 'drip')
+                   ORDER BY trade_date, trade_id""",
+                (end, account_id),
+            ).fetchall()
 
-    if not trade_rows:
-        return pd.Series(0.0, index=date_range), []
+        if not trade_rows:
+            return pd.Series(0.0, index=date_range), []
 
-    trades_df = pd.DataFrame([dict(r) for r in trade_rows])
+        trades_df = pd.DataFrame([dict(r) for r in trade_rows])
     trades_df["trade_date"] = pd.to_datetime(trades_df["trade_date"])
     trades_df["signed"] = trades_df.apply(
         lambda r: r["shares"] if r["action"].lower() == "buy" else -r["shares"],
@@ -573,6 +628,15 @@ def _portfolio_value_series_impl(
         end=end,
         freq="D",
     )
+    if raw and (trades_df["ticker"] == "SPAXX").any():
+        # Under the raw-close rule a SPAXX trade enters at its dollars, as units bought
+        # at SPAXX's level that day, so it earns BIL's total return from its own date.
+        level, _st = _spaxx_levels(account_id, end, full_range)
+        spaxx = trades_df["ticker"] == "SPAXX"
+        trades_df.loc[spaxx, "signed"] = [
+            _spaxx_units(float(n) * float(px), level.get(d))
+            for n, px, d in zip(trades_df.loc[spaxx, "signed"], trades_df.loc[spaxx, "price"],
+                                trades_df.loc[spaxx, "trade_date"])]
 
     daily_changes = (
         trades_df.groupby(["trade_date", "ticker"])["signed"]
@@ -582,25 +646,36 @@ def _portfolio_value_series_impl(
     )
 
     # Cumulative holdings at each date
-    holdings_matrix = daily_changes.cumsum().clip(lower=0)
+    held = daily_changes.cumsum().clip(lower=0)
 
     # Slice to requested range (full_range ⊇ date_range since start ≤ start_date)
-    holdings_matrix = holdings_matrix.reindex(date_range)
+    holdings_matrix = held.reindex(date_range)
+
+    pending = None
+    if raw:
+        # The income line: SPAXX units bought with dividend income, held as SPAXX, and
+        # income a DRIP lot has yet to be paid from, held at its amount.
+        units, pending = _dividend_income(book, held, end, account_id=account_id)
+        units, pending = units.reindex(date_range), pending.reindex(date_range)
+        if (units > 0).any():
+            spaxx = holdings_matrix["SPAXX"] if "SPAXX" in holdings_matrix else 0.0
+            holdings_matrix["SPAXX"] = spaxx + units
+    # Under adjusted levels DRIP reinvestment shares (lot_source='drip') are
+    # deliberately EXCLUDED by the SQL query above: adj_close already embeds dividend
+    # reinvestment, so adding the DRIP shares would double-count income.
 
     tickers = holdings_matrix.columns.tolist()
     prices_matrix, _factors, statuses = _valuation_levels(
-        tickers, start_date, end, account_id=account_id)
+        tickers, start_date, end, account_id=account_id, raw=raw)
 
     common = [t for t in tickers if t in prices_matrix.columns]
-
-    # DRIP reinvestment shares (lot_source='drip') are deliberately EXCLUDED by
-    # the SQL query above: adj_close already embeds dividend reinvestment, so
-    # adding the DRIP shares would double-count income. See the docstring.
 
     # A held position with no price is never $0 (#639, #643): such a day is not a sum,
     # and the holding's status records the dates for the readers that must say so.
     unpriced = (holdings_matrix[common] > 1e-9) & prices_matrix[common].isna()
     value = (holdings_matrix[common] * prices_matrix[common]).sum(axis=1)
+    if pending is not None:
+        value = value + pending
     value[unpriced.any(axis=1)] = float("nan")
     from src.demo_refresh import is_session
     for i, ticker in enumerate(tickers):
@@ -612,16 +687,101 @@ def _portfolio_value_series_impl(
     return value, statuses
 
 
+def _spaxx_levels(account_id: int, end: str, days: pd.DatetimeIndex
+                  ) -> "tuple[pd.Series, TickerStatus]":
+    """SPAXX's level on each of ``days``, and SPAXX's status: BIL's total return,
+    normalized to $1.00 at the book's inception, as at every site that values SPAXX
+    (#646), forward-filled. All NaN when BIL does not cover the inception
+    (_bil_for_spaxx), $1.00 when its frame will not read."""
+    p, st = _bil_for_spaxx(get_inception_date(account_id=account_id), end)
+    try:
+        p.index = pd.to_datetime(p.index)
+        series = total_return_series(p)
+        p0 = series.first_valid_index()
+        if p0 is not None and float(series[p0]) > 0:
+            series = series / float(series[p0])  # normalize to $1.00
+        return series.reindex(days).ffill(), st
+    except Exception:
+        return pd.Series(1.0, index=days), st
+
+
+def _spaxx_units(dollars: float, level) -> float:
+    """The SPAXX units ``dollars`` buys at SPAXX's ``level`` that day, under the raw-close
+    rule (decided by the owner on October 28, 2026, #369): a SPAXX trade, or a dividend
+    swept into SPAXX, enters at its dollars and earns BIL's total return from its own
+    date. Where SPAXX has no level a unit is $1.00, as the current value prices an
+    unresolved SPAXX, and SPAXX's own status says it is not priced."""
+    return dollars / float(level) if level is not None and level > 0 else dollars
+
+
+def _dividend_income(book: pd.DataFrame, held: pd.DataFrame, end: str, *,
+                     account_id: int) -> "tuple[pd.Series, pd.Series]":
+    """The raw-close rule's income line (#369, decided by the owner on October 27 and
+    28, 2026), by day over ``held``'s index: (the SPAXX units bought with dividend
+    income, the income held at its amount until a DRIP lot is paid from it), each
+    cumulative.
+
+    Every dividend is income on its ex-date: the shares held at the previous day's end,
+    DRIP lots included, times the amount, from the stored dividends (get_dividends, which
+    inside a quarter lock serves the lock's own).
+    * A dividend on a fund the book reinvests, one its ledger holds DRIP lots for, is
+      held at its amount from its ex-date. Each DRIP lot is paid from it on the lot's
+      date: the lot's dollars, shares × price + fees, leave the line, an internal move
+      and not a flow. The whole ledger decides which funds those are, so a window's end
+      cannot change how a day inside it is valued.
+    * Any other dividend, as in a book that takes its dividends in cash, goes into SPAXX
+      on its ex-date as units bought at SPAXX's level that day (_spaxx_units), so it
+      earns BIL's total return from then.
+
+    book: the account's ledger (_account_ledger), every date. held: every share held each
+    day, DRIP lots included, from the book's first trade.
+    """
+    days = held.index
+    units = pd.Series(0.0, index=days)
+    pending = pd.Series(0.0, index=days)
+    reinvested = set(book.loc[book["lot_source"] == "drip", "ticker"])
+    level = None
+    first = days[0].date().isoformat()
+    for ticker in held.columns:
+        if ticker == "SPAXX":
+            continue
+        for ex, amount in get_dividends(ticker, first, end).items():
+            ex_ts = pd.Timestamp(ex)
+            before = ex_ts - pd.Timedelta(days=1)
+            if before < days[0] or ex_ts > days[-1]:
+                continue
+            income = float(held.at[before, ticker]) * float(amount)
+            if income <= 0:
+                continue
+            if ticker in reinvested:
+                pending[ex_ts] += income
+                continue
+            if level is None:
+                level, _st = _spaxx_levels(account_id, end, days)
+            units[ex_ts] += _spaxx_units(income, level.get(ex_ts))
+    lots = book[(book["lot_source"] == "drip") & (book["trade_date"] <= end)]
+    for lot in lots.itertuples(index=False):
+        lot_ts = pd.Timestamp(lot.trade_date)
+        if lot_ts in pending.index:
+            pending[lot_ts] -= float(lot.shares) * float(lot.price) + float(lot.fees)
+    return units.cumsum(), pending.cumsum()
+
+
 def _valuation_levels(
     tickers: "list[str]",
     start_date: str,
     end: str,
     *,
     account_id: int,
+    raw: bool = False,
 ) -> "tuple[pd.DataFrame, pd.DataFrame, list[TickerStatus]]":
     """The level the value series counts one share of each ticker at, on every day of
     [start_date, end], each ticker's adjustment factor on those days, and each
     ticker's status, in ``tickers``' order.
+
+    ``raw``: the raw-close rule (#369), where the level is the ticker's close and every
+    factor is 1, since a flow is the ledger's dollars. SPAXX is BIL's total return
+    under both rules.
 
     The factor is the level over the ticker's close, both read from the one frame, so
     it is what a dollar paid for the ticker that day counts for in the value series'
@@ -650,17 +810,8 @@ def _valuation_levels(
     statuses: "list[TickerStatus]" = []
     for ticker in tickers:
         if ticker == "SPAXX":
-            p, st = _bil_for_spaxx(get_inception_date(account_id=account_id), end)
+            price_cols[ticker], st = _spaxx_levels(account_id, end, date_range)
             statuses.append(st)
-            try:
-                p.index = pd.to_datetime(p.index)
-                series = total_return_series(p)
-                p0 = series.first_valid_index()
-                if p0 is not None and float(series[p0]) > 0:
-                    series = series / float(series[p0])  # normalize to $1.00
-                price_cols[ticker] = series.reindex(date_range).ffill()
-            except Exception:
-                price_cols[ticker] = pd.Series(1.0, index=date_range)
             factor_cols[ticker] = price_cols[ticker]
         else:
             p, st = _price_and_status(ticker, start_date, end, account_id=account_id)
@@ -676,9 +827,9 @@ def _valuation_levels(
                 continue
             try:
                 p.index = pd.to_datetime(p.index)
-                series = total_return_series(p)
+                series = p["close"].astype(float) if raw else total_return_series(p)
                 price_cols[ticker] = series.reindex(date_range).ffill()
-                factor = (series / p["close"] if "close" in p.columns
+                factor = (series / p["close"] if "close" in p.columns and not raw
                           else pd.Series(1.0, index=p.index))
                 factor_cols[ticker] = factor.reindex(date_range).ffill()
             except Exception:
@@ -722,6 +873,13 @@ def get_external_cashflow_series(
     functions (src/returns.py) and compute_risk_metrics (src/performance.py) net
     out so that deposited cash is not counted as market return.
 
+    UNDER THE RAW-CLOSE RULE, THE LEDGER'S DOLLARS (#369, decided by the owner on
+    October 28, 2026): shares × the trade's price + fees for a buy, −shares × price +
+    fees for a sell, DRIP lots excluded, since each is paid from its dividend's income.
+    The value series counts a share at its close there, so there is nothing to convert,
+    and inside a raw-close lock the trades come from the ledger the lock holds. The rest
+    of this docstring is the adjusted-levels rule, every lock taken before the marker.
+
     IN THE VALUE SERIES' UNITS, NOT THE LEDGER'S DOLLARS (#687, convention chosen by
     the owner on October 27, 2026). The TWR's step is
     r_t = (V_t − V_{t−1} − CF_t) / V_{t−1}, and get_portfolio_value_series counts a
@@ -761,6 +919,20 @@ def get_external_cashflow_series(
     account_id = _require_account_id(account_id)
     end = end_date or date.today().isoformat()
     date_range = pd.date_range(start=start_date, end=end, freq="D")
+
+    from src.cache import RAW_CLOSE_RULE, valuation_in_force
+    rule, ledger = valuation_in_force()
+    if rule == RAW_CLOSE_RULE:
+        book = _account_ledger(account_id, ledger)
+        book = book[(book["trade_date"] >= start_date) & (book["trade_date"] <= end)
+                    & (book["lot_source"] != "drip")]
+        flows = pd.Series(0.0, index=date_range)
+        for r in book.itertuples(index=False):
+            ts = pd.Timestamp(r.trade_date)
+            if ts in flows.index:
+                signed = r.shares if r.action.lower() == "buy" else -r.shares
+                flows[ts] += float(signed) * float(r.price) + float(r.fees)
+        return flows
 
     with get_connection() as conn:
         rows = conn.execute(
@@ -914,18 +1086,16 @@ def _sleeve_weights_impl(date_str: str) -> "tuple[pd.DataFrame, list[TickerStatu
 
 def get_current_market_value(date_str: Optional[str] = None) -> float:
     """True current account market value for DISPLAY: every share actually held
-    (including DRIP lots) valued at the latest RAW close, plus cash.
-
-    This is DISTINCT from get_portfolio_value_series (adj_close × NON-DRIP shares),
-    which is the total-return series used for RETURNS. DRIP shares are real shares
-    with real market worth, so they belong in the dollar value — even though
-    adj_close already embeds their income for return purposes. The two answer
-    different questions (what is the account worth today vs. what was the
-    total return), so they use different share bases.
-
-    Display-only: this figure must not feed any return calculation. Mirrors the
-    valuation in get_sleeve_weights_on_date (raw close; SPAXX proxied via
+    (including DRIP lots) valued at the latest RAW close, plus cash (SPAXX proxied via
     BIL adj_close normalized to $1 at inception).
+
+    UNDER THE RAW-CLOSE RULE, live reads (#369), it also holds the income line
+    (dividend_income), and it is the value series' last value: returns and the current
+    value share one basis. Under adjusted levels, inside a lock taken before the marker,
+    it holds no income line and is DISTINCT from get_portfolio_value_series there
+    (adj_close × NON-DRIP shares, the total-return series used for that lock's returns).
+
+    Display-only: this figure must not feed any return calculation.
     """
     value, _statuses = _current_market_value_impl(date_str)
     return value
@@ -959,12 +1129,15 @@ def _current_market_value_impl(
     if holdings.empty:
         return 0.0, statuses
 
+    raw = _raw_close_on(d, account_id=account_id)
     total = 0.0
     for ticker, row in holdings.iterrows():
         shares = float(row["net_shares"])
         if ticker == "SPAXX":
             price, st = _spaxx_price(d)
             statuses.append(st)
+            if raw is not None:
+                shares = raw.spaxx_units
         else:
             p, st = _price_and_status(ticker, look_back_start(ticker, d), d,
                                       account_id=account_id)
@@ -976,7 +1149,57 @@ def _current_market_value_impl(
                              served_through=None)
             statuses.append(st)
         total += shares * price
+    if raw is not None:
+        total += raw.income
+        if raw.status is not None and "SPAXX" not in holdings.index:
+            statuses.append(raw.status)
     return round(total, 2), statuses
+
+
+class _RawCloseOn(NamedTuple):
+    spaxx_units: float              # SPAXX units its trades hold (_spaxx_units)
+    income: float                   # the income line's value (_dividend_income)
+    status: "TickerStatus | None"   # SPAXX's, when the income line holds SPAXX
+
+
+def _raw_close_on(d: str, *, account_id: int) -> "_RawCloseOn | None":
+    """What the raw-close rule adds to the current value on ``d``, read as the value
+    series reads it: the SPAXX units the trades hold, and the income line's value, its
+    SPAXX part at SPAXX's level on ``d``. None under adjusted levels, which hold neither."""
+    from src.cache import RAW_CLOSE_RULE, valuation_in_force
+    rule, ledger = valuation_in_force()
+    if rule != RAW_CLOSE_RULE:
+        return None
+    book = _account_ledger(account_id, ledger)
+    book = book[book["trade_date"] <= d]
+    if book.empty:
+        return _RawCloseOn(0.0, 0.0, None)
+    signed = book["shares"].where(book["action"].str.lower() == "buy", -book["shares"])
+    days = pd.date_range(start=book["trade_date"].min(), end=d, freq="D")
+    held = (signed.groupby([pd.to_datetime(book["trade_date"]), book["ticker"]]).sum()
+            .unstack(fill_value=0).reindex(days, fill_value=0).cumsum().clip(lower=0))
+    spaxx_units = 0.0
+    spaxx = book[book["ticker"] == "SPAXX"]
+    if not spaxx.empty:
+        level, _st = _spaxx_levels(account_id, d, days)
+        bought = [_spaxx_units(float(n) * float(px), level.get(pd.Timestamp(t)))
+                  for n, px, t in zip(signed[spaxx.index], spaxx["price"], spaxx["trade_date"])]
+        spaxx_units = max(sum(bought), 0.0)
+    units, pending = _dividend_income(book, held, d, account_id=account_id)
+    income = float(pending.iloc[-1])
+    if float(units.iloc[-1]) <= 0:
+        return _RawCloseOn(spaxx_units, income, None)
+    price, st = _spaxx_price(d)
+    return _RawCloseOn(spaxx_units, income + float(units.iloc[-1]) * price, st)
+
+
+def dividend_income(date_str: Optional[str] = None) -> float:
+    """What the current market value holds of dividend income on ``date_str`` (#369):
+    income a DRIP lot has yet to be paid from, at its amount, and income taken in cash,
+    in SPAXX at BIL's total return from its ex-date. 0.0 under adjusted levels."""
+    d = date_str or date.today().isoformat()
+    raw = _raw_close_on(d, account_id=get_portfolio_account_id())
+    return raw.income if raw is not None else 0.0
 
 
 def valuation_tickers(date_str: Optional[str] = None) -> "set[str]":
@@ -1016,14 +1239,19 @@ def spaxx_modeled_income(date_str: Optional[str] = None) -> float:
     """What the current market value adds for SPAXX above its $1.00 NAV: the
     money-market income modeled at BIL's total return (see _spaxx_price). The
     Performance page's current value includes it; the Tax Lots page values SPAXX
-    at NAV, as its lots are recorded. The two pages' market values differ by exactly
-    this, and their unrealized gains do not differ at all. 0.0 with no SPAXX held."""
+    at NAV, as its lots are recorded, and holds no dividend income (dividend_income).
+    The two pages' market values differ by exactly those two, and their unrealized
+    gains do not differ at all. 0.0 with no SPAXX held."""
     d = date_str or date.today().isoformat()
-    holdings = get_holdings_on_date(d, account_id=get_portfolio_account_id())
+    account_id = get_portfolio_account_id()
+    holdings = get_holdings_on_date(d, account_id=account_id)
     if "SPAXX" not in holdings.index:
         return 0.0
     price, _st = _spaxx_price(d)
-    return float(holdings.loc["SPAXX", "net_shares"]) * (price - 1.0)
+    nav = float(holdings.loc["SPAXX", "net_shares"])
+    # Under the raw-close rule SPAXX holds the units its trades bought (_spaxx_units).
+    raw = _raw_close_on(d, account_id=account_id)
+    return raw.spaxx_units * price - nav if raw is not None else nav * (price - 1.0)
 
 
 def get_inception_date(

@@ -26,7 +26,7 @@ from src.harvest import (
     HARVEST_PCT_THRESHOLD,
     compute_harvest_candidates,
 )
-from src.holdings import spaxx_modeled_income
+from src.holdings import dividend_income, spaxx_modeled_income
 from src.prices import get_prices
 from src.config import get_demo_banner_text, IS_DEMO
 from src.ui_helpers import demo_portfolio_phrase, render_footer, render_page_header
@@ -205,13 +205,24 @@ with c6:
             f"(threshold: ${HARVEST_MATERIALITY_THRESHOLD:.0f}/lot)"
         )
 
-_spaxx_income = spaxx_modeled_income(date.today().isoformat())
-if round(_spaxx_income, 2):
+# The Performance page's current value adds two lines this page's lots do not hold
+# (#369): SPAXX's money-market income above its $1.00 NAV, and dividend income from each
+# ex-date. Each clause is said only when its figure rounds to a cent or more.
+_spaxx_income = round(spaxx_modeled_income(date.today().isoformat()), 2) + 0.0
+_div_income = round(dividend_income(date.today().isoformat()), 2) + 0.0
+_adds = []
+if _spaxx_income:
+    _adds.append(f"\\${_spaxx_income:,.2f} of money-market income on SPAXX, modeled at "
+                 f"BIL's total return, which the ledger does not record as shares (SPAXX "
+                 f"is valued here at its \\$1.00 NAV, as its lots are recorded)")
+if _div_income:
+    _adds.append(f"\\${_div_income:,.2f} of dividend income, counted from each ex-date "
+                 f"until a DRIP lot reinvests it or, where none does, held in SPAXX")
+if _adds:
     st.caption(
-        f"SPAXX is valued at its \\$1.00 NAV, as its lots are recorded. The Performance "
-        f"page's current value is \\${_spaxx_income:,.2f} higher: it adds the "
-        f"money-market income modeled at BIL's total return, which the ledger does not "
-        f"record as shares. Unrealized G/L is the same on both pages."
+        f"The Performance page's current value is "
+        f"\\${_spaxx_income + _div_income:,.2f} higher: it adds "
+        f"{' and '.join(_adds)}. Unrealized G/L is the same on both pages."
     )
 
 st.divider()
