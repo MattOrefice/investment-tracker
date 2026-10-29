@@ -208,8 +208,9 @@ with c6:
 # The Performance page's current value adds two lines this page's lots do not hold
 # (#369): SPAXX's money-market income above its $1.00 NAV, and dividend income from each
 # ex-date. Each clause is said only when its figure rounds to a cent or more.
-_spaxx_income = round(spaxx_modeled_income(date.today().isoformat()), 2) + 0.0
-_div_income = round(dividend_income(date.today().isoformat()), 2) + 0.0
+# On New York's date, as the page's figures are (#443).
+_spaxx_income = round(spaxx_modeled_income(TODAY), 2) + 0.0
+_div_income = round(dividend_income(TODAY), 2) + 0.0
 _adds = []
 if _spaxx_income:
     _adds.append(f"\\${_spaxx_income:,.2f} of money-market income on SPAXX, modeled at "
