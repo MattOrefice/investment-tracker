@@ -62,7 +62,9 @@ def _holding_symbols():
     if holdings_csv is None or not holdings_csv.exists():
         pytest.skip("Holdings CSV not present (personal-mode file)")
     df = parse_fidelity_csv(str(holdings_csv))
-    return set(df["symbol"].dropna().unique())
+    # The export's pending-activity line is cash in its account, not a held security
+    # (#705): it has no securities row to be ready.
+    return set(df["symbol"].dropna().unique()) - {"Pending activity"}
 
 
 # ── Base DB fixture ────────────────────────────────────────────────────────────
