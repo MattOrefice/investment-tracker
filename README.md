@@ -5,7 +5,6 @@ Multi-asset portfolio analytics with institutional-grade performance attribution
 **Live demo:** [mattorefice-investment.streamlit.app](https://mattorefice-investment.streamlit.app/) &nbsp;·&nbsp; ![CI](https://github.com/MattOrefice/investment-tracker/actions/workflows/ci.yml/badge.svg) &nbsp;·&nbsp; [![Live Data Tests](https://github.com/MattOrefice/investment-tracker/actions/workflows/live-data.yml/badge.svg)](https://github.com/MattOrefice/investment-tracker/actions/workflows/live-data.yml)
 
 Built by [Matt Orefice, CFA](https://www.linkedin.com/in/matthew-orefice-cfa-83536b190/).
-Available for buy-side allocator and investment due diligence roles.
 
 ---
 
@@ -204,4 +203,4 @@ MIT. See `LICENSE`.
 
 ## Author
 
-Matt Orefice, CFA (April 2026). Former Investment Data Analyst II at MissionSquare Retirement. Contact via [LinkedIn](https://www.linkedin.com/in/matthew-orefice-cfa-83536b190/).
+Matt Orefice, CFA (April 2026). Contact via [LinkedIn](https://www.linkedin.com/in/matthew-orefice-cfa-83536b190/).
