@@ -20,7 +20,7 @@ to a live personal portfolio:
 - Automated quarterly PDF reporting (WeasyPrint, kaleido static chart rendering)
 - Dual-mode architecture: local personal portfolio and public demo on Streamlit Cloud
 
-CFA charterholder (April 2026) | Previously: portfolio analytics at MissionSquare
+CFA charterholder (April 2026)
 
 Live demo: https://mattorefice-investment.streamlit.app/
 GitHub: https://github.com/MattOrefice/investment-tracker
@@ -43,8 +43,7 @@ structure. Macro context integrates CAPE, yield curve slope, and credit spreads 
 FRED, with historical percentiles for each indicator.
 
 The primary public artifact is an automated quarterly PDF report, generated directly
-from the live demo. CFA charterholder (April 2026); previously in portfolio analytics
-at MissionSquare.
+from the live demo. CFA charterholder (April 2026).
 
 Live demo: https://mattorefice-investment.streamlit.app/
 GitHub: https://github.com/MattOrefice/investment-tracker
@@ -56,7 +55,7 @@ GitHub: https://github.com/MattOrefice/investment-tracker
 - Version A is more scannable for a quick profile view; better if the audience is
   likely to skim rather than read.
 - Version B reads more naturally as prose; better if the audience will read the full
-  entry (more common for direct outreach or cover letter context).
+  entry.
 - Either version can be shortened by removing one bullet (A) or one sentence (B)
   if the platform's character limit is tight.
 - The GitHub URL should link to the public repo once it is flipped to public.

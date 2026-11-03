@@ -140,10 +140,6 @@ def _landing_page_render():
             color: #1e3a5f;
             font-weight: 600;
         }
-        .endow-byline-suffix {
-            color: #4b5563;
-            font-weight: 400;
-        }
         .endow-recency {
             color: #6b7280;
             font-style: italic;
@@ -226,7 +222,7 @@ def _landing_page_render():
         f"""
         <h1 class="endow-title">Investment Analytics Tracker</h1>
         <p class="endow-tagline">Multi-asset portfolio analytics: performance attribution, factor regression, and macro regime monitoring.</p>
-        <p><span class="endow-byline">Built by Matt Orefice, CFA</span><span class="endow-byline-suffix"> · Available for buy-side allocator and investment due diligence roles</span></p>
+        <p><span class="endow-byline">Built by Matt Orefice, CFA</span></p>
         <p class="endow-recency"><em>{as_of_banner()}</em></p>
         <hr class="endow-rule">
         """,

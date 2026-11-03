@@ -57,10 +57,6 @@ def render_sidebar_footer() -> None:
             "[LinkedIn](https://www.linkedin.com/in/matthew-orefice-cfa-83536b190/)  \n"
             "[GitHub](https://github.com/MattOrefice/investment-tracker)"
         )
-        st.caption(
-            "Available for buy-side allocator and "
-            "investment due diligence roles."
-        )
 
 
 # A page built from the trade ledger, on a book the portfolio-account lookup resolves
