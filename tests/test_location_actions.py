@@ -675,7 +675,7 @@ AUTHORED_PROSE_LEN = {
     "relocate_loss_side":        (438, 885),
     "relocate_gain_side":        (383, 338),
     "thematic_sprawl":           (208, 772),
-    "rollover_401k":             (524, 353),
+    "rollover_401k":             (477, 927),
     "frozen_tod_income":         (408, 508),
     "saa_sleeves_taxable":       (349, 669),
     "predeploy_stranded_equity": (334, 540),
