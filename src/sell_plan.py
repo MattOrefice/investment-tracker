@@ -15,6 +15,13 @@ Whole positions are sold until the next one would raise more than is still neede
 that one is sold in part. A partial sale's cost basis and gain are pro rata to the
 position's totals in the positions file: the lots actually sold decide the real figure.
 
+Fidelity's pending-activity line is cash in its account (#705). It nets against that
+account's cash before anything else. A positive amount is cash the plan can use. A
+negative amount is cash already spoken for: it lowers the account's cash, and if it
+takes the cash below zero, the account's own sales cover the gap first, in the plan's
+order, so the plan raises the amount asked plus the gap. It is never a sale of its own
+in the negative, and it gets no ticker, cost basis, gain or wash-sale check.
+
 A position at a loss whose ticker is also held in ANOTHER account is skipped and flagged
 rather than sold. A purchase of the same ticker in that account within the wash-sale
 window would disallow the loss (IRS Publication 550, the page cites it). Only the same
@@ -32,14 +39,19 @@ from dataclasses import dataclass
 import pandas as pd
 
 from src.household import look_through_position
+from src.ingestion.fidelity import PENDING_ACTIVITY_LABEL, is_pending_activity
 
 # ── Groups, in the order the plan sells them ──────────────────────────────────
 GROUP_CASH = "cash"
 GROUP_LOSS = "loss"
 GROUP_GAIN = "gain"
 GROUP_ORDER: tuple[str, ...] = (GROUP_CASH, GROUP_LOSS, GROUP_GAIN)
+GROUP_PENDING = "pending"
 GROUP_LABEL: dict[str, str] = {
     GROUP_CASH: "Cash and money market",
+    # A positive pending-activity line, used as the cash it is (#705). It sells with
+    # the cash group; this key only labels it.
+    GROUP_PENDING: "Pending activity (cash)",
     GROUP_LOSS: "At a loss",
     GROUP_GAIN: "Lowest gain as a share of cost",
 }
@@ -50,9 +62,8 @@ GROUP_LABEL: dict[str, str] = {
 WASH_SALE_WINDOW_DAYS: int = 30
 
 # Fidelity's export carries a line for cash still settling, with a value and no
-# security. It is cash in the account, so the allocation counts it as cash, and the
-# plan never picks it: it is not a holding that can be sold.
-PENDING_ACTIVITY = "pending activity"
+# security (src.ingestion.fidelity.is_pending_activity). It is cash in its account.
+PENDING_ACTIVITY = PENDING_ACTIVITY_LABEL
 
 # ── The eight broad classes, in the order the page shows them ─────────────────
 US_STOCKS = "US stocks"
@@ -118,15 +129,22 @@ ROOT_BROAD_CLASS: dict[str, str] = {
 }
 
 _PICK_COLUMNS = ["account", "pseudonym", "symbol", "group", "shares", "value",
-                 "cost_basis", "realized_gain", "partial"]
+                 "cost_basis", "realized_gain", "partial", "pending_covered"]
+_GAP_COLUMNS = ["account", "pseudonym", "pending", "cash", "gap", "covered"]
 _WASH_COLUMNS = ["account", "pseudonym", "symbol", "value", "loss", "also_held_in"]
 _NO_BASIS_COLUMNS = ["account", "pseudonym", "symbol", "value"]
 
 
 @dataclass(frozen=True)
 class SellPlan:
-    """What to sell, and what it raises. ``shortfall`` is what the taxable holdings the
-    plan may sell could not cover; it is 0.0 when the amount is met."""
+    """What to sell, and what it raises.
+
+    ``target`` is what the plan must raise: ``amount`` plus every account's pending
+    gap (``pending_gaps``: a negative pending-activity line deeper than the account's
+    cash). ``shortfall`` is what the taxable holdings the plan may sell could not
+    cover of the target; it is 0.0 when the target is met. A pick's
+    ``pending_covered`` is the part of its value that pays its account's gap rather
+    than the amount."""
     amount: float
     picks: pd.DataFrame
     raised: float
@@ -134,15 +152,21 @@ class SellPlan:
     shortfall: float
     wash_sale_skips: pd.DataFrame
     no_basis_skips: pd.DataFrame
+    target: float = 0.0
+    pending_gaps: "pd.DataFrame | None" = None
 
 
 def _is_pending(symbol: str) -> bool:
-    return str(symbol).strip().lower() == PENDING_ACTIVITY
+    return is_pending_activity(symbol)
 
 
 def _aggregate(positions_df: pd.DataFrame) -> pd.DataFrame:
     """One row per (pseudonym, symbol): a symbol listed twice in one account is one
-    position. A column with no value in any of its rows stays missing, not 0."""
+    position. A column with no value in any of its rows stays missing, not 0. Every
+    pending-activity line in an account is one row, under PENDING_ACTIVITY_LABEL."""
+    positions_df = positions_df.assign(symbol=[
+        PENDING_ACTIVITY_LABEL if is_pending_activity(x) else x
+        for x in positions_df["symbol"]])
     return (
         positions_df
         .groupby(["pseudonym", "symbol"], as_index=False, sort=False)
@@ -190,9 +214,12 @@ def build_sell_plan(
     for p, s in zip(held["pseudonym"], held["symbol"]):
         accounts_holding.setdefault(str(s), set()).add(str(p))
 
-    pos = _aggregate(positions_df)
-    pos = pos[pos["pseudonym"].isin(taxable) & (pos["current_value"] > 0)
-              & ~pos["symbol"].map(_is_pending)]
+    agg = _aggregate(positions_df)
+    agg = agg[agg["pseudonym"].isin(taxable)]
+    is_pend = agg["symbol"].map(_is_pending)
+    pending_by_acct = {str(p): float(v) for p, v in
+                       zip(agg.loc[is_pend, "pseudonym"], agg.loc[is_pend, "current_value"])}
+    pos = agg[~is_pend & (agg["current_value"] > 0)]
 
     candidates, wash, no_basis = [], [], []
     for r in pos.itertuples(index=False):
@@ -201,7 +228,8 @@ def build_sell_plan(
                "symbol": symbol, "value": float(r.current_value)}
         if sleeve.get(symbol) == "cash":
             candidates.append({**row, "group": GROUP_CASH, "quantity": r.quantity,
-                               "cost_basis": float("nan"), "gain": 0.0, "share": 0.0})
+                               "cost_basis": float("nan"), "gain": 0.0, "share": 0.0,
+                               "label": GROUP_CASH})
             continue
         if pd.isna(r.cost_basis_total) or pd.isna(r.total_gain_loss) or r.cost_basis_total <= 0:
             no_basis.append(row)
@@ -217,7 +245,37 @@ def build_sell_plan(
         else:
             group = GROUP_GAIN
         candidates.append({**row, "group": group, "quantity": r.quantity,
-                           "cost_basis": cost, "gain": gain, "share": gain / cost})
+                           "cost_basis": cost, "gain": gain, "share": gain / cost,
+                           "label": group})
+
+    # ── Pending activity nets against its account's cash (#705) ──────────────────
+    # Positive: cash the plan can use, a cash candidate with no ticker or basis.
+    # Negative: it lowers the account's cash candidates, largest first; what the cash
+    # cannot absorb is the account's gap, which its own sales cover before the amount.
+    for c in candidates:
+        c["left"] = c["value"]        # what the plan may still take of the position
+    gaps = []
+    for pseudonym, pend in sorted(pending_by_acct.items()):
+        account = names.get(pseudonym, pseudonym)
+        cash = [c for c in candidates
+                if c["pseudonym"] == pseudonym and c["group"] == GROUP_CASH]
+        if pend > 0:
+            candidates.append({"account": account, "pseudonym": pseudonym,
+                               "symbol": PENDING_ACTIVITY_LABEL, "value": pend,
+                               "left": pend, "group": GROUP_CASH,
+                               "quantity": float("nan"), "cost_basis": float("nan"),
+                               "gain": 0.0, "share": 0.0, "label": GROUP_PENDING})
+        elif pend < 0:
+            owed = -pend
+            for c in sorted(cash, key=lambda c: -c["value"]):
+                absorbed = min(c["left"], owed)
+                c["left"] -= absorbed
+                owed -= absorbed
+            if owed > 0.005:
+                gaps.append({"account": account, "pseudonym": pseudonym,
+                             "pending": round(pend, 2),
+                             "cash": round(sum(c["value"] for c in cash), 2),
+                             "gap": round(owed, 2), "covered": 0.0})
 
     rank = {g: i for i, g in enumerate(GROUP_ORDER)}
     # Cash largest first; losses and gains by gain as a share of cost, lowest first.
@@ -225,38 +283,80 @@ def build_sell_plan(
     candidates.sort(key=lambda c: (rank[c["group"]],
                                    c["share"] if c["group"] != GROUP_CASH else 0.0,
                                    -c["value"], c["account"], c["symbol"]))
-
-    picks, remaining = [], amount
     for c in candidates:
-        if remaining <= 0.005:
-            break
-        whole = c["value"] <= remaining + 0.005
-        f = 1.0 if whole else remaining / c["value"]
-        value = c["value"] if whole else remaining
+        c["taken"], c["covered"] = 0.0, 0.0
+
+    def _walk(pool: list, need: float, covers_gap: bool) -> float:
+        """Take from ``pool`` in order until ``need`` is met; return what is left."""
+        for c in pool:
+            if need <= 0.005:
+                break
+            take = min(c["left"], need)
+            if take <= 0.005:
+                continue
+            c["left"] -= take
+            c["taken"] += take
+            if covers_gap:
+                c["covered"] += take
+            need -= take
+        return max(0.0, need)
+
+    if amount > 0:
+        # Each account's gap first, from that account's own candidates in plan order;
+        # then the amount, from every candidate in plan order.
+        for g in gaps:
+            pool = [c for c in candidates if c["pseudonym"] == g["pseudonym"]]
+            g["covered"] = round(g["gap"] - _walk(pool, g["gap"], True), 2)
+        _walk(candidates, amount, False)
+
+    picks = []
+    for c in candidates:
+        if c["taken"] <= 0.005:
+            continue
+        whole = c["taken"] >= c["value"] - 0.005
+        f = 1.0 if whole else c["taken"] / c["value"]
         picks.append({
             "account": c["account"], "pseudonym": c["pseudonym"], "symbol": c["symbol"],
-            "group": c["group"],
+            "group": c["label"],
             "shares": (float(c["quantity"]) * f if pd.notna(c["quantity"]) else float("nan")),
-            "value": round(value, 2),
+            "value": round(c["taken"], 2),
             "cost_basis": (round(c["cost_basis"] * f, 2) if pd.notna(c["cost_basis"])
                            else float("nan")),
             "realized_gain": round(c["gain"] * f, 2),
             "partial": not whole,
+            "pending_covered": round(c["covered"], 2),
         })
-        remaining -= value
 
     picks_df = pd.DataFrame(picks, columns=_PICK_COLUMNS)
+    gaps_df = pd.DataFrame(gaps, columns=_GAP_COLUMNS)
     raised = round(float(picks_df["value"].sum()), 2) if not picks_df.empty else 0.0
     realized = round(float(picks_df["realized_gain"].sum()), 2) if not picks_df.empty else 0.0
+    target = round(amount + float(gaps_df["gap"].sum()), 2) if amount > 0 else 0.0
     return SellPlan(
         amount=round(amount, 2),
         picks=picks_df,
         raised=raised,
         realized_gain=realized,
-        shortfall=round(max(0.0, amount - raised), 2),
+        shortfall=round(max(0.0, target - raised), 2),
         wash_sale_skips=pd.DataFrame(wash, columns=_WASH_COLUMNS),
         no_basis_skips=pd.DataFrame(no_basis, columns=_NO_BASIS_COLUMNS),
+        target=target,
+        pending_gaps=gaps_df,
     )
+
+
+def plan_sales(plan: SellPlan) -> pd.DataFrame:
+    """The plan as ``allocation_table`` takes it: each pick's value off its position,
+    and each account's covered gap back onto its pending-activity line, which those
+    sales settle. Proceeds beyond the gap leave the household."""
+    sales = plan.picks[["pseudonym", "symbol", "value"]].copy()
+    gaps = plan.pending_gaps
+    if gaps is not None and not gaps.empty:
+        settle = pd.DataFrame({"pseudonym": gaps["pseudonym"],
+                               "symbol": PENDING_ACTIVITY_LABEL,
+                               "value": -gaps["covered"].astype(float)})
+        sales = pd.concat([sales, settle[settle["value"] < 0]], ignore_index=True)
+    return sales
 
 
 def whole_position_sales(positions_df: pd.DataFrame, pseudonym: str,
@@ -285,10 +385,17 @@ def _after_sales(positions: pd.DataFrame, sales: "pd.DataFrame | None") -> pd.Da
             raise ValueError(f"a sale of {s.symbol} in {s.pseudonym} matches "
                              f"{int(hit.sum())} positions, not one.")
         held = float(after.loc[hit, "current_value"].iloc[0])
-        if float(s.value) > held + 0.01:
+        left = held - float(s.value)
+        if _is_pending(s.symbol):
+            # The pending line moves toward zero, never past it: a positive line is
+            # used as cash, a negative one is settled by the account's sales.
+            if not min(held, 0.0) - 0.01 <= left <= max(held, 0.0) + 0.01:
+                raise ValueError(f"{s.value:,.2f} against the {held:,.2f} pending in "
+                                 f"{s.pseudonym} would carry the line past zero.")
+        elif float(s.value) > held + 0.01:
             raise ValueError(f"a sale of {s.value:,.2f} of {s.symbol} in {s.pseudonym} "
                              f"is more than the {held:,.2f} held.")
-        after.loc[hit, "current_value"] = held - float(s.value)
+        after.loc[hit, "current_value"] = left
     return after
 
 

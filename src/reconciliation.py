@@ -25,6 +25,7 @@ from datetime import date
 import pandas as pd
 
 from src.holdings import get_holdings_on_date
+from src.ingestion.fidelity import is_pending_activity
 
 
 def reconcile_account_shares(
@@ -39,7 +40,9 @@ def reconcile_account_shares(
 
     ``positions_df`` is the parsed Fidelity positions frame (columns include
     ``pseudonym``, ``symbol``, ``quantity``). SPAXX/cash rows, whose "quantity"
-    is a dollar balance rather than a share count, are excluded from the compare.
+    is a dollar balance rather than a share count, are excluded from the compare,
+    and so is the export's pending-activity line: it is cash in the account, part
+    of the export's cash, never a ticker the ledger could hold (#705).
 
     Returns a DataFrame with columns [ticker, trade_shares, position_qty, diff],
     EMPTY when every ticker balances within ``tol``. Empty == reconciled.
@@ -52,7 +55,8 @@ def reconcile_account_shares(
         else pd.Series(dtype=float, name="net_shares")
     )
 
-    pos = positions_df[positions_df["pseudonym"] == pseudonym]
+    pos = positions_df[(positions_df["pseudonym"] == pseudonym)
+                       & ~positions_df["symbol"].map(is_pending_activity)]
     pos_qty = (
         pos[pos["symbol"] != "SPAXX"]
         .groupby("symbol")["quantity"].sum()

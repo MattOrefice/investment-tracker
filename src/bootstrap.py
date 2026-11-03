@@ -167,9 +167,10 @@ def unmapped_holdings(
         return UnmappedCheck("no_holdings", {})
 
     try:
-        from src.ingestion.fidelity import parse_fidelity_csv
+        from src.ingestion.fidelity import is_pending_activity, parse_fidelity_csv
         parsed = parse_fidelity_csv(str(csv_path), account_map_path=account_map_path)
-        held = sorted({s for s in parsed["symbol"].dropna()})
+        # The pending-activity line is cash in its account, not a security to map (#705).
+        held = sorted({s for s in parsed["symbol"].dropna() if not is_pending_activity(s)})
     except Exception as exc:                            # unreadable / unmapped account
         logger.warning("unmapped_holdings: could not parse %s", csv_path, exc_info=True)
         # PARSED, not read: the likeliest failure is the account-map step inside the

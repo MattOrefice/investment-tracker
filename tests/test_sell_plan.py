@@ -217,12 +217,17 @@ def test_a_position_with_no_cost_basis_is_skipped_not_guessed():
     assert list(plan.picks["symbol"]) == ["L_DEEP"]
 
 
-def test_pending_activity_is_never_picked():
+def test_a_positive_pending_line_is_cash_the_plan_uses():
+    """It read "never picked" until #705's decision: a positive pending-activity line is
+    cash in its account, so the plan uses it with the account's cash, never as a
+    security (tests/test_pending_activity.py pins the negative and zero lines)."""
     sp = _sp()
     book = pd.DataFrame([_pos("tax_a", "Pending activity", 25.0, quantity=NAN),
                          _pos("tax_a", "MMF", 100.0, quantity=NAN)])
     plan = sp.build_sell_plan(1_000.0, book, ACCOUNTS, SECURITIES)
-    assert list(plan.picks["symbol"]) == ["MMF"]
+    assert list(plan.picks["symbol"]) == ["MMF", "Pending activity"]
+    assert list(plan.picks["group"]) == ["cash", sp.GROUP_PENDING]
+    assert plan.raised == pytest.approx(125.0)
 
 
 # ── Allocation before and after, looked through ───────────────────────────────────
@@ -300,16 +305,20 @@ def test_the_allocation_looks_blends_through_before_and_after_the_sales():
 
 
 def test_a_plans_picks_feed_the_allocation_as_its_sales():
+    """tax_a's -50 pending line nets against its MMF (#705), so the plan can use 500
+    of MMF's 550; the 50 it leaves settles the line."""
     sp = _sp()
     book = _alloc_book()
-    plan = sp.build_sell_plan(700.0, book, ACCOUNTS, ALLOC_SECURITIES)
+    plan = sp.build_sell_plan(650.0, book, ACCOUNTS, ALLOC_SECURITIES)
     assert list(plan.picks["symbol"]) == ["MMF", "COIN"] and plan.picks.iloc[-1]["partial"]
+    assert list(plan.picks["value"]) == [pytest.approx(500.0), pytest.approx(150.0)]
     t = sp.allocation_table(book, ALLOC_SECURITIES, COMPOSITIONS,
                             sp.policy_targets(ASSET_CLASSES, ALLOC_SECURITIES),
-                            plan.picks[["pseudonym", "symbol", "value"]]).set_index("broad_class")
-    assert t.loc[sp.CASH, "after_value"] == pytest.approx(600 - 550)
+                            sp.plan_sales(plan)).set_index("broad_class")
+    # Cash before: MMF 550, the line -50 and BLEND's 100 look-through cash.
+    assert t.loc[sp.CASH, "after_value"] == pytest.approx(600 - 500)
     assert t.loc[sp.ALTERNATIVES, "after_value"] == pytest.approx(200 - 150)
-    assert t["after_value"].sum() == pytest.approx(10_000 - 700)
+    assert t["after_value"].sum() == pytest.approx(10_000 - 650)
 
 
 def test_whole_position_sales_names_what_it_sells_and_refuses_what_is_not_held():

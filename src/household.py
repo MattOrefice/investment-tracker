@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from src.ingestion.fidelity import is_pending_activity
+
 _PERF_COLS  = ["account_pseudonym", "return_type", "period", "return_pct", "si_start_date", "source"]
 _BENCH_COLS = ["benchmark_name", "period", "return_pct", "as_of_range", "source"]
 _PERF_PERIODS = ("1M", "3M", "YTD", "1Y", "3Y", "5Y", "SI")
@@ -80,9 +82,14 @@ def look_through_position(
     If no composition exists, returns a single row using the security's
     sleeve_category from securities_df.
 
+    The export's pending-activity line (``is_pending_activity``) is cash in its
+    account: one row in the ``cash`` sleeve, with no securities row needed (#705).
+
     Raises ValueError if the symbol has neither a composition nor a
     sleeve_category — this is a hard guard against silent mis-aggregation.
     """
+    if is_pending_activity(symbol):
+        return pd.DataFrame([{"sleeve": "cash", "dollar_value": dollar_value}])
     comp = compositions_df[compositions_df["fund_symbol"] == symbol]
     if not comp.empty:
         return pd.DataFrame({
@@ -344,7 +351,8 @@ def compute_household_allocation(
         else:
             sec = securities_df[securities_df["ticker"] == symbol]
             sleeve = (
-                str(sec.iloc[0]["sleeve_category"])
+                "cash" if is_pending_activity(symbol)       # cash in its account (#705)
+                else str(sec.iloc[0]["sleeve_category"])
                 if not sec.empty and sec.iloc[0].get("sleeve_category")
                 else "unknown"
             )
@@ -517,6 +525,8 @@ def compute_sleeve_by_account(
     """
     sec = securities_df[["ticker", "sleeve_category"]].copy()
     joined = positions_df.merge(sec, left_on="symbol", right_on="ticker", how="left")
+    # The pending-activity line is cash in its account, not an unmapped ticker (#705).
+    joined.loc[joined["symbol"].map(is_pending_activity), "sleeve_category"] = "cash"
     joined["sleeve_category"] = joined["sleeve_category"].fillna("unknown")
 
     sleeve_by_acct = (
@@ -1030,8 +1040,9 @@ def _relocation_is_categorically_wrong(sleeve_key: str) -> bool:
 def compute_embedded_gain(positions_df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
     """Per (pseudonym, symbol) embedded gain and cost basis from the ingest frame.
 
-    Rows with NaN total_gain_loss or cost_basis_total (cash / money-market lines)
-    are EXCLUDED, never zero-filled — a NaN gain is 'not applicable', not $0.
+    Rows with NaN total_gain_loss or cost_basis_total (cash / money-market lines,
+    and the pending-activity line, which is cash) are EXCLUDED, never zero-filled —
+    a NaN gain is 'not applicable', not $0.
 
     Returns (df, n_excluded):
       df: columns [pseudonym, symbol, embedded_gain, cost_basis, gain_pct]
@@ -1039,7 +1050,8 @@ def compute_embedded_gain(positions_df: pd.DataFrame) -> tuple[pd.DataFrame, int
     """
     cols = ["pseudonym", "symbol", "embedded_gain", "cost_basis", "gain_pct"]
     needed = positions_df[["pseudonym", "symbol", "total_gain_loss", "cost_basis_total"]].copy()
-    valid_mask = needed["total_gain_loss"].notna() & needed["cost_basis_total"].notna()
+    valid_mask = (needed["total_gain_loss"].notna() & needed["cost_basis_total"].notna()
+                  & ~needed["symbol"].map(is_pending_activity))
     n_excluded = int((~valid_mask).sum())
     valid = needed[valid_mask]
     if valid.empty:
@@ -1383,13 +1395,16 @@ def build_top_holdings(
     """Return top-N holdings by dollar value.
 
     Columns: Holding, Symbol, Account, $ Value, % of Household
+
+    The pending-activity line is cash, not a holding: it counts in the household
+    total and is never listed (#705).
     """
     total_aum = float(positions_df["current_value"].sum())
     sec = securities_df[["ticker", "name"]].copy()
     acct = accounts_df[["pseudonym", "display_name"]].copy()
 
     df = (
-        positions_df
+        positions_df[~positions_df["symbol"].map(is_pending_activity)]
         .merge(sec, left_on="symbol", right_on="ticker", how="left")
         .merge(acct, on="pseudonym", how="left")
         .sort_values("current_value", ascending=False)
@@ -1416,8 +1431,12 @@ def build_issuer_concentration(
     """Return top-N issuers by dollar value.
 
     Columns: Issuer, $ Total, % of Household
+
+    The pending-activity line is cash with no issuer: it counts in the household
+    total and in no issuer's (#705).
     """
     total_aum = float(positions_df["current_value"].sum())
+    positions_df = positions_df[~positions_df["symbol"].map(is_pending_activity)]
     desc_col = (
         positions_df["description"]
         if "description" in positions_df.columns

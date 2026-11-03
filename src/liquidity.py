@@ -23,6 +23,7 @@ from __future__ import annotations
 import pandas as pd
 
 from src.household import compute_embedded_gain
+from src.ingestion.fidelity import PENDING_ACTIVITY_LABEL, is_pending_activity
 from src.location_config import TAX_PROFILE, ordinary_rate, ltcg_rate
 
 # Early-withdrawal penalty on tax-advantaged accounts before age 59½.
@@ -86,8 +87,18 @@ def build_liquidity_ladder(
     """Rank every household holding by cost to convert to spendable cash, cheapest
     first. Returns a DataFrame with columns:
       symbol, account, tax_treatment, value, embedded_gain, tier, cost_to_cash,
-      net_cash (value − cost), cumulative_net_cash (running total, cheapest first),
-      note (plain-language reason).
+      net_cash (value − cost − pending_netted), cumulative_net_cash (running total,
+      cheapest first), pending_netted, note (plain-language reason).
+
+    PENDING ACTIVITY (#705). The export's pending-activity line is cash in its account.
+    A positive amount is a cash rung of its own. A negative amount is cash already
+    spoken for: it nets against the account's cash rungs first (rows with no embedded
+    gain), then against the account's other rungs in ladder order, cheapest first. A
+    rung it reaches carries the amount in ``pending_netted``, and its value and net
+    cash fall by it, never below the rung's cost: so no rung or tier is negative, the
+    running total never falls, and the account's rungs sum to its total in the export.
+    A Roth's line is in the Roth total its tranches split. What no rung of the account
+    can cover is in ``attrs["pending_uncovered"]`` ({account: dollars}).
 
     Tiers:
       1  taxable at a loss / small gain, and taxable cash/money-market — ~$0 tax;
@@ -133,11 +144,32 @@ def build_liquidity_ladder(
     )
 
     rows: list[dict] = []
+    pending: dict[str, float] = {}      # account -> its negative pending, to net below
     for _, r in merged.iterrows():
         tt = r.get("tax_treatment")
         if tt == "roth_ira":
             continue    # Roth is aggregated into basis/earnings tranches below (ordering, not per-holding)
         value = float(r["current_value"])
+        if is_pending_activity(r["symbol"]):
+            account = r.get("display_name") or ""
+            if value < 0:
+                pending[account] = pending.get(account, 0.0) + value
+                continue
+            if value == 0:
+                continue
+            if tt == "taxable":
+                tier, cost, note = 1, 0.0, "Pending activity — cash in this account, no tax"
+            else:
+                tier, cost = 3, value * penord
+                note = ("Pending activity — cash in a pre-tax account: 10% penalty + "
+                        "ordinary income on the whole withdrawal if before 59½")
+            rows.append({
+                "symbol": PENDING_ACTIVITY_LABEL, "account": account, "tax_treatment": tt,
+                "value": round(value, 2), "embedded_gain": None, "tier": tier,
+                "cost_to_cash": round(float(cost), 2), "net_cash": round(value - float(cost), 2),
+                "note": note, "_cash": True,
+            })
+            continue
         egv = r["embedded_gain"]
         gain_pct = r["gain_pct"]
 
@@ -168,6 +200,7 @@ def build_liquidity_ladder(
             "cost_to_cash": round(float(cost), 2),
             "net_cash": round(value - float(cost), 2),
             "note": note,
+            "_cash": pd.isna(egv),
         })
 
     # ── Roth IRA — contribution-basis ordering (two fungible tranches) ───────────
@@ -205,17 +238,44 @@ def build_liquidity_ladder(
             })
 
     if not rows:
-        return pd.DataFrame(columns=[
+        empty = pd.DataFrame(columns=[
             "symbol", "account", "tax_treatment", "value", "embedded_gain",
-            "tier", "cost_to_cash", "net_cash", "cumulative_net_cash", "note"])
+            "tier", "cost_to_cash", "net_cash", "cumulative_net_cash", "pending_netted",
+            "note"])
+        empty.attrs["pending_uncovered"] = {a: round(-v, 2) for a, v in pending.items()}
+        return empty
 
     out = (
         pd.DataFrame(rows)
-        .assign(_roth_last=lambda d: (d["tax_treatment"] == "roth_ira").astype(int))
+        .assign(_roth_last=lambda d: (d["tax_treatment"] == "roth_ira").astype(int),
+                _cash=lambda d: d["_cash"].fillna(False).astype(bool))
         .sort_values(["tier", "cost_to_cash", "_roth_last", "value"],
                      ascending=[True, True, True, False])
         .drop(columns="_roth_last")
         .reset_index(drop=True)
     )
+    out["pending_netted"] = 0.0
+    uncovered: dict[str, float] = {}
+    for account, amount in sorted(pending.items()):
+        left = -amount
+        mine = out[out["account"] == account]
+        # The account's cash first, then its other rungs in ladder order.
+        for i in list(mine.index[mine["_cash"]]) + list(mine.index[~mine["_cash"]]):
+            if left <= 0.005:
+                break
+            room = float(out.at[i, "net_cash"])
+            take = min(room, left)
+            if take <= 0:
+                continue
+            out.at[i, "pending_netted"] = round(take, 2)
+            out.at[i, "value"] = round(float(out.at[i, "value"]) - take, 2)
+            out.at[i, "net_cash"] = round(room - take, 2)
+            out.at[i, "note"] = (f"{out.at[i, 'note']} · {take:,.2f} of it covers this "
+                                 "account's pending activity")
+            left -= take
+        if left > 0.005:
+            uncovered[account] = round(left, 2)
+    out = out.drop(columns="_cash")
     out["cumulative_net_cash"] = out["net_cash"].cumsum().round(2)
+    out.attrs["pending_uncovered"] = uncovered
     return out
