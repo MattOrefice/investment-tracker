@@ -10,7 +10,7 @@ AVDV,Avantis International Small Cap Value ETF,intl_small_value,high,true,SAA ta
 IEMG,iShares Core MSCI Emerging Markets ETF,emerging_markets,high,true,SAA target ticker
 VGIT,Vanguard Intermediate-Term Treasury ETF,core_fi_treasury,low,true,SAA target ticker — Treasury coupons taxed as ordinary income
 SCHP,Schwab US TIPS ETF,tips,low,true,SAA target ticker — phantom income on inflation accruals
-PDBC,Invesco Optimum Yield Diversified Commodity Strategy No K-1,real_assets_commodities,low,true,SAA target ticker — 1099 reporting (no K-1)
+PDBC,Invesco Optimum Yield Diversified Commodity Strategy No K-1 ETF,real_assets_commodities,low,true,SAA target ticker — 1099 reporting (no K-1)
 VNQ,Vanguard Real Estate ETF,real_assets_reit,low,true,SAA target ticker — non-qualified REIT distributions
 SPAXX,Fidelity Government Money Market Fund,cash,low,true,SAA cash sleeve
 FDRXX,Fidelity Government Cash Reserves,cash,low,false,Money market sweep

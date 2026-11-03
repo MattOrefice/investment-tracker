@@ -65,7 +65,8 @@ SLEEVE_ASSUMED_YIELD: dict[str, float] = {
     "hedged_equity":           0.060,
     "single_stock":            0.020,
     "crypto":                  0.000,
-    "liquid_alt":              0.020,
+    # liquid_alt has no entry: no source publishes BILPX's yield, so the sleeve is
+    # NOT_MODELLED_SLEEVES (#707). It carried an authored 0.020 from 2026-06-01.
     # ── Equity sleeves, added #210 PR 2. Each value is a benchmark proxy's
     # trailing-twelve-month distribution yield as of SLEEVE_YIELD_PROXY_AS_OF
     # (2026-09-30), rounded to 4dp.
@@ -304,9 +305,6 @@ SLEEVE_YIELD_AUTHORED: dict[str, dict] = {
                           "why": "JUDGED — and measurable today: VNQ is both held and cached. "
                                  "Left authored here only because #289 sequences the benchmark "
                                  "work after this shape exists."},
-    "liquid_alt":        {"authored": "2026-06-01",
-                          "why": "JUDGED — the category is heterogeneous and no defensible "
-                                 "benchmark may exist (#289)."},
     "high_yield_fi":     {"authored": "2026-06-01",
                           "why": "JUDGED — HYG is cached but inadequately (50 price rows over 71 "
                                  "days, 2 dividends), so it measures a window rather than a yield."},
@@ -447,8 +445,18 @@ BLEND_SLEEVES: frozenset[str] = frozenset({"multi_asset", "target_date"})
 #
 # Every OTHER equity sleeve has a benchmark proxy already cached, and takes a
 # declared-basis entry instead — see SLEEVE_YIELD_PROXY. USER-EDITABLE.
+#
+#   liquid_alt   held (BILPX, BlackRock Event Driven Equity Fund, Institutional
+#                Shares: an event-driven equity fund, not the Treasury liquidity fund
+#                its seed name once suggested, #707). It carried an authored 0.020 from
+#                2026-06-01. No source publishes a yield for it: BlackRock's fund page
+#                (NAV as of November 2, 2026) and its fact sheet (as of June 30, 2026)
+#                print none. Its distributions are on record (BlackRock, 2025
+#                Distributions for Open-End Mutual Funds) but a yield measured from
+#                them would be a number this repo made, so the sleeve is refused rather
+#                than sized.
 NOT_MODELLED_SLEEVES: frozenset[str] = frozenset({
-    "thematic", "us_mid_cap", "intl_all_exus", "real_assets_commodities",
+    "thematic", "us_mid_cap", "intl_all_exus", "real_assets_commodities", "liquid_alt",
 })
 
 # ── Tax character (#278) ───────────────────────────────────────────────────────
@@ -528,6 +536,12 @@ SLEEVE_TAX_CHARACTER: dict[str, str] = {
     "high_yield_fi":           "ordinary",
     "floating_rate":           "ordinary",
     "multi_sector_fi":         "ordinary",
+    # BILPX's distributions are mostly ordinary income: for calendar 2025 its
+    # Institutional shares paid 0.278890 (July 18) and 0.083118 (December 12) per share
+    # of ordinary income, and 0.074171 (December 12) of long-term capital gain
+    # (BlackRock, 2025 Distributions for Open-End Mutual Funds). Kept as ordinary;
+    # its yield is not modelled (NOT_MODELLED_SLEEVES), so this reaches only the
+    # gain path today.
     "liquid_alt":              "ordinary",
     # Covered-call and ELN income is ordinary. The sleeve is Equity by category
     # (OFF_SAA_SLEEVE_CATEGORY) for EXPOSURE and is taxed as ordinary for CHARACTER.

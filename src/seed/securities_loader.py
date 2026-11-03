@@ -3,8 +3,12 @@
 Reads data/seed/securities_household.csv and UPSERTs into the securities
 table, keyed on ticker (CSV column: symbol).
 
-For existing tickers: enriches sleeve_category, tax_efficiency, is_in_saa
-WITHOUT touching any other column (name, asset_class_id, expense_ratio, etc.).
+For existing tickers: updates name (from the CSV's description column),
+sleeve_category, tax_efficiency and is_in_saa, WITHOUT touching any other column
+(asset_class_id, expense_ratio, etc.). The seed is the source for names (#707): a
+name corrected in the seed reaches a book seeded before the correction. No ticker
+may carry two different names across the seeds (tests/test_seed_names.py), so the
+SAA seed (src/seed_securities.py) and this one never overwrite each other.
 
 For new tickers: inserts with the parking-lot asset_class_id ('Other / Non-SAA')
 so the NOT NULL constraint is satisfied.
@@ -19,6 +23,7 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 PARKING_LOT_NAME = "Other / Non-SAA"
+DEFAULT_CSV = Path(__file__).resolve().parents[2] / "data" / "seed" / "securities_household.csv"
 
 
 def _get_parking_lot_id(conn: sqlite3.Connection) -> int:
@@ -70,6 +75,7 @@ def load_household_securities(db_path: str | Path, csv_path: str | Path) -> dict
                              sleeve_category, tax_efficiency, is_in_saa)
                         VALUES (?, ?, ?, ?, ?, ?)
                         ON CONFLICT(ticker) DO UPDATE SET
+                            name            = excluded.name,
                             sleeve_category = excluded.sleeve_category,
                             tax_efficiency  = excluded.tax_efficiency,
                             is_in_saa       = excluded.is_in_saa
@@ -98,3 +104,28 @@ def load_household_securities(db_path: str | Path, csv_path: str | Path) -> dict
         conn.close()
 
     return counts
+
+
+def main(argv: "list[str] | None" = None) -> int:
+    """The loader's own entry point: ``python -m src.seed.securities_loader <db>``.
+
+    Loads data/seed/securities_household.csv (or a second argument) into the named
+    book and prints the counts. The book is named explicitly, never defaulted, so a
+    run cannot write a book it did not mean to.
+    """
+    import sys
+    args = sys.argv[1:] if argv is None else argv
+    if not args or len(args) > 2:
+        print("usage: python -m src.seed.securities_loader <db> [<seed.csv>]")
+        return 2
+    db = Path(args[0])
+    if not db.exists():
+        print(f"no book at {db}")
+        return 2
+    counts = load_household_securities(db, Path(args[1]) if len(args) == 2 else DEFAULT_CSV)
+    print(counts)
+    return 1 if counts["errors"] else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
