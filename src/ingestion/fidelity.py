@@ -73,6 +73,22 @@ _REQUIRED_CANONICAL = list(_COL_MAP.values())
 _NUMERIC_COLS = {"quantity", "current_value", "cost_basis_total", "total_gain_loss"}
 
 
+# Fidelity's positions export can carry a line whose Symbol cell reads "Pending
+# activity": cash still settling in the account it is listed under, with a current
+# value (negative when the cash is already spoken for) and no quantity, cost basis or
+# security (#705). It is CASH IN THAT ACCOUNT, never a security: it counts in the
+# account's total, so the account sums to what Fidelity shows, and as Cash in every
+# allocation. It gets no ticker, sleeve, cost basis, gain, lot or wash-sale check.
+# The parser keeps the line, under this label in the symbol column, and every reader
+# of the export asks is_pending_activity() rather than comparing strings itself.
+PENDING_ACTIVITY_LABEL = "Pending activity"
+
+
+def is_pending_activity(symbol) -> bool:
+    """True for the export's pending-activity line, in any casing or spacing."""
+    return re.sub(r"\s+", " ", str(symbol).strip()).lower() == PENDING_ACTIVITY_LABEL.lower()
+
+
 def _clean_numeric(series: pd.Series) -> pd.Series:
     s = series.astype(str).str.strip()
     s = s.replace({"--": None, "nan": None, "": None})
@@ -96,6 +112,10 @@ def parse_fidelity_csv(
     dropped — no account number is ever returned. A parsed account number absent
     from the map raises (the row is never passed through raw, never silently
     dropped). A missing map file raises.
+
+    A "Pending activity" line is kept as cash in its account: symbol
+    ``PENDING_ACTIVITY_LABEL``, its current value, and no quantity, cost basis or
+    gain. Readers identify it with ``is_pending_activity``.
 
     Returns a DataFrame with columns:
         pseudonym, account_name, symbol, description, quantity,
@@ -151,6 +171,12 @@ def parse_fidelity_csv(
 
     for col in _NUMERIC_COLS:
         df[col] = _clean_numeric(df[col])
+
+    # The pending-activity line is cash, not a holding: one spelling of its label, and
+    # no quantity, cost basis or gain even if an export ever printed one.
+    pending = df["symbol"].map(is_pending_activity)
+    df.loc[pending, "symbol"] = PENDING_ACTIVITY_LABEL
+    df.loc[pending, ["quantity", "cost_basis_total", "total_gain_loss"]] = float("nan")
 
     # pseudonym leads the frame (it replaces account_number's former position)
     cols = ["pseudonym"] + [c for c in df.columns if c != "pseudonym"]

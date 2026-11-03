@@ -1628,6 +1628,9 @@ def _independent_lookthrough_equity(pos, sec, comps, symbols=None):
     m = pos[["symbol", "current_value"]].merge(w, on="symbol", how="left")
     m["sleeve"] = m["underlying_sleeve"].where(
         m["underlying_sleeve"].notna(), m["symbol"].map(sleeve_of))
+    # The export's pending-activity line is cash in its account (#705), read here by
+    # the parser's label rather than through the product's helper.
+    m.loc[m["symbol"] == "Pending activity", "sleeve"] = "cash"
     m["dollars"] = m["current_value"] * m["weight"].fillna(1.0)
     assert m["sleeve"].notna().all(), (
         f"unclassified symbols: {sorted(set(m[m['sleeve'].isna()]['symbol']))}"

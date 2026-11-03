@@ -35,9 +35,10 @@ from src.location_config import ordinary_rate
 from src.personal_profile import (
     QUALIFIED_WITHDRAWAL_AGE, load_roth_profile, load_tax_residence,
 )
+from src.ingestion.fidelity import is_pending_activity
 from src.sell_plan import (
     GROUP_LABEL, WASH_SALE_WINDOW_DAYS, allocation_table, build_sell_plan,
-    policy_targets,
+    plan_sales, policy_targets,
 )
 
 # ── Load data ──────────────────────────────────────────────────────────────────
@@ -237,6 +238,14 @@ with col:
     if plan.amount <= 0:
         st.caption("Enter an amount to see which holdings the plan sells.")
     else:
+        # A negative pending-activity line deeper than its account's cash (#705): that
+        # account's own sales cover the gap first, so the plan raises more than asked.
+        for _g in plan.pending_gaps.itertuples(index=False):
+            st.caption(
+                f"Pending activity of {_d2(_g.pending)} in {_g.account} takes its cash "
+                f"{_d2(_g.gap)} below zero, so the plan raises {_d2(plan.amount)} plus "
+                f"that {_d2(_g.gap)}: the first sales in {_g.account} cover it."
+            )
         if plan.picks.empty:
             st.warning(
                 f"No taxable holding can be sold under this plan, so it raises nothing "
@@ -247,6 +256,8 @@ with col:
             _pk = plan.picks.copy()
             _pk["why"] = [GROUP_LABEL[g] + (" (part)" if p else "")
                           for g, p in zip(_pk["group"], _pk["partial"])]
+            # The pending-activity line is cash with no ticker.
+            _pk["symbol"] = [None if is_pending_activity(x) else x for x in _pk["symbol"]]
             _pk = _pk[["account", "symbol", "why", "shares", "value", "cost_basis",
                        "realized_gain"]].rename(columns={
                 "account": "Account", "symbol": "Ticker", "why": "Why",
@@ -271,7 +282,7 @@ with col:
             if plan.shortfall > 0:
                 st.warning(
                     f"The holdings this plan may sell raise {_d2(plan.raised)}, "
-                    f"{_d2(plan.shortfall)} short of {_d2(plan.amount)}. It never sells "
+                    f"{_d2(plan.shortfall)} short of {_d2(plan.target)}. It never sells "
                     "from tax-advantaged accounts or the positions skipped below."
                 )
     if not plan.wash_sale_skips.empty:
@@ -309,7 +320,7 @@ with col:
     try:
         _targets = policy_targets(asset_classes_df, securities_df)
         _alloc = allocation_table(positions_df, securities_df, compositions_df, _targets,
-                                  plan.picks[["pseudonym", "symbol", "value"]])
+                                  plan_sales(plan))
     except ValueError as exc:
         st.error(f"The allocation could not be built: {exc}")
     else:
@@ -367,6 +378,18 @@ with col:
         .set_properties(subset=["Account"], **{"font-weight": "700"})   # Feature B — bold account
     )
     st.dataframe(_sty, use_container_width=True, hide_index=True)
+    if (ladder["pending_netted"] > 0).any():
+        st.caption(
+            "Fidelity's **pending activity** line is cash in its account. A negative "
+            "amount is cash already spoken for: it comes off the account's cash first, "
+            "then off its cheapest rungs, whose value and net cash show what is left "
+            "after it."
+        )
+    elif ladder["symbol"].map(is_pending_activity).any():
+        st.caption("Fidelity's **pending activity** line is cash in its account.")
+    for _acct, _short in ladder.attrs.get("pending_uncovered", {}).items():
+        st.warning(f"Pending activity in {_acct} is {_d2(_short)} more than every "
+                   "holding in that account can cover.")
 
     # The rates the costs above are priced at, each with the table it comes from.
     _fed = (f"Federal {_tax['federal_marginal']:.0%} ordinary and "
