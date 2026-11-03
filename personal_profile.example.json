@@ -1,6 +1,17 @@
 {
-  "_comment": "TEMPLATE — copy to private/personal_profile.json (gitignored) and fill in your real values. Never commit the real file. date_of_birth: ISO YYYY-MM-DD. roth_contribution_basis: total dollars of direct Roth contributions (verify against Form 8606, Form 5498 box 10, or Fidelity). Converted amounts and their 5-year clocks are not modeled. ordinary_income: expected ordinary income for the tax year — sizes the 0% long-term-cap-gains budget on the Asset Location page, which is (0%-bracket ceiling minus ordinary income). Omit it or leave it at 0 and that budget is treated as exhausted rather than guessed at, since assuming room that is not there would mean realizing gains you expected to be untaxed.",
+  "_comment": "TEMPLATE — copy to private/personal_profile.json (gitignored) and fill in your real values. Never commit the real file. date_of_birth: ISO YYYY-MM-DD. roth_contribution_basis: total dollars of direct Roth contributions (verify against Form 8606, Form 5498 box 10, or Fidelity). Converted amounts and their 5-year clocks are not modeled. ordinary_income: expected ordinary income for the tax year — sizes the 0% long-term-cap-gains budget on the Asset Location page, which is (0%-bracket ceiling minus ordinary income). Omit it or leave it at 0 and that budget is treated as exhausted rather than guessed at, since assuming room that is not there would mean realizing gains you expected to be untaxed. tax_residence: the state and local jurisdictions that tax your income, one entry each, for the Liquidity page's tax costs. ordinary_rate and gains_rate are fractions (0.05, not 5) read off each jurisdiction's own published rate table at your bracket; source names that table and source_date its date. An entry without a source or date is refused, and with no tax_residence the page includes no state or local tax and says so. The rates below are null on purpose: fill them in.",
   "date_of_birth": "1990-01-01",
   "roth_contribution_basis": 0,
-  "ordinary_income": 0
+  "ordinary_income": 0,
+  "tax_residence": {
+    "jurisdictions": [
+      {
+        "name": "Your state",
+        "ordinary_rate": null,
+        "gains_rate": null,
+        "source": "the published rate table the rate is read from",
+        "source_date": "that table's date"
+      }
+    ]
+  }
 }

@@ -37,16 +37,17 @@ USRT,iShares Core US REIT ETF,real_assets_reit,low,false,REIT — overlaps VNQ
 IAU,iShares Gold Trust,real_assets_gold,low,false,Gold — collectibles tax treatment in taxable
 HLIPX,JPMorgan Core Plus Bond Fund I,core_fi_credit,low,false,Core plus credit — sold by advisor Aug-2026; kept as reference data for historical positions
 JCPB,JPMorgan Core Plus Bond ETF,core_fi_credit,low,false,Advisor swap Aug-2026 replacing HLIPX — same Core Plus strategy in the ETF wrapper; ER 0.40% lives in tracker.db securities.expense_ratio only (this CSV carries no ER — a from-scratch rebuild seeds the row without it)
-BFRIX,Blackstone Floating Rate Income Fund I,floating_rate,low,false,Floating rate loan fund
+BFRIX,BlackRock Floating Rate Income Portfolio Institutional,floating_rate,low,false,Floating rate loan fund
 FAGIX,Fidelity Capital & Income Fund,high_yield_fi,low,false,High yield credit
-FIWDX,Fidelity Total Bond Fund,multi_sector_fi,low,false,Multi-sector bond
-GBOSX,Goldman Sachs Strategic Income Fund I,multi_sector_fi,low,false,Multi-sector bond
+FIWDX,Fidelity Advisor Strategic Income Fund Class Z,multi_sector_fi,low,false,Multi-sector bond
+GBOSX,JPMorgan Global Bond Opportunities Fund Class I,multi_sector_fi,low,false,Multi-sector bond
 GHYIX,Goldman Sachs High Yield Muni Bond Fund I,high_yield_muni,medium,false,HY muni — tax-advantaged for HY exposure
+HIMU,iShares High Yield Muni Active ETF,high_yield_muni,medium,false,HY muni — active ETF
 JHEQX,JPMorgan Hedged Equity Fund I,hedged_equity,medium,false,Equity with options collar
 JEPQ,JPMorgan Nasdaq Equity Premium Income ETF,hedged_equity,medium,false,Nasdaq covered call — option premium taxed as ordinary income
 JEPI,JPMorgan Equity Premium Income ETF,hedged_equity,medium,false,S&P covered call — option premium taxed as ordinary income
 HELO,JPMorgan Hedged Equity Laddered Overlay ETF,hedged_equity,medium,false,Laddered hedged equity
-BILPX,BlackRock Liquid Federal Trust,liquid_alt,low,false,Short-term Treasury liquidity
+BILPX,BlackRock Event Driven Equity Fund Institutional,liquid_alt,low,false,Event-driven equity — liquid alternative
 GAOSX,JPMorgan Global Allocation Fund I,multi_asset,medium,false,Look-through to underlying sleeves
 RFUTX,American Funds 2060 Target Date (R6),target_date,medium,false,Look-through to glide path (2026-03-31 factsheet)
 31564E540,Fidelity Freedom Index 2065 Fund Class T,target_date,medium,false,Look-through to glide path — CUSIP-as-symbol
