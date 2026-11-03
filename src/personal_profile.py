@@ -1,7 +1,8 @@
-"""Personal profile (date of birth, Roth contribution basis, ordinary income).
+"""Personal profile (date of birth, Roth contribution basis, ordinary income, tax
+residence).
 
-Consumed by the Liquidity page (DOB / Roth basis) and the Asset Location page
-(ordinary income, which sizes the 0% long-term-cap-gains budget).
+Consumed by the Liquidity page (DOB / Roth basis / tax residence) and the Asset
+Location page (ordinary income, which sizes the 0% long-term-cap-gains budget).
 
 SECURITY — real values live ONLY in ``private/personal_profile.json`` (gitignored,
 user-populated, NEVER committed), the same pattern as ``private/account_map.json``.
@@ -39,6 +40,22 @@ DEMO_DATE_OF_BIRTH: str = "1990-01-01"   # synthetic placeholder; age < 59½
 # ceiling so the demo exercises the exhausted-bracket path (the interesting one),
 # not so it resembles anyone's actual income.
 DEMO_ORDINARY_INCOME: float = 100_000.0
+
+# A synthetic tax residence for demo mode and tests: one invented jurisdiction at an
+# invented rate, named so it cannot be read as a place or a published rate. Where the
+# owner lives, and that place's rates, belong only in private/personal_profile.json, so
+# the committed tree names no home state.
+DEMO_TAX_RESIDENCE: dict = {
+    "jurisdictions": [
+        {"name": "Example State (synthetic)", "ordinary_rate": 0.05, "gains_rate": 0.05,
+         "source": "synthetic demo value, not a published rate",
+         "source_date": "synthetic"},
+    ],
+}
+
+# A rate above this is not a state or local income-tax rate; it is a typo (5 for
+# 0.05). The loader refuses it rather than pricing a sale at 500%.
+_MAX_JURISDICTION_RATE: float = 0.25
 
 # The age at which Roth earnings become penalty-free (the 5-year account rule is
 # handled by caveat, not computed — see the page).
@@ -139,3 +156,70 @@ def load_income_profile(is_demo: bool) -> dict:
             pass
 
     return {"ordinary_income": None, "source": "absent"}
+
+
+def _jurisdictions(raw) -> "tuple[list[dict], str | None]":
+    """The tax residence's jurisdictions, or ([], why not). Each needs a name, an
+    ordinary rate and a gains rate as fractions in [0, 0.25], the published table the
+    rates come from (``source``) and that table's date (``source_date``). An entry
+    missing its source or date is refused: a rate on the page is cited or it goes."""
+    if not isinstance(raw, dict):
+        return [], "tax_residence is not an object"
+    entries = raw.get("jurisdictions")
+    if not isinstance(entries, list) or not entries:
+        return [], "tax_residence.jurisdictions is missing or empty"
+    out = []
+    for i, e in enumerate(entries):
+        if not isinstance(e, dict):
+            return [], f"jurisdiction {i + 1} is not an object"
+        name = str(e.get("name") or "").strip()
+        source = str(e.get("source") or "").strip()
+        source_date = str(e.get("source_date") or "").strip()
+        if not name:
+            return [], f"jurisdiction {i + 1} has no name"
+        if not source or not source_date:
+            return [], f"{name} has no source or no source_date for its rates"
+        rates = {}
+        for key in ("ordinary_rate", "gains_rate"):
+            try:
+                rate = float(e.get(key))
+            except (TypeError, ValueError):
+                return [], f"{name}'s {key} is not a number"
+            if not 0.0 <= rate <= _MAX_JURISDICTION_RATE:
+                return [], (f"{name}'s {key} is {rate}, outside 0 to "
+                            f"{_MAX_JURISDICTION_RATE} (a rate is a fraction: 0.05, not 5)")
+            rates[key] = rate
+        out.append({"name": name, **rates, "source": source, "source_date": source_date})
+    return out, None
+
+
+def load_tax_residence(is_demo: bool) -> dict:
+    """Return the tax residence the Liquidity page prices state and local tax with:
+        {jurisdictions: [{name, ordinary_rate, gains_rate, source, source_date}, ...],
+         source: str, problem: str|None}
+
+    Demo returns DEMO_TAX_RESIDENCE. Personal reads ``tax_residence`` from
+    private/personal_profile.json. Absent, unparseable or invalid, it returns no
+    jurisdictions, with ``problem`` saying why, and the page says that state and local
+    tax are not included. It never falls back to a committed home state: there is none.
+    """
+    if is_demo:
+        return {"jurisdictions": [dict(j) for j in DEMO_TAX_RESIDENCE["jurisdictions"]],
+                "source": "demo-synthetic", "problem": None}
+
+    if not _PROFILE_PATH.exists():
+        return {"jurisdictions": [], "source": "absent",
+                "problem": "private/personal_profile.json does not exist"}
+    try:
+        raw = json.loads(_PROFILE_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"jurisdictions": [], "source": "invalid",
+                "problem": "private/personal_profile.json could not be read as JSON"}
+    if not isinstance(raw, dict) or "tax_residence" not in raw:
+        return {"jurisdictions": [], "source": "absent",
+                "problem": "private/personal_profile.json has no tax_residence"}
+    juris, problem = _jurisdictions(raw["tax_residence"])
+    if problem:
+        return {"jurisdictions": [], "source": "invalid", "problem": problem}
+    return {"jurisdictions": juris, "source": "private/personal_profile.json",
+            "problem": None}

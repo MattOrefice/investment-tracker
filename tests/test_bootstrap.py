@@ -29,7 +29,7 @@ def _fresh_db(tmp_path, monkeypatch):
 
 def test_bootstrap_populates_securities_with_tax_efficiency(tmp_path, monkeypatch):
     """A fresh DB ends up with the securities table carrying the tax_efficiency
-    column and the 65 household securities, all classified low/medium/high."""
+    column and the 66 household securities, all classified low/medium/high."""
     fresh = _fresh_db(tmp_path, monkeypatch)
     bootstrap.bootstrap_personal_db()
 
@@ -47,9 +47,9 @@ def test_bootstrap_populates_securities_with_tax_efficiency(tmp_path, monkeypatc
         valid = conn.execute(
             "SELECT COUNT(*) FROM securities WHERE tax_efficiency IN ('low','medium','high')"
         ).fetchone()[0]
-        # 65 = the 63 pre-Aug-2026 rows + JCPB and FCASH (the advisor's Aug-2026
-        # HLIPX-to-JCPB swap; see data/seed/securities_household.csv).
-        assert valid == 65, f"expected 65 household securities with valid tax_efficiency, got {valid}"
+        # 66 = the 63 pre-Aug-2026 rows + JCPB and FCASH (the advisor's Aug-2026
+        # HLIPX-to-JCPB swap) + HIMU (Nov-2026); see data/seed/securities_household.csv.
+        assert valid == 66, f"expected 66 household securities with valid tax_efficiency, got {valid}"
     finally:
         conn.close()
 

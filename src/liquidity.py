@@ -9,14 +9,21 @@ ranked by 'how cheaply can I turn this into spendable cash', cheapest first.
 
 Reuses the existing model — compute_embedded_gain(positions) for per-holding gain +
 cost basis (cash rows return NaN gain and are treated as immediately spendable), the
-account tax_treatment for the wrapper, and TAX_PROFILE rates. No new tax derivation.
+account tax_treatment for the wrapper, and the tax profile's rates. No new tax
+derivation.
+
+THE TAX PROFILE THIS PAGE PRICES WITH is ``residence_tax_profile``: the federal rates
+from TAX_PROFILE, and state and local rates from the owner's tax residence, which
+lives in the gitignored private/personal_profile.json (personal_profile.
+load_tax_residence). The committed tree names no home state for this page. TAX_PROFILE's
+own state keys are not read here.
 """
 from __future__ import annotations
 
 import pandas as pd
 
 from src.household import compute_embedded_gain
-from src.location_config import ordinary_rate, ltcg_rate
+from src.location_config import TAX_PROFILE, ordinary_rate, ltcg_rate
 
 # Early-withdrawal penalty on tax-advantaged accounts before age 59½.
 EARLY_WITHDRAWAL_PENALTY: float = 0.10
@@ -25,9 +32,47 @@ SMALL_GAIN_PCT: float = 10.0
 
 TIER_LABEL: dict[int, str] = {
     1: "Tier 1 · free / cheap",
-    2: "Tier 2 · moderate (15% LTCG)",
+    2: f"Tier 2 · moderate ({TAX_PROFILE['federal_ltcg']:.0%} LTCG)",   # federal, read
     3: "Tier 3 · locked (penalty + tax)",
 }
+
+
+def residence_tax_profile(residence: dict,
+                          federal: "dict[str, float] | None" = None) -> dict[str, float]:
+    """The rates this page prices with: federal from ``federal`` (TAX_PROFILE by
+    default), state and local summed over the residence's jurisdictions. With no
+    jurisdictions the state and local rates are 0.0, and ``gain_tax_note`` says that no
+    state or local tax is included rather than letting the 0 pass for a rate."""
+    federal = TAX_PROFILE if federal is None else federal
+    juris = residence.get("jurisdictions") or []
+    return {
+        "federal_marginal": float(federal["federal_marginal"]),
+        "federal_ltcg": float(federal["federal_ltcg"]),
+        "state_marginal": round(sum(float(j["ordinary_rate"]) for j in juris), 6),
+        "state_ltcg": round(sum(float(j["gains_rate"]) for j in juris), 6),
+    }
+
+
+def residence_names(residence: dict) -> str:
+    """'A', 'A and B', 'A, B and C' — the jurisdictions the residence names, or ''."""
+    names = [str(j["name"]) for j in (residence.get("jurisdictions") or [])]
+    if len(names) <= 1:
+        return "".join(names)
+    return ", ".join(names[:-1]) + " and " + names[-1]
+
+
+def gain_tax_note(tax_profile: dict[str, float], tax_location: str) -> str:
+    """The tax a taxable gain is priced at, in words read from the profile: the combined
+    rate, then its parts. ``tax_location`` names the state and local jurisdictions; ''
+    with a 0 state rate says that none is included."""
+    fed = float(tax_profile["federal_ltcg"])
+    total = ltcg_rate(tax_profile)
+    if tax_location:
+        return f"{total:.2%} on the gain: {fed:.0%} federal + {tax_location}"
+    if float(tax_profile["state_ltcg"]) == 0.0:
+        return (f"{total:.2%} on the gain: {fed:.0%} federal only; no state or local tax "
+                f"is included")
+    return f"{total:.2%} on the gain: {fed:.0%} federal + {tax_profile['state_ltcg']:.2%} state"
 
 
 def build_liquidity_ladder(
@@ -36,6 +81,7 @@ def build_liquidity_ladder(
     tax_profile: dict[str, float],
     roth_contribution_basis: float = 0.0,
     roth_is_qualified_age: bool = False,
+    tax_location: str = "",
 ) -> pd.DataFrame:
     """Rank every household holding by cost to convert to spendable cash, cheapest
     first. Returns a DataFrame with columns:
@@ -46,7 +92,9 @@ def build_liquidity_ladder(
     Tiers:
       1  taxable at a loss / small gain, and taxable cash/money-market — ~$0 tax;
          plus the Roth CONTRIBUTION-BASIS tranche (comes out first, free, any age).
-      2  taxable with a meaningful embedded gain — 15% LTCG + PA on the gain.
+      2  taxable with a meaningful embedded gain — the profile's long-term rate on the
+         gain, its note naming the parts (gain_tax_note; ``tax_location`` names the
+         state and local jurisdictions).
       3  pre-tax IRA/401k (10% penalty + ordinary income on the whole withdrawal),
          and the Roth EARNINGS tranche when the owner is under 59½ — locked.
 
@@ -71,9 +119,10 @@ def build_liquidity_ladder(
     Only the ORDER shifts; tier assignment (and therefore tier totals and
     Accessible-now) is unchanged.
     """
-    ord_rate = ordinary_rate(tax_profile)   # e.g. 22% federal + 3.07% PA
-    ltcg = ltcg_rate(tax_profile)           # e.g. 15% federal + 3.07% PA
+    ord_rate = ordinary_rate(tax_profile)   # federal + state + local ordinary
+    ltcg = ltcg_rate(tax_profile)           # federal LTCG + state + local on gains
     penord = EARLY_WITHDRAWAL_PENALTY + ord_rate
+    gain_note = gain_tax_note(tax_profile, tax_location)
     eg, _ = compute_embedded_gain(positions_df)
 
     merged = (
@@ -101,7 +150,7 @@ def build_liquidity_ladder(
                 if egv <= 0 or (pd.notna(gain_pct) and float(gain_pct) < SMALL_GAIN_PCT):
                     tier, note = 1, "Taxable at a loss or small gain — minimal or no tax"
                 else:
-                    tier, note = 2, "Taxable with a meaningful gain — 15% LTCG + PA on the gain"
+                    tier, note = 2, f"Taxable with a meaningful gain — {gain_note}"
         else:
             # Pre-tax (Traditional IRA, 401(k)/workplace, HSA): LOCKED — the WHOLE
             # withdrawal is penalized + ordinary-taxed if taken before 59½.

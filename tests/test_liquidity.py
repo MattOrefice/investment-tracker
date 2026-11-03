@@ -276,12 +276,18 @@ def test_liquidity_page_renders_live(monkeypatch):
     # Fix 1 — no locked (Tier-3) row shows $0 cost
     locked = t[t["Tier"].str.contains("locked")]
     assert not locked.empty and (locked["Cost to cash ($)"] > 0).all(), "no locked row may show $0 cost"
-    # Feature A — entering a target names the top-N holdings to sell
-    at.number_input[0].set_value(40000).run()
+    # The sell plan (replaced Feature A's "sell the top N" readout, which walked the
+    # ladder into the Roth and the IRAs): entering an amount plans sales from taxable
+    # accounts only, and the totals read off the picks table.
+    at.number_input[0].set_value(4000).run()
     assert not at.exception
-    assert any("To raise" in s.value and "sell the top" in s.value for s in at.success), (
-        "raise-cash summary missing"
-    )
+    plans = [d.value for d in at.dataframe if "Est. realized gain/loss ($)" in list(d.value.columns)]
+    assert plans, "sell plan table missing"
+    _taxable = {"Individual Taxable (Self-Directed)", "Individual Taxable (TOD)"}
+    assert set(plans[0]["Account"]) <= _taxable, "the plan picked a tax-advantaged account"
+    _raised = {m.label: m.value for m in at.metric}["Total raised"]
+    assert _num(_raised) == pytest.approx(float(plans[0]["Value ($)"].sum()), abs=0.01)
+    assert not any("sell the top" in s.value for s in at.success), "Feature A's readout survived"
 
 
 # ── Ordinary-income runtime profile ────────────────────────────────────────────
