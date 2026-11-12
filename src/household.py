@@ -732,7 +732,9 @@ _OFF_SAA_SUBSTITUTIONS: dict[str, tuple[str, str]] = {
     "floating_rate":        ("—", "none"),
     "multi_sector_fi":      ("Core FI — Treasury", "low"),
     "hedged_equity":        ("US Large Core", "medium"),
-    "liquid_alt":           ("Cash", "medium"),
+    # BILPX, the sleeve's one holding, is an event-driven equity fund: an alternative,
+    # not a substitute for cash (#707).
+    "liquid_alt":           ("—", "none"),
     "real_assets_gold":     ("Real Assets — Commodities", "medium"),
     "thematic":             ("—", "none"),
     "multi_asset":          ("—", "none"),
