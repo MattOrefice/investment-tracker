@@ -1,4 +1,5 @@
-"""Nothing public says the owner is available for roles (November 3, 2026).
+"""Nothing public says the owner is available for roles, or between jobs (November 3,
+2026).
 
 The landing page's byline, every page's sidebar footer and the README each
 carried "Available for buy-side allocator and investment due diligence roles."
@@ -22,7 +23,10 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 BANNED = re.compile(
     r"available for buy-side|due diligence roles|allocator and investment due diligence"
-    r"|resume artifact|Investment Data Analyst",
+    r"|resume artifact|Investment Data Analyst"
+    # The 401(k) rollover card (November 3, 2026): no page says or implies the owner
+    # is between jobs.
+    r"|next job|future employer|between jobs",
     re.IGNORECASE,
 )
 EXEMPT = {"CHANGELOG.md", "tests/test_no_availability_claim.py"}
@@ -63,3 +67,19 @@ def test_no_tracked_text_file_says_the_owner_is_available_for_roles() -> None:
             continue
         hits += [f"{name}: {m.group(0)}" for m in BANNED.finditer(text)]
     assert not hits, hits
+
+
+def test_the_rollover_card_cites_what_its_claims_rest_on() -> None:
+    """The card's two corrected claims (owner's decision, November 3, 2026): the
+    Traditional IRA holds a balance, so no route keeps it empty, and the rule is a
+    December 31 total, not a clock."""
+    from src.location_actions import ACTION_GROUPS
+    g = next(x for x in ACTION_GROUPS if x["key"] == "rollover_401k")
+    text = " ".join(g[f] for f in ("action", "pros", "cons"))
+    assert "Instructions for Form 8606 (2025), line 6" in text
+    assert "SEP and SIMPLE IRAs included, on December 31" in text
+    assert "an employer plan's balance is not in it" in text
+    assert "Rollover Chart" in text and "a plan is not required to" in text
+    assert "Worth a CPA check" in text
+    for gone in ("pro-rata clock", "keeps the Traditional IRA empty", "decent plan"):
+        assert gone not in text, gone
