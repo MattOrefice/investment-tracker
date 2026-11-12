@@ -27,6 +27,7 @@ if IS_DEMO:
 from src.db import get_connection
 from src.household_data import load_latest_positions
 from src.household import exclude_non_household_positions
+from src.holdings import PortfolioAccountUnresolved, get_portfolio_account
 from src.liquidity import (
     EARLY_WITHDRAWAL_PENALTY, TIER_LABEL, build_liquidity_ladder, gain_tax_note,
     residence_names, residence_tax_profile,
@@ -233,8 +234,36 @@ with col:
         "part. This plans only: nothing is traded or written."
     )
 
+    # The tracked portfolio account (holdings.get_portfolio_account) is left out unless
+    # the owner lets it in: a sale there withdraws from the book the performance pages
+    # measure. Its holdings still count for the wash-sale check.
+    try:
+        _tracked_id = get_portfolio_account()["account_id"]
+    except PortfolioAccountUnresolved:
+        _tracked_id = None
+    _tracked = accounts_df[accounts_df["account_id"] == _tracked_id]
+    _tracked_pseudo = str(_tracked["pseudonym"].iloc[0]) if len(_tracked) else None
+    _tracked_name = (str(_tracked["display_name"].iloc[0] or _tracked["name"].iloc[0])
+                     if len(_tracked) else None)
+    _include_tracked = False
+    if _tracked_pseudo is not None:
+        _include_tracked = st.toggle(
+            f"Let the plan sell from {_tracked_name}", value=False,
+            help="The tracked portfolio account: the book the performance pages measure.",
+        )
+        if not _include_tracked:
+            st.caption(
+                f"Left out: **{_tracked_name}**. A sale there is a withdrawal from the "
+                "book the performance pages measure, and it moves that book's sleeves "
+                "off their targets."
+            )
+    else:
+        st.caption("No tracked portfolio account resolves, so the plan leaves none out.")
+
     plan = build_sell_plan(float(_need or 0), positions_df, accounts_df, securities_df,
-                           everywhere_df=everywhere_df)
+                           everywhere_df=everywhere_df,
+                           leave_out=(() if _include_tracked or _tracked_pseudo is None
+                                      else (_tracked_pseudo,)))
     if plan.amount <= 0:
         st.caption("Enter an amount to see which holdings the plan sells.")
     else:
