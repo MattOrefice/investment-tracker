@@ -2,9 +2,9 @@
 
 The suite's tests copy whole books into their tmp_path. Under pytest's default
 retention, "all", every one of those copies stayed until the session ended: 16.0 GB at
-e6b2725, and #712's CI run died out of disk partway into the suite. pytest.ini sets
-tmp_path_retention_policy = failed. These tests hold that setting, and check that the
-pinned pytest does what its reference says the setting does, in a session of its own.
+e6b2725. pytest.ini sets tmp_path_retention_policy = failed, which cut the peak to 2.6
+GB. These tests hold that setting, and check that the pinned pytest does what its
+reference says the setting does, in a session of its own.
 """
 from __future__ import annotations
 
@@ -40,6 +40,9 @@ def test_this_pytest_removes_a_passing_tests_directory_and_keeps_a_failing_ones(
          f"--basetemp={base}", "test_inner.py"],
         cwd=proj, env=env, capture_output=True, text=True, timeout=120)
     assert "1 failed, 1 passed" in run.stdout, run.stdout + run.stderr
-    kept = sorted(p.name for p in base.iterdir() if p.is_dir())
+    # On Linux pytest also links "<name>current" to the newest numbered directory
+    # (_force_symlink, _pytest/pathlib.py); Windows makes no link. A link is not a kept
+    # directory, and is_dir() follows it, so links are left out.
+    kept = sorted(p.name for p in base.iterdir() if p.is_dir() and not p.is_symlink())
     assert kept == ["test_fails0"], kept
     assert (base / "test_fails0" / "copy.db").exists()
