@@ -130,6 +130,19 @@ jobs:
           echo "read-only: $(git ls-files data | wc -l) tracked data files"
           test -z "$writable" || { echo "still writable: $writable"; exit 1; }
 
+      - name: Disk before the suite (diagnostic)
+        # A RUN THAT DIES OUT OF DISK LEAVES NO OUTCOME (#713). #712's run (41742004956)
+        # died at 4m 38s with "No space left on device", partway into the suite, and
+        # the runner's own log write was what failed, so no test reported. This step and
+        # the one after the suite say how much space the suite had and what it used.
+        # The sampler records free space on / every 5 s while the suite runs; the step
+        # after the suite reads its lowest value. GitHub ends the loop with the job.
+        run: |
+          df -h / /tmp
+          mkdir -p "$RUNNER_TEMP/disk"
+          nohup sh -c 'while :; do df --output=avail -B1M / | tail -1 >> "$RUNNER_TEMP/disk/avail_mib"; sleep 5; done' >/dev/null 2>&1 &
+        timeout-minutes: 1
+
       - name: Run fast tests (slow/network tests excluded)
         # Exclusions live in pytest.ini addopts (not slow and not live_data). Do NOT add a CLI -m here — it overrides addopts and silently re-includes the live_data tests (live external API calls on every push).
         run: python -m pytest --tb=long -q -n 4
@@ -153,3 +166,22 @@ jobs:
         timeout-minutes: 20
         env:
           TRACKER_MODE: demo
+
+      - name: Disk after the suite (diagnostic)
+        # Runs when the suite fails too: a failing or dying run is the one whose disk
+        # figures are needed (#713). Free space at the end of the suite, its lowest point
+        # during the suite, and the largest directories, pytest's temp folders included.
+        if: always()
+        run: |
+          df -h / /tmp
+          samples="$RUNNER_TEMP/disk/avail_mib"
+          if [ -s "$samples" ]; then
+            echo "free space on / during the suite: lowest $(sort -n "$samples" | head -1) MiB, first $(head -1 "$samples") MiB, last $(tail -1 "$samples") MiB, $(wc -l < "$samples") samples 5 s apart"
+          fi
+          echo "largest directories in /tmp (MiB):"
+          du -xsm /tmp/* 2>/dev/null | sort -rn | head -15
+          echo "pytest's temp folders (MiB):"
+          du -xsm /tmp/pytest-of-*/pytest-* /tmp/pytest-of-*/pytest-*/* 2>/dev/null | sort -rn | head -15
+          echo "home, workspace and runner temp (MiB):"
+          du -xsm "$HOME"/.cache "$GITHUB_WORKSPACE" "$RUNNER_TEMP" 2>/dev/null | sort -rn
+        timeout-minutes: 3
