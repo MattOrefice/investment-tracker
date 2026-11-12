@@ -1330,7 +1330,9 @@ def test_page14_action_lines_and_prominent_captions_live(monkeypatch):
     _dep, tier = _live_tier(pos, acct, sec)
     deploy_line = ("No buy proposed" if tier["tier"] == "below_floor"
                    else "sized to its household underweight gap")
-    for snippet in (deploy_line, "keeps the Traditional IRA empty",
+    # The rollover card's action line names the two destinations the IRS allows; the
+    # line it replaced promised an outcome no route delivers.
+    for snippet in (deploy_line, "employer's plan if it accepts roll-ins",
                     "already builds these positions", "belong in a shelter"):
         assert snippet in md, f"action line missing from render: {snippet!r}"
     assert "This group covers" in md, "gap caption must render as prominent markdown"
