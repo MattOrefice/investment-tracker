@@ -12,6 +12,7 @@ one, and, as the contrast, the personal wording still rendered in personal mode.
 """
 from __future__ import annotations
 
+import ast
 import os
 import re
 import shutil
@@ -33,9 +34,18 @@ DEMO_DB = ROOT / "data" / "demo.db"
 DEMO_PAGES = ["app.py"] + sorted(
     str(p.relative_to(ROOT)).replace("\\", "/") for p in (ROOT / "pages").glob("*.py"))
 
-# Pages exempt from the banner by name, each with the owner's reason (#673).
+# Pages exempt from the banner by name, each with the owner's reason (#673). Every
+# reason is one a test below checks, and each exempt page is held to its own.
+NO_LEDGER = "it reads no portfolio ledger"
+# Decided by the owner on November 11, 2026 (#711). Page 15 names the tracked portfolio
+# account so its sell plan can leave that account out, which takes an import from
+# src.holdings, and the scan reads every such page as showing portfolio data. In demo
+# mode the page shows none: the render test below holds it to that.
+RENDERS_NOTHING_IN_DEMO = ("it renders nothing in demo mode: it stops before any import, "
+                           "and app.py hides it.")
 BANNER_EXEMPT = {
-    "pages/16_Policy_Backtest.py": "it reads no portfolio ledger",
+    "pages/15_Liquidity.py": RENDERS_NOTHING_IN_DEMO,
+    "pages/16_Policy_Backtest.py": NO_LEDGER,
 }
 
 # A page reads portfolio data if it imports a module that reads the ledger or the
@@ -80,16 +90,133 @@ def test_the_scan_reads_every_page_file():
     assert "pages/16_Policy_Backtest.py" in DEMO_PAGES
 
 
-@pytest.mark.parametrize("page", list(BANNER_EXEMPT))
+def test_every_exemption_names_a_scanned_page_and_a_reason_a_test_checks():
+    """A new reason is a new decision, and it needs a test of its own before it lands."""
+    for page, reason in BANNER_EXEMPT.items():
+        assert page in DEMO_PAGES, page
+        assert reason in (NO_LEDGER, RENDERS_NOTHING_IN_DEMO), (page, reason)
+
+
+@pytest.mark.parametrize("page", [p for p, r in BANNER_EXEMPT.items() if r == NO_LEDGER])
 def test_an_exempt_page_is_one_the_scan_reads_and_its_reason_still_holds(page):
     """An exemption names a page that exists and is scanned, and its reason, "it reads no
     portfolio ledger", is held by the scan's own definition: the page imports none of
     the modules that read the ledger or the holdings and queries no trades. A page that
     starts reading the ledger fails here, and its exemption needs a new decision."""
     assert page in DEMO_PAGES
-    assert BANNER_EXEMPT[page] == "it reads no portfolio ledger"
+    assert BANNER_EXEMPT[page] == NO_LEDGER
     match = _PORTFOLIO_SOURCE.search((ROOT / page).read_text(encoding="utf-8"))
     assert match is None, f"{page} reads portfolio data now ({match.group(0)!r})"
+
+
+_DEMO_EMPTY = [p for p, r in BANNER_EXEMPT.items() if r == RENDERS_NOTHING_IN_DEMO]
+
+
+def _demo_stop_index(tree: ast.Module) -> int:
+    """The index of the module-level `if IS_DEMO:` whose body ends in st.stop()."""
+    for i, node in enumerate(tree.body):
+        if (isinstance(node, ast.If) and isinstance(node.test, ast.Name)
+                and node.test.id == "IS_DEMO" and not node.orelse):
+            last = node.body[-1]
+            if (isinstance(last, ast.Expr) and isinstance(last.value, ast.Call)
+                    and ast.unparse(last.value.func) == "st.stop"):
+                return i
+    raise AssertionError("no module-level `if IS_DEMO: ... st.stop()`")
+
+
+@pytest.mark.parametrize("page", _DEMO_EMPTY)
+def test_a_demo_empty_page_stops_before_it_imports_anything_that_reads_the_book(page):
+    """'It stops before any import': before its demo stop the page imports only what
+    decides the mode and draws the header, and every portfolio import comes after."""
+    tree = ast.parse((ROOT / page).read_text(encoding="utf-8"))
+    stop = _demo_stop_index(tree)
+    before = set()
+    for node in tree.body[:stop]:
+        if isinstance(node, ast.Import):
+            before |= {a.name for a in node.names}
+        elif isinstance(node, ast.ImportFrom):
+            before.add(node.module)
+    assert before == {"logging", "streamlit", "pandas", "src.config", "src.ui_helpers"}, before
+    after = "\n".join(ast.unparse(n) for n in tree.body[stop + 1:])
+    assert _PORTFOLIO_SOURCE.search(after), "the exemption is for a page that reads the book"
+
+
+@pytest.mark.parametrize("page", _DEMO_EMPTY)
+def test_app_registers_a_demo_empty_page_only_outside_demo_mode(page):
+    """'app.py hides it': its st.Page sits inside `if not IS_DEMO:` and nowhere else."""
+    tree = ast.parse((ROOT / "app.py").read_text(encoding="utf-8"))
+    parent = {c: p for p in ast.walk(tree) for c in ast.iter_child_nodes(p)}
+    calls = [n for n in ast.walk(tree)
+             if isinstance(n, ast.Call) and ast.unparse(n.func) == "st.Page"
+             and any(isinstance(a, ast.Constant) and a.value == page for a in n.args)]
+    assert len(calls) == 1, f"app.py registers {page} {len(calls)} times"
+    node, guards = calls[0], []
+    while node in parent:
+        up = parent[node]
+        if isinstance(up, ast.If):
+            guards.append((ast.unparse(up.test), any(node is s for s in up.body)))
+        node = up
+    assert guards == [("not IS_DEMO", True)], guards
+
+
+@pytest.fixture
+def watch_reads(monkeypatch):
+    """Every module an import statement names, and every SQL statement run, while a page
+    renders. builtins.__import__ is called by every import statement, cached module or
+    not, so a module another test imported first is still seen."""
+    import builtins
+    seen = {"imports": set(), "sql": []}
+    real_import = builtins.__import__
+
+    def _import(name, globals=None, locals=None, fromlist=(), level=0):
+        if level == 0:
+            seen["imports"].add(name)
+            seen["imports"].update(f"{name}.{f}" for f in (fromlist or ()))
+        return real_import(name, globals, locals, fromlist, level)
+
+    real_connect = sqlite3.connect
+
+    def _connect(*a, **k):
+        conn = real_connect(*a, **k)
+        conn.set_trace_callback(seen["sql"].append)
+        return conn
+
+    monkeypatch.setattr(builtins, "__import__", _import)
+    monkeypatch.setattr(sqlite3, "connect", _connect)
+    return seen
+
+
+def _reads_the_book(seen) -> list:
+    hits = sorted(m for m in seen["imports"] if re.fullmatch(
+        r"src\.(holdings|tax_lots|performance|attribution|risk|trade_writer|rebalance|"
+        r"harvest|reports)", m))
+    return hits + [s for s in seen["sql"] if re.search(r"\btrades\b", s, re.I)][:3]
+
+
+def test_the_import_and_sql_watch_sees_a_page_that_reads_the_book(render, watch_reads):
+    """The positive control: on a page that does read the ledger, the watch below sees
+    the import and the trades query, so its silence on page 15 is a finding."""
+    render("12_Tax_Lots.py")
+    found = _reads_the_book(watch_reads)
+    assert "src.holdings" in found or "src.tax_lots" in found, sorted(watch_reads["imports"])[:40]
+    assert any(re.search(r"\btrades\b", s, re.I) for s in watch_reads["sql"])
+
+
+@pytest.mark.parametrize("page", _DEMO_EMPTY)
+def test_a_demo_empty_page_renders_only_the_personal_mode_message(render, watch_reads, page):
+    """'It renders nothing in demo mode', rendered: the header, the page's title and the
+    one personal-mode message, and nothing that reads the book on the way."""
+    at = render(page.removeprefix("pages/"))
+    assert [e.value for e in at.title] == ["Liquidity"]
+    assert [e.value for e in at.info] == [
+        "The liquidity hierarchy is available in personal mode only."]
+    markdown = [e.value for e in at.markdown]
+    assert len(markdown) == 1 and "endow-page-header" in markdown[0], markdown
+    for kind in ("warning", "error", "success", "caption", "header", "subheader",
+                 "metric", "dataframe", "table", "toggle", "button", "number_input",
+                 "selectbox", "expander", "exception"):
+        assert not list(getattr(at, kind)), (kind, [str(e) for e in getattr(at, kind)][:3])
+    assert _reads_the_book(watch_reads) == [], _reads_the_book(watch_reads)
 
 
 @pytest.fixture

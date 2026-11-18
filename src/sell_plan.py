@@ -194,6 +194,7 @@ def build_sell_plan(
     securities_df: pd.DataFrame,
     *,
     everywhere_df: "pd.DataFrame | None" = None,
+    leave_out: "frozenset[str] | set[str] | tuple[str, ...]" = (),
 ) -> SellPlan:
     """The plan to raise ``amount`` from the taxable accounts in ``positions_df``.
 
@@ -202,10 +203,15 @@ def build_sell_plan(
     check reads, in every account, the household's or not; it defaults to
     ``positions_df``. A loss position is skipped when its ticker has a positive value in
     any other account there.
+
+    ``leave_out`` names accounts (pseudonyms) the plan sells nothing from: not their
+    cash, losses or gains, and not their pending-activity line. The wash-sale check
+    still reads them, so a loss elsewhere in a ticker they hold is still skipped.
     """
     amount = max(0.0, float(amount or 0.0))
     names = _names(accounts_df)
-    taxable = set(accounts_df.loc[accounts_df["tax_treatment"] == "taxable", "pseudonym"])
+    taxable = (set(accounts_df.loc[accounts_df["tax_treatment"] == "taxable", "pseudonym"])
+               - {str(p) for p in leave_out})
     sleeve = _sleeve_of(securities_df)
 
     held = _aggregate(everywhere_df if everywhere_df is not None else positions_df)
