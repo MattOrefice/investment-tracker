@@ -19,7 +19,8 @@ Placeholder resolution (per group, against the newest positions CSV):
                    (symbols ∩ case_filter ∩ accounts)
   {register_count} number of those register rows — the holdings actually driving
                    {annual_benefit}; differs from {count} for matched_symbols
-                   groups (frozen_tod_income counts GHYIX, which is never a row)
+                   groups (frozen_tod_income counts its municipal fund, which is
+                   never a row)
 value/count/embedded_gain are position-based (the whole holding); annual_benefit
 is register-based (only the mislocated rows). This asymmetry is intentional and
 matches the authored prose.
@@ -189,9 +190,9 @@ _LOSS_SIDE_CONS = (
 _GAIN_SIDE_PROS = (
     "{annual_benefit} of recurring annual drag on {value} of assets, and the same "
     "credit-risk argument as the loss side. Relocating realizes {embedded_gain} of "
-    "gains — now taxable at 18.07% (15% federal + 3.07% PA), since 2026 income put the "
-    "0% bracket out of reach — but that {cost_to_realize} is a {payback} payback against "
-    "the {annual_benefit}/yr of relief. On the merits, worth doing."
+    "gains, taxable at {gain_rate} ({gain_rate_parts}). {bracket_sentence} But that "
+    "{cost_to_realize} is a {payback} payback against the {annual_benefit}/yr of relief. "
+    "On the merits, worth doing."
 )
 _GAIN_SIDE_CONS = (
     "It is worth doing, but there is nowhere to put it yet — the same shared "
@@ -220,10 +221,13 @@ _THEMATIC_PROS = (
 # so a reader dividing the figures the card displays could not reach it by any route.
 # All three figures are templated now, on the basis household.py's methodology
 # decision 1 commits the household to, and the sentence states its own scope.
+#
+# The rate and the tax are read from the profile the register's figures use (#706),
+# and "the 0% bracket" sentence is chosen by the computed budget, so neither can
+# disagree with the figures beside it. "Several hundred dollars" was a reading of a
+# figure the card did not show; the card shows the figure now ({gain_tax}).
 _THEMATIC_CONS = (
-    "Unwinding realizes {embedded_gain} of "
-    "gain, costing several hundred dollars in 18.07% capital-gains tax (15% federal + "
-    "3.07% PA) now that the 0% bracket is gone — for no location benefit. You have decided to keep the sector bets. "
+    "{unwind_sentence} {bracket_sentence} You have decided to keep the sector bets. "
     "{value} of that book sits in the taxable TOD account; household-wide the same "
     "symbols hold {thematic_equity_value} of equity against the household's "
     "{lookthrough_equity_value} of look-through equity — {thematic_equity_share}, a "
@@ -288,24 +292,43 @@ _TOD_INCOME_PROS = (
 )
 _TOD_INCOME_CONS = (
     "There is no pre-tax space — the Traditional IRA capacity {group_2_title} "
-    "details is already spoken for. And GHYIX is a municipal fund — its interest "
-    "is federally exempt, so taxable is exactly where it belongs; sheltering it "
-    "would waste the shelter. The rest carry embedded gains of {embedded_gain}, "
-    "now taxable at 18.07% (15% federal + 3.07% PA) with the 0% bracket gone — "
-    "another reason to leave them undisturbed. This book is externally managed "
+    "details is already spoken for. {muni_sentence} The rest carry embedded gains of "
+    "{embedded_gain}, taxable at {gain_rate} ({gain_rate_parts}) — another reason to "
+    "leave them undisturbed. {bracket_sentence} This book is externally managed "
     "and frozen by decision, not by oversight. Logged as accepted."
 )
 
 # {population_count}/{population_value} span all matched holdings (matched_symbols);
-# {row_count} is the register-row count shown in the expander. The gap is GHYIX: a
-# federally-exempt muni that generates no A/B action, so it is counted but not listed.
+# {row_count} is the register-row count shown in the expander. The gap is the book's
+# municipal fund: federally exempt, so it generates no A/B action and is counted but
+# not listed. Its ticker is read from the book ({muni_caption}), never typed (#706).
 _TOD_INCOME_CAPTION = (
     "This group covers {population_count} holdings worth {population_value}. "
-    "{row_count} appear below (worth {shown_value}) — GHYIX is a federally exempt "
-    "municipal fund, so there is no federal tax to save and moving it into a "
-    "pre-tax account would convert exempt interest into ordinary income. It is "
-    "correctly located and generates no action."
+    "{row_count} appear below (worth {shown_value}) — {muni_caption}"
 )
+
+# The sentences a book-read municipal fund puts in the TOD card, by how many the book
+# holds. A sentence chosen by a computed figure covers zero: with no municipal fund
+# in the group there is nothing exempt to explain, and the card says so.
+_MUNI_SENTENCE = {
+    0: "No municipal fund sits in this book.",
+    1: ("And {muni_symbols} is a municipal fund — its interest is federally exempt, so "
+        "taxable is exactly where it belongs; sheltering it would waste the shelter."),
+    "many": ("And {muni_symbols} are municipal funds — their interest is federally "
+             "exempt, so taxable is exactly where they belong; sheltering them would "
+             "waste the shelter."),
+}
+_MUNI_CAPTION = {
+    0: "every holding in this group is a register row.",
+    1: ("{muni_symbols} is a federally exempt municipal fund, so there is no federal "
+        "tax to save and moving it into a pre-tax account would convert exempt "
+        "interest into ordinary income. It is correctly located and generates no "
+        "action."),
+    "many": ("{muni_symbols} are federally exempt municipal funds, so there is no "
+             "federal tax to save and moving them into a pre-tax account would convert "
+             "exempt interest into ordinary income. They are correctly located and "
+             "generate no action."),
+}
 
 _SAA_TAXABLE_PROS = (
     "{count} holdings worth {value} — treasuries, TIPS, commodities, and a REIT — "
@@ -475,7 +498,10 @@ ACTION_GROUPS: list[dict] = [
         # not weak on merit — so it sits in the blocked/waiting bucket, scored near
         # the rollover that unblocks it, not down at "not worth doing".
         "score": 3, "status": "blocked",
-        "action": "Defer — with the 0% bracket gone this costs {cost_to_realize} to "
+        # "With the 0% bracket gone" left this line (#706): whether the bracket is gone
+        # is the computed budget's to say, and the For paragraph's {bracket_sentence}
+        # says it.
+        "action": "Defer — this costs {cost_to_realize} to "
                   "relieve {annual_benefit}/yr (a {payback} payback, worth doing), but "
                   "the Traditional IRA is full: the loss side alone nearly consumes it. "
                   "Revisit after the 401(k) rollover frees space.",
@@ -498,6 +524,13 @@ ACTION_GROUPS: list[dict] = [
         # mandatory to reconcile the two. `resolve_caption` derives both numbers, so
         # neither is written down here.
         "population": "matched_symbols", "caption": _THEMATIC_CAPTION,
+        # A RECORDED DECISION (#706): it keeps its decision and the date it was
+        # recorded, taken from the commit that recorded it because the text states
+        # none. Its figures and rates are today's. "reason_by_rates" names the
+        # stated reason today's rates could reverse: here, that unwinding costs
+        # capital-gains tax for no location benefit. decision_review checks it.
+        "decision": {"recorded": "2026-07-09", "commit": "ab62f8d",
+                     "reason_by_rates": "gain_tax"},
     },
     {
         "key": "rollover_401k", "title": "401(k) rollover",
@@ -517,14 +550,17 @@ ACTION_GROUPS: list[dict] = [
         "score": 5, "status": "accepted",
         "action": "Leave as-is — no better account exists until the 401(k) rollover "
                   "frees pre-tax space.",
-        # Ordinary-income holdings in the frozen TOD book (case A/B). GAOSX is the
-        # multi-asset fund with a credit sleeve; MCO is NOT here (correctly located).
-        # GHYIX is a federally-exempt muni: build_location_register drops it from
-        # cases A/B, so it stays in the population ({count}/{value}, via
-        # matched_symbols) but is NOT a register row — the caption states that gap.
-        # JCPB (Aug-2026): the advisor's core-plus bond ETF replacing HLIPX — an
-        # ordinary-income holding placed by the frozen book's manager, so it is
-        # claimed here (accepted), not by a sell-side group.
+        # Income holdings in the frozen TOD book (case A/B). THE BOOK NAMES THEM, not
+        # this list (#706): bind_groups_to_book fills `symbols` with every holding in
+        # the account whose sleeve is in `book_sleeves`, less any symbol another group
+        # names for the same account. So when the book's manager swaps a fund, as
+        # HLIPX became JCPB in Aug-2026, the group follows the book with no edit
+        # here. MCO is
+        # NOT here (single_stock, correctly located).
+        # A municipal fund in these sleeves is federally exempt:
+        # build_location_register drops it from cases A/B, so it stays in the
+        # population ({count}/{value}, via matched_symbols) but is NOT a register row —
+        # the caption states that gap, naming the fund from the book.
         # {drag_amount} states the group's annual cost, or why it is withheld. The
         # refusal here is NARROW: four rows, one refuses. GAOSX is a blend that looks
         # through to real_assets_commodities at 5%, and a blend with an unsizable
@@ -542,10 +578,14 @@ ACTION_GROUPS: list[dict] = [
                 ),
             },
         },
-        "symbols": ["BILPX", "GAOSX", "GHYIX", "JHEQX", "JCPB"],
+        "symbols": None,
+        "book_sleeves": ("liquid_alt", "multi_asset", "high_yield_muni", "hedged_equity",
+                         "core_fi_credit"),
         "case_filter": ["A", "B"], "accounts": ["Individual Taxable (TOD)"],
         "pros": _TOD_INCOME_PROS, "cons": _TOD_INCOME_CONS,
         "population": "matched_symbols", "caption": _TOD_INCOME_CAPTION,
+        "decision": {"recorded": "2026-07-09", "commit": "516f2c6",
+                     "reason_by_rates": "gain_tax"},
     },
     {
         "key": "saa_sleeves_taxable", "title": "SAA sleeves in taxable",
@@ -583,6 +623,10 @@ ACTION_GROUPS: list[dict] = [
         "symbols": ["PDBC", "SCHP", "VGIT", "VNQ"],
         "case_filter": ["A"], "accounts": ["Individual Taxable (Self-Directed)"],
         "pros": _SAA_TAXABLE_PROS, "cons": _SAA_TAXABLE_CONS,
+        # Its stated reason is capacity (pre-tax space is full), which no rate moves,
+        # so there is no rate-dependent reason to review.
+        "decision": {"recorded": "2026-07-09", "commit": "516f2c6",
+                     "reason_by_rates": None},
     },
     {
         "key": "predeploy_stranded_equity", "title": "Taxable small-cap/EM — already handled",
@@ -1031,12 +1075,14 @@ def _group_title(key: str) -> str:
     return next(g["title"] for g in ACTION_GROUPS if g["key"] == key)
 
 
-def _group_annual_benefit(register: pd.DataFrame, key: str) -> str | None:
+def _group_annual_benefit(register: pd.DataFrame, key: str,
+                          groups: "list[dict] | None" = None) -> str | None:
     """Another group's total annual_benefit (drag relief), formatted — or None if it
     claims no register rows. Lets one card cite a sibling card's LIVE tax-relief figure
     (the Roth-cleanup card weighs which Traditional-IRA claim to drop against the loss-
-    and gain-side relief) without hardcoding a dollar amount."""
-    grp = next(g for g in ACTION_GROUPS if g["key"] == key)
+    and gain-side relief) without hardcoding a dollar amount. ``groups`` are the groups
+    bound to the book (bind_groups_to_book); the authored ones by default."""
+    grp = next(g for g in (ACTION_GROUPS if groups is None else groups) if g["key"] == key)
     reg = filter_register_for_group(register, grp)
     if reg.empty:
         return None
@@ -1050,15 +1096,19 @@ def _group_annual_benefit(register: pd.DataFrame, key: str) -> str | None:
     return _fmt_dollars(float(reg["annual_benefit"].sum()))
 
 
-def assert_full_coverage(register: pd.DataFrame) -> None:
+def assert_full_coverage(register: pd.DataFrame, groups: "list[dict] | None" = None) -> None:
     """Every register row must be claimed by at least one action group. RAISE (at
     render) if any row is orphaned — the authored groups and the computed register
     must never silently drift apart. Depends on filter_register_for_group keeping
-    each row's original register index (see that function)."""
+    each row's original register index (see that function).
+
+    ``groups`` is the page's groups bound to the book (bind_groups_to_book); without
+    it the authored ACTION_GROUPS are checked, and a group whose symbols the book
+    names claims nothing."""
     if register.empty:
         return
     covered: set = set()
-    for g in ACTION_GROUPS:
+    for g in (ACTION_GROUPS if groups is None else groups):
         covered |= set(filter_register_for_group(register, g).index)
     orphans = register.index.difference(covered)
     if len(orphans):
@@ -1071,6 +1121,97 @@ def assert_full_coverage(register: pd.DataFrame) -> None:
             "Every register row must be claimed by a group — extend a group's "
             "symbols/case_filter/accounts, or add a group."
         )
+
+
+def _is_municipal(sleeve) -> bool:
+    """A sleeve whose declared character is municipal interest (TAX_CHARACTER)."""
+    from src.location_config import SLEEVE_TAX_CHARACTER
+    return str(SLEEVE_TAX_CHARACTER.get(str(sleeve), "")).startswith("muni")
+
+
+def bind_groups_to_book(
+    securities_df: pd.DataFrame, positions_df: pd.DataFrame, accounts_df: pd.DataFrame,
+    groups: "list[dict] | None" = None,
+) -> list[dict]:
+    """The action groups with every symbol list the BOOK decides filled in (#706).
+
+    A group carrying ``book_sleeves`` (frozen_tod_income) types no tickers. Its
+    symbols are the holdings in its accounts whose sleeve (securities.sleeve_category)
+    is one of its book_sleeves, less any symbol another group names for one of the
+    same accounts: JEPI and JEPQ share the hedged-equity sleeve, and the loss and gain
+    sides claim them. Its ``muni_symbols`` are those of its symbols in a municipal
+    sleeve, which its texts name. Every other group is returned as authored.
+
+    Returns copies: ACTION_GROUPS itself is never changed, so one render's book cannot
+    leak into the next.
+    """
+    groups = ACTION_GROUPS if groups is None else groups
+    sleeve_of = dict(zip(securities_df["ticker"], securities_df["sleeve_category"]))
+    out = []
+    for g in groups:
+        sleeves = g.get("book_sleeves")
+        if not sleeves:
+            out.append(g)
+            continue
+        accounts = set(g.get("accounts") or [])
+        named = {s for o in groups if o is not g and o.get("symbols")
+                 and (o.get("accounts") is None or accounts & set(o["accounts"]))
+                 for s in o["symbols"]}
+        pseudos = _accounts_to_pseudonyms(accounts_df, g.get("accounts"))
+        held = positions_df.loc[positions_df["pseudonym"].isin(pseudos), "symbol"]
+        symbols = sorted({str(s) for s in held
+                          if sleeve_of.get(s) in sleeves and s not in named})
+        out.append({**g, "symbols": symbols,
+                    "muni_symbols": [s for s in symbols if _is_municipal(sleeve_of[s])]})
+    return out
+
+
+def _gain_tax_today(gain: float, tax_profile: dict, headroom_remaining: float) -> float:
+    """The capital-gains tax a realization of ``gain`` costs at today's rates: the
+    residence's rate on all of it, and the federal rate on what the 0% bracket's
+    remaining room does not cover. Zero for a gain of zero or less."""
+    from src.location_config import _require_rate
+    if gain <= 0:
+        return 0.0
+    federal = _require_rate(tax_profile, "federal_ltcg")
+    state = _require_rate(tax_profile, "state_ltcg")
+    return state * gain + federal * max(0.0, gain - max(0.0, headroom_remaining))
+
+
+def decision_review(
+    group: dict, positions_df: pd.DataFrame, accounts_df: pd.DataFrame,
+    register: pd.DataFrame, tax_profile: dict, headroom: dict,
+) -> "dict | None":
+    """A recorded decision's record for this render, or None for a group that records
+    none: {recorded, commit, reason, holds, review}.
+
+    The decision and its date stay as recorded; its figures are today's. ``holds`` is
+    False when today's rates would reverse the decision's stated rate-dependent
+    reason, and ``review`` then says why, for the page to flag. No decision is changed
+    here. A decision whose reason no rate moves has ``holds`` True and reason None.
+    """
+    rec = group.get("decision")
+    if not rec:
+        return None
+    out = {"recorded": rec["recorded"], "commit": rec["commit"],
+           "reason": rec.get("reason_by_rates"), "holds": True, "review": None}
+    if rec.get("reason_by_rates") == "gain_tax":
+        pop = _pop_holdings(group, positions_df, accounts_df, register)
+        gain = 0.0
+        if not pop.empty:
+            eg, _ = compute_embedded_gain(positions_df)
+            eg = eg.merge(pop[["pseudonym", "symbol"]].drop_duplicates(),
+                          on=["pseudonym", "symbol"], how="inner")
+            gain = float(eg["embedded_gain"].sum()) if not eg.empty else 0.0
+        tax = _gain_tax_today(gain, tax_profile, headroom["remaining"])
+        out["gain"], out["tax"] = gain, tax
+        if tax <= 0:
+            out["holds"] = False
+            out["review"] = (
+                "At today's rates, realizing this group's gains costs no capital-gains "
+                "tax, so the tax cost this decision gave as a reason no longer holds. "
+                "Review it.")
+    return out
 
 
 def _fmt_dollars(x: float) -> str:
@@ -1174,8 +1315,8 @@ def format_tax_character(character: "str | None") -> str:
     format_assumed_yield above, which leaves its `table` case unmarked "because it is
     the only one a reader can verify unaided."
 
-    No character is verifiable unaided. A reader cannot tell 25.07% from 20.67% by
-    looking at a dollar figure, so there is no case that earns going unmarked — and an
+    No character is verifiable unaided. A reader cannot tell the ordinary rate from the
+    §199A one by looking at a dollar figure, so there is no case that earns going unmarked — and an
     unmarked row would read as "no character was declared here" rather than as "the
     ordinary one", which inverts the meaning. Following the precedent literally would
     have been the wrong call; stating why stops someone restoring consistency later.
@@ -1242,9 +1383,13 @@ _CHARACTER_PHRASE = {
     "ordinary":          "taxed as **ordinary income**",
     "qualified":         "taxed at the **qualified-dividend** rate",
     "qualified_199a":    "taxed at the **REIT §199A** rate (ordinary less the 20% deduction)",
-    "treasury":          "**US Treasury obligations**, whose interest PA does not tax "
-                         "— the federal rate only",
-    "muni_out_of_state": "**federally exempt municipal** interest, which PA still taxes",
+    # The two members whose second fact is about the residence (TAX_CHARACTER). Neither
+    # names a place: the rates the residence switches on come from load_tax_residence.
+    "treasury":          "**US Treasury obligations**, whose interest federal law exempts "
+                         "from state and local income tax (31 U.S.C. § 3124(a), U.S. Code "
+                         "2024 edition) — the federal rate only",
+    "muni_out_of_state": "**federally exempt municipal** interest, taxed in full at the "
+                         "residence's rate (no in-state share is modelled)",
     "muni_in_state":     "**fully exempt municipal** interest",
     "collectibles":      "a **collectible**, which changes the rate on a *sale* rather "
                          "than on income",
@@ -1256,7 +1401,7 @@ def tax_character_note(register) -> str:
 
     The rate block above lists four rates and stopping there implies the model has
     exactly four — which was true only while the rate was a boolean, and is what let
-    US Treasury interest be charged PA tax (#283). This says what a holding is
+    US Treasury interest be charged state tax (#283). This says what a holding is
     actually taxed at and why that is a per-holding fact.
 
     COUNTS ARE DERIVED FROM THE REGISTER, never written down, for the same reason
@@ -1759,10 +1904,18 @@ def resolve_placeholders(
     compositions_df: pd.DataFrame | None = None,
     tier_state: "dict | None" = None,
     asset_classes_df: pd.DataFrame | None = None,
+    tax_profile: "dict | None" = None,
 ) -> dict[str, str | None]:
     """Resolve every placeholder for a group. A key maps to a formatted string, or
     None if it cannot resolve (empty subset) — render_prose raises if the prose
     references a None key.
+
+    tax_profile is the profile the register was built with (federal from TAX_PROFILE,
+    state and local from the residence: liquidity.residence_tax_profile). Every rate a
+    card's text states is read from it — {gain_rate}, {gain_rate_parts}, {gain_tax} —
+    so a text and the figures beside it cannot disagree (#706). Omit it and those
+    resolve to None, so a card that states a rate raises rather than typing one.
+    {bracket_sentence} is chosen by the computed 0% budget, never typed.
 
     tier_state (from deploy_state) supplies the deploy card's effect and floor
     figures. Omit it and those resolve to None, so the deploy prose raises rather
@@ -1782,6 +1935,7 @@ def resolve_placeholders(
     """
     hr = capital_gains_headroom(register)
     base = {
+        **_rate_placeholders(tax_profile, hr),
         "headroom_total": _fmt_dollars(hr["total"]),
         "headroom_consumed": _fmt_dollars(hr["consumed"]),
         "headroom_remaining": _fmt_dollars(hr["remaining"]),
@@ -1811,10 +1965,12 @@ def resolve_placeholders(
     value = _fmt_dollars(pop["current_value"].sum()) if not pop.empty else None
     count = str(len(pop)) if not pop.empty else None
 
+    _gain_raw = None
     if not pop.empty:
         eg, _ = compute_embedded_gain(positions_df)
         eg = eg.merge(pop[["pseudonym", "symbol"]].drop_duplicates(), on=["pseudonym", "symbol"], how="inner")
-        embedded_gain = _fmt_dollars(eg["embedded_gain"].sum()) if not eg.empty else None
+        _gain_raw = float(eg["embedded_gain"].sum()) if not eg.empty else None
+        embedded_gain = _fmt_dollars(_gain_raw) if _gain_raw is not None else None
     else:
         embedded_gain = None
 
@@ -1874,12 +2030,60 @@ def resolve_placeholders(
         if not _rebuy.empty:
             roth_equity_rebuy = _fmt_dollars(float(_rebuy["current_value"].sum()))
 
+    # The tax a realization of the population's gain costs at the profile's full rate,
+    # the same convention as cost_to_realize, and the sentence that states it. Both
+    # cover a gain of zero or less, and an unknown profile resolves to None.
+    gain_tax = unwind_sentence = None
+    if tax_profile is not None and _gain_raw is not None:
+        from src.location_config import ltcg_rate
+        gain_tax = _fmt_dollars(max(0.0, _gain_raw) * ltcg_rate(tax_profile))
+        if _gain_raw > 0:
+            unwind_sentence = (
+                f"Unwinding realizes {embedded_gain} of gain, costing {gain_tax} in "
+                f"capital-gains tax at {base['gain_rate']} ({base['gain_rate_parts']}) "
+                "— for no location benefit.")
+        else:
+            unwind_sentence = (
+                f"Unwinding realizes no net gain ({embedded_gain}), so it would cost no "
+                "capital-gains tax, and it would win no location benefit either.")
+
+    # The municipal funds a book-bound group holds (bind_groups_to_book), named from
+    # the book. An unbound group has none to name and resolves to None.
+    muni = group.get("muni_symbols")
+    muni_symbols = _join_tickers(muni) if muni else None
+    muni_sentence = (None if muni is None else
+                     _MUNI_SENTENCE[len(muni) if len(muni) < 2 else "many"]
+                     .format(muni_symbols=muni_symbols))
+
     return {**base, "value": value, "count": count,
             "embedded_gain": embedded_gain, "annual_benefit": annual_benefit,
             "register_count": register_count,
             "cost_to_realize": cost_to_realize, "payback": payback,
             "roth_equity_rebuy": roth_equity_rebuy,
+            "gain_tax": gain_tax, "unwind_sentence": unwind_sentence,
+            "muni_symbols": muni_symbols, "muni_sentence": muni_sentence,
             **stateful}
+
+
+def _rate_placeholders(tax_profile: "dict | None", hr: dict) -> dict[str, str | None]:
+    """{gain_rate}, {gain_rate_parts} and {bracket_sentence}, read from the profile and
+    the computed 0% budget (capital_gains_headroom). No profile: all three None."""
+    if tax_profile is None:
+        return {"gain_rate": None, "gain_rate_parts": None, "bracket_sentence": None}
+    from src.location_config import _require_rate, ltcg_rate
+    federal = _require_rate(tax_profile, "federal_ltcg")
+    state = _require_rate(tax_profile, "state_ltcg")
+    parts = (f"{federal:.0%} federal + {state:.2%} state and local" if state > 0 else
+             f"{federal:.0%} federal only; no state or local tax is included")
+    if not hr["income_known"]:
+        bracket = "No income is configured, so the 0% bracket is treated as used up."
+    elif hr["total"] <= 0:
+        bracket = "2026 income puts the 0% bracket out of reach."
+    else:
+        bracket = (f"The 0% bracket still has {_fmt_dollars(hr['total'])} of room in "
+                   "2026, which these figures do not deduct.")
+    return {"gain_rate": f"{ltcg_rate(tax_profile):.2%}", "gain_rate_parts": parts,
+            "bracket_sentence": bracket}
 
 
 _PLACEHOLDER_RE = re.compile(r"\{(\w+)\}")
@@ -1928,11 +2132,18 @@ def resolve_caption(
     pop = _pop_holdings(group, positions_df, accounts_df, register)
     reg = filter_register_for_group(register, group)
     row_count = len(reg)
+    # {muni_caption}: the book-bound group's municipal funds, named from the book
+    # (bind_groups_to_book). An unbound group resolves it to None, so it raises.
+    muni = group.get("muni_symbols")
+    muni_caption = (None if muni is None else
+                    _MUNI_CAPTION[len(muni) if len(muni) < 2 else "many"]
+                    .format(muni_symbols=_join_tickers(muni) if muni else ""))
     resolved = {
         "population_count": str(len(pop)) if not pop.empty else None,
         "population_value": _fmt_dollars(pop["current_value"].sum()) if not pop.empty else None,
         "row_count": str(row_count),
         "shown_value": _fmt_dollars(reg["current_value"].sum()) if not reg.empty else None,
+        "muni_caption": muni_caption,
     }
     out = escape_md(render_prose(tmpl, resolved))
     # Subject-verb agreement for the "{row_count} appear below" clause, fixed HERE so
@@ -1953,6 +2164,18 @@ def validate_action_groups() -> None:
                 f"group {g['key']!r} uses population='matched_symbols' (its count may "
                 "differ from its register-row count) but supplies no caption."
             )
+        # A group the book names (#706) types no tickers: a typed list beside
+        # book_sleeves would be a second copy that the book and the list could split.
+        if g.get("book_sleeves") and g.get("symbols") is not None:
+            raise ValueError(
+                f"group {g['key']!r} reads its symbols from the book (book_sleeves) "
+                "but also types a symbols list.")
+        rec = g.get("decision")
+        if rec is not None:
+            from datetime import date as _date
+            _date.fromisoformat(rec["recorded"])   # raises on a malformed date
+            if not rec.get("commit"):
+                raise ValueError(f"group {g['key']!r} records a decision with no commit.")
 
 
 validate_action_groups()   # enforce config invariants at import time

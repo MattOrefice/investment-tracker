@@ -49,11 +49,11 @@ from src.location_config import (
     ACCOUNT_SHELTER_PRIORITY,
     SLEEVE_ASSUMED_YIELD,
     SLEEVE_PRIORITY_BY_ACCOUNT_TYPE,
-    TAX_PROFILE,
 )
+from tests.tax_profiles import SYNTHETIC_TAX_PROFILE
 
 VALUE = 10_000.0
-ORDINARY = TAX_PROFILE["federal_marginal"] + TAX_PROFILE["state_marginal"]
+ORDINARY = SYNTHETIC_TAX_PROFILE["federal_marginal"] + SYNTHETIC_TAX_PROFILE["state_marginal"]
 
 # A composition whose underlying sleeves are ALL in the yield table, so the
 # look-through is complete and its expected value is computable by hand here.
@@ -95,12 +95,13 @@ def _compositions(rows):
 def _fixture():
     """One symbol per basis, all inside ONE authored action group.
 
-    The symbols and the account name are the real ``frozen_tod_income`` group's
-    (``BILPX/GAOSX/GHYIX/JHEQX/JCPB`` in "Individual Taxable (TOD)", case_filter
-    A/B) because filter_register_for_group matches on the group's AUTHORED symbol
-    list. An invented ticker is claimed by no group, and the surface tests below
-    then skip — which reads as green and proves nothing. That is how the first cut
-    of this fixture silently left three of the five surfaces unexercised.
+    The symbols and the account name are those the ``frozen_tod_income`` group
+    covered when this was written (``BILPX/GAOSX/GHYIX/JHEQX/JCPB`` in "Individual
+    Taxable (TOD)", case_filter A/B). That group now reads its symbols from the book
+    (#706), so the surface tests bind the groups to their fixture's book
+    (_surface_fixture, _surface). A row no group claims makes those tests skip, which
+    reads as green and proves nothing: that is how the first cut of this fixture
+    silently left three of the five surfaces unexercised.
 
     Sleeves are ASSIGNED here to reach each basis, not to describe the real book:
 
@@ -134,7 +135,7 @@ def _register(compositions="default"):
     if compositions == "default":
         compositions = comps
     return build_location_register(
-        pos, acct, sec, TAX_PROFILE, SLEEVE_PRIORITY_BY_ACCOUNT_TYPE,
+        pos, acct, sec, SYNTHETIC_TAX_PROFILE, SLEEVE_PRIORITY_BY_ACCOUNT_TYPE,
         ACCOUNT_SHELTER_PRIORITY, compositions_df=compositions)
 
 
@@ -192,7 +193,7 @@ def test_blend_with_an_unlisted_underlying_sleeve_now_raises():
                            ("JCPB", UNLISTED_UNDERLYING_MIX)])
     with pytest.raises(ValueError, match="no yield basis"):
         build_location_register(
-            pos, acct, sec, TAX_PROFILE, SLEEVE_PRIORITY_BY_ACCOUNT_TYPE,
+            pos, acct, sec, SYNTHETIC_TAX_PROFILE, SLEEVE_PRIORITY_BY_ACCOUNT_TYPE,
             ACCOUNT_SHELTER_PRIORITY, compositions_df=comps)
 
 
@@ -211,7 +212,7 @@ def test_blend_with_no_composition_is_not_modelled():
     pos, acct, sec, comps = _fixture()
     only_jcpb = comps[comps["fund_symbol"] == "JCPB"]      # GAOSX loses its composition
     reg = build_location_register(
-        pos, acct, sec, TAX_PROFILE, SLEEVE_PRIORITY_BY_ACCOUNT_TYPE,
+        pos, acct, sec, SYNTHETIC_TAX_PROFILE, SLEEVE_PRIORITY_BY_ACCOUNT_TYPE,
         ACCOUNT_SHELTER_PRIORITY, compositions_df=only_jcpb)
     r = _row(reg, "GAOSX")
     assert r["yield_basis"] == "not_modelled"
@@ -224,7 +225,7 @@ def test_blend_whose_composition_does_not_sum_to_one_is_not_modelled():
     pos, acct, sec, _ = _fixture()
     short = _compositions([("GAOSX", [("core_fi_treasury", 0.40), ("cash", 0.30)])])
     reg = build_location_register(
-        pos, acct, sec, TAX_PROFILE, SLEEVE_PRIORITY_BY_ACCOUNT_TYPE,
+        pos, acct, sec, SYNTHETIC_TAX_PROFILE, SLEEVE_PRIORITY_BY_ACCOUNT_TYPE,
         ACCOUNT_SHELTER_PRIORITY, compositions_df=short)
     assert _row(reg, "GAOSX")["yield_basis"] == "not_modelled"
 
@@ -262,7 +263,7 @@ def test_unlisted_non_blend_sleeve_now_raises():
     sec.loc[sec["ticker"] == "JHEQX", "sleeve_category"] = UNLISTED
     with pytest.raises(ValueError, match="no yield basis"):
         build_location_register(
-            pos, acct, sec, TAX_PROFILE, SLEEVE_PRIORITY_BY_ACCOUNT_TYPE,
+            pos, acct, sec, SYNTHETIC_TAX_PROFILE, SLEEVE_PRIORITY_BY_ACCOUNT_TYPE,
             ACCOUNT_SHELTER_PRIORITY, compositions_df=comps)
 
 
@@ -298,10 +299,34 @@ def test_look_through_benefit_uses_the_looked_through_yield():
 
 # ── surface 1: _group_annual_benefit (location_actions.py:760) ───────────────
 
-def _group_holding(reg, symbol):
-    """The first ACTION_GROUP whose filter claims this symbol's row."""
+def _surface_fixture():
+    """_fixture with BILPX in its real sleeve, liquid_alt.
+
+    The surface tests need a GROUP to claim a refused row. frozen_tod_income reads
+    its symbols from the book (#706): the TOD account's holdings in its book_sleeves.
+    BILPX's real sleeve is one of them, and liquid_alt is in NOT_MODELLED_SLEEVES
+    (#707), so BILPX both refuses and is claimed. GHYIX keeps us_mid_cap, which no
+    group's sleeves include, so it is claimed by none; these tests do not need it.
+    """
+    pos, acct, sec, comps = _fixture()
+    sec = sec.copy()
+    sec.loc[sec["ticker"] == "BILPX", "sleeve_category"] = "liquid_alt"
+    return pos, acct, sec, comps
+
+
+def _surface(pos, acct, sec, comps):
+    """The register and the action groups bound to this fixture's book."""
+    from src.location_actions import bind_groups_to_book
+    reg = build_location_register(
+        pos, acct, sec, SYNTHETIC_TAX_PROFILE, SLEEVE_PRIORITY_BY_ACCOUNT_TYPE,
+        ACCOUNT_SHELTER_PRIORITY, compositions_df=comps)
+    return reg, bind_groups_to_book(sec, pos, acct)
+
+
+def _group_holding(reg, symbol, groups):
+    """The first bound group whose filter claims this symbol's row."""
     from src.location_actions import filter_register_for_group
-    for g in ACTION_GROUPS:
+    for g in groups:
         rr = filter_register_for_group(reg, g)
         if symbol in set(rr["symbol"]):
             return g
@@ -312,13 +337,14 @@ def test_surface_group_total_refuses_when_a_row_is_not_modelled():
     """SURFACE 1/5. A group total that omits a refused row must resolve to None so
     render_prose raises, never to a smaller number rendered as complete."""
     from src.location_actions import _group_annual_benefit
-    reg = _register()
-    g = _group_holding(reg, "BILPX")
+    reg, groups = _surface(*_surface_fixture())
+    assert reg.set_index("symbol").loc["BILPX", "yield_basis"] == "not_modelled"
+    g = _group_holding(reg, "BILPX", groups)
     assert g is not None, (
-        "the fixture uses frozen_tod_income's authored symbols precisely so a group "
-        "claims this row; a skip here would leave the surface unexercised"
+        "the fixture's book puts BILPX in a sleeve frozen_tod_income reads, precisely "
+        "so a group claims this row; a skip here would leave the surface unexercised"
     )
-    assert _group_annual_benefit(reg, g["key"]) is None
+    assert _group_annual_benefit(reg, g["key"], groups) is None
 
 
 def test_surface_group_total_is_a_figure_when_nothing_is_refused():
@@ -326,28 +352,26 @@ def test_surface_group_total_is_a_figure_when_nothing_is_refused():
     by DROPPING the refused holdings rather than by searching for a clean group, so
     this can never degrade into a skip that reads as a pass."""
     from src.location_actions import _group_annual_benefit, filter_register_for_group
-    pos, acct, sec, comps = _fixture()
+    pos, acct, sec, comps = _surface_fixture()
     keep = pos[~pos["symbol"].isin(["BILPX", "GHYIX"])]
-    reg = build_location_register(
-        keep, acct, sec, TAX_PROFILE, SLEEVE_PRIORITY_BY_ACCOUNT_TYPE,
-        ACCOUNT_SHELTER_PRIORITY, compositions_df=comps)
+    reg, groups = _surface(keep, acct, sec, comps)
     assert not reg["yield_basis"].eq("not_modelled").any(), "precondition: nothing refused"
-    g = _group_holding(reg, "GAOSX")
+    g = _group_holding(reg, "GAOSX", groups)
     assert g is not None, "precondition: a group claims the look-through row"
     assert not filter_register_for_group(reg, g).empty
-    assert _group_annual_benefit(reg, g["key"]) is not None
+    assert _group_annual_benefit(reg, g["key"], groups) is not None
 
 
 # ── surface 2 & 3: resolve_placeholders (location_actions.py:1148, :1156) ────
 
 def test_surface_placeholder_annual_benefit_refuses_when_not_modelled():
     """SURFACE 2/5."""
-    pos, acct, sec, comps = _fixture()
-    reg = _register()
-    g = _group_holding(reg, "BILPX")
+    pos, acct, sec, comps = _surface_fixture()
+    reg, groups = _surface(pos, acct, sec, comps)
+    g = _group_holding(reg, "BILPX", groups)
     assert g is not None, (
-        "the fixture uses frozen_tod_income's authored symbols precisely so a group "
-        "claims this row; a skip here would leave the surface unexercised"
+        "the fixture's book puts BILPX in a sleeve frozen_tod_income reads, precisely "
+        "so a group claims this row; a skip here would leave the surface unexercised"
     )
     resolved = resolve_placeholders(g, pos, acct, sec, reg, roth_idle_cash=1000.0,
                                    compositions_df=comps)
@@ -357,12 +381,12 @@ def test_surface_placeholder_annual_benefit_refuses_when_not_modelled():
 def test_surface_placeholder_payback_refuses_when_not_modelled():
     """SURFACE 3/5 — :1156's _ab feeds a rendered '<n>-year payback' string, so a
     silently-reduced denominator would render a payback that is too short."""
-    pos, acct, sec, comps = _fixture()
-    reg = _register()
-    g = _group_holding(reg, "BILPX")
+    pos, acct, sec, comps = _surface_fixture()
+    reg, groups = _surface(pos, acct, sec, comps)
+    g = _group_holding(reg, "BILPX", groups)
     assert g is not None, (
-        "the fixture uses frozen_tod_income's authored symbols precisely so a group "
-        "claims this row; a skip here would leave the surface unexercised"
+        "the fixture's book puts BILPX in a sleeve frozen_tod_income reads, precisely "
+        "so a group claims this row; a skip here would leave the surface unexercised"
     )
     resolved = resolve_placeholders(g, pos, acct, sec, reg, roth_idle_cash=1000.0,
                                    compositions_df=comps)
@@ -421,7 +445,7 @@ def test_drag_exclusion_notice_is_none_when_nothing_is_excluded():
     pos, acct, sec, comps = _fixture()
     keep = pos[~pos["symbol"].isin(["BILPX", "GHYIX"])]
     reg = build_location_register(
-        keep, acct, sec, TAX_PROFILE, SLEEVE_PRIORITY_BY_ACCOUNT_TYPE,
+        keep, acct, sec, SYNTHETIC_TAX_PROFILE, SLEEVE_PRIORITY_BY_ACCOUNT_TYPE,
         ACCOUNT_SHELTER_PRIORITY, compositions_df=comps)
     cov = drag_coverage(reg)
     assert cov.n_not_modelled == 0
@@ -434,7 +458,7 @@ def test_drag_coverage_on_an_empty_register():
                               "total_gain_loss", "cost_basis_total"]),
         pd.DataFrame(columns=["pseudonym", "display_name", "tax_treatment"]),
         pd.DataFrame(columns=["ticker", "name", "tax_efficiency", "sleeve_category"]),
-        TAX_PROFILE, SLEEVE_PRIORITY_BY_ACCOUNT_TYPE, ACCOUNT_SHELTER_PRIORITY,
+        SYNTHETIC_TAX_PROFILE, SLEEVE_PRIORITY_BY_ACCOUNT_TYPE, ACCOUNT_SHELTER_PRIORITY,
         compositions_df=None)
     cov = drag_coverage(reg)
     assert cov.total == 0.0 and cov.n_not_modelled == 0

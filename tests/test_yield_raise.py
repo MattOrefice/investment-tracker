@@ -44,8 +44,8 @@ from src.location_config import (
     NOT_MODELLED_SLEEVES,
     SLEEVE_ASSUMED_YIELD,
     SLEEVE_PRIORITY_BY_ACCOUNT_TYPE,
-    TAX_PROFILE,
 )
+from tests.tax_profiles import SYNTHETIC_TAX_PROFILE
 
 # A sleeve name in NO config set. After PR 2 every real sleeve resolves, so only a
 # name the config has never seen can reach the raise — which is precisely the
@@ -75,7 +75,7 @@ def _fixture(sleeve, symbol="JHEQX", compositions=None):
 def _build(sleeve, symbol="JHEQX", compositions=None):
     pos, acct, sec, comps = _fixture(sleeve, symbol, compositions)
     return build_location_register(
-        pos, acct, sec, TAX_PROFILE, SLEEVE_PRIORITY_BY_ACCOUNT_TYPE,
+        pos, acct, sec, SYNTHETIC_TAX_PROFILE, SLEEVE_PRIORITY_BY_ACCOUNT_TYPE,
         ACCOUNT_SHELTER_PRIORITY, compositions_df=comps)
 
 
@@ -278,7 +278,7 @@ def test_the_intl_carrier_trades_do_not_raise():
     ])
 
     reg = build_location_register(
-        pos, acct, sec, TAX_PROFILE, SLEEVE_PRIORITY_BY_ACCOUNT_TYPE,
+        pos, acct, sec, SYNTHETIC_TAX_PROFILE, SLEEVE_PRIORITY_BY_ACCOUNT_TYPE,
         ACCOUNT_SHELTER_PRIORITY, compositions_df=None)
 
     assert reg.empty, (

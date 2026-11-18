@@ -28,6 +28,8 @@ if IS_DEMO:
     st.stop()
 
 # ── Personal-mode imports ──────────────────────────────────────────────────────
+from datetime import date
+
 from src.db import get_connection
 from src.household_data import load_latest_positions
 from src.household import (
@@ -36,12 +38,15 @@ from src.household import (
     exclude_non_household_positions,
     sleeve_display_name,
 )
+from src.liquidity import residence_names, residence_tax_profile
+from src.personal_profile import load_tax_residence
 from src.location_config import (
-    TAX_PROFILE,
     SLEEVE_PRIORITY_BY_ACCOUNT_TYPE,
     ACCOUNT_SHELTER_PRIORITY,
     LTCG_0_BRACKET_CEILING_SINGLE_2026,
     is_directable,
+    ltcg_rate,
+    ordinary_rate,
     # IRS 2026 limits — for the ideal-location reference table (2c). Named constants
     # so no dollar literal is scattered in the page.
     IRA_CONTRIB_LIMIT_2026,
@@ -58,7 +63,8 @@ from src.location_config import (
     HSA_CATCHUP_55_2026,
 )
 from src.location_actions import (
-    ACTION_GROUPS,
+    bind_groups_to_book,
+    decision_review,
     STATUS_ORDER,
     STATUS_LABEL,
     INFORMATIONAL_KEYS,
@@ -128,18 +134,30 @@ with get_connection() as conn:
 # the register, deploy sizing, and every dollar figure below agree.
 positions_df = exclude_non_household_positions(positions_df, accounts_df)
 
+# ── Tax profile ─────────────────────────────────────────────────────────────────
+# Federal rates from TAX_PROFILE; state and local rates from the owner's tax
+# residence in the gitignored private/personal_profile.json (#706), as the Liquidity
+# page prices them. The committed tree names no home state. With no residence the
+# state and local rates are 0, and the Assumptions block says that none is included.
+_residence = load_tax_residence(IS_DEMO)
+_tax_profile = residence_tax_profile(_residence)
+_where = residence_names(_residence)
+
 # ── Derived frames ──────────────────────────────────────────────────────────────
 register = build_location_register(
     positions_df, accounts_df, securities_df,
-    TAX_PROFILE, SLEEVE_PRIORITY_BY_ACCOUNT_TYPE, ACCOUNT_SHELTER_PRIORITY,
+    _tax_profile, SLEEVE_PRIORITY_BY_ACCOUNT_TYPE, ACCOUNT_SHELTER_PRIORITY,
     # Multi-asset and target-date funds are sized by looking through their
     # compositions to the sleeve yields, not by an equity default. Omitting this
     # frame is not an error — every blend then refuses visibly instead.
     compositions_df=compositions_df,
 )
+# The action groups, with the symbol lists the book decides read from it (#706): the
+# frozen TOD group follows its manager's swaps rather than a typed list.
+ACTION_GROUPS = bind_groups_to_book(securities_df, positions_df, accounts_df)
 # Coverage invariant: every register row must be claimed by some action group.
 # Raise loudly at render if a new mislocation slips in with no group to narrate it.
-assert_full_coverage(register)
+assert_full_coverage(register, ACTION_GROUPS)
 deploy = build_roth_deploy_answer(
     positions_df, accounts_df, securities_df, compositions_df, saa_targets_df)
 _roth_idle_cash = deploy["idle_cash"]
@@ -376,7 +394,8 @@ for group in _ordered_groups:
                                     roth_idle_cash=_roth_idle_cash,
                                     compositions_df=compositions_df,
                                     tier_state=_deploy_tier,
-                                    asset_classes_df=asset_classes_df)
+                                    asset_classes_df=asset_classes_df,
+                                    tax_profile=_tax_profile)
     _card = (deploy_card_text(group, _deploy_tier, resolved)
              if group["key"] == "deploy_roth_cash" else None)
 
@@ -424,6 +443,16 @@ for group in _ordered_groups:
             # bold, before the two-paragraph For/Against reasoning below.
             st.markdown(f"**{render_prose_md(group['action'], resolved)}**")
             st.caption(escape_md(f"**{_STATUS_LABEL[group['status']]}** — {_summary_line(group, resolved, reg_rows)}"))
+            # A recorded decision keeps its decision and its date; its figures and
+            # rates are today's, and a reason today's rates reverse is flagged (#706).
+            _rec = decision_review(group, positions_df, accounts_df, register,
+                                   _tax_profile, capital_gains_headroom(register))
+            if _rec is not None:
+                _on = date.fromisoformat(_rec["recorded"])
+                st.caption(f"Decision recorded {_on:%B} {_on.day}, {_on.year} "
+                           f"(commit {_rec['commit']}). Its figures and rates are today's.")
+                if not _rec["holds"]:
+                    st.warning(_rec["review"])
             st.markdown(f"**For.** {render_prose_md(group['pros'], resolved)}")
             st.markdown(f"**Against.** {render_prose_md(group['cons'], resolved)}")
 
@@ -561,7 +590,7 @@ for group in _ordered_groups:
                 # The RATE that produced this row's Annual Benefit, beside the yield
                 # that produced it. Both multiplicands are authored, so both declare
                 # themselves — carrying one and not the other would imply the rate is
-                # self-evident, which is how Treasury interest was charged PA tax for
+                # self-evident, which is how Treasury interest was charged state tax for
                 # as long as the rate was a boolean (#278, #283).
                 show["tax_character"] = [
                     format_tax_character(c) for c in reg_rows["tax_character"]
@@ -614,8 +643,30 @@ for group in _ordered_groups:
 _, col, _ = st.columns([1, 8, 1])
 with col:
     with st.expander("Assumptions", expanded=False):
-        _ord = TAX_PROFILE["federal_marginal"] + TAX_PROFILE["state_marginal"]
-        _ltcg = TAX_PROFILE["federal_ltcg"] + TAX_PROFILE["state_ltcg"]
+        # Every rate here is read from the profile the register was built with
+        # (_tax_profile): federal from TAX_PROFILE, state and local from the residence.
+        _fed_ord = _tax_profile["federal_marginal"]
+        _fed_ltcg = _tax_profile["federal_ltcg"]
+        _ord = ordinary_rate(_tax_profile)
+        _ltcg = ltcg_rate(_tax_profile)
+        _gain_parts = (f"{_fed_ltcg:.0%} federal + {_tax_profile['state_ltcg']:.2%} "
+                       "state and local" if _tax_profile["state_ltcg"] > 0
+                       else f"{_fed_ltcg:.0%} federal only")
+        if _residence["jurisdictions"]:
+            _cites = "; ".join(f"{j['name']}: {j['source']}, {j['source_date']}"
+                               for j in _residence["jurisdictions"])
+            _state_lines = (
+                f"- State and local ordinary ({escape_md(_where)}): "
+                f"**{_tax_profile['state_marginal']:.2%}**\n"
+                f"- State and local on gains ({escape_md(_where)}): "
+                f"**{_tax_profile['state_ltcg']:.2%}** (sources: {escape_md(_cites)})\n"
+            )
+        else:
+            _state_lines = (
+                "- State and local: **none included** — "
+                f"{escape_md(_residence['problem'] or 'no tax residence')}. Add a "
+                "`tax_residence` to `private/personal_profile.json` to include them.\n"
+            )
         # Income comes from the runtime profile, so the headroom prose is stated
         # conditionally rather than asserting the exhausted-bracket conclusion
         # that only holds while income sits above the ceiling.
@@ -625,7 +676,7 @@ with col:
         if not _hr["income_known"]:
             _income_line = (
                 "- Federal ordinary marginal: "
-                f"**{TAX_PROFILE['federal_marginal']:.0%}** (2026 single bracket; "
+                f"**{_fed_ord:.0%}** (2026 single bracket; "
                 "your income is not configured)\n"
             )
             _headroom_para = (
@@ -638,7 +689,7 @@ with col:
             )
         else:
             _income_line = (
-                f"- Federal ordinary marginal: **{TAX_PROFILE['federal_marginal']:.0%}** "
+                f"- Federal ordinary marginal: **{_fed_ord:.0%}** "
                 f"(2026 single bracket at ~\\${_income:,.0f} income)\n"
             )
             if _hr["total"] > 0:
@@ -647,7 +698,7 @@ with col:
                     f"With 2026 income of ~\\${_income:,.0f} below the "
                     f"~\\${LTCG_0_BRACKET_CEILING_SINGLE_2026:,.0f} single-filer "
                     "0%-rate ceiling, that much realized long-term gain is federally "
-                    "untaxed; beyond it, gains are taxed at 15% federal + 3.07% PA."
+                    f"untaxed; beyond it, gains are taxed at {_gain_parts}."
                 )
             else:
                 _headroom_para = (
@@ -655,19 +706,23 @@ with col:
                     f"~\\${_income:,.0f} above the "
                     f"~\\${LTCG_0_BRACKET_CEILING_SINGLE_2026:,.0f} single-filer "
                     "0%-rate ceiling, the 0% bracket is exhausted — every realized "
-                    "long-term gain is taxed at 15% federal + 3.07% PA."
+                    f"long-term gain is taxed at {_gain_parts}."
                 )
 
         st.markdown(
-            "**Tax profile** (rates user-editable in `src/location_config.py`; "
-            "income in `private/personal_profile.json`):\n\n"
+            "**Tax profile** (federal rates user-editable in `src/location_config.py`; "
+            "income and the tax residence in `private/personal_profile.json`):\n\n"
             + _income_line
-            + f"- Federal long-term capital gains: **{TAX_PROFILE['federal_ltcg']:.0%}** "
+            + f"- Federal long-term capital gains: **{_fed_ltcg:.0%}** "
             "— the rate that applies once the 0% bracket is used up\n"
-            f"- State ordinary (PA flat): **{TAX_PROFILE['state_marginal']:.2%}**\n"
-            f"- State LTCG (PA — no preferential rate): **{TAX_PROFILE['state_ltcg']:.2%}**\n"
-            f"- Combined ordinary rate: **{_ord:.2%}** · combined rate on realized "
-            f"gains: **{_ltcg:.2%}** (15% federal + PA)\n\n"
+            + _state_lines
+            + f"- Combined ordinary rate: **{_ord:.2%}** · combined rate on realized "
+            f"gains: **{_ltcg:.2%}** ({_gain_parts})\n\n"
+            # #706: the residence's rate reaches a national muni fund in full. The
+            # model holds no in-state share for a national fund, and says so.
+            "The model treats a national municipal fund's income as exempt from federal "
+            "tax and **fully taxable by the residence**: it holds no in-state share for "
+            "a national fund.\n\n"
             + _headroom_para
             + "\n\n"
             # THE FOUR RATES ABOVE ARE INPUTS, NOT THE ANSWER (#278). Listing them and

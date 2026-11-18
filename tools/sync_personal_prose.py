@@ -14,7 +14,7 @@ edits actually landed, which is deliberately NOT filename-sorted order:
     2. migrate_personal_intl_rationales      (fill IDHQ/AVIV/AVDV; de-superlative AVUV/IEMG)
     3. migrate_personal_revisit_clause_bold  (bold + split the five existing revisit clauses)
     4. migrate_personal_missing_falsifiers   (add the five missing falsifiers; PDBC opening rewrite)
-    5. migrate_personal_vgit_jurisdiction    (VGIT: DC -> Pennsylvania's flat rate, #283)
+    5. migrate_personal_vgit_jurisdiction    (VGIT: the DC reference replaced, #283)
 
 Today's per-ticker substring swaps happen to be order-independent, but that is
 coincidental, not guaranteed — the real order is encoded here so a future

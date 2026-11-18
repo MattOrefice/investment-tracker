@@ -39,8 +39,8 @@ from src.location_config import (
     BLEND_SLEEVES,
     SLEEVE_ASSUMED_YIELD,
     SLEEVE_PRIORITY_BY_ACCOUNT_TYPE,
-    TAX_PROFILE,
 )
+from tests.tax_profiles import SYNTHETIC_TAX_PROFILE
 
 # A sleeve name that is in NO config set, deliberately. After #210 PR 2 every
 # real sleeve resolves through the table, a look-through or an explicit refusal,
@@ -50,7 +50,7 @@ from src.location_config import (
 UNLISTED = "zz_unlisted_test_sleeve"
 
 VALUE = 50_000.0
-ORDINARY = TAX_PROFILE["federal_marginal"] + TAX_PROFILE["state_marginal"]
+ORDINARY = SYNTHETIC_TAX_PROFILE["federal_marginal"] + SYNTHETIC_TAX_PROFILE["state_marginal"]
 
 
 def _fixture():
@@ -87,7 +87,7 @@ def _fixture():
 def _register(pos=None, acct=None, sec=None):
     if pos is None:
         pos, acct, sec = _fixture()
-    return build_location_register(pos, acct, sec, TAX_PROFILE,
+    return build_location_register(pos, acct, sec, SYNTHETIC_TAX_PROFILE,
                                   SLEEVE_PRIORITY_BY_ACCOUNT_TYPE, ACCOUNT_SHELTER_PRIORITY)
 
 

@@ -9,16 +9,17 @@ import pandas as pd
 import pytest
 
 from src.liquidity import build_liquidity_ladder, EARLY_WITHDRAWAL_PENALTY
-from src.location_config import TAX_PROFILE, ordinary_rate, ltcg_rate
+from src.location_config import ordinary_rate, ltcg_rate
+from tests.tax_profiles import SYNTHETIC_TAX_PROFILE
 
 
 # ── Combined-rate helpers must fail loud on an incomplete tax_profile ──────────
 
 def test_full_tax_profile_yields_the_expected_combined_rates():
-    assert ltcg_rate(TAX_PROFILE) == pytest.approx(
-        TAX_PROFILE["federal_ltcg"] + TAX_PROFILE["state_ltcg"])
-    assert ordinary_rate(TAX_PROFILE) == pytest.approx(
-        TAX_PROFILE["federal_marginal"] + TAX_PROFILE["state_marginal"])
+    assert ltcg_rate(SYNTHETIC_TAX_PROFILE) == pytest.approx(
+        SYNTHETIC_TAX_PROFILE["federal_ltcg"] + SYNTHETIC_TAX_PROFILE["state_ltcg"])
+    assert ordinary_rate(SYNTHETIC_TAX_PROFILE) == pytest.approx(
+        SYNTHETIC_TAX_PROFILE["federal_marginal"] + SYNTHETIC_TAX_PROFILE["state_marginal"])
 
 
 @pytest.mark.parametrize("fn, drop", [
@@ -30,7 +31,7 @@ def test_full_tax_profile_yields_the_expected_combined_rates():
 def test_combined_rate_raises_on_missing_component(fn, drop):
     """A missing component must RAISE, not silently drop to 0 and halve the rate
     (which would understate every tax-drag / payback figure downstream)."""
-    partial = {k: v for k, v in TAX_PROFILE.items() if k != drop}
+    partial = {k: v for k, v in SYNTHETIC_TAX_PROFILE.items() if k != drop}
     with pytest.raises(KeyError, match=drop):
         fn(partial)
 
@@ -67,9 +68,9 @@ def _fixture():
 def test_liquidity_tiers_and_costs():
     pos, acct = _fixture()
     # No basis entered (default) → the whole Roth ($2,500) is one locked earnings row.
-    lad = build_liquidity_ladder(pos, acct, TAX_PROFILE).set_index("symbol")
-    ltcg = ltcg_rate(TAX_PROFILE)
-    penord = EARLY_WITHDRAWAL_PENALTY + ordinary_rate(TAX_PROFILE)
+    lad = build_liquidity_ladder(pos, acct, SYNTHETIC_TAX_PROFILE).set_index("symbol")
+    ltcg = ltcg_rate(SYNTHETIC_TAX_PROFILE)
+    penord = EARLY_WITHDRAWAL_PENALTY + ordinary_rate(SYNTHETIC_TAX_PROFILE)
 
     # Tiers: taxable loss/small/cash -> 1, taxable meaningful gain -> 2, sheltered -> 3
     assert lad.loc["LOSS", "tier"] == 1 and lad.loc["SMALL", "tier"] == 1 and lad.loc["SPAXX", "tier"] == 1
@@ -103,9 +104,9 @@ def test_liquidity_roth_basis_tranches():
     the whole-withdrawal rate; the two sum to the Roth total and no per-holding row
     survives. At 59½+, the earnings tranche also becomes free (Tier 1)."""
     pos, acct = _fixture()
-    penord = EARLY_WITHDRAWAL_PENALTY + ordinary_rate(TAX_PROFILE)
+    penord = EARLY_WITHDRAWAL_PENALTY + ordinary_rate(SYNTHETIC_TAX_PROFILE)
 
-    lad = build_liquidity_ladder(pos, acct, TAX_PROFILE,
+    lad = build_liquidity_ladder(pos, acct, SYNTHETIC_TAX_PROFILE,
                                  roth_contribution_basis=1500.0, roth_is_qualified_age=False).set_index("symbol")
     assert _ROTH_FREE in lad.index and _ROTH_EARN_LOCKED in lad.index
     assert "RGROW" not in lad.index and "RCASH" not in lad.index, "no per-holding Roth split (not pro-rata)"
@@ -116,19 +117,19 @@ def test_liquidity_roth_basis_tranches():
     assert free["value"] + earn["value"] == pytest.approx(2500.0, abs=0.01), "tranches sum to the Roth total"
 
     # 59½+ → the earnings tranche is free too (whole Roth Tier 1).
-    lad_q = build_liquidity_ladder(pos, acct, TAX_PROFILE,
+    lad_q = build_liquidity_ladder(pos, acct, SYNTHETIC_TAX_PROFILE,
                                    roth_contribution_basis=1500.0, roth_is_qualified_age=True).set_index("symbol")
     assert lad_q.loc[_ROTH_EARN_QUAL, "tier"] == 1 and lad_q.loc[_ROTH_EARN_QUAL, "cost_to_cash"] == 0.0
 
     # A basis covering the whole Roth → one free tranche, no earnings row (underwater-safe cap).
-    lad_full = build_liquidity_ladder(pos, acct, TAX_PROFILE, roth_contribution_basis=99_999.0).set_index("symbol")
+    lad_full = build_liquidity_ladder(pos, acct, SYNTHETIC_TAX_PROFILE, roth_contribution_basis=99_999.0).set_index("symbol")
     assert _ROTH_EARN_LOCKED not in lad_full.index and _ROTH_EARN_QUAL not in lad_full.index
     assert lad_full.loc[_ROTH_FREE, "value"] == pytest.approx(2500.0, abs=0.01) and lad_full.loc[_ROTH_FREE, "tier"] == 1
 
 
 def test_liquidity_sorted_cheapest_first_and_cumulative():
     pos, acct = _fixture()
-    lad = build_liquidity_ladder(pos, acct, TAX_PROFILE)
+    lad = build_liquidity_ladder(pos, acct, SYNTHETIC_TAX_PROFILE)
     assert list(lad["tier"]) == sorted(lad["tier"]), "must be tier-ascending (cheapest tier first)"
     # net_cash == value − cost; cumulative == running sum of net_cash
     for _, r in lad.iterrows():
@@ -148,7 +149,7 @@ def test_liquidity_taxable_ranks_before_roth_basis_at_equal_cost():
     # $1,500 basis < LOSS's $1,000 value? No — size the basis LARGER than every
     # individual taxable Tier-1 row (LOSS=1000, SPAXX=300) so a value-only
     # tie-break would have wrongly floated it to the very top.
-    lad = build_liquidity_ladder(pos, acct, TAX_PROFILE,
+    lad = build_liquidity_ladder(pos, acct, SYNTHETIC_TAX_PROFILE,
                                  roth_contribution_basis=1500.0, roth_is_qualified_age=False)
     t1 = lad[lad["tier"] == 1].reset_index(drop=True)
     # All of these are $0-cost Tier-1 rows.
@@ -169,7 +170,7 @@ def test_liquidity_is_the_inverse_of_shelter_priority():
     """The core insight: sheltered money (Roth / IRA) is the LEAST liquid (Tier 3),
     even though it's the most valuable to shelter — liquidity inverts asset location."""
     pos, acct = _fixture()
-    lad = build_liquidity_ladder(pos, acct, TAX_PROFILE).set_index("symbol")
+    lad = build_liquidity_ladder(pos, acct, SYNTHETIC_TAX_PROFILE).set_index("symbol")
     assert lad.loc[_ROTH_EARN_LOCKED, "tier"] == 3 and lad.loc["TDX", "tier"] == 3
     assert lad.loc["LOSS", "tier"] == 1
     # a taxable loss converts to cash more cheaply than a sheltered dollar
@@ -181,7 +182,7 @@ def test_tier_capital_reconciles_to_ladder():
     Σ per-tier gross == total Value, Σ per-tier net == total Net cash, and gross ≥ net
     for every tier (cost is non-negative). No new tax computation is introduced."""
     pos, acct = _fixture()
-    lad = build_liquidity_ladder(pos, acct, TAX_PROFILE)
+    lad = build_liquidity_ladder(pos, acct, SYNTHETIC_TAX_PROFILE)
     by = lad.groupby("tier").agg(gross=("value", "sum"), net=("net_cash", "sum"))
     assert abs(by["gross"].sum() - lad["value"].sum()) < 0.01, "tier grosses must sum to total value"
     assert abs(by["net"].sum() - lad["net_cash"].sum()) < 0.01, "tier nets must sum to total net cash"
@@ -194,11 +195,11 @@ def test_marginal_cost_exhibit_derivation():
     Boundaries are the cumulative gross at the end of Tier 1 and Tier 2. All derived
     from the ladder's existing columns — no tax recomputation."""
     pos, acct = _fixture()
-    lad = build_liquidity_ladder(pos, acct, TAX_PROFILE)
+    lad = build_liquidity_ladder(pos, acct, SYNTHETIC_TAX_PROFILE)
     mc = lad.groupby("tier").agg(gross=("value", "sum"), cost=("cost_to_cash", "sum")).sort_index()
     mc["pct"] = mc["cost"] / mc["gross"] * 100
     assert mc.loc[1, "pct"] <= mc.loc[2, "pct"] <= mc.loc[3, "pct"], "marginal cost must step up T1→T2→T3"
-    penord = EARLY_WITHDRAWAL_PENALTY + ordinary_rate(TAX_PROFILE)
+    penord = EARLY_WITHDRAWAL_PENALTY + ordinary_rate(SYNTHETIC_TAX_PROFILE)
     assert mc.loc[3, "pct"] == pytest.approx(penord * 100, abs=0.1), "Tier 3 marginal == whole-withdrawal rate"
     cum = mc["gross"].cumsum()
     assert cum.loc[1] == pytest.approx(mc.loc[1, "gross"]), "boundary 1 = Tier-1 gross"

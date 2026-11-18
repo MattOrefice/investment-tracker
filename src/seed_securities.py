@@ -282,18 +282,20 @@ HOLDINGS = [
             # jurisdiction was wrong and rendered to a reader as-is. A reader spotting
             # "DC" would have discarded the half that was right.
             #
-            # Not a straight DC->PA swap: PA's 3.07% flat rate is one of the LOWEST
-            # state income taxes, so "high-income-tax jurisdiction" is true of DC and
-            # FALSE of PA. Three claims have to hold at once — the exemption, the
-            # jurisdiction, and the magnitude — and the swap alone fixes one.
+            # #710: the sentence names no state. It says what its source says, and
+            # only that: Treasury interest is exempt from state and local income tax
+            # under federal law, 31 U.S.C. § 3124(a), read on November 17, 2026, in the
+            # U.S. Code's 2024 edition. The comparison with corporate bond funds the
+            # sentence used to make is not in that source, so it went.
+            # tools/migrate_vgit_state_exemption.py writes the same sentence into a book
+            # that already holds the row, because this seed is insert-only.
             #
-            # NO RATE STATED. TAX_PROFILE already holds 3.07%; putting it here mints a
-            # second copy of a config value, which is the mechanism #228 and #284 are
-            # both about. "Real, if modest" carries the size without the number: at
-            # VGIT's 4.00% assumed yield the advantage is ~12bp/yr.
-            "Critically, Treasury interest income is exempt from state and local taxes: a "
-            "real, if modest, after-tax advantage at Pennsylvania's flat rate over investment-grade "
-            "corporate bond funds with similar yield. Cost minimization is the dominant selection "
+            # NO RATE STATED. The rate is the residence's (load_tax_residence); putting
+            # it here mints a second copy of a config value, which is the mechanism
+            # #228 and #284 are both about.
+            "Treasury interest is exempt from state and local income tax under federal law "
+            "(31 U.S.C. § 3124(a); U.S. Code, 2024 edition, read November 17, 2026). Cost "
+            "minimization is the dominant selection "
             "criterion for a sleeve that exists for drawdown buffering and rebalancing optionality, "
             "not return.\n"
             "\n"

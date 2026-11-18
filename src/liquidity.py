@@ -15,8 +15,8 @@ derivation.
 THE TAX PROFILE THIS PAGE PRICES WITH is ``residence_tax_profile``: the federal rates
 from TAX_PROFILE, and state and local rates from the owner's tax residence, which
 lives in the gitignored private/personal_profile.json (personal_profile.
-load_tax_residence). The committed tree names no home state for this page. TAX_PROFILE's
-own state keys are not read here.
+load_tax_residence). The committed tree names no home state. TAX_PROFILE holds the
+federal keys only (#706), and Asset Location builds its profile the same way.
 """
 from __future__ import annotations
 

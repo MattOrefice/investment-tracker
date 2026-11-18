@@ -400,7 +400,8 @@ def test_the_ladders_tax_note_names_the_residences_jurisdictions():
     assert note == ("Taxable with a meaningful gain — 24.00% on the gain: 15% federal + "
                     "Synthetica State and Synthetica City")
     assert lad.loc["BIG", "cost_to_cash"] == pytest.approx(500.0 * 0.24, abs=0.01)
-    assert not re.search(r"\bPA\b|Pennsylvania|3\.07", note)
+    from tests.us_states import codes_in_text, states_named
+    assert states_named(note) == [] and codes_in_text(note) == [], note
     assert gain_tax_note(tax, where) in note
 
 
@@ -426,29 +427,19 @@ def test_the_residence_profile_never_reads_tax_profiles_state_keys(monkeypatch):
     assert tax["federal_ltcg"] == lc.TAX_PROFILE["federal_ltcg"]
 
 
-# Every state's name, so the check below singles out none of them.
-US_STATES = (
-    "Alabama", "Alaska", "Arizona", "Arkansas", "California", "Colorado", "Connecticut",
-    "Delaware", "Florida", "Georgia", "Hawaii", "Idaho", "Illinois", "Indiana", "Iowa",
-    "Kansas", "Kentucky", "Louisiana", "Maine", "Maryland", "Massachusetts", "Michigan",
-    "Minnesota", "Mississippi", "Missouri", "Montana", "Nebraska", "Nevada",
-    "New Hampshire", "New Jersey", "New Mexico", "New York", "North Carolina",
-    "North Dakota", "Ohio", "Oklahoma", "Oregon", "Pennsylvania", "Rhode Island",
-    "South Carolina", "South Dakota", "Tennessee", "Texas", "Utah", "Vermont", "Virginia",
-    "Washington", "West Virginia", "Wisconsin", "Wyoming",
-)
-
-
 def test_the_liquidity_code_names_no_state_and_no_state_rate():
     """Where the owner lives is read from the private profile: the committed code that
-    prices this page names no state, and the old home's code and rate are gone."""
+    prices this page names no state and writes no state's postal code. Every state is
+    checked, from the one list (tests/us_states.py), so the check singles out none;
+    tests/test_no_home_state.py holds the whole tree to the same rule (#706)."""
+    from tests.us_states import US_STATES, codes_named, states_named
     assert len(set(US_STATES)) == 50
     for rel in ("pages/15_Liquidity.py", "src/liquidity.py", "src/sell_plan.py",
                 "src/personal_profile.py", "personal_profile.example.json"):
         text = (ROOT / rel).read_text(encoding="utf-8")
-        named = [s for s in US_STATES if re.search(rf"\b{s}\b", text)]
-        assert named == [], f"{rel} names {named}"
-        assert not re.search(r"\bPA\b|3\.07", text), rel
+        assert states_named(text) == [], f"{rel} names {states_named(text)}"
+        if rel.endswith(".py"):
+            assert codes_named(text) == [], f"{rel} writes {codes_named(text)}"
 
 
 def _write_profile(tmp_path, body) -> Path:
@@ -674,7 +665,8 @@ def test_the_page_renders_the_plan_and_writes_nothing(monkeypatch, tmp_path, boo
     ladder = _frame(at, "Cumulative net cash ($)")
     notes = set(ladder["Why"])
     assert any("Synthetica State and Synthetica City" in n for n in notes), notes
-    assert not any(re.search(r"\bPA\b", n) for n in notes)
+    from tests.us_states import codes_in_text, states_named
+    assert not any(codes_in_text(n) or states_named(n) for n in notes), notes
 
 
 def test_with_no_residence_the_page_says_no_state_tax_is_included(

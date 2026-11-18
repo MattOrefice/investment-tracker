@@ -30,6 +30,7 @@ if IS_DEMO:
 from src.db import get_connection
 from src.household_data import load_latest_positions
 from src.household import (
+    advisor_fixed_income_tickers,
     compute_household_allocation,
     exclude_non_household_positions,
     household_summary,
@@ -173,6 +174,10 @@ with col:
         "and exposure data follows below."
     )
 
+    # The fixed-income book's tickers are read from the book (#706): a typed list named
+    # funds the manager had since swapped out.
+    _fi = advisor_fixed_income_tickers(positions_df, accounts_df, securities_df)
+    _fi_list = (" (" + ", ".join(_fi) + ")") if _fi else ""
     with st.expander("Advisor portfolio — strategic synthesis", expanded=True):
         st.markdown(
             "The advisor-managed portion of the household reads as a risk-aware, "
@@ -181,8 +186,8 @@ with col:
             "recognizable: a broad-market equity core (ITOT, VONE, IXUS, VXUS, IEFA, "
             "IJH, IJR) overlaid with active hedged-equity strategies (JHEQX, JEPI, "
             "JEPQ, HELO) that participate in upside while explicitly pricing left-tail "
-            "risk; a multi-sector fixed income book (FIWDX, HLIPX, GBOSX, FAGIX, "
-            "BFRIX, GHYIX) built around yield generation through credit and "
+            f"risk; a multi-sector fixed income book{_fi_list} built around yield "
+            "generation through credit and "
             "floating-rate exposure rather than duration ballast; a series of small "
             "thematic and sector satellite positions; token-sized real-asset "
             "diversifiers; one actively-managed multi-asset allocation fund (GAOSX); "

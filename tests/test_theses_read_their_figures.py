@@ -218,9 +218,13 @@ def test_the_items_421_and_447_named(book_copy):
     # thesis 16: 0.25% is not the highest expense ratio in the portfolio
     assert "highest in the portfolio" not in r[16]["vehicle_rationale"]
     assert "Its 0.25% expense ratio buys factor exposure." in r[16]["vehicle_rationale"]
-    # thesis 19: Pennsylvania, as 776e1e6 corrected VGIT's rationale
+    # thesis 19: the exemption sentence names no state and cites its source (#710),
+    # as tools/migrate_vgit_state_exemption.py rewrote it after 776e1e6's correction
+    from tests.us_states import codes_in_text, states_named
+    from tools.migrate_vgit_state_exemption import NEW_SENTENCE
     t = r[19]["vehicle_rationale"]
-    assert "Pennsylvania's flat rate" in t and "DC" not in t and "high-income-tax" not in t
+    assert NEW_SENTENCE in t and "DC" not in t and "high-income-tax" not in t
+    assert states_named(t) == [] and codes_in_text(t) == []
     assert "at 0.04% versus IEF's 0.15%" in t and "a 6.1% sleeve inside a 79.6% growth" in t
     # theses 18 and 21: #449's corrections hold, with the fees read from the data
     assert ("EEM costs 0.70% against IEMG's 0.09%, the largest fee gap in the portfolio. "

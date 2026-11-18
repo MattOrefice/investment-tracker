@@ -48,8 +48,8 @@ from src.location_config import (
     SLEEVE_YIELD_PROXY,
     SLEEVE_YIELD_PROXY_AS_OF,
     SLEEVE_YIELD_PROXY_CANDIDATES,
-    TAX_PROFILE,
 )
+from tests.tax_profiles import SYNTHETIC_TAX_PROFILE
 
 CONFIG = Path(__file__).resolve().parent.parent / "src" / "location_config.py"
 
@@ -289,7 +289,7 @@ VALUE = 10_000.0
 # would make this test assert the defect #278 removed.
 def _rate_for(sleeve: str) -> float:
     from src.household import _tax_character, income_rate
-    return income_rate(_tax_character(sleeve, ""), TAX_PROFILE)
+    return income_rate(_tax_character(sleeve, ""), SYNTHETIC_TAX_PROFILE)
 
 COMPLETE_MIX = [("us_large_core", 0.60), ("emerging_markets", 0.40)]
 
@@ -321,7 +321,7 @@ def _fixture():
 def _register():
     pos, acct, sec, comps = _fixture()
     return build_location_register(
-        pos, acct, sec, TAX_PROFILE, SLEEVE_PRIORITY_BY_ACCOUNT_TYPE,
+        pos, acct, sec, SYNTHETIC_TAX_PROFILE, SLEEVE_PRIORITY_BY_ACCOUNT_TYPE,
         ACCOUNT_SHELTER_PRIORITY, compositions_df=comps)
 
 
@@ -617,7 +617,7 @@ def _note_register():
          "total_gain_loss": 500.0, "cost_basis_total": 9_500.0} for t, _ in specs
     ])
     return build_location_register(
-        pos, acct, sec, TAX_PROFILE, SLEEVE_PRIORITY_BY_ACCOUNT_TYPE,
+        pos, acct, sec, SYNTHETIC_TAX_PROFILE, SLEEVE_PRIORITY_BY_ACCOUNT_TYPE,
         ACCOUNT_SHELTER_PRIORITY, compositions_df=None)
 
 
