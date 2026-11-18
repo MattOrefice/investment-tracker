@@ -389,7 +389,8 @@ def _ladder_fixture():
 def test_the_ladders_tax_note_names_the_residences_jurisdictions():
     from src.liquidity import (build_liquidity_ladder, gain_tax_note, residence_names,
                                residence_tax_profile)
-    tax = residence_tax_profile(SYNTHETIC_RESIDENCE)
+    from tests.tax_profiles import SYNTHETIC_FEDERAL
+    tax = residence_tax_profile(SYNTHETIC_RESIDENCE, SYNTHETIC_FEDERAL)
     assert tax["state_marginal"] == pytest.approx(0.10)
     assert tax["state_ltcg"] == pytest.approx(0.09)
     where = residence_names(SYNTHETIC_RESIDENCE)
@@ -397,9 +398,10 @@ def test_the_ladders_tax_note_names_the_residences_jurisdictions():
     pos, acc = _ladder_fixture()
     lad = build_liquidity_ladder(pos, acc, tax, tax_location=where).set_index("symbol")
     note = lad.loc["BIG", "note"]
-    assert note == ("Taxable with a meaningful gain — 24.00% on the gain: 15% federal + "
-                    "Synthetica State and Synthetica City")
-    assert lad.loc["BIG", "cost_to_cash"] == pytest.approx(500.0 * 0.24, abs=0.01)
+    # The synthetic federal gains rate (10%, tax year 2027) + the residence's 9%.
+    assert note == ("Taxable with a meaningful gain — 19.00% on the gain (tax year 2027): "
+                    "10% federal + Synthetica State and Synthetica City")
+    assert lad.loc["BIG", "cost_to_cash"] == pytest.approx(500.0 * 0.19, abs=0.01)
     from tests.us_states import codes_in_text, states_named
     assert states_named(note) == [] and codes_in_text(note) == [], note
     assert gain_tax_note(tax, where) in note
@@ -407,24 +409,38 @@ def test_the_ladders_tax_note_names_the_residences_jurisdictions():
 
 def test_with_no_residence_the_note_says_no_state_or_local_tax_is_included():
     from src.liquidity import build_liquidity_ladder, residence_names, residence_tax_profile
+    from tests.tax_profiles import SYNTHETIC_FEDERAL
     empty = {"jurisdictions": [], "source": "absent", "problem": "no tax_residence"}
-    tax = residence_tax_profile(empty)
+    tax = residence_tax_profile(empty, SYNTHETIC_FEDERAL)
     assert tax["state_marginal"] == 0.0 and tax["state_ltcg"] == 0.0
     pos, acc = _ladder_fixture()
     lad = build_liquidity_ladder(pos, acc, tax, tax_location=residence_names(empty))
-    assert lad.iloc[0]["note"] == ("Taxable with a meaningful gain — 15.00% on the gain: "
-                                   "15% federal only; no state or local tax is included")
+    assert lad.iloc[0]["note"] == ("Taxable with a meaningful gain — 10.00% on the gain "
+                                   "(tax year 2027): 10% federal only; no state or local "
+                                   "tax is included")
 
 
-def test_the_residence_profile_never_reads_tax_profiles_state_keys(monkeypatch):
-    """The committed config's state rate must not reach this page's prices."""
-    import src.location_config as lc
+def test_the_residence_profile_reads_state_rates_only_from_the_residence():
+    """A state rate anywhere but the residence must not reach this page's prices: one
+    planted in the federal profile is ignored, and the federal rates are the federal
+    profile's (#724)."""
     from src.liquidity import residence_tax_profile
-    monkeypatch.setitem(lc.TAX_PROFILE, "state_marginal", 0.5)
-    monkeypatch.setitem(lc.TAX_PROFILE, "state_ltcg", 0.5)
-    tax = residence_tax_profile(SYNTHETIC_RESIDENCE)
+    from tests.tax_profiles import SYNTHETIC_FEDERAL
+    federal = {**SYNTHETIC_FEDERAL, "state_marginal": 0.5, "state_ltcg": 0.5}
+    tax = residence_tax_profile(SYNTHETIC_RESIDENCE, federal)
     assert tax["state_marginal"] == pytest.approx(0.10)
-    assert tax["federal_ltcg"] == lc.TAX_PROFILE["federal_ltcg"]
+    assert tax["federal_ltcg"] == SYNTHETIC_FEDERAL["federal_ltcg"]
+    assert tax["tax_year"] == SYNTHETIC_FEDERAL["tax_year"]
+
+
+def test_a_federal_profile_with_no_rates_is_refused():
+    """No committed rate stands in for the owner's: a federal profile the loader could
+    not read (its rates None, its problem set) raises rather than pricing at a default."""
+    from src.liquidity import residence_tax_profile
+    absent = {"federal_marginal": None, "federal_ltcg": None, "niit": None,
+              "tax_year": None, "problem": "private/personal_profile.json has no federal_tax"}
+    with pytest.raises(ValueError, match="no federal_tax"):
+        residence_tax_profile(SYNTHETIC_RESIDENCE, absent)
 
 
 def test_the_liquidity_code_names_no_state_and_no_state_rate():
@@ -575,9 +591,10 @@ PAGE_POSITIONS = pd.DataFrame([
 PAGE_AS_OF = "2026-11-02"
 
 
-def _personal_page(mp, book, tmp_dir, residence):
+def _personal_page(mp, book, tmp_dir, residence, federal="synthetic"):
     """The page, in personal mode, on a COPY of the bootstrapped book, with the
-    synthetic positions, Roth profile and residence. Returns (AppTest, the copy)."""
+    synthetic positions, Roth profile, residence and federal rates (``federal``: the
+    synthetic profile, or a load_federal_tax result). Returns (AppTest, the copy)."""
     from datetime import date
 
     import src.config
@@ -602,6 +619,9 @@ def _personal_page(mp, book, tmp_dir, residence):
         "roth_contribution_basis": 1_000.0, "date_of_birth": None,
         "is_qualified_age": False, "source": "test-synthetic"})
     mp.setattr(pp, "load_tax_residence", lambda is_demo: residence)
+    from tests.tax_profiles import SYNTHETIC_FEDERAL
+    fed = SYNTHETIC_FEDERAL if federal == "synthetic" else federal
+    mp.setattr(pp, "load_federal_tax", lambda is_demo: fed)
     st.cache_data.clear()
     return _page_app(), copy
 
@@ -633,6 +653,9 @@ def test_the_page_renders_the_plan_and_writes_nothing(monkeypatch, tmp_path, boo
     assert "Roth withdrawal of contributions is tax-free (Publication 590-B, 2025)" in said
     assert "gone for good once 60 days pass" in said
     assert "nothing is traded or written" in said
+    # Every combined rate on the page names its tax year (#724).
+    assert "**Rates.** Federal, tax year 2027: 20% ordinary" in said
+    assert "(tax year 2027): 10% federal" in said
 
     picks = _frame(at, "Est. realized gain/loss ($)")
     assert list(picks["Ticker"]) == ["SPAXX", "VGIT", "JEPI"]
@@ -695,3 +718,20 @@ def test_an_amount_beyond_the_taxable_holdings_says_how_short_it_falls(
     # Taxable sellable: SPAXX 1,000 + VGIT 2,000 + JEPI 3,000 + GAOSX 10,000 + QQQ 2,000.
     assert "raise \\$18,000.00, \\$82,000.00 short of \\$100,000.00" in warned
     assert "never sells from tax-advantaged accounts" in warned
+
+
+def test_with_no_federal_rates_the_page_says_so_and_prices_nothing(
+        monkeypatch, tmp_path, bootstrapped_book):
+    """No committed rate stands in for the owner's (#724): without a federal_tax the
+    page names what is missing and stops before any tax cost is priced."""
+    absent = {"federal_marginal": None, "federal_ltcg": None, "niit": None,
+              "tax_year": None, "sources": {}, "source": "absent",
+              "problem": "private/personal_profile.json has no federal_tax"}
+    at, _book = _personal_page(monkeypatch, bootstrapped_book, tmp_path,
+                               SYNTHETIC_RESIDENCE, federal=absent)
+    at.run()
+    assert not at.exception, at.exception
+    errors = [e.value for e in at.error]
+    assert len(errors) == 1 and "No federal tax rates" in errors[0], errors
+    assert "has no federal_tax" in errors[0]
+    assert not at.number_input and not at.dataframe, "the page priced without rates"

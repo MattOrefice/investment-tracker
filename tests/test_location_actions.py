@@ -78,9 +78,11 @@ def _live():
 
 
 def _live_profile() -> dict:
-    """The profile page 14 prices with (#706): federal from TAX_PROFILE, state and local
-    from the private tax residence, read at run time and never written here."""
-    return residence_tax_profile(load_tax_residence(False))
+    """The profile page 14 prices with (#706, #724): federal from the private federal_tax,
+    state and local from the private tax residence, read at run time and never written
+    here."""
+    from src.personal_profile import load_federal_tax
+    return residence_tax_profile(load_tax_residence(False), load_federal_tax(False))
 
 
 def _live_groups(pos, acct, sec) -> list:
@@ -940,7 +942,7 @@ def test_no_group_carries_allow_literals():
 #
 # The dollar guard above can be blanket (no card needs to author a dollar figure).
 # Percents cannot: eight cards carry legitimate RATE literals — tax rates from
-# TAX_PROFILE, an SAA target weight, the international structural assumptions —
+# the tax profile, an SAA target weight, the international structural assumptions —
 # and a blanket regex would fire on every one of them, which is how you end up
 # deleting the guard instead of the defect.
 #

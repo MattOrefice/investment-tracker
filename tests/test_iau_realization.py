@@ -92,8 +92,8 @@ def test_the_two_characters_produce_different_costs(monkeypatch):
 
 
 def test_the_income_rate_is_not_what_reaches_cost_to_realize(monkeypatch):
-    """M4's target, named. `collectibles` income is ordinary (22% federal plus the
-    state rate) and its gain is 28% federal plus the state rate — so a call site that
+    """M4's target, named. `collectibles` income is ordinary (the federal ordinary rate
+    plus the state rate) and its gain is 28% federal plus the state rate — so a call site that
     reached for income_rate instead would produce a
     plausible, wrong number rather than an error."""
     monkeypatch.setitem(lc.SLEEVE_TAX_CHARACTER, "multi_sector_fi", "collectibles")

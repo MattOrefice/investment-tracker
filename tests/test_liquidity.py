@@ -17,7 +17,8 @@ from tests.tax_profiles import SYNTHETIC_TAX_PROFILE
 
 def test_full_tax_profile_yields_the_expected_combined_rates():
     assert ltcg_rate(SYNTHETIC_TAX_PROFILE) == pytest.approx(
-        SYNTHETIC_TAX_PROFILE["federal_ltcg"] + SYNTHETIC_TAX_PROFILE["state_ltcg"])
+        SYNTHETIC_TAX_PROFILE["federal_ltcg"] + SYNTHETIC_TAX_PROFILE["niit"]
+        + SYNTHETIC_TAX_PROFILE["state_ltcg"])
     assert ordinary_rate(SYNTHETIC_TAX_PROFILE) == pytest.approx(
         SYNTHETIC_TAX_PROFILE["federal_marginal"] + SYNTHETIC_TAX_PROFILE["state_marginal"])
 
@@ -25,6 +26,7 @@ def test_full_tax_profile_yields_the_expected_combined_rates():
 @pytest.mark.parametrize("fn, drop", [
     (ltcg_rate,     "state_ltcg"),
     (ltcg_rate,     "federal_ltcg"),
+    (ltcg_rate,     "niit"),
     (ordinary_rate, "state_marginal"),
     (ordinary_rate, "federal_marginal"),
 ])
@@ -261,8 +263,12 @@ def test_liquidity_page_renders_live(monkeypatch):
     assert tables, "liquidity ladder not rendered"
     t = tables[0]
     assert (t["Cumulative net cash ($)"].diff().dropna() >= -0.01).all(), "cumulative must be non-decreasing"
-    assert set(t["Tier"]) <= {
-        "Tier 1 · free / cheap", "Tier 2 · moderate (15% LTCG)", "Tier 3 · locked (penalty + tax)"}
+    # The tier names the page priced with, read from the private federal profile, never
+    # typed here (#724).
+    from src.liquidity import residence_tax_profile, tier_labels
+    _live = residence_tax_profile(src.personal_profile.load_tax_residence(False),
+                                  src.personal_profile.load_federal_tax(False))
+    assert set(t["Tier"]) <= set(tier_labels(_live).values())
     # Roth is two synthetic tranche rows: basis (free) in Tier 1, earnings (locked) in Tier 3.
     _syms = set(t["Symbol"])
     assert "Roth IRA — contribution basis (free)" in _syms, "Roth basis tranche missing"

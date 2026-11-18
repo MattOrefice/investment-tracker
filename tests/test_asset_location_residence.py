@@ -1,10 +1,11 @@
 """Asset Location prices state tax with the tax residence, and its TOD group follows the
 book (#706).
 
-  * TAX_PROFILE holds the federal rates only. State and local rates come from
-    personal_profile.load_tax_residence: the private `tax_residence` in personal mode,
-    DEMO_TAX_RESIDENCE in demo. The page builds its profile the way the Liquidity page
-    does (liquidity.residence_tax_profile).
+  * No committed profile holds a rate (#724). Federal rates come from
+    personal_profile.load_federal_tax, state and local rates from load_tax_residence:
+    the private `federal_tax` and `tax_residence` in personal mode, the synthetic
+    DEMO_FEDERAL_TAX and DEMO_TAX_RESIDENCE in demo. The page builds its profile the way
+    the Liquidity page does (liquidity.residence_tax_profile).
   * Every rate a decision text states is read from the profile its figures use.
   * A recorded decision keeps its decision and its date; its figures and rates are
     today's, and decision_review flags one today's rates would reverse, changing none.
@@ -26,7 +27,7 @@ import src.location_config as lc
 from src.household import build_location_register
 from src.liquidity import residence_tax_profile
 from src.personal_profile import DEMO_TAX_RESIDENCE
-from tests.tax_profiles import SYNTHETIC_TAX_PROFILE
+from tests.tax_profiles import SYNTHETIC_FEDERAL, SYNTHETIC_TAX_PROFILE
 
 ROOT = Path(__file__).resolve().parent.parent
 PAGE = ROOT / "pages" / "14_Asset_Location.py"
@@ -39,22 +40,32 @@ OTHER_RESIDENCE = {"jurisdictions": [
 NO_RESIDENCE = {"jurisdictions": [], "source": "absent", "problem": "no tax_residence"}
 
 
-# ── TAX_PROFILE is federal ────────────────────────────────────────────────────
+def _profile(residence: dict) -> dict:
+    """A residence's profile at the synthetic federal rates."""
+    return residence_tax_profile(residence, SYNTHETIC_FEDERAL)
 
-def test_tax_profile_holds_the_federal_keys_only():
-    assert set(lc.TAX_PROFILE) == {"federal_marginal", "federal_ltcg"}
-    assert not [k for k in lc.TAX_PROFILE if "state" in k or "local" in k]
+
+# ── no committed profile holds a rate ─────────────────────────────────────────
+
+def test_location_config_holds_no_tax_profile():
+    """TAX_PROFILE typed the owner's federal rates; it is gone (#724), and nothing in
+    location_config is a profile with a federal rate in it."""
+    assert not hasattr(lc, "TAX_PROFILE")
+    assert not [n for n, v in vars(lc).items()
+                if isinstance(v, dict) and ("federal_marginal" in v or "federal_ltcg" in v)]
 
 
 def test_a_profile_without_state_keys_raises_rather_than_pricing_at_zero():
-    """TAX_PROFILE alone is not a profile anything prices with: _require_rate raises."""
+    """A federal-only profile is not a profile anything prices with: _require_rate
+    raises."""
+    federal_only = {"federal_marginal": 0.2, "federal_ltcg": 0.1, "niit": 0.0}
     with pytest.raises(Exception, match="state_ltcg"):
-        lc.ltcg_rate(lc.TAX_PROFILE)
+        lc.ltcg_rate(federal_only)
 
 
 def test_page_14_reads_the_residence_and_never_tax_profile():
-    """The page's profile is the residence's; the name TAX_PROFILE does not appear in
-    the page's code at all."""
+    """The page's profile is the residence's and the private federal profile's; the
+    name TAX_PROFILE does not appear in the page's code at all."""
     tree = ast.parse(PAGE.read_text(encoding="utf-8"))
     names = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)}
     imported = {a.name for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)
@@ -62,14 +73,16 @@ def test_page_14_reads_the_residence_and_never_tax_profile():
     assert "TAX_PROFILE" not in names | imported
     calls = {ast.unparse(n) for n in ast.walk(tree) if isinstance(n, ast.Call)}
     assert "load_tax_residence(IS_DEMO)" in calls
-    assert "residence_tax_profile(_residence)" in calls
+    assert "load_federal_tax(IS_DEMO)" in calls
+    assert "residence_tax_profile(_residence, _federal)" in calls
 
 
 def test_demo_takes_the_synthetic_residence():
     from src.personal_profile import load_tax_residence
     r = load_tax_residence(True)
     assert r["jurisdictions"] == DEMO_TAX_RESIDENCE["jurisdictions"]
-    assert residence_tax_profile(r) == SYNTHETIC_TAX_PROFILE
+    from src.personal_profile import load_federal_tax
+    assert residence_tax_profile(r, load_federal_tax(True)) == SYNTHETIC_TAX_PROFILE
 
 
 def test_in_demo_mode_the_page_renders_its_gate_and_reads_no_residence(monkeypatch):
@@ -86,6 +99,7 @@ def test_in_demo_mode_the_page_renders_its_gate_and_reads_no_residence(monkeypat
     _pin_mode(monkeypatch, "demo")
     monkeypatch.setattr(src.config, "IS_DEMO", True)
     monkeypatch.setattr(pp, "load_tax_residence", _refuse)
+    monkeypatch.setattr(pp, "load_federal_tax", _refuse)
     at = AppTest.from_file(str(PAGE), default_timeout=60).run()
     assert not at.exception, at.exception
     assert [i.value for i in at.info] == [
@@ -127,9 +141,11 @@ def _render_page_14(monkeypatch, residence=None) -> str:
 
 def _assumptions_for(residence: dict) -> "list[str]":
     from src.liquidity import residence_names
-    p = residence_tax_profile(residence)
+    from src.personal_profile import load_federal_tax
+    p = residence_tax_profile(residence, load_federal_tax(False))   # what the page reads
     where = residence_names(residence)
-    return [f"State and local ordinary ({where}): **{p['state_marginal']:.2%}**",
+    return [f"**Tax profile, tax year {p['tax_year']}**",
+            f"State and local ordinary ({where}): **{p['state_marginal']:.2%}**",
             f"State and local on gains ({where}): **{p['state_ltcg']:.2%}**",
             f"combined rate on realized gains: **{lc.ltcg_rate(p):.2%}**",
             "exempt from federal tax and **fully taxable by the residence**"]
@@ -154,7 +170,7 @@ def test_page_14_renders_with_the_private_residence_live(monkeypatch):
     body = _render_page_14(monkeypatch)
     for line in _assumptions_for(residence):
         assert line in body, "a line the private residence prices is missing"
-    for line in _assumptions_for(DEMO_TAX_RESIDENCE)[:2]:
+    for line in _assumptions_for(DEMO_TAX_RESIDENCE)[1:3]:
         assert line not in body
 
 
@@ -178,12 +194,13 @@ def _register(pos, acct, sec, profile):
 
 @pytest.mark.parametrize("residence", [DEMO_TAX_RESIDENCE, OTHER_RESIDENCE, NO_RESIDENCE])
 def test_the_rate_placeholders_are_read_from_the_profile(residence):
-    profile = residence_tax_profile(residence)
+    profile = _profile(residence)
     hr = {"income_known": True, "total": 0.0, "consumed": 0.0, "remaining": 0.0}
     out = la._rate_placeholders(profile, hr)
     assert out["gain_rate"] == f"{lc.ltcg_rate(profile):.2%}"
     if profile["state_ltcg"] > 0:
-        assert out["gain_rate_parts"] == (f"{profile['federal_ltcg']:.0%} federal + "
+        assert out["gain_rate_parts"] == (f"tax year {profile['tax_year']}: "
+                                          f"{profile['federal_ltcg']:.0%} federal + "
                                           f"{profile['state_ltcg']:.2%} state and local")
     else:
         assert "no state or local tax is included" in out["gain_rate_parts"]
@@ -218,7 +235,7 @@ def test_the_thematic_unwind_sentence_states_the_profiles_rate_and_tax():
     g = {"key": "t", "symbols": ["SECTR"], "case_filter": None,
          "accounts": ["Individual Taxable (TOD)"], "population": "matched_symbols"}
     for residence in (DEMO_TAX_RESIDENCE, OTHER_RESIDENCE):
-        profile = residence_tax_profile(residence)
+        profile = _profile(residence)
         reg = _register(pos, acct, sec, profile)
         out = la.resolve_placeholders(g, pos, acct, sec, reg, tax_profile=profile)
         tax = la._fmt_dollars(4000.0 * lc.ltcg_rate(profile))
@@ -272,11 +289,27 @@ def test_a_decision_whose_reason_holds_is_not_flagged():
 def test_a_decision_todays_rates_reverse_is_flagged_and_left_as_it_was():
     """With no state tax and the 0% bracket covering the whole gain, unwinding costs
     nothing, so "costs capital-gains tax" no longer holds: flagged, not changed."""
-    profile = residence_tax_profile(NO_RESIDENCE)
+    profile = _profile(NO_RESIDENCE)
     g, rec = _review(4000.0, profile, 10_000.0)
     assert rec["holds"] is False and rec["tax"] == 0.0
     assert "no longer holds" in rec["review"]
     assert g["status"] == "accepted" and g["decision"]["recorded"] == "2026-07-09"
+
+
+def test_the_zero_bracket_does_not_cover_the_net_investment_income_tax():
+    """The 0% bracket is the federal gains rate's (#724). Where the NIIT applies it
+    reaches the whole gain, room or no room, and the rate a text states names it."""
+    from tests.tax_profiles import SYNTHETIC_NIIT_PROFILE as N
+    _g, rec = _review(4000.0, N, 10_000.0)
+    assert rec["tax"] == pytest.approx(4000.0 * (N["state_ltcg"] + N["niit"]))
+    _g, rec = _review(4000.0, N, 0.0)
+    assert rec["tax"] == pytest.approx(4000.0 * lc.ltcg_rate(N))
+    hr = {"income_known": True, "total": 0.0, "consumed": 0.0, "remaining": 0.0}
+    out = la._rate_placeholders(N, hr)
+    assert out["gain_rate"] == f"{lc.ltcg_rate(N):.2%}"
+    assert out["gain_rate_parts"] == (f"tax year {N['tax_year']}: {N['federal_ltcg']:.0%} "
+                                      "federal + 3.8% net investment income tax + "
+                                      f"{N['state_ltcg']:.2%} state and local")
 
 
 def test_a_decision_with_no_rate_dependent_reason_is_never_flagged():

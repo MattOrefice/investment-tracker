@@ -29,12 +29,12 @@ from src.household_data import load_latest_positions
 from src.household import exclude_non_household_positions
 from src.holdings import PortfolioAccountUnresolved, get_portfolio_account
 from src.liquidity import (
-    EARLY_WITHDRAWAL_PENALTY, TIER_LABEL, build_liquidity_ladder, gain_tax_note,
-    residence_names, residence_tax_profile,
+    EARLY_WITHDRAWAL_PENALTY, build_liquidity_ladder, gain_tax_note,
+    residence_names, residence_tax_profile, tier_labels,
 )
 from src.location_config import ordinary_rate
 from src.personal_profile import (
-    QUALIFIED_WITHDRAWAL_AGE, load_roth_profile, load_tax_residence,
+    QUALIFIED_WITHDRAWAL_AGE, load_federal_tax, load_roth_profile, load_tax_residence,
 )
 from src.ingestion.fidelity import is_pending_activity
 from src.sell_plan import (
@@ -92,7 +92,20 @@ _roth_qualified = bool(_profile["is_qualified_age"])
 # tables they come from, read from the gitignored private profile (synthetic in demo).
 # The committed tree names no home state for this page.
 _residence = load_tax_residence(IS_DEMO)
-_tax = residence_tax_profile(_residence)
+# Federal rates, the tax year they are for and their IRS sources: the private profile's
+# `federal_tax` (synthetic in demo, #724). No committed rate stands in for the owner's,
+# so without them the page prices nothing rather than a guess.
+_federal = load_federal_tax(IS_DEMO)
+if _federal["problem"]:
+    st.error(
+        "**No federal tax rates, so no tax cost can be priced.** "
+        f"{_federal['problem']}. Add a `federal_tax` to `private/personal_profile.json` "
+        "(see `personal_profile.example.json`): the ordinary and long-term gains rates "
+        "and whether the net investment income tax applies, each with its tax year and "
+        "the IRS source it was read from."
+    )
+    st.stop()
+_tax = residence_tax_profile(_residence, _federal)
 _where = residence_names(_residence)
 _gain_note = gain_tax_note(_tax, _where)
 _penord = EARLY_WITHDRAWAL_PENALTY + ordinary_rate(_tax)
@@ -387,7 +400,7 @@ with col:
     )
 
     _disp = ladder.copy()
-    _disp["tier"] = _disp["tier"].map(TIER_LABEL)
+    _disp["tier"] = _disp["tier"].map(tier_labels(_tax))
     _disp["cost_pct"] = (_disp["cost_to_cash"] / _disp["value"].where(_disp["value"] != 0) * 100).fillna(0.0)
     _disp["embedded_gain"] = pd.to_numeric(_disp["embedded_gain"], errors="coerce")
     _cols = {
@@ -421,9 +434,14 @@ with col:
                    "holding in that account can cover.")
 
     # The rates the costs above are priced at, each with the table it comes from.
-    _fed = (f"Federal {_tax['federal_marginal']:.0%} ordinary and "
-            f"{_tax['federal_ltcg']:.0%} on long-term gains (TAX_PROFILE in "
-            "src/location_config.py)")
+    _src = _federal["sources"]
+    _niit = (f"the {_pct(_tax['niit'])} net investment income tax on the gains"
+             if _tax["niit"] > 0 else "no net investment income tax")
+    _fed = (f"Federal, tax year {_tax['tax_year']}: {_tax['federal_marginal']:.0%} ordinary "
+            f"({_md(_src['ordinary_rate'][0])}, {_md(_src['ordinary_rate'][1])}) and "
+            f"{_tax['federal_ltcg']:.0%} on long-term gains ({_md(_src['gains_rate'][0])}, "
+            f"{_md(_src['gains_rate'][1])}), with {_niit} ({_md(_src['niit'][0])}, "
+            f"{_md(_src['niit'][1])})")
     if _residence["jurisdictions"]:
         _parts = []
         for _j in _residence["jurisdictions"]:
@@ -488,7 +506,8 @@ with col:
             f"Selling realizes long-term capital-gains tax on the gain ({_gain_note}).\n"
             "- **Tier 3 — locked.** Roth, both IRAs, and the 401(k). This tool costs the "
             f"**whole withdrawal** at a 10% penalty + ordinary income tax ({_penord:.0%} "
-            "together at the rates below the ladder), *if taken before 59½* — "
+            f"together at the tax year {_tax['tax_year']} rates below the ladder), *if "
+            "taken before 59½* — "
             "deliberately conservative. Your real cost is lower if you're over 59½, or "
             "(for a Roth) if you withdraw contributions first, which come out penalty- "
             "and tax-free. Never treat the shown cost as exact — confirm with Fidelity.\n\n"

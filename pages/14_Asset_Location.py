@@ -39,14 +39,14 @@ from src.household import (
     sleeve_display_name,
 )
 from src.liquidity import residence_names, residence_tax_profile
-from src.personal_profile import load_tax_residence
+from src.personal_profile import load_federal_tax, load_tax_residence
 from src.location_config import (
     SLEEVE_PRIORITY_BY_ACCOUNT_TYPE,
     ACCOUNT_SHELTER_PRIORITY,
     LTCG_0_BRACKET_CEILING_SINGLE_2026,
+    investment_income_rate,
     is_directable,
     ltcg_rate,
-    ordinary_rate,
     # IRS 2026 limits — for the ideal-location reference table (2c). Named constants
     # so no dollar literal is scattered in the page.
     IRA_CONTRIB_LIMIT_2026,
@@ -135,12 +135,24 @@ with get_connection() as conn:
 positions_df = exclude_non_household_positions(positions_df, accounts_df)
 
 # ── Tax profile ─────────────────────────────────────────────────────────────────
-# Federal rates from TAX_PROFILE; state and local rates from the owner's tax
-# residence in the gitignored private/personal_profile.json (#706), as the Liquidity
-# page prices them. The committed tree names no home state. With no residence the
-# state and local rates are 0, and the Assumptions block says that none is included.
+# Federal rates, with the tax year they are for and their IRS sources, from
+# `federal_tax` (#724), and state and local rates from the tax residence (#706), both in
+# the gitignored private/personal_profile.json, as the Liquidity page prices them. The
+# committed tree holds no rate of the owner's and names no home state. With no
+# residence the state and local rates are 0, and the Assumptions block says that none is
+# included. With no federal rates nothing can be priced, so the page stops.
 _residence = load_tax_residence(IS_DEMO)
-_tax_profile = residence_tax_profile(_residence)
+_federal = load_federal_tax(IS_DEMO)
+if _federal["problem"]:
+    st.error(
+        "**No federal tax rates, so no benefit or tax cost can be priced.** "
+        f"{_federal['problem']}. Add a `federal_tax` to `private/personal_profile.json` "
+        "(see `personal_profile.example.json`): the ordinary and long-term gains rates "
+        "and whether the net investment income tax applies, each with its tax year and "
+        "the IRS source it was read from."
+    )
+    st.stop()
+_tax_profile = residence_tax_profile(_residence, _federal)
 _where = residence_names(_residence)
 
 # ── Derived frames ──────────────────────────────────────────────────────────────
@@ -644,14 +656,23 @@ _, col, _ = st.columns([1, 8, 1])
 with col:
     with st.expander("Assumptions", expanded=False):
         # Every rate here is read from the profile the register was built with
-        # (_tax_profile): federal from TAX_PROFILE, state and local from the residence.
+        # (_tax_profile): federal from the private federal_tax, state and local from
+        # the residence. Each federal rate names its tax year and IRS source (#724).
         _fed_ord = _tax_profile["federal_marginal"]
         _fed_ltcg = _tax_profile["federal_ltcg"]
-        _ord = ordinary_rate(_tax_profile)
+        _niit = _tax_profile["niit"]
+        _year = _tax_profile["tax_year"]
+        _src = {k: f"{escape_md(s)}, {escape_md(d)}"
+                for k, (s, d) in _federal["sources"].items()}
+        _ord = investment_income_rate(_tax_profile)
         _ltcg = ltcg_rate(_tax_profile)
-        _gain_parts = (f"{_fed_ltcg:.0%} federal + {_tax_profile['state_ltcg']:.2%} "
-                       "state and local" if _tax_profile["state_ltcg"] > 0
-                       else f"{_fed_ltcg:.0%} federal only")
+        _gain_parts = f"{_fed_ltcg:.0%} federal"
+        if _niit > 0:
+            _gain_parts += f" + {_niit:.1%} net investment income tax"
+        if _tax_profile["state_ltcg"] > 0:
+            _gain_parts += f" + {_tax_profile['state_ltcg']:.2%} state and local"
+        elif not _niit:
+            _gain_parts += " only"
         if _residence["jurisdictions"]:
             _cites = "; ".join(f"{j['name']}: {j['source']}, {j['source_date']}"
                                for j in _residence["jurisdictions"])
@@ -674,11 +695,6 @@ with col:
         _income = _hr["ordinary_income"]
 
         if not _hr["income_known"]:
-            _income_line = (
-                "- Federal ordinary marginal: "
-                f"**{_fed_ord:.0%}** (2026 single bracket; "
-                "your income is not configured)\n"
-            )
             _headroom_para = (
                 "**0% capital-gains headroom (2026): not computed.** No "
                 "`ordinary_income` is set in `private/personal_profile.json`, and "
@@ -688,10 +704,6 @@ with col:
                 "gains you expected to be untaxed. Set your income to size it."
             )
         else:
-            _income_line = (
-                f"- Federal ordinary marginal: **{_fed_ord:.0%}** "
-                f"(2026 single bracket at ~\\${_income:,.0f} income)\n"
-            )
             if _hr["total"] > 0:
                 _headroom_para = (
                     f"**0% capital-gains headroom (2026): \\${_hr['total']:,.0f}.** "
@@ -710,14 +722,18 @@ with col:
                 )
 
         st.markdown(
-            "**Tax profile** (federal rates user-editable in `src/location_config.py`; "
-            "income and the tax residence in `private/personal_profile.json`):\n\n"
-            + _income_line
+            f"**Tax profile, tax year {_year}** (the federal rates, income and the tax "
+            "residence are in `private/personal_profile.json`):\n\n"
+            + f"- Federal ordinary marginal: **{_fed_ord:.0%}** ({_src['ordinary_rate']})\n"
             + f"- Federal long-term capital gains: **{_fed_ltcg:.0%}** "
-            "— the rate that applies once the 0% bracket is used up\n"
+            f"— the rate that applies once the 0% bracket is used up ({_src['gains_rate']})\n"
+            + (f"- Net investment income tax: **{_niit:.1%}** on investment income and "
+               f"gains ({_src['niit']})\n" if _niit > 0 else
+               f"- Net investment income tax: **does not apply** ({_src['niit']})\n")
             + _state_lines
-            + f"- Combined ordinary rate: **{_ord:.2%}** · combined rate on realized "
-            f"gains: **{_ltcg:.2%}** ({_gain_parts})\n\n"
+            + f"- Combined rate on ordinary investment income: **{_ord:.2%}** · combined "
+            f"rate on realized gains: **{_ltcg:.2%}** ({_gain_parts}), both tax year "
+            f"{_year}\n\n"
             # #706: the residence's rate reaches a national muni fund in full. The
             # model holds no in-state share for a national fund, and says so.
             "The model treats a national municipal fund's income as exempt from federal "

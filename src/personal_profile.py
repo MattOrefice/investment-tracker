@@ -53,9 +53,32 @@ DEMO_TAX_RESIDENCE: dict = {
     ],
 }
 
+# A synthetic federal profile for demo mode and tests (#724). Neither rate is a federal
+# bracket or a federal gains rate in any recent tax year, so it cannot be read as
+# anyone's. The owner's federal rates, the tax year they are for and the IRS source each
+# was read from belong only in private/personal_profile.json (`federal_tax`).
+DEMO_FEDERAL_TAX: dict = {
+    "ordinary_rate": {"tax_year": 2027, "rate": 0.20,
+                      "source": "synthetic demo value, not a rate read for anyone",
+                      "source_date": "synthetic"},
+    "gains_rate": {"tax_year": 2027, "rate": 0.10,
+                   "source": "synthetic demo value, not a rate read for anyone",
+                   "source_date": "synthetic"},
+    "niit": {"tax_year": 2027, "applies": False,
+             "source": "synthetic demo value, not a determination for anyone",
+             "source_date": "synthetic"},
+}
+
+# The net investment income tax: 3.8% of the lesser of net investment income and modified
+# AGI above a threshold (26 U.S.C. § 1411(a)(1); Instructions for Form 8960). Whether it
+# applies is the owner's fact, read from the profile; the rate is the statute's.
+NIIT_RATE: float = 0.038
+
 # A rate above this is not a state or local income-tax rate; it is a typo (5 for
 # 0.05). The loader refuses it rather than pricing a sale at 500%.
 _MAX_JURISDICTION_RATE: float = 0.25
+# The same guard for a federal rate: none exceeds 37%.
+_MAX_FEDERAL_RATE: float = 0.37
 
 # The age at which Roth earnings become penalty-free (the 5-year account rule is
 # handled by caveat, not computed — see the page).
@@ -223,3 +246,88 @@ def load_tax_residence(is_demo: bool) -> dict:
         return {"jurisdictions": [], "source": "invalid", "problem": problem}
     return {"jurisdictions": juris, "source": "private/personal_profile.json",
             "problem": None}
+
+
+_FEDERAL_ENTRIES = ("ordinary_rate", "gains_rate", "niit")
+
+
+def _federal(raw) -> "tuple[dict | None, str | None]":
+    """The federal profile from a ``federal_tax`` object, or (None, why not).
+
+    Three entries, each carrying the tax year it is for, the IRS source it was read
+    from and that source's date: ``ordinary_rate`` and ``gains_rate`` ({tax_year, rate,
+    source, source_date}, the rate a fraction) and ``niit`` ({tax_year, applies,
+    source, source_date}). All three must name the same tax year: a combined rate that
+    mixed two years' law would be no year's. An entry missing its year, source or date
+    is refused, as a residence's rate is: a rate on the page is cited or it goes."""
+    if not isinstance(raw, dict):
+        return None, "federal_tax is not an object"
+    years, out = set(), {}
+    for key in _FEDERAL_ENTRIES:
+        e = raw.get(key)
+        if not isinstance(e, dict):
+            return None, f"federal_tax.{key} is missing or not an object"
+        source = str(e.get("source") or "").strip()
+        source_date = str(e.get("source_date") or "").strip()
+        if not source or not source_date:
+            return None, f"federal_tax.{key} has no source or no source_date"
+        year = e.get("tax_year")
+        if not isinstance(year, int) or isinstance(year, bool) or not 2000 <= year <= 2100:
+            return None, f"federal_tax.{key}.tax_year is not a year"
+        years.add(year)
+        if key == "niit":
+            if not isinstance(e.get("applies"), bool):
+                return None, "federal_tax.niit.applies is not true or false"
+            value = NIIT_RATE if e["applies"] else 0.0
+        else:
+            try:
+                value = float(e.get("rate"))
+            except (TypeError, ValueError):
+                return None, f"federal_tax.{key}.rate is not a number"
+            if not 0.0 <= value <= _MAX_FEDERAL_RATE:
+                return None, (f"federal_tax.{key}.rate is {value}, outside 0 to "
+                              f"{_MAX_FEDERAL_RATE} (a rate is a fraction: 0.12, not 12)")
+        out[key] = {"value": value, "source": source, "source_date": source_date}
+    if len(years) != 1:
+        return None, f"federal_tax's entries name different tax years: {sorted(years)}"
+    return {
+        "federal_marginal": out["ordinary_rate"]["value"],
+        "federal_ltcg": out["gains_rate"]["value"],
+        "niit": out["niit"]["value"],
+        "tax_year": years.pop(),
+        "sources": {k: (v["source"], v["source_date"]) for k, v in out.items()},
+    }, None
+
+
+def load_federal_tax(is_demo: bool) -> dict:
+    """Return the federal rates the Liquidity and Asset Location pages price with (#724):
+        {federal_marginal, federal_ltcg, niit, tax_year, sources, source, problem}
+
+    ``niit`` is the net investment income tax's rate where it applies (NIIT_RATE) and
+    0.0 where it does not. ``sources`` maps each entry to (source, source_date).
+
+    Demo returns DEMO_FEDERAL_TAX, labelled synthetic. Personal reads ``federal_tax``
+    from private/personal_profile.json. Absent, unparseable or invalid, the rates are
+    None and ``problem`` says why: a page cannot price a sale or a shelter without the
+    federal rates, and no committed rate stands in for the owner's.
+    """
+    none = {"federal_marginal": None, "federal_ltcg": None, "niit": None,
+            "tax_year": None, "sources": {}}
+    if is_demo:
+        fed, problem = _federal(DEMO_FEDERAL_TAX)
+        return {**fed, "source": "demo-synthetic", "problem": problem}
+    if not _PROFILE_PATH.exists():
+        return {**none, "source": "absent",
+                "problem": "private/personal_profile.json does not exist"}
+    try:
+        raw = json.loads(_PROFILE_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {**none, "source": "invalid",
+                "problem": "private/personal_profile.json could not be read as JSON"}
+    if not isinstance(raw, dict) or "federal_tax" not in raw:
+        return {**none, "source": "absent",
+                "problem": "private/personal_profile.json has no federal_tax"}
+    fed, problem = _federal(raw["federal_tax"])
+    if problem:
+        return {**none, "source": "invalid", "problem": problem}
+    return {**fed, "source": "private/personal_profile.json", "problem": None}

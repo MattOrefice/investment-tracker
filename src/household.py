@@ -989,7 +989,7 @@ def income_rate(character: str, tax_profile: dict) -> float:
     realization_rate's, and they must not be conflated: `treasury` interest is
     state-exempt while a gain on the same fund is state-taxed.
     """
-    from src.location_config import SECTION_199A_DEDUCTION, TAX_CHARACTER
+    from src.location_config import SECTION_199A_DEDUCTION, TAX_CHARACTER, _require_rate
     federal_kind, state_taxed, _ = TAX_CHARACTER[character]
     fed_ordinary = float(tax_profile["federal_marginal"])
     federal = {
@@ -1000,8 +1000,12 @@ def income_rate(character: str, tax_profile: dict) -> float:
         "199a":     fed_ordinary * (1.0 - SECTION_199A_DEDUCTION),
         "exempt":   0.0,
     }[federal_kind]
+    # The net investment income tax reaches every federally taxable kind of investment
+    # income, a REIT dividend in full (the §199A deduction does not reduce it), and not
+    # tax-exempt interest (#724; Instructions for Form 8960).
+    niit = 0.0 if federal_kind == "exempt" else _require_rate(tax_profile, "niit")
     state = float(tax_profile["state_marginal"]) if state_taxed else 0.0
-    return federal + state
+    return federal + niit + state
 
 
 def realization_rate(character: str, tax_profile: dict) -> float:
@@ -1012,11 +1016,12 @@ def realization_rate(character: str, tax_profile: dict) -> float:
     three facts does not. This is also the term a refused sleeve still reaches: an
     unsizable income does not make a holding unsellable.
     """
-    from src.location_config import COLLECTIBLES_FEDERAL_RATE, TAX_CHARACTER
+    from src.location_config import COLLECTIBLES_FEDERAL_RATE, TAX_CHARACTER, _require_rate
     _, _, gain_kind = TAX_CHARACTER[character]
     federal = (COLLECTIBLES_FEDERAL_RATE if gain_kind == "collectibles"
                else float(tax_profile["federal_ltcg"]))
-    return federal + float(tax_profile["state_ltcg"])
+    # A gain is net investment income whatever its federal rate (#724).
+    return federal + _require_rate(tax_profile, "niit") + float(tax_profile["state_ltcg"])
 
 
 def _relocation_is_categorically_wrong(sleeve_key: str) -> bool:

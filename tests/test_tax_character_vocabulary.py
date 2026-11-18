@@ -156,19 +156,46 @@ def test_the_income_and_gain_facts_are_independent_across_the_table():
 # The synthetic residence's state rate (tests/tax_profiles.py), read rather than
 # typed, so no test states a real residence's rate.
 _STATE = PROFILE["state_marginal"]
+# The synthetic profile's federal rates, read rather than typed: no committed rate is the
+# owner's (#724).
+_FED = PROFILE["federal_marginal"]
+_LTCG = PROFILE["federal_ltcg"]
 
 
 @pytest.mark.parametrize("character,expected", [
-    ("ordinary",          0.22 + _STATE),
-    ("qualified",         0.15 + _STATE),
-    ("qualified_199a",    0.22 * 0.80 + _STATE),
-    ("treasury",          0.22),
+    ("ordinary",          _FED + _STATE),
+    ("qualified",         _LTCG + _STATE),
+    ("qualified_199a",    _FED * 0.80 + _STATE),
+    ("treasury",          _FED),
     ("muni_out_of_state", _STATE),
     ("muni_in_state",     0.0),
-    ("collectibles",      0.22 + _STATE),
+    ("collectibles",      _FED + _STATE),
 ])
 def test_income_rate_per_character(character, expected):
     assert hh.income_rate(character, PROFILE) == pytest.approx(expected)
+
+
+@pytest.mark.parametrize("character, reached", [
+    ("ordinary", True), ("qualified", True), ("qualified_199a", True),
+    ("treasury", True), ("collectibles", True),
+    ("muni_out_of_state", False), ("muni_in_state", False),
+])
+def test_the_net_investment_income_tax_reaches_taxable_income_and_every_gain(
+        character, reached):
+    """Where it applies (#724), the NIIT reaches every federally taxable kind of
+    investment income, a REIT dividend in full, and not tax-exempt interest; and every
+    gain, whatever its federal rate (Instructions for Form 8960)."""
+    from tests.tax_profiles import SYNTHETIC_NIIT_PROFILE as N
+    niit = N["niit"]
+    assert niit == pytest.approx(0.038)
+    assert hh.income_rate(character, N) == pytest.approx(
+        hh.income_rate(character, PROFILE) + (niit if reached else 0.0))
+    assert hh.realization_rate(character, N) == pytest.approx(
+        hh.realization_rate(character, PROFILE) + niit)
+    assert lc.ltcg_rate(N) == pytest.approx(lc.ltcg_rate(PROFILE) + niit)
+    assert lc.ordinary_rate(N) == pytest.approx(lc.ordinary_rate(PROFILE)), (
+        "a pre-tax withdrawal is not net investment income")
+    assert lc.investment_income_rate(N) == pytest.approx(lc.ordinary_rate(N) + niit)
 
 
 def test_the_199a_rate_is_a_deduction_not_the_ltcg_rate():

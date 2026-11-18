@@ -142,12 +142,6 @@ FIGURES: dict[str, dict[str, str]] = {
         "$45,000": f"{SYNTHETIC}: two balances the deploy sentence is calibrated across",
         "$0.40": f"{SYNTHETIC}: an example of a sub-dollar buy leg",
     },
-    "src/location_config.py": {
-        "$48.5K": (f"{PUBLIC}: the 2025 single filer's 22% bracket, 48,475 to 103,350 "
-                   "dollars, Rev. Proc. 2024-40 (October 2024)"),
-        "$103K": (f"{PUBLIC}: the 2025 single filer's 22% bracket, 48,475 to 103,350 "
-                  "dollars, Rev. Proc. 2024-40 (October 2024)"),
-    },
     "src/policy_backtest.py": {
         "$53,171": f"{SYNTHETIC}: the formatter's docstring example",
     },

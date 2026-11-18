@@ -192,8 +192,9 @@ def test_the_share_reconciliation_compares_no_pending_line(monkeypatch):
 
 # ── The ladder ───────────────────────────────────────────────────────────────────
 
-FLAT = {"federal_marginal": 0.22, "federal_ltcg": 0.15, "state_marginal": 0.0,
-        "state_ltcg": 0.0}
+# Synthetic flat rates (no state, no NIIT), none of them the owner's (#724).
+FLAT = {"federal_marginal": 0.20, "federal_ltcg": 0.10, "niit": 0.0, "state_marginal": 0.0,
+        "state_ltcg": 0.0, "tax_year": 2027}
 LADDER_SEC = None
 
 
@@ -267,10 +268,12 @@ def test_a_line_no_rung_can_cover_is_reported_not_made_negative():
     lad = _ladder(-1_000.0)
     taxable = lad[lad["account"] == "Taxable A"]
     assert (taxable["net_cash"] == 0).all()
-    # Every taxable rung gives up its net cash: 40 + 500 + (300 - its 30 tax) = 810.
+    # Every taxable rung gives up its net cash: 40 + 500 + (300 less the tax on its 200
+    # gain at FLAT's synthetic gains rate).
+    net = 40.0 + 500.0 + 300.0 - 200.0 * FLAT["federal_ltcg"]
     covered = float(taxable["pending_netted"].sum())
-    assert covered == pytest.approx(810.0)
-    assert lad.attrs["pending_uncovered"] == {"Taxable A": pytest.approx(190.0)}
+    assert covered == pytest.approx(net)
+    assert lad.attrs["pending_uncovered"] == {"Taxable A": pytest.approx(1_000.0 - net)}
     # No rung goes below zero to absorb the rest, so the rungs sum to the holdings less
     # what was covered, not to the account's negative total.
     _ladder_holds(lad, 1_840.0 - covered)
