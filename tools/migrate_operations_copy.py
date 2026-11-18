@@ -9,6 +9,13 @@ tools/migrate_markets_copy.py, which keeps it equal to the Research page's text.
 Each UPDATE is keyed on the thesis id and the cell's current text, must change exactly
 one row, or the run rolls back; a second run changes nothing. Targets data/demo.db
 explicitly and runs from main() only. The personal book is not touched.
+
+SUPERSEDED IN PART (#710). tools/migrate_vgit_state_exemption.py later rewrote one
+sentence in thesis 19's macro_view, vehicle_rationale and view_summary, so that the books
+name no state. NEW below keeps this sweep's text as it was, and this tool writes NEW over
+whatever a cell holds, so a run now changes those three cells back. Run
+`python tools/migrate_vgit_state_exemption.py data/demo.db` after it.
+tests/test_operations_copy.py asserts both.
 """
 import sqlite3
 from pathlib import Path
