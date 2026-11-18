@@ -11,29 +11,20 @@ never be presented in the UI as an expected return.
 from __future__ import annotations
 
 # ── Tax profile ────────────────────────────────────────────────────────────────
-# USER-EDITABLE. The FEDERAL marginal and long-term-capital-gains rates used to size
-# the annual benefit and the cost-to-realize of each suggested move. Rates are
-# fractions (0.12 == 12%). Sources noted per line; update when your situation or the
-# law changes.
-#
-# FEDERAL KEYS ONLY (#706). State and local rates belong to where the owner lives,
-# which the committed tree does not name: they come from `tax_residence` in the
-# gitignored private/personal_profile.json (personal_profile.load_tax_residence), or
-# from the synthetic DEMO_TAX_RESIDENCE, and liquidity.residence_tax_profile adds them
-# to these. Every page that prices state tax builds its profile that way; a profile
-# missing a state key raises (_require_rate) rather than pricing at 0.
-TAX_PROFILE: dict[str, float] = {
-    # Federal ordinary marginal bracket — the 2026 single 22% bracket
-    # (~$48.5K–$103K). Drives the income-tax benefit of moving ordinary-income
-    # assets into a shelter. Re-check this against your own income when it moves
-    # across a bracket boundary; the income itself is not stored here (see
-    # private/personal_profile.json).
-    "federal_marginal": 0.22,
-    # Federal long-term capital-gains rate: the 15% LTCG bracket, i.e. income sits
-    # above the 0%-rate ceiling (LTCG_0_BRACKET_CEILING_SINGLE_2026), so the 0%
-    # bracket is out of reach and realized gains are federally taxed at 15%.
-    "federal_ltcg": 0.15,
-}
+# NO RATE HERE IS THE OWNER'S (#724). The rates that size the annual benefit and the
+# cost-to-realize of each suggested move follow from the owner's income, so they are
+# personal and never committed. A page prices with one profile, built by
+# liquidity.residence_tax_profile from two private sources:
+#   * the federal rates — the ordinary marginal rate, the long-term gains rate and
+#     whether the net investment income tax applies, each with the tax year it is for
+#     and the IRS source it was read from — from `federal_tax` in the gitignored
+#     private/personal_profile.json (personal_profile.load_federal_tax), or the
+#     synthetic DEMO_FEDERAL_TAX in demo mode and tests;
+#   * the state and local rates from `tax_residence` there (load_tax_residence), or the
+#     synthetic DEMO_TAX_RESIDENCE (#706). The committed tree names no home state.
+# A profile missing a key raises (_require_rate) rather than pricing that part at 0.
+# Rates are fractions (0.12 == 12%). TAX_PROFILE, which typed the federal rates here,
+# is gone (#724).
 
 # Assumed annual distribution YIELD per sleeve (income throw-off, not total
 # return). This table is INCOME ONLY — it must never encode tax status. A
@@ -646,7 +637,8 @@ MIN_ANNUAL_BENEFIT: float = 1.00
 # The single-filer 0% long-term-cap-gains ceiling — TAX LAW, so it belongs here
 # alongside the other IRS figures. The 0% LTCG bracket is a finite BUDGET, not a
 # rate: realized long-term gains are federally untaxed up to
-# (ceiling − ordinary income), then taxed at 15% (TAX_PROFILE['federal_ltcg']).
+# (ceiling − ordinary income), then taxed at the federal gains rate
+# (personal_profile.load_federal_tax).
 LTCG_0_BRACKET_CEILING_SINGLE_2026: float = 48_350.0
 
 # Ordinary income is NOT here. It is the owner's real salary, this file is tracked,
@@ -945,12 +937,24 @@ def _require_rate(tax_profile: dict[str, float], key: str) -> float:
 
 
 def ltcg_rate(tax_profile: dict[str, float]) -> float:
-    """Combined long-term capital-gains rate (federal + state). Raises on a missing
-    component (see _require_rate) rather than understating the rate."""
-    return _require_rate(tax_profile, "federal_ltcg") + _require_rate(tax_profile, "state_ltcg")
+    """Combined long-term capital-gains rate on a taxable sale: federal, the net
+    investment income tax where it applies (a gain is net investment income, Form 8960
+    instructions), and state and local. Raises on a missing component (see
+    _require_rate) rather than understating the rate."""
+    return (_require_rate(tax_profile, "federal_ltcg") + _require_rate(tax_profile, "niit")
+            + _require_rate(tax_profile, "state_ltcg"))
 
 
 def ordinary_rate(tax_profile: dict[str, float]) -> float:
-    """Combined ordinary marginal rate (federal + state). Raises on a missing
-    component (see _require_rate) rather than understating the rate."""
+    """Combined ordinary marginal rate (federal + state) on ordinary income that is NOT
+    investment income: a withdrawal from a pre-tax account, which the net investment
+    income tax does not reach (Form 8960 instructions exclude qualified-plan and IRA
+    distributions). Investment income's rate is investment_income_rate's. Raises on a
+    missing component (see _require_rate) rather than understating the rate."""
     return _require_rate(tax_profile, "federal_marginal") + _require_rate(tax_profile, "state_marginal")
+
+
+def investment_income_rate(tax_profile: dict[str, float]) -> float:
+    """Combined rate on ordinary investment income (interest, non-qualified dividends):
+    the ordinary rate plus the net investment income tax where it applies."""
+    return ordinary_rate(tax_profile) + _require_rate(tax_profile, "niit")

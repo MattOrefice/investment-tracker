@@ -1169,14 +1169,17 @@ def bind_groups_to_book(
 
 def _gain_tax_today(gain: float, tax_profile: dict, headroom_remaining: float) -> float:
     """The capital-gains tax a realization of ``gain`` costs at today's rates: the
-    residence's rate on all of it, and the federal rate on what the 0% bracket's
-    remaining room does not cover. Zero for a gain of zero or less."""
+    residence's rate and the net investment income tax where it applies on all of it
+    (the 0% bracket is the federal gains rate's, not the NIIT's: #724), and the federal
+    rate on what the 0% bracket's remaining room does not cover. Zero for a gain of zero
+    or less."""
     from src.location_config import _require_rate
     if gain <= 0:
         return 0.0
     federal = _require_rate(tax_profile, "federal_ltcg")
+    niit = _require_rate(tax_profile, "niit")
     state = _require_rate(tax_profile, "state_ltcg")
-    return state * gain + federal * max(0.0, gain - max(0.0, headroom_remaining))
+    return (state + niit) * gain + federal * max(0.0, gain - max(0.0, headroom_remaining))
 
 
 def decision_review(
@@ -1911,8 +1914,8 @@ def resolve_placeholders(
     None if it cannot resolve (empty subset) — render_prose raises if the prose
     references a None key.
 
-    tax_profile is the profile the register was built with (federal from TAX_PROFILE,
-    state and local from the residence: liquidity.residence_tax_profile). Every rate a
+    tax_profile is the profile the register was built with (federal from the private
+    federal_tax, state and local from the residence: liquidity.residence_tax_profile). Every rate a
     card's text states is read from it — {gain_rate}, {gain_rate_parts}, {gain_tax} —
     so a text and the figures beside it cannot disagree (#706). Omit it and those
     resolve to None, so a card that states a rate raises rather than typing one.
@@ -2073,9 +2076,15 @@ def _rate_placeholders(tax_profile: "dict | None", hr: dict) -> dict[str, str | 
         return {"gain_rate": None, "gain_rate_parts": None, "bracket_sentence": None}
     from src.location_config import _require_rate, ltcg_rate
     federal = _require_rate(tax_profile, "federal_ltcg")
+    niit = _require_rate(tax_profile, "niit")
     state = _require_rate(tax_profile, "state_ltcg")
-    parts = (f"{federal:.0%} federal + {state:.2%} state and local" if state > 0 else
-             f"{federal:.0%} federal only; no state or local tax is included")
+    parts = f"tax year {int(tax_profile['tax_year'])}: {federal:.0%} federal"
+    if niit > 0:
+        parts += f" + {niit:.1%} net investment income tax"
+    if state > 0:
+        parts += f" + {state:.2%} state and local"
+    else:
+        parts += ("" if niit > 0 else " only") + "; no state or local tax is included"
     if not hr["income_known"]:
         bracket = "No income is configured, so the 0% bracket is treated as used up."
     elif hr["total"] <= 0:

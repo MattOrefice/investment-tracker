@@ -13,10 +13,11 @@ account tax_treatment for the wrapper, and the tax profile's rates. No new tax
 derivation.
 
 THE TAX PROFILE THIS PAGE PRICES WITH is ``residence_tax_profile``: the federal rates
-from TAX_PROFILE, and state and local rates from the owner's tax residence, which
-lives in the gitignored private/personal_profile.json (personal_profile.
-load_tax_residence). The committed tree names no home state. TAX_PROFILE holds the
-federal keys only (#706), and Asset Location builds its profile the same way.
+and the tax year they are for (personal_profile.load_federal_tax, #724), and state and
+local rates from the owner's tax residence (load_tax_residence, #706). Both live in the
+gitignored private/personal_profile.json; demo mode and tests read synthetic ones. The
+committed tree holds no rate of the owner's and names no home state. Asset Location
+builds its profile the same way.
 """
 from __future__ import annotations
 
@@ -24,33 +25,42 @@ import pandas as pd
 
 from src.household import compute_embedded_gain
 from src.ingestion.fidelity import PENDING_ACTIVITY_LABEL, is_pending_activity
-from src.location_config import TAX_PROFILE, ordinary_rate, ltcg_rate
+from src.location_config import ordinary_rate, ltcg_rate
 
 # Early-withdrawal penalty on tax-advantaged accounts before age 59½.
 EARLY_WITHDRAWAL_PENALTY: float = 0.10
 # Embedded-gain % below which a taxable lot is "small gain" (Tier 1, minimal tax).
 SMALL_GAIN_PCT: float = 10.0
 
-TIER_LABEL: dict[int, str] = {
-    1: "Tier 1 · free / cheap",
-    2: f"Tier 2 · moderate ({TAX_PROFILE['federal_ltcg']:.0%} LTCG)",   # federal, read
-    3: "Tier 3 · locked (penalty + tax)",
-}
+def tier_labels(tax_profile: dict[str, float]) -> dict[int, str]:
+    """The ladder's tier names. Tier 2's states the federal gains rate, read from the
+    profile the ladder was priced with."""
+    return {
+        1: "Tier 1 · free / cheap",
+        2: f"Tier 2 · moderate ({float(tax_profile['federal_ltcg']):.0%} federal LTCG)",
+        3: "Tier 3 · locked (penalty + tax)",
+    }
 
 
-def residence_tax_profile(residence: dict,
-                          federal: "dict[str, float] | None" = None) -> dict[str, float]:
-    """The rates this page prices with: federal from ``federal`` (TAX_PROFILE by
-    default), state and local summed over the residence's jurisdictions. With no
-    jurisdictions the state and local rates are 0.0, and ``gain_tax_note`` says that no
-    state or local tax is included rather than letting the 0 pass for a rate."""
-    federal = TAX_PROFILE if federal is None else federal
+def residence_tax_profile(residence: dict, federal: dict) -> dict[str, float]:
+    """The rates this page prices with: federal from ``federal``
+    (personal_profile.load_federal_tax: the ordinary and gains rates, the net investment
+    income tax's rate where it applies, and the tax year), state and local summed over
+    the residence's jurisdictions. With no jurisdictions the state and local rates are
+    0.0, and ``gain_tax_note`` says that no state or local tax is included rather than
+    letting the 0 pass for a rate. A federal profile with no rates (its ``problem``
+    set) raises: no committed rate stands in for the owner's."""
+    for key in ("federal_marginal", "federal_ltcg", "niit", "tax_year"):
+        if federal.get(key) is None:
+            raise ValueError(f"no federal {key}: {federal.get('problem') or 'not supplied'}")
     juris = residence.get("jurisdictions") or []
     return {
         "federal_marginal": float(federal["federal_marginal"]),
         "federal_ltcg": float(federal["federal_ltcg"]),
+        "niit": float(federal["niit"]),
         "state_marginal": round(sum(float(j["ordinary_rate"]) for j in juris), 6),
         "state_ltcg": round(sum(float(j["gains_rate"]) for j in juris), 6),
+        "tax_year": int(federal["tax_year"]),
     }
 
 
@@ -68,12 +78,14 @@ def gain_tax_note(tax_profile: dict[str, float], tax_location: str) -> str:
     with a 0 state rate says that none is included."""
     fed = float(tax_profile["federal_ltcg"])
     total = ltcg_rate(tax_profile)
+    head = f"{total:.2%} on the gain (tax year {int(tax_profile['tax_year'])}): {fed:.0%} federal"
+    if float(tax_profile["niit"]) > 0:
+        head += f" + {float(tax_profile['niit']):.1%} net investment income tax"
     if tax_location:
-        return f"{total:.2%} on the gain: {fed:.0%} federal + {tax_location}"
+        return f"{head} + {tax_location}"
     if float(tax_profile["state_ltcg"]) == 0.0:
-        return (f"{total:.2%} on the gain: {fed:.0%} federal only; no state or local tax "
-                f"is included")
-    return f"{total:.2%} on the gain: {fed:.0%} federal + {tax_profile['state_ltcg']:.2%} state"
+        return f"{head} only; no state or local tax is included"
+    return f"{head} + {tax_profile['state_ltcg']:.2%} state"
 
 
 def build_liquidity_ladder(
