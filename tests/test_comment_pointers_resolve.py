@@ -28,6 +28,7 @@ import tokenize
 import pytest
 
 import src.location_config as _lc
+from tests.tax_profiles import SYNTHETIC_TAX_PROFILE
 
 SRC = pathlib.Path(_lc.__file__).resolve().parent
 
@@ -312,7 +313,7 @@ def test_the_caption_reconciles_a_real_gap_in_the_personal_book():
         sec = pd.read_sql_query("SELECT * FROM securities", conn)
         comp = pd.read_sql_query("SELECT * FROM fund_compositions", conn)
     reg = hh.build_location_register(
-        exclude_non_household_positions(pos, acc), acc, sec, lc.TAX_PROFILE,
+        exclude_non_household_positions(pos, acc), acc, sec, SYNTHETIC_TAX_PROFILE,
         lc.SLEEVE_PRIORITY_BY_ACCOUNT_TYPE, lc.ACCOUNT_SHELTER_PRIORITY,
         compositions_df=comp)
     grp = next(g for g in la.ACTION_GROUPS if g.get("key") == "thematic_sprawl")

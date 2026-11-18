@@ -33,7 +33,8 @@ import pytest
 import src.household as hh
 import src.location_config as lc
 from src.location_config import (ACCOUNT_SHELTER_PRIORITY,
-                                 SLEEVE_PRIORITY_BY_ACCOUNT_TYPE, TAX_PROFILE)
+                                 SLEEVE_PRIORITY_BY_ACCOUNT_TYPE)
+from tests.tax_profiles import SYNTHETIC_TAX_PROFILE
 
 GAIN = 10_000.0
 VALUE = 60_000.0
@@ -55,7 +56,7 @@ def _fixture():
 
 
 def _register(pos, acct, sec):
-    return hh.build_location_register(pos, acct, sec, TAX_PROFILE,
+    return hh.build_location_register(pos, acct, sec, SYNTHETIC_TAX_PROFILE,
                                       SLEEVE_PRIORITY_BY_ACCOUNT_TYPE,
                                       ACCOUNT_SHELTER_PRIORITY)
 
@@ -68,7 +69,7 @@ def test_a_collectibles_holding_pays_the_collectibles_rate_on_a_taxable_sale(mon
     reg = _register(*_fixture())
     row = reg[reg["symbol"] == "COLL"]
     assert len(row) == 1, "fixture did not produce a taxable row with a gain"
-    expected = GAIN * (lc.COLLECTIBLES_FEDERAL_RATE + TAX_PROFILE["state_ltcg"])
+    expected = GAIN * (lc.COLLECTIBLES_FEDERAL_RATE + SYNTHETIC_TAX_PROFILE["state_ltcg"])
     assert row.iloc[0]["cost_to_realize"] == pytest.approx(round(expected, 2))
 
 
@@ -77,7 +78,7 @@ def test_the_same_holding_pays_the_ordinary_ltcg_rate_without_the_character():
     if this and the test above agreed, neither would be measuring the character."""
     reg = _register(*_fixture())
     row = reg[reg["symbol"] == "COLL"]
-    expected = GAIN * (TAX_PROFILE["federal_ltcg"] + TAX_PROFILE["state_ltcg"])
+    expected = GAIN * (SYNTHETIC_TAX_PROFILE["federal_ltcg"] + SYNTHETIC_TAX_PROFILE["state_ltcg"])
     assert row.iloc[0]["cost_to_realize"] == pytest.approx(round(expected, 2))
 
 
@@ -91,13 +92,14 @@ def test_the_two_characters_produce_different_costs(monkeypatch):
 
 
 def test_the_income_rate_is_not_what_reaches_cost_to_realize(monkeypatch):
-    """M4's target, named. `collectibles` income is ordinary (25.07%) and its gain is
-    31.07% — so a call site that reached for income_rate instead would produce a
+    """M4's target, named. `collectibles` income is ordinary (22% federal plus the
+    state rate) and its gain is 28% federal plus the state rate — so a call site that
+    reached for income_rate instead would produce a
     plausible, wrong number rather than an error."""
     monkeypatch.setitem(lc.SLEEVE_TAX_CHARACTER, "multi_sector_fi", "collectibles")
     reg = _register(*_fixture())
     cost = reg.iloc[0]["cost_to_realize"]
-    wrong = round(GAIN * hh.income_rate("collectibles", TAX_PROFILE), 2)
+    wrong = round(GAIN * hh.income_rate("collectibles", SYNTHETIC_TAX_PROFILE), 2)
     assert cost != pytest.approx(wrong), (
         "cost_to_realize equals the INCOME rate applied to the gain — the two terms "
         "have been conflated")

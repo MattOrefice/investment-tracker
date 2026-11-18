@@ -11,10 +11,17 @@ never be presented in the UI as an expected return.
 from __future__ import annotations
 
 # ── Tax profile ────────────────────────────────────────────────────────────────
-# USER-EDITABLE. Marginal + long-term-capital-gains rates used to size the
-# annual benefit and the cost-to-realize of each suggested move. Rates are
-# fractions (0.12 == 12%). Sources noted per line; update when your situation
-# or the law changes.
+# USER-EDITABLE. The FEDERAL marginal and long-term-capital-gains rates used to size
+# the annual benefit and the cost-to-realize of each suggested move. Rates are
+# fractions (0.12 == 12%). Sources noted per line; update when your situation or the
+# law changes.
+#
+# FEDERAL KEYS ONLY (#706). State and local rates belong to where the owner lives,
+# which the committed tree does not name: they come from `tax_residence` in the
+# gitignored private/personal_profile.json (personal_profile.load_tax_residence), or
+# from the synthetic DEMO_TAX_RESIDENCE, and liquidity.residence_tax_profile adds them
+# to these. Every page that prices state tax builds its profile that way; a profile
+# missing a state key raises (_require_rate) rather than pricing at 0.
 TAX_PROFILE: dict[str, float] = {
     # Federal ordinary marginal bracket — the 2026 single 22% bracket
     # (~$48.5K–$103K). Drives the income-tax benefit of moving ordinary-income
@@ -26,12 +33,6 @@ TAX_PROFILE: dict[str, float] = {
     # above the 0%-rate ceiling (LTCG_0_BRACKET_CEILING_SINGLE_2026), so the 0%
     # bracket is out of reach and realized gains are federally taxed at 15%.
     "federal_ltcg": 0.15,
-    # State ordinary marginal rate. Source: Pennsylvania flat personal income
-    # tax, 3.07%.
-    "state_marginal": 0.0307,
-    # State LTCG rate. Source: PA taxes capital gains as ordinary income — no
-    # preferential rate — so this equals state_marginal.
-    "state_ltcg": 0.0307,
 }
 
 # Assumed annual distribution YIELD per sleeve (income throw-off, not total
@@ -475,14 +476,17 @@ NOT_MODELLED_SLEEVES: frozenset[str] = frozenset({
 # sentence in #228 and two contradicting ones in #284.
 #
 # THREE FACTS PER MEMBER, and `treasury` is why one value cannot do. Treasury
-# INTEREST is exempt from PA tax; a capital gain on a Treasury fund is an ordinary
-# capital gain and PA taxes it. Collapse the three into one and either the interest
-# is over-taxed or the gain is under-taxed — the same failure the boolean had, one
-# level down. The two axes are genuinely independent, which the repo already knew on
-# the one sleeve it applied to: PA taxes out-of-state muni interest, so a national
-# HY-muni fund is federally exempt and state-taxed. `muni_in_state` is DECLARED AND
-# UNUSED for exactly that reason — nothing held is one, and without it `treasury`
-# reads as a special case with nowhere for the next state-exemption question to go.
+# INTEREST is exempt from state and local income tax under federal law (31 U.S.C.
+# § 3124(a), read November 17, 2026, in the U.S. Code's 2024 edition), wherever the
+# owner lives; a capital gain on a Treasury fund is an ordinary capital gain, and the
+# residence taxes it. Collapse the three into one and either the interest is
+# over-taxed or the gain is under-taxed — the same failure the boolean had, one level
+# down. The two axes are genuinely independent, which the repo already knew on the
+# one sleeve it applied to: a national HY-muni fund is federally exempt, and its
+# income is treated as fully taxed by the residence, because the model holds no
+# in-state share for a national fund. `muni_in_state` is DECLARED AND UNUSED for
+# exactly that reason — nothing held is one, and without it `treasury` reads as a
+# special case with nowhere for the next state-exemption question to go.
 #
 # NOT DECLARED, deliberately: `section_1256` (60/40). JHEQX writes index options, but
 # 60/40 governs the FUND's internal gains, not the character of what it distributes —
@@ -492,7 +496,13 @@ NOT_MODELLED_SLEEVES: frozenset[str] = frozenset({
 # AUTHORED, NOT MEASURED — the same standing limitation as the yield table, and the
 # page says so in the same words rather than implying a measurement.
 #
-#     member -> (federal income treatment, PA taxes the income?, gain treatment)
+#     member -> (federal income treatment, the residence taxes the income?,
+#                gain treatment)
+#
+# The second fact is about the residence: the state and local rates it switches on
+# are the residence's (load_tax_residence). Its values here hold for any residence
+# for `treasury` (federal law) and are the model's simplification for
+# `muni_out_of_state` (no in-state share).
 #
 # USER-EDITABLE.
 TAX_CHARACTER: dict[str, tuple[str, bool, str]] = {
@@ -579,14 +589,15 @@ SLEEVE_TAX_CHARACTER: dict[str, str] = {
     # ── everything else is its own character ──────────────────────────────────
     # REIT dividends are non-qualified ordinary but carry §199A's 20% deduction.
     "real_assets_reit":        "qualified_199a",
-    # US Treasury obligations — interest exempt from PA tax, gains taxed normally.
+    # US Treasury obligations — interest exempt from state and local income tax under
+    # federal law (31 U.S.C. § 3124(a)), gains taxed normally.
     # THE CASE THAT FORCED THIS TABLE. pages/8_Research.py renders VGIT's rationale
     # naming this exemption as the reason the fund was chosen, while the register
     # charged it state tax anyway (#283).
     "core_fi_treasury":        "treasury",
     "tips":                    "treasury",
-    # A national HY-muni fund is mostly out-of-state, so PA's 3.07% still applies:
-    # the exemption is federal, not total.
+    # A national HY-muni fund's income is treated as fully taxable by the residence:
+    # the exemption is federal, not total, and no in-state share is modelled.
     "high_yield_muni":         "muni_out_of_state",
     "real_assets_gold":        "collectibles",
 }
@@ -920,7 +931,7 @@ def _require_rate(tax_profile: dict[str, float], key: str) -> float:
     """One component of a combined rate, or raise. Deliberately NO default.
 
     A missing key previously read as 0.0, silently DROPPING that component: an
-    absent ``state_ltcg`` turned a 15%+3.07% LTCG rate into a bare 15%, understating
+    absent ``state_ltcg`` turned a federal-plus-state LTCG rate into the bare federal 15%, understating
     every tax-drag and payback figure downstream with nothing visibly wrong. The
     zero was indistinguishable from a real 0% rate. An incomplete tax_profile is a
     configuration error to fix at the source, not a rate to quietly halve."""

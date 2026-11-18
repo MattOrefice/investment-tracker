@@ -20,13 +20,13 @@ from src.household import (
     sleeve_display_name,
 )
 from src.location_config import (
-    TAX_PROFILE,
     SLEEVE_PRIORITY_BY_ACCOUNT_TYPE,
     ACCOUNT_SHELTER_PRIORITY,
     SLEEVE_ASSUMED_YIELD,
     MIN_ANNUAL_BENEFIT,
     sleeve_priority,
 )
+from tests.tax_profiles import SYNTHETIC_TAX_PROFILE
 
 ROOT       = pathlib.Path(__file__).resolve().parent.parent
 TRACKER_DB = ROOT / "data" / "tracker.db"
@@ -61,7 +61,7 @@ def _fixture():
 
 def _register():
     pos, acct, sec = _fixture()
-    return build_location_register(pos, acct, sec, TAX_PROFILE,
+    return build_location_register(pos, acct, sec, SYNTHETIC_TAX_PROFILE,
                                    SLEEVE_PRIORITY_BY_ACCOUNT_TYPE, ACCOUNT_SHELTER_PRIORITY)
 
 
@@ -97,9 +97,10 @@ def test_in_shelter_move_is_free():
 
 def test_taxable_move_has_positive_cost_and_payback():
     reg = _register()
-    # VNQ in taxable: gain 2000 * combined LTCG rate (federal 15% + PA 3.07%).
+    # VNQ in taxable: gain 2000 * combined LTCG rate (federal 15% + the synthetic
+    # residence's state rate, tests/tax_profiles.py).
     a = reg[(reg["symbol"] == "VNQ") & (reg["case"] == "A")].iloc[0]
-    _ltcg = TAX_PROFILE["federal_ltcg"] + TAX_PROFILE["state_ltcg"]
+    _ltcg = SYNTHETIC_TAX_PROFILE["federal_ltcg"] + SYNTHETIC_TAX_PROFILE["state_ltcg"]
     assert a["cost_to_realize"] == pytest.approx(2000.0 * _ltcg, abs=0.01)
     assert not bool(a["is_free"])
     assert a["payback_months"] is not None and a["payback_months"] > 0
@@ -249,7 +250,7 @@ def _case_d_fixture():
 
 def _case_d_symbols():
     pos, acct, sec = _case_d_fixture()
-    reg = build_location_register(pos, acct, sec, TAX_PROFILE,
+    reg = build_location_register(pos, acct, sec, SYNTHETIC_TAX_PROFILE,
                                   SLEEVE_PRIORITY_BY_ACCOUNT_TYPE, ACCOUNT_SHELTER_PRIORITY)
     return set(reg[reg["case"] == "D"]["symbol"])
 
@@ -317,7 +318,7 @@ def _muni_fixture():
 
 
 def _muni_register(pos, acct, sec):
-    return build_location_register(pos, acct, sec, TAX_PROFILE,
+    return build_location_register(pos, acct, sec, SYNTHETIC_TAX_PROFILE,
                                    SLEEVE_PRIORITY_BY_ACCOUNT_TYPE, ACCOUNT_SHELTER_PRIORITY)
 
 
@@ -356,7 +357,7 @@ def test_a_state_exempt_sleeve_is_not_suppressed(monkeypatch):
 
     Under FEDERALLY_EXEMPT_SLEEVES, rate and eligibility were one set: anything
     given the exempt rate was also barred from generating an action. A US Treasury
-    needs the opposite pairing — a reduced rate (PA does not tax the interest) AND a
+    needs the opposite pairing — a reduced rate (no state may tax the interest) AND a
     live relocation action, because there is still federal tax to save by sheltering
     it. Re-bundling them would make this row vanish.
     """
@@ -406,12 +407,14 @@ def _group7_fixture():
 
 def test_group7_population_four_rows_three_caption_and_coverage():
     from src.location_actions import (
-        ACTION_GROUPS, filter_register_for_group, resolve_placeholders,
+        bind_groups_to_book, filter_register_for_group, resolve_placeholders,
         resolve_caption, assert_full_coverage, _fmt_dollars,
     )
     pos, acct, sec = _group7_fixture()
     reg = _muni_register(pos, acct, sec)
-    g7 = next(g for g in ACTION_GROUPS if g["key"] == "frozen_tod_income")
+    # The group reads its symbols from the book (#706): bind it to this fixture's.
+    groups = bind_groups_to_book(sec, pos, acct)
+    g7 = next(g for g in groups if g["key"] == "frozen_tod_income")
 
     reg7 = filter_register_for_group(reg, g7)
     assert set(reg7["symbol"]) == {"BILPX", "GAOSX", "JHEQX"}, "GHYIX must not be a register row"
@@ -425,9 +428,12 @@ def test_group7_population_four_rows_three_caption_and_coverage():
     # the population value: "4 holdings worth $80,000. 3 appear below (worth $60,000)".
     shown = _fmt_dollars(float(reg7["current_value"].sum())).lstrip("$")
     assert cap and "3 appear below" in cap and shown in cap and "generates no action" in cap, cap
+    # The municipal fund the caption explains is named from the book, not typed.
+    assert "GHYIX is a federally exempt municipal fund" in cap, cap
+    assert resolved["muni_symbols"] == "GHYIX"
 
     # A vanished row (GHYIX) must not orphan anything.
-    assert_full_coverage(reg)   # raises on any orphan
+    assert_full_coverage(reg, groups)   # raises on any orphan
 
 
 def test_caption_verb_agrees_with_singular_row_count():
@@ -435,7 +441,7 @@ def test_caption_verb_agrees_with_singular_row_count():
     'appears', many 'appear'. The rule lives in resolve_caption (not per template),
     so a lone register row renders 'Only 1 appears below', never 'Only 1 appear'."""
     from src.location_actions import (
-        ACTION_GROUPS, filter_register_for_group, resolve_caption,
+        bind_groups_to_book, filter_register_for_group, resolve_caption,
     )
     acct = pd.DataFrame([
         {"pseudonym": "tod", "display_name": "Individual Taxable (TOD)", "tax_treatment": "taxable"},
@@ -449,7 +455,9 @@ def test_caption_verb_agrees_with_singular_row_count():
         for s in ("GHYIX", "JHEQX")
     ])
     reg = _muni_register(pos, acct, sec)
-    g7 = next(g for g in ACTION_GROUPS if g["key"] == "frozen_tod_income")
+    # The group reads its symbols from the book (#706): bind it to this fixture's.
+    groups = bind_groups_to_book(sec, pos, acct)
+    g7 = next(g for g in groups if g["key"] == "frozen_tod_income")
     assert len(filter_register_for_group(reg, g7)) == 1, "fixture must yield exactly one register row"
     cap = resolve_caption(g7, pos, acct, reg)
     assert "1 appears below" in cap, f"singular verb expected: {cap!r}"
@@ -503,7 +511,7 @@ def test_register_rows_group_shows_all_backing_rows_including_subthreshold():
         {"pseudonym": "t", "symbol": "TSYX", "current_value": 10.0,   # $10 -> drag << $1
          "total_gain_loss": 0.0, "cost_basis_total": 10.0},
     ])
-    reg = build_location_register(pos, acct, sec, TAX_PROFILE,
+    reg = build_location_register(pos, acct, sec, SYNTHETIC_TAX_PROFILE,
                                   SLEEVE_PRIORITY_BY_ACCOUNT_TYPE, ACCOUNT_SHELTER_PRIORITY)
     group = {"key": "synthetic_saa", "symbols": ["TSYX"], "case_filter": ["A"],
              "accounts": ["SynthTax"], "population": "register_rows"}

@@ -1,17 +1,21 @@
-"""Correct demo.db's VGIT holding_rationale jurisdiction from DC to Pennsylvania.
+"""Correct demo.db's VGIT holding_rationale jurisdiction: drop the DC reference.
 
 #283. The rationale rendered on the Research page said Treasury interest is exempt
 from state and local taxes — correct, and contradicted by the register until #278 —
 and called the jurisdiction "a high-income-tax jurisdiction like DC". Every other
-jurisdiction reference in the repo is PA (twelve of them); this sentence landed at
-1454d0b on 2026-05-01 and TAX_PROFILE's PA rates at e1c88c6 on 2026-07-09, ten weeks
-later. The prose predates the tax model and was never revisited.
+jurisdiction reference in the repo then named one other state (twelve of them); this
+sentence landed at 1454d0b on 2026-05-01 and TAX_PROFILE's state rates at e1c88c6 on
+2026-07-09, ten weeks later. The prose predates the tax model and was never revisited.
 
-NOT A STRAIGHT DC->PA SWAP. PA's 3.07% flat rate is one of the LOWEST state income
-taxes, so "high-income-tax jurisdiction" is true of DC and false of PA. The
-replacement drops the characterisation and keeps the claim: "a real, if modest,
-after-tax advantage at Pennsylvania's flat rate". No rate is stated — TAX_PROFILE
-holds 3.07% and duplicating it here is the mechanism #228 and #284 are about.
+NOT A STRAIGHT SWAP. "High-income-tax jurisdiction" was true of DC and false of the
+jurisdiction that replaced it, so the replacement dropped the characterisation and
+kept the claim. No rate was stated: TAX_PROFILE held the rate then, and duplicating
+it here is the mechanism #228 and #284 are about.
+
+SUPERSEDED (#710). tools/migrate_vgit_state_exemption.py rewrites the same sentence so
+that it names no state. _OLD and _NEW below are this migration's data and are kept as
+they were; _NEW names a state, because it is the text this migration wrote. On a book
+the newer tool has rewritten, this migration finds neither and aborts, writing nothing.
 
 WHY A MIGRATION AT ALL. src/seed_securities.py is INSERT-ONLY: it guards every write
 with `if existing is None` and has no UPDATE path, so editing the seed changes
@@ -86,7 +90,7 @@ def main() -> int:
                   "and would surface only in a rendered diff.")
             return 1
         conn.commit()
-        print("demo.db VGIT jurisdiction updated: DC -> Pennsylvania's flat rate "
+        print("demo.db VGIT jurisdiction updated: the DC reference replaced "
               "(1 row).")
         return 0
     finally:

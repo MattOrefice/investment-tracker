@@ -5,7 +5,7 @@ WHY A VOCABULARY AND NOT FOUR EXCEPTIONS. The register's rate was
     income_rate = state_only if _is_federally_exempt(sleeve) else ordinary
 
 — an expression with exactly two outcomes. US Treasury interest is federally taxed
-and PA-exempt, which is a THIRD, and a boolean has nowhere to put one. So that line
+and state-exempt, which is a THIRD, and a boolean has nowhere to put one. So that line
 changes whichever way the fix is framed, and once it is not binary a character
 selector exists whether or not anyone names it. Exceptions were not the weaker
 option here; they were unavailable. Everything below pins that structure rather than
@@ -28,8 +28,9 @@ import pytest
 import src.household as hh
 import src.location_actions as la
 import src.location_config as lc
+from tests.tax_profiles import SYNTHETIC_TAX_PROFILE
 
-PROFILE = lc.TAX_PROFILE
+PROFILE = SYNTHETIC_TAX_PROFILE
 ROOT = pathlib.Path(hh.__file__).resolve().parent.parent
 
 
@@ -63,7 +64,7 @@ def test_every_declared_character_is_a_defined_member(mapping):
 def test_an_undeclared_sleeve_raises_rather_than_defaulting(monkeypatch):
     """THE NO-FALLBACK RULE, and the reason it exists. Defaulting to `ordinary`
     is indistinguishable from someone having DECIDED a sleeve is ordinary — which is
-    precisely how US Treasury interest came to be charged PA tax for as long as the
+    precisely how US Treasury interest came to be charged state tax for as long as the
     rate was a boolean (#283). Same rule SLEEVE_ASSUMED_YIELD adopted in #210 PR 3.
     """
     monkeypatch.delitem(lc.SLEEVE_TAX_CHARACTER, "core_fi_credit")
@@ -124,8 +125,9 @@ def test_the_override_map_is_empty_and_that_is_a_finding():
 def test_treasury_needs_all_three_facts():
     """THE PROOF THAT ONE VALUE CANNOT DO, and the same shape as the boolean's.
 
-    Treasury INTEREST is exempt from PA tax. A capital gain on a Treasury fund is an
-    ordinary capital gain and PA taxes it. Collapse the three facts into one and
+    Treasury INTEREST is exempt from state and local income tax under federal law
+    (31 U.S.C. § 3124(a)). A capital gain on a Treasury fund is an ordinary capital
+    gain, and the residence taxes it. Collapse the three facts into one and
     either the interest is over-taxed or the gain is under-taxed.
     """
     inc = hh.income_rate("treasury", PROFILE)
@@ -151,14 +153,19 @@ def test_the_income_and_gain_facts_are_independent_across_the_table():
         "redundant and the table is really two facts wearing three")
 
 
+# The synthetic residence's state rate (tests/tax_profiles.py), read rather than
+# typed, so no test states a real residence's rate.
+_STATE = PROFILE["state_marginal"]
+
+
 @pytest.mark.parametrize("character,expected", [
-    ("ordinary",          0.22 + 0.0307),
-    ("qualified",         0.15 + 0.0307),
-    ("qualified_199a",    0.22 * 0.80 + 0.0307),
+    ("ordinary",          0.22 + _STATE),
+    ("qualified",         0.15 + _STATE),
+    ("qualified_199a",    0.22 * 0.80 + _STATE),
     ("treasury",          0.22),
-    ("muni_out_of_state", 0.0307),
+    ("muni_out_of_state", _STATE),
     ("muni_in_state",     0.0),
-    ("collectibles",      0.22 + 0.0307),
+    ("collectibles",      0.22 + _STATE),
 ])
 def test_income_rate_per_character(character, expected):
     assert hh.income_rate(character, PROFILE) == pytest.approx(expected)
@@ -309,7 +316,7 @@ def test_hedged_equity_is_equity_exposure_with_ordinary_character():
 def test_every_character_renders_a_marked_label():
     """DEPARTS FROM format_assumed_yield's precedent, deliberately. That leaves its
     `table` case unmarked "because it is the only one a reader can verify unaided."
-    No character is verifiable unaided — a reader cannot tell 25.07% from 20.67% by
+    No character is verifiable unaided — a reader cannot tell the ordinary rate from the §199A one by
     looking at a dollar figure — so an unmarked row would read as "none declared"
     rather than as "the ordinary one", inverting the meaning."""
     for c in lc.TAX_CHARACTER:

@@ -976,7 +976,7 @@ def _tax_character(sleeve_key: str, symbol: str) -> str:
             f"no tax character declared for sleeve {sleeve_key!r} (symbol {symbol!r}). "
             f"Add it to SLEEVE_TAX_CHARACTER in src/location_config.py, or override "
             f"the symbol in SECURITY_TAX_CHARACTER. There is deliberately no default: "
-            f"assuming 'ordinary' is how US Treasury interest came to be charged PA "
+            f"assuming 'ordinary' is how US Treasury interest came to be charged state "
             f"tax (#283)."
         ) from None
 
@@ -1114,7 +1114,7 @@ def build_location_register(
       character       = SECURITY_TAX_CHARACTER[symbol] or SLEEVE_TAX_CHARACTER[sleeve],
                         RAISING if neither declares one — there is no `ordinary`
                         default, because that default is what charged US Treasury
-                        interest PA tax for as long as it existed (#283)
+                        interest state tax for as long as it existed (#283)
       annual_benefit  = value * assumed_sleeve_yield * income_rate(character)
                         (income-shelter value at stake — a ranking magnitude, not a
                         forecast)
@@ -1204,7 +1204,7 @@ def build_location_register(
         # THE RATE COMES FROM THE HOLDING'S DECLARED CHARACTER (#278). This was
         # `state_only if _is_federally_exempt(sleeve) else ordinary` — two outcomes,
         # so every sleeve nobody had classified got the combined ordinary rate,
-        # including US Treasuries whose interest PA does not tax (#283).
+        # including US Treasuries, whose interest no state may tax (#283).
         # YIELD FIRST, THEN CHARACTER, and the order is load-bearing rather than
         # stylistic. #210 built a careful raise for an unlisted sleeve — it names the
         # sleeve and the symbol and points at all three config sets. Resolving
@@ -1662,3 +1662,29 @@ def build_benchmark_table(benchmarks_df: pd.DataFrame) -> pd.DataFrame:
         lambda x: "—" if pd.isna(x) else f"+{x:.2f}%"
     )
     return result[["Benchmark", "1Y Return"]].reset_index(drop=True)
+
+
+# The sleeves of the advisor's fixed-income book, as the Household View's synthesis
+# describes it: "a multi-sector fixed income book ... built around yield generation
+# through credit and floating-rate exposure rather than duration ballast". They are
+# the sleeves of the six tickers that sentence typed when it was written; the tickers
+# themselves are read from the book now (#706), because the manager swaps funds.
+ADVISOR_FIXED_INCOME_SLEEVES: tuple[str, ...] = (
+    "multi_sector_fi", "core_fi_credit", "high_yield_fi", "floating_rate",
+    "high_yield_muni",
+)
+
+
+def advisor_fixed_income_tickers(
+    positions_df: pd.DataFrame, accounts_df: pd.DataFrame, securities_df: pd.DataFrame,
+) -> list[str]:
+    """The tickers of the advisor's fixed-income book, read from the book: every
+    holding in an externally managed account (accounts.managed_by = 'external') whose
+    sleeve is in ADVISOR_FIXED_INCOME_SLEEVES, sorted. Empty when the book holds none."""
+    if positions_df.empty or accounts_df.empty or securities_df.empty:
+        return []
+    external = set(accounts_df.loc[accounts_df["managed_by"] == "external", "pseudonym"])
+    sleeve_of = dict(zip(securities_df["ticker"], securities_df["sleeve_category"]))
+    held = positions_df.loc[positions_df["pseudonym"].isin(external), "symbol"]
+    return sorted({str(s) for s in held
+                   if sleeve_of.get(s) in ADVISOR_FIXED_INCOME_SLEEVES})

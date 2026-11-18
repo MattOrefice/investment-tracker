@@ -54,7 +54,8 @@ def test_the_register_carries_the_weakest_basis_for_a_blend_row():
     its least-verified component named, and a non-blend row names none."""
     from src.household import build_location_register
     from src.location_config import (ACCOUNT_SHELTER_PRIORITY, BLEND_SLEEVES,
-                                      SLEEVE_PRIORITY_BY_ACCOUNT_TYPE, TAX_PROFILE)
+                                      SLEEVE_PRIORITY_BY_ACCOUNT_TYPE)
+    from tests.tax_profiles import SYNTHETIC_TAX_PROFILE
     blend = sorted(BLEND_SLEEVES)[0]
     accounts = pd.DataFrame([{"pseudonym": "t", "display_name": "Taxable",
                               "tax_treatment": "taxable", "managed_by": "self"}])
@@ -66,7 +67,7 @@ def test_the_register_carries_the_weakest_basis_for_a_blend_row():
     positions = pd.DataFrame([
         {"pseudonym": "t", "symbol": s, "description": s, "current_value": 10000.0,
          "total_gain_loss": 0.0, "cost_basis_total": 10000.0} for s in ("FND", "VNQ")])
-    reg = build_location_register(positions, accounts, securities, TAX_PROFILE,
+    reg = build_location_register(positions, accounts, securities, SYNTHETIC_TAX_PROFILE,
                                   SLEEVE_PRIORITY_BY_ACCOUNT_TYPE, ACCOUNT_SHELTER_PRIORITY,
                                   compositions_df=_comp((PROXY, 0.95), (AUTHORED, 0.05)))
     fnd = reg[reg["symbol"] == "FND"]

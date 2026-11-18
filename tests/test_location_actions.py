@@ -36,13 +36,14 @@ from src.location_actions import (
     _group_title,
 )
 from src.location_config import (
-    TAX_PROFILE,
     SLEEVE_PRIORITY_BY_ACCOUNT_TYPE,
     ACCOUNT_SHELTER_PRIORITY,
     DIRECTABLE_PSEUDONYMS,
     is_directable,
 )
 from src.household import build_location_register
+from src.liquidity import residence_tax_profile
+from src.personal_profile import load_tax_residence
 
 ROOT       = pathlib.Path(__file__).resolve().parent.parent
 TRACKER_DB = ROOT / "data" / "tracker.db"
@@ -70,10 +71,22 @@ def _live():
     # them.
     comps = pd.read_sql_query("SELECT * FROM fund_compositions", conn)
     conn.close()
-    reg = build_location_register(pos, acct, sec, TAX_PROFILE,
+    reg = build_location_register(pos, acct, sec, _live_profile(),
                                   SLEEVE_PRIORITY_BY_ACCOUNT_TYPE, ACCOUNT_SHELTER_PRIORITY,
                                   compositions_df=comps)
     return pos, acct, sec, reg
+
+
+def _live_profile() -> dict:
+    """The profile page 14 prices with (#706): federal from TAX_PROFILE, state and local
+    from the private tax residence, read at run time and never written here."""
+    return residence_tax_profile(load_tax_residence(False))
+
+
+def _live_groups(pos, acct, sec) -> list:
+    """The action groups bound to the live book, as page 14 binds them (#706)."""
+    from src.location_actions import bind_groups_to_book
+    return bind_groups_to_book(sec, pos, acct)
 
 
 def _live_saa():
@@ -184,10 +197,11 @@ def test_no_two_groups_render_identical_prose():
     comps, _targets = _live_saa()
     deploy, tier = _live_tier(pos, acct, sec)
     rendered = []
-    for g in ACTION_GROUPS:
+    for g in _live_groups(pos, acct, sec):
         resolved = resolve_placeholders(g, pos, acct, sec, reg, roth_idle_cash=deploy["idle_cash"],
                                         compositions_df=comps, tier_state=tier,
-                                        asset_classes_df=_live_taxonomy())
+                                        asset_classes_df=_live_taxonomy(),
+                                        tax_profile=_live_profile())
         rendered.append(render_prose(g["pros"], resolved))
         rendered.append(render_prose(g["cons"], resolved))
     assert len(set(rendered)) == len(rendered), (
@@ -198,8 +212,8 @@ def test_no_two_groups_render_identical_prose():
 # ── Every register-backed group resolves to >=1 register row ───────────────────
 
 def test_every_register_backed_group_has_rows():
-    _pos, _acct, _sec, reg = _live()
-    for g in ACTION_GROUPS:
+    pos, acct, sec, reg = _live()
+    for g in _live_groups(pos, acct, sec):
         if g["key"] in INFORMATIONAL_KEYS:
             continue
         rows = filter_register_for_group(reg, g)
@@ -640,10 +654,11 @@ def _rendered_all():
     comps, _targets = _live_saa()
     dep, tier = _live_tier(pos, acct, sec)
     out = {}
-    for g in ACTION_GROUPS:
+    for g in _live_groups(pos, acct, sec):
         r = resolve_placeholders(g, pos, acct, sec, reg, roth_idle_cash=dep["idle_cash"],
                                  compositions_df=comps, tier_state=tier,
-                                 asset_classes_df=_live_taxonomy())
+                                 asset_classes_df=_live_taxonomy(),
+                                 tax_profile=_live_profile())
         out[g["key"]] = (render_prose_md(g["pros"], r), render_prose_md(g["cons"], r), r, g)
     return out
 
@@ -673,10 +688,10 @@ AUTHORED_PROSE_LEN = {
     "deploy_roth_cash":          (621, 766),
     "clear_roth_non_equity":     (1390, 1479),
     "relocate_loss_side":        (438, 885),
-    "relocate_gain_side":        (383, 338),
-    "thematic_sprawl":           (208, 772),
+    "relocate_gain_side":        (345, 338),
+    "thematic_sprawl":           (208, 621),
     "rollover_401k":             (524, 353),
-    "frozen_tod_income":         (408, 508),
+    "frozen_tod_income":         (408, 369),
     "saa_sleeves_taxable":       (349, 669),
     "predeploy_stranded_equity": (334, 540),
     "fund_intl_tilts":           (936, 1209),
@@ -804,18 +819,23 @@ def test_only_matched_symbols_groups_have_a_population_gap_live():
     correctly-located / federally-exempt holdings that are never register rows). Every
     other group has count == row_count, and each gap-bearing group carries a caption."""
     pos, acct, sec, reg = _live()
+    # Bound to the book, as the page binds them (#706): the TOD group's tickers, its
+    # municipal fund among them, are the book's, so a manager's swap cannot empty it.
+    groups = _live_groups(pos, acct, sec)
     gap = set()
-    for g in ACTION_GROUPS:
+    for g in groups:
         if g["key"] in INFORMATIONAL_KEYS:
             continue
         if len(_pop_holdings(g, pos, acct, reg)) != len(filter_register_for_group(reg, g)):
             gap.add(g["key"])
     assert gap == {"thematic_sprawl", "frozen_tod_income"}, f"unexpected population gaps: {gap}"
     for k in gap:
-        gg = next(x for x in ACTION_GROUPS if x["key"] == k)
+        gg = next(x for x in groups if x["key"] == k)
         assert gg.get("caption"), f"{k} has a population gap but no caption"
+    tod = next(x for x in groups if x["key"] == "frozen_tod_income")
+    assert tod["muni_symbols"], "the TOD group's gap is its municipal fund, read from the book"
     # And no group is orphaned (every register row is claimed).
-    assert_full_coverage(reg)
+    assert_full_coverage(reg, groups)
 
 
 def test_page14_renders_value_column_and_saa_rows_live(monkeypatch):
@@ -937,13 +957,13 @@ def test_no_group_carries_allow_literals():
 _PERCENT_LITERAL = re.compile(r"\d+(?:\.\d+)?\s?%")
 
 PERCENT_LITERALS = {
-    # TAX_PROFILE: federal_ltcg 0.15 + state_ltcg 0.0307 = 18.07%; "0%" is the
-    # LTCG_0_BRACKET_CEILING_SINGLE_2026 bracket the card says is out of reach.
-    "relocate_gain_side":         {"18.07%", "15%", "3.07%", "0%"},
-    "frozen_tod_income":          {"18.07%", "15%", "3.07%", "0%"},
-    # Same tax rates. The 11.8% book share that used to sit here is now
-    # {thematic_equity_share} — computed household-wide over look-through equity.
-    "thematic_sprawl":            {"18.07%", "15%", "3.07%", "0%"},
+    # The three cards that state a tax rate read it from the profile their figures
+    # use ({gain_rate}, {gain_rate_parts}), and "the 0% bracket" sentence is chosen by
+    # the computed budget ({bracket_sentence}), so none types a percent (#706). The
+    # 11.8% book share that used to sit in thematic_sprawl is {thematic_equity_share}.
+    "relocate_gain_side":         set(),
+    "frozen_tod_income":          set(),
+    "thematic_sprawl":            set(),
     # US Large Core's SAA target weight (asset_classes.target_weight), which the
     # rebuy widens the measured overweight against.
     "clear_roth_non_equity":      {"17.35%"},
@@ -1105,20 +1125,33 @@ def test_unresolvable_rollover_source_raises_no_fallback():
 def test_coverage_guard_passes_over_live_register():
     """assert_full_coverage must not raise: after groups 7-9, every one of the
     live register's rows is claimed by some action group (zero orphans)."""
-    _pos, _acct, _sec, reg = _live()
-    assert_full_coverage(reg)   # raises on any orphan
+    pos, acct, sec, reg = _live()
+    assert_full_coverage(reg, _live_groups(pos, acct, sec))   # raises on any orphan
+
+
+def test_the_authored_groups_alone_leave_the_tod_book_unclaimed_live():
+    """Why the page binds (#706): the TOD group types no tickers, so unbound it claims
+    nothing and the guard names the TOD book's rows. Bound, it claims them."""
+    pos, acct, sec, reg = _live()
+    tod = filter_register_for_group(reg, next(
+        g for g in _live_groups(pos, acct, sec) if g["key"] == "frozen_tod_income"))
+    if tod.empty:
+        pytest.skip("the live TOD book holds no register row")
+    with pytest.raises(ValueError) as ei:
+        assert_full_coverage(reg)
+    assert str(tod["symbol"].iloc[0]) in str(ei.value)
 
 
 def test_coverage_guard_raises_and_names_the_orphan():
     """Dropping a coverage group must orphan its rows and make the guard RAISE,
     naming the uncovered symbol — this is the whole point of the guard."""
     import src.location_actions as la
-    _pos, _acct, _sec, reg = _live()
+    pos, acct, sec, reg = _live()
     orig = la.ACTION_GROUPS
     la.ACTION_GROUPS = [g for g in orig if g["key"] != "saa_sleeves_taxable"]
     try:
         with pytest.raises(ValueError) as ei:
-            la.assert_full_coverage(reg)
+            la.assert_full_coverage(reg, la.bind_groups_to_book(sec, pos, acct))
         assert "VGIT" in str(ei.value), "guard must name the now-orphaned SAA sleeves"
     finally:
         la.ACTION_GROUPS = orig
@@ -1259,7 +1292,7 @@ def test_gap_caption_shown_value_equals_register_rows_value_live():
     it shows — i.e. the expander's Value total row — so the caption's second figure
     matches the table (no more $17,526-in-caption vs $13,005-in-table contradiction)."""
     pos, acct, sec, reg = _live()
-    for g in ACTION_GROUPS:
+    for g in _live_groups(pos, acct, sec):
         if g.get("population") != "matched_symbols":
             continue
         rr = filter_register_for_group(reg, g)
@@ -1461,8 +1494,9 @@ def test_kpi_scope_note_partitions_drag_deferred_vs_actionable_live(monkeypatch)
     pos, acct, sec, reg = _live()
     ABD = ["A", "B", "D"]
     kpi = float(reg[reg["case"].isin(ABD)]["annual_benefit"].sum())
+    groups = _live_groups(pos, acct, sec)
     def_idx = set()
-    for g in ACTION_GROUPS:
+    for g in groups:
         if g["status"] in ("accepted", "blocked"):
             def_idx |= set(filter_register_for_group(reg, g).index)
     _def = reg.loc[sorted(def_idx)] if def_idx else reg.iloc[0:0]
@@ -1472,7 +1506,7 @@ def test_kpi_scope_note_partitions_drag_deferred_vs_actionable_live(monkeypatch)
     assert abs((deferred + actionable) - kpi) < 0.005, "deferred + actionable must equal the KPI"
     # summing A/B/D over ALL group tables must equal the KPI (no double-counting)
     all_groups_abd = 0.0
-    for g in ACTION_GROUPS:
+    for g in groups:
         if g["key"] in INFORMATIONAL_KEYS:
             continue
         rr = filter_register_for_group(reg, g)
@@ -1753,7 +1787,7 @@ def test_thematic_cons_states_both_scopes_so_the_arithmetic_closes():
     pos, acct, sec, reg, comps = _thematic_live_frames()
     g = next(x for x in ACTION_GROUPS if x["key"] == "thematic_sprawl")
     r = resolve_placeholders(g, pos, acct, sec, reg, compositions_df=comps,
-                             asset_classes_df=_live_taxonomy())
+                             asset_classes_df=_live_taxonomy(), tax_profile=_live_profile())
     cons = render_prose_md(g["cons"], r)
 
     for key in ("value", "thematic_equity_value", "lookthrough_equity_value",

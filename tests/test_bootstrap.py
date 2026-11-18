@@ -63,8 +63,9 @@ def test_bootstrap_lets_build_location_register_run(tmp_path, monkeypatch):
 
     from src.household import build_location_register
     from src.location_config import (
-        TAX_PROFILE, SLEEVE_PRIORITY_BY_ACCOUNT_TYPE, ACCOUNT_SHELTER_PRIORITY,
+        SLEEVE_PRIORITY_BY_ACCOUNT_TYPE, ACCOUNT_SHELTER_PRIORITY,
     )
+    from tests.tax_profiles import SYNTHETIC_TAX_PROFILE
 
     conn = db.get_connection()
     accounts_df = pd.read_sql_query(
@@ -82,7 +83,7 @@ def test_bootstrap_lets_build_location_register_run(tmp_path, monkeypatch):
 
     register = build_location_register(  # must NOT raise KeyError on securities columns
         positions_df, accounts_df, securities_df,
-        TAX_PROFILE, SLEEVE_PRIORITY_BY_ACCOUNT_TYPE, ACCOUNT_SHELTER_PRIORITY,
+        SYNTHETIC_TAX_PROFILE, SLEEVE_PRIORITY_BY_ACCOUNT_TYPE, ACCOUNT_SHELTER_PRIORITY,
     )
     assert register is not None
 
