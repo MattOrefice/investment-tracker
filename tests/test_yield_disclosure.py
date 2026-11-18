@@ -61,7 +61,7 @@ def _fixture():
     RAISE, so a fixture containing one cannot build a register at all.
 
     #210 NOTE: this fixture used multi_asset for the default case, because GAOSX (a
-    $10,833 global allocation fund, the largest drag row) took the equity default.
+    global allocation fund, the largest drag row) took the equity default.
     multi_asset now resolves by LOOK-THROUGH, so using it here would no longer test
     the default at all. The basis mechanics live in tests/test_yield_basis.py; what
     stays here is the DISCLOSURE.

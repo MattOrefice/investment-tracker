@@ -69,12 +69,12 @@ _DEPLOY_ROTH_CASH_PROS = (
 # tolerance band × household value. The BAND is the anchor; the 10% is a CHOICE, not
 # derived from it. What the floor measures is TOTAL cash against ONE band. It does
 # not bound any single sleeve's move: the buys split across the underweight sleeves,
-# so at the floor the largest sleeve moves far less than 10% of its band (+0.08pp,
-# about 4% of a 2pp band, at the 2026-09-23 gaps).
+# so at the floor the largest sleeve moves far less than 10% of its band (measured on
+# the personal book's gaps of 2026-09-23).
 DEPLOY_FLOOR_BAND_FRACTION = 0.10
 
 # Rendered INSTEAD of the argument when a real, nonzero balance is below the floor.
-# Not the zero state: at $7.93 "the cash sleeve is empty" is false. It states the
+# Not the zero state: at a few dollars "the cash sleeve is empty" is false. It states the
 # balance and the rule, and forbids the reassuring misreading (#261's shape). It
 # deliberately says nothing about how the cash got there — the repo has no
 # contribution ledger, the same reason {value} stopped being "this year's
@@ -203,21 +203,21 @@ _GAIN_SIDE_CONS = (
 )
 
 # The fee figures this card used to carry ("roughly 0.45% in average fees against
-# 0.07% for broad index", "the excess fee is about $76 a year") were authored
+# 0.07% for broad index", and a dollar "excess fee" a year) were authored
 # literals with no source: securities.expense_ratio is NULL for all 16 thematic
 # tickers, so neither can be computed. They were also wrong by their own
-# arithmetic — 38 bps on the live book is ~$58, not $76 — and $76 implies a
-# $20,000 position set the card does not hold. The qualitative claim survives;
+# arithmetic — 38 bps on the live book did not give the dollar figure typed, which
+# implied a position set the card does not hold. The qualitative claim survives;
 # the false precision does not.
 _THEMATIC_PROS = (
     "{count} unmanaged positions worth {value}, carrying materially higher fees "
     "than a broad index fund. Most are slivers you could not state a "
     "forward thesis for. The intellectual case for cleaning it up is real."
 )
-# The "11.8% of your equity" this cons paragraph used to assert was an authored
+# The share "of your equity" this cons paragraph used to assert was an authored
 # literal with no source and no stated denominator — six readings of "equity" were
-# available and none of them produced 11.8 on the live book (look-through household
-# equity reads ~11.5; as-held reads ~19.8). It also sat next to a TOD-scoped {value},
+# available and none of them produced it on the live book (look-through household
+# equity and as-held both read otherwise). It also sat next to a TOD-scoped {value},
 # so a reader dividing the figures the card displays could not reach it by any route.
 # All three figures are templated now, on the basis household.py's methodology
 # decision 1 commits the household to, and the sentence states its own scope.
@@ -437,8 +437,9 @@ ACTION_GROUPS: list[dict] = [
         # The score and status above are the FULL-BAND tier: a deploy that can by
         # itself move a sleeve through its band is an allocation decision. Below one
         # full band the balance selects one of these, still AUTHORED here, never
-        # computed (deploy_state only chooses the row). A $500 deploy scoring 10/10
-        # beside a $7,000 one was the same disproportion as $7.93, relocated.
+        # computed (deploy_state only chooses the row). A deploy of a few hundred
+        # dollars scoring 10/10 beside one of thousands was the same disproportion as
+        # a few dollars scoring it, relocated.
         "floor_tiers": {
             "below_floor":    {"score": None, "status": "accepted"},
             "under_one_band": {"score": 6,    "status": "evaluate"},
@@ -711,8 +712,8 @@ def deploy_prose_for(group: dict, idle_cash: "float | None", *, tier: str) -> st
     or the zero state.
 
     `tier` is REQUIRED (from deploy_state). A caller that did not know the floor
-    used to get the full argument for any nonzero balance, which is how $7.93
-    rendered as an urgent deploy.
+    used to get the full argument for any nonzero balance, which is how a balance of
+    a few dollars rendered as an urgent deploy.
 
     Raises on None rather than choosing for the caller — an unknown balance is
     not a zero balance, and picking either branch for it would re-open the hole
@@ -787,7 +788,7 @@ def deploy_state(group: dict, deploy: dict, saa_targets_df: pd.DataFrame) -> dic
     else:
         tier = "full_band"
     # A measured zero is below the floor too (#313): it takes the below-floor row's
-    # score and status, so $0 cannot outrank $7.93. Only its WORDING differs.
+    # score and status, so $0 cannot outrank a few dollars. Only its WORDING differs.
     row_key = "below_floor" if tier == "zero" else tier
     row = group["floor_tiers"].get(row_key)
     score, status = (row["score"], row["status"]) if row else (group["score"], group["status"])
@@ -1830,15 +1831,15 @@ def _thematic_equity_figures(
 
     LOOK-THROUGH, not as-held, because household.py's methodology decision 1 makes
     look-through the household's stated basis and the Household View defaults to it.
-    As-held reads ~19.8% against look-through's ~11.5% on the same data, so as-held
-    would put this card in contradiction with the methodology note it sits behind.
+    As-held reads a materially larger share than look-through on the same data, so
+    as-held would put this card in contradiction with the methodology note it sits behind.
     Decomposition goes through look_through_position — the same function the Household
     View aggregates with — rather than a second local implementation, because one
     quantity meaning two things on two pages is the defect this figure exists to fix.
 
     The numerator is the CARD's symbol list, not sleeve_category == 'thematic'. Seven
     of the card's symbols (QQQ, QQQJ, JTEK, XLK, XLV, IWC, IBIT) live in other
-    sleeves, so the sleeve filter would describe a $10K population the card does not
+    sleeves, so the sleeve filter would describe a different population the card does not
     display while the card enumerates the one it does.
 
     Numerator and denominator are filtered out of the SAME decomposed frame, which
@@ -2108,8 +2109,9 @@ def render_prose(template: str, resolved: dict[str, str | None]) -> str:
 def escape_md(text: str) -> str:
     r"""Escape "$" as "\$" so Streamlit Markdown does not read it as a LaTeX math
     delimiter. An unescaped "$" opens math mode and swallows following text (and
-    the "$" itself) into monospace — the visible bug where "$51" rendered as
-    "- 51" and a workplace-plan balance rendered without its leading "$"."""
+    the "$" itself) into monospace — the visible bug where a "-$" figure rendered
+    as "- " and its digits, and a workplace-plan balance rendered without its
+    leading "$"."""
     return text.replace("$", "\\$")
 
 

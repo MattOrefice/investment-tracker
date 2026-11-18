@@ -391,9 +391,9 @@ def test_a_construction_past_its_review_cadence_prompts_a_review():
 
 def test_the_review_prompt_disclaims_materiality():
     """The cadence exists so the entry gets LOOKED AT, not because drift is material —
-    measured at #231: a full year is worth $0.07 typical, $0.62 worst-in-23-years,
-    against $1.68 for the entire candidate range. A prompt reading as a risk warning
-    would misrepresent its own measurement."""
+    measured at #231: on the personal book a full year is worth cents, typical or
+    worst-in-23-years, against a few dollars for the entire candidate range. A prompt
+    reading as a risk warning would misrepresent its own measurement."""
     from src.location_actions import yield_assumption_note
     from src.location_config import YIELD_CONSTRUCTION_REVIEW_DAYS
 
@@ -426,7 +426,7 @@ def _cadence_reasoning() -> str:
 
     Both tests below asserted against ``src[i-2200:i]``, a window that reaches back past
     the constant's own comment and into SLEEVE_YIELD_CONSTRUCTION's ``note`` field. That
-    note, written at #213, also contains "$1.68" — so the measurement assertion passed on
+    note, written at #213, also contains the candidate range — so the measurement assertion passed on
     text belonging to a DIFFERENT declaration, and a mutant deleting the figure from the
     cadence comment stayed green (N12). Same shape as a parser anchoring on the first
     mention of a name instead of its definition: the window has to be the artifact, not
@@ -472,13 +472,16 @@ def test_the_cadence_is_annual_and_distinguishes_itself_from_the_refresh_thresho
 def test_the_cadence_constant_records_the_measurement_that_justifies_it():
     """A cadence with no measurement behind it is a preference. The drift magnitudes and
     their dollar translation belong in the code, with their vintage, so the next reader
-    can check the reasoning instead of re-deriving it."""
+    can check the reasoning instead of re-deriving it. The dollar translation is stated
+    as a magnitude, cents against dollars: the dollars were read off the personal book,
+    and no personal figure is committed (#721)."""
     reasoning = _cadence_reasoning()
     assert "bp" in reasoning, "no measured drift magnitudes"
-    assert "1.68" in reasoning, (
-        "the comparison that makes the drift trivial — the whole candidate range being "
-        "worth $1.68 — is not recorded"
+    assert "by cents" in reasoning and "2.50%-9.88% candidate range" in reasoning, (
+        "the comparison that makes the drift trivial — a year's drift in cents against "
+        "the whole candidate range — is not recorded"
     )
+    assert "$" not in reasoning, "the measurement record types a dollar figure (#721)"
 
 def test_the_oldest_constructed_stamp_governs(monkeypatch):
     """With one constructed entry, min(stamps) and max(stamps) are the same value, so

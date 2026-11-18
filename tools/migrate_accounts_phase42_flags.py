@@ -8,8 +8,8 @@ WHY THIS EXISTS. The accounts schema shipped with permissive column defaults:
 Both fail OPEN. A new account created without setting these inherits them, and a
 forgotten flag then means:
   - included_in_household=1  -> the account silently enters every household total,
-    allocation, and liquidity calc (the exact defect PR #107 fixed for one account
-    worth $78,410);
+    allocation, and liquidity calc (the exact defect PR #107 fixed for one
+    workplace-plan account);
   - managed_by='self'        -> the account is pulled into the self-directed taxable
     book: it satisfies get_portfolio_account()'s
     `tax_treatment='taxable' AND managed_by='self'` predicate and can make the

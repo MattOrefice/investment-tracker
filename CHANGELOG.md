@@ -97,9 +97,9 @@ summary's top-contributor/detractor, and the benchmark cross-reference; the thes
 were unscoped too — while Holdings, Performance, Portfolio Value and inception all
 resolve the portfolio account. Latent today (one trade-bearing account), live the
 moment a second account carries trades. Proven on a scratch copy: a single 5-share VOO
-buy in a Roth (account 5) made one PDF report **US Large Core at 17.3% on the Holdings
-page and 76.8% on the Attribution page**, log a **$2,988 trade against a $1,352
-portfolio**, and flip the top contributor — a document contradicting itself, which is
+buy in a Roth (account 5) made one PDF report **two different US Large Core weights on
+the Holdings and Attribution pages**, log a **trade larger than the portfolio it was
+logged against**, and flip the top contributor — a document contradicting itself, which is
 worse than any single wrong number.
 
 `brinson_fachler_period` now takes a **required keyword-only `account_id`** (raises on
@@ -442,8 +442,7 @@ personal reseed should not be a surprise.
 ## Hedged equity stays off-SAA: decomposition rejected, deliberately
 _2026-07-20_
 
-The four covered-call funds (JEPQ, JEPI, JHEQX, HELO — ~$12.7K, 5.7% of the
-household) stay in the off-SAA `hedged_equity` bucket. They get no
+The four covered-call funds (JEPQ, JEPI, JHEQX, HELO) stay in the off-SAA `hedged_equity` bucket. They get no
 `fund_compositions` rows, no `sleeve_category` reclassification, and no hedged
 sleeve of their own. Recorded so the look-through question is not re-litigated.
 
@@ -492,8 +491,8 @@ no-rebuild default is overturned and the household deliberately keeps a permanen
 hedged allocation. Even then the answer is an explicit sleeve with its own target
 and falsifier (a statement that the truncated payoff is wanted), never silent
 decomposition. The concession worth keeping: while the funds live, a reader looking
-at the sleeve rows alone understates a JEPI-sized position — tolerable at $12.7K and
-shrinking, would not be at $50K and growing.
+at the sleeve rows alone understates a JEPI-sized position — tolerable while the
+position is small and shrinking, would not be if it were large and growing.
 
 ## The international sleeve split, and a benchmark map that can no longer drift
 _2026-07-20_

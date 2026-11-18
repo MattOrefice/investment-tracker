@@ -383,7 +383,7 @@ def test_methodology_note_figures_are_templated_not_hardcoded():
     )
     # Synthetic substitution values — arbitrary, only exercise render_prose.
     resolved = {
-        "total_aum": "$100,000", "self_aum": "$2,000", "external_pct": "98.0%",
+        "total_aum": "$100,000", "self_aum": "$5,000", "external_pct": "95.0%",
         "rfutx_value": "$40,000", "off_saa_value": "$60,000",
     }
     out = render_prose(note, resolved)
