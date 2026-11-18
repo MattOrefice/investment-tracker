@@ -2,11 +2,11 @@
 
 WHAT THE ISSUE GOT WRONG, recorded because the correction is the finding. #286 set
 the authored 4.00% against the NOMINAL YIELD CURVE at VGIT's ~5.5y duration (4.36%)
-and called it a 36bp understatement worth +$0.11/yr. But this table's declared basis
+and called it a 36bp understatement, worth cents a year on the personal book. But this table's declared basis
 — for every proxied entry — is a trailing-twelve-month DISTRIBUTION yield, which is
 coupon income actually paid and is not a point on the nominal curve. Compared like
 with like, IEF measures 3.97% against the authored 4.00%: **3bp, overstated, worth
--$0.01/yr.** The framing survived; the magnitude did not, and the sign flipped.
+about a cent a year the other way.** The framing survived; the magnitude did not, and the sign flipped.
 
 WHY IT IS STILL WORTH DOING. Not the money. The entry arrived at 6cd6f99
 (2026-06-01) in a block whose FIFTEEN entries are all exact multiples of 0.5%, with
@@ -17,8 +17,8 @@ been examined and three moved: tips 0.0250 -> 0.0461 (+84%), real_assets_commodi
 measurement distinguishes them.
 
 THIS IS THE SECOND-SMALLEST MEASURABLE ENTRY. It should not read as progress on the
-underlying problem: 96.1% of the drag KPI still rests on undeclared bases, and
-hedged_equity alone is 89x this one. See the coverage issue.
+underlying problem: most of the personal book's drag KPI still rested on undeclared
+bases, and hedged_equity alone was many times this one. See the coverage issue.
 
 RE-MEASURED WITH EVERY OTHER PROXY ENTRY AT 2026-09-30 (#513). The figures above are
 #286's, at its as-of of 2026-08-11, and are history. Over the September 30 close IEF

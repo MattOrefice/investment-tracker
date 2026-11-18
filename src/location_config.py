@@ -335,7 +335,7 @@ SLEEVE_YIELD_CONSTRUCTION: dict[str, dict] = {
             "APPROXIMATION, DECLARED. This is the 10-year point; SCHP holds "
             "broad-maturity TIPS, so a duration-matched real yield and breakeven would "
             "be more exact. #231 tracks it, and the sizing says why it can wait: the "
-            "whole 2.50%-9.88% range moves the drag KPI by $1.68. "
+            "whole 2.50%-9.88% range moves the drag KPI by a few dollars. "
             "FROZEN AND DATED, NOT LIVE. src/macro.py caches both series and could "
             "fetch them, but the yield table has no network dependency and does not "
             "vary by day. That property is worth more than the vintage."
@@ -357,9 +357,9 @@ SLEEVE_YIELD_CONSTRUCTION: dict[str, dict] = {
 # REVIEW HYGIENE, NOT A RISK CONTROL — the measurement is why. Over 5,890 cached
 # observations of DFII10 + T10YIE (2003-01-02 .. 2026-07-20, read 2026-08-17), a full
 # year of staleness moves the constructed value a median 31bp, p90 76bp, and 272bp in
-# the worst 365-day window in 23 years. At the $90.68 SCHP position and the 25.07%
-# ordinary rate that is $0.07 / $0.17 / $0.62 on the drag total — against $1.68 for the
-# ENTIRE 2.50%-9.88% candidate range weighed at #213. Nothing here is justifiable by
+# the worst 365-day window in 23 years. On the personal book's TIPS position that moves
+# the drag total by cents, typical or worst, against a few dollars for the ENTIRE
+# 2.50%-9.88% candidate range weighed at #213. Nothing here is justifiable by
 # materiality. The cadence exists so the entry gets LOOKED AT.
 #
 # 365 because this file already commits to exactly that cadence for the IRS figures
@@ -435,7 +435,7 @@ BLEND_SLEEVES: frozenset[str] = frozenset({"multi_asset", "target_date"})
 #                so BOTH inputs are wrong in different ways. A sleeve the model cannot
 #                size on either axis is exactly what this set is for.
 #
-#   intl_all_exus  held (IXUS + VXUS, $19,387 — the largest of the equity sleeves).
+#   intl_all_exus  held (IXUS + VXUS, the largest of the equity sleeves).
 #                The only all-ex-US candidate in the cache is EFA, which is
 #                DEVELOPED-ONLY and excludes emerging markets: wrong in KIND for this
 #                sleeve, the same error declined for multi_asset. Using it would buy a
@@ -627,7 +627,7 @@ SECURITY_TAX_CHARACTER: dict[str, str] = {}
 RELOCATION_IS_CATEGORICALLY_WRONG: frozenset[str] = frozenset({"high_yield_muni"})
 
 # The annual income-shelter benefit below which a "relocation" is a rounding error
-# rather than a decision (e.g. a $0.43/yr row). A PRESENTATION THRESHOLD, never a
+# rather than a decision (e.g. a row worth cents a year). A PRESENTATION THRESHOLD, never a
 # modeling claim — a row below it is real drag and always counted in the aggregate
 # drag KPI and in every group's total.
 #
@@ -818,10 +818,10 @@ ROLLOVER_SOURCE_PSEUDONYM: str = "acct_wkpl_02"  # MissionSquare former-employer
 #   forgone FTC is only part of the reason. Pre-migration these render as off-SAA,
 #   target-$0 rows, so a Roth buy is movement AWAY from the SAA on the page's own
 #   terms; the phase-46 split gate counts carriers in acct_01 only, so a Roth trade
-#   cannot open it; and Roth space is the scarcest shelter, with the $76,147
+#   cannot open it; and Roth space is the scarcest shelter, with the workplace-plan
 #   rollover inbound. Any one of those excludes them without the FTC.
 #
-# KEPT — emerging_markets, rank 2. A targeted SAA sleeve (9.18%, currently ~4.5pp
+# KEPT — emerging_markets, rank 2. A targeted SAA sleeve (9.18%, currently
 #   underweight), not off-SAA, so none of those three arguments reaches it. The FTC
 #   cost is REAL AND ACCEPTED here, not avoided: EM withholding runs ~20-25%
 #   against developed's ~15%, so the credit forfeited is LARGER than the ~45bp

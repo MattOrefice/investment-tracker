@@ -41,7 +41,7 @@ from src.ui_helpers import (demo_portfolio_phrase, render_footer, render_page_he
 
 
 def _usd(v: float) -> str:
-    """'+$327' and '-$34': the sign before the dollar sign (audit item 13)."""
+    """'+$1,250' and '-$40' (synthetic): the sign before the dollar sign (audit item 13)."""
     return f"{'-' if round(v) < 0 else '+'}${abs(v):,.0f}"
 
 render_page_header()

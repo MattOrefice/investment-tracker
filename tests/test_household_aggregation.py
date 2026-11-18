@@ -138,7 +138,7 @@ def test_us_large_core_is_largest_saa_sleeve(lt_total_result):
 
 # ── Look-through weights, pinned on a FROZEN book (#305) ──────────────────────
 # This used to pin the LIVE household's weights (±2pp, a retired constant), a fact
-# about real holdings: it failed on cash (1.62% vs 4.90%) the day the Sep-23 CSV
+# about real holdings: it failed on cash, by more than the band, the day the Sep-23 CSV
 # moved the book, and said nothing about the aggregation. The weights are now pinned
 # on a book that cannot move, with every expected figure worked by hand below, so a
 # red means the AGGREGATION changed. Not a second copy of the look-through: the
@@ -235,11 +235,15 @@ def test_as_held_funds_stay_in_fund_sleeves():
     sleeves = set(result["sleeve"])
     assert "target_date" in sleeves, "RFUTX/31564E540 should appear as target_date in as_held mode"
     assert "multi_asset" in sleeves, "GAOSX should appear as multi_asset in as_held mode"
-    # SAA-decomposed sleeves from look-through should NOT dominate in as_held
-    # (target_date alone should be the biggest sleeve at ~33%)
+    # SAA-decomposed sleeves from look-through should NOT dominate in as_held: a
+    # target-date fund stays whole, so its sleeve holds exactly the funds' own value.
+    # Read from the export, never typed: a typed bound would be a personal figure (#721).
+    td_syms = set(sec.loc[sec["sleeve_category"] == "target_date", "ticker"])
+    held_td = pos.loc[pos["symbol"].isin(td_syms), "current_value"].sum()
     td_row = result[result["sleeve"] == "target_date"]
-    assert td_row["dollar_value"].sum() > 60_000, (
-        "target_date sleeve should hold >$60k (RFUTX + 31564E540) in as_held mode"
+    assert held_td > 0, "the export holds no target-date fund"
+    assert td_row["dollar_value"].sum() == pytest.approx(held_td, abs=0.01), (
+        "target_date sleeve should hold the target-date funds whole in as_held mode"
     )
 
 
@@ -271,8 +275,15 @@ def test_us_small_core_is_off_saa_not_merged_into_us_small_cap(lt_total_result):
     sc_row = lt_total_result[lt_total_result["sleeve"] == "us_small_core"]
     assert not sc_row.empty, "us_small_core should appear as its own off-SAA row"
     assert sc_row.iloc[0]["is_off_saa"], "us_small_core must be off_saa (SAA targets us_small_value)"
-    assert sc_row.iloc[0]["dollar_value"] > 15_000, (
-        "us_small_core should hold >$15k (look-through from RFUTX + 31564E540 + direct)"
+    # Look-through adds the target-date funds' small-cap share to what is held
+    # directly, so the row holds more than the direct positions alone. Read from the
+    # export, never typed (#721).
+    pos, _acct, sec, _comp, _saa = _load_fixtures()
+    direct_syms = set(sec.loc[sec["sleeve_category"] == "us_small_core", "ticker"])
+    direct = pos.loc[pos["symbol"].isin(direct_syms), "current_value"].sum()
+    assert sc_row.iloc[0]["dollar_value"] > direct, (
+        "us_small_core should hold more than its direct positions (look-through from "
+        "RFUTX + 31564E540)"
     )
 
 

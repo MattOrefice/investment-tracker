@@ -177,7 +177,7 @@ def test_no_card_title_asserts_free_or_costly():
     turned the block from a net loss into a small net GAIN, still labelling the
     card free while the derived badge said costly. It was wrong independently of
     the net, too: the card sells in Individual Taxable (TOD), which the glossary
-    calls costly whether the block nets +$7 or -$40. Pinning the derivation rather
+    calls costly whether the block nets a gain or a loss. Pinning the derivation rather
     than the sign is what makes this durable against the next external swap.
     """
     offenders = {
@@ -391,10 +391,10 @@ def test_fund_intl_tilts_prose_no_literal_and_placeholders_resolve():
         "fund_intl_tilts prose must carry no hardcoded dollar literal (FTC cost is a placeholder)"
 
     pos = pd.DataFrame([
-        {"pseudonym": "acct_01", "symbol": "VEA", "current_value": 2000.0,
-         "total_gain_loss": 0.0, "cost_basis_total": 2000.0},
-        {"pseudonym": ROLLOVER_SOURCE_PSEUDONYM, "symbol": "RFUTX", "current_value": 78000.0,
-         "total_gain_loss": 0.0, "cost_basis_total": 78000.0},
+        {"pseudonym": "acct_01", "symbol": "VEA", "current_value": 3000.0,
+         "total_gain_loss": 0.0, "cost_basis_total": 3000.0},
+        {"pseudonym": ROLLOVER_SOURCE_PSEUDONYM, "symbol": "RFUTX", "current_value": 50000.0,
+         "total_gain_loss": 0.0, "cost_basis_total": 50000.0},
         {"pseudonym": "acct_taxable_02", "symbol": "IXUS", "current_value": 140000.0,
          "total_gain_loss": 0.0, "cost_basis_total": 140000.0},
     ])
@@ -419,7 +419,7 @@ def test_fund_intl_tilts_prose_no_literal_and_placeholders_resolve():
     assert resolved["intl_tilt_target_value"] == _fmt_dollars(household * _INTL_TILT_TARGET_FRACTION)
     assert resolved["intl_tilt_ftc_cost"] == _fmt_dollars(
         household * _INTL_TILT_TARGET_FRACTION * _INTL_FTC_DRAG)
-    assert resolved["self_directed_value"] == _fmt_dollars(2000.0)
+    assert resolved["self_directed_value"] == _fmt_dollars(3000.0)
 
 
 # ── Roth deploy answer excludes ineligible sleeves (synthetic + live) ──────────
@@ -602,26 +602,27 @@ def test_deploy_and_rollover_render():
 # ── Dollar formatting + Markdown escaping (bugs 1 & 2) ─────────────────────────
 
 def test_fmt_dollars_keeps_symbol_and_sign():
-    assert _fmt_dollars(51) == "$51"
-    assert _fmt_dollars(12345) == "$12,345"   # synthetic value — exercises comma insertion
-    assert _fmt_dollars(-51) == "-$51"        # negative is "-$51", never "- 51"
-    assert _fmt_dollars(-51.4) == "-$51"
+    # Synthetic values throughout.
+    assert _fmt_dollars(37) == "$37"
+    assert _fmt_dollars(12345) == "$12,345"   # exercises comma insertion
+    assert _fmt_dollars(-37) == "-$37"        # negative is "-$37", never "- 37"
+    assert _fmt_dollars(-37.4) == "-$37"
 
 
 def test_render_prose_md_escapes_every_dollar():
     # Synthetic fixture values — arbitrary strings that exercise the $-escaping path.
-    resolved = {"value": "$8,159", "count": "3", "embedded_gain": "-$51", "annual_benefit": "$62"}
+    resolved = {"value": "$6,420", "count": "3", "embedded_gain": "-$37", "annual_benefit": "$48"}
     template = "These {count} sit at {embedded_gain}; removing {annual_benefit} on {value}."
     out = render_prose_md(template, resolved)
     # Every "$" is escaped as "\$" — no bare "$" that could open LaTeX math mode.
     assert "\\$" in out, "expected escaped \\$ in rendered markdown"
     assert "$" not in out.replace("\\$", ""), f"bare $ would open math mode: {out!r}"
     # Numbers and sign survive the escaping.
-    assert "8,159" in out and "-\\$51" in out and "\\$62" in out
+    assert "6,420" in out and "-\\$37" in out and "\\$48" in out
 
 
 def test_escape_md_leaves_non_dollar_markdown_intact():
-    assert escape_md("**For.** costs $780 today") == "**For.** costs \\$780 today"
+    assert escape_md("**For.** costs $123 today") == "**For.** costs \\$123 today"
     assert escape_md("no dollars here") == "no dollars here"
 
 
@@ -678,7 +679,7 @@ def test_no_rendered_prose_contains_comma_emdash():
 # placeholder renders as the sentinel "<name>", so a length moves only when the
 # authored prose changes. The pin used to render against the newest positions CSV,
 # so it also moved whenever the BOOK moved: it failed on deploy_roth_cash at 496
-# once the Sep-23 CSV set the Roth cash to $7.93, and relocate_loss_side's 410 vs
+# once the Sep-23 CSV set the Roth cash to a few dollars, and relocate_loss_side's 410 vs
 # 408 hid behind that failure, because a loop reports only its first mismatch. The
 # deploy card moved to a fixed balance in #312; this applies the same to every card.
 # Whether each placeholder RESOLVES in the live render is still checked live by
@@ -912,16 +913,16 @@ def test_no_dollar_literals_except_allow_literals_groups():
 def test_no_group_carries_allow_literals():
     """No group is exempt from the dollar-literal guard any more.
 
-    thematic_sprawl was the last holdout, exempted for its "$76 a year" excess-fee
+    thematic_sprawl was the last holdout, exempted for its dollar excess-fee
     estimate. That figure had no source — securities.expense_ratio is NULL for all
     16 thematic tickers, so neither it nor the 0.45%/0.07% rates it derived from
     could be computed — and it was wrong by its own arithmetic besides (38 bps on
-    the live book is ~$58). Deleting the false precision retired the exemption
+    the live book gave another figure). Deleting the false precision retired the exemption
     with it, so every group's prose is now covered by
     test_no_dollar_literals_except_allow_literals_groups.
 
     Re-adding the flag is a deliberate act: it silently removes a card from that
-    guard, which is how "$76" survived long enough to go stale unnoticed.
+    guard, which is how that figure survived long enough to go stale unnoticed.
     """
     import src.location_actions as la
     allowed = [g["key"] for g in ACTION_GROUPS if g.get("allow_literals")]
@@ -1075,12 +1076,12 @@ def test_workplace_plan_value_selects_by_pseudonym_not_largest():
         {"pseudonym": "acct_trad_ira_01",        "display_name": "Traditional IRA", "tax_treatment": "traditional_ira"},
     ])
     pos = pd.DataFrame([
-        {"pseudonym": ROLLOVER_SOURCE_PSEUDONYM, "symbol": "RFUTX", "current_value": 77_000.0,
+        {"pseudonym": ROLLOVER_SOURCE_PSEUDONYM, "symbol": "RFUTX", "current_value": 50_000.0,
          "total_gain_loss": float("nan"), "cost_basis_total": float("nan")},
         {"pseudonym": "acct_wkpl_bigger", "symbol": "BIGX", "current_value": 200000.0,   # bigger than the 401k
          "total_gain_loss": 0.0, "cost_basis_total": 0.0},
-        {"pseudonym": "acct_trad_ira_01", "symbol": "VOO", "current_value": 10000.0,
-         "total_gain_loss": 0.0, "cost_basis_total": 10000.0},
+        {"pseudonym": "acct_trad_ira_01", "symbol": "VOO", "current_value": 8000.0,
+         "total_gain_loss": 0.0, "cost_basis_total": 8000.0},
     ])
     sec = pd.DataFrame([
         {"ticker": "RFUTX", "sleeve_category": "target_date"},
@@ -1088,12 +1089,13 @@ def test_workplace_plan_value_selects_by_pseudonym_not_largest():
         {"ticker": "VOO",   "sleeve_category": "us_large_core"},
     ])
     hp = _household_placeholders(pos, acct, sec)
-    assert hp["workplace_plan_value"] == "$77,000", (
+    assert hp["workplace_plan_value"] == "$50,000", (
         f"argmax leak — a larger second workplace account changed the figure: {hp['workplace_plan_value']}"
     )
-    # after stays derived: pretax_capacity ($10,000) + workplace_plan_value ($77,000)
-    assert hp["pretax_capacity"] == "$10,000"
-    assert hp["pretax_capacity_after"] == "$87,000"
+    # after stays derived: pretax_capacity ($8,000) + workplace_plan_value ($50,000).
+    # Synthetic values, none near the personal book's (#721).
+    assert hp["pretax_capacity"] == "$8,000"
+    assert hp["pretax_capacity_after"] == "$58,000"
 
 
 def test_unresolvable_rollover_source_raises_no_fallback():
@@ -1106,7 +1108,7 @@ def test_unresolvable_rollover_source_raises_no_fallback():
     ])
     pos = pd.DataFrame([
         {"pseudonym": "acct_wkpl_other",  "symbol": "BIGX", "current_value": 50000.0, "total_gain_loss": 0.0, "cost_basis_total": 0.0},
-        {"pseudonym": "acct_trad_ira_01", "symbol": "VOO",  "current_value": 10000.0, "total_gain_loss": 0.0, "cost_basis_total": 10000.0},
+        {"pseudonym": "acct_trad_ira_01", "symbol": "VOO",  "current_value": 8000.0, "total_gain_loss": 0.0, "cost_basis_total": 8000.0},
     ])
     sec = pd.DataFrame([{"ticker": "BIGX", "sleeve_category": "target_date"}, {"ticker": "VOO", "sleeve_category": "us_large_core"}])
     hp = _household_placeholders(pos, acct, sec)
@@ -1290,7 +1292,8 @@ def test_gap_captions_lead_with_prominent_coverage_phrasing():
 def test_gap_caption_shown_value_equals_register_rows_value_live():
     """Fix 1: each population-gap caption's {shown_value} equals the value of the rows
     it shows — i.e. the expander's Value total row — so the caption's second figure
-    matches the table (no more $17,526-in-caption vs $13,005-in-table contradiction)."""
+    matches the table (no more caption-vs-table contradiction: the caption's figure was
+    the population's value, the table's the shown rows')."""
     pos, acct, sec, reg = _live()
     for g in _live_groups(pos, acct, sec):
         if g.get("population") != "matched_symbols":
@@ -1552,7 +1555,7 @@ def test_loss_side_action_names_only_loss_lots_at_a_loss_live():
     This asserts a PER-HOLDING label, not the group's net. It used to also require
     `embedded_gain.sum() < 0`, which contradicted this docstring's own statement
     that the block nets to roughly zero: the Aug-2026 advisor swap removed HLIPX,
-    the lot carrying the loss, leaving BFRIX -$40.22 + JEPI +$47.70 = +$7.48. The
+    the lot carrying the loss, leaving BFRIX's loss smaller than JEPI's gain. The
     action prose already says "nets to roughly zero" and reports the figure from a
     template, so the sign of the net is data, not a promise this test can make —
     and the next external swap can move it again in either direction. What must
@@ -1707,9 +1710,9 @@ def test_thematic_equity_share_matches_independent_derivation_live():
 
 def test_thematic_share_denominator_is_look_through_not_as_held():
     """household.py's methodology decision 1 makes look-through the household's
-    stated basis, and the Household View defaults to it. As-held would read ~19.8%
-    against look-through's ~11.5% — an 8pp gap, and a card contradicting the
-    methodology note on the same data."""
+    stated basis, and the Household View defaults to it. As-held reads a materially
+    larger share than look-through on the live book, and a card on it would contradict
+    the methodology note on the same data."""
     pos, acct, sec, reg, comps = _thematic_live_frames()
     eq_sleeves = _live_equity_sleeves(sec)
     g = next(x for x in ACTION_GROUPS if x["key"] == "thematic_sprawl")
@@ -1733,7 +1736,7 @@ def test_thematic_share_numerator_is_a_strict_subset_of_its_denominator():
     """A share of equity has to be a share OF something: every dollar on top must
     also be counted underneath. That is what excludes IBIT — crypto is not an equity
     sleeve, so it stays in the card's {count}/{value} and out of the percentage.
-    Without this the figure would put $238 of crypto over an equity base and stop
+    Without this the figure would put the crypto position over an equity base and stop
     being a proportion at all."""
     pos, acct, sec, reg, comps = _thematic_live_frames()
     eq_sleeves = _live_equity_sleeves(sec)
@@ -2103,33 +2106,33 @@ def _card(cash):
 def test_below_the_floor_the_card_renders_its_third_state():
     """The RENDERED card below the floor: no score, not Act now, no buys, no Against,
     and the action line says no buy is proposed."""
-    c = _card(7.93)
+    c = _card(6.42)
     assert "/10" not in c["subheader"], f"a below-floor card must not carry a score: {c['subheader']!r}"
     assert c["status_label"] == "Below floor"
     # The card strings are Markdown, so "$" arrives escaped.
     assert c["action"].replace(r"\$", "$").startswith(
-        "No buy proposed: $7.93 of Roth cash is below the $200 deploy floor")
+        "No buy proposed: $6.42 of Roth cash is below the $200 deploy floor")
     assert not c["show_against"] and not c["show_buys"]
 
 
 def test_the_below_floor_body_forbids_the_reassuring_misreading():
-    c = _card(7.93)
+    c = _card(6.42)
     assert "the balance is not lost" in c["body"]
     assert "The Roth is not empty" in c["body"]
     assert "sits in the Roth's cash sleeve" in c["body"]
-    assert "Nothing to deploy" not in c["body"], "the zero state is false at $7.93"
+    assert "Nothing to deploy" not in c["body"], "the zero state is false at $6.42"
 
 
 def test_no_buy_proposed_is_said_once_not_twice():
     """The action line says it; the body must not repeat it."""
-    c = _card(7.93)
+    c = _card(6.42)
     assert "No buy" not in c["body"] and "no buy" not in c["body"].lower()
 
 
 def test_below_the_floor_asserts_no_provenance():
     """How the cash got there is unknowable (no contribution ledger), so the body
     must not claim it was a dividend, a contribution, or left over from a deploy."""
-    body = _card(7.93)["body"].lower()
+    body = _card(6.42)["body"].lower()
     for word in ("dividend", "contribution", "accumulated", "deployment complete", "leftover"):
         assert word not in body, f"below-floor body asserts provenance: {word!r}"
 
@@ -2146,8 +2149,8 @@ def test_above_the_floor_the_prose_states_the_effect_not_urgency():
 
 def test_deploy_prose_lengths_pinned_at_a_fixed_balance():
     """The pin moved here from the live table: at a FIXED state it measures the
-    prose, not the book (#309). Argument at $1,000; below-floor state at $7.93."""
-    assert (len(_card(1_000.0)["body"]), len(_card(7.93)["body"])) == PINNED_DEPLOY_LENGTHS
+    prose, not the book (#309). Argument at $1,000; below-floor state at $6.42."""
+    assert (len(_card(1_000.0)["body"]), len(_card(6.42)["body"])) == PINNED_DEPLOY_LENGTHS
 
 
 PINNED_DEPLOY_LENGTHS = (565, 375)   # measured and READ at 2026-09-23, not transcribed
@@ -2174,7 +2177,7 @@ def test_page14_buy_columns_use_the_cents_format():
 
 @pytest.mark.parametrize("x, want", [
     (0.40, "$0.40"), (0.01, "$0.01"), (-0.2, "-$0.20"),
-    (0.0, "$0"), (0.5, "$0"), (7.93, "$8"), (51, "$51"), (447.56, "$448"),
+    (0.0, "$0"), (0.5, "$0"), (6.42, "$6"), (37, "$37"), (447.56, "$448"),
 ])
 def test_fmt_dollars_keeps_cents_only_where_rounding_would_print_zero(x, want):
     """Narrow on purpose: whole dollars everywhere else, so no other card's
@@ -2185,7 +2188,7 @@ def test_fmt_dollars_keeps_cents_only_where_rounding_would_print_zero(x, want):
 
 def test_page14_live_below_floor_card_renders_its_third_state(monkeypatch):
     """The RENDERED page on the live book, when the live balance is below the floor
-    (it is, at $7.93 on 2026-09-23): the card leaves Act now, carries no score, and
+    (it was, at a few dollars, on 2026-09-23): the card leaves Act now, carries no score, and
     renders the below-floor action and body."""
     from src.household_data import find_latest_positions_csv
     if find_latest_positions_csv() is None or not TRACKER_DB.exists() \
@@ -2216,8 +2219,9 @@ def test_page14_live_below_floor_card_renders_its_third_state(monkeypatch):
 
 
 def test_page14_live_kpi_states_the_same_below_floor_balance_as_the_card(monkeypatch):
-    """One balance, one rendering: the Act-now KPI line and the card both say $7.93,
-    not "$8" in one place and "$7.93" in the other."""
+    """One balance, one rendering: the Act-now KPI line and the card both state the
+    balance to the cent, not rounded to whole dollars in one place and exact in the
+    other."""
     from src.household_data import find_latest_positions_csv
     if find_latest_positions_csv() is None or not TRACKER_DB.exists() \
             or TRACKER_DB.stat().st_size == 0:
@@ -2238,11 +2242,11 @@ def test_page14_live_kpi_states_the_same_below_floor_balance_as_the_card(monkeyp
 
 
 def test_a_measured_zero_is_scored_below_the_floor_but_keeps_its_wording():
-    """#313. $0 is below the floor, so it cannot outrank $7.93: no score, Accepted.
+    """#313. $0 is below the floor, so it cannot outrank $6.42: no score, Accepted.
     Its WORDING is the zero state's, unchanged -- only the routing moved."""
-    zero, small = _card(0.0), _card(7.93)
+    zero, small = _card(0.0), _card(6.42)
     assert zero["subheader"] == small["subheader"] == _deploy_group()["title"]
-    assert _tier(0.0)["status"] == _tier(7.93)["status"] == "accepted"
+    assert _tier(0.0)["status"] == _tier(6.42)["status"] == "accepted"
     assert zero["action"] == "Nothing to deploy — the Roth's cash sleeve is empty."
     assert zero["body"] == render_prose_md(_deploy_group()["zero_state"], {})
     assert zero["status_label"] == "Accepted"

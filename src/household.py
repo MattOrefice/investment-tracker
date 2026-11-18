@@ -643,17 +643,18 @@ def build_location_flags(
 def build_strategic_comparison() -> pd.DataFrame:
     """Return the SAA-vs-advisor-book comparison table.
 
-    Static editorial content — not derived from holdings.
+    Static editorial content — not derived from holdings, so it types no figure from
+    them (#721): a size the book holds belongs to the pages that read it.
     """
     rows = [
         ("Equity tilts",          "Factor (Quality, Value, Small Value)",       "Market-cap broad"),
         ("Equity risk mgmt",      "Diversification",                            "Active hedging overlays"),
         ("Fixed income role",     "Duration ballast (Treasury + TIPS)",         "Yield generation (credit, floating, HY)"),
         ("Fixed income duration", "Intermediate Treasury + TIPS",               "Mixed; mostly credit-spread risk"),
-        ("Real assets",           "Strategic 10% (commodities + REIT)",         "Token gestures (gold + REIT, ~1.5%)"),
-        ("Thematic",              "None (Phase 10 Asset Eval declined Bitcoin)", "$9.7k across ~12 themes"),
+        ("Real assets",           "Strategic 10% (commodities + REIT)",         "Token gestures (gold + REIT)"),
+        ("Thematic",              "None (Phase 10 Asset Eval declined Bitcoin)", "Many small positions across themes"),
         ("Single stocks",         "None",                                       "One position (MCO)"),
-        ("Active management",     "None",                                       "~$25k (hedged equity + multi-sector FI + GAOSX)"),
+        ("Active management",     "None",                                       "Hedged equity, multi-sector FI and GAOSX"),
         ("Tax-location",          "Designed-in",                                "Not the priority"),
     ]
     return pd.DataFrame(rows, columns=["Dimension", "SAA Framework", "Advisor Book"])
