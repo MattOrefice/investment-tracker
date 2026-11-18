@@ -126,7 +126,8 @@ def test_treasury_needs_all_three_facts():
     """THE PROOF THAT ONE VALUE CANNOT DO, and the same shape as the boolean's.
 
     Treasury INTEREST is exempt from state and local income tax under federal law
-    (31 U.S.C. § 3124(a)). A capital gain on a Treasury fund is an ordinary capital
+    (31 U.S.C. § 3124(a)); the model assumes a fund's distributions of it keep the
+    exemption, and Asset Location says so (#722). A capital gain on a Treasury fund is an ordinary capital
     gain, and the residence taxes it. Collapse the three facts into one and
     either the interest is over-taxed or the gain is under-taxed.
     """

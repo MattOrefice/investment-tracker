@@ -739,6 +739,15 @@ with col:
             "The model treats a national municipal fund's income as exempt from federal "
             "tax and **fully taxable by the residence**: it holds no in-state share for "
             "a national fund.\n\n"
+            # #722: federal law exempts Treasury obligations and their interest from
+            # state and local tax; what a holder of a fund receives is the fund's
+            # distribution, and how a state taxes that is its own law. The model assumes
+            # the exemption carries through, and says so.
+            "The model treats a Treasury fund's distributions as **keeping the exemption "
+            "from state and local income tax** that federal law gives Treasury interest "
+            "(31 U.S.C. § 3124(a); U.S. Code, 2024 edition, read November 17, 2026). How "
+            "a state taxes a fund's distributions is that state's own law, which the "
+            "model does not read.\n\n"
             + _headroom_para
             + "\n\n"
             # THE FOUR RATES ABOVE ARE INPUTS, NOT THE ANSWER (#278). Listing them and

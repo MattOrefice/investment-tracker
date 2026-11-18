@@ -491,9 +491,13 @@ NOT_MODELLED_SLEEVES: frozenset[str] = frozenset({
 #                gain treatment)
 #
 # The second fact is about the residence: the state and local rates it switches on
-# are the residence's (load_tax_residence). Its values here hold for any residence
-# for `treasury` (federal law) and are the model's simplification for
-# `muni_out_of_state` (no in-state share).
+# are the residence's (load_tax_residence). Its values here are the model's
+# assumptions, and the page states both:
+#   * `treasury`: federal law exempts Treasury obligations and their interest from
+#     state and local tax (31 U.S.C. § 3124(a)). The sleeves are held through funds,
+#     and how a state taxes a fund's distributions is that state's own law, which the
+#     model does not read. It assumes the exemption carries through (#722).
+#   * `muni_out_of_state`: no in-state share for a national fund (#706).
 #
 # USER-EDITABLE.
 TAX_CHARACTER: dict[str, tuple[str, bool, str]] = {
