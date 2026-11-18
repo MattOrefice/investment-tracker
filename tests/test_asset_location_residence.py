@@ -63,6 +63,28 @@ def test_a_profile_without_state_keys_raises_rather_than_pricing_at_zero():
         lc.ltcg_rate(federal_only)
 
 
+def test_page_14_states_the_treasury_distribution_assumption_and_its_source():
+    """#722: the section the model cites exempts Treasury obligations and their interest;
+    a fund's distributions are the residence's own law. The page says the model assumes
+    the exemption carries through, cites the section with the date it was read, and
+    says the model does not read the state's law. The demo gate stops the page before
+    the block, so it is read from the source here; the live renders read it rendered."""
+    tree = ast.parse(PAGE.read_text(encoding="utf-8"))
+    said = [n.value for n in ast.walk(tree)
+            if isinstance(n, ast.Constant) and isinstance(n.value, str)
+            and "Treasury fund's distributions" in n.value]
+    assert len(said) == 1, said
+    for part in ("The model treats a Treasury fund's distributions as **keeping the "
+                 "exemption from state and local income tax** that federal law gives "
+                 "Treasury interest",
+                 "(31 U.S.C. § 3124(a); U.S. Code, 2024 edition, read November 17, 2026)",
+                 "How a state taxes a fund's distributions is that state's own law, which "
+                 "the model does not read."):
+        assert part in said[0], part
+    assert lc.TAX_CHARACTER["treasury"] == ("ordinary", False, "ltcg"), (
+        "the treasury character stays: no state or local tax on its income")
+
+
 def test_page_14_reads_the_residence_and_never_tax_profile():
     """The page's profile is the residence's and the private federal profile's; the
     name TAX_PROFILE does not appear in the page's code at all."""
@@ -148,7 +170,9 @@ def _assumptions_for(residence: dict) -> "list[str]":
             f"State and local ordinary ({where}): **{p['state_marginal']:.2%}**",
             f"State and local on gains ({where}): **{p['state_ltcg']:.2%}**",
             f"combined rate on realized gains: **{lc.ltcg_rate(p):.2%}**",
-            "exempt from federal tax and **fully taxable by the residence**"]
+            "exempt from federal tax and **fully taxable by the residence**",
+            "a Treasury fund's distributions as **keeping the exemption from state and "
+            "local income tax**"]
 
 
 def test_page_14_renders_with_the_synthetic_residence_live(monkeypatch):
