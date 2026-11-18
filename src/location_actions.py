@@ -241,22 +241,34 @@ _THEMATIC_CAPTION = (
     "case for cleanup is fees and sprawl, not location."
 )
 
+# The rollover card (owner's decision, November 3, 2026). It says nothing about the
+# owner's employment beyond "the current employer's plan", names no employer, and
+# cites the two IRS documents its claims rest on. tests/test_no_availability_claim.py
+# keeps the removed phrases out of committed text.
 _ROLLOVER_PROS = (
-    "Available now — a former employer's plan, not gated on your next job. "
+    "Available now — a former employer's plan. "
     "It converts {workplace_plan_value} of self-allocating target-date money "
     "into pre-tax space that can hold your bonds — letting fixed income leave "
     "taxable entirely. Pre-tax capacity (room to relocate assets into the "
-    "Traditional IRA/401(k) before they're full) is {pretax_capacity} today, "
-    "already exhausted; this raises it to {pretax_capacity_after}. Rollovers "
+    "Traditional IRA/401(k) before they're full) is {pretax_capacity} today; "
+    "this raises it to {pretax_capacity_after}. Rollovers "
     "typically sell to cash and reinvest in the new plan's menu — these exact "
     "holdings don't survive."
 )
 _ROLLOVER_CONS = (
-    "Rolling straight into a Traditional IRA works today, but creates a "
-    "pre-tax balance that triggers pro-rata and forecloses backdoor Roth once "
-    "income clears the direct limits. A future employer plan avoids that — so "
-    "available now doesn't mean immediately: if a decent plan is coming, wait "
-    "for it, not the account being locked. Worth a CPA check either way."
+    "Two destinations. The former employer's plan can roll to the current "
+    "employer's plan, if that plan accepts roll-ins: its plan documents say, and "
+    "a plan is not required to (IRS, Rollovers of Retirement Plan and IRA "
+    "Distributions, reviewed May 31, 2026). Or it can roll to the Traditional IRA. "
+    "The IRS rollover chart allows both from a 401(k), and a Traditional IRA into "
+    "an employer plan too (Rollover Chart; the PDF prints no date and is linked "
+    "from that page). Only the IRA route adds to the December 31 total: the "
+    "taxable share of a Roth conversion is figured from the value of all your "
+    "traditional IRAs, SEP and SIMPLE IRAs included, on December 31 "
+    "(Instructions for Form 8606 (2025), line 6), and an employer plan's balance "
+    "is not in it. The Traditional IRA's balance is already in that total; moving "
+    "its pre-tax money into an employer plan would take it out, if a backdoor "
+    "Roth is ever wanted. Worth a CPA check either way."
 )
 
 
@@ -490,9 +502,10 @@ ACTION_GROUPS: list[dict] = [
     {
         "key": "rollover_401k", "title": "401(k) rollover",
         "score": 3, "status": "evaluate",
-        "action": "Roll the {workplace_plan_value} MissionSquare 401(k) now — a future "
-                  "employer plan keeps the Traditional IRA empty; an IRA works too, but "
-                  "starts the pro-rata clock.",
+        "action": "Roll the {workplace_plan_value} MissionSquare 401(k) to the current "
+                  "employer's plan if it accepts roll-ins, which keeps it out of the "
+                  "December 31 IRA total that sets a Roth conversion's taxable share, "
+                  "or to the Traditional IRA, which adds it to that total.",
         "symbols": None, "case_filter": None, "accounts": None,   # informational
         "pros": _ROLLOVER_PROS, "cons": _ROLLOVER_CONS,
     },
