@@ -10,6 +10,7 @@ st.set_page_config(page_title="Benchmark Attribution", layout="wide")
 from src.asof import as_of_banner, data_vintage, format_long_date
 from src.attribution import benchmark_gap_notice, brinson_fachler_period, price_gap_notice
 from src.benchmarks import blended_rule_note
+from src.cache import valuation_basis
 from src.config import get_demo_banner_text, IS_DEMO
 from src.holdings import (UnpricedHoldingError, committed_price_frontier,
                           get_inception_date, get_portfolio_account,
@@ -213,7 +214,7 @@ with col:
             "return inference."
         )
         st.caption(
-            "Portfolio returns: the portfolio value series (adjusted-close basis). "
+            f"Portfolio returns: the portfolio value series ({valuation_basis()[0]}). "
             f"Benchmark returns: the custom blended SAA target-weight basket, {blended_rule_note()}. "
             "RF, HML, SMB, RMW: Ken French US daily factors (mba.tuck.dartmouth.edu). "
             "A committed copy, refreshed by hand and never fetched on read."

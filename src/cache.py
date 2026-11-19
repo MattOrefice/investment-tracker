@@ -236,6 +236,29 @@ def valuation_in_force() -> "tuple[str, pd.DataFrame | None]":
     return held if held is not None else (RAW_CLOSE_RULE, None)
 
 
+# What a methodology statement calls the value series' basis under each rule, and how SPAXX
+# is valued on it (#702, decided by the owner on November 18, 2026). Read through
+# valuation_basis, never typed beside it: a live read says the raw-close rule, and a report
+# rendered inside a lock on adjusted levels, as every lock taken before the marker is, says
+# adjusted close. The words are holdings.get_portfolio_value_series' two rules.
+VALUATION_BASIS = {
+    RAW_CLOSE_RULE: (
+        "raw-close basis: every share held, DRIP lots included, at its close, with each "
+        "dividend as income from its ex-date",
+        "and SPAXX at BIL's total return, each SPAXX trade and each dividend swept into it "
+        "entering as units bought at that day's level"),
+    ADJUSTED_LEVELS_RULE: (
+        "adjusted-close basis",
+        "SPAXX proxied via BIL normalized to $1.00 at inception"),
+}
+
+
+def valuation_basis() -> "tuple[str, str]":
+    """(the value series' basis, how SPAXX is valued on it), in words, for the valuation
+    rule in force for this read (valuation_in_force)."""
+    return VALUATION_BASIS[valuation_in_force()[0]]
+
+
 def _capture_ledger(end: date) -> dict:
     """The book's ledger through ``end``: every trades row, DRIP lots included, in the
     order the value series reads them, as {"columns", "data"}."""

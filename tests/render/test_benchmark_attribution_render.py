@@ -92,6 +92,20 @@ def test_methodology_expander_present(ba_app: AppTest) -> None:
     )
 
 
+def test_the_methodology_states_the_valuation_rule_it_reads(ba_app: AppTest) -> None:
+    """Both statements of the portfolio series' basis read the rule in force (#702): a live
+    read is on the raw-close rule (#369), so neither says adjusted close."""
+    if not ba_app.metric:
+        pytest.skip("No portfolio data — skipped in local/empty-DB mode")
+    from src.cache import RAW_CLOSE_RULE, VALUATION_BASIS
+    basis, spaxx = VALUATION_BASIS[RAW_CLOSE_RULE]
+    captions = " ".join(c.value for c in ba_app.caption)
+    markdown = " ".join(str(m.value) for m in ba_app.markdown)
+    assert f"Portfolio returns: the portfolio value series ({basis}). " in captions
+    assert f"- R_p: daily portfolio total return ({basis}, {spaxx}). R_b: " in markdown
+    assert "adjusted-close" not in captions + markdown
+
+
 def test_factor_definitions_always_visible(ba_app: AppTest) -> None:
     """Factor Definitions table must render in the always-visible bordered container. Pinned: Phase 40.1."""
     if not ba_app.metric:
