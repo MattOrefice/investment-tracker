@@ -2324,7 +2324,11 @@ def build_benchmark_prose(
 
 
 def build_benchmark_methodology(result: Optional[dict]) -> list[str]:
-    """Return methodology disclosure bullet points for the benchmark attribution regression."""
+    """Return methodology disclosure bullet points for the benchmark attribution regression.
+    R_p's basis is the valuation rule in force (cache.valuation_basis, #702): the raw-close
+    rule for a live read, and inside a quarter lock the lock's own."""
+    from src.cache import valuation_basis
+    basis, spaxx = valuation_basis()
     T      = result["T"]      if result else "N/A"
     L      = result["nw_lags"] if result else "N/A"
     window = (
@@ -2332,8 +2336,8 @@ def build_benchmark_methodology(result: Optional[dict]) -> list[str]:
         if result else "N/A"
     )
     return [
-        "R_p: daily portfolio total return (adjusted-close basis, SPAXX proxied via BIL normalized "
-        "to $1.00 at inception). R_b: daily custom blended SAA benchmark return (target-weight "
+        f"R_p: daily portfolio total return ({basis}, {spaxx}). "
+        "R_b: daily custom blended SAA benchmark return (target-weight "
         "basket: SPY, QUAL, IWD, IWM, EFA, EEM, IEF, TIP, 60% VNQ + 40% DBC, BIL). "
         "RF, HML, SMB, RMW: Ken French US daily factors (Dartmouth). "
         "All series aligned by inner join on trading dates.",
