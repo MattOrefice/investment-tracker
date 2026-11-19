@@ -9,7 +9,7 @@ tested below on invented names, so CI still holds the machinery.
 What counts:
   * a NAME: each ``withheld_names.names`` entry, matched case-insensitively as a whole
     word, with or without a possessive ('s), and with or without spaces, hyphens, dots or
-    apostrophes between its letters ("Example Co's", "EXAMPLE CO", "Example-Co");
+    apostrophes between its letters ("Sample Firm's", "SAMPLE FIRM", "Sample-Firm");
   * a TIE: an ``employer_stock_tickers`` entry (case-sensitive, a whole word) within two
     lines of a word beginning "employ". The ticker itself may stand: the seed files hold
     it, and tests use it as a ticker. It may not stand beside "employer".
@@ -107,19 +107,19 @@ def _head(path: Path) -> bytes:
 
 # ── the scanner, on invented names (runs everywhere) ──────────────────────────
 
-INVENTED = ["Example Co's", "Plan Admin"]
+INVENTED = ["Sample Firm's", "Plan Admin"]
 
 
 @pytest.mark.parametrize("text", [
-    "Example Co", "EXAMPLE CO'S plan", "Example Co’s", "Example-Co", "ExampleCo's",
-    "example co", "the Example.Co account", "PLAN ADMIN 401(k)", "PlanAdmin",
+    "Sample Firm", "SAMPLE FIRM'S plan", "Sample Firm’s", "Sample-Firm", "SampleFirm's",
+    "sample firm", "the Sample.Firm account", "PLAN ADMIN 401(k)", "PlanAdmin",
 ])
 def test_the_scanner_finds_every_spelling_of_a_name(text):
     assert names_in(f"before\n{text}\nafter", INVENTED) == [2], text
 
 
 @pytest.mark.parametrize("text", [
-    "Example Company", "Counterexample Co", "Examples Co", "a plan administrator",
+    "Sample Firmware", "Countersample Firm", "Samples Firm", "a plan administrator",
     "PlanAdministration",
 ])
 def test_the_scanner_passes_a_word_that_only_contains_a_name(text):
@@ -147,7 +147,7 @@ def test_the_scanner_reads_every_text_cell_of_a_book(tmp_path):
     con.execute("CREATE TABLE a (id INTEGER, label TEXT, value REAL)")
     con.execute("CREATE TABLE b (note TEXT)")
     con.executemany("INSERT INTO a VALUES (?, ?, ?)",
-                    [(1, "a clean label", 1.0), (2, "the Example Co plan", 2.0)])
+                    [(1, "a clean label", 1.0), (2, "the Sample Firm plan", 2.0)])
     con.execute("INSERT INTO b VALUES ('plain')")
     con.commit()
     con.close()
@@ -249,10 +249,10 @@ def _single_stock() -> str:
 
 
 STOCK = _single_stock()
-_SYNTHETIC = {"names": ["Example Co"], "employer_stock_tickers": ["XYZ"],
-              "account_labels": {"acct_wkpl_01": "Example Co plan",
-                                 "acct_wkpl_02": "Example Co 401(k)"},
-              "security_names": {STOCK: "Example Co Inc."},
+_SYNTHETIC = {"names": ["Sample Firm"], "employer_stock_tickers": ["XYZ"],
+              "account_labels": {"acct_wkpl_01": "Sample Firm plan",
+                                 "acct_wkpl_02": "Sample Firm 401(k)"},
+              "security_names": {STOCK: "Sample Firm Inc."},
               "source": "test", "problem": None}
 
 
@@ -282,7 +282,7 @@ def _bootstrapped_labels(tmp_path, monkeypatch, withheld: dict):
 def test_bootstrap_writes_the_private_labels_into_the_personal_book(tmp_path, monkeypatch):
     accounts, name = _bootstrapped_labels(tmp_path, monkeypatch, _SYNTHETIC)
     assert accounts == _SYNTHETIC["account_labels"]
-    assert name == "Example Co Inc."
+    assert name == "Sample Firm Inc."
 
 
 def test_without_private_labels_the_seeds_neutral_labels_stand(tmp_path, monkeypatch):
@@ -306,13 +306,13 @@ def test_load_withheld_names_reads_and_refuses(tmp_path, monkeypatch):
     profile.write_text(json.dumps({"ordinary_income": 1}), encoding="utf-8")
     assert "no withheld_names" in pp.load_withheld_names(is_demo=False)["problem"]
     body = {k: v for k, v in _SYNTHETIC.items() if k not in ("source", "problem")}
-    body["names"] = [{"name": "Example Co", "kind": "former employer"}]
+    body["names"] = [{"name": "Sample Firm", "kind": "former employer"}]
     profile.write_text(json.dumps({"withheld_names": body}), encoding="utf-8")
     got = pp.load_withheld_names(is_demo=False)
     assert got["problem"] is None
-    assert got["names"] == ["Example Co"]
+    assert got["names"] == ["Sample Firm"]
     assert got["account_labels"] == _SYNTHETIC["account_labels"]
-    for bad in ({**body, "names": []}, {**body, "names": ["Example Co"]},
+    for bad in ({**body, "names": []}, {**body, "names": ["Sample Firm"]},
                 {**body, "employer_stock_tickers": "XYZ"},
                 {**body, "account_labels": {"acct_wkpl_01": ""}}):
         profile.write_text(json.dumps({"withheld_names": bad}), encoding="utf-8")
