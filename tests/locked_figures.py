@@ -418,9 +418,11 @@ def _day_after_last_close(book: Path) -> date:
 # ── rendering a book's locks ─────────────────────────────────────────────────
 
 def render_book(name: str, scratch_dir: Path, *, book: "Path | None" = None,
-                marked: bool = True, html_out: "dict | None" = None) -> dict:
+                marked: bool = True, html_out: "dict | None" = None,
+                quarters: "tuple[str, ...] | None" = None) -> dict:
     """Render every lock of the named book and read its figures: a committed book, or
-    PERSONAL, which renders as the personal app renders it (is_demo=False).
+    PERSONAL, which renders as the personal app renders it (is_demo=False). ``quarters``
+    renders only those of its locks (each must be one), for a test that reads a few.
 
     Runs on a scratch copy (never the book itself), offline, charts and the PDF step
     left out, with today pinned to the day after the book's last close. Returns
@@ -470,7 +472,11 @@ def render_book(name: str, scratch_dir: Path, *, book: "Path | None" = None,
             mp.setattr(prose_helpers, "_label_reader", labelled)
         pin_today(mp, _day_after_last_close(copy))
         try:
-            for quarter, (end_iso, payload) in locks_in(source).items():
+            locks = locks_in(source)
+            if quarters is not None:
+                assert set(quarters) <= set(locks), f"{name}: no lock for {set(quarters) - set(locks)}"
+                locks = {q: locks[q] for q in quarters}
+            for quarter, (end_iso, payload) in locks.items():
                 end = date.fromisoformat(end_iso)
                 start = _quarter_start(end)
                 html = reports.generate_quarterly_report_bytes(
