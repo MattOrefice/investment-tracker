@@ -10,12 +10,11 @@ Each UPDATE is keyed on the thesis id and the cell's current text, must change e
 one row, or the run rolls back; a second run changes nothing. Targets data/demo.db
 explicitly and runs from main() only. The personal book is not touched.
 
-SUPERSEDED IN PART (#710). tools/migrate_vgit_state_exemption.py later rewrote one
-sentence in thesis 19's macro_view, vehicle_rationale and view_summary, so that the books
-name no state. NEW below keeps this sweep's text as it was, and this tool writes NEW over
-whatever a cell holds, so a run now changes those three cells back. Run
-`python tools/migrate_vgit_state_exemption.py data/demo.db` after it.
-tests/test_operations_copy.py asserts both.
+THESIS 19 CARRIES THE #710 TEXT (#720). tools/migrate_vgit_state_exemption.py rewrote one
+sentence in thesis 19's macro_view, vehicle_rationale and view_summary after this sweep, so
+that the books name no state. NEW holds those three cells as the books hold them now, so a
+run writes today's prose and, on the committed book, changes nothing.
+tests/test_operations_copy.py asserts it.
 """
 import sqlite3
 from pathlib import Path
@@ -131,9 +130,9 @@ NEW = {
         "vehicle_rationale": "IEMG is the holding because EEM costs {{er:EEM}} against IEMG's {{er:IEMG}}, the largest fee gap in the portfolio. The two are not the same exposure: IEMG tracks MSCI Emerging Markets IMI, which adds small caps to the large and mid caps of EEM's MSCI Emerging Markets index. China inclusion was deliberate. The SAA rationale flags governance risk as a watch item but not yet a reason to exit: China trades at a valuation discount to global equities, and the EM valuation thesis meaningfully includes Chinese equities. Excluding China via EMXC would be a larger active bet than appropriate at current prices. Would revisit if ADR delisting risk materializes legislatively or if another sector-level government intervention occurs."
     },
     "19": {
-        "macro_view": "VGIT delivers intermediate-term US Treasury exposure at {{er:VGIT}} versus IEF's {{er:IEF}}. Duration is modestly shorter ({{dur:VGIT}} vs IEF's {{dur:IEF}}), appropriate for a {{w:Core Fixed Income}} sleeve inside a {{w:Equity}} growth portfolio. Critically, Treasury interest income is exempt from state and local taxes: a real, if modest, after-tax advantage at Pennsylvania's flat rate over investment-grade corporate bond funds with similar yield. Cost minimization is the dominant selection criterion for a sleeve that exists for drawdown buffering and rebalancing optionality, not return.",
-        "view_summary": "VGIT delivers intermediate-term US Treasury exposure at {{er:VGIT}} versus IEF's {{er:IEF}}. Duration is modestly shorter ({{dur:VGIT}} vs IEF's {{dur:IEF}}), appropriate for a {{w:Core Fixed Income}} sleeve inside a {{w:Equity}} growth portfolio. Critically, Treasury interest income is exempt from state and local taxes: a real, if modest, after-tax advantage at Pennsylvania's flat rate over investment-grade corporate bond funds with similar yield. Cost minimization is the dominant selection criterion for a sleeve that exists for drawdown buffering and rebalancing optionality, not return.",
-        "vehicle_rationale": "VGIT delivers intermediate-term US Treasury exposure at {{er:VGIT}} versus IEF's {{er:IEF}}. Duration is modestly shorter ({{dur:VGIT}} vs IEF's {{dur:IEF}}), appropriate for a {{w:Core Fixed Income}} sleeve inside a {{w:Equity}} growth portfolio. Critically, Treasury interest income is exempt from state and local taxes: a real, if modest, after-tax advantage at Pennsylvania's flat rate over investment-grade corporate bond funds with similar yield. Cost minimization is the dominant selection criterion for a sleeve that exists for drawdown buffering and rebalancing optionality, not return."
+        "macro_view": "VGIT delivers intermediate-term US Treasury exposure at {{er:VGIT}} versus IEF's {{er:IEF}}. Duration is modestly shorter ({{dur:VGIT}} vs IEF's {{dur:IEF}}), appropriate for a {{w:Core Fixed Income}} sleeve inside a {{w:Equity}} growth portfolio. Treasury interest is exempt from state and local income tax under federal law (31 U.S.C. § 3124(a); U.S. Code, 2024 edition, read November 17, 2026). Cost minimization is the dominant selection criterion for a sleeve that exists for drawdown buffering and rebalancing optionality, not return.",
+        "view_summary": "VGIT delivers intermediate-term US Treasury exposure at {{er:VGIT}} versus IEF's {{er:IEF}}. Duration is modestly shorter ({{dur:VGIT}} vs IEF's {{dur:IEF}}), appropriate for a {{w:Core Fixed Income}} sleeve inside a {{w:Equity}} growth portfolio. Treasury interest is exempt from state and local income tax under federal law (31 U.S.C. § 3124(a); U.S. Code, 2024 edition, read November 17, 2026). Cost minimization is the dominant selection criterion for a sleeve that exists for drawdown buffering and rebalancing optionality, not return.",
+        "vehicle_rationale": "VGIT delivers intermediate-term US Treasury exposure at {{er:VGIT}} versus IEF's {{er:IEF}}. Duration is modestly shorter ({{dur:VGIT}} vs IEF's {{dur:IEF}}), appropriate for a {{w:Core Fixed Income}} sleeve inside a {{w:Equity}} growth portfolio. Treasury interest is exempt from state and local income tax under federal law (31 U.S.C. § 3124(a); U.S. Code, 2024 edition, read November 17, 2026). Cost minimization is the dominant selection criterion for a sleeve that exists for drawdown buffering and rebalancing optionality, not return."
     },
     # Thesis 20 carries its own text now, the fees read from the data (#421): it
     # renders exactly as SCHP's fund rationale does, without the revisit line.

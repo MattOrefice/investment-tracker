@@ -15,7 +15,10 @@ it here is the mechanism #228 and #284 are about.
 SUPERSEDED (#710). tools/migrate_vgit_state_exemption.py rewrites the same sentence so
 that it names no state. _OLD and _NEW below are this migration's data and are kept as
 they were; _NEW names a state, because it is the text this migration wrote. On a book
-the newer tool has rewritten, this migration finds neither and aborts, writing nothing.
+the newer tool has rewritten, this migration finds the #710 sentence, reports the cell
+already superseded and writes nothing (#720), so tools/sync_personal_prose.py runs on to
+its later step, the #710 tool itself. The demo twin still aborts on that sentence: no
+runner sequences it.
 
 WHY A MIGRATION AT ALL. src/seed_securities.py is INSERT-ONLY: it guards every write
 with `if existing is None` and has no UPDATE path, so editing the seed changes
@@ -43,7 +46,11 @@ HOW THIS DIFFERS FROM ITS TEMPLATE (tools/migrate_personal_vea_rationale.py):
     impossible to ship unnoticed.
 """
 import sqlite3
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # repo root, run alone
+from tools.migrate_vgit_state_exemption import NEW_SENTENCE as _SUPERSEDED_BY  # noqa: E402
 
 TRACKER_DB = Path(__file__).resolve().parent.parent / "data" / "tracker.db"
 
@@ -70,6 +77,10 @@ def main() -> int:
 
         if _NEW in text:
             print("tracker.db VGIT jurisdiction already migrated — nothing to do.")
+            return 0
+        if _SUPERSEDED_BY in text and _OLD not in text:
+            print("tracker.db VGIT jurisdiction already superseded by #710's sentence "
+                  "— nothing to do.")
             return 0
         if _OLD not in text:
             # Abort rather than guess. A partial or hand-edited row is a state this

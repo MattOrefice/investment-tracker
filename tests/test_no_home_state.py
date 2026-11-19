@@ -54,7 +54,6 @@ THE_LIST = "tests/us_states.py"
 MIGRATION_DATA: dict[str, frozenset[str]] = {
     "tools/migrate_demo_vgit_jurisdiction.py": frozenset({"_NEW"}),
     "tools/migrate_personal_vgit_jurisdiction.py": frozenset({"_NEW"}),
-    "tools/migrate_operations_copy.py": frozenset({"NEW"}),
 }
 
 
