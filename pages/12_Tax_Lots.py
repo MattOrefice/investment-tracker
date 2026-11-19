@@ -25,7 +25,9 @@ from src.harvest import (
     HARVEST_ACTION_THRESHOLD,
     HARVEST_PCT_THRESHOLD,
     compute_harvest_candidates,
+    harvest_rates,
 )
+from src.personal_profile import load_federal_tax
 from src.holdings import dividend_income, spaxx_modeled_income
 from src.prices import get_prices
 from src.config import get_demo_banner_text, IS_DEMO
@@ -372,7 +374,30 @@ st.divider()
 
 # ── Tax-Loss Harvest Candidates ───────────────────────────────────────────────
 
-_candidates = compute_harvest_candidates(display_lots)
+# The estimate prices with the federal profile (#727): the owner's rates from
+# private/personal_profile.json in personal mode, the synthetic demo profile in demo.
+_federal = load_federal_tax(IS_DEMO)
+_rates = harvest_rates(_federal)
+
+
+def escape_md(text: str) -> str:
+    """A "$" in profile text would open Streamlit Markdown's math mode."""
+    return str(text).replace("$", "\\$")
+
+
+if _rates["problem"]:
+    _rates_phrase = f"estimated tax benefit not priced: {_rates['problem']}"
+else:
+    _rates_phrase = (
+        f"estimated tax benefit at tax year {_rates['tax_year']}'s "
+        + ("synthetic demo " if IS_DEMO else "")
+        + f"federal rates, {_rates['st_rate']:.1%} short-term and "
+        f"{_rates['lt_rate']:.1%} long-term"
+        + (f", each including the {_rates['niit']:.1%} net investment income tax"
+           if _rates["niit"] else "")
+    )
+_candidates = compute_harvest_candidates(display_lots, st_tax_rate=_rates["st_rate"],
+                                         lt_tax_rate=_rates["lt_rate"])
 _has_candidates = len(_candidates) > 0
 
 with st.expander("Tax-Loss Harvest Candidates", expanded=_has_candidates):
@@ -388,8 +413,8 @@ with st.expander("Tax-Loss Harvest Candidates", expanded=_has_candidates):
         st.markdown(
             f"**{n_cands} material harvest candidate{plural} identified** "
             f"(≥ ${HARVEST_ACTION_THRESHOLD:.0f} loss and "
-            f"≥ {HARVEST_PCT_THRESHOLD * 100:.0f}% loss percentage, "
-            f"federal rate assumed 22% ST / 15% LT)."
+            f"≥ {HARVEST_PCT_THRESHOLD * 100:.0f}% loss percentage; "
+            f"{_rates_phrase})."
         )
 
         # Candidate summary table
@@ -523,10 +548,30 @@ else:
             "Check for data integrity issues."
         )
 
+if _rates["problem"]:
+    _rates_method = (
+        f"**Tax rates**: the estimated tax benefit is not priced — "
+        f"{escape_md(_rates['problem'])}. Add a `federal_tax` to "
+        "`private/personal_profile.json` to price it.\n\n"
+    )
+else:
+    _plus = " plus the net investment income tax" if _rates["niit"] else ""
+    _rates_method = (
+        f"**Tax rates** (tax year {_rates['tax_year']}): a short-term loss is priced at "
+        f"the federal ordinary rate{_plus}, **{_rates['st_rate']:.1%}**, and a long-term "
+        f"loss at the federal long-term capital-gains rate{_plus}, "
+        f"**{_rates['lt_rate']:.1%}**. "
+        + ("" if _rates["niit"] else "The net investment income tax does not apply. ")
+        + ("These are the demo's synthetic rates, not a rate read for anyone."
+           if IS_DEMO else
+           "Sources: " + "; ".join(f"{escape_md(s)}, {escape_md(d)}"
+                                   for s, d in _federal["sources"].values()) + ".")
+        + "\n\n"
+    )
+
 with st.expander("Methodology", expanded=False):
     st.markdown(
-        "**Marginal tax rate assumptions**: estimates assume a 22% federal marginal "
-        "rate on short-term gains and 15% on long-term gains.\n\n"
+        _rates_method +
         "**Capital loss offset hierarchy**: capital losses offset capital gains first "
         "(ST losses against ST gains, LT against LT, then cross-character), then up to "
         "$3,000 of ordinary income per year, with excess carried forward indefinitely.\n\n"
@@ -536,9 +581,9 @@ with st.expander("Methodology", expanded=False):
         "separate lot rows using the payment-date closing price as cost basis, matching "
         "Fidelity DRIP execution. Holding period begins on the payment date; long-term "
         "qualification requires holding more than 365 calendar days (day 366+).\n\n"
-        "**What is not modeled**: state taxes and the NIIT 3.8% surcharge (applicable "
-        "above relevant income thresholds). Replacement security suggestions are "
-        "educational only; consult a tax advisor before executing trades."
+        "**What is not modeled**: state and local taxes. Replacement security "
+        "suggestions are educational only; consult a tax advisor before executing "
+        "trades."
     )
 
 render_footer()

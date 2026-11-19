@@ -9,14 +9,24 @@ import pytest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from src.harvest import (
-    DEFAULT_LT_TAX_RATE,
-    DEFAULT_ST_TAX_RATE,
     HARVEST_ACTION_THRESHOLD,
     HARVEST_PCT_THRESHOLD,
     REPLACEMENT_MAP,
     WASH_SALE_WINDOW_DAYS,
     compute_harvest_candidates,
+    harvest_rates,
 )
+from tests.tax_profiles import SYNTHETIC_FEDERAL, synthetic_federal
+
+# The estimate's rates come from the federal profile (#727); tests price with the
+# synthetic demo profile, whose rates are no recent year's federal bracket.
+RATES = harvest_rates(SYNTHETIC_FEDERAL)
+
+
+def _cands(lots, **kw):
+    """compute_harvest_candidates at the synthetic federal profile's rates."""
+    return compute_harvest_candidates(lots, st_tax_rate=RATES["st_rate"],
+                                      lt_tax_rate=RATES["lt_rate"], **kw)
 
 
 # ── Helper ────────────────────────────────────────────────────────────────────
@@ -61,57 +71,57 @@ def _make_lot(
 def test_candidate_qualifies_when_both_thresholds_met():
     """$200 loss at 20% qualifies — both exceed $100 floor and 5% floor."""
     lots = _make_lot(unrealized_gl=-200.0, unrealized_gl_pct=-0.20)
-    result = compute_harvest_candidates(lots, action_threshold=100.0, pct_threshold=0.05)
+    result = _cands(lots, action_threshold=100.0, pct_threshold=0.05)
     assert len(result) == 1
 
 
 def test_candidate_excluded_when_dollar_threshold_not_met():
     """$50 loss at 20% — excluded because abs(loss) < $100 even though pct qualifies."""
     lots = _make_lot(unrealized_gl=-50.0, unrealized_gl_pct=-0.20)
-    result = compute_harvest_candidates(lots, action_threshold=100.0, pct_threshold=0.05)
+    result = _cands(lots, action_threshold=100.0, pct_threshold=0.05)
     assert len(result) == 0
 
 
 def test_candidate_excluded_when_pct_threshold_not_met():
     """$500 loss at 4% — excluded because pct < 5% even though dollar amount qualifies."""
     lots = _make_lot(unrealized_gl=-500.0, unrealized_gl_pct=-0.04)
-    result = compute_harvest_candidates(lots, action_threshold=100.0, pct_threshold=0.05)
+    result = _cands(lots, action_threshold=100.0, pct_threshold=0.05)
     assert len(result) == 0
 
 
 def test_candidate_excluded_when_gain():
     """Positive G/L is never a harvest candidate."""
     lots = _make_lot(unrealized_gl=200.0, unrealized_gl_pct=0.20)
-    result = compute_harvest_candidates(lots)
+    result = _cands(lots)
     assert len(result) == 0
 
 
 def test_candidate_excluded_when_zero_gl():
     """Zero G/L is not a harvest candidate."""
     lots = _make_lot(unrealized_gl=0.0, unrealized_gl_pct=0.0)
-    result = compute_harvest_candidates(lots)
+    result = _cands(lots)
     assert len(result) == 0
 
 
 def test_empty_lots_returns_empty_list():
     """Empty DataFrame → empty list, no exception."""
-    assert compute_harvest_candidates(pd.DataFrame()) == []
+    assert _cands(pd.DataFrame()) == []
 
 
 # ── ST vs LT tax benefit differentiation ─────────────────────────────────────
 
 def test_st_loss_uses_st_tax_rate():
-    """ST lot: estimated_tax_benefit = abs(loss) × st_tax_rate (0.22)."""
+    """ST lot: estimated_tax_benefit = abs(loss) × st_tax_rate (0.30 here)."""
     lots = _make_lot(unrealized_gl=-200.0, unrealized_gl_pct=-0.20, tax_status="ST")
-    result = compute_harvest_candidates(lots, st_tax_rate=0.22, lt_tax_rate=0.15)
-    assert result[0]["estimated_tax_benefit"] == pytest.approx(200.0 * 0.22)
+    result = compute_harvest_candidates(lots, st_tax_rate=0.30, lt_tax_rate=0.12)
+    assert result[0]["estimated_tax_benefit"] == pytest.approx(200.0 * 0.30)
 
 
 def test_lt_loss_uses_lt_tax_rate():
-    """LT lot: estimated_tax_benefit = abs(loss) × lt_tax_rate (0.15)."""
+    """LT lot: estimated_tax_benefit = abs(loss) × lt_tax_rate (0.12 here)."""
     lots = _make_lot(unrealized_gl=-200.0, unrealized_gl_pct=-0.20, tax_status="LT")
-    result = compute_harvest_candidates(lots, st_tax_rate=0.22, lt_tax_rate=0.15)
-    assert result[0]["estimated_tax_benefit"] == pytest.approx(200.0 * 0.15)
+    result = compute_harvest_candidates(lots, st_tax_rate=0.30, lt_tax_rate=0.12)
+    assert result[0]["estimated_tax_benefit"] == pytest.approx(200.0 * 0.12)
 
 
 def test_st_benefit_exceeds_lt_benefit_for_same_dollar_loss():
@@ -119,7 +129,7 @@ def test_st_benefit_exceeds_lt_benefit_for_same_dollar_loss():
     lot_st = _make_lot(trade_id=1, unrealized_gl=-300.0, unrealized_gl_pct=-0.30, tax_status="ST")
     lot_lt = _make_lot(trade_id=2, unrealized_gl=-300.0, unrealized_gl_pct=-0.30, tax_status="LT")
     lots = pd.concat([lot_st, lot_lt], ignore_index=True)
-    result = compute_harvest_candidates(lots)
+    result = _cands(lots)
     st_benefit = next(c["estimated_tax_benefit"] for c in result if c["tax_status"] == "ST")
     lt_benefit = next(c["estimated_tax_benefit"] for c in result if c["tax_status"] == "LT")
     assert st_benefit > lt_benefit
@@ -138,7 +148,7 @@ def test_candidates_sorted_descending_by_tax_benefit():
         unrealized_gl=-400.0, unrealized_gl_pct=-0.40, tax_status="LT",
     )
     lots = pd.concat([small_loss, large_loss], ignore_index=True)
-    result = compute_harvest_candidates(lots)
+    result = _cands(lots)
     assert result[0]["ticker"] == "IEMG"
     assert result[1]["ticker"] == "VOO"
 
@@ -200,7 +210,7 @@ def test_high_risk_replacement_not_surfaced_as_actionable():
         ticker="PDBC", sleeve="Real Assets",
         unrealized_gl=-300.0, unrealized_gl_pct=-0.30,
     )
-    result = compute_harvest_candidates(lots)
+    result = _cands(lots)
     assert len(result) == 1
     assert result[0]["replacement_ticker"] is None
     assert "consult" in result[0]["replacement_rationale"].lower()
@@ -212,7 +222,7 @@ def test_wash_sale_window_is_30_days_each_side():
     """wash_sale_start = as_of − 30 days; wash_sale_end = as_of + 30 days."""
     as_of = date(2025, 6, 15)
     lots  = _make_lot(unrealized_gl=-200.0, unrealized_gl_pct=-0.20)
-    result = compute_harvest_candidates(lots, as_of=as_of)
+    result = _cands(lots, as_of=as_of)
     assert result[0]["wash_sale_start_date"] == as_of - timedelta(days=30)
     assert result[0]["wash_sale_end_date"]   == as_of + timedelta(days=30)
 
@@ -231,9 +241,51 @@ def test_pct_threshold_is_5_percent():
     assert HARVEST_PCT_THRESHOLD == pytest.approx(0.05)
 
 
-def test_default_st_tax_rate_is_22_percent():
-    assert DEFAULT_ST_TAX_RATE == pytest.approx(0.22)
+# ── The rates come from the federal profile, never typed (#727) ────────────────
+# These replace the two pins on the typed default rates: what those pinned is the rate
+# a harvested loss is priced at, which now comes from load_federal_tax.
+
+def test_no_rate_is_typed_and_none_is_defaulted():
+    import inspect
+    import src.harvest as h
+    assert not hasattr(h, "DEFAULT_ST_TAX_RATE") and not hasattr(h, "DEFAULT_LT_TAX_RATE")
+    params = inspect.signature(compute_harvest_candidates).parameters
+    for name in ("st_tax_rate", "lt_tax_rate"):
+        assert params[name].default is inspect.Parameter.empty, name
+        assert params[name].kind is inspect.Parameter.KEYWORD_ONLY, name
 
 
-def test_default_lt_tax_rate_is_15_percent():
-    assert DEFAULT_LT_TAX_RATE == pytest.approx(0.15)
+def test_harvest_rates_read_the_federal_profile():
+    """Short-term at the ordinary rate, long-term at the gains rate, for the profile's
+    tax year; with no NIIT, nothing is added."""
+    f = SYNTHETIC_FEDERAL
+    r = harvest_rates(f)
+    assert r == {"st_rate": pytest.approx(f["federal_marginal"]),
+                 "lt_rate": pytest.approx(f["federal_ltcg"]),
+                 "tax_year": f["tax_year"], "niit": 0.0, "problem": None}
+
+
+def test_harvest_rates_add_the_niit_to_both_where_it_applies():
+    from src.personal_profile import NIIT_RATE
+    f = synthetic_federal(niit_applies=True)
+    r = harvest_rates(f)
+    assert r["st_rate"] == pytest.approx(f["federal_marginal"] + NIIT_RATE)
+    assert r["lt_rate"] == pytest.approx(f["federal_ltcg"] + NIIT_RATE)
+    assert r["niit"] == pytest.approx(NIIT_RATE)
+
+
+def test_without_a_federal_profile_the_estimate_is_not_priced():
+    """No profile: no rate, so no benefit — None, never $0 — and the candidates are
+    ordered by the loss itself."""
+    r = harvest_rates({"federal_marginal": None, "federal_ltcg": None, "niit": None,
+                       "tax_year": None, "sources": {},
+                       "problem": "private/personal_profile.json has no federal_tax"})
+    assert r["st_rate"] is None and r["lt_rate"] is None
+    assert r["problem"] == "private/personal_profile.json has no federal_tax"
+    small = _make_lot(trade_id=1, unrealized_gl=-150.0, unrealized_gl_pct=-0.15)
+    large = _make_lot(trade_id=2, ticker="IEMG", unrealized_gl=-400.0,
+                      unrealized_gl_pct=-0.40, tax_status="ST")
+    out = compute_harvest_candidates(pd.concat([small, large], ignore_index=True),
+                                     st_tax_rate=r["st_rate"], lt_tax_rate=r["lt_rate"])
+    assert [c["estimated_tax_benefit"] for c in out] == [None, None]
+    assert [c["ticker"] for c in out] == ["IEMG", "VOO"]

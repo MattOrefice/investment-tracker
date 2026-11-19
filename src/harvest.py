@@ -13,10 +13,31 @@ import pandas as pd
 
 HARVEST_ACTION_THRESHOLD = 100.0   # minimum per-lot loss ($) for action recommendation
 HARVEST_PCT_THRESHOLD    = 0.05    # minimum per-lot loss (%) for action recommendation
-DEFAULT_ST_TAX_RATE      = 0.22    # assumed federal marginal rate on short-term capital gains
-DEFAULT_LT_TAX_RATE      = 0.15    # assumed federal long-term capital gains rate
+
+# No rate is typed here (#727). The estimate prices with the federal profile
+# (personal_profile.load_federal_tax): the owner's rates in personal mode, the
+# synthetic demo profile in demo. harvest_rates reads them.
 
 WASH_SALE_WINDOW_DAYS = 30
+
+
+def harvest_rates(federal: dict) -> dict:
+    """The federal rates a harvested loss is priced at, from load_federal_tax's result:
+        {st_rate, lt_rate, tax_year, niit, problem}
+
+    A short-term loss offsets gains taxed at the ordinary rate, a long-term loss gains
+    taxed at the long-term gains rate. The net investment income tax reaches every gain
+    (#724), so where it applies it is added to both. State and local taxes are not
+    included. With no federal profile the rates are None and ``problem`` says why: the
+    estimate is then not priced, rather than priced at a typed rate.
+    """
+    if federal.get("problem") or federal.get("federal_marginal") is None:
+        return {"st_rate": None, "lt_rate": None, "tax_year": None, "niit": None,
+                "problem": federal.get("problem") or "no federal rates"}
+    niit = float(federal["niit"])
+    return {"st_rate": float(federal["federal_marginal"]) + niit,
+            "lt_rate": float(federal["federal_ltcg"]) + niit,
+            "tax_year": int(federal["tax_year"]), "niit": niit, "problem": None}
 
 # ── Replacement map ───────────────────────────────────────────────────────────
 # ticker → (replacement_ticker | None, rationale, wash_sale_risk_level)
@@ -127,12 +148,14 @@ def compute_harvest_candidates(
     lots: pd.DataFrame,
     action_threshold: float = HARVEST_ACTION_THRESHOLD,
     pct_threshold: float = HARVEST_PCT_THRESHOLD,
-    st_tax_rate: float = DEFAULT_ST_TAX_RATE,
-    lt_tax_rate: float = DEFAULT_LT_TAX_RATE,
+    *,
+    st_tax_rate: float | None,
+    lt_tax_rate: float | None,
     as_of: date | None = None,
 ) -> list[dict]:
     """
-    Return harvest candidate lots sorted descending by estimated_tax_benefit.
+    Return harvest candidate lots sorted descending by estimated_tax_benefit, or by
+    unrealized loss when the benefit is not priced.
 
     A lot qualifies only when ALL three conditions hold:
       - unrealized_gl < 0 (is a loss)
@@ -142,6 +165,8 @@ def compute_harvest_candidates(
     Tax benefit uses the lot's tax_status:
       ST loss → benefit = abs(loss) × st_tax_rate
       LT loss → benefit = abs(loss) × lt_tax_rate
+    The rates have no default (#727): the caller passes harvest_rates' figures. A rate
+    of None leaves that lot's estimated_tax_benefit None — not priced, never $0.
 
     Entries in REPLACEMENT_MAP with risk_level == "high" are not surfaced as
     actionable swaps; replacement_ticker is set to None with an explanatory
@@ -151,8 +176,8 @@ def compute_harvest_candidates(
         lots: DataFrame from get_lot_inventory().
         action_threshold: minimum dollar loss magnitude (default 100.0).
         pct_threshold: minimum fractional loss magnitude (default 0.05 = 5%).
-        st_tax_rate: federal marginal rate for short-term losses (default 0.22).
-        lt_tax_rate: federal LTCG rate for long-term losses (default 0.15).
+        st_tax_rate: rate for short-term losses (harvest_rates' st_rate), or None.
+        lt_tax_rate: rate for long-term losses (harvest_rates' lt_rate), or None.
         as_of: reference date for wash-sale window (defaults to today).
 
     Returns:
@@ -187,7 +212,7 @@ def compute_harvest_candidates(
         ticker     = str(lot["ticker"])
         tax_status = str(lot["tax_status"])
         tax_rate   = st_tax_rate if tax_status == "ST" else lt_tax_rate
-        benefit    = abs(gl) * tax_rate
+        benefit    = None if tax_rate is None else abs(gl) * tax_rate
 
         entry = REPLACEMENT_MAP.get(ticker)
         if entry is None:
@@ -224,5 +249,7 @@ def compute_harvest_candidates(
             }
         )
 
-    candidates.sort(key=lambda c: c["estimated_tax_benefit"], reverse=True)
+    priced = all(c["estimated_tax_benefit"] is not None for c in candidates)
+    key = "estimated_tax_benefit" if priced else "unrealized_loss"
+    candidates.sort(key=lambda c: c[key], reverse=True)
     return candidates

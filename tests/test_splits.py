@@ -267,8 +267,8 @@ def test_a_held_position_crossing_a_split_is_unresolved_with_its_reason(book, mo
     assert tax_lots.summary_metrics(lots)["cost_basis_total"] == pytest.approx(
         valued["cost_basis_total"].sum())
     assert tax_lots.not_valued_note(lots).startswith(f"VTV's {len(held)} lot")
-    assert "VTV" not in {c["ticker"] for c in compute_harvest_candidates(lots, action_threshold=0,
-                                                                          pct_threshold=0)}
+    assert "VTV" not in {c["ticker"] for c in compute_harvest_candidates(
+        lots, action_threshold=0, pct_threshold=0, st_tax_rate=None, lt_tax_rate=None)}
 
 
 def test_inside_a_quarter_lock_the_position_is_valued_as_the_lock_holds_it(book, monkeypatch):
