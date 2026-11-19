@@ -653,7 +653,7 @@ def build_strategic_comparison() -> pd.DataFrame:
         ("Fixed income duration", "Intermediate Treasury + TIPS",               "Mixed; mostly credit-spread risk"),
         ("Real assets",           "Strategic 10% (commodities + REIT)",         "Token gestures (gold + REIT)"),
         ("Thematic",              "None (Phase 10 Asset Eval declined Bitcoin)", "Many small positions across themes"),
-        ("Single stocks",         "None",                                       "One position (MCO)"),
+        ("Single stocks",         "None",                                       "One position (employer stock)"),
         ("Active management",     "None",                                       "Hedged equity, multi-sector FI and GAOSX"),
         ("Tax-location",          "Designed-in",                                "Not the priority"),
     ]
@@ -1478,7 +1478,7 @@ def build_single_stock_summary(
 ) -> str:
     """Return a one-line single-stock exposure summary.
 
-    Example: "Single-stock exposure: $5,000 (2.5%) — Moody's (MCO)."
+    Example: "Single-stock exposure: $5,000 (2.5%) — Example Corp (XYZ)."
     """
     sec = securities_df[["ticker", "name", "sleeve_category"]].copy()
     single_stocks = (

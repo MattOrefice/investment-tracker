@@ -63,5 +63,5 @@ IBB,iShares Biotechnology ETF,thematic,high,false,Biotech thematic
 XLV,Health Care Select Sector SPDR Fund,us_sector_healthcare,high,false,Healthcare sector
 FINX,Global X FinTech ETF,thematic,high,false,Fintech thematic
 IBIT,iShares Bitcoin Trust,crypto,low,false,Spot Bitcoin ETF — not in SAA (per Phase 10 Asset Evaluation framework)
-MCO,Moody's Corporation,single_stock,high,false,Single stock position
+MCO,Single stock,single_stock,high,false,Single stock position
 UFO,Procure Space ETF,thematic,high,false,Space thematic ETF held in Roth

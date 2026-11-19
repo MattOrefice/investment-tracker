@@ -331,3 +331,63 @@ def load_federal_tax(is_demo: bool) -> dict:
     if problem:
         return {**none, "source": "invalid", "problem": problem}
     return {**fed, "source": "private/personal_profile.json", "problem": None}
+
+
+def _withheld(raw) -> "tuple[dict | None, str | None]":
+    """The withheld names from a ``withheld_names`` object, or (None, why not)."""
+    if not isinstance(raw, dict):
+        return None, "withheld_names is not an object"
+    names = raw.get("names")
+    if (not isinstance(names, list) or not names
+            or not all(isinstance(n, dict) and str(n.get("name") or "").strip()
+                       for n in names)):
+        return None, "withheld_names.names is not a list of {name, kind} entries"
+    tickers = raw.get("employer_stock_tickers", [])
+    if not isinstance(tickers, list) or not all(isinstance(t, str) and t.strip()
+                                                for t in tickers):
+        return None, "withheld_names.employer_stock_tickers is not a list of tickers"
+    out = {"names": [str(n["name"]).strip() for n in names],
+           "employer_stock_tickers": [t.strip() for t in tickers]}
+    for key in ("account_labels", "security_names"):
+        value = raw.get(key, {})
+        if not isinstance(value, dict) or not all(
+                isinstance(k, str) and isinstance(v, str) and v.strip()
+                for k, v in value.items()):
+            return None, f"withheld_names.{key} is not an object of names"
+        out[key] = {k: v.strip() for k, v in value.items()}
+    return out, None
+
+
+def load_withheld_names(is_demo: bool) -> dict:
+    """The names committed text must never carry, and the real labels the personal book
+    shows in their place (#725):
+        {names, employer_stock_tickers, account_labels, security_names, source, problem}
+
+    ``names`` are employers and workplace-plan providers; ``employer_stock_tickers``
+    are tickers committed text must not tie to an employer. ``account_labels`` (by
+    pseudonym) and ``security_names`` (by ticker) are what bootstrap_personal_db writes
+    into the personal book instead of the seeds' neutral labels.
+
+    Demo has none: it returns empty collections and no problem. Personal reads
+    ``withheld_names`` from private/personal_profile.json; absent or invalid, the
+    collections are empty and ``problem`` says why, so the seeds' neutral labels stand.
+    """
+    empty = {"names": [], "employer_stock_tickers": [], "account_labels": {},
+             "security_names": {}}
+    if is_demo:
+        return {**empty, "source": "demo", "problem": None}
+    if not _PROFILE_PATH.exists():
+        return {**empty, "source": "absent",
+                "problem": "private/personal_profile.json does not exist"}
+    try:
+        raw = json.loads(_PROFILE_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {**empty, "source": "invalid",
+                "problem": "private/personal_profile.json could not be read as JSON"}
+    if not isinstance(raw, dict) or "withheld_names" not in raw:
+        return {**empty, "source": "absent",
+                "problem": "private/personal_profile.json has no withheld_names"}
+    found, problem = _withheld(raw["withheld_names"])
+    if problem:
+        return {**empty, "source": "invalid", "problem": problem}
+    return {**found, "source": "private/personal_profile.json", "problem": None}

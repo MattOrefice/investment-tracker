@@ -402,7 +402,7 @@ def test_fund_intl_tilts_prose_no_literal_and_placeholders_resolve():
     ])
     acct = pd.DataFrame([
         {"pseudonym": "acct_01", "display_name": "Individual Taxable (Self-Directed)", "tax_treatment": "taxable"},
-        {"pseudonym": ROLLOVER_SOURCE_PSEUDONYM, "display_name": "MissionSquare 401(k)", "tax_treatment": "workplace_plan"},
+        {"pseudonym": ROLLOVER_SOURCE_PSEUDONYM, "display_name": "Former employer's 401(k)", "tax_treatment": "workplace_plan"},
         {"pseudonym": "acct_taxable_02", "display_name": "Individual Taxable (TOD)", "tax_treatment": "taxable"},
     ])
     sec = pd.DataFrame(columns=["ticker", "sleeve_category"])
@@ -697,7 +697,8 @@ AUTHORED_PROSE_LEN = {
     "frozen_tod_income":         (408, 369),
     "saa_sleeves_taxable":       (349, 669),
     "predeploy_stranded_equity": (334, 540),
-    "fund_intl_tilts":           (936, 1209),
+    # +10 (#725): the plan provider's name became the {rollover_source_label} sentinel.
+    "fund_intl_tilts":           (946, 1209),
 }
 
 

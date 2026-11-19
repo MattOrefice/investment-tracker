@@ -41,30 +41,40 @@ _ACCOUNTS: list[tuple[str, str, str, str, int]] = [
     ("taxable",         "external", "acct_taxable_02",  "Individual Taxable (TOD)", 1),
     ("traditional_ira", "external", "acct_trad_ira_01", "Traditional IRA", 1),
     ("roth_ira",        "external", "acct_roth_01",     "Roth IRA", 1),
-    # 0% vested — forfeitable Moody's employer money (holds the small Fidelity
-    # Freedom 2065 position), not the user's asset. Excluded from household
-    # totals/allocation/liquidity. Its Fidelity account is literally named
-    # "MOODY'S PPP"; account_map.json binds that raw account to acct_wkpl_01.
-    ("workplace_plan",  "external", "acct_wkpl_01",     "Moody's PPP", 0),
-    # Fully-vested former-employer (MissionSquare) 401(k) — the user's own asset,
-    # and their single largest position: the American Funds 2060 (RFUTX) target-
-    # date fund. Included in the household; the rollover source (see
-    # ROLLOVER_SOURCE_PSEUDONYM). account_map.json binds RFUTX's raw account here.
-    ("workplace_plan",  "external", "acct_wkpl_02",     "MissionSquare 401(k)", 1),
+    # 0% vested — forfeitable money in a former employer's plan (it holds a small
+    # target-date position), not the user's asset. Excluded from household
+    # totals/allocation/liquidity. account_map.json binds that raw account to
+    # acct_wkpl_01.
+    ("workplace_plan",  "external", "acct_wkpl_01",     "Former employer's plan (unvested)", 0),
+    # Fully-vested former employer's 401(k) — the user's own asset, and their single
+    # largest position: the American Funds 2060 (RFUTX) target-date fund. Included in
+    # the household; the rollover source (see ROLLOVER_SOURCE_PSEUDONYM).
+    # account_map.json binds RFUTX's raw account here.
+    ("workplace_plan",  "external", "acct_wkpl_02",     "Former employer's 401(k)", 1),
     ("hsa",             "external", "acct_hsa_01",      "HSA", 1),
 ]
+# The labels above are neutral on purpose (#725): committed text names no employer or
+# workplace-plan provider. The real labels live in private/personal_profile.json
+# (`withheld_names.account_labels`), and bootstrap_personal_db passes them in, so the
+# personal book and its pages keep them.
 
 
-def seed_household_accounts(db_path: str | Path) -> None:
+def seed_household_accounts(db_path: str | Path,
+                            labels: "dict[str, str] | None" = None) -> None:
     """UPSERT the 6 household accounts into the accounts table, keyed on pseudonym.
+
+    ``labels`` maps a pseudonym to the display_name it carries instead of the neutral
+    one in _ACCOUNTS: the private labels, passed by bootstrap_personal_db.
 
     The 7th household account — the self-directed taxable book — is acct_01, the
     db.py base account, NOT seeded here (see the _ACCOUNTS note above)."""
     db_path = Path(db_path)
+    labels = labels or {}
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     try:
         for tax_treat, managed_by, pseudonym, display_name, included in _ACCOUNTS:
+            display_name = labels.get(pseudonym, display_name)
             acct_type = _TAX_TO_TYPE.get(tax_treat, "other")
             try:
                 conn.execute(

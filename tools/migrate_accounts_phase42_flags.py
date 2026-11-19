@@ -34,7 +34,7 @@ key stays valid), drop the old table, rename, and rebuild the pseudonym unique i
 Data safety:
   - Every existing explicit value survives — the copy is column-by-column, not a
     reseed. An account already marked included_in_household=0 (e.g. the forfeitable
-    Moody's PPP sleeve) stays 0; a household account marked 1 stays 1.
+    former-employer plan) stays 0; a household account marked 1 stays 1.
   - The trades -> accounts FK is checked with PRAGMA foreign_key_check AFTER the
     rebuild; a violation raises and the change is abandoned rather than committed.
   - Idempotent: if the accounts table already carries the conservative defaults, it
