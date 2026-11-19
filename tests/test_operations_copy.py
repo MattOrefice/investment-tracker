@@ -6,13 +6,10 @@ that carries a cell to one text: the tool's table, both committed books, and the
 modules wherever they hold a cell verbatim (the system theses' exit conditions, and
 SLEEVE_META's exit, invalidation and expected-return fields for the sleeve theses).
 
-SUPERSEDED IN PART (#710). Thesis 19's macro_view, vehicle_rationale and view_summary hold
-one sentence that tools/migrate_vgit_state_exemption.py rewrote after this sweep, so that
-the books name no state. The sweep's table keeps its own text, because a migration's data
-is kept as it was (#710), so those three cells are held to the sweep's text with that one
-sentence swapped. The tool overwrites whatever a cell holds, so a re-run writes the old
-sentence back into those three cells; the #710 tool, run after it, restores them. Both
-are asserted below, so the order is visible rather than remembered.
+Thesis 19's macro_view, vehicle_rationale and view_summary hold one sentence that
+tools/migrate_vgit_state_exemption.py rewrote after this sweep, so that the books name no
+state (#710). The sweep's table carries the rewritten text (#720), so a re-run writes
+today's prose and changes nothing, and the #710 tool finds nothing left to do.
 """
 import importlib.util
 import shutil
@@ -22,13 +19,14 @@ from pathlib import Path
 import pytest
 
 import tools.migrate_vgit_state_exemption as state_exemption
+from tests.us_states import codes_in_text, states_named
 
 ROOT = Path(__file__).resolve().parent.parent
 BOOKS = [ROOT / "data" / "demo.db", ROOT / "tests" / "fixtures" / "frozen_book.db"]
 META_FIELDS = ("exit_conditions", "invalidation_conditions", "expected_return_scenario")
 
 # The cells #710 rewrote after this sweep: (thesis id, column).
-SUPERSEDED = {("19", "macro_view"), ("19", "vehicle_rationale"), ("19", "view_summary")}
+REWRITTEN_BY_710 = {("19", "macro_view"), ("19", "vehicle_rationale"), ("19", "view_summary")}
 
 
 def _tool():
@@ -48,13 +46,6 @@ def _cell(book, thesis_id, col):
         con.close()
 
 
-def _after_710(text: str) -> str:
-    """The sweep's text with the one sentence #710 rewrote, swapped as its tool swaps it."""
-    found = state_exemption.OLD_SENTENCE.findall(text)
-    assert len(found) == 1, "a superseded cell holds the #710 sentence exactly once"
-    return state_exemption.OLD_SENTENCE.sub(state_exemption.NEW_SENTENCE, text, count=1)
-
-
 @pytest.mark.parametrize("book", BOOKS, ids=lambda p: p.name)
 def test_both_books_carry_every_swept_cell(book):
     new = _tool().NEW
@@ -64,11 +55,10 @@ def test_both_books_carry_every_swept_cell(book):
     # which this table carries now instead of tools/migrate_copy_corrections.py; plus
     # thesis 8's expected return, whose typed P/E figures were dropped (item 1, 09-28).
     assert sum(len(cols) for cols in new.values()) == 61
-    assert SUPERSEDED <= {(tid, col) for tid, cols in new.items() for col in cols}
+    assert REWRITTEN_BY_710 <= {(tid, col) for tid, cols in new.items() for col in cols}
     for tid, cols in new.items():
         for col, text in cols.items():
-            want = _after_710(text) if (tid, col) in SUPERSEDED else text
-            assert _cell(book, int(tid), col) == want, (book.name, tid, col)
+            assert _cell(book, int(tid), col) == text, (book.name, tid, col)
 
 
 def test_the_seeds_hold_the_books_text_where_they_hold_a_cell():
@@ -120,21 +110,31 @@ def _all_cells(book) -> dict:
         con.close()
 
 
-def test_a_second_run_changes_only_the_cells_710_superseded(tmp_path, monkeypatch, capsys):
-    """On the committed book the sweep finds every cell at its text except the three #710
-    rewrote, and writes those three back. The #710 tool, run after it, restores the
-    committed cells exactly."""
+def test_a_second_run_changes_nothing(tmp_path, monkeypatch, capsys):
+    """On the committed book the sweep finds every cell at its text, thesis 19's three
+    included, and writes nothing (#720); the #710 tool then finds nothing to do."""
     mod, copy, out = _run_on_copy(tmp_path, monkeypatch, capsys)
-    assert f"demo.db: {len(SUPERSEDED)} thesis cell(s) changed" in out, out
-    before, after = _all_cells(BOOKS[0]), _all_cells(copy)
-    assert {k for k in before if before[k] != after[k]} == SUPERSEDED
-    state_exemption.migrate(copy)
-    assert _all_cells(copy) == before
+    assert "demo.db: 0 thesis cell(s) changed" in out, out
+    assert _all_cells(copy) == _all_cells(BOOKS[0])
+    outcomes = state_exemption.migrate(copy)
+    assert {k: v for k, v in outcomes.items() if v == "updated"} == {}, outcomes
+    assert _all_cells(copy) == _all_cells(BOOKS[0])
+
+
+def test_thesis_19_carries_the_710_sentence_and_names_no_state():
+    """The three cells #710 rewrote hold its sentence once and the old one not at all,
+    so the tool's constants need no exemption from the state census."""
+    new = _tool().NEW
+    for tid, col in REWRITTEN_BY_710:
+        text = new[tid][col]
+        assert text.count(state_exemption.NEW_SENTENCE) == 1, (tid, col)
+        assert not state_exemption.OLD_SENTENCE.findall(text), (tid, col)
+        assert states_named(text) == [] and codes_in_text(text) == [], (tid, col)
 
 
 def test_the_tool_rewrites_a_cell_that_drifted(tmp_path, monkeypatch, capsys):
     """The positive control for the test above: a run that finds one more cell off
     changes that cell too, back to the table's text."""
     mod, copy, out = _run_on_copy(tmp_path, monkeypatch, capsys, drift=("drifted", 4))
-    assert f"demo.db: {1 + len(SUPERSEDED)} thesis cell(s) changed" in out, out
+    assert "demo.db: 1 thesis cell(s) changed" in out, out
     assert _cell(copy, 4, "macro_view") == mod.NEW["4"]["macro_view"]

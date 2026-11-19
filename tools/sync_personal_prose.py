@@ -7,7 +7,7 @@ its holding_rationale text up to what shipped in the seed:
 
     python tools/sync_personal_prose.py
 
-It runs the five personal prose migrations in CHRONOLOGICAL order — the order the
+It runs the personal prose migrations in CHRONOLOGICAL order — the order the
 edits actually landed, which is deliberately NOT filename-sorted order:
 
     1. migrate_personal_vea_rationale        (drop the stale 19% weight)
@@ -15,6 +15,12 @@ edits actually landed, which is deliberately NOT filename-sorted order:
     3. migrate_personal_revisit_clause_bold  (bold + split the five existing revisit clauses)
     4. migrate_personal_missing_falsifiers   (add the five missing falsifiers; PDBC opening rewrite)
     5. migrate_personal_vgit_jurisdiction    (VGIT: the DC reference replaced, #283)
+    6. migrate_vgit_state_exemption          (VGIT: the sentence names no state, #710)
+
+Step 6 rewrites the sentence step 5 wrote, so step 5 treats a book that already
+carries the #710 sentence as done (#720), and a book at any of VGIT's three texts
+(before #283, after it, after #710) ends at the #710 text. Step 6 takes the book on its
+command line, never defaulted; the runner passes tracker.db.
 
 Today's per-ticker substring swaps happen to be order-independent, but that is
 coincidental, not guaranteed — the real order is encoded here so a future
@@ -27,11 +33,16 @@ did/didn't run. It never catches-and-continues — a half-applied prose sync is
 exactly the state this exists to prevent. Safe to run repeatedly; on a fully
 synced DB every step reports "already-applied" and nothing is written.
 
+KNOWN STOP (#732). Steps 2 and 4 read their target text from TODAY's seed, and the seed
+has been edited since each was written. On a book whose text has moved past them they
+abort, so on the personal book as it stands the runner stops at step 2 and steps 3 to 6
+do not run through it. What those two steps should do is an open decision (#732).
+
 WHY this is a manual runner and not an auto-discovered bootstrap migration
 --------------------------------------------------------------------------
 src/bootstrap.run_pending_migrations auto-runs every tools/migrate_*.py that
 exposes migrate_db(db_path); modules exposing only main() are deliberately skipped
-(bootstrap.py documents this for the SAA migrations). These five are main()-only
+(bootstrap.py documents this for the SAA migrations). These are all main()-only
 ON PURPOSE — auto-running them on bootstrap is wrong for three concrete reasons:
 
   - Ordering. run_pending_migrations fires at bootstrap step 3, BEFORE
@@ -59,6 +70,11 @@ from pathlib import Path
 _TOOLS = Path(__file__).resolve().parent
 sys.path.insert(0, str(_TOOLS.parent))  # repo root — so each migration's `from src...` resolves
 
+TRACKER_DB = _TOOLS.parent / "data" / "tracker.db"
+# Books this runner refuses whatever it is handed: the committed ones.
+_NEVER = (_TOOLS.parent / "data" / "demo.db",
+          _TOOLS.parent / "tests" / "fixtures" / "frozen_book.db")
+
 # Chronological / dependency order — NOT filename order (see module docstring).
 _MIGRATIONS = [
     "migrate_personal_vea_rationale",
@@ -69,7 +85,13 @@ _MIGRATIONS = [
     # a different sentence — so it is order-free in fact, and appended last because
     # this list encodes WHEN edits landed, not what depends on what.
     "migrate_personal_vgit_jurisdiction",
+    # #710/#720. Rewrites the sentence step 5 wrote so that it names no state; step 5
+    # reports a book already carrying it as done.
+    "migrate_vgit_state_exemption",
 ]
+# Steps whose main() takes the book on its command line rather than a TRACKER_DB
+# constant. Their output names each cell's outcome; "updated" is a write.
+_TAKES_THE_BOOK = frozenset({"migrate_vgit_state_exemption"})
 
 
 def _load(name: str):
@@ -86,17 +108,29 @@ def _emit(reason: str) -> None:
 
 
 def main() -> int:
+    return run(TRACKER_DB)
+
+
+def run(db_path: Path) -> int:
+    """The sync against ``db_path``: tracker.db from main(); a scratch copy of it in a
+    test. Every step is pointed at that one book, and a committed book is refused."""
+    db_path = Path(db_path)
+    if any(db_path.resolve() == p.resolve() for p in _NEVER):
+        print(f"ABORT: {db_path} is a committed book; this runner writes the personal one.")
+        return 1
     n = len(_MIGRATIONS)
-    print(f"Personal prose sync — {n} migrations against tracker.db, in chronological order.\n")
+    print(f"Personal prose sync — {n} migrations against {db_path.name}, in chronological order.\n")
 
     applied: list[str] = []
     already: list[str] = []
     for i, name in enumerate(_MIGRATIONS, 1):
         mod = _load(name)
+        if hasattr(mod, "TRACKER_DB"):
+            mod.TRACKER_DB = db_path
         buf = io.StringIO()
         try:
             with redirect_stdout(buf):
-                rc = mod.main()
+                rc = mod.main([str(db_path)]) if name in _TAKES_THE_BOOK else mod.main()
         except Exception as exc:  # unexpected — never swallow; name the culprit and stop
             print(f"[{i}/{n}] {name}: ERROR — {type(exc).__name__}: {exc}")
             _emit(buf.getvalue().strip())
@@ -117,7 +151,11 @@ def main() -> int:
                   "(completed steps are no-ops).")
             return rc
 
-        status = "already-applied" if "nothing to do" in reason else "applied"
+        if name in _TAKES_THE_BOOK:
+            wrote = any(line.endswith(": updated") for line in reason.splitlines())
+        else:
+            wrote = "nothing to do" not in reason
+        status = "applied" if wrote else "already-applied"
         (already if status == "already-applied" else applied).append(name)
         print(f"[{i}/{n}] {name}: {status}")
         _emit(reason)
@@ -127,7 +165,7 @@ def main() -> int:
         print("  applied:         " + ", ".join(applied))
     if already:
         print("  already-applied: " + ", ".join(already))
-    print("tracker.db prose is in sync with the shipped seed.")
+    print(f"{db_path.name} prose is in sync with the shipped seed.")
     return 0
 
 
