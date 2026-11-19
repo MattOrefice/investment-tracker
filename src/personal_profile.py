@@ -300,7 +300,8 @@ def _federal(raw) -> "tuple[dict | None, str | None]":
 
 
 def load_federal_tax(is_demo: bool) -> dict:
-    """Return the federal rates the Liquidity and Asset Location pages price with (#724):
+    """Return the federal rates the Liquidity and Asset Location pages price with (#724),
+    and Tax Lots' harvest estimate (#727):
         {federal_marginal, federal_ltcg, niit, tax_year, sources, source, problem}
 
     ``niit`` is the net investment income tax's rate where it applies (NIIT_RATE) and

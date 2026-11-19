@@ -216,10 +216,19 @@ def _register(pos, acct, sec, profile):
                                    lc.ACCOUNT_SHELTER_PRIORITY)
 
 
+def _hr(profile: dict, total: float = 0.0, income_known: bool = True,
+        year: "int | None" = None) -> dict:
+    """A 0% budget as capital_gains_headroom returns it, for ``profile``'s tax year
+    unless ``year`` is given."""
+    year = profile["tax_year"] if year is None else year
+    return {"income_known": income_known, "total": total, "consumed": 0.0,
+            "remaining": total, "tax_year": year, "ceiling": lc.ltcg_zero_rate_ceiling(year)}
+
+
 @pytest.mark.parametrize("residence", [DEMO_TAX_RESIDENCE, OTHER_RESIDENCE, NO_RESIDENCE])
 def test_the_rate_placeholders_are_read_from_the_profile(residence):
     profile = _profile(residence)
-    hr = {"income_known": True, "total": 0.0, "consumed": 0.0, "remaining": 0.0}
+    hr = _hr(profile)
     out = la._rate_placeholders(profile, hr)
     assert out["gain_rate"] == f"{lc.ltcg_rate(profile):.2%}"
     if profile["state_ltcg"] > 0:
@@ -228,19 +237,31 @@ def test_the_rate_placeholders_are_read_from_the_profile(residence):
                                           f"{profile['state_ltcg']:.2%} state and local")
     else:
         assert "no state or local tax is included" in out["gain_rate_parts"]
-    assert out["bracket_sentence"] == "2026 income puts the 0% bracket out of reach."
+    assert out["bracket_sentence"] == (f"The configured income puts tax year "
+                                       f"{profile['tax_year']}'s 0% bracket out of reach.")
 
 
 def test_the_bracket_sentence_is_chosen_by_the_computed_budget():
     p = SYNTHETIC_TAX_PROFILE
-    assert la._rate_placeholders(p, {"income_known": False, "total": 0.0,
-                                      "consumed": 0.0, "remaining": 0.0})[
+    y = p["tax_year"]
+    assert la._rate_placeholders(p, _hr(p, income_known=False))[
         "bracket_sentence"].startswith("No income is configured")
-    room = la._rate_placeholders(p, {"income_known": True, "total": 1234.0,
-                                     "consumed": 0.0, "remaining": 1234.0})
-    assert room["bracket_sentence"] == ("The 0% bracket still has $1,234 of room in 2026, "
-                                        "which these figures do not deduct.")
+    room = la._rate_placeholders(p, _hr(p, total=1234.0))
+    assert room["bracket_sentence"] == (f"The 0% bracket still has $1,234 of room in "
+                                        f"tax year {y}, which these figures do not deduct.")
     assert la._rate_placeholders(None, {})["gain_rate"] is None
+
+
+def test_the_bracket_sentence_names_its_tax_year_and_borrows_no_other_years_ceiling():
+    """#728: the sentence names the rates' tax year, and the budget must be that year's.
+    A year with no recorded ceiling says so; a budget for another year is refused."""
+    p = {**SYNTHETIC_TAX_PROFILE, "tax_year": 2031}
+    none = la._rate_placeholders(p, _hr(p))
+    assert lc.ltcg_zero_rate_ceiling(2031) is None
+    assert none["bracket_sentence"] == ("No 0% ceiling is recorded for tax year 2031, so "
+                                        "the 0% bracket is treated as used up.")
+    with pytest.raises(ValueError, match="tax year 2026, the rates for 2027"):
+        la._rate_placeholders(SYNTHETIC_TAX_PROFILE, _hr(SYNTHETIC_TAX_PROFILE, year=2026))
 
 
 @pytest.mark.parametrize("key", ["relocate_gain_side", "frozen_tod_income", "thematic_sprawl"])
@@ -328,7 +349,7 @@ def test_the_zero_bracket_does_not_cover_the_net_investment_income_tax():
     assert rec["tax"] == pytest.approx(4000.0 * (N["state_ltcg"] + N["niit"]))
     _g, rec = _review(4000.0, N, 0.0)
     assert rec["tax"] == pytest.approx(4000.0 * lc.ltcg_rate(N))
-    hr = {"income_known": True, "total": 0.0, "consumed": 0.0, "remaining": 0.0}
+    hr = _hr(N)
     out = la._rate_placeholders(N, hr)
     assert out["gain_rate"] == f"{lc.ltcg_rate(N):.2%}"
     assert out["gain_rate_parts"] == (f"tax year {N['tax_year']}: {N['federal_ltcg']:.0%} "

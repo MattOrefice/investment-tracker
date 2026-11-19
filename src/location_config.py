@@ -638,12 +638,28 @@ RELOCATION_IS_CATEGORICALLY_WRONG: frozenset[str] = frozenset({"high_yield_muni"
 # rather than reinventing one. USER-EDITABLE.
 MIN_ANNUAL_BENEFIT: float = 1.00
 
-# The single-filer 0% long-term-cap-gains ceiling — TAX LAW, so it belongs here
-# alongside the other IRS figures. The 0% LTCG bracket is a finite BUDGET, not a
-# rate: realized long-term gains are federally untaxed up to
+# The single-filer 0% long-term-cap-gains ceiling, BY TAX YEAR (#728) — TAX LAW, so it
+# belongs here alongside the other IRS figures. The 0% LTCG bracket is a finite BUDGET,
+# not a rate: realized long-term gains are federally untaxed up to
 # (ceiling − ordinary income), then taxed at the federal gains rate
 # (personal_profile.load_federal_tax).
-LTCG_0_BRACKET_CEILING_SINGLE_2026: float = 48_350.0
+#
+# Each entry is the "maximum zero rate amount" for All Other Individuals, read off that
+# year's IRS inflation-adjustment revenue procedure, section 3.03: the same tables the
+# federal rates in private/personal_profile.json are read from (#724). The headroom
+# takes the entry for the tax year the federal profile names, so the year on the page
+# and the ceiling under it are one year's. A tax year with no entry has no ceiling, and
+# the budget is withheld rather than borrowed from another year.
+LTCG_ZERO_RATE_CEILING_SINGLE: dict[int, dict] = {
+    2026: {"amount": 49_450.0,
+           "source": "Rev. Proc. 2025-32 (IR-2025-103), section 3.03, All Other "
+                     "Individuals, maximum zero rate amount",
+           "source_date": "October 9, 2025"},
+    2027: {"amount": 51_050.0,
+           "source": "Rev. Proc. 2026-35 (IR-2026-133), section 3.03, All Other "
+                     "Individuals, maximum zero rate amount",
+           "source_date": "November 5, 2026"},
+}
 
 # Ordinary income is NOT here. It is the owner's real salary, this file is tracked,
 # and the repo is public — so it lives in private/personal_profile.json (gitignored)
@@ -651,17 +667,25 @@ LTCG_0_BRACKET_CEILING_SINGLE_2026: float = 48_350.0
 # module for why an absent profile yields UNKNOWN rather than zero.
 
 
-def ltcg_headroom(ordinary_income: float | None) -> float | None:
-    """Remaining 0%-bracket budget: (ceiling − income), floored at zero.
+def ltcg_zero_rate_ceiling(tax_year: int | None) -> dict | None:
+    """The 0%-rate ceiling entry for ``tax_year`` ({amount, source, source_date}), or
+    None when the year has no entry (or is unknown)."""
+    return None if tax_year is None else LTCG_ZERO_RATE_CEILING_SINGLE.get(int(tax_year))
 
-    Returns None when income is unknown — the caller must decide how to present
-    that. Explicitly NOT `max(0, ceiling - 0)`: treating unknown income as zero
-    would report the entire ceiling as free headroom, which is the one wrong
-    answer here with a real cost (realizing gains that are actually taxed).
+
+def ltcg_headroom(ordinary_income: float | None, tax_year: int | None) -> float | None:
+    """Remaining 0%-bracket budget for ``tax_year``: (ceiling − income), floored at zero.
+
+    Returns None when income is unknown or the tax year has no ceiling — the caller
+    must decide how to present that. Explicitly NOT `max(0, ceiling - 0)`: treating
+    unknown income as zero would report the entire ceiling as free headroom, which is
+    the one wrong answer here with a real cost (realizing gains that are actually
+    taxed). Nor another year's ceiling for a year with none.
     """
-    if ordinary_income is None:
+    ceiling = ltcg_zero_rate_ceiling(tax_year)
+    if ordinary_income is None or ceiling is None:
         return None
-    return max(0.0, LTCG_0_BRACKET_CEILING_SINGLE_2026 - float(ordinary_income))
+    return max(0.0, ceiling["amount"] - float(ordinary_income))
 
 # ── IRS 2026 figures — verify annually (tax year 2026) ──────────────────────────
 # STATIC tax-law limits — contribution ceilings and income/eligibility phase-outs.

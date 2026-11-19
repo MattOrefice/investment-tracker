@@ -376,28 +376,52 @@ def test_personal_profile_income_is_read(monkeypatch, tmp_path):
 
 def test_ltcg_headroom_unknown_income_returns_none():
     from src.location_config import ltcg_headroom
-    assert ltcg_headroom(None) is None
+    assert ltcg_headroom(None, 2026) is None
 
 
 def test_ltcg_headroom_never_reports_full_ceiling_for_unknown_income():
     """The specific wrong answer this design exists to prevent."""
-    from src.location_config import ltcg_headroom, LTCG_0_BRACKET_CEILING_SINGLE_2026
-    assert ltcg_headroom(None) != LTCG_0_BRACKET_CEILING_SINGLE_2026
+    from src.location_config import LTCG_ZERO_RATE_CEILING_SINGLE, ltcg_headroom
+    for year, entry in LTCG_ZERO_RATE_CEILING_SINGLE.items():
+        assert ltcg_headroom(None, year) != entry["amount"]
 
 
-@pytest.mark.parametrize("income,expected", [
-    (100_000.0, 0.0),        # above the ceiling — bracket exhausted
-    (48_350.0, 0.0),         # exactly at the ceiling
-    (40_000.0, 8_350.0),     # below — real room
-    (0.5, 48_349.5),
-])
-def test_ltcg_headroom_known_income(income, expected):
-    from src.location_config import ltcg_headroom
-    assert ltcg_headroom(income) == pytest.approx(expected)
+def test_the_zero_rate_ceiling_is_each_years_irs_figure_with_its_source():
+    """#728. Each year's ceiling is section 3.03's maximum zero rate amount for All
+    Other Individuals in that year's revenue procedure, cited with its date. 2026's is
+    Rev. Proc. 2025-32's (49,450), not 2025's (48,350), which the old constant held."""
+    from src.location_config import LTCG_ZERO_RATE_CEILING_SINGLE as table
+    assert {y: e["amount"] for y, e in table.items()} == {2026: 49_450.0, 2027: 51_050.0}
+    assert table[2026]["source"].startswith("Rev. Proc. 2025-32 (IR-2025-103), section 3.03")
+    assert table[2026]["source_date"] == "October 9, 2025"
+    assert table[2027]["source"].startswith("Rev. Proc. 2026-35 (IR-2026-133), section 3.03")
+    assert table[2027]["source_date"] == "November 5, 2026"
+    for entry in table.values():
+        assert "All Other Individuals" in entry["source"]
+
+
+def test_a_year_with_no_ceiling_has_no_headroom():
+    """No other year's ceiling stands in for a year the table does not hold."""
+    from src.location_config import ltcg_headroom, ltcg_zero_rate_ceiling
+    assert ltcg_zero_rate_ceiling(2025) is None and ltcg_zero_rate_ceiling(None) is None
+    assert ltcg_headroom(1.0, 2025) is None
+    assert ltcg_headroom(1.0, None) is None
+
+
+@pytest.mark.parametrize("year", [2026, 2027])
+def test_ltcg_headroom_known_income(year):
+    from src.location_config import ltcg_headroom, ltcg_zero_rate_ceiling
+    c = ltcg_zero_rate_ceiling(year)["amount"]
+    assert ltcg_headroom(c + 51_650.0, year) == 0.0                   # above — exhausted
+    assert ltcg_headroom(c, year) == 0.0                              # exactly at it
+    assert ltcg_headroom(c - 8_350.0, year) == pytest.approx(8_350.0)  # below — real room
+    assert ltcg_headroom(0.5, year) == pytest.approx(c - 0.5)
 
 
 def test_income_constant_absent_from_tracked_config():
-    """The tracked config must expose no income constant at all."""
+    """The tracked config must expose no income constant at all, and no ceiling that
+    names a year in its own name (#728)."""
     import src.location_config as lc
     assert not hasattr(lc, "ORDINARY_INCOME_2026")
     assert not hasattr(lc, "LTCG_HEADROOM_2026")
+    assert not hasattr(lc, "LTCG_0_BRACKET_CEILING_SINGLE_2026")

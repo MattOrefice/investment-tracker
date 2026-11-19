@@ -99,7 +99,7 @@ def _other_dates() -> "dict[str, str]":
                          "shares": 10.0, "tax_status": "ST", "cost_basis_per_share": 100.0,
                          "current_price": 80.0, "market_value": 800.0,
                          "unrealized_gl": -200.0, "unrealized_gl_pct": -0.2}])
-    cand = harvest.compute_harvest_candidates(lot)[0]
+    cand = harvest.compute_harvest_candidates(lot, st_tax_rate=None, lt_tax_rate=None)[0]
     return {
         "series age": asof.staleness_note("Factor", date(2026, 3, 31), 0),
         "estimate age": str(forward_pe.staleness_days({"as_of": date(2026, 6, 1)})),

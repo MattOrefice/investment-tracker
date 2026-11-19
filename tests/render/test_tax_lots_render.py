@@ -80,15 +80,27 @@ def test_methodology_expander_present(tax_lots_app: AppTest) -> None:
 
 
 def test_methodology_marginal_rate(tax_lots_app: AppTest) -> None:
-    """Methodology expander must state the marginal tax rate assumptions.
-    Pinned: Phase 49 Item B1."""
+    """Methodology expander must state the tax rates the estimate prices with.
+    Pinned: Phase 49 Item B1. Since #727 they are the federal profile's, read in the
+    mode the page renders in, with their tax year: so the expected text is computed
+    from load_federal_tax, never typed."""
     if not _has_lot_data(tax_lots_app):
         pytest.skip("No lot data available — data-dependent test skipped.")
+    from src.config import IS_DEMO
+    from src.harvest import harvest_rates
+    from src.personal_profile import load_federal_tax
+    r = harvest_rates(load_federal_tax(IS_DEMO))
     all_md = " ".join(m.value for m in tax_lots_app.markdown if hasattr(m, "value") and m.value)
-    assert "22% federal marginal rate" in all_md, (
-        "Marginal rate assumption not found — Phase 49 Item B1 regression: "
-        "'22% federal marginal rate' must appear in the Methodology expander."
-    )
+    if r["problem"]:
+        assert "the estimated tax benefit is not priced" in all_md
+        return
+    assert f"**Tax rates** (tax year {r['tax_year']}): a short-term loss" in all_md, (
+        "The federal rates' tax year must appear in the Methodology expander.")
+    assert (f"federal ordinary rate{' plus the net investment income tax' if r['niit'] else ''}"
+            f", **{r['st_rate']:.1%}**, and a long-term") in all_md
+    assert f", **{r['lt_rate']:.1%}**. " in all_md
+    if IS_DEMO:
+        assert "the demo's synthetic rates" in all_md
 
 
 def test_methodology_wash_sale(tax_lots_app: AppTest) -> None:
@@ -117,3 +129,26 @@ def test_sleeve_summary_subtitle(tax_lots_app: AppTest) -> None:
         "'Tax-lot exposure aggregated by SAA sleeve' must appear as a caption "
         "under the Sleeve Summary subheader."
     )
+
+
+def test_the_estimate_is_priced_at_the_federal_profiles_rates(monkeypatch) -> None:
+    """#727: the page hands compute_harvest_candidates the federal profile's rates, read
+    in the mode it renders in, and no typed rate. Recorded at the call, because neither
+    committed book holds a harvest candidate for a benefit to show."""
+    import src.harvest as harvest
+    from src.config import IS_DEMO
+    from src.personal_profile import load_federal_tax
+    calls = []
+
+    def record(lots, *args, **kwargs):
+        calls.append(kwargs)
+        return []
+
+    monkeypatch.setattr(harvest, "compute_harvest_candidates", record)
+    at = AppTest.from_file("pages/12_Tax_Lots.py", default_timeout=60)
+    at.run()
+    assert not at.exception, at.exception
+    if not calls:
+        pytest.skip("No lot data available — the page stopped before the estimate.")
+    want = harvest.harvest_rates(load_federal_tax(IS_DEMO))
+    assert calls == [{"st_tax_rate": want["st_rate"], "lt_tax_rate": want["lt_rate"]}]
