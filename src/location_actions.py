@@ -1668,6 +1668,7 @@ def capital_gains_headroom(
     register: pd.DataFrame,
     ordinary_income: float | None = _UNSET,
     is_demo: bool | None = None,
+    tax_year: int | None = _UNSET,
 ) -> dict:
     """The 0% LTCG bracket as a finite budget: total, consumed by the recommended
     gain-side realizations, and remaining. Single source of truth for both the
@@ -1676,24 +1677,32 @@ def capital_gains_headroom(
     Income is resolved from the runtime profile unless passed explicitly. Omitting
     the argument and passing None are DIFFERENT: omitted means "resolve it", None
     means "known to be unknown" — hence the sentinel, so a caller can state the
-    unknown case without the resolver silently overriding it.
+    unknown case without the resolver silently overriding it. The tax year is
+    resolved the same way, from the federal profile (load_federal_tax), so the
+    ceiling is the one for the year the page's rates are for (#728).
 
-    ``income_known`` is False when no income is configured; the budget then
-    collapses to zero — the conservative reading — and the page says so rather
-    than presenting a computed-looking $0.
+    ``income_known`` is False when no income is configured, and ``ceiling`` is None
+    when the tax year has no recorded ceiling (location_config's
+    LTCG_ZERO_RATE_CEILING_SINGLE); in either case the budget collapses to zero — the
+    conservative reading — and the page says which, rather than presenting a
+    computed-looking $0.
     """
-    from src.location_config import ltcg_headroom
+    from src.location_config import ltcg_headroom, ltcg_zero_rate_ceiling
 
+    if is_demo is None and (ordinary_income is _UNSET or tax_year is _UNSET):
+        from src.config import IS_DEMO
+        is_demo = IS_DEMO
     if ordinary_income is _UNSET:
         from src.personal_profile import load_income_profile
-        if is_demo is None:
-            from src.config import IS_DEMO
-            is_demo = IS_DEMO
         ordinary_income = load_income_profile(is_demo)["ordinary_income"]
+    if tax_year is _UNSET:
+        from src.personal_profile import load_federal_tax
+        tax_year = load_federal_tax(is_demo)["tax_year"]
 
-    headroom = ltcg_headroom(ordinary_income)
-    income_known = headroom is not None
-    total = float(headroom) if income_known else 0.0
+    ceiling = ltcg_zero_rate_ceiling(tax_year)
+    headroom = ltcg_headroom(ordinary_income, tax_year)
+    income_known = ordinary_income is not None
+    total = float(headroom) if headroom is not None else 0.0
 
     gain = next(g for g in ACTION_GROUPS if g["key"] == "relocate_gain_side")
     rows = filter_register_for_group(register, gain)
@@ -1705,6 +1714,8 @@ def capital_gains_headroom(
         "remaining": remaining,
         "income_known": income_known,
         "ordinary_income": ordinary_income,
+        "tax_year": tax_year,
+        "ceiling": ceiling,
     }
 
 
@@ -1945,7 +1956,9 @@ def resolve_placeholders(
     taxonomy that says which sleeves are equity, for {trad_ira_equity} and the
     thematic figures. Omit it and those resolve to None, the same contract.
     """
-    hr = capital_gains_headroom(register)
+    # The budget's tax year is the rates' (#728): read from the profile when there is one.
+    hr = capital_gains_headroom(
+        register, tax_year=int(tax_profile["tax_year"]) if tax_profile else _UNSET)
     base = {
         **_rate_placeholders(tax_profile, hr),
         "headroom_total": _fmt_dollars(hr["total"]),
@@ -2079,14 +2092,21 @@ def resolve_placeholders(
 
 def _rate_placeholders(tax_profile: "dict | None", hr: dict) -> dict[str, str | None]:
     """{gain_rate}, {gain_rate_parts} and {bracket_sentence}, read from the profile and
-    the computed 0% budget (capital_gains_headroom). No profile: all three None."""
+    the computed 0% budget (capital_gains_headroom). No profile: all three None.
+
+    The budget must be the one for the profile's tax year: a sentence that named one
+    year and sized the bracket with another's ceiling would be no year's (#728)."""
     if tax_profile is None:
         return {"gain_rate": None, "gain_rate_parts": None, "bracket_sentence": None}
     from src.location_config import _require_rate, ltcg_rate
     federal = _require_rate(tax_profile, "federal_ltcg")
     niit = _require_rate(tax_profile, "niit")
     state = _require_rate(tax_profile, "state_ltcg")
-    parts = f"tax year {int(tax_profile['tax_year'])}: {federal:.0%} federal"
+    year = int(tax_profile["tax_year"])
+    if hr.get("tax_year") != year:
+        raise ValueError(f"the 0% budget is for tax year {hr.get('tax_year')}, "
+                         f"the rates for {year}")
+    parts = f"tax year {year}: {federal:.0%} federal"
     if niit > 0:
         parts += f" + {niit:.1%} net investment income tax"
     if state > 0:
@@ -2095,11 +2115,14 @@ def _rate_placeholders(tax_profile: "dict | None", hr: dict) -> dict[str, str | 
         parts += ("" if niit > 0 else " only") + "; no state or local tax is included"
     if not hr["income_known"]:
         bracket = "No income is configured, so the 0% bracket is treated as used up."
+    elif hr.get("ceiling") is None:
+        bracket = (f"No 0% ceiling is recorded for tax year {year}, so the 0% bracket "
+                   "is treated as used up.")
     elif hr["total"] <= 0:
-        bracket = "2026 income puts the 0% bracket out of reach."
+        bracket = f"The configured income puts tax year {year}'s 0% bracket out of reach."
     else:
         bracket = (f"The 0% bracket still has {_fmt_dollars(hr['total'])} of room in "
-                   "2026, which these figures do not deduct.")
+                   f"tax year {year}, which these figures do not deduct.")
     return {"gain_rate": f"{ltcg_rate(tax_profile):.2%}", "gain_rate_parts": parts,
             "bracket_sentence": bracket}
 

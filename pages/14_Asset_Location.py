@@ -43,7 +43,6 @@ from src.personal_profile import load_federal_tax, load_tax_residence
 from src.location_config import (
     SLEEVE_PRIORITY_BY_ACCOUNT_TYPE,
     ACCOUNT_SHELTER_PRIORITY,
-    LTCG_0_BRACKET_CEILING_SINGLE_2026,
     investment_income_rate,
     is_directable,
     ltcg_rate,
@@ -457,8 +456,9 @@ for group in _ordered_groups:
             st.caption(escape_md(f"**{_STATUS_LABEL[group['status']]}** — {_summary_line(group, resolved, reg_rows)}"))
             # A recorded decision keeps its decision and its date; its figures and
             # rates are today's, and a reason today's rates reverse is flagged (#706).
-            _rec = decision_review(group, positions_df, accounts_df, register,
-                                   _tax_profile, capital_gains_headroom(register))
+            _rec = decision_review(group, positions_df, accounts_df, register, _tax_profile,
+                                   capital_gains_headroom(
+                                       register, tax_year=_tax_profile["tax_year"]))
             if _rec is not None:
                 _on = date.fromisoformat(_rec["recorded"])
                 st.caption(f"Decision recorded {_on:%B} {_on.day}, {_on.year} "
@@ -691,33 +691,47 @@ with col:
         # Income comes from the runtime profile, so the headroom prose is stated
         # conditionally rather than asserting the exhausted-bracket conclusion
         # that only holds while income sits above the ceiling.
-        _hr = capital_gains_headroom(register)
+        # The ceiling is the one for the rates' tax year (#728), read from the dated
+        # table in location_config and cited with its source.
+        _hr = capital_gains_headroom(register, tax_year=_year)
         _income = _hr["ordinary_income"]
+        _ceil = _hr["ceiling"]
 
         if not _hr["income_known"]:
             _headroom_para = (
-                "**0% capital-gains headroom (2026): not computed.** No "
+                f"**0% capital-gains headroom (tax year {_year}): not computed.** No "
                 "`ordinary_income` is set in `private/personal_profile.json`, and "
                 "the 0% bracket is sized as (ceiling − income) — so it is treated "
                 "as exhausted rather than guessed at. That is the conservative "
                 "reading: assuming room that isn't there would mean realizing "
                 "gains you expected to be untaxed. Set your income to size it."
             )
+        elif _ceil is None:
+            _headroom_para = (
+                f"**0% capital-gains headroom (tax year {_year}): not computed.** No "
+                f"0%-rate ceiling is recorded for tax year {_year} "
+                "(`LTCG_ZERO_RATE_CEILING_SINGLE` in `src/location_config.py`), so the "
+                "0% bracket is treated as exhausted rather than sized with another "
+                "year's ceiling."
+            )
         else:
+            _ceiling_text = (
+                f"~\\${_ceil['amount']:,.0f} single-filer 0%-rate ceiling for tax year "
+                f"{_year} ({escape_md(_ceil['source'])}, {escape_md(_ceil['source_date'])})"
+            )
             if _hr["total"] > 0:
                 _headroom_para = (
-                    f"**0% capital-gains headroom (2026): \\${_hr['total']:,.0f}.** "
-                    f"With 2026 income of ~\\${_income:,.0f} below the "
-                    f"~\\${LTCG_0_BRACKET_CEILING_SINGLE_2026:,.0f} single-filer "
-                    "0%-rate ceiling, that much realized long-term gain is federally "
-                    f"untaxed; beyond it, gains are taxed at {_gain_parts}."
+                    f"**0% capital-gains headroom (tax year {_year}): "
+                    f"\\${_hr['total']:,.0f}.** With the profile's ordinary income of "
+                    f"~\\${_income:,.0f} below the {_ceiling_text}, that much realized "
+                    "long-term gain is federally untaxed; beyond it, gains are taxed at "
+                    f"{_gain_parts}."
                 )
             else:
                 _headroom_para = (
-                    "**0% capital-gains headroom (2026): \\$0.** With 2026 income of "
-                    f"~\\${_income:,.0f} above the "
-                    f"~\\${LTCG_0_BRACKET_CEILING_SINGLE_2026:,.0f} single-filer "
-                    "0%-rate ceiling, the 0% bracket is exhausted — every realized "
+                    f"**0% capital-gains headroom (tax year {_year}): \\$0.** With the "
+                    f"profile's ordinary income of ~\\${_income:,.0f} above the "
+                    f"{_ceiling_text}, the 0% bracket is exhausted — every realized "
                     f"long-term gain is taxed at {_gain_parts}."
                 )
 

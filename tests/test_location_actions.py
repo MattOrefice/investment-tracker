@@ -1603,24 +1603,30 @@ def test_headroom_unknown_income_collapses_budget_to_zero():
 
 def test_headroom_unknown_income_never_reports_the_full_ceiling():
     from src.location_actions import capital_gains_headroom
-    from src.location_config import LTCG_0_BRACKET_CEILING_SINGLE_2026
+    from src.location_config import ltcg_zero_rate_ceiling
     import pandas as pd
 
     hr = capital_gains_headroom(
-        pd.DataFrame(columns=["embedded_gain"]), ordinary_income=None, is_demo=False
+        pd.DataFrame(columns=["embedded_gain"]), ordinary_income=None, is_demo=False,
+        tax_year=2027,
     )
-    assert hr["total"] != LTCG_0_BRACKET_CEILING_SINGLE_2026
+    assert hr["total"] != ltcg_zero_rate_ceiling(2027)["amount"]
 
 
-def test_headroom_income_below_ceiling_reports_real_room():
+@pytest.mark.parametrize("year", [2026, 2027])
+def test_headroom_income_below_ceiling_reports_real_room(year):
     from src.location_actions import capital_gains_headroom
+    from src.location_config import ltcg_zero_rate_ceiling
     import pandas as pd
 
+    ceiling = ltcg_zero_rate_ceiling(year)
     hr = capital_gains_headroom(
-        pd.DataFrame(columns=["embedded_gain"]), ordinary_income=40_000.0
+        pd.DataFrame(columns=["embedded_gain"]),
+        ordinary_income=ceiling["amount"] - 8_350.0, tax_year=year,
     )
     assert hr["income_known"] is True
     assert hr["total"] == pytest.approx(8_350.0)
+    assert hr["tax_year"] == year and hr["ceiling"] == ceiling
 
 
 def test_headroom_income_above_ceiling_is_exhausted():
@@ -1628,10 +1634,69 @@ def test_headroom_income_above_ceiling_is_exhausted():
     import pandas as pd
 
     hr = capital_gains_headroom(
-        pd.DataFrame(columns=["embedded_gain"]), ordinary_income=100_000.0
+        pd.DataFrame(columns=["embedded_gain"]), ordinary_income=100_000.0, tax_year=2027
     )
     assert hr["income_known"] is True
     assert hr["total"] == 0.0
+
+
+def test_headroom_takes_the_federal_profiles_tax_year_and_no_other_years_ceiling():
+    """#728: with no tax year passed, the budget is for the federal profile's year (the
+    synthetic demo profile's here), sized with that year's ceiling. A year with no
+    recorded ceiling has no budget: income known, ceiling None, total 0."""
+    from src.location_actions import capital_gains_headroom
+    from src.location_config import ltcg_zero_rate_ceiling
+    from src.personal_profile import DEMO_FEDERAL_TAX
+    import pandas as pd
+
+    empty = pd.DataFrame(columns=["embedded_gain"])
+    year = DEMO_FEDERAL_TAX["gains_rate"]["tax_year"]
+    hr = capital_gains_headroom(empty, ordinary_income=1.0, is_demo=True)
+    assert hr["tax_year"] == year
+    assert hr["total"] == pytest.approx(ltcg_zero_rate_ceiling(year)["amount"] - 1.0)
+    none = capital_gains_headroom(empty, ordinary_income=1.0, tax_year=2031)
+    assert none["income_known"] is True and none["ceiling"] is None
+    assert none["total"] == 0.0 and none["remaining"] == 0.0
+
+
+def test_page14_headroom_labels_name_the_rates_tax_year_in_source():
+    """#728: every label of the headroom paragraph names the rates' tax year, never a
+    typed one. Read from the source, so CI holds it; the live test below reads it
+    rendered."""
+    text = (ROOT / "pages" / "14_Asset_Location.py").read_text(encoding="utf-8")
+    labels = re.findall(r"0% capital-gains headroom \(([^)]*)\)", text)
+    assert len(labels) == 4, labels
+    assert set(labels) == {"tax year {_year}"}, labels
+    assert "With 2026 income" not in text
+
+
+def test_page14_headroom_paragraph_names_its_tax_year_and_cites_its_ceiling_live(monkeypatch):
+    """Personal mode: the rendered paragraph names the federal profile's tax year and
+    cites that year's ceiling with its source and date. Expected text is computed from
+    the profile and the table, so no personal figure is typed here."""
+    from src.household_data import find_latest_positions_csv
+    from src.location_config import ltcg_zero_rate_ceiling
+    from src.personal_profile import load_federal_tax
+    csv = find_latest_positions_csv()
+    if csv is None or not TRACKER_DB.exists() or TRACKER_DB.stat().st_size == 0:
+        pytest.skip("personal-mode inputs absent")
+    year = load_federal_tax(False)["tax_year"]
+    if year is None:
+        pytest.skip("no federal profile")
+    import src.config
+    import src.db
+    monkeypatch.setattr(src.config, "IS_DEMO", False)
+    monkeypatch.setattr(src.db, "DB_PATH", TRACKER_DB)
+    from streamlit.testing.v1 import AppTest
+    at = AppTest.from_file(str(ROOT / "pages" / "14_Asset_Location.py"), default_timeout=90).run()
+    assert not at.exception, f"page raised: {at.exception}"
+    md = " ||| ".join(m.value for m in at.markdown)
+    assert f"**0% capital-gains headroom (tax year {year}):" in md
+    ceiling = ltcg_zero_rate_ceiling(year)
+    if ceiling is not None and "not computed" not in md.split("headroom (tax year")[1][:40]:
+        assert (f"\\${ceiling['amount']:,.0f} single-filer 0%-rate ceiling for tax year "
+                f"{year} ({ceiling['source']}, {ceiling['source_date']})") in md
+    assert "headroom (2026)" not in md
 
 
 def test_headroom_resolves_demo_income_when_not_passed():
