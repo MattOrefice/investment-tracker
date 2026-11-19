@@ -10,6 +10,11 @@ name corrected in the seed reaches a book seeded before the correction. No ticke
 may carry two different names across the seeds (tests/test_seed_names.py), so the
 SAA seed (src/seed_securities.py) and this one never overwrite each other.
 
+A name the committed seed withholds (#725: the seed names no employer, so a single
+stock's row carries a neutral description) comes from ``names``, which
+bootstrap_personal_db reads from private/personal_profile.json
+(`withheld_names.security_names`), so the personal book keeps the real name.
+
 For new tickers: inserts with the parking-lot asset_class_id ('Other / Non-SAA')
 so the NOT NULL constraint is satisfied.
 
@@ -39,13 +44,18 @@ def _get_parking_lot_id(conn: sqlite3.Connection) -> int:
     return row["asset_class_id"]
 
 
-def load_household_securities(db_path: str | Path, csv_path: str | Path) -> dict:
+def load_household_securities(db_path: str | Path, csv_path: str | Path,
+                              names: "dict[str, str] | None" = None) -> dict:
     """UPSERT household securities from CSV into the securities table.
+
+    ``names`` maps a ticker to the name it carries instead of the CSV's description:
+    the private names, passed by bootstrap_personal_db.
 
     Returns a summary dict: {inserted, updated, skipped, errors}.
     """
     db_path  = Path(db_path)
     csv_path = Path(csv_path)
+    names    = names or {}
 
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
@@ -58,7 +68,7 @@ def load_household_securities(db_path: str | Path, csv_path: str | Path) -> dict
             reader = csv.DictReader(f)
             for row in reader:
                 symbol       = row["symbol"].strip()
-                description  = row["description"].strip()
+                description  = names.get(symbol, row["description"].strip())
                 sleeve_cat   = row["sleeve_category"].strip()
                 tax_eff      = row["tax_efficiency"].strip()
                 is_in_saa    = 1 if row["is_in_saa"].strip().lower() == "true" else 0

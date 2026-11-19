@@ -225,7 +225,7 @@ def _case_d_fixture():
         {"pseudonym": "r", "display_name": "Roth",    "tax_treatment": "roth_ira"},
     ])
     sec = pd.DataFrame([
-        {"ticker": "MCO",  "name": "Moody's",      "tax_efficiency": "high", "sleeve_category": "single_stock"},
+        {"ticker": "MCO",  "name": "Single stock", "tax_efficiency": "high", "sleeve_category": "single_stock"},
         # IXUS/VXUS carry NO fund_compositions rows here, deliberately: this fixture
         # exercises look_through_position's no-composition path, where a holding
         # resolves to its own sleeve_category. Do NOT "fix" this by adding

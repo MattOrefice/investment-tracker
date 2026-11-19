@@ -387,8 +387,8 @@ _FUND_INTL_TILTS_PROS = (
     "international region — the 15-, 9- and 8-of-49 weights the domestic tilts carry — "
     "so the sizing follows from choices already made, not a separate decision. Together "
     "they target {intl_tilt_target_value} against the household. The capacity to fund "
-    "them exists in exactly one place: the {workplace_plan_value} MissionSquare "
-    "rollover. The self-directed taxable book — international's tax-home, the only "
+    "them exists in exactly one place: the {workplace_plan_value} "
+    "{rollover_source_label} rollover. The self-directed taxable book — international's tax-home, the only "
     "wrapper you control that can credit the foreign tax withheld — holds "
     "{self_directed_value}, so "
     "it cannot fund a {intl_tilt_target_value} sleeve. The counterfactual to funding "
@@ -536,7 +536,7 @@ ACTION_GROUPS: list[dict] = [
     {
         "key": "rollover_401k", "title": "401(k) rollover",
         "score": 3, "status": "evaluate",
-        "action": "Roll the {workplace_plan_value} MissionSquare 401(k) to the current "
+        "action": "Roll the {workplace_plan_value} {rollover_source_label} to the current "
                   "employer's plan if it accepts roll-ins, which keeps it out of the "
                   "December 31 IRA total that sets a Roth conversion's taxable share, "
                   "or to the Traditional IRA, which adds it to that total.",
@@ -1752,7 +1752,11 @@ def _household_placeholders(
       pretax_capacity        Traditional IRA total current_value
       workplace_plan_value   total of the specific rollable 401(k) account
                              (ROLLOVER_SOURCE_PSEUDONYM) — a definition, not an
-                             argmax; the $0-vested Moody's PPP is deliberately excluded
+                             argmax; the $0-vested former-employer plan (acct_wkpl_01)
+                             is deliberately excluded
+      rollover_source_label  that account's display_name, read from the accounts
+                             table: the book's own label, so committed text names
+                             no plan provider (#725)
       pretax_capacity_after  pretax_capacity + workplace_plan_value (derived)
       pretax_capacity_threshold
                              the fixed-income/real-asset policy book that the
@@ -1783,6 +1787,9 @@ def _household_placeholders(
     # The rollable 401(k) is identified by pseudonym — never by comparing balances.
     wk = positions_df[positions_df["pseudonym"] == ROLLOVER_SOURCE_PSEUDONYM]
     workplace_plan_value = float(wk["current_value"].sum()) if not wk.empty else None
+    labels = accounts_df.loc[accounts_df["pseudonym"] == ROLLOVER_SOURCE_PSEUDONYM,
+                             "display_name"] if "display_name" in accounts_df else []
+    rollover_source_label = str(labels.iloc[0]) if len(labels) else None
 
     after = None
     if pretax_capacity is not None and workplace_plan_value is not None:
@@ -1807,6 +1814,7 @@ def _household_placeholders(
         "trad_ira_equity":           _fmt(trad_ira_equity),
         "pretax_capacity":           _fmt(pretax_capacity),
         "workplace_plan_value":      _fmt(workplace_plan_value),
+        "rollover_source_label":     rollover_source_label,
         "pretax_capacity_after":     _fmt(after),
         "pretax_capacity_threshold": _fmt(threshold),
         "self_directed_value":       _fmt(self_directed_value),

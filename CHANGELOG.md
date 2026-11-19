@@ -556,12 +556,11 @@ the deployed page went wrong. Pinned to 0.5.2, matching the working version.
 Two findings the audit raised were checked and deliberately not changed, which is
 worth recording so they are not re-litigated:
 
-The **employer name** in tracked files is not a leak. "MissionSquare" appears in
-the README as the author's own professional bio, next to a LinkedIn link — it is
-self-published, not disclosed. "Moody's" is both a former employer and a real
-publicly-traded company whose ticker (MCO) is a genuine single-stock holding, so
-it appears as security metadata regardless. Redacting either would be churn that
-removes accurate, intentionally-public context.
+The **employer names** in tracked files were judged not a leak at the time: one
+appeared in the README's professional bio, and the other was also the name of a
+single-stock holding, so it appeared as security metadata. That judgment was
+reversed on November 18, 2026 (#725): committed text now names no employer or
+workplace-plan provider, and the real labels live in the private profile.
 
 The **test fixtures** are not derived from real values. They are round synthetic
 amounts — 10,000 / 5,000 / 8,000 — and no fixture encodes a real balance, basis,
@@ -892,17 +891,17 @@ previous change.
 That filter was meant to drop one workplace account holding unvested,
 forfeitable employer money. It landed on the wrong account. The two workplace
 plans had their identities swapped: the account actually holding RFUTX is the
-user's own, fully-vested former-employer MissionSquare 401(k) — his single
+user's own, fully-vested former employer's 401(k) — his single
 largest position — while the small Fidelity Freedom 2065 holding is the
-0%-vested, forfeitable Moody's profit-sharing plan. The flag excluded the
-MissionSquare money and kept the Moody's money, so RFUTX's hidden
+0%-vested, forfeitable plan of another former employer. The flag excluded the
+vested 401(k) money and kept the forfeitable money, so RFUTX's hidden
 US-large exposure never reached the allocation, leaving core artificially
 underweight and VOO on the buy list. This corrects the prior change, which
 excluded the wrong account and silently defeated the target-date look-through.
 
-The fix swaps both workplace accounts to their real identities: the MissionSquare
-401(k) (RFUTX) is now included in the household and is the 401(k)-rollover source
-the rollover card describes; the Moody's plan is excluded from every total,
+The fix swaps both workplace accounts to their real identities: the former
+employer's 401(k) (RFUTX) is now included in the household and is the 401(k)-rollover
+source the rollover card describes; the forfeitable plan is excluded from every total,
 allocation, and the Liquidity ladder, where truly forfeitable money does not
 belong. With RFUTX back in the household the Deploy card drops to its correct
 four buys — SPHQ, AVUV, VTV, IEMG — VOO gone, sized to each sleeve's real
@@ -2019,7 +2018,7 @@ Deployed to Streamlit Cloud and resolved cloud-specific rendering and caching is
 - **8p** — Fixed flat portfolio value bug on Streamlit Cloud caused by duplicate
   price-date index and stale `@st.cache_data` serving a pre-fix $30 value (dfbbfb7)
 - **8q–8u** — Global Factors discontinued disclosure; Performance reconciliation note;
-  risk metrics layout; MissionSquare reference; risk-adjusted metrics extended to
+  risk metrics layout; a former-employer reference; risk-adjusted metrics extended to
   five-window selector; window-collapse bug fix (c33e522 → 3b27668)
 - **Asset Evaluation** — Bitcoin case study page: univariate statistics, full-sample
   and rolling correlations, regime-conditional correlation by NBER cycle phase,

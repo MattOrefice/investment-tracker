@@ -291,6 +291,7 @@ def _bootstrap(path: Path) -> dict:
     from src.seed.securities_loader import load_household_securities
     from src.seed.fund_compositions import seed_fund_compositions
     from src.seed.household_accounts import seed_household_accounts
+    from src.personal_profile import load_withheld_names
 
     # 1. Base schema + the 'Personal Fidelity' account (idempotent).
     _db.initialize_db()
@@ -307,11 +308,18 @@ def _bootstrap(path: Path) -> dict:
     migrations = run_pending_migrations(path)
 
     # 4. Remaining household seeds, in dependency order (each idempotent or
-    #    per-ticker guarded).
+    #    per-ticker guarded). The seeds name no employer (#725); the real account
+    #    labels and the single stock's name come from the private profile, so the
+    #    personal book keeps them. Without them the seeds' neutral labels stand.
+    withheld = load_withheld_names(is_demo=False)
+    if withheld["problem"]:
+        logger.warning("Seeding neutral account labels: %s", withheld["problem"])
     seed_securities.seed()                             # SAA ETFs -> real asset_class_id
-    load_household_securities(path, _HOUSEHOLD_CSV)    # enrich + household rows (UPSERT)
+    load_household_securities(path, _HOUSEHOLD_CSV,    # enrich + household rows (UPSERT)
+                              names=withheld["security_names"])
     seed_fund_compositions(path)                       # compositions (UPSERT)
-    seed_household_accounts(path)                      # 6 household accounts (UPSERT)
+    seed_household_accounts(path,                      # 6 household accounts (UPSERT)
+                            labels=withheld["account_labels"])
 
     # 5. Label acct_01 (the db.py base account = the self-directed taxable book,
     #    carrying the trade ledger) with its household-facing display_name. Done

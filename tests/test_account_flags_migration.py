@@ -65,7 +65,7 @@ def _seed(db_path):
         [
             ("Base Taxable", "taxable", "taxable", "acct_01", "Base Taxable", "self", 1),
             ("Advisor IRA",  "retirement", "roth_ira", "acct_roth", "Advisor IRA", "external", 1),
-            ("Forfeitable",  "retirement", "workplace_plan", "acct_ppp", "PPP", "external", 0),
+            ("Forfeitable",  "retirement", "workplace_plan", "acct_forfeit", "Forfeitable plan", "external", 0),
         ],
     )
     conn.executemany(
