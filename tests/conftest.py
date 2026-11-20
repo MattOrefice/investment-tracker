@@ -24,6 +24,7 @@ import shutil
 import tempfile
 import threading
 import time
+import traceback
 import warnings
 from contextlib import contextmanager
 from pathlib import Path
@@ -430,12 +431,14 @@ def pytest_configure(config):
 # test. Measured 2026-09-27 over the CI-style suite (2629 tests): 4 tests left a thread
 # alive at teardown, 3 of them the PDF's chart render below and 1 the warm.
 #
-# TWO EXCEPTIONS to the no-grace-period rule. A chart export's own threads are the
-# second, below EXPORT_PACKAGES (#698). The first (decided by the owner on October 17,
-# 2026, #635): a threading.Timer already cancelled when it is reported, its finished event
-# set, is joined and fails only if it is still alive after the join. A cancelled Timer
-# can never start its function, so it is not the hazard this check exists for. What is
-# left of it is a wait that has already returned, and it ends at once on any machine.
+# THREE EXCEPTIONS to the no-grace-period rule. A chart export's own threads are the
+# second, below EXPORT_PACKAGES (#698), and Streamlit's script thread with its run over
+# is the third, below SCRIPT_THREAD_NAME (#741). The first (decided by the owner on
+# October 17, 2026, #635): a threading.Timer already cancelled when it is reported, its
+# finished event set, is joined and fails only if it is still alive after the join. A
+# cancelled Timer can never start its function, so it is not the hazard this check exists
+# for. What is left of it is a wait that has already returned, and it ends at once on any
+# machine.
 # Streamlit's st.spinner, which st.cache_data shows by default, starts one and cancels
 # it on exit. A page render under AppTest left one alive in the instant before it ended,
 # and failed CI on a test whose body passed (#635). Whether it is cancelled is read when
@@ -479,6 +482,33 @@ THREADS_ALLOWED_TO_OUTLIVE = {
 # thread among them, which is alive only mid-export: the export had outlived its 25 s
 # join, and its threads failed a test whose body passed.
 EXPORT_PACKAGES = ("kaleido", "choreographer", "logistro")
+
+# STREAMLIT'S SCRIPT THREAD WITH ITS RUN OVER (decided by the owner on November 19, 2026,
+# #741, for the case the source below shows). AppTest runs a page on a thread of
+# Streamlit's, named SCRIPT_THREAD_NAME, and returns before that thread exits. Read in
+# streamlit 1.57.0, the pinned version:
+# - testing/v1/app_test.py, AppTest._run: each run makes a LocalScriptRunner and returns
+#   when its run() does. Nothing joins the thread.
+# - testing/v1/local_script_runner.py, LocalScriptRunner.run: returns as soon as
+#   require_widgets_deltas sees script_stopped(), a SHUTDOWN event recorded.
+# - runtime/scriptrunner/script_runner.py, ScriptRunner._run_script_thread: runs the page
+#   in a loop until on_scriptrunner_ready returns a STOP request, then sends SHUTDOWN as
+#   its last statement.
+# - runtime/scriptrunner_utils/script_requests.py, ScriptRequests: on_scriptrunner_ready
+#   returns STOP only with no rerun pending, and sets the state to STOP. request_rerun
+#   refuses every request in that state. A rerun, a fragment and a widget callback each
+#   run only through a rerun request, so none can run after it.
+# So a script thread whose runner has recorded SHUTDOWN runs no page code again: what is
+# left is the return from _run_script_thread and the thread's own exit. One is joined
+# and fails only if it is still alive after the join, as a cancelled Timer does. Main's
+# push run for #740 failed on one whose target was already gone (CPython's Thread.run
+# deletes _target as it returns, so thread_target named it threading.Thread), on a test
+# whose body passed (#741). Whether its run is over is read when it is reported, before
+# the join: its target gone, or its runner's script_stopped(). A script thread reported
+# while its page still runs fails as any thread does, even one that ends within the join.
+SCRIPT_THREAD_NAME = "ScriptRunner.scriptThread"
+SCRIPT_THREAD_TARGET = ("streamlit.runtime.scriptrunner.script_runner."
+                        "ScriptRunner._run_script_thread")
 _THREAD_JOIN_SECONDS = 5.0
 _threads_before: "set[threading.Thread]" = set()
 
@@ -527,16 +557,62 @@ def cancelled_timer(t: threading.Thread) -> bool:
     return isinstance(t, threading.Timer) and finished is not None and finished.is_set()
 
 
+def finished_script_thread(t: threading.Thread) -> bool:
+    """Streamlit's script thread with its run over (#741): its target has returned, or
+    its runner has recorded SHUTDOWN, the event AppTest returns on."""
+    if t.name != SCRIPT_THREAD_NAME:
+        return False
+    from streamlit.runtime.scriptrunner_utils.script_run_context import (
+        SCRIPT_RUN_CONTEXT_ATTR_NAME, ScriptRunContext)
+    if not isinstance(getattr(t, SCRIPT_RUN_CONTEXT_ATTR_NAME, None), ScriptRunContext):
+        return False
+    target = getattr(t, "_target", None)
+    if target is None:
+        return True  # Thread.run deletes its target as it returns
+    stopped = getattr(getattr(target, "__self__", None), "script_stopped", None)
+    return (thread_target(t) == SCRIPT_THREAD_TARGET and callable(stopped)
+            and stopped() is True)
+
+
 def fails_after_join(alive: "list[threading.Thread]",
                      seconds: float = _THREAD_JOIN_SECONDS) -> "list[threading.Thread]":
     """Of the threads threads_outliving reported, the ones that fail the test. Each is
     joined first, so a failure cannot run into the next test. Every one fails, however
-    soon it ends, except two that pass once they have ended by the end of the join: a
-    Timer cancelled when reported (#635), and a chart export's own thread (#698). Both
-    are read before the join: a finished thread no longer holds its target."""
-    excused = [t for t in alive if cancelled_timer(t) or in_an_export(t)]
+    soon it ends, except three that pass once they have ended by the end of the join: a
+    Timer cancelled when reported (#635), a chart export's own thread (#698), and
+    Streamlit's script thread with its run over (#741). Each is read before the join: a
+    finished thread no longer holds its target."""
+    excused = [t for t in alive
+               if cancelled_timer(t) or in_an_export(t) or finished_script_thread(t)]
     join_for_cleanup(excused + [t for t in alive if t not in excused], seconds)
     return [t for t in alive if t not in excused or t.is_alive()]
+
+
+def thread_stacks(threads: "list[threading.Thread]") -> "dict[threading.Thread, str]":
+    """Each thread's stack as it stands now. Read when the threads are reported, before
+    the join, so a failure shows what each was doing as its test ended (#741)."""
+    frames = sys._current_frames()
+    return {t: ("".join(traceback.format_stack(frames[t.ident])) if t.ident in frames
+                else "  (none: it had ended)\n")
+            for t in threads}
+
+
+def outlived_threads_fail(nodeid: str, before: "set[threading.Thread]",
+                          seconds: float = _THREAD_JOIN_SECONDS) -> None:
+    """The teardown check (#429): raise when a thread the test left fails
+    fails_after_join, naming each one with its stack as it was reported."""
+    alive = threads_outliving(before)
+    named = {t: (t.name, thread_target(t)) for t in alive}
+    stacks = thread_stacks(alive)
+    failing = fails_after_join(alive, seconds)
+    if failing:
+        raise AssertionError(
+            f"{nodeid} left {len(failing)} thread(s) running past its teardown: "
+            f"{[named[t] for t in failing]}. A thread that outlives its test reads "
+            "globals later tests repoint (db.DB_PATH) and acts on their databases "
+            "(#429). Join it before the test ends, or keep the test from starting it."
+            + "".join(f"\n\nStack of {named[t]} when reported:\n{stacks[t]}"
+                      for t in failing))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -691,15 +767,7 @@ def pytest_runtest_teardown(item, nextitem):
             f"{_LEAK_HEADLINE}: {item.nodeid} opened {len(leaks)} connection(s) to a "
             "redirected tracked-DB copy and never closed them. `with sqlite3.connect(...)"
             " as c:` commits but does NOT close; use contextlib.closing or get_connection.")
-    alive = threads_outliving(_threads_before)
-    named = {t: (t.name, thread_target(t)) for t in alive}
-    failing = fails_after_join(alive)
-    if failing:
-        raise AssertionError(
-            f"{item.nodeid} left {len(failing)} thread(s) running past its teardown: "
-            f"{[named[t] for t in failing]}. A thread that outlives its test reads "
-            "globals later tests repoint (db.DB_PATH) and acts on their databases "
-            "(#429). Join it before the test ends, or keep the test from starting it.")
+    outlived_threads_fail(item.nodeid, _threads_before)
     if switch:
         raise AssertionError(switch)
 
