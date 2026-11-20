@@ -16,11 +16,15 @@ from src.harvest import (
     compute_harvest_candidates,
     harvest_rates,
 )
+from src.personal_profile import DEMO_TAX_RESIDENCE
 from tests.tax_profiles import SYNTHETIC_FEDERAL, synthetic_federal
 
-# The estimate's rates come from the federal profile (#727); tests price with the
-# synthetic demo profile, whose rates are no recent year's federal bracket.
-RATES = harvest_rates(SYNTHETIC_FEDERAL)
+# The estimate's rates come from the federal profile (#727) and the tax residence; the
+# candidate tests price at the synthetic federal profile alone, whose rates are no recent
+# year's federal bracket, with no residence.
+NO_RESIDENCE = {"jurisdictions": [], "source": "absent",
+                "problem": "private/personal_profile.json has no tax_residence"}
+RATES = harvest_rates(SYNTHETIC_FEDERAL, NO_RESIDENCE)
 
 
 def _cands(lots, **kw):
@@ -257,18 +261,21 @@ def test_no_rate_is_typed_and_none_is_defaulted():
 
 def test_harvest_rates_read_the_federal_profile():
     """Short-term at the ordinary rate, long-term at the gains rate, for the profile's
-    tax year; with no NIIT, nothing is added."""
+    tax year; with no NIIT and no residence, nothing is added, and the residence's
+    problem says why no state or local tax is included."""
     f = SYNTHETIC_FEDERAL
-    r = harvest_rates(f)
+    r = harvest_rates(f, NO_RESIDENCE)
     assert r == {"st_rate": pytest.approx(f["federal_marginal"]),
                  "lt_rate": pytest.approx(f["federal_ltcg"]),
-                 "tax_year": f["tax_year"], "niit": 0.0, "problem": None}
+                 "tax_year": f["tax_year"], "niit": 0.0, "state_st": 0.0, "state_lt": 0.0,
+                 "where": "", "residence_problem": NO_RESIDENCE["problem"],
+                 "problem": None}
 
 
 def test_harvest_rates_add_the_niit_to_both_where_it_applies():
     from src.personal_profile import NIIT_RATE
     f = synthetic_federal(niit_applies=True)
-    r = harvest_rates(f)
+    r = harvest_rates(f, NO_RESIDENCE)
     assert r["st_rate"] == pytest.approx(f["federal_marginal"] + NIIT_RATE)
     assert r["lt_rate"] == pytest.approx(f["federal_ltcg"] + NIIT_RATE)
     assert r["niit"] == pytest.approx(NIIT_RATE)
@@ -279,7 +286,8 @@ def test_without_a_federal_profile_the_estimate_is_not_priced():
     ordered by the loss itself."""
     r = harvest_rates({"federal_marginal": None, "federal_ltcg": None, "niit": None,
                        "tax_year": None, "sources": {},
-                       "problem": "private/personal_profile.json has no federal_tax"})
+                       "problem": "private/personal_profile.json has no federal_tax"},
+                      DEMO_TAX_RESIDENCE)
     assert r["st_rate"] is None and r["lt_rate"] is None
     assert r["problem"] == "private/personal_profile.json has no federal_tax"
     small = _make_lot(trade_id=1, unrealized_gl=-150.0, unrealized_gl_pct=-0.15)
@@ -289,3 +297,37 @@ def test_without_a_federal_profile_the_estimate_is_not_priced():
                                      st_tax_rate=r["st_rate"], lt_tax_rate=r["lt_rate"])
     assert [c["estimated_tax_benefit"] for c in out] == [None, None]
     assert [c["ticker"] for c in out] == ["IEMG", "VOO"]
+
+
+# Two jurisdictions whose ordinary and gains rates differ, as no committed profile does.
+_TWO_PLACES = {"jurisdictions": [
+    {"name": "Place A (synthetic)", "ordinary_rate": 0.031, "gains_rate": 0.017,
+     "source": "synthetic", "source_date": "synthetic"},
+    {"name": "Place B (synthetic)", "ordinary_rate": 0.012, "gains_rate": 0.009,
+     "source": "synthetic", "source_date": "synthetic"}], "problem": None}
+
+
+def test_harvest_rates_add_the_residences_state_and_local_rates():
+    """Each jurisdiction's ordinary rate is added to the short-term rate and its gains
+    rate to the long-term one, on top of the federal rate and the NIIT."""
+    from src.personal_profile import NIIT_RATE
+    f = synthetic_federal(niit_applies=True)
+    r = harvest_rates(f, _TWO_PLACES)
+    assert r["st_rate"] == pytest.approx(f["federal_marginal"] + NIIT_RATE + 0.031 + 0.012)
+    assert r["lt_rate"] == pytest.approx(f["federal_ltcg"] + NIIT_RATE + 0.017 + 0.009)
+    assert (r["state_st"], r["state_lt"]) == (pytest.approx(0.043), pytest.approx(0.026))
+    assert r["where"] == "Place A (synthetic) and Place B (synthetic)"
+
+
+@pytest.mark.parametrize("niit", [False, True])
+def test_harvest_rates_are_the_profile_liquidity_and_asset_location_price_with(niit):
+    """One profile for every page: residence_tax_profile, which Liquidity and Asset
+    Location read, gives the same parts."""
+    from src.liquidity import residence_tax_profile
+    f = synthetic_federal(niit_applies=niit)
+    tax = residence_tax_profile(DEMO_TAX_RESIDENCE, f)
+    r = harvest_rates(f, DEMO_TAX_RESIDENCE)
+    assert r["st_rate"] == pytest.approx(
+        tax["federal_marginal"] + tax["niit"] + tax["state_marginal"])
+    assert r["lt_rate"] == pytest.approx(tax["federal_ltcg"] + tax["niit"] + tax["state_ltcg"])
+    assert tax["state_marginal"] > 0 and tax["state_ltcg"] > 0

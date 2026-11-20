@@ -352,6 +352,10 @@ def test_absent_profile_yields_unknown_income_not_zero(monkeypatch, tmp_path):
     '{"ordinary_income": 0}',           # zero == not configured
     '{"ordinary_income": -5}',          # negative
     '{}',                               # key absent
+    '{"ordinary_income": 123456}',      # a bare number names no tax year (#734)
+    '{"ordinary_income": {"amount": 123456}}',                  # no tax year
+    '{"ordinary_income": {"tax_year": "2027", "amount": 1}}',  # not a year
+    '{"ordinary_income": {"tax_year": 2027, "amount": 0}}',    # not positive
 ])
 def test_malformed_income_degrades_to_unknown(monkeypatch, tmp_path, body):
     """A bad profile must not raise and must not fabricate an income."""
@@ -365,10 +369,10 @@ def test_malformed_income_degrades_to_unknown(monkeypatch, tmp_path, body):
 def test_personal_profile_income_is_read(monkeypatch, tmp_path):
     import src.personal_profile as pp
     p = tmp_path / "personal_profile.json"
-    p.write_text('{"ordinary_income": 123456}', encoding="utf-8")
+    p.write_text('{"ordinary_income": {"tax_year": 2027, "amount": 123456}}', encoding="utf-8")
     monkeypatch.setattr(pp, "_PROFILE_PATH", p)
     prof = pp.load_income_profile(is_demo=False)
-    assert prof["ordinary_income"] == 123456.0
+    assert prof["ordinary_income"] == 123456.0 and prof["tax_year"] == 2027
     assert prof["source"] == "private/personal_profile.json"
 
 

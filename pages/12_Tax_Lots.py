@@ -27,7 +27,7 @@ from src.harvest import (
     compute_harvest_candidates,
     harvest_rates,
 )
-from src.personal_profile import load_federal_tax
+from src.personal_profile import load_federal_tax, load_tax_residence
 from src.holdings import dividend_income, spaxx_modeled_income
 from src.prices import get_prices
 from src.config import get_demo_banner_text, IS_DEMO
@@ -374,10 +374,12 @@ st.divider()
 
 # ── Tax-Loss Harvest Candidates ───────────────────────────────────────────────
 
-# The estimate prices with the federal profile (#727): the owner's rates from
-# private/personal_profile.json in personal mode, the synthetic demo profile in demo.
+# The estimate prices with the federal profile (#727) and the tax residence's state and
+# local rates, the profile Liquidity and Asset Location price with: the owner's from
+# private/personal_profile.json in personal mode, the synthetic demo profiles in demo.
 _federal = load_federal_tax(IS_DEMO)
-_rates = harvest_rates(_federal)
+_residence = load_tax_residence(IS_DEMO)
+_rates = harvest_rates(_federal, _residence)
 
 
 def escape_md(text: str) -> str:
@@ -388,13 +390,16 @@ def escape_md(text: str) -> str:
 if _rates["problem"]:
     _rates_phrase = f"estimated tax benefit not priced: {_rates['problem']}"
 else:
+    _included = [f"the {_rates['niit']:.1%} net investment income tax"] if _rates["niit"] else []
+    if _rates["where"]:
+        _included.append(f"{_rates['where']}'s state and local rates")
     _rates_phrase = (
         f"estimated tax benefit at tax year {_rates['tax_year']}'s "
         + ("synthetic demo " if IS_DEMO else "")
-        + f"federal rates, {_rates['st_rate']:.1%} short-term and "
-        f"{_rates['lt_rate']:.1%} long-term"
-        + (f", each including the {_rates['niit']:.1%} net investment income tax"
-           if _rates["niit"] else "")
+        + f"rates, {_rates['st_rate']:.1%} short-term and {_rates['lt_rate']:.1%} long-term"
+        + (f", each including {' and '.join(_included)}" if _included else "")
+        + ("" if _rates["where"] else
+           f"; no state or local tax is included: {_rates['residence_problem']}")
     )
 _candidates = compute_harvest_candidates(display_lots, st_tax_rate=_rates["st_rate"],
                                          lt_tax_rate=_rates["lt_rate"])
@@ -556,16 +561,32 @@ if _rates["problem"]:
     )
 else:
     _plus = " plus the net investment income tax" if _rates["niit"] else ""
+    if _rates["where"]:
+        _st_local = f" plus {escape_md(_rates['where'])}'s state and local ordinary rates"
+        _lt_local = f" plus {escape_md(_rates['where'])}'s state and local gains rates"
+        _local = (
+            f"The state and local rates are the tax residence's, read from the same "
+            f"profile as Liquidity and Asset Location: "
+            + "; ".join(f"{escape_md(j['name'])} {j['ordinary_rate'] * 100:g}% ordinary and "
+                        f"{j['gains_rate'] * 100:g}% on gains ({escape_md(j['source'])}, "
+                        f"{escape_md(j['source_date'])})"
+                        for j in _residence["jurisdictions"]) + ". ")
+    else:
+        _st_local = _lt_local = ""
+        _local = ("No state or local tax is included: "
+                  f"{escape_md(_rates['residence_problem'])}. Add a `tax_residence` to "
+                  "`private/personal_profile.json` to include it. ")
     _rates_method = (
         f"**Tax rates** (tax year {_rates['tax_year']}): a short-term loss is priced at "
-        f"the federal ordinary rate{_plus}, **{_rates['st_rate']:.1%}**, and a long-term "
-        f"loss at the federal long-term capital-gains rate{_plus}, "
+        f"the federal ordinary rate{_plus}{_st_local}, **{_rates['st_rate']:.1%}**, and a "
+        f"long-term loss at the federal long-term capital-gains rate{_plus}{_lt_local}, "
         f"**{_rates['lt_rate']:.1%}**. "
         + ("" if _rates["niit"] else "The net investment income tax does not apply. ")
+        + _local
         + ("These are the demo's synthetic rates, not a rate read for anyone."
            if IS_DEMO else
-           "Sources: " + "; ".join(f"{escape_md(s)}, {escape_md(d)}"
-                                   for s, d in _federal["sources"].values()) + ".")
+           "Federal sources: " + "; ".join(f"{escape_md(s)}, {escape_md(d)}"
+                                           for s, d in _federal["sources"].values()) + ".")
         + "\n\n"
     )
 

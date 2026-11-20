@@ -699,12 +699,14 @@ with col:
 
         if not _hr["income_known"]:
             _headroom_para = (
-                f"**0% capital-gains headroom (tax year {_year}): not computed.** No "
-                "`ordinary_income` is set in `private/personal_profile.json`, and "
-                "the 0% bracket is sized as (ceiling − income) — so it is treated "
-                "as exhausted rather than guessed at. That is the conservative "
-                "reading: assuming room that isn't there would mean realizing "
-                "gains you expected to be untaxed. Set your income to size it."
+                f"**0% capital-gains headroom (tax year {_year}): not computed.** "
+                f"The profile's ordinary income for tax year {_year} is not known: "
+                f"{escape_md(_hr['income_problem'] or 'no ordinary income')}. The 0% "
+                "bracket is sized as (ceiling − income), so it is treated as exhausted "
+                "rather than guessed at. That is the conservative reading: assuming room "
+                "that isn't there would mean realizing gains you expected to be untaxed. "
+                f"Set `ordinary_income` in `private/personal_profile.json` to "
+                f"{{\"tax_year\": {_year}, \"amount\": ...}} to size it."
             )
         elif _ceil is None:
             _headroom_para = (
@@ -722,15 +724,17 @@ with col:
             if _hr["total"] > 0:
                 _headroom_para = (
                     f"**0% capital-gains headroom (tax year {_year}): "
-                    f"\\${_hr['total']:,.0f}.** With the profile's ordinary income of "
-                    f"~\\${_income:,.0f} below the {_ceiling_text}, that much realized "
+                    f"\\${_hr['total']:,.0f}.** With the profile's ordinary income for tax "
+                    f"year {_year}, ~\\${_income:,.0f}, below the {_ceiling_text}, that much "
+                    "realized "
                     "long-term gain is federally untaxed; beyond it, gains are taxed at "
                     f"{_gain_parts}."
                 )
             else:
                 _headroom_para = (
                     f"**0% capital-gains headroom (tax year {_year}): \\$0.** With the "
-                    f"profile's ordinary income of ~\\${_income:,.0f} above the "
+                    f"profile's ordinary income for tax year {_year}, ~\\${_income:,.0f}, "
+                    "above the "
                     f"{_ceiling_text}, the 0% bracket is exhausted — every realized "
                     f"long-term gain is taxed at {_gain_parts}."
                 )
