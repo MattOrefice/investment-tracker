@@ -33,10 +33,13 @@ did/didn't run. It never catches-and-continues — a half-applied prose sync is
 exactly the state this exists to prevent. Safe to run repeatedly; on a fully
 synced DB every step reports "already-applied" and nothing is written.
 
-KNOWN STOP (#732). Steps 2 and 4 read their target text from TODAY's seed, and the seed
-has been edited since each was written. On a book whose text has moved past them they
-abort, so on the personal book as it stands the runner stops at step 2 and steps 3 to 6
-do not run through it. What those two steps should do is an open decision (#732).
+Steps 2 and 4 take step 5's rule (#732). Each holds its target text and the SHA-256 of
+every text the seed held after it as data, never reading today's seed, and leaves a book
+at one of those later texts as it is. They read the seed until #732, so the next edit to
+the seed made them abort, and the runner stopped at step 2 on the personal book. From
+every text the seed has held for the tickers they touch, the runner now completes end to
+end (tests/test_prose_runner_from_history.py, on scratch copies of the personal book),
+except from AVUV's first seed text, which stops at step 3 (#747).
 
 WHY this is a manual runner and not an auto-discovered bootstrap migration
 --------------------------------------------------------------------------
