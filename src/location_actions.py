@@ -1681,7 +1681,9 @@ def capital_gains_headroom(
     resolved the same way, from the federal profile (load_federal_tax), so the
     ceiling is the one for the year the page's rates are for (#728).
 
-    ``income_known`` is False when no income is configured, and ``ceiling`` is None
+    ``income_known`` is False when no income is configured, or the profile's names no
+    tax year or another year than the rates' (#734), and ``income_problem`` says which;
+    ``ceiling`` is None
     when the tax year has no recorded ceiling (location_config's
     LTCG_ZERO_RATE_CEILING_SINGLE); in either case the budget collapses to zero — the
     conservative reading — and the page says which, rather than presenting a
@@ -1692,12 +1694,22 @@ def capital_gains_headroom(
     if is_demo is None and (ordinary_income is _UNSET or tax_year is _UNSET):
         from src.config import IS_DEMO
         is_demo = IS_DEMO
-    if ordinary_income is _UNSET:
-        from src.personal_profile import load_income_profile
-        ordinary_income = load_income_profile(is_demo)["ordinary_income"]
     if tax_year is _UNSET:
         from src.personal_profile import load_federal_tax
         tax_year = load_federal_tax(is_demo)["tax_year"]
+    income_problem = None
+    if ordinary_income is _UNSET:
+        # One year's inputs (#734): the profile's income is used only for the tax year
+        # the rates and the ceiling are for, and otherwise is unknown, with the reason.
+        from src.personal_profile import load_income_profile
+        income = load_income_profile(is_demo)
+        ordinary_income, income_problem = income["ordinary_income"], income["problem"]
+        if ordinary_income is not None and income["tax_year"] != tax_year:
+            income_problem = (f"ordinary_income is for tax year {income['tax_year']}, "
+                              f"the rates for tax year {tax_year}")
+            ordinary_income = None
+    elif ordinary_income is None:
+        income_problem = "no ordinary income was given"
 
     ceiling = ltcg_zero_rate_ceiling(tax_year)
     headroom = ltcg_headroom(ordinary_income, tax_year)
@@ -1713,6 +1725,7 @@ def capital_gains_headroom(
         "consumed": consumed,
         "remaining": remaining,
         "income_known": income_known,
+        "income_problem": income_problem,
         "ordinary_income": ordinary_income,
         "tax_year": tax_year,
         "ceiling": ceiling,

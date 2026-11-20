@@ -140,14 +140,30 @@ def load_roth_profile(is_demo: bool, as_of: date) -> dict:
     }
 
 
+def _income(raw) -> "tuple[dict | None, str | None]":
+    """An ``ordinary_income`` entry, {tax_year, amount}, or (None, why not). A bare
+    number names no tax year, so it cannot be checked against the rates' year (#734)."""
+    if not isinstance(raw, dict):
+        return None, "ordinary_income names no tax year"
+    year, amount = raw.get("tax_year"), raw.get("amount")
+    if not isinstance(year, int) or isinstance(year, bool) or not 2000 <= year <= 2100:
+        return None, "ordinary_income.tax_year is not a year"
+    if (not isinstance(amount, (int, float)) or isinstance(amount, bool)
+            or not float(amount) > 0):
+        return None, "ordinary_income.amount is not a positive number"
+    return {"tax_year": year, "amount": float(amount)}, None
+
+
 def load_income_profile(is_demo: bool) -> dict:
     """Return the ordinary-income profile:
-        {ordinary_income: float|None, source: str}
+        {ordinary_income: float|None, tax_year: int|None, source: str, problem: str|None}
 
-    Same shape and same graceful degradation as load_roth_profile: demo returns
-    the synthetic constant; personal reads private/personal_profile.json (key
-    ``ordinary_income``); a missing, unparseable, or non-positive value returns
-    None rather than raising.
+    Same graceful degradation as load_roth_profile: demo returns the synthetic constant
+    for the demo federal profile's tax year; personal reads private/personal_profile.json
+    (key ``ordinary_income``, {tax_year, amount}, #734). A missing, unparseable or
+    non-positive value, or one that names no tax year, returns None rather than raising,
+    and ``problem`` says why. The caller pairs it only with the rates of its own tax year
+    (location_actions.capital_gains_headroom).
 
     None means UNKNOWN, and callers must treat it as such — NOT as zero. Income
     sizes the 0% long-term-cap-gains budget as (ceiling − income), so a zero
@@ -159,26 +175,28 @@ def load_income_profile(is_demo: bool) -> dict:
     if is_demo:
         return {
             "ordinary_income": float(DEMO_ORDINARY_INCOME),
-            "source": "demo-synthetic",
+            "tax_year": int(DEMO_FEDERAL_TAX["ordinary_rate"]["tax_year"]),
+            "source": "demo-synthetic", "problem": None,
         }
 
-    if _PROFILE_PATH.exists():
-        try:
-            raw = json.loads(_PROFILE_PATH.read_text(encoding="utf-8"))
-            value = raw.get("ordinary_income")
-            if value is not None:
-                income = float(value)
-                if income > 0:
-                    return {
-                        "ordinary_income": income,
-                        "source": "private/personal_profile.json",
-                    }
-        except (OSError, ValueError, TypeError, json.JSONDecodeError):
-            # Malformed file or value: fall through to the unknown default
-            # rather than raising and taking the whole page down.
-            pass
-
-    return {"ordinary_income": None, "source": "absent"}
+    none = {"ordinary_income": None, "tax_year": None}
+    if not _PROFILE_PATH.exists():
+        return {**none, "source": "absent",
+                "problem": "private/personal_profile.json does not exist"}
+    try:
+        raw = json.loads(_PROFILE_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        # Malformed file: the unknown default rather than taking the whole page down.
+        return {**none, "source": "invalid",
+                "problem": "private/personal_profile.json could not be read as JSON"}
+    if not isinstance(raw, dict) or raw.get("ordinary_income") is None:
+        return {**none, "source": "absent",
+                "problem": "private/personal_profile.json has no ordinary_income"}
+    found, problem = _income(raw["ordinary_income"])
+    if problem:
+        return {**none, "source": "invalid", "problem": problem}
+    return {"ordinary_income": found["amount"], "tax_year": found["tax_year"],
+            "source": "private/personal_profile.json", "problem": None}
 
 
 def _jurisdictions(raw) -> "tuple[list[dict], str | None]":
