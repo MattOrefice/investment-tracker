@@ -15,29 +15,41 @@ HARVEST_ACTION_THRESHOLD = 100.0   # minimum per-lot loss ($) for action recomme
 HARVEST_PCT_THRESHOLD    = 0.05    # minimum per-lot loss (%) for action recommendation
 
 # No rate is typed here (#727). The estimate prices with the federal profile
-# (personal_profile.load_federal_tax): the owner's rates in personal mode, the
-# synthetic demo profile in demo. harvest_rates reads them.
+# (personal_profile.load_federal_tax) and the tax residence's state and local rates
+# (personal_profile.load_tax_residence): the owner's in personal mode, the synthetic
+# demo profiles in demo. harvest_rates reads them.
 
 WASH_SALE_WINDOW_DAYS = 30
 
 
-def harvest_rates(federal: dict) -> dict:
-    """The federal rates a harvested loss is priced at, from load_federal_tax's result:
-        {st_rate, lt_rate, tax_year, niit, problem}
+def harvest_rates(federal: dict, residence: dict) -> dict:
+    """The rates a harvested loss is priced at, from load_federal_tax's and
+    load_tax_residence's results, through liquidity.residence_tax_profile, the profile
+    Liquidity and Asset Location price with:
+        {st_rate, lt_rate, tax_year, niit, state_st, state_lt, where,
+         residence_problem, problem}
 
     A short-term loss offsets gains taxed at the ordinary rate, a long-term loss gains
     taxed at the long-term gains rate. The net investment income tax reaches every gain
-    (#724), so where it applies it is added to both. State and local taxes are not
-    included. With no federal profile the rates are None and ``problem`` says why: the
-    estimate is then not priced, rather than priced at a typed rate.
+    (#724), so where it applies it is added to both, and so are the residence's state
+    and local rates, summed over its jurisdictions: ``where`` names them. With no
+    jurisdictions they are 0.0 and ``residence_problem`` says why none is included.
+    With no federal profile the rates are None and ``problem`` says why: the estimate is
+    then not priced, rather than priced at a typed rate.
     """
     if federal.get("problem") or federal.get("federal_marginal") is None:
         return {"st_rate": None, "lt_rate": None, "tax_year": None, "niit": None,
+                "state_st": None, "state_lt": None, "where": "",
+                "residence_problem": residence.get("problem"),
                 "problem": federal.get("problem") or "no federal rates"}
-    niit = float(federal["niit"])
-    return {"st_rate": float(federal["federal_marginal"]) + niit,
-            "lt_rate": float(federal["federal_ltcg"]) + niit,
-            "tax_year": int(federal["tax_year"]), "niit": niit, "problem": None}
+    from src.liquidity import residence_names, residence_tax_profile
+    tax = residence_tax_profile(residence, federal)
+    return {"st_rate": tax["federal_marginal"] + tax["niit"] + tax["state_marginal"],
+            "lt_rate": tax["federal_ltcg"] + tax["niit"] + tax["state_ltcg"],
+            "tax_year": tax["tax_year"], "niit": tax["niit"],
+            "state_st": tax["state_marginal"], "state_lt": tax["state_ltcg"],
+            "where": residence_names(residence),
+            "residence_problem": residence.get("problem"), "problem": None}
 
 # ── Replacement map ───────────────────────────────────────────────────────────
 # ticker → (replacement_ticker | None, rationale, wash_sale_risk_level)

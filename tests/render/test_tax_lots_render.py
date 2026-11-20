@@ -88,17 +88,27 @@ def test_methodology_marginal_rate(tax_lots_app: AppTest) -> None:
         pytest.skip("No lot data available — data-dependent test skipped.")
     from src.config import IS_DEMO
     from src.harvest import harvest_rates
-    from src.personal_profile import load_federal_tax
-    r = harvest_rates(load_federal_tax(IS_DEMO))
+    from src.personal_profile import load_federal_tax, load_tax_residence
+    residence = load_tax_residence(IS_DEMO)
+    r = harvest_rates(load_federal_tax(IS_DEMO), residence)
     all_md = " ".join(m.value for m in tax_lots_app.markdown if hasattr(m, "value") and m.value)
     if r["problem"]:
         assert "the estimated tax benefit is not priced" in all_md
         return
     assert f"**Tax rates** (tax year {r['tax_year']}): a short-term loss" in all_md, (
         "The federal rates' tax year must appear in the Methodology expander.")
-    assert (f"federal ordinary rate{' plus the net investment income tax' if r['niit'] else ''}"
-            f", **{r['st_rate']:.1%}**, and a long-term") in all_md
+    plus = " plus the net investment income tax" if r["niit"] else ""
+    local = f" plus {r['where']}'s state and local ordinary rates" if r["where"] else ""
+    assert (f"federal ordinary rate{plus}{local}, **{r['st_rate']:.1%}**, and a "
+            "long-term") in all_md
     assert f", **{r['lt_rate']:.1%}**. " in all_md
+    if r["where"]:
+        assert ("The state and local rates are the tax residence's, read from the same "
+                "profile as Liquidity and Asset Location: ") in all_md
+        for j in residence["jurisdictions"]:
+            assert f"{j['name']} {j['ordinary_rate'] * 100:g}% ordinary and " in all_md
+    else:
+        assert "No state or local tax is included: " in all_md
     if IS_DEMO:
         assert "the demo's synthetic rates" in all_md
 
@@ -137,7 +147,7 @@ def test_the_estimate_is_priced_at_the_federal_profiles_rates(monkeypatch) -> No
     committed book holds a harvest candidate for a benefit to show."""
     import src.harvest as harvest
     from src.config import IS_DEMO
-    from src.personal_profile import load_federal_tax
+    from src.personal_profile import load_federal_tax, load_tax_residence
     calls = []
 
     def record(lots, *args, **kwargs):
@@ -150,5 +160,5 @@ def test_the_estimate_is_priced_at_the_federal_profiles_rates(monkeypatch) -> No
     assert not at.exception, at.exception
     if not calls:
         pytest.skip("No lot data available — the page stopped before the estimate.")
-    want = harvest.harvest_rates(load_federal_tax(IS_DEMO))
+    want = harvest.harvest_rates(load_federal_tax(IS_DEMO), load_tax_residence(IS_DEMO))
     assert calls == [{"st_tax_rate": want["st_rate"], "lt_tax_rate": want["lt_rate"]}]
