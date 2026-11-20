@@ -190,10 +190,33 @@ def test_no_card_still_asserts_a_drag_figure_it_cannot_size(page_text):
     assert not re.search(r"The drag is \$[\d,]+ a year", body)
 
 
+def _held_unsized_by_this_rule() -> "set[str]":
+    """The holdings the newest export holds whose income this rule declines to size:
+    one in the commodity sleeve, or a blend whose look-through holds it (piece 2).
+    Read from the export and the book's seed tables, sleeves from ``securities`` and
+    look-through from ``fund_compositions``, never typed: what the household holds moves
+    with each export, so a typed ticker goes stale."""
+    import sqlite3
+    from contextlib import closing
+    from pathlib import Path
+
+    from src.household_data import load_latest_positions
+    held = set(load_latest_positions().positions_df["symbol"])
+    book = Path(hh.__file__).resolve().parent.parent / "data" / "tracker.db"
+    with closing(sqlite3.connect(f"file:{book.as_posix()}?mode=ro", uri=True)) as c:
+        sleeve = dict(c.execute("SELECT ticker, sleeve_category FROM securities"))
+        blends = {fund for fund, part in c.execute(
+            "SELECT fund_symbol, underlying_sleeve FROM fund_compositions")
+            if part == SLEEVE}
+    return {t for t in held if sleeve.get(t) == SLEEVE or t in blends}
+
+
 def test_the_kpi_exclusion_note_names_the_newly_unsized_holdings(page_text):
-    """The total must say what it is blind to — and now names PDBC and GAOSX, where
-    before it named only IDGT."""
+    """The total must say what it is blind to: it names every held holding this rule
+    unsizes, where before the rule it named only IDGT."""
     note = [t for t in page_text if t.startswith("Excludes")]
     assert note, "the drag KPI renders no exclusion note"
-    assert "PDBC" in note[0] and "GAOSX" in note[0]
+    unsized = _held_unsized_by_this_rule()
+    assert unsized, "premise: the export holds a holding this rule unsizes"
+    assert [t for t in sorted(unsized) if t not in note[0]] == []
     assert "not modelled, not zero" in note[0]

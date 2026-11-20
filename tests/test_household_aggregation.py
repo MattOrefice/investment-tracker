@@ -233,8 +233,15 @@ def test_as_held_funds_stay_in_fund_sleeves():
     result = compute_household_allocation(pos, acct, sec, comp, saa,
                                           mode="as_held", scope="total")
     sleeves = set(result["sleeve"])
-    assert "target_date" in sleeves, "RFUTX/31564E540 should appear as target_date in as_held mode"
-    assert "multi_asset" in sleeves, "GAOSX should appear as multi_asset in as_held mode"
+    # The fund sleeves the export holds, read from the seed's categories, never typed:
+    # what the household holds moves with each export, so a typed ticker goes stale.
+    # Each appears whole exactly when a fund in it is held.
+    held = set(sec.loc[sec["ticker"].isin(set(pos["symbol"])), "sleeve_category"])
+    assert "target_date" in held, "premise: the export holds a target-date fund"
+    for fund_sleeve in ("target_date", "multi_asset"):
+        assert (fund_sleeve in sleeves) == (fund_sleeve in held), (
+            f"{fund_sleeve} should appear in as_held mode exactly when the export holds "
+            f"a fund in it")
     # SAA-decomposed sleeves from look-through should NOT dominate in as_held: a
     # target-date fund stays whole, so its sleeve holds exactly the funds' own value.
     # Read from the export, never typed: a typed bound would be a personal figure (#721).
