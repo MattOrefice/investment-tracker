@@ -172,6 +172,33 @@ def _benchmarks_for(sleeve_weights: dict[str, float]) -> dict[str, list[tuple[st
     return bench
 
 
+def blended_basket() -> "list[tuple[str, float, list[tuple[str, float]]]]":
+    """The blended benchmark's basket, as _fresh_basket_series buys it: each sleeve with
+    its target weight and its benchmark legs, (ticker, share of the sleeve), in the
+    policy's order. The book's targets, or the lock's inside a quarter lock that holds
+    them (#525)."""
+    from src import policy
+    sleeve_weights = {r["name"]: r["target_weight"] for r in policy.sleeves()}
+    return [(sleeve, sleeve_weights.get(sleeve, 0.0), legs)
+            for sleeve, legs in _benchmarks_for(sleeve_weights).items()]
+
+
+def blended_basket_legs() -> str:
+    """The basket's legs as a methodology names them (#739): each leg the basket buys,
+    a blend by its parts' shares ("60% VNQ + 40% DBC"), in the policy's order. A sleeve
+    with no target weight buys nothing, so its legs are not named: Cash / SPAXX's BIL in
+    both committed books."""
+    parts: list[str] = []
+    for _sleeve, weight, legs in blended_basket():
+        if not weight:
+            continue
+        part = (legs[0][0] if len(legs) == 1
+                else " + ".join(f"{share * 100:g}% {ticker}" for ticker, share in legs))
+        if part not in parts:
+            parts.append(part)
+    return ", ".join(parts) if parts else "no sleeve carries a target weight"
+
+
 # ── The blended benchmarks' rebalancing rule (#383) ────────────────────────────
 # ONE series per blended benchmark: the basket is reset to its target weights at the
 # start of every calendar quarter (the prior quarter's last day, the base a quarter
@@ -291,20 +318,14 @@ def _fresh_basket_series(start_date: str, end_date: str | None = None) -> pd.Ser
     end = end_date or date.today().isoformat()
     date_range = pd.date_range(start=start_date, end=end, freq="D")
 
-    # The book's targets, or the lock's inside a quarter lock that holds them (#525).
-    from src import policy
-    sleeve_weights = {r["name"]: r["target_weight"] for r in policy.sleeves()}
-    _bench_map = _benchmarks_for(sleeve_weights)
-
     # Build price matrix for each component ticker
     price_cols: dict[str, pd.Series] = {}
     weight_map: dict[str, float] = {}   # component ticker → effective weight
     gaps: list[tuple[str, str, str]] = []
 
-    for sleeve, components in _bench_map.items():
-        # _bench_map is derived from the DB, so every key is a live sleeve: this
+    for sleeve, sleeve_wt, components in blended_basket():
+        # The basket is derived from the DB, so every sleeve is a live one: this
         # cannot silently resolve a stale key to 0.0 and drop its leg from the blend.
-        sleeve_wt = sleeve_weights.get(sleeve, 0.0)
         for ticker, frac in components:
             effective_wt = sleeve_wt * frac
             if ticker in price_cols:
