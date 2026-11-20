@@ -38,7 +38,8 @@ every text the seed held after it as data, never reading today's seed, and leave
 at one of those later texts as it is. They read the seed until #732, so the next edit to
 the seed made them abort, and the runner stopped at step 2 on the personal book. From
 every text the seed has held for the tickers they touch, the runner now completes end to
-end (tests/test_prose_runner_from_history.py, on scratch copies of the personal book).
+end (tests/test_prose_runner_from_history.py, on scratch copies of the personal book),
+except from AVUV's first seed text, which stops at step 3 (#747).
 
 WHY this is a manual runner and not an auto-discovered bootstrap migration
 --------------------------------------------------------------------------

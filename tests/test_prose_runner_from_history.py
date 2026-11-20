@@ -15,7 +15,8 @@ prose). Pinned:
     old falsifier beside the new one; a text the step cannot reason about still aborts;
     the held data is the history's;
   * in personal mode, on scratch copies of the personal book: from each of those texts
-    the runner completes end to end, and the book itself is untouched.
+    the runner completes end to end, and the book itself is untouched. One of the 51,
+    AVUV's first seed text, passes steps 2 and 4's part and stops at step 3 (#747).
 """
 from __future__ import annotations
 
@@ -141,6 +142,10 @@ def test_a_text_neither_earlier_nor_later_still_aborts(step, ticker, monkeypatch
 # ── on scratch copies of the personal book (personal mode) ────────────────────
 
 CASES = [(t, v["commit"]) for t in TICKERS[step2] + TICKERS[step4] for v in HISTORY[t]]
+# AVUV's first seed text predates the revisit clause the seed added at b7fa2c3. Step 2
+# migrates it; step 3, which bolds that clause, then aborts (#747). Step 3 is not one of
+# the two steps #732 changed, so this case is pinned as it stops, not hidden.
+STOPS_AT_STEP_3 = {("AVUV", "1454d0b")}
 
 
 @pytest.mark.parametrize("ticker, commit", CASES)
@@ -158,5 +163,10 @@ def test_the_runner_completes_from_each_historical_text(ticker, commit, tmp_path
         c.commit()
     rc = runner.run(copy)
     out = capsys.readouterr().out
-    assert rc == 0, out
+    if (ticker, commit) in STOPS_AT_STEP_3:
+        assert rc == 1, out
+        assert "[2/6] migrate_personal_intl_rationales: applied" in out
+        assert "[3/6] migrate_personal_revisit_clause_bold: ABORTED" in out
+    else:
+        assert rc == 0, out
     assert hashlib.sha256(TRACKER_DB.read_bytes()).hexdigest() == sha
