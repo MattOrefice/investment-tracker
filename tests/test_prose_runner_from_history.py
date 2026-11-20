@@ -8,8 +8,9 @@ through it. Each step now holds its target text and the SHA-256 of every later s
 as data. A book at a later text is left as it is.
 
 tests/fixtures/rationale_history.json holds every text the seed held for the ten tickers
-the two steps touch, read from src/seed_securities.py's git history (public, committed
-prose). Pinned:
+the two steps touch, read from src/seed_securities.py's git history. A text that names a
+state is withheld there, as no committed file may name one: the fixture keeps its commit
+and SHA-256, and the personal-mode sweep reads it from git. Pinned:
   * in CI, on a fixture book: a later text is left byte for byte and nothing is written,
     including one where step 4's anchor still occurs and a swap would have inserted the
     old falsifier beside the new one; a text the step cannot reason about still aborts;
@@ -20,10 +21,12 @@ prose). Pinned:
 """
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import shutil
 import sqlite3
+import subprocess
 from contextlib import closing
 from pathlib import Path
 
@@ -46,8 +49,33 @@ def _sha(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def _sha_of(entry: dict) -> str:
+    """A fixture entry's SHA-256: its text's, or the one kept for a withheld text."""
+    return entry["sha256"] if entry["text"] is None else _sha(entry["text"])
+
+
+def _from_git(ticker: str, commit: str) -> str:
+    """A withheld text, read from the seed at ``commit``. The fixture withholds a text that
+    names a state, which no committed file may (tests/test_no_home_state.py); the
+    history it comes from is in git."""
+    src = subprocess.run(["git", "show", f"{commit}:src/seed_securities.py"], cwd=ROOT,
+                         capture_output=True, text=True, encoding="utf-8", check=True).stdout
+    for node in ast.parse(src).body:
+        if isinstance(node, ast.Assign) and getattr(node.targets[0], "id", "") == "HOLDINGS":
+            for d in node.value.elts:
+                row = {ast.literal_eval(k): v for k, v in zip(d.keys, d.values)}
+                if ast.literal_eval(row["ticker"]) == ticker:
+                    return ast.literal_eval(row["holding_rationale"])
+    raise LookupError(f"{ticker} at {commit}")
+
+
 def _text(ticker: str, commit: str) -> str:
-    return next(v["text"] for v in HISTORY[ticker] if v["commit"] == commit)
+    entry = next(v for v in HISTORY[ticker] if v["commit"] == commit)
+    if entry["text"] is not None:
+        return entry["text"]
+    text = _from_git(ticker, commit)
+    assert _sha(text) == entry["sha256"], f"{ticker} at {commit} is not the withheld text"
+    return text
 
 
 def _after(ticker: str, commit: str) -> "list[dict]":
@@ -75,7 +103,7 @@ def _read(db: Path) -> "dict[str, str]":
 def test_each_step_holds_every_later_seed_text(step):
     commit = STEP_COMMIT[step]
     for t in TICKERS[step]:
-        assert step.LATER[t] == {_sha(v["text"]) for v in _after(t, commit)}, t
+        assert step.LATER[t] == {_sha_of(v) for v in _after(t, commit)}, t
     assert "seed_securities" not in Path(step.__file__).read_text(encoding="utf-8"), (
         "a step that reads today's seed goes stale the next time the seed is edited")
 

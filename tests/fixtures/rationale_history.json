@@ -229,17 +229,20 @@
   {
    "commit": "776e1e6",
    "date": "2026-08-22",
-   "text": "VGIT delivers intermediate-term US Treasury exposure at 0.04% versus IEF's 0.15%. Duration is modestly shorter (~5.5 years vs IEF's ~7.5 years), appropriate for a 6% sleeve inside a 78% growth portfolio. The shorter duration means VGIT underperforms longer-dated Treasuries in a flight-to-quality rally but limits drawdown in a rate-selloff — appropriate given the portfolio's 78% growth allocation. Critically, Treasury interest income is exempt from state and local taxes — a real, if modest, after-tax advantage at Pennsylvania's flat rate over investment-grade corporate bond funds with similar yield. Cost minimization is the dominant selection criterion for a sleeve that exists for drawdown buffering and rebalancing optionality, not return.\n\n**Would revisit if** nominal Treasuries stopped hedging equity drawdowns across successive inflationary episodes. 2022 was one such failure; this sleeve's case rests on it being the exception rather than the regime.\n\n**Would also revisit if** real yields rose enough to make longer duration compensated for its additional volatility."
+   "text": null,
+   "sha256": "d02ce2e9310bc70edb476604c161ae03d8cd5a6a0dddbd92466086a11507bce2"
   },
   {
    "commit": "fc0a9ca",
    "date": "2026-09-27",
-   "text": "VGIT delivers intermediate-term US Treasury exposure at 0.04% versus IEF's 0.15%. Duration is modestly shorter (~5.5 years vs IEF's ~7.5 years), appropriate for a 6% sleeve inside a 78% growth portfolio. The shorter duration means VGIT underperforms longer-dated Treasuries in a flight-to-quality rally but limits drawdown in a rate-selloff. Critically, Treasury interest income is exempt from state and local taxes: a real, if modest, after-tax advantage at Pennsylvania's flat rate over investment-grade corporate bond funds with similar yield. Cost minimization is the dominant selection criterion for a sleeve that exists for drawdown buffering and rebalancing optionality, not return.\n\n**Would revisit if** nominal Treasuries stopped hedging equity drawdowns across successive inflationary episodes. 2022 was one such failure; this sleeve's case rests on it being the exception rather than the regime.\n\n**Would also revisit if** real yields rose enough to make longer duration compensated for its additional volatility."
+   "text": null,
+   "sha256": "21206060bda1652f852b6d09c21e3c750b8608e67deff54fd8621354a4ae458f"
   },
   {
    "commit": "e1674e5",
    "date": "2026-09-28",
-   "text": "VGIT delivers intermediate-term US Treasury exposure at {{er:VGIT}} versus IEF's {{er:IEF}}. Duration is modestly shorter ({{dur:VGIT}} vs IEF's {{dur:IEF}}), appropriate for a {{w:Core Fixed Income}} sleeve inside a {{w:Equity}} growth portfolio. The shorter duration means VGIT underperforms longer-dated Treasuries in a flight-to-quality rally but limits drawdown in a rate-selloff. Critically, Treasury interest income is exempt from state and local taxes: a real, if modest, after-tax advantage at Pennsylvania's flat rate over investment-grade corporate bond funds with similar yield. Cost minimization is the dominant selection criterion for a sleeve that exists for drawdown buffering and rebalancing optionality, not return.\n\n**Would revisit if** nominal Treasuries stopped hedging equity drawdowns across successive inflationary episodes. 2022 was one such failure; this sleeve's case rests on it being the exception rather than the regime.\n\n**Would also revisit if** real yields rose enough to make longer duration compensated for its additional volatility."
+   "text": null,
+   "sha256": "da67fde28b7da1d18d0273ef03df282e1964bc7c8b1dbdb4e813272885ce145b"
   },
   {
    "commit": "002a218",
