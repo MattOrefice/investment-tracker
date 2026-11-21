@@ -18,10 +18,12 @@ Every tracked text file is read. A tracked SQLite book is read cell by cell (eve
 value of every table), because its bytes are not text. Other binaries (the two README
 images) are not read.
 
-In place of the names, the seeds carry neutral labels, and bootstrap_personal_db writes
-the private labels into the personal book (``withheld_names.account_labels`` and
-``security_names``), so its pages keep the real ones. The last tests here hold that
-overlay.
+In place of the names, the seeds carry placeholders, written only when a row is first
+created and never over an existing label (#743, tests/test_placeholder_never_overwrites.py).
+The personal book keeps its real labels. ``withheld_names.account_labels`` and
+``security_names`` name them, and only this census reads them: each holds a withheld
+name, each is what the personal book holds, and each sits where the seed carries a
+placeholder.
 """
 from __future__ import annotations
 
@@ -216,8 +218,9 @@ def test_every_private_label_holds_a_withheld_name():
 
 
 def test_the_private_labels_are_the_personal_books():
-    """The labels bootstrap_personal_db writes are the ones the personal book holds, so
-    the next start writes the same text. Read-only: tracker.db is not written."""
+    """The private labels are the ones the personal book holds. No start writes them
+    (#743): the book keeps them because a placeholder never overwrites. Read-only:
+    tracker.db is not written."""
     w = _withheld()
     if not TRACKER_DB.exists() or TRACKER_DB.stat().st_size == 0:
         pytest.skip("no personal book")
@@ -235,7 +238,22 @@ def test_the_private_labels_are_the_personal_books():
         con.close()
 
 
-# ── the overlay: neutral seeds, private labels in the personal book ───────────
+def test_every_private_label_sits_where_the_seed_carries_a_placeholder():
+    """Each withheld label replaces a seed value marked as a placeholder, and each
+    placeholder stands for a withheld label. An unmarked seed value would reach the
+    personal book over its real label on the next start (#743)."""
+    from tests.test_placeholder_never_overwrites import placeholder_marks
+    w = _withheld()
+    accounts, securities = placeholder_marks()
+    assert set(w["account_labels"]) == accounts
+    assert set(w["security_names"]) == securities
+
+
+# ── the withheld-names reader ─────────────────────────────────────────────────
+# The overlay this file held until #743 (bootstrap_personal_db writing these labels into
+# the personal book) is gone. Its two tests moved to tests/test_placeholder_never_overwrites.py:
+# a fresh book gets the placeholders with or without withheld_names, and a start
+# leaves an existing book's labels as they are.
 
 def _single_stock() -> str:
     """The household seed's one single-stock ticker, read from the seed so this file
@@ -254,45 +272,6 @@ _SYNTHETIC = {"names": ["Sample Firm"], "employer_stock_tickers": ["XYZ"],
                                  "acct_wkpl_02": "Sample Firm 401(k)"},
               "security_names": {STOCK: "Sample Firm Inc."},
               "source": "test", "problem": None}
-
-
-def _bootstrapped_labels(tmp_path, monkeypatch, withheld: dict):
-    import src.personal_profile as pp
-    from src import bootstrap
-    d = tmp_path / "data"
-    d.mkdir()
-    fresh = d / "tracker.db"
-    fresh.write_bytes(b"")
-    monkeypatch.setattr("src.db.DB_PATH", fresh)
-    monkeypatch.setattr("src.db._migrated_paths", set())
-    monkeypatch.setattr("src.bootstrap._bootstrapped", set())
-    monkeypatch.setattr(pp, "load_withheld_names", lambda is_demo: withheld)
-    bootstrap.bootstrap_personal_db()
-    con = sqlite3.connect(fresh)
-    try:
-        accounts = dict(con.execute(
-            "SELECT pseudonym, display_name FROM accounts "
-            "WHERE pseudonym IN ('acct_wkpl_01', 'acct_wkpl_02')"))
-        (name,), = con.execute("SELECT name FROM securities WHERE ticker = ?", (STOCK,))
-        return accounts, name
-    finally:
-        con.close()
-
-
-def test_bootstrap_writes_the_private_labels_into_the_personal_book(tmp_path, monkeypatch):
-    accounts, name = _bootstrapped_labels(tmp_path, monkeypatch, _SYNTHETIC)
-    assert accounts == _SYNTHETIC["account_labels"]
-    assert name == "Sample Firm Inc."
-
-
-def test_without_private_labels_the_seeds_neutral_labels_stand(tmp_path, monkeypatch):
-    empty = {**_SYNTHETIC, "names": [], "employer_stock_tickers": [], "account_labels": {},
-             "security_names": {}, "problem": "private/personal_profile.json has no "
-                                              "withheld_names"}
-    accounts, name = _bootstrapped_labels(tmp_path, monkeypatch, empty)
-    assert accounts == {"acct_wkpl_01": "Former employer's plan (unvested)",
-                        "acct_wkpl_02": "Former employer's 401(k)"}
-    assert name == "Single stock"
 
 
 def test_load_withheld_names_reads_and_refuses(tmp_path, monkeypatch):

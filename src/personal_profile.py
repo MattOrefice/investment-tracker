@@ -384,12 +384,17 @@ def load_withheld_names(is_demo: bool) -> dict:
 
     ``names`` are employers and workplace-plan providers; ``employer_stock_tickers``
     are tickers committed text must not tie to an employer. ``account_labels`` (by
-    pseudonym) and ``security_names`` (by ticker) are what bootstrap_personal_db writes
-    into the personal book instead of the seeds' neutral labels.
+    pseudonym) and ``security_names`` (by ticker) are the real labels the personal book
+    holds where the seeds carry placeholders.
+
+    Only the census reads these (tests/test_no_employer_names.py). Nothing writes them
+    into a book: a seed's placeholder is written only when its row is first created,
+    never over an existing label (#743), so a start changes no label with or without
+    them.
 
     Demo has none: it returns empty collections and no problem. Personal reads
     ``withheld_names`` from private/personal_profile.json; absent or invalid, the
-    collections are empty and ``problem`` says why, so the seeds' neutral labels stand.
+    collections are empty and ``problem`` says why.
     """
     empty = {"names": [], "employer_stock_tickers": [], "account_labels": {},
              "security_names": {}}
