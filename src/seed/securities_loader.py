@@ -10,10 +10,13 @@ name corrected in the seed reaches a book seeded before the correction. No ticke
 may carry two different names across the seeds (tests/test_seed_names.py), so the
 SAA seed (src/seed_securities.py) and this one never overwrite each other.
 
-A name the committed seed withholds (#725: the seed names no employer, so a single
-stock's row carries a neutral description) comes from ``names``, which
-bootstrap_personal_db reads from private/personal_profile.json
-(`withheld_names.security_names`), so the personal book keeps the real name.
+A PLACEHOLDER NAME NEVER OVERWRITES (#743, decided by the owner on November 21, 2026).
+The seed names no employer (#725), so a single stock's row carries a neutral
+description, marked `name_is_placeholder` true in the CSV. A placeholder is written
+only when its row is first created: a book that already holds a name for that ticker
+keeps it, so the personal book's real name stands on every start, whatever
+private/personal_profile.json holds. Its `withheld_names` feeds only the census
+(tests/test_no_employer_names.py). A CSV without the column marks no placeholder.
 
 For new tickers: inserts with the parking-lot asset_class_id ('Other / Non-SAA')
 so the NOT NULL constraint is satisfied.
@@ -44,18 +47,16 @@ def _get_parking_lot_id(conn: sqlite3.Connection) -> int:
     return row["asset_class_id"]
 
 
-def load_household_securities(db_path: str | Path, csv_path: str | Path,
-                              names: "dict[str, str] | None" = None) -> dict:
+def load_household_securities(db_path: str | Path, csv_path: str | Path) -> dict:
     """UPSERT household securities from CSV into the securities table.
 
-    ``names`` maps a ticker to the name it carries instead of the CSV's description:
-    the private names, passed by bootstrap_personal_db.
+    A description marked `name_is_placeholder` is written only when the row is
+    created, never over an existing row's name (#743).
 
     Returns a summary dict: {inserted, updated, skipped, errors}.
     """
     db_path  = Path(db_path)
     csv_path = Path(csv_path)
-    names    = names or {}
 
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
@@ -68,10 +69,11 @@ def load_household_securities(db_path: str | Path, csv_path: str | Path,
             reader = csv.DictReader(f)
             for row in reader:
                 symbol       = row["symbol"].strip()
-                description  = names.get(symbol, row["description"].strip())
+                description  = row["description"].strip()
                 sleeve_cat   = row["sleeve_category"].strip()
                 tax_eff      = row["tax_efficiency"].strip()
                 is_in_saa    = 1 if row["is_in_saa"].strip().lower() == "true" else 0
+                placeholder  = (row.get("name_is_placeholder") or "").strip().lower() == "true"
 
                 if not symbol:
                     counts["skipped"] += 1
@@ -85,13 +87,15 @@ def load_household_securities(db_path: str | Path, csv_path: str | Path,
                              sleeve_category, tax_efficiency, is_in_saa)
                         VALUES (?, ?, ?, ?, ?, ?)
                         ON CONFLICT(ticker) DO UPDATE SET
-                            name            = excluded.name,
+                            -- a placeholder never overwrites an existing name (#743)
+                            name            = CASE WHEN ? THEN securities.name
+                                                   ELSE excluded.name END,
                             sleeve_category = excluded.sleeve_category,
                             tax_efficiency  = excluded.tax_efficiency,
                             is_in_saa       = excluded.is_in_saa
                         """,
                         (symbol, description, parking_lot_id,
-                         sleeve_cat, tax_eff, is_in_saa),
+                         sleeve_cat, tax_eff, is_in_saa, placeholder),
                     )
                     # Distinguish insert vs update for reporting
                     if conn.execute(

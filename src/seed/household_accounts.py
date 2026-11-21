@@ -23,7 +23,8 @@ _TAX_TO_TYPE: dict[str, str] = {
     "other":           "other",
 }
 
-# (tax_treatment, managed_by, pseudonym, display_name, included_in_household)
+# (tax_treatment, managed_by, pseudonym, display_name, included_in_household,
+#  label_is_placeholder)
 # included_in_household=0 means the account holds money that is not a household
 # asset — excluded from every total, allocation, and liquidity calc at this one
 # source, never re-filtered per page.
@@ -37,44 +38,44 @@ _TAX_TO_TYPE: dict[str, str] = {
 # display_name ("Individual Taxable (Self-Directed)") is set in
 # bootstrap_personal_db (personal-only, so demo's acct_01 keeps "Personal
 # Fidelity"). See tools/migrate_accounts_phase45_merge.py.
-_ACCOUNTS: list[tuple[str, str, str, str, int]] = [
-    ("taxable",         "external", "acct_taxable_02",  "Individual Taxable (TOD)", 1),
-    ("traditional_ira", "external", "acct_trad_ira_01", "Traditional IRA", 1),
-    ("roth_ira",        "external", "acct_roth_01",     "Roth IRA", 1),
+_ACCOUNTS: list[tuple[str, str, str, str, int, bool]] = [
+    ("taxable",         "external", "acct_taxable_02",  "Individual Taxable (TOD)", 1, False),
+    ("traditional_ira", "external", "acct_trad_ira_01", "Traditional IRA", 1, False),
+    ("roth_ira",        "external", "acct_roth_01",     "Roth IRA", 1, False),
     # 0% vested — forfeitable money in a former employer's plan (it holds a small
     # target-date position), not the user's asset. Excluded from household
     # totals/allocation/liquidity. account_map.json binds that raw account to
     # acct_wkpl_01.
-    ("workplace_plan",  "external", "acct_wkpl_01",     "Former employer's plan (unvested)", 0),
+    ("workplace_plan",  "external", "acct_wkpl_01",     "Former employer's plan (unvested)", 0, True),
     # Fully-vested former employer's 401(k) — the user's own asset, and their single
     # largest position: the American Funds 2060 (RFUTX) target-date fund. Included in
     # the household; the rollover source (see ROLLOVER_SOURCE_PSEUDONYM).
     # account_map.json binds RFUTX's raw account here.
-    ("workplace_plan",  "external", "acct_wkpl_02",     "Former employer's 401(k)", 1),
-    ("hsa",             "external", "acct_hsa_01",      "HSA", 1),
+    ("workplace_plan",  "external", "acct_wkpl_02",     "Former employer's 401(k)", 1, True),
+    ("hsa",             "external", "acct_hsa_01",      "HSA", 1, False),
 ]
-# The labels above are neutral on purpose (#725): committed text names no employer or
-# workplace-plan provider. The real labels live in private/personal_profile.json
-# (`withheld_names.account_labels`), and bootstrap_personal_db passes them in, so the
-# personal book and its pages keep them.
+# A PLACEHOLDER LABEL NEVER OVERWRITES (#743, decided by the owner on November 21, 2026).
+# The two labels marked True are neutral on purpose (#725): committed text names no
+# employer or workplace-plan provider. A placeholder is written only when its row is
+# first created. A book that already holds a label for that account keeps it, so the
+# personal book's real labels stand on every start, whatever private/personal_profile.json
+# holds. Its `withheld_names` feeds only the census (tests/test_no_employer_names.py).
+# An unmarked label is the seed's own and still reaches an existing row.
 
 
-def seed_household_accounts(db_path: str | Path,
-                            labels: "dict[str, str] | None" = None) -> None:
+def seed_household_accounts(db_path: str | Path) -> None:
     """UPSERT the 6 household accounts into the accounts table, keyed on pseudonym.
 
-    ``labels`` maps a pseudonym to the display_name it carries instead of the neutral
-    one in _ACCOUNTS: the private labels, passed by bootstrap_personal_db.
+    A label marked as a placeholder in _ACCOUNTS is written only when the row is
+    created, never over an existing row's display_name (#743).
 
     The 7th household account — the self-directed taxable book — is acct_01, the
     db.py base account, NOT seeded here (see the _ACCOUNTS note above)."""
     db_path = Path(db_path)
-    labels = labels or {}
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     try:
-        for tax_treat, managed_by, pseudonym, display_name, included in _ACCOUNTS:
-            display_name = labels.get(pseudonym, display_name)
+        for tax_treat, managed_by, pseudonym, display_name, included, placeholder in _ACCOUNTS:
             acct_type = _TAX_TO_TYPE.get(tax_treat, "other")
             try:
                 conn.execute(
@@ -96,11 +97,14 @@ def seed_household_accounts(db_path: str | Path,
                         custodian     = excluded.custodian,
                         is_active     = excluded.is_active,
                         tax_treatment = excluded.tax_treatment,
-                        display_name  = excluded.display_name,
+                        -- a placeholder never overwrites an existing label (#743)
+                        display_name  = CASE WHEN ? THEN accounts.display_name
+                                             ELSE excluded.display_name END,
                         managed_by    = excluded.managed_by,
                         included_in_household = excluded.included_in_household
                     """,
-                    (display_name, acct_type, tax_treat, pseudonym, display_name, managed_by, included),
+                    (display_name, acct_type, tax_treat, pseudonym, display_name, managed_by,
+                     included, placeholder),
                 )
             except Exception:
                 logger.warning("Failed to upsert account %r — skipping", pseudonym, exc_info=True)
