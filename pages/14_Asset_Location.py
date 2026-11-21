@@ -46,22 +46,11 @@ from src.location_config import (
     investment_income_rate,
     is_directable,
     ltcg_rate,
-    # IRS 2026 limits — for the ideal-location reference table (2c). Named constants
-    # so no dollar literal is scattered in the page.
-    IRA_CONTRIB_LIMIT_2026,
-    IRA_CATCHUP_50_2026,
-    WORKPLACE_ELECTIVE_DEFERRAL_2026,
-    WORKPLACE_CATCHUP_50_2026,
-    WORKPLACE_CATCHUP_60_63_2026,
-    WORKPLACE_415C_TOTAL_2026,
-    ROTH_MAGI_PHASEOUT_SINGLE_2026,
-    ROTH_MAGI_PHASEOUT_MFJ_2026,
-    TRAD_IRA_DEDUCTION_PHASEOUT_SINGLE_2026,
-    HSA_CONTRIB_LIMIT_SELF_2026,
-    HSA_CONTRIB_LIMIT_FAMILY_2026,
-    HSA_CATCHUP_55_2026,
 )
 from src.location_actions import (
+    # The ideal-location reference table (2c), its IRS limits for the federal rates'
+    # tax year, each cited with its document's date (#735).
+    ideal_location_reference,
     bind_groups_to_book,
     decision_review,
     STATUS_ORDER,
@@ -785,66 +774,15 @@ with col:
             "assumed yield above."
         )
 
-# ── Ideal account location — 2026 reference ─────────────────────────────────────
-# A static reference: the TARGET location for each account type, with IRS-2026
-# limits. Every dollar figure templates from the named constants in
-# location_config.py (no scattered literals); ages/years are inherent content.
+# ── Ideal account location — reference, for the federal rates' tax year ─────────
+# A static reference: the TARGET location for each account type, with the IRS limits
+# for the tax year the page's federal rates are for (#735). Every dollar figure
+# templates from location_config.IRS_LIMITS (no scattered literals), and the notes
+# cite each document with its date; a tax year with no row shows none, never another
+# year's. Built by location_actions.ideal_location_reference, so CI can read it.
+_reference = ideal_location_reference(_tax_profile["tax_year"])
 _, col, _ = st.columns([1, 8, 1])
 with col:
-    with st.expander("Where each account type ideally sits — 2026", expanded=False):
-        def _d(x):   return escape_md(_fmt_dollars(x))     # full dollars: "\$7,500"
-        def _k(x):   return "\\$" + f"{x / 1000:,.0f}k"    # abbreviated:  "\$153k"
-        def _rng(t): return f"{_k(t[0])}–{_k(t[1])}"       # phase-out range: "\$153k–\$168k"
-
-        _ira_contrib = f"{_d(IRA_CONTRIB_LIMIT_2026)} combined¹ (+{_d(IRA_CATCHUP_50_2026)} if 50+)"
-        _rows = [
-            ("Roth IRA",
-             "Highest-return equity — broad-market, growth-tilted",
-             _ira_contrib,
-             f"Phases out MAGI {_rng(ROTH_MAGI_PHASEOUT_SINGLE_2026)} single, "
-             f"{_rng(ROTH_MAGI_PHASEOUT_MFJ_2026)} joint",
-             "Growth & withdrawals never taxed; contributions withdrawable anytime; "
-             "no RMDs."),
-            ("Traditional IRA",
-             "Income-heavy / lower-return — bonds, REITs, hedged equity",
-             _ira_contrib,
-             f"Anyone can contribute; deduction phases out "
-             f"{_rng(TRAD_IRA_DEDUCTION_PHASEOUT_SINGLE_2026)} single if covered by a workplace plan",
-             "Withdrawn as ordinary income; RMDs from 73 (75 if born 1960+)."),
-            ("401(k) / 403(b)",
-             "Same as Traditional; capture the full employer match first",
-             f"{_d(WORKPLACE_ELECTIVE_DEFERRAL_2026)} employee (+{_d(WORKPLACE_CATCHUP_50_2026)} if 50+, "
-             f"+{_d(WORKPLACE_CATCHUP_60_63_2026)} if 60–63); {_k(WORKPLACE_415C_TOTAL_2026)} incl. employer",
-             "No income limit",
-             "Employer match beats any market return. Roth 401(k): after-tax in, "
-             "tax-free growth out, no income limit — same ideal contents as a Roth "
-             "IRA; pre-tax side holds bonds like a Traditional IRA."),
-            ("Taxable brokerage",
-             "Tax-efficient broad equity, munis, anything needed before 59½",
-             "No limit",
-             "No limit",
-             "Low turnover + qualified dividends keep drag low; no early-withdrawal "
-             "penalty; harvest losses; step-up at death."),
-            ("HSA (needs HDHP)",
-             "Long-horizon growth equity, if medical bills paid out of pocket",
-             f"{_d(HSA_CONTRIB_LIMIT_SELF_2026)} self / {_d(HSA_CONTRIB_LIMIT_FAMILY_2026)} family "
-             f"(+{_d(HSA_CATCHUP_55_2026)} if 55+)",
-             "No income limit; requires an HSA-eligible HDHP",
-             "Triple tax-free; after 65 works like a Traditional IRA for non-medical spending."),
-        ]
-        _hdr = ("| Account | Ideal holdings | 2026 contribution limit | "
-                "2026 income / eligibility limit | Why here / key note |\n"
-                "|---|---|---|---|---|\n")
-        _body = "\n".join("| " + " | ".join(r) + " |" for r in _rows)
-        st.markdown(_hdr + _body)
-        st.markdown(
-            f"¹ {_d(IRA_CONTRIB_LIMIT_2026)} is the *combined* ceiling across both IRAs, not each.\n\n"
-            "**Why growth, not drag, picks the Roth.** Value scales with tax-free growth, "
-            "not drag avoided — equities (highest return) go here; bonds (low return, "
-            "tax-inefficient) cost nothing extra in the Traditional IRA regardless. The "
-            "40-year horizon is beside the point: location only answers where the bonds "
-            "you hold go, not whether to hold them — that is a whole-portfolio risk "
-            "decision (the SAA's fixed-income target), not a location one.\n\n"
-            "² Pre-tax 401(k), Roth 401(k), and Roth IRA can coexist — the 401(k) limit "
-            "is shared across pre-tax + Roth; the Roth IRA limit is separate."
-        )
+    with st.expander(_reference["title"], expanded=False):
+        st.markdown(_reference["table"])
+        st.markdown(_reference["notes"])

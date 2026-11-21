@@ -16,7 +16,7 @@ A zero or a one-dollar unit ($0, $0.00, $1, $1.00: an empty amount, a money-mark
 a growth-of-$1 base) states no amount from any book, and needs no entry.
 
 WHAT COUNTS AS A DOLLAR FIGURE. A "$" followed by a digit, with the number's grouping,
-decimals and a K, M or B suffix: "$19.4B", "$1,000.00", "\\$153k". A sign before the "$"
+decimals and a K, M or B suffix: "$19.4B", "$1,000.00", "\\$500k". A sign before the "$"
 is not part of the figure. A format placeholder ("${x:,.0f}", "$%.0f") has no digit after
 its "$" and is not a figure.
 
@@ -72,8 +72,6 @@ _NPORT = (f"{PUBLIC}: SPHQ's and QUAL's net assets on July 31, 2026, from each t
 _VANGUARD_VNQ = (f"{PUBLIC}: Vanguard's net assets for VNQ's ETF share class and for the "
                  "fund, August 31, 2026, read for #456")
 _OLD_THESIS_AUM = f"{DEMO}: an AUM the demo book's thesis prose typed before #456 dropped it"
-_IRS_2026 = (f"{PUBLIC}: the IRS's 2026 retirement-plan limits, IRS Notice 2025-67 "
-             "(November 2025), held in src/location_config.py's _2026 constants")
 _CLOUD_BUG = (f"{DEMO}: the demo book's current value under the Phase 8p duplicate "
               "price-index bug")
 _BOOK_FREE = f"{SYNTHETIC}: a made-up amount in a constructed fixture or example"
@@ -105,11 +103,6 @@ FIGURES: dict[str, dict[str, str]] = {
         "$0.01": f"{SYNTHETIC}: the page's reconciliation tolerance",
         "$3,000": (f"{PUBLIC}: the yearly limit on capital losses deducted against "
                    "ordinary income, 26 U.S.C. § 1211(b)(1) (U.S. Code, 2024 edition)"),
-    },
-    "pages/14_Asset_Location.py": {
-        "$7,500": _IRS_2026,
-        "$153k": _IRS_2026,
-        "$168k": _IRS_2026,
     },
     "pages/15_Liquidity.py": {
         "$10,000": f"{SYNTHETIC}: an example of text Markdown misreads as LaTeX",
