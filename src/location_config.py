@@ -354,7 +354,7 @@ SLEEVE_YIELD_CONSTRUCTION: dict[str, dict] = {
 # materiality. The cadence exists so the entry gets LOOKED AT.
 #
 # 365 because this file already commits to exactly that cadence for the IRS figures
-# later on ("verify annually" — IRA_CONTRIB_LIMIT_2026 and friends). A yield review
+# later on (IRS_LIMITS, a row per tax year since #735). A yield review
 # riding the tax-year pass that has to happen anyway beats a second calendar nobody
 # keeps. NOT ENFORCED BY A TEST, deliberately: an assertion that reddens as real data
 # ages fails with no commit, blocks unrelated PRs, and makes bumping the date the
@@ -687,28 +687,81 @@ def ltcg_headroom(ordinary_income: float | None, tax_year: int | None) -> float 
         return None
     return max(0.0, ceiling["amount"] - float(ordinary_income))
 
-# ── IRS 2026 figures — verify annually (tax year 2026) ──────────────────────────
-# STATIC tax-law limits — contribution ceilings and income/eligibility phase-outs.
-# These are NOT portfolio figures: they are named constants (never scattered dollar
-# literals) so the Asset Location page's ideal-location reference table templates
-# every amount from here. Re-verify against the IRS annual inflation-adjustment
-# release each year and bump the _2026 suffix when the tax year rolls. Phase-outs
-# are (start, end) ranges — the deduction/eligibility fades linearly across them.
-IRA_CONTRIB_LIMIT_2026: float = 7_500.0            # combined Traditional + Roth (per person, not per account)
-IRA_CATCHUP_50_2026: float = 1_100.0               # additional, age 50+
-WORKPLACE_ELECTIVE_DEFERRAL_2026: float = 24_500.0  # 401(k)/403(b) employee elective deferral
-WORKPLACE_CATCHUP_50_2026: float = 8_000.0         # additional, age 50+
-WORKPLACE_CATCHUP_60_63_2026: float = 11_250.0     # additional, age 60-63 (SECURE 2.0 higher catch-up)
-WORKPLACE_415C_TOTAL_2026: float = 72_000.0        # total employee + employer (IRC 415(c))
-ROTH_MAGI_PHASEOUT_SINGLE_2026: tuple[float, float] = (153_000.0, 168_000.0)   # single / head of household
-ROTH_MAGI_PHASEOUT_MFJ_2026: tuple[float, float] = (242_000.0, 252_000.0)      # married filing jointly
-# Traditional IRA deduction phase-out applies only when the contributor is covered
-# by a workplace plan; there is no income limit to CONTRIBUTE (only to deduct).
-TRAD_IRA_DEDUCTION_PHASEOUT_SINGLE_2026: tuple[float, float] = (81_000.0, 91_000.0)   # single, covered by a plan
-TRAD_IRA_DEDUCTION_PHASEOUT_MFJ_2026: tuple[float, float] = (129_000.0, 149_000.0)    # MFJ, contributor covered
-HSA_CONTRIB_LIMIT_SELF_2026: float = 4_400.0       # self-only HDHP coverage
-HSA_CONTRIB_LIMIT_FAMILY_2026: float = 8_750.0     # family HDHP coverage
-HSA_CATCHUP_55_2026: float = 1_000.0               # additional, age 55+
+# ── IRS contribution and income limits, BY TAX YEAR (#735) ──────────────────────
+# Decided by the owner on November 21, 2026. STATIC tax-law limits: contribution
+# ceilings and income/eligibility phase-outs, for the Asset Location page's
+# ideal-location reference table, which templates every amount from here. They are not
+# portfolio figures.
+#
+# Each row's figures are read off the documents that state them, and the row cites
+# each document with its date:
+#   * retirement plans and IRAs (sections 219, 402(g), 408A, 414(v) and 415 of the
+#     Code): the year's IRS notice of cost-of-living adjustments;
+#   * HSAs (section 223(b)(2)): the year's HSA revenue procedure.
+# The inflation-adjustment revenue procedure the 0% ceiling above is read from states
+# none of these. The HSA catch-up is not adjusted by year (HSA_CATCHUP_55 below).
+#
+# The page shows the row for the tax year its federal rates are for. A tax year with no
+# row shows no limits, never another year's. Phase-outs are (start, end) ranges of
+# modified AGI: the deduction or the eligibility fades linearly across them.
+IRS_LIMITS: dict[int, dict] = {
+    2026: {
+        "retirement_source": "IRS Notice 2025-67, 2026 Amounts Relating to Retirement "
+                             "Plans and IRAs (IR-2025-111)",
+        "retirement_source_date": "November 13, 2025",
+        "hsa_source": "Rev. Proc. 2025-19, section 2.01(1) (Internal Revenue Bulletin "
+                      "2025-21, page 1447)",
+        "hsa_source_date": "May 19, 2025",
+        "ira_contrib_limit": 7_500.0,               # § 219(b)(5)(A), Traditional + Roth combined
+        "ira_catchup_50": 1_100.0,                  # § 219(b)(5)(B)(ii), age 50+
+        "workplace_elective_deferral": 24_500.0,    # § 402(g)(1), 401(k)/403(b) employee deferral
+        "workplace_catchup_50": 8_000.0,            # § 414(v)(2)(B)(i), age 50+
+        "workplace_catchup_60_63": 11_250.0,        # § 414(v)(2)(E)(i), ages 60 to 63
+        "workplace_415c_total": 72_000.0,           # § 415(c)(1)(A), employee + employer
+        "roth_magi_phaseout_single": (153_000.0, 168_000.0),          # § 408A(c)(3)(A), single / HoH
+        "roth_magi_phaseout_mfj": (242_000.0, 252_000.0),             # § 408A(c)(3)(A), joint
+        "trad_ira_deduction_phaseout_single": (81_000.0, 91_000.0),   # § 219(g)(2)(A), single, covered by a plan
+        "trad_ira_deduction_phaseout_mfj": (129_000.0, 149_000.0),    # § 219(g)(2)(A), joint, contributor covered
+        "hsa_contrib_limit_self": 4_400.0,          # § 223(b)(2)(A), self-only HDHP coverage
+        "hsa_contrib_limit_family": 8_750.0,        # § 223(b)(2)(B), family HDHP coverage
+    },
+    2027: {
+        "retirement_source": "IRS Notice 2026-66, 2027 Amounts Relating to Retirement "
+                             "Plans and IRAs (IR-2026-136)",
+        "retirement_source_date": "November 12, 2026",
+        "hsa_source": "Rev. Proc. 2026-24, section 3.01(1) (Internal Revenue Bulletin "
+                      "2026-25, page 1582)",
+        "hsa_source_date": "June 15, 2026",
+        "ira_contrib_limit": 7_500.0,               # § 219(b)(5)(A): "remains"
+        "ira_catchup_50": 1_100.0,                  # § 219(b)(5)(B)(ii): "remains"
+        "workplace_elective_deferral": 25_500.0,    # § 402(g)(1)
+        "workplace_catchup_50": 8_500.0,            # § 414(v)(2)(B)(i)
+        "workplace_catchup_60_63": 11_750.0,        # § 414(v)(2)(E)(i)
+        "workplace_415c_total": 75_000.0,           # § 415(c)(1)(A)
+        "roth_magi_phaseout_single": (158_000.0, 173_000.0),          # § 408A(c)(3)(A)
+        "roth_magi_phaseout_mfj": (250_000.0, 260_000.0),             # § 408A(c)(3)(A)
+        "trad_ira_deduction_phaseout_single": (83_000.0, 93_000.0),   # § 219(g)(2)(A)
+        "trad_ira_deduction_phaseout_mfj": (133_000.0, 153_000.0),    # § 219(g)(2)(A)
+        "hsa_contrib_limit_self": 4_500.0,          # § 223(b)(2)(A)
+        "hsa_contrib_limit_family": 9_000.0,        # § 223(b)(2)(B)
+    },
+}
+
+# The HSA catch-up for age 55 and over: the statute's own amount, which no yearly
+# document adjusts. Section 223(b)(3)(B)'s table ends "2009 and thereafter" at this
+# figure.
+HSA_CATCHUP_55: dict = {
+    "amount": 1_000.0,
+    "source": "26 U.S.C. § 223(b)(3)(B), the additional contribution amount for 2009 and "
+              "thereafter (United States Code, 2024 edition)",
+    "source_date": "read November 21, 2026",
+}
+
+
+def irs_limits(tax_year: int | None) -> dict | None:
+    """The IRS_LIMITS row for ``tax_year``, or None when the year has no row (or is
+    unknown). Never another year's row."""
+    return None if tax_year is None else IRS_LIMITS.get(int(tax_year))
 
 # ── Sleeve category: where "equity" comes from (#212) ──────────────────────────
 # A sleeve's CATEGORY is a root of the SAA taxonomy (asset_classes rows with no

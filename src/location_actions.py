@@ -2173,6 +2173,105 @@ def render_prose_md(template: str, resolved: dict[str, str | None]) -> str:
     return escape_md(render_prose(template, resolved))
 
 
+def ideal_location_reference(tax_year: int | None) -> dict:
+    """The Asset Location page's ideal-location reference, for ``tax_year``: the tax
+    year the page's federal rates are for (#735).
+
+    Returns {title, table, notes}, Markdown with every "$" escaped. Each limit is
+    templated from location_config.IRS_LIMITS' row for the year and from
+    HSA_CATCHUP_55, and ``notes`` cites each document with its date. A year with no
+    row shows "not recorded" in each limit's place, never another year's figure.
+    Ages and years in the text are inherent content, not figures."""
+    from src.location_config import HSA_CATCHUP_55, irs_limits
+
+    def _d(x):   return escape_md(_fmt_dollars(x))     # full dollars
+    def _k(x):   return "\\$" + f"{x / 1000:,.0f}k"    # abbreviated, in thousands
+    def _rng(t): return f"{_k(t[0])}–{_k(t[1])}"       # a phase-out range
+
+    lim = irs_limits(tax_year)
+    if lim is None:
+        none = f"Not recorded for tax year {tax_year}"
+        ira_contrib = roth_income = workplace_contrib = hsa_contrib = none
+        trad_income = ("Anyone can contribute; the deduction's phase-out is not recorded "
+                       f"for tax year {tax_year}")
+        combined = "¹ The IRA limit is the *combined* ceiling across both IRAs, not each."
+        sources = (f"**No IRS limits are recorded for tax year {tax_year}**, so none is "
+                   "shown here rather than another year's.")
+    else:
+        ira_contrib = (f"{_d(lim['ira_contrib_limit'])} combined¹ "
+                       f"(+{_d(lim['ira_catchup_50'])} if 50+)")
+        roth_income = (f"Phases out MAGI {_rng(lim['roth_magi_phaseout_single'])} single, "
+                       f"{_rng(lim['roth_magi_phaseout_mfj'])} joint")
+        trad_income = (f"Anyone can contribute; deduction phases out "
+                       f"{_rng(lim['trad_ira_deduction_phaseout_single'])} single if covered "
+                       "by a workplace plan")
+        workplace_contrib = (
+            f"{_d(lim['workplace_elective_deferral'])} employee "
+            f"(+{_d(lim['workplace_catchup_50'])} if 50+, "
+            f"+{_d(lim['workplace_catchup_60_63'])} if 60–63); "
+            f"{_k(lim['workplace_415c_total'])} incl. employer")
+        hsa_contrib = (f"{_d(lim['hsa_contrib_limit_self'])} self / "
+                       f"{_d(lim['hsa_contrib_limit_family'])} family "
+                       f"(+{_d(HSA_CATCHUP_55['amount'])} if 55+)")
+        combined = (f"¹ {_d(lim['ira_contrib_limit'])} is the *combined* ceiling across "
+                    "both IRAs, not each.")
+        sources = (
+            f"**Sources, tax year {tax_year}.** Retirement plans and IRAs: "
+            f"{escape_md(lim['retirement_source'])}, {escape_md(lim['retirement_source_date'])}. "
+            f"HSAs: {escape_md(lim['hsa_source'])}, {escape_md(lim['hsa_source_date'])}. "
+            f"The HSA catch-up: {escape_md(HSA_CATCHUP_55['source'])}, "
+            f"{escape_md(HSA_CATCHUP_55['source_date'])}.")
+
+    rows = [
+        ("Roth IRA",
+         "Highest-return equity — broad-market, growth-tilted",
+         ira_contrib,
+         roth_income,
+         "Growth & withdrawals never taxed; contributions withdrawable anytime; "
+         "no RMDs."),
+        ("Traditional IRA",
+         "Income-heavy / lower-return — bonds, REITs, hedged equity",
+         ira_contrib,
+         trad_income,
+         "Withdrawn as ordinary income; RMDs from 73 (75 if born 1960+)."),
+        ("401(k) / 403(b)",
+         "Same as Traditional; capture the full employer match first",
+         workplace_contrib,
+         "No income limit",
+         "Employer match beats any market return. Roth 401(k): after-tax in, "
+         "tax-free growth out, no income limit — same ideal contents as a Roth "
+         "IRA; pre-tax side holds bonds like a Traditional IRA."),
+        ("Taxable brokerage",
+         "Tax-efficient broad equity, munis, anything needed before 59½",
+         "No limit",
+         "No limit",
+         "Low turnover + qualified dividends keep drag low; no early-withdrawal "
+         "penalty; harvest losses; step-up at death."),
+        ("HSA (needs HDHP)",
+         "Long-horizon growth equity, if medical bills paid out of pocket",
+         hsa_contrib,
+         "No income limit; requires an HSA-eligible HDHP",
+         "Triple tax-free; after 65 works like a Traditional IRA for non-medical spending."),
+    ]
+    header = (f"| Account | Ideal holdings | {tax_year} contribution limit | "
+              f"{tax_year} income / eligibility limit | Why here / key note |\n"
+              "|---|---|---|---|---|\n")
+    notes = (
+        f"{combined}\n\n"
+        "**Why growth, not drag, picks the Roth.** Value scales with tax-free growth, "
+        "not drag avoided — equities (highest return) go here; bonds (low return, "
+        "tax-inefficient) cost nothing extra in the Traditional IRA regardless. The "
+        "40-year horizon is beside the point: location only answers where the bonds "
+        "you hold go, not whether to hold them — that is a whole-portfolio risk "
+        "decision (the SAA's fixed-income target), not a location one.\n\n"
+        "² Pre-tax 401(k), Roth 401(k), and Roth IRA can coexist — the 401(k) limit "
+        "is shared across pre-tax + Roth; the Roth IRA limit is separate.\n\n"
+        f"{sources}")
+    return {"title": f"Where each account type ideally sits — tax year {tax_year}",
+            "table": header + "\n".join("| " + " | ".join(r) + " |" for r in rows),
+            "notes": notes}
+
+
 def resolve_caption(
     group: dict, positions_df: pd.DataFrame, accounts_df: pd.DataFrame, register: pd.DataFrame,
 ) -> str | None:
